@@ -9,6 +9,7 @@ import kotlinx.coroutines.withTimeout
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.userauth.UserAuthException
+import net.schmizz.sshj.userauth.method.AuthNone
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import net.schmizz.sshj.transport.TransportException
 import java.io.IOException
@@ -90,10 +91,17 @@ class SshjProbe(
                 else -> ProbeResult.Failed(ProbeFailure.Unreachable, redact(transport.message))
             }
         } catch (auth: UserAuthException) {
-            return ProbeResult.Failed(
-                ProbeFailure.AuthFailed,
-                "The host refused these credentials. Nothing was stored.",
-            )
+            return when (profile.authMethod.sshAuthType) {
+                SshAuthType.None -> ProbeResult.Failed(
+                    ProbeFailure.TailscaleSshRefused,
+                    SshProbe.TAILSCALE_SSH_REFUSED,
+                )
+
+                else -> ProbeResult.Failed(
+                    ProbeFailure.AuthFailed,
+                    "The host refused these credentials. Nothing was stored.",
+                )
+            }
         } catch (timeout: SocketTimeoutException) {
             return ProbeResult.Failed(ProbeFailure.Timeout, "The host did not answer in time.")
         } catch (unknown: UnknownHostException) {
@@ -106,15 +114,25 @@ class SshjProbe(
         }
     }
 
+    /**
+     * One attempt, one method. sshj would happily be handed a list to try in
+     * turn; it is not, because a fallback is how a keyless choice quietly turns
+     * into a password on the wire.
+     */
     private fun authenticate(client: SSHClient, profile: HostProfile, credential: SshCredential) {
-        when (profile.authMethod) {
-            AuthMethod.Password -> {
+        when (profile.authMethod.sshAuthType) {
+            // Tailscale already authenticated this node over WireGuard and
+            // checked the tailnet SSH policy, so the SSH layer sends type
+            // `none` and no secret exists to send.
+            SshAuthType.None -> client.auth(profile.username, AuthNone())
+
+            SshAuthType.Password -> {
                 val password = credential.password
                     ?: throw UserAuthException("No password supplied.")
                 client.authPassword(profile.username, password)
             }
 
-            AuthMethod.PrivateKey -> {
+            SshAuthType.PublicKey -> {
                 val pem = credential.privateKey
                     ?: throw UserAuthException("No private key supplied.")
                 val finder = credential.passphrase?.let { PasswordUtils.createOneOff(it) }

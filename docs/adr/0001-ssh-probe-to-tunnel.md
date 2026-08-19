@@ -39,7 +39,7 @@ that maps one-to-one onto the TOFU design. Nothing found while building this
 slice argued for Apache MINA SSHD instead, and the swap stays cheap because the
 interface is one method wide.
 
-Three rules are load-bearing and are asserted by tests, not by convention:
+Four rules are load-bearing and are asserted by tests, not by convention:
 
 1. **Host-key policy is real code, not a flag.** `evaluateHostKey` returns
    `Trusted` / `FirstUse` / `Changed`. A first use aborts the transport *before*
@@ -53,7 +53,18 @@ Three rules are load-bearing and are asserted by tests, not by convention:
    `HostProfile`: host, port, username, auth *method*, accepted fingerprint,
    imported-key display name. The type system enforces it — `HostProfileStore`
    accepts nothing else.
-3. **Everything user-visible is redacted.** `redact()` ports Desktop's
+3. **One method, one attempt, no fallback.** sshj will happily be handed a list
+   of auth methods to try in turn; it is not. `AuthMethod` maps to an
+   `SshAuthType` and the adapter switches on that, so `SshAuthType.None` — SSH
+   auth type `none`, which is what Tailscale SSH uses after WireGuard and the
+   tailnet SSH policy have already authenticated the node
+   (<https://tailscale.com/docs/features/tailscale-ssh>) — is a deliberate
+   choice and never a step in a chain. A fallback is how a keyless choice
+   quietly becomes a password on the wire. A refusal is its own typed failure,
+   `ProbeFailure.TailscaleSshRefused`, because "this host is not running
+   Tailscale SSH" and "your password is wrong" are different problems with
+   different fixes.
+4. **Everything user-visible is redacted.** `redact()` ports Desktop's
    `redactSecrets` (`ssh-connection.ts:130-157`) plus two Android-specific
    shapes (a pasted PEM, a labelled password). `SecretRedactionTest` feeds known
    secrets through every carrier the app emits.

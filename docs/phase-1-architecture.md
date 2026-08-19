@@ -21,6 +21,8 @@ against that SHA.
 | Streaming, stop, background-turn isolation | **Real** state machine on a **fake** producer. |
 | Session list: grouping, search, status dots, create/rename/archive | **Real** logic over an **in-memory** session set. |
 | SSH host profile, key import via SAF, host-key TOFU policy | **Real.** |
+| One-field `user@host` destination, port 22 implicit | **Real.** Parser, formatter and round-trip are tested. |
+| Tailscale SSH: SSH auth type `none`, no secret collected | **Real** code path. Unverified against a host that actually runs Tailscale SSH — see §3 and §6. |
 | `probe`: connect → verify → auth → run one command → close | **Real**, over sshj 0.40.0. Unverified against a live host — see §6. |
 | Secret redaction and in-memory-only credentials | **Real**, and tested. |
 | Hermes gateway, WebSocket, real sessions, real model output | **Absent.** Not stubbed, not mocked. |
@@ -44,20 +46,59 @@ signature. Desktop's entire strategy — shell out to OpenSSH and inherit the
 user's config for free (`apps/desktop/electron/ssh-connection.ts:4-8`) — has no
 Android equivalent.
 
-So the app asks for its own credentials, keeps them in memory, and says so on
-screen. The alternative — implying the phone already has access — produces a
-confusing failure the first time someone taps Probe.
+So the app brings its own auth: credentials it collects and keeps in memory, or
+Tailscale SSH, which needs none because the tailnet has already authenticated
+the node. Either way it says so on screen. The alternative — implying the phone
+already has access because *something else* on it does — produces a confusing
+failure the first time someone taps Probe.
 
-## 3. Current auth choices, and their limits
+## 3. Where you are going, and how you prove who you are
+
+### The destination
+
+One field, the same string you would type after `ssh`: `you@hermes-box`,
+`you@hermes-box:2222`, `you@[fd7a:115c::1]:2222`. Port 22 is implicit on input
+and omitted on output, so the value round-trips. A host, a port and a username
+as three separate boxes was three chances to mistype and two boxes whose answer
+never changes.
+
+`parseSshDestination` refuses rather than guesses: whitespace inside is an
+error instead of being stripped (silently deleting it turns a typo into a
+different, valid host), and a bare IPv6 address is an error because
+`fd7a:115c::1:2222` has no single reading — the same reason `ssh` wants
+brackets. A value that does not parse is shown with its reason and never
+reaches the profile, so a half-typed host cannot overwrite a working one.
+
+Trust is scoped to the host key, so `HostProfile.withDestination` keeps an
+accepted fingerprint when only the username changes and drops it when the host
+or port changes. Dropping is the safe direction; the cost is one extra
+fingerprint review.
+
+### Auth choices, and their limits
 
 | Method | How it works | Limit, stated honestly |
 |---|---|---|
+| Tailscale SSH (default for a fresh profile) | Nothing is collected and nothing is sent: `client.auth(username, AuthNone())`. The tailnet already authenticated the node over WireGuard and checked the tailnet SSH policy, so the SSH layer uses auth type `none` (<https://tailscale.com/docs/features/tailscale-ssh>) | Works **only** if the target runs Tailscale SSH *and* the tailnet SSH policy allows the connection. Being on the same tailnet buys reachability and a MagicDNS name (<https://tailscale.com/docs/features/magicdns>) and nothing more — a box running ordinary OpenSSH over Tailscale still wants a password or a key, and says so as `ProbeFailure.TailscaleSshRefused`. There is no automatic fallback to another method. |
 | Password | Typed, held in memory for the screen, zeroed after the probe | Never persisted. Retyped every probe. |
 | Imported OpenSSH private key | Picked through the Storage Access Framework, read once (64 KB cap), held in memory | Never persisted, and **no persistable URI permission is taken** — a key the app can silently re-read after a restart is a key the app effectively stores. Re-import each session. |
 
+The three claims that get conflated, kept apart on purpose: the tailnet gives a
+route, MagicDNS gives a name, and Tailscale SSH gives an identity the server
+accepts. The first two do not imply the third.
+
 What reaches disk: host, port, username, auth *method*, the accepted host-key
 fingerprint, the imported key's display name. That is the whole list, and
-`HostProfileStore` accepts nothing else by type.
+`HostProfileStore` accepts nothing else by type. The destination is not a
+seventh key — it is derived from the parsed host, port and username, so there
+is one canonical copy. The auth method is persisted by enum *name*, so entries
+can be reordered or added without rewriting an existing install's choice; a
+name this build does not recognise falls back to Password rather than to the
+fresh default, because quietly moving someone onto a keyless method is the one
+wrong answer.
+
+Tailscale distributes host keys to its own client through a custom
+`known_hosts`; sshj does not consume that, so the TOFU review below is
+unchanged and still mandatory for Tailscale SSH.
 
 Host-key policy (`data/ssh/HostKeyPolicy.kt`):
 
@@ -90,14 +131,15 @@ com.hermesagent.mobile
 │   ├── markdown/             block parser for the transcript
 │   ├── demo/                 deterministic seed + turn engine   ← replaced by the gateway
 │   ├── prefs/                DataStore: appearance + host profile
-│   └── ssh/                  SshProbe seam, sshj adapter, fake, TOFU policy, redaction
+│   └── ssh/                  SshProbe seam, sshj adapter, fake, destination parser,
+│                              TOFU policy, redaction
 └── ui/
     ├── theme/                registry, palette, tokens, type scale   ← the whole theme system
     ├── common/               shared primitives (one per concern)
     ├── chat/                 ChatViewModel, ChatScreen, Transcript, Composer
     ├── sessions/             SessionList
     ├── appearance/           theme picker
-    └── ssh/                  SshViewModel, host + probe screen
+    └── ssh/                  SshViewModel, destination + auth + probe screen
 ```
 
 State, by authority (`apps/desktop/AGENTS.md`, "Decide state by authority"):
@@ -106,7 +148,7 @@ State, by authority (`apps/desktop/AGENTS.md`, "Decide state by authority"):
 |---|---|---|
 | Backend-authoritative | `SessionCache`, owned by `HermesApplication` | Merge, never clobber. Rows leave only via `removeSession`. A no-op upsert returns the same instance so Compose does not recompose. Process-scoped because a retained ViewModel outlives the Activity. |
 | Connection-scoped | `ChatViewModel` fields (`jobs`, `generations`) | Dies with the scope. A per-session generation counter drops deltas from a superseded turn. |
-| UI-only | `ChatViewModel` flows, `rememberSaveable` | Draft, search, drawer, destination. |
+| UI-only | `ChatViewModel` / `SshViewModel` flows, `rememberSaveable` | Draft, search, drawer, and the SSH destination exactly as typed — its parsed halves are what get persisted. |
 | Persisted | `HermesPreferences` | Keys carry their scope (`appearance.*`, `host.single.*`). |
 
 Two behaviours worth naming because they are the ones a naive port gets wrong:
@@ -147,6 +189,14 @@ Where the tests sit relative to those seams:
 The gap worth naming: `SshjProbe` itself has no test that opens a socket. Its
 policy, its redaction and its verifier are covered; the handshake is not, and
 cannot be without a host.
+
+The Tailscale SSH branch is covered as far as it goes offline. `AuthMethod`
+maps to an `SshAuthType`, the adapter switches on that value, and
+`HostProfileTest` pins that exactly one method sends `None` — so the branch
+cannot be widened by accident, and no method can acquire a silent fallback.
+`SshCredential.carriesSecret` lets `FakeSshProbe` record, per call, that
+nothing secret reached the transport. What no offline test can show is sshj's
+`AuthNone` completing against a real Tailscale SSH server.
 
 ## 5. Theming
 
@@ -189,7 +239,7 @@ is identical at phone reading distance. The table is in `HermesTypography.kt`.
 Commands, and what they proved on 2026-08-19 (JDK 17, `ANDROID_HOME=/opt/android-sdk`):
 
 ```bash
-./gradlew check          # 94 debug + 85 release unit tests, 0 failures;
+./gradlew check          # 124 debug + 111 release unit tests, 0 failures;
                          # lint clean; repo invariants pass
 ./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk, ~16.5 MB
 git diff --check         # clean
@@ -199,9 +249,11 @@ git diff --check         # clean
 `scripts/check-repo-invariants.sh`.
 
 Compose journeys run under **Robolectric** in `app/src/testDebug/`, so the core
-phone journey is covered without an emulator: open the drawer, group by date,
+phone journeys are covered without an emulator: open the drawer, group by date,
 switch session, search, create, send a prompt, and the composer's send↔stop
-swap.
+swap; and on the SSH screen, one destination field with no separate host/port/
+username, the three auth choices, first-use review through to a successful
+probe, and the Tailscale-SSH-refused copy.
 
 **Not verified, and not claimed:**
 
@@ -209,6 +261,15 @@ swap.
   host credentials were provided. `SshjProbe` is compiled, linted, and its
   policy and redaction are unit-tested with real key material — but "sshj
   completes a handshake against a real sshd from a real phone" is unproven.
+- **Tailscale SSH has not been observed succeeding.** On the Linux devbox on
+  2026-08-19, `dev` resolved over MagicDNS but
+  `ssh -o BatchMode=yes donovanyohan@dev` answered
+  `Permission denied (publickey,password)`, so that target is running
+  traditional OpenSSH over Tailscale, not Tailscale SSH. The app's Tailscale
+  SSH path is therefore exercised only against `FakeSshProbe`; against that
+  host it is expected to produce `ProbeFailure.TailscaleSshRefused`, which is
+  the honest answer, not a bug. Enabling Tailscale SSH on a target and writing
+  the tailnet policy is out of this slice's scope.
 - **No physical-device dogfood.** Real IME behaviour, gesture navigation, fold
   and unfold, rendering fidelity, and colour on an actual panel are
   emulator/device-only.

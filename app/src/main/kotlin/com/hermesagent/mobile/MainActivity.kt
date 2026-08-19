@@ -78,9 +78,7 @@ class MainActivity : ComponentActivity() {
                     onSelectMode = { mode -> lifecycleScope.launch { preferences.setMode(mode) } },
                 ),
                 sshActions = SshActions(
-                    onHostChange = sshViewModel::setHost,
-                    onPortChange = sshViewModel::setPort,
-                    onUsernameChange = sshViewModel::setUsername,
+                    onDestinationChange = sshViewModel::setDestination,
                     onAuthMethodChange = sshViewModel::setAuthMethod,
                     onPasswordChange = sshViewModel::setPassword,
                     onPassphraseChange = sshViewModel::setKeyPassphrase,

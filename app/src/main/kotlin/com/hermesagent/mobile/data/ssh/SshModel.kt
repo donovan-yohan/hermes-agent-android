@@ -4,12 +4,21 @@ package com.hermesagent.mobile.data.ssh
  * A saved host. **Non-secret fields only** — this is the type that reaches
  * disk. Passwords, passphrases and private keys are carried separately in
  * [SshCredential], which is never persisted and never logged.
+ *
+ * The destination the user types is not a seventh field: it is [destination],
+ * derived from the parsed host, port and username, so there is exactly one
+ * canonical copy of that answer.
  */
 data class HostProfile(
     val host: String = "",
-    val port: Int = 22,
+    val port: Int = SshDestination.DEFAULT_PORT,
     val username: String = "",
-    val authMethod: AuthMethod = AuthMethod.Password,
+    /**
+     * Tailscale SSH by default, because on a tailnet it is the choice that
+     * needs no secret at all. It is still a choice: a target running ordinary
+     * OpenSSH refuses it, and the screen says so.
+     */
+    val authMethod: AuthMethod = AuthMethod.TailscaleSsh,
     /**
      * Accepted host key, `SHA256:…` as `ssh-keygen -lf` prints it. Null means
      * this host has never been trusted, so the next probe is a first use.
@@ -18,20 +27,63 @@ data class HostProfile(
     /** Display name of the imported key document, for the UI only. */
     val importedKeyName: String? = null,
 ) {
-    fun validate(): List<String> = buildList {
-        if (host.isBlank()) add("Host is required.")
-        if (host.contains(' ')) add("Host must not contain spaces.")
-        if (port !in 1..65535) add("Port must be between 1 and 65535.")
-        if (username.isBlank()) add("Username is required.")
-    }
+    val isValid: Boolean
+        get() = host.isNotBlank() && username.isNotBlank() &&
+            host.none(Char::isWhitespace) && port in 1..65535
 
-    val isValid: Boolean get() = validate().isEmpty()
+    /** `user@host`, port 22 implicit. Never includes anything secret. */
+    val destination: String
+        get() = if (host.isEmpty() && username.isEmpty()) {
+            ""
+        } else {
+            SshDestination(username, host, port).format()
+        }
 
-    /** `user@host:port`, for labels. Never includes anything secret. */
-    val label: String get() = "$username@$host:$port"
+    /**
+     * Applies a parsed destination.
+     *
+     * Trust is scoped to a host and a port, not to an account: renaming the
+     * user keeps the fingerprint that was accepted for this box, while any
+     * change to where the connection goes drops it so the next probe is a first
+     * use again. Dropping it is the safe direction — the worst case is one
+     * extra fingerprint review.
+     */
+    fun withDestination(destination: SshDestination): HostProfile = copy(
+        host = destination.host,
+        port = destination.port,
+        username = destination.username,
+        acceptedFingerprint = acceptedFingerprint
+            ?.takeIf { destination.host == host && destination.port == port },
+    )
 }
 
-enum class AuthMethod { Password, PrivateKey }
+/**
+ * How the SSH layer proves who the user is.
+ *
+ * Persisted by [Enum.name], never by ordinal, so the order here is a UI
+ * decision and adding an entry cannot rewrite an existing install's choice.
+ */
+enum class AuthMethod { TailscaleSsh, Password, PrivateKey }
+
+/**
+ * The authentication type each method puts on the wire.
+ *
+ * [SshAuthType.None] is not a fallback and never follows a failed attempt: it
+ * is what Tailscale SSH uses deliberately, because the tailnet already
+ * authenticated the node over WireGuard and checked the tailnet SSH policy, so
+ * the SSH layer has nothing left to prove
+ * (https://tailscale.com/docs/features/tailscale-ssh). Kept as a value rather
+ * than inlined in the sshj adapter so that "exactly one method sends `none`" is
+ * assertable without a live server.
+ */
+enum class SshAuthType { None, Password, PublicKey }
+
+val AuthMethod.sshAuthType: SshAuthType
+    get() = when (this) {
+        AuthMethod.TailscaleSsh -> SshAuthType.None
+        AuthMethod.Password -> SshAuthType.Password
+        AuthMethod.PrivateKey -> SshAuthType.PublicKey
+    }
 
 /**
  * In-memory auth material for exactly one probe.
@@ -46,6 +98,12 @@ class SshCredential private constructor(
     internal val privateKey: CharArray?,
     internal val passphrase: CharArray?,
 ) {
+    /**
+     * Whether this carries anything secret at all. A boolean, never the value:
+     * it is how the Tailscale SSH path proves it sends nothing.
+     */
+    val carriesSecret: Boolean get() = password != null || privateKey != null || passphrase != null
+
     fun clear() {
         password?.fill(ZERO)
         privateKey?.fill(ZERO)
@@ -58,6 +116,9 @@ class SshCredential private constructor(
         /** Explicit NUL rather than a space literal: an invisible character in a
          *  wipe routine is a bug waiting to happen. */
         private const val ZERO = '\u0000'
+
+        /** Tailscale SSH: there is nothing to send, and nothing to zero. */
+        fun none() = SshCredential(null, null, null)
 
         fun password(value: String) = SshCredential(value.toCharArray(), null, null)
 
@@ -95,6 +156,8 @@ sealed interface ProbeResult {
  * Failure kinds, mirroring Desktop's classifier
  * (`apps/desktop/electron/ssh-connection.ts:324-362` @ `f82f2dba`).
  * `HostKeyChanged` is absent on purpose: on Android that is a typed result,
- * not a string we parse back out of stderr.
+ * not a string we parse back out of stderr. [TailscaleSshRefused] has no
+ * Desktop equivalent at all — Desktop's OpenSSH would simply move on to the
+ * next auth method, and this app deliberately does not.
  */
-enum class ProbeFailure { Unreachable, AuthFailed, Timeout, Cancelled, Unknown }
+enum class ProbeFailure { Unreachable, AuthFailed, TailscaleSshRefused, Timeout, Cancelled, Unknown }

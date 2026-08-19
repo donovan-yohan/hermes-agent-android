@@ -11,7 +11,7 @@ and a real SSH probe; there is no gateway transport yet.
 | `app/src/main/kotlin/.../ui/theme/` | Theme registry, palette, semantic tokens, type scale | Any colour, font or spacing question |
 | `app/src/main/kotlin/.../ui/` | Compose surfaces: `chat/`, `sessions/`, `appearance/`, `ssh/`, `common/` primitives | Changing what the app looks like or does |
 | `app/src/main/kotlin/.../data/session/` | `SessionCache` (backend-authoritative), model, calendar grouping | Anything about sessions or transcripts |
-| `app/src/main/kotlin/.../data/ssh/` | `SshProbe` seam, sshj adapter, TOFU policy, redaction | SSH, host keys, secrets |
+| `app/src/main/kotlin/.../data/ssh/` | `SshProbe` seam, sshj adapter, destination parser, TOFU policy, redaction | SSH, destinations, host keys, secrets |
 | `app/src/main/kotlin/.../data/demo/` | Deterministic demo sessions + turn engine | Understanding what is fake; deleted by the gateway slice |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
@@ -59,6 +59,21 @@ fingerprint and an imported key's display name reach disk — enforced by
 `redact()`. No credential, host name or fingerprint belongs in this repo, in a
 test, or in a screenshot. There is no accept-all host-key verifier and a changed
 host key has no accept path.
+
+**One auth method, one attempt, no fallback.** `AuthMethod` maps to an
+`SshAuthType` and `SshjProbe` switches on that; `SshAuthType.None` is Tailscale
+SSH's deliberate auth type `none`, never a step in a chain, and a refusal is its
+own `ProbeFailure.TailscaleSshRefused` rather than a generic auth failure.
+Tailscale SSH still goes through the same mandatory TOFU review — sshj does not
+consume Tailscale's client-side `known_hosts`. The auth method is persisted by
+enum *name*, so entries may be reordered; an unrecognised name falls back to
+Password, never to a keyless method.
+
+**The SSH destination is one field.** `user@host`, port 22 implicit,
+`user@[ipv6]:port` supported. `parseSshDestination` refuses rather than guesses,
+only a value that parses reaches the profile, and the parsed host/port/username
+are the canonical persisted copy — the raw string is UI-only. Changing the host
+or port drops the accepted fingerprint; changing only the username keeps it.
 
 **Backend-authoritative data merges, never clobbers.** `SessionCache` is the
 cache of gateway truth even though the gateway does not exist yet: partial

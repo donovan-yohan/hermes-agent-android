@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.ProbeFailure
+import com.hermesagent.mobile.data.ssh.SshProbe
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -77,7 +79,8 @@ fun SshScreen(
                 "Reaching this box from Termux proves the network route and that sshd accepts " +
                     "your account. It does not hand this app Termux's keys, agent, or " +
                     "~/.ssh/config — those live in another app's sandbox and are unreadable here. " +
-                    "So Hermes asks for its own credentials.",
+                    "So Hermes brings its own: credentials it holds in memory, or Tailscale SSH, " +
+                    "which needs none.",
                 style = HermesTheme.type.caption,
                 color = tokens.textTertiary,
             )
@@ -85,36 +88,47 @@ fun SshScreen(
 
         Hairline()
 
-        LabelledField(
-            label = "Host",
-            value = state.profile.host,
-            placeholder = "hermes-box.local",
-            onValueChange = actions.onHostChange,
-        )
-        LabelledField(
-            label = "Port",
-            value = state.profile.port.takeIf { it > 0 }?.toString().orEmpty(),
-            placeholder = "22",
-            onValueChange = actions.onPortChange,
-            keyboardType = KeyboardType.Number,
-        )
-        LabelledField(
-            label = "Username",
-            value = state.profile.username,
-            placeholder = "you",
-            onValueChange = actions.onUsernameChange,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LabelledField(
+                label = "SSH destination",
+                value = state.destination,
+                placeholder = "you@hermes-box",
+                onValueChange = actions.onDestinationChange,
+                keyboardType = KeyboardType.Email,
+            )
+            Text(
+                "The same thing you would type after `ssh`. Port 22 unless you add one " +
+                    "(`you@hermes-box:2222`); an IPv6 address goes in brackets. On a tailnet " +
+                    "the short MagicDNS name works from any signed-in device.",
+                style = HermesTheme.type.scaffoldMeta,
+                color = tokens.scaffoldMeta,
+            )
+        }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionLabel("Authentication")
             SegmentedControl(
                 options = AuthMethod.entries,
                 selected = state.profile.authMethod,
-                label = { if (it == AuthMethod.Password) "Password" else "Private key" },
+                label = AuthMethod::label,
                 onSelect = actions.onAuthMethodChange,
+                // A segment read out as just "Password" is ambiguous with the
+                // field below it, to a screen reader and to a test.
+                describe = { "Authenticate with ${it.label()}" },
             )
 
             when (state.profile.authMethod) {
+                AuthMethod.TailscaleSsh -> Text(
+                    "No password, no key, nothing secret sent: the tailnet already " +
+                        "authenticated this device, so the SSH layer uses auth type `none`. " +
+                        "That works only if the target runs Tailscale SSH *and* your tailnet " +
+                        "SSH policy allows this connection. Sharing a tailnet by itself gives " +
+                        "you the route and the name — a box running ordinary OpenSSH over " +
+                        "Tailscale still wants a password or a key.",
+                    style = HermesTheme.type.caption,
+                    color = tokens.textSecondary,
+                )
+
                 AuthMethod.Password -> LabelledField(
                     label = "Password",
                     value = state.password,
@@ -149,11 +163,8 @@ fun SshScreen(
             )
         }
 
-        if (state.validationErrors.isNotEmpty()) {
-            ErrorState(
-                title = "Fix these first",
-                description = state.validationErrors.joinToString("\n"),
-            )
+        state.destinationError?.let { problem ->
+            ErrorState(title = "Fix the destination", description = problem)
         }
 
         state.pendingHostKey?.let { pending ->
@@ -245,9 +256,17 @@ private fun ProbeSection(state: SshUiState, onProbe: () -> Unit, onCancel: () ->
 private fun ProbeFailure.title(): String = when (this) {
     ProbeFailure.Unreachable -> "Could not reach the host"
     ProbeFailure.AuthFailed -> "Authentication was refused"
+    ProbeFailure.TailscaleSshRefused -> "Reachable, but not over Tailscale SSH"
     ProbeFailure.Timeout -> "The host did not answer"
     ProbeFailure.Cancelled -> "Probe cancelled"
     ProbeFailure.Unknown -> "The probe failed"
+}
+
+/** Short enough for a third of a segmented control, and still the real name. */
+private fun AuthMethod.label(): String = when (this) {
+    AuthMethod.TailscaleSsh -> "Tailscale SSH"
+    AuthMethod.Password -> "Password"
+    AuthMethod.PrivateKey -> "Private key"
 }
 
 /**
@@ -318,6 +337,10 @@ private fun LabelledField(
                 visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (secret) KeyboardType.Password else keyboardType,
+                    // A host name is not a sentence: an IME that capitalises or
+                    // autocorrects it produces a destination that cannot resolve.
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrectEnabled = false,
                     imeAction = ImeAction.Next,
                 ),
                 modifier = Modifier
@@ -335,11 +358,43 @@ private fun SshPreviewFirstUse() {
     HermesTheme(selection) {
         SshScreen(
             state = SshUiState(
-                profile = HostProfile(host = "hermes-box.local", username = "hermes"),
+                profile = HostProfile(
+                    host = "hermes-box.local",
+                    username = "hermes",
+                    authMethod = AuthMethod.Password,
+                ),
+                destination = "hermes@hermes-box.local",
                 password = "••••",
                 pendingHostKey = PendingHostKey(
                     fingerprint = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01",
                     keyType = "ssh-ed25519",
+                ),
+            ),
+            actions = SshActions(),
+        )
+    }
+}
+
+/**
+ * The case this screen exists to explain: on the tailnet, name resolves, host
+ * key trusted — and the target is still ordinary OpenSSH.
+ */
+@Preview(name = "SSH · Tailscale SSH refused", widthDp = 412, heightDp = 892)
+@Composable
+private fun SshPreviewTailscaleRefused() {
+    val selection = AppearanceSelection("nous", HermesThemeMode.Dark)
+    HermesTheme(selection) {
+        SshScreen(
+            state = SshUiState(
+                profile = HostProfile(
+                    host = "hermes-box",
+                    username = "hermes",
+                    acceptedFingerprint = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01",
+                ),
+                destination = "hermes@hermes-box",
+                status = ProbeStatus.Failed(
+                    ProbeFailure.TailscaleSshRefused,
+                    SshProbe.TAILSCALE_SSH_REFUSED,
                 ),
             ),
             actions = SshActions(),

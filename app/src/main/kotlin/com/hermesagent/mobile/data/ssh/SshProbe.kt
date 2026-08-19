@@ -35,6 +35,20 @@ interface SshProbe {
         /** Bounded read so a hostile or broken server cannot stream forever. */
         const val MAX_OUTPUT_BYTES: Int = 4096
 
+        /**
+         * What the screen says when a host is reachable, its key is trusted,
+         * and it still refuses SSH auth type `none`. Held here so the sshj
+         * adapter and [FakeSshProbe] cannot drift apart on the one message
+         * whose whole job is to separate "on the tailnet" from "Tailscale SSH
+         * is enabled and the policy allows you".
+         */
+        const val TAILSCALE_SSH_REFUSED: String =
+            "This host answered and its key is trusted, but it refused Tailscale SSH. " +
+                "Either the target is not running Tailscale SSH, or your tailnet SSH policy " +
+                "does not allow this connection — sharing a tailnet only provides the route " +
+                "and the name. Enable Tailscale SSH on the target and allow it in the policy, " +
+                "or switch to Password or Private key. Nothing was sent."
+
         const val CONNECT_TIMEOUT_MILLIS: Int = 15_000
         const val OVERALL_TIMEOUT_MILLIS: Long = 30_000
     }

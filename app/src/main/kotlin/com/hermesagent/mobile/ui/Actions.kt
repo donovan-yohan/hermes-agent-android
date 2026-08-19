@@ -31,9 +31,7 @@ class AppearanceActions(
 )
 
 class SshActions(
-    val onHostChange: (String) -> Unit = {},
-    val onPortChange: (String) -> Unit = {},
-    val onUsernameChange: (String) -> Unit = {},
+    val onDestinationChange: (String) -> Unit = {},
     val onAuthMethodChange: (AuthMethod) -> Unit = {},
     val onPasswordChange: (String) -> Unit = {},
     val onPassphraseChange: (String) -> Unit = {},

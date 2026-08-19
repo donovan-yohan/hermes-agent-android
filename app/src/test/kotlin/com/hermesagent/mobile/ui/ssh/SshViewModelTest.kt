@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -42,10 +43,10 @@ class SshViewModelTest {
 
     private fun viewModel(probe: SshProbe) = SshViewModel(store, probe)
 
+    /** A destination plus a password: the pre-Tailscale-SSH baseline. */
     private fun SshViewModel.fillValidProfile() {
-        setHost("hermes-box.local")
-        setPort("22")
-        setUsername("hermes")
+        setDestination("hermes@hermes-box.local")
+        setAuthMethod(AuthMethod.Password)
         setPassword("s3cret")
     }
 
@@ -101,7 +102,6 @@ class SshViewModelTest {
         )
         val vm = viewModel(FakeSshProbe())
         advanceUntilIdle()
-        vm.setPassword("s3cret")
 
         vm.runProbe()
         advanceUntilIdle()
@@ -170,16 +170,21 @@ class SshViewModelTest {
     }
 
     @Test
-    fun `probing is refused until the profile and a credential are present`() = runTest(dispatcher) {
+    fun `probing is refused until the destination parses and a credential is present`() = runTest(dispatcher) {
         val probe = FakeSshProbe()
         val vm = viewModel(probe)
 
         vm.runProbe()
         advanceUntilIdle()
-        assertTrue("an empty profile must not dial", probe.calls.isEmpty())
+        assertTrue("an empty destination must not dial", probe.calls.isEmpty())
 
-        vm.setHost("hermes-box.local")
-        vm.setUsername("hermes")
+        vm.setDestination("hermes@")
+        vm.setAuthMethod(AuthMethod.Password)
+        vm.runProbe()
+        advanceUntilIdle()
+        assertTrue("a half-typed destination must not dial", probe.calls.isEmpty())
+
+        vm.setDestination("hermes@hermes-box.local")
         vm.runProbe()
         advanceUntilIdle()
         assertTrue("no credential means no dial", probe.calls.isEmpty())
@@ -191,21 +196,78 @@ class SshViewModelTest {
     }
 
     @Test
-    fun `validation reports every problem at once`() = runTest(dispatcher) {
+    fun `the destination field is the only host, port and username input`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
-        vm.setPort("0")
+
+        vm.setDestination("  donovanyohan@dev  ")
         advanceUntilIdle()
 
-        val errors = vm.uiState.value.validationErrors
-        assertEquals(setOf("Host is required.", "Port must be between 1 and 65535.", "Username is required."), errors.toSet())
+        val implicit = vm.uiState.value.profile
+        assertEquals("donovanyohan", implicit.username)
+        assertEquals("dev", implicit.host)
+        assertEquals("nobody should have to type port 22", 22, implicit.port)
+        assertNull(vm.uiState.value.destinationError)
+
+        vm.setDestination("donovanyohan@dev:2222")
+        advanceUntilIdle()
+        assertEquals(2222, vm.uiState.value.profile.port)
     }
 
     @Test
-    fun `the port field ignores anything that is not a digit`() = runTest(dispatcher) {
+    fun `an unparseable destination is shown, not saved`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
-        vm.setPort("2s2")
+        vm.setDestination("hermes@hermes-box.local")
         advanceUntilIdle()
-        assertEquals(22, vm.uiState.value.profile.port)
+
+        vm.setDestination("hermes@hermes box")
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals("the field keeps what was typed", "hermes@hermes box", state.destination)
+        assertNotNull("and says why it cannot be used", state.destinationError)
+        assertFalse(state.canProbe)
+        assertEquals(
+            "a broken edit must not overwrite a working profile",
+            "hermes-box.local",
+            store.saved.value.host,
+        )
+    }
+
+    @Test
+    fun `an emptied destination cannot quietly dial the last host`() = runTest(dispatcher) {
+        val probe = FakeSshProbe()
+        val vm = viewModel(probe)
+        vm.setDestination("hermes@hermes-box.local")
+        advanceUntilIdle()
+
+        vm.setDestination("   ")
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertNull("a blank field is not worth an error message", state.destinationError)
+        assertFalse("but it is not something to dial either", state.canProbe)
+
+        vm.runProbe()
+        advanceUntilIdle()
+        assertTrue(probe.calls.isEmpty())
+    }
+
+    @Test
+    fun `editing only the username keeps the accepted fingerprint`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@hermes-box")
+        vm.runProbe()
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+
+        vm.setDestination("donovanyohan@hermes-box")
+        advanceUntilIdle()
+        assertEquals(FakeSshProbe.DEFAULT_FINGERPRINT, store.saved.value.acceptedFingerprint)
+
+        vm.setDestination("donovanyohan@other-box")
+        advanceUntilIdle()
+        assertNull("a new host has to be reviewed again", store.saved.value.acceptedFingerprint)
     }
 
     @Test
@@ -235,6 +297,64 @@ class SshViewModelTest {
         assertFalse(persisted.contains("s3cret"))
         assertFalse(persisted.contains("secretkeymaterial"))
         assertFalse(persisted.contains("passphrase-value"))
+    }
+
+    @Test
+    fun `a fresh screen probes over Tailscale SSH without collecting anything`() = runTest(dispatcher) {
+        val probe = FakeSshProbe()
+        val vm = viewModel(probe)
+        advanceUntilIdle()
+
+        assertEquals(AuthMethod.TailscaleSsh, vm.uiState.value.profile.authMethod)
+
+        vm.setDestination("donovanyohan@dev")
+        advanceUntilIdle()
+        assertTrue("a destination is the whole form for Tailscale SSH", vm.uiState.value.canProbe)
+
+        vm.runProbe()
+        advanceUntilIdle()
+        assertEquals(1, probe.calls.size)
+        assertFalse("nothing secret may reach the transport", probe.calls.single().carriedSecret)
+        assertEquals(
+            "the host key is still reviewed first",
+            FakeSshProbe.DEFAULT_FINGERPRINT,
+            vm.uiState.value.pendingHostKey?.fingerprint,
+        )
+    }
+
+    @Test
+    fun `a host that only rides the tailnet is told apart from a wrong password`() = runTest(dispatcher) {
+        store.saved.value = HostProfile(
+            host = "dev",
+            username = "donovanyohan",
+            acceptedFingerprint = FakeSshProbe.DEFAULT_FINGERPRINT,
+        )
+        val vm = viewModel(FakeSshProbe(tailscaleSshEnabled = false))
+        advanceUntilIdle()
+
+        vm.runProbe()
+        advanceUntilIdle()
+
+        val status = vm.uiState.value.status as ProbeStatus.Failed
+        assertEquals(ProbeFailure.TailscaleSshRefused, status.kind)
+        assertEquals(SshProbe.TAILSCALE_SSH_REFUSED, status.message)
+        assertTrue("the copy must name the policy", status.message.contains("policy"))
+        assertTrue("and the way out", status.message.contains("Password"))
+        assertNull("a refusal is not a key problem", vm.uiState.value.pendingHostKey)
+    }
+
+    @Test
+    fun `switching to Tailscale SSH does not send a password typed before the switch`() = runTest(dispatcher) {
+        val probe = FakeSshProbe()
+        val vm = viewModel(probe)
+        vm.fillValidProfile()
+        advanceUntilIdle()
+
+        vm.setAuthMethod(AuthMethod.TailscaleSsh)
+        vm.runProbe()
+        advanceUntilIdle()
+
+        assertFalse(probe.calls.single().carriedSecret)
     }
 
     /** The in-memory half of [HostProfileStore] — the reason the interface exists. */

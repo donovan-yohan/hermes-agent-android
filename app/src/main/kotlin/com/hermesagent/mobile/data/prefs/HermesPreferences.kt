@@ -43,12 +43,19 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
         )
     }
 
+    /**
+     * A key that is absent means nothing has ever been saved, so the fresh
+     * [HostProfile] defaults answer — including Tailscale SSH as the starting
+     * auth method. A key that is *present* is the user's own past choice and
+     * always wins; [toAuthMethod] is what handles a value this build does not
+     * know.
+     */
     override val hostProfile: Flow<HostProfile> = context.hermesDataStore.data.map { prefs ->
         HostProfile(
-            host = prefs[HOST] ?: "",
-            port = prefs[PORT] ?: 22,
-            username = prefs[USERNAME] ?: "",
-            authMethod = prefs[AUTH_METHOD]?.toAuthMethod() ?: AuthMethod.Password,
+            host = prefs[HOST] ?: FRESH.host,
+            port = prefs[PORT] ?: FRESH.port,
+            username = prefs[USERNAME] ?: FRESH.username,
+            authMethod = prefs[AUTH_METHOD]?.toAuthMethod() ?: FRESH.authMethod,
             acceptedFingerprint = prefs[ACCEPTED_FINGERPRINT],
             importedKeyName = prefs[IMPORTED_KEY_NAME],
         )
@@ -74,6 +81,9 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
     }
 
     private companion object {
+        /** What an install with nothing saved yet gets. */
+        val FRESH = HostProfile()
+
         val THEME_NAME = stringPreferencesKey("appearance.theme")
         val THEME_MODE = stringPreferencesKey("appearance.mode")
         val HOST = stringPreferencesKey("host.single.host")
@@ -86,6 +96,12 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
         fun String.toThemeMode(): HermesThemeMode =
             HermesThemeMode.entries.firstOrNull { it.name == this } ?: HermesThemeMode.System
 
+        /**
+         * Persisted by name, so entries can be reordered or added without
+         * rewriting an existing install's choice. A name this build does not
+         * recognise falls back to Password rather than to the fresh default:
+         * quietly moving someone onto a keyless method is the one wrong answer.
+         */
         fun String.toAuthMethod(): AuthMethod =
             AuthMethod.entries.firstOrNull { it.name == this } ?: AuthMethod.Password
     }

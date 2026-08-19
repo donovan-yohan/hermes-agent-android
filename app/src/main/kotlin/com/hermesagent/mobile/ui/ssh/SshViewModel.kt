@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.hermesagent.mobile.data.ssh.AuthMethod
+import com.hermesagent.mobile.data.ssh.DestinationParse
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
 import com.hermesagent.mobile.data.ssh.ProbeFailure
@@ -11,6 +12,7 @@ import com.hermesagent.mobile.data.ssh.ProbeResult
 import com.hermesagent.mobile.data.ssh.SshCredential
 import com.hermesagent.mobile.data.ssh.SshProbe
 import com.hermesagent.mobile.data.ssh.SshjProbe
+import com.hermesagent.mobile.data.ssh.parseSshDestination
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,12 @@ data class PendingHostKey(val fingerprint: String, val keyType: String)
 
 data class SshUiState(
     val profile: HostProfile = HostProfile(),
+    /**
+     * The destination field exactly as typed. Non-secret, and not persisted in
+     * this form — [profile] holds the parsed halves, which are the canonical
+     * copy.
+     */
+    val destination: String = "",
     /** In memory for the life of this screen. Never written anywhere. */
     val password: String = "",
     val keyPassphrase: String = "",
@@ -45,13 +53,31 @@ data class SshUiState(
     val status: ProbeStatus = ProbeStatus.Idle,
     val pendingHostKey: PendingHostKey? = null,
 ) {
-    val validationErrors: List<String> get() = profile.validate()
+    private val parsedDestination: DestinationParse get() = parseSshDestination(destination)
 
+    /**
+     * Why the destination cannot be used, or null. A blank field is not an
+     * error — it is a screen nobody has filled in yet, and shouting at it on
+     * first open is noise. It is still not probeable, which [canProbe] answers.
+     */
+    val destinationError: String?
+        get() = (parsedDestination as? DestinationParse.Invalid)
+            ?.reason
+            ?.takeIf { destination.isNotBlank() }
+
+    /**
+     * Both halves have to agree: the field must parse, *and* the profile it
+     * parsed into must be dialable. Otherwise a field the user has emptied
+     * could still dial the host they typed a minute ago.
+     */
     val canProbe: Boolean
-        get() = profile.isValid && status != ProbeStatus.Running && hasCredential
+        get() = parsedDestination is DestinationParse.Valid && profile.isValid &&
+            status != ProbeStatus.Running && hasCredential
 
     private val hasCredential: Boolean
         get() = when (profile.authMethod) {
+            // Nothing to collect: the tailnet already authenticated the node.
+            AuthMethod.TailscaleSsh -> true
             AuthMethod.Password -> password.isNotEmpty()
             AuthMethod.PrivateKey -> privateKeyLoaded
         }
@@ -89,17 +115,24 @@ class SshViewModel(
     init {
         viewModelScope.launch {
             val stored = store.hostProfile.first()
-            if (!edited) _uiState.update { it.copy(profile = stored) }
+            if (!edited) _uiState.update { it.copy(profile = stored, destination = stored.destination) }
         }
     }
 
-    fun setHost(value: String) = editProfile { it.copy(host = value.trim()) }
-
-    fun setPort(value: String) = editProfile { profile ->
-        profile.copy(port = value.filter(Char::isDigit).take(5).toIntOrNull() ?: 0)
+    /**
+     * The whole destination, as typed.
+     *
+     * Only a value that parses reaches the profile. A half-typed host is not a
+     * host: persisting one would replace a working profile with a prefix, and
+     * running it through [HostProfile.withDestination] would drop the
+     * fingerprint accepted for the real host on the way past.
+     */
+    fun setDestination(value: String) {
+        edited = true
+        _uiState.update { it.copy(destination = value, status = ProbeStatus.Idle) }
+        val parsed = parseSshDestination(value)
+        if (parsed is DestinationParse.Valid) editProfile { it.withDestination(parsed.destination) }
     }
-
-    fun setUsername(value: String) = editProfile { it.copy(username = value.trim()) }
 
     fun setAuthMethod(method: AuthMethod) = editProfile { it.copy(authMethod = method) }
 
@@ -217,7 +250,13 @@ class SshViewModel(
     }
 }
 
+/**
+ * The one place a credential is built. One method, one credential, no
+ * fallback: Tailscale SSH gets an empty one, so there is no code path on which
+ * a secret the user typed for another method could reach a keyless probe.
+ */
 private fun SshUiState.credential(pem: String?): SshCredential = when (profile.authMethod) {
+    AuthMethod.TailscaleSsh -> SshCredential.none()
     AuthMethod.Password -> SshCredential.password(password)
     AuthMethod.PrivateKey -> SshCredential.privateKey(pem.orEmpty(), keyPassphrase)
 }
