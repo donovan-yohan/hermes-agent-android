@@ -26,7 +26,8 @@ interface SshProbe {
         /**
          * The command the probe runs. Chosen to be harmless, bounded, and
          * present on any POSIX login shell: no file is written, no state
-         * changes, and the output is a fixed 20 bytes.
+         * changes, and the output is a fixed 21 bytes — the length of
+         * [EXPECTED_OUTPUT], which is what [MAX_OUTPUT_BYTES] leaves room for.
          */
         const val COMMAND: String = "printf HERMES_ANDROID_SSH_OK"
 

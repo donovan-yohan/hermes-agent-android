@@ -708,14 +708,115 @@ class SshViewModelTest {
     }
 
     @Test
-    fun `the imported key name is sanitised before it is shown or saved`() = runTest(dispatcher) {
+    fun `the imported key name is sanitised before it is ever shown`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
 
         vm.importPrivateKey(privateKey(), "id\u202egnp.exe")
         advanceUntilIdle()
 
+        // The bidi override would render `id_ed25519.txt` as `idtxt.912de_di`
+        // in the "Key loaded" row. It is screen state either way — that it is
+        // not written to disk is `HermesPreferencesTest`'s claim, not this
+        // double's, which stores whatever HostProfile it is handed.
         assertEquals("idgnp.exe", vm.uiState.value.profile.importedKeyName)
-        assertEquals("idgnp.exe", store.saved.value.importedKeyName)
+    }
+
+    // ── Leaving the screen ────────────────────────────────────────────────
+
+    @Test
+    fun `leaving the screen wipes the key, the password and the passphrase`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        val pem = privateKey()
+        vm.setDestination("hermes@hermes-box")
+        vm.importPrivateKey(pem, "id_ed25519")
+        vm.setKeyPassphrase("passphrase-value")
+        advanceUntilIdle()
+
+        vm.releaseScreen()
+
+        // Synchronous: no `advanceUntilIdle` before these, on purpose.
+        assertTrue("the key must be zeroed, not merely dropped", pem.all { it == '\u0000' })
+        assertFalse(vm.uiState.value.privateKeyLoaded)
+        assertEquals("", vm.uiState.value.keyPassphrase)
+        assertNull(vm.uiState.value.profile.importedKeyName)
+    }
+
+    @Test
+    fun `leaving the screen cancels a probe and its credential copy`() = runTest(dispatcher) {
+        val probe = CapturingCancellableProbe()
+        val vm = viewModel(probe)
+        vm.setDestination("hermes@hermes-box")
+        vm.setAuthMethod(AuthMethod.Password)
+        vm.setPassword("s3cret")
+        vm.runProbe()
+
+        val credential = requireNotNull(probe.credential)
+        vm.releaseScreen()
+
+        assertTrue(
+            "the probe-owned copy must be wiped as the screen goes",
+            requireNotNull(credential.password).all { it == '\u0000' },
+        )
+        assertEquals("", vm.uiState.value.password)
+        assertEquals(ProbeStatus.Idle, vm.uiState.value.status)
+    }
+
+    @Test
+    fun `an answer that arrives after leaving the screen never paints it`() = runTest(dispatcher) {
+        val probe = ManualProbe()
+        val vm = viewModel(probe)
+        vm.setDestination("hermes@hermes-box")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.releaseScreen()
+        probe.finish(ProbeResult.Ok(SshProbe.EXPECTED_OUTPUT, "SSH-2.0-test", 12))
+        advanceUntilIdle()
+
+        assertEquals(ProbeStatus.Idle, vm.uiState.value.status)
+        assertNull(vm.uiState.value.pendingHostKey)
+    }
+
+    @Test
+    fun `leaving the screen keeps the profile a returning user still needs`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@hermes-box:2222")
+        vm.setAuthMethod(AuthMethod.Password)
+        vm.setPassword("s3cret")
+        vm.runProbe()
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+
+        vm.releaseScreen()
+        advanceUntilIdle()
+
+        val profile = vm.uiState.value.profile
+        assertEquals("hermes-box", profile.host)
+        assertEquals(2222, profile.port)
+        assertEquals("hermes", profile.username)
+        assertEquals(AuthMethod.Password, profile.authMethod)
+        assertEquals(
+            "a fingerprint reviewed out of band is not a secret to forget",
+            FakeSshProbe.DEFAULT_FINGERPRINT,
+            profile.acceptedFingerprint,
+        )
+        assertEquals("hermes@hermes-box:2222", vm.uiState.value.destination)
+    }
+
+    @Test
+    fun `leaving twice, or leaving a screen that held nothing, changes nothing`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@hermes-box")
+        advanceUntilIdle()
+
+        vm.releaseScreen()
+        val afterFirst = vm.uiState.value
+        vm.releaseScreen()
+        advanceUntilIdle()
+
+        assertEquals(afterFirst.profile, vm.uiState.value.profile)
+        assertEquals(ProbeStatus.Idle, vm.uiState.value.status)
     }
 
     @Test

@@ -53,10 +53,12 @@ palette field, never a raw colour, never a preset name. `ThemeParityTest`
 enforces it offline; the parity script diffs a live upstream checkout.
 
 **Secrets policy.** Passwords, passphrases and private keys are in-memory only
-and are zeroed after use. Only host, port, username, auth method, accepted
-fingerprint and an imported key's display name reach disk — enforced by
-`HostProfileStore` accepting nothing else. Everything user-visible goes through
-`redact()`. No credential, host name or fingerprint belongs in this repo, in a
+and are zeroed after use, and the whole screen's material is wiped when the
+Gateways surface leaves — before `FLAG_SECURE` is cleared, because the
+ViewModel outlives the screen. Only host, port, username, auth method and the
+accepted fingerprint reach disk; `HostProfileStore` accepts nothing else by
+type, and the imported key's display name is screen state the store drops.
+Everything user-visible goes through `redact()`. No credential, host name or fingerprint belongs in this repo, in a
 test, or in a screenshot. There is no accept-all host-key verifier and a changed
 host key has no accept path.
 

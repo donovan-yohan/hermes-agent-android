@@ -39,29 +39,47 @@ import kotlin.coroutines.coroutineContext
  * deadline fires; closing the socket is what makes the blocked call return.
  * The probe re-checks before authenticating and before running the command, so
  * a cancellation that lands mid-handshake cannot be followed by a credential.
+ *
+ * Crypto provider bring-up is part of that blocking half, not a prelude to it.
+ * A cold [SshSecurityProvider.ensureReady] loads BouncyCastle, copies its
+ * algorithm table and completes a live X25519 agreement; run before the
+ * `withTimeout`/`async` pair it would sit on whatever thread called `probe` —
+ * the main thread, under `CoroutineStart.UNDISPATCHED` — with no deadline and
+ * no cancel path, and outside the elapsed time the screen prints.
  */
 class SshjProbe internal constructor(
     private val dispatcher: CoroutineDispatcher,
     private val transports: SshTransports,
     private val overallTimeoutMillis: Long,
+    /**
+     * Crypto provider bring-up. A parameter only so a test can say where it ran
+     * and hold it past the deadline; production always gets the real one.
+     */
+    private val ensureCrypto: () -> CryptoProviderStatus = SshSecurityProvider::ensureReady,
 ) : SshProbe {
 
     constructor(dispatcher: CoroutineDispatcher = Dispatchers.IO) :
         this(dispatcher, SshjTransports, SshProbe.OVERALL_TIMEOUT_MILLIS)
 
     override suspend fun probe(profile: HostProfile, credential: SshCredential): ProbeResult {
-        // Before anything from sshj is constructed: `DefaultConfig` decides
-        // which ciphers it can offer while it is being built.
-        val crypto = SshSecurityProvider.ensureReady()
-        if (crypto is CryptoProviderStatus.Unavailable) {
-            return ProbeResult.Failed(ProbeFailure.CryptoUnavailable, redact(crypto.reason))
-        }
-
         val handle = TransportHandle(transports)
+        // Taken before provider bring-up, so the duration the screen prints is
+        // the whole probe and the deadline below bounds the same span.
         val startedAt = System.nanoTime()
         try {
             return withTimeout(overallTimeoutMillis) {
-                val exchange = async(dispatcher) { runProbe(handle, profile, credential, startedAt) }
+                val exchange = async(dispatcher) {
+                    // Provider first, on this dispatcher and inside the
+                    // deadline: `DefaultConfig` decides which ciphers it can
+                    // offer while it is being constructed, so a provider
+                    // installed afterwards is one that arrived too late.
+                    when (val crypto = ensureCrypto()) {
+                        is CryptoProviderStatus.Unavailable ->
+                            ProbeResult.Failed(ProbeFailure.CryptoUnavailable, redact(crypto.reason))
+
+                        is CryptoProviderStatus.Ready -> runProbe(handle, profile, credential, startedAt)
+                    }
+                }
                 try {
                     exchange.await().also { ensureActive() }
                 } catch (stopped: Throwable) {

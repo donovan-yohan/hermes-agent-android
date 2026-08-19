@@ -161,7 +161,9 @@ data class SshUiState(
  *   points somewhere else.
  * - **The screen stops holding a secret once a probe has used it.** A first-use
  *   review is the one exception, because nothing was sent yet and the retry
- *   after accepting is the same attempt.
+ *   after accepting is the same attempt. Leaving the screen ends that lifetime
+ *   too — see [releaseScreen], which is what makes "for this screen only" true
+ *   of a ViewModel that outlives the screen.
  */
 class SshViewModel(
     private val store: HostProfileStore,
@@ -295,6 +297,45 @@ class SshViewModel(
     }
 
     fun dismissPendingHostKey() = _uiState.update { it.copy(hostKeyReview = null) }
+
+    /**
+     * Ends this screen's secret lifetime, synchronously, when the screen goes.
+     *
+     * This ViewModel is Activity-scoped and the Gateways surface is one
+     * destination inside a single composition, so leaving it — toolbar back,
+     * system back, or the Activity itself going away — destroys nothing on its
+     * own. Without this call a password, a passphrase, an imported key and a
+     * running probe would all outlive the screen the user believes they closed,
+     * and would still be there when it is reopened.
+     *
+     * Ordering is the contract, and it is why this is a call rather than a
+     * `DisposableEffect` of its own: `SshScreen` runs it inside the same
+     * disposal that clears `FLAG_SECURE`, and runs it *first*, so nothing
+     * secret is still held once the window stops being a secure one. Everything
+     * here is synchronous — the cancel, the zeroing and the state reset are all
+     * done before this returns.
+     *
+     * Scoped to composition disposal, not to backgrounding: stopping the
+     * Activity does not dispose the composition, so stepping out to the
+     * document picker and back keeps the form that is waiting for the key.
+     *
+     * Idempotent, and safe on a screen that never held anything.
+     */
+    fun releaseScreen() {
+        stopProbe()
+        dropScreenSecrets()
+        // The generation bump is what makes a probe that had already answered
+        // stale: cancelling its job does not unqueue a result that is a few
+        // instructions from being applied.
+        _uiState.update {
+            it.copy(
+                status = ProbeStatus.Idle,
+                hostKeyReview = null,
+                keyImportProblem = null,
+                generation = it.generation + 1,
+            )
+        }
+    }
 
     /** Drop a previously accepted key so the next probe is a first use again. */
     fun forgetAcceptedHostKey() = editProfile { it.copy(acceptedFingerprint = null) }

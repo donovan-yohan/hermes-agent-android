@@ -42,4 +42,11 @@ class SshActions(
     val onAcceptHostKey: () -> Unit = {},
     val onDismissHostKey: () -> Unit = {},
     val onForgetHostKey: () -> Unit = {},
+    /**
+     * The SSH surface is leaving. Ends the screen's credential lifetime — see
+     * [com.hermesagent.mobile.ui.ssh.SshViewModel.releaseScreen]. It is an
+     * action rather than a lifecycle callback because the screen, not the
+     * Activity, is what the secrets belong to.
+     */
+    val onLeaveScreen: () -> Unit = {},
 )

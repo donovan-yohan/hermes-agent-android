@@ -22,8 +22,8 @@ against that SHA.
 | Session list: grouping, search, status dots, create/rename/archive | **Real** logic over an **in-memory** session set. |
 | SSH host profile, key import via SAF, host-key TOFU policy | **Real.** |
 | One-field `user@host` destination, port 22 implicit | **Real.** Parser, formatter and round-trip are tested. |
-| Tailscale SSH: SSH auth type `none`, no secret collected | **Real** code path. Unverified against a host that actually runs Tailscale SSH — see §3 and §6. |
-| `probe`: connect → verify → auth → run one command → close | **Real**, over sshj 0.40.0. Unverified against a live host — see §6. |
+| Tailscale SSH: SSH auth type `none`, no secret collected | **Real**, and verified against a host running Tailscale SSH from a Pixel 10 Pro — see §6. |
+| `probe`: connect → verify → auth → run one command → close | **Real**, over sshj 0.40.0, verified end to end against a live host — see §6. |
 | Secret redaction and in-memory-only credentials | **Real**, and tested. |
 | Hermes gateway, WebSocket, real sessions, real model output | **Absent.** Not stubbed, not mocked. |
 | SSH tunnel, `hermes serve` lifecycle, token adoption | **Absent.** See `docs/adr/0001-ssh-probe-to-tunnel.md`. |
@@ -87,10 +87,14 @@ route, MagicDNS gives a name, and Tailscale SSH gives an identity the server
 accepts. The first two do not imply the third.
 
 What reaches disk: host, port, username, auth *method*, the accepted host-key
-fingerprint, the imported key's display name. That is the whole list, and
-`HostProfileStore` accepts nothing else by type. The destination is not a
-seventh key — it is derived from the parsed host, port and username, so there
-is one canonical copy. The auth method is persisted by enum *name*, so entries
+fingerprint. That is the whole list, it is the same list the screen prints, and
+`HostProfileStore` accepts nothing else by type. The destination is not a sixth
+key — it is derived from the parsed host, port and username, so there is one
+canonical copy. `HostProfile.importedKeyName` rides along in memory for the
+"Key loaded" row and is dropped by the store: it is useless without a key that
+cannot survive a restart, and a document name can identify a target or an
+organisation on its own. A value an earlier build wrote is removed by a
+DataStore migration before the first read. The auth method is persisted by enum *name*, so entries
 can be reordered or added without rewriting an existing install's choice; a
 name this build does not recognise falls back to Password rather than to the
 fresh default, because quietly moving someone onto a keyless method is the one
@@ -121,10 +125,20 @@ makes a late answer stale rather than letting it paint the screen.
 The screen drops the password, passphrase and key as soon as a probe has used
 them — success, refusal, cancellation or timeout alike. A first-use review is
 the one exception: nothing was sent, so accepting and retrying does not ask
-again. `FLAG_SECURE` is applied while the SSH surface is on screen and cleared
-when it leaves, so screenshots, recordings, casting and the recent-apps preview
-skip credential entry and host-key review without blacking out the rest of the
-app. The accepted fingerprint is excluded from cloud backup and device transfer,
+again. **Leaving the screen ends that lifetime too**, and it has to be said
+explicitly because the ViewModel is Activity-scoped while the surface is one
+destination inside a single composition: without it, toolbar back or system
+back would take the screen off-screen and clear `FLAG_SECURE` while a password,
+a passphrase, an imported key and a running probe carried on behind it, and
+would still be there on the way back in. `SshScreen`'s one lifecycle effect owns
+both halves and runs them in order — `SshViewModel.releaseScreen()` cancels the
+probe and wipes everything synchronously, *then* the secure flag is cleared, so
+nothing secret is held once the window has stopped being a protected one.
+`SshLifecycleJourneyTest` drives that through the real navigation and asserts
+the ordering rather than describing it. `FLAG_SECURE` itself is applied while
+the SSH surface is composed, so screenshots, recordings, casting and the
+recent-apps preview skip credential entry and host-key review without blacking
+out the rest of the app. The accepted fingerprint is excluded from cloud backup and device transfer,
 so a restored install reviews the key again on the device that will use it.
 
 Known residual risks: first-use acceptance without out-of-band verification is
@@ -183,6 +197,8 @@ There are three here, and all are exercised:
 | Seam | Implementations | What the tests drive |
 |---|---|---|
 | `SshProbe` | `SshjProbe` (real), `FakeSshProbe` (deterministic) | `SshViewModelTest` drives the full onboarding journey through the fake, but the fake runs the **real** `evaluateHostKey`, so the policy under test is production policy. `HostKeyPolicyTest` additionally drives the real sshj `HostKeyVerifier` with generated EC keys. |
+| Crypto provider bring-up (`SshjProbe`'s `ensureCrypto` parameter) | `SshSecurityProvider::ensureReady` (real), stubs in `SshjProbeTest` | Cold BouncyCastle bring-up is class loading, an algorithm-table copy and a live X25519 agreement, and `runProbe` is started `UNDISPATCHED` so its caller's thread is the main one. The parameter exists so a test can prove bring-up runs on the injected dispatcher, that a bring-up outlasting the deadline times out instead of connecting late, and that cancelling during it opens nothing. |
+| Picked-document I/O (`readKeyDocument`) | The Activity's `ContentResolver` (real), streams and name lambdas in `KeyDocumentTest` | The Storage Access Framework answers on the main thread and both halves are IPC to another process. The seam is two lambdas, so a plain-JVM test pins that the read and the name query leave the caller's thread, that the read is bounded, and that an oversized document is refused whole with its bytes wiped. |
 | `SshTransport` | `SshjTransport` (real), focused blocking doubles in `SshjProbeTest` | Proves cancellation/timeout closes the active transport, blocks later auth/commands, bounds command reads, and rejects non-exact probe results without requiring a live server. The seam is internal and has one production implementation. |
 | `HostProfileStore` | `HermesPreferences` (DataStore), an in-memory double in the test source set | Lets the SSH ViewModel run on a plain JVM, and lets a test assert that nothing secret reaches the store. |
 
@@ -205,8 +221,9 @@ Where the tests sit relative to those seams:
 
 The gap worth naming: `SshjProbe` has no test that opens a real socket. Its
 blocking lifecycle is covered through `SshTransport`, and its policy, redaction,
-provider setup and verifier are covered directly; an actual handshake still
-needs a host and physical Android runtime.
+provider setup and verifier are covered directly; an actual handshake needs a
+host and a physical Android runtime, and §6 records the one that has now been
+run.
 
 The Tailscale SSH branch is covered as far as it goes offline. `AuthMethod`
 maps to an `SshAuthType`, the adapter switches on that value, and
@@ -257,9 +274,9 @@ is identical at phone reading distance. The table is in `HermesTypography.kt`.
 Commands, and what they proved on 2026-08-19 (JDK 17, `ANDROID_HOME=/opt/android-sdk`):
 
 ```bash
-./gradlew check          # 220 debug + 195 release unit tests, 0 failures;
+./gradlew check          # 252 debug + 216 release unit tests, 0 failures;
                          # lint clean; repo invariants pass
-./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk, ~16.5 MB
+./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk, ~16.6 MB
 git diff --check         # clean
 ```
 
@@ -271,13 +288,35 @@ phone journeys are covered without an emulator: open the drawer, group by date,
 switch session, search, create, send a prompt, and the composer's send↔stop
 swap; and on the SSH screen, one destination field with no separate host/port/
 username, the three auth choices, first-use review through to a successful
-probe, and the Tailscale-SSH-refused copy.
+probe, the Tailscale-SSH-refused copy, the field touch targets and the
+load-bearing copy — plus `SshLifecycleJourneyTest`, which navigates Chat →
+Settings → Gateways and leaves by toolbar back and by system back to prove the
+screen's credential lifetime ends with the screen, in that order relative to
+`FLAG_SECURE`.
 
 **Verified on a physical device, and what it found:**
 
-- **The real probe was run on a Pixel 10 Pro (Android 17 / API 37) with the
-  Tailscale VPN connected, and it failed** — before host-key review, with
-  `no such algorithm: X25519 for provider BC`. That was not the network: the
+- **A real SSH handshake now completes from a phone.** On a Pixel 10 Pro
+  (Android 17 / API 37, package `com.hermesagent.mobile.debug`) the probe ran
+  first use → fingerprint review → accept → success against a host running
+  **Tailscale SSH**: `Probe succeeded`, 204 ms and 150 ms on two runs, server
+  version `Tailscale`, output exactly `HERMES_ANDROID_SSH_OK`. The fingerprint
+  shown at first use was compared out of band against
+  `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the host before it was
+  accepted; neither the fingerprint nor the endpoint is recorded here. That run
+  is the end-to-end proof of four things at once: the crypto repair below on
+  real Android, the SSH auth type `none` path against a target that actually
+  runs Tailscale SSH, the fingerprint anchoring, and exact-sentinel acceptance.
+- **In-flight cancellation was induced on the device** against a non-routable
+  destination and cancelled after 350 ms: the screen showed *Probe cancelled*
+  and the app kept its PID. Retargeting the single saved profile to another host
+  dropped the old trust binding and required a fresh review on return, which is
+  the Phase-1 single-profile trust contract.
+- **Gateway screenshots came back black** while the status and navigation bars
+  stayed visible, which is `FLAG_SECURE` doing its job rather than a rendering
+  fault.
+- **The real probe first failed on that same Pixel** — before host-key review,
+  with `no such algorithm: X25519 for provider BC`. That was not the network: the
   same phone's Termux reaches the same host. It was a JCE provider-name
   collision. Android ships a stripped, deprecated provider that owns the name
   `BC`, so sshj's `SecurityUtils.registerSecurityProvider` cannot install the
@@ -295,27 +334,26 @@ probe, and the Tailscale-SSH-refused copy.
 
 **Not verified, and not claimed:**
 
-- **No SSH handshake has completed against a real sshd from a phone.** The
-  provider repair is proven on the JVM, not on Android: what a JVM test cannot
-  show is that *Android's* `BC` is stripped in exactly the way the device error
-  implies, or that `Provider.putAll` behaves identically on API 26. The Pixel
-  rerun is the evidence for that, and it belongs to Ebi.
-- **API 26 has no coverage at all.** The unit tests run on the JVM and the
-  Compose journeys under Robolectric at SDK 34. Nothing has executed on the
-  minimum supported API level.
-- **Tailscale SSH has not been observed succeeding.** A local development
-  target was confirmed to run traditional OpenSSH over Tailscale rather than
-  Tailscale SSH; endpoint and account details are intentionally not recorded
-  here. The app's Tailscale SSH path is therefore exercised only against
-  `FakeSshProbe`; that path is expected to produce
-  `ProbeFailure.TailscaleSshRefused`, which is the honest answer, not a bug.
-  Enabling Tailscale SSH on a target and writing the tailnet policy is out of
-  this slice's scope.
-- **Insets, `FLAG_SECURE` and the recents preview are device-only.** The SSH
-  column now consumes the IME and navigation-bar insets and sets `FLAG_SECURE`
-  while it is composed, but "the keyboard does not cover the Accept button on a
-  real Pixel" and "the recents card is blank" cannot be asserted from
-  Robolectric.
+- **API 26 has no coverage at all.** The unit tests run on the JVM, the Compose
+  journeys under Robolectric at SDK 34, and the device evidence is API 37.
+  Nothing has executed on the minimum supported API level, so what a JVM test
+  cannot show — that `Provider.putAll` behaves identically on API 26 — is still
+  unshown there.
+- **Password and imported-key authentication have no device evidence.** Every
+  device artifact used Tailscale SSH. The Storage Access Framework import path
+  in particular has never run against a real DocumentsProvider; what is gated is
+  that its I/O leaves the main thread and that each refusal has its own answer
+  (`KeyDocumentTest`), not that a specific provider behaves.
+- **The changed-host-key hard stop was not induced against the real server,**
+  because rotating or spoofing its key would change external security state.
+  Matching, first-use and changed verdicts are covered deterministically, and
+  there is no accept action for a change anywhere in the app.
+- **Appearance, landscape, IME geometry and TalkBack are unverified.** The
+  device locked mid-run and `wm dismiss-keyguard` could wake but not unlock it,
+  so those scenarios are *blocked*, not passed. "The keyboard does not cover the
+  Accept button on a real Pixel" and a full spoken traversal are still open.
+- **A hierarchy dump is not a screenshot.** The `FLAG_SECURE` evidence is the
+  black capture, not the accessibility trees, which succeed either way.
 - **No other physical-device dogfood.** Fold and unfold, rendering fidelity, and
   colour on an actual panel are emulator/device-only.
 - **No release build path.** No signing config, no shrinking. `proguard-rules.pro`

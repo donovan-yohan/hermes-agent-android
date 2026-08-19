@@ -1,17 +1,21 @@
 package com.hermesagent.mobile.data.ssh
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * What the real adapter promises about stopping, and about what counts as
@@ -41,7 +45,7 @@ class SshjProbeTest {
     @Test
     fun `cancelling closes the live transport and never authenticates`() = runBlocking {
         val transport = FakeTransport(blockInConnect = true)
-        val probe = SshjProbe(Dispatchers.IO, { transport }, SshProbe.OVERALL_TIMEOUT_MILLIS)
+        val probe = SshjProbe(Dispatchers.IO, { transport }, SshProbe.OVERALL_TIMEOUT_MILLIS, READY)
 
         // On its own thread: this test blocks the caller on a latch, and a probe
         // queued on `runBlocking`'s single-threaded loop would never start.
@@ -60,11 +64,16 @@ class SshjProbeTest {
         val transport = FakeTransport()
         val opening = CountDownLatch(1)
         val releaseOpen = CountDownLatch(1)
-        val probe = SshjProbe(Dispatchers.IO, {
-            opening.countDown()
-            releaseOpen.await()
-            transport
-        }, SshProbe.OVERALL_TIMEOUT_MILLIS)
+        val probe = SshjProbe(
+            Dispatchers.IO,
+            {
+                opening.countDown()
+                releaseOpen.await()
+                transport
+            },
+            SshProbe.OVERALL_TIMEOUT_MILLIS,
+            READY,
+        )
 
         val job = launch(Dispatchers.Default) { probe.probe(profile, SshCredential.none()) }
         assertTrue("the factory has to be in flight", opening.await(5, TimeUnit.SECONDS))
@@ -114,7 +123,7 @@ class SshjProbeTest {
         // A short deadline so the test does not wait 30 seconds for a peer that
         // is never going to answer. The mechanism is the same one production
         // uses; only the number differs.
-        val probe = SshjProbe(Dispatchers.IO, { transport }, 150)
+        val probe = SshjProbe(Dispatchers.IO, { transport }, 150, READY)
 
         val result = probe.probe(profile, SshCredential.none())
 
@@ -223,13 +232,100 @@ class SshjProbeTest {
         )
     }
 
+    // ── Crypto provider bring-up ──────────────────────────────────────────
+
+    @Test
+    fun `provider bring-up runs on the injected dispatcher, never the caller's thread`() = runBlocking {
+        val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, PROBE_THREAD) }
+        val ranOn = AtomicReference<String>()
+        val caller = Thread.currentThread().name
+
+        try {
+            val probe = SshjProbe(executor.asCoroutineDispatcher(), { FakeTransport() }, SshProbe.OVERALL_TIMEOUT_MILLIS) {
+                ranOn.set(Thread.currentThread().name)
+                CryptoProviderStatus.Ready("test")
+            }
+
+            assertTrue(probe.probe(profile, SshCredential.none()) is ProbeResult.Ok)
+        } finally {
+            executor.shutdownNow()
+        }
+
+        // The coroutines debug agent suffixes thread names, so match the prefix.
+        assertTrue(
+            "bring-up belongs on the probe's own dispatcher, not ${ranOn.get()}",
+            ranOn.get().orEmpty().startsWith(PROBE_THREAD),
+        )
+        assertNotEquals("and never on the thread that called probe", caller, ranOn.get())
+    }
+
+    @Test
+    fun `a provider this device cannot supply fails closed before a transport exists`() = runBlocking {
+        val probe = SshjProbe(
+            Dispatchers.IO,
+            { throw AssertionError("no transport may be opened without cryptography") },
+            SshProbe.OVERALL_TIMEOUT_MILLIS,
+        ) { CryptoProviderStatus.Unavailable("no X25519") }
+
+        val result = probe.probe(profile, SshCredential.none())
+
+        assertEquals(ProbeFailure.CryptoUnavailable, (result as ProbeResult.Failed).kind)
+        assertEquals("no X25519", result.message)
+    }
+
+    @Test
+    fun `a bring-up that outlasts the deadline times out instead of connecting late`() = runBlocking {
+        val transport = FakeTransport()
+        // Twenty times the deadline, on a latch nothing counts down: the probe's
+        // own timeout is the only thing that can end this, and it can only end
+        // it because bring-up is inside `withTimeout`. Outside it — where this
+        // call used to live — the same wait would be free, and the probe would
+        // go on to connect and succeed with a full deadline of its own.
+        val wedged = CountDownLatch(1)
+        val probe = SshjProbe(Dispatchers.IO, { transport }, 20) {
+            wedged.await(400, TimeUnit.MILLISECONDS)
+            CryptoProviderStatus.Ready("test")
+        }
+
+        val result = probe.probe(profile, SshCredential.none())
+
+        assertEquals(ProbeFailure.Timeout, (result as ProbeResult.Failed).kind)
+        assertFalse("a probe past its deadline must not connect", transport.connected)
+        assertFalse(transport.authenticated)
+    }
+
+    @Test
+    fun `cancelling during bring-up stops the probe before it connects`() = runBlocking {
+        val transport = FakeTransport()
+        val reached = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val probe = SshjProbe(Dispatchers.IO, { transport }, SshProbe.OVERALL_TIMEOUT_MILLIS) {
+            reached.countDown()
+            release.await()
+            CryptoProviderStatus.Ready("test")
+        }
+
+        val job = launch(Dispatchers.Default) { probe.probe(profile, SshCredential.none()) }
+        assertTrue("bring-up has to be in flight", reached.await(5, TimeUnit.SECONDS))
+
+        job.cancel()
+        release.countDown()
+        job.join()
+
+        assertFalse("a cancelled probe must not connect after bring-up returns", transport.connected)
+        assertFalse(transport.authenticated)
+        assertFalse(transport.ranCommand)
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
     private suspend fun probeWith(outcome: CommandOutcome): ProbeResult =
         probe(FakeTransport(outcome = outcome)).probe(profile, SshCredential.none())
 
     private fun probe(
         transport: SshTransport,
         overallTimeoutMillis: Long = SshProbe.OVERALL_TIMEOUT_MILLIS,
-    ) = SshjProbe(Dispatchers.IO, { transport }, overallTimeoutMillis)
+    ) = SshjProbe(Dispatchers.IO, { transport }, overallTimeoutMillis, READY)
 
     /**
      * A transport that can be made to block exactly where sshj does, and that
@@ -301,5 +397,12 @@ class SshjProbeTest {
             closed = true
             released.countDown()
         }
+    }
+
+    private companion object {
+        const val PROBE_THREAD = "hermes-probe-test"
+
+        /** A provider that is already there: these tests are not about BouncyCastle. */
+        val READY: () -> CryptoProviderStatus = { CryptoProviderStatus.Ready("test") }
     }
 }

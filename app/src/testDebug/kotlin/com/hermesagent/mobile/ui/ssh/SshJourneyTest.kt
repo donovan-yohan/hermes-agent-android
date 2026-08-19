@@ -2,27 +2,29 @@ package com.hermesagent.mobile.ui.ssh
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.ssh.FakeSshProbe
 import com.hermesagent.mobile.data.ssh.HostProfile
-import com.hermesagent.mobile.data.ssh.HostProfileStore
 import com.hermesagent.mobile.data.ssh.SshProbe
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
+import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -205,18 +207,102 @@ class SshJourneyTest {
         )
     }
 
-    /** The in-memory half of [HostProfileStore]; the SSH tests' usual double. */
-    private class InMemoryHostProfileStore : HostProfileStore {
-        val saved = MutableStateFlow(HostProfile())
-        override val hostProfile: Flow<HostProfile> = saved
-        override suspend fun saveHostProfile(profile: HostProfile) {
-            saved.value = profile
-        }
+    // ── Field geometry and semantics ──────────────────────────────────────
+
+    @Test
+    fun `the editable node is the touch target, not a box drawn around it`() {
+        launch()
+        val floor = HermesSpacing().touchTarget
+
+        // The node a finger and TalkBack both address is the one carrying the
+        // label and the edit action. Asserting the height on a decorative
+        // wrapper would pass while the real target stayed a 22 dp text line.
+        compose.onNodeWithContentDescription("SSH destination")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsActions.SetText))
+            .assertHeightIsAtLeast(floor)
+
+        compose.onNodeWithContentDescription("Authenticate with Password").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Password")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsActions.SetText))
+            .assertHeightIsAtLeast(floor)
     }
+
+    @Test
+    fun `field text is centred in the target rather than pinned to its top`() {
+        launch()
+
+        val field = compose.onNodeWithContentDescription("SSH destination").fetchSemanticsNode()
+        val placeholder = compose.onNodeWithText("you@hermes-box", useUnmergedTree = true).fetchSemanticsNode()
+
+        // Placeholder and typed text share the style and the alignment, so one
+        // measurement covers both. Half a device pixel of rounding is allowed;
+        // top-aligned text in a 48 dp box is off by ten times that.
+        val drift = abs(placeholder.boundsInRoot.center.y - field.boundsInRoot.center.y)
+        assertTrue("the placeholder sits ${drift}px off the field's centre line", drift <= 1f)
+    }
+
+    // ── Copy the screen is answerable for ─────────────────────────────────
+
+    @Test
+    fun `the screen states what this build does and does not do`() {
+        launch()
+
+        assertEquals(1, compose.countWithText("Tests SSH access to a Hermes host", substring = true))
+        assertEquals(
+            "launching Hermes and tunneling the gateway must not be implied",
+            1,
+            compose.countWithText("not implemented yet", substring = true),
+        )
+        assertEquals(
+            "and the Android sandbox exception stays, because it is the whole reason for this screen",
+            1,
+            compose.countWithText("Android sandboxes packages", substring = true),
+        )
+    }
+
+    @Test
+    fun `the host-key contract is on screen before any key is trusted`() {
+        launch()
+
+        assertEquals(1, compose.countWithText("reviewed by you and pinned", substring = true))
+        assertEquals(1, compose.countWithText("fails closed", substring = true))
+        assertEquals(
+            "Tailscale SSH is not an exemption from the review",
+            1,
+            compose.countWithText("cannot read Tailscale's known_hosts", substring = true),
+        )
+    }
+
+    @Test
+    fun `the persistence disclosure is the same closed list the store keeps`() {
+        launch()
+
+        assertEquals(
+            1,
+            compose.countWithText(
+                "only host, port, username, method and the fingerprint you accept are saved",
+                substring = true,
+            ),
+        )
+        assertEquals(
+            "leaving the screen is part of the promise, not only a completed probe",
+            1,
+            compose.countWithText("dropped when a probe uses them or when you leave", substring = true),
+        )
+    }
+
+    @Test
+    fun `the sections read in the order the task is done in`() {
+        launch()
+
+        val destination = compose.onNodeWithContentDescription("SSH destination").fetchSemanticsNode()
+        val authentication = compose.onNodeWithTag(SECTION_AUTHENTICATION).fetchSemanticsNode()
+        val hostKey = compose.onNodeWithTag(SECTION_HOST_KEY).fetchSemanticsNode()
+        val probe = compose.onNodeWithTag(SECTION_PROBE).fetchSemanticsNode()
+
+        val order = listOf(destination, authentication, hostKey, probe).map { it.boundsInRoot.top }
+        assertEquals("where, then who, then whose key, then run", order.sorted(), order)
+    }
+
 }
-
-private fun ComposeContentTestRule.countWithText(text: String, substring: Boolean = false): Int =
-    onAllNodes(hasText(text, substring = substring)).fetchSemanticsNodes().size
-
-private fun ComposeContentTestRule.countWithContentDescription(description: String): Int =
-    onAllNodes(hasContentDescription(description)).fetchSemanticsNodes().size

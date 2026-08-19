@@ -16,7 +16,9 @@ import java.io.File
  * This reads the shipped XML rather than a copy of it, because the rules only
  * do anything if they are the ones in the APK. It also checks the legacy
  * pre-API-31 file, since a rule that exists in only one of them protects only
- * half the fleet.
+ * half the fleet — and it checks the manifest still points at both, because a
+ * rules file nothing references is a rules file that does nothing while every
+ * assertion about its contents stays green.
  */
 class BackupRulesTest {
 
@@ -47,14 +49,27 @@ class BackupRulesTest {
         )
     }
 
-    /** Gradle runs unit tests from the module directory; fall back to the repo root. */
-    private fun resource(name: String): String {
-        val candidates = listOf(
-            File("src/main/res/xml/$name"),
-            File("app/src/main/res/xml/$name"),
+    @Test
+    fun `the manifest still points at both rule files`() {
+        val manifest = source("src/main/AndroidManifest.xml")
+
+        assertTrue(
+            "deleting dataExtractionRules makes the accepted fingerprint eligible for cloud backup",
+            manifest.contains("""android:dataExtractionRules="@xml/data_extraction_rules""""),
         )
+        assertTrue(
+            "and deleting fullBackupContent does the same on API 30 and below",
+            manifest.contains("""android:fullBackupContent="@xml/backup_rules""""),
+        )
+    }
+
+    /** Gradle runs unit tests from the module directory; fall back to the repo root. */
+    private fun resource(name: String): String = source("src/main/res/xml/$name")
+
+    private fun source(path: String): String {
+        val candidates = listOf(File(path), File("app/$path"))
         val found = candidates.firstOrNull(File::isFile)
-        requireNotNull(found) { "$name not found in ${candidates.map(File::getAbsolutePath)}" }
+        requireNotNull(found) { "$path not found in ${candidates.map(File::getAbsolutePath)}" }
         return found.readText()
     }
 }

@@ -58,9 +58,13 @@ Six rules are load-bearing and are asserted by tests, not by convention:
    `char[]` end to end (`CharArrayReader` into sshj's `FileKeyProvider` seam
    rather than `SSHClient.loadKeys(String)`), so it is really wiped; the
    password and passphrase arrive from a text field as `String`s and can only be
-   dropped, which the code says rather than dresses up. The only thing that
-   touches disk is `HostProfile`: host, port, username, auth *method*, accepted
-   fingerprint, imported-key display name. The type system enforces it —
+   dropped, which the code says rather than dresses up. The screen's whole
+   lifetime is bounded the same way: leaving Gateways cancels the probe and
+   wipes what it held before the secure-window flag is cleared, because the
+   ViewModel is Activity-scoped and the screen is not. The only thing that
+   touches disk is host, port, username, auth *method* and the accepted
+   fingerprint; `HostProfile.importedKeyName` rides along for the UI and the
+   store drops it. The type system enforces the rest —
    `HostProfileStore` accepts nothing else — and the accepted fingerprint is
    excluded from cloud backup and device transfer, so a restored install starts
    at a first use rather than inheriting a decision made on another phone.

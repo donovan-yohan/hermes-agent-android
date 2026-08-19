@@ -26,11 +26,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -61,12 +64,22 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 
+/** Section anchors, so a test can pin the order the screen reads in. */
+internal const val SECTION_AUTHENTICATION = "ssh-section-authentication"
+internal const val SECTION_HOST_KEY = "ssh-section-host-key"
+internal const val SECTION_PROBE = "ssh-section-probe"
+
 /**
- * SSH onboarding + probe.
+ * SSH onboarding + probe — Desktop's *Connect via SSH*, minus everything Phase 1
+ * does not have (`apps/desktop/src/i18n/en.ts:866-874` @ `f82f2dba`).
  *
- * The copy here is load-bearing, not decoration. It is the screen where the
- * app tells the truth about the Termux question: reachability transfers,
- * credentials do not, because Android sandboxes packages from each other.
+ * The copy is load-bearing, not decoration, and it carries four claims the code
+ * has to keep true: this build tests SSH access and nothing more; Android
+ * sandboxes packages, so Termux's SSH files are unreachable here; the first host
+ * key is reviewed and pinned and a change fails closed; and credentials live in
+ * memory for this screen only. The last of those is why [SecureScreenLifetime]
+ * exists — the ViewModel outlives the screen, so leaving has to end the lifetime
+ * the copy promises.
  */
 @Composable
 fun SshScreen(
@@ -77,7 +90,7 @@ fun SshScreen(
     val tokens = HermesTheme.tokens
     val inset = HermesTheme.spacing.pageInset
 
-    SecureWhileVisible()
+    SecureScreenLifetime(onLeave = actions.onLeaveScreen)
 
     Column(
         modifier
@@ -95,11 +108,16 @@ fun SshScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                "Reaching this box from Termux proves the network route and that sshd accepts " +
-                    "your account. It does not hand this app Termux's keys, agent, or " +
-                    "~/.ssh/config — those live in another app's sandbox and are unreadable here. " +
-                    "So Hermes brings its own: credentials it holds in memory, or Tailscale SSH, " +
-                    "which needs none.",
+                "Tests SSH access to a Hermes host. Launching Hermes there and tunneling the " +
+                    "gateway are not implemented yet.",
+                style = HermesTheme.type.caption,
+                color = tokens.textSecondary,
+            )
+            Text(
+                "Reaching the host from Termux proves the route, not this app's access: Android " +
+                    "sandboxes packages, so Termux's keys, agent and ~/.ssh/config are unreadable " +
+                    "here. Hermes brings its own — credentials it holds in memory, or Tailscale " +
+                    "SSH, which needs none.",
                 style = HermesTheme.type.caption,
                 color = tokens.textTertiary,
             )
@@ -116,16 +134,18 @@ fun SshScreen(
                 keyboardType = KeyboardType.Email,
             )
             Text(
-                "The same thing you would type after `ssh`. Port 22 unless you add one " +
-                    "(`you@hermes-box:2222`); an IPv6 address goes in brackets. On a tailnet " +
-                    "the short MagicDNS name works from any signed-in device.",
+                "`user@host`, as you would type it after `ssh`. Port 22 unless you add one " +
+                    "(`you@hermes-box:2222`); an IPv6 address goes in brackets.",
                 style = HermesTheme.type.scaffoldMeta,
                 color = tokens.scaffoldMeta,
             )
+            state.destinationError?.let { problem ->
+                ErrorState(title = "Fix the destination", description = problem)
+            }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionLabel("Authentication")
+            SectionLabel("Authentication", Modifier.testTag(SECTION_AUTHENTICATION))
             SegmentedControl(
                 options = AuthMethod.entries,
                 selected = state.profile.authMethod,
@@ -138,12 +158,10 @@ fun SshScreen(
 
             when (state.profile.authMethod) {
                 AuthMethod.TailscaleSsh -> Text(
-                    "No password, no key, nothing secret sent: the tailnet already " +
-                        "authenticated this device, so the SSH layer uses auth type `none`. " +
-                        "That works only if the target runs Tailscale SSH *and* your tailnet " +
-                        "SSH policy allows this connection. Sharing a tailnet by itself gives " +
-                        "you the route and the name — a box running ordinary OpenSSH over " +
-                        "Tailscale still wants a password or a key.",
+                    "Nothing to type: the tailnet already authenticated this device, so SSH " +
+                        "uses auth type `none`. It works only if the target runs Tailscale SSH " +
+                        "and your tailnet SSH policy allows this connection — a box running " +
+                        "ordinary OpenSSH over Tailscale still wants a password or a key.",
                     style = HermesTheme.type.caption,
                     color = tokens.textSecondary,
                 )
@@ -173,38 +191,44 @@ fun SshScreen(
                 }
             }
 
+            // Outside the `when`: a refused document is reported before the
+            // method switches, so this must be visible whichever is selected.
+            state.keyImportProblem?.let { problem ->
+                ErrorState(title = "That key was not imported", description = problem.message())
+            }
+
             Text(
-                "Credentials stay in memory for this screen only, and are dropped as soon as a " +
-                    "probe has used them — a probe that stops at the fingerprint review has not, " +
-                    "so accepting and retrying does not ask again. Nothing secret is written to " +
-                    "disk, logged, or backed up. Only host, port, username, method and the " +
-                    "fingerprint you accept are saved. This screen is excluded from screenshots " +
-                    "and from the recent-apps preview.",
+                "Credentials stay in memory for this screen and are dropped when a probe uses " +
+                    "them or when you leave. A probe that stops at the fingerprint review has " +
+                    "not used them, so accepting and retrying does not ask again. Nothing " +
+                    "secret is written to disk, logged, or backed up: only host, port, " +
+                    "username, method and the fingerprint you accept are saved. Screenshots and " +
+                    "the recent-apps preview are blocked here.",
                 style = HermesTheme.type.scaffoldMeta,
                 color = tokens.scaffoldMeta,
             )
         }
 
-        state.keyImportProblem?.let { problem ->
-            ErrorState(title = "That key was not imported", description = problem.message())
-        }
-
-        state.destinationError?.let { problem ->
-            ErrorState(title = "Fix the destination", description = problem)
-        }
-
-        state.pendingHostKey?.let { pending ->
-            HostKeyReview(
-                fingerprint = pending.fingerprint,
-                keyType = pending.keyType,
-                onAccept = actions.onAcceptHostKey,
-                onDismiss = actions.onDismissHostKey,
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionLabel("Host key", Modifier.testTag(SECTION_HOST_KEY))
+            Text(
+                "The first key a host presents is reviewed by you and pinned; a later change " +
+                    "fails closed, and there is no accept path for it here. Tailscale SSH is " +
+                    "reviewed the same way — this app cannot read Tailscale's known_hosts.",
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
             )
-        }
 
-        state.profile.acceptedFingerprint?.let { accepted ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SectionLabel("Trusted host key")
+            state.pendingHostKey?.let { pending ->
+                HostKeyReview(
+                    fingerprint = pending.fingerprint,
+                    keyType = pending.keyType,
+                    onAccept = actions.onAcceptHostKey,
+                    onDismiss = actions.onDismissHostKey,
+                )
+            }
+
+            state.profile.acceptedFingerprint?.let { accepted ->
                 LogView(accepted)
                 TextButton("Forget this host key", actions.onForgetHostKey, color = tokens.textTertiary)
             }
@@ -219,7 +243,7 @@ private fun ProbeSection(state: SshUiState, onProbe: () -> Unit, onCancel: () ->
     val tokens = HermesTheme.tokens
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionLabel("Probe")
+        SectionLabel("Probe", Modifier.testTag(SECTION_PROBE))
         Text(
             "Connects, verifies the host key, authenticates, runs " +
                 "`printf HERMES_ANDROID_SSH_OK`, and disconnects. Nothing else.",
@@ -291,21 +315,39 @@ private fun ProbeFailure.title(): String = when (this) {
 }
 
 /**
- * Keeps this surface out of screenshots, screen recordings, casts and the
- * recent-apps preview for exactly as long as it is on screen.
+ * One effect owns both halves of "this screen is the protected one".
  *
- * Scoped to the composable rather than set once on the Activity: this is the
- * only surface that holds a password, a passphrase or a host-key decision, and
- * a process-wide `FLAG_SECURE` would also block screenshots of a chat transcript
- * nobody asked to protect.
+ * **Secure window.** `FLAG_SECURE` keeps the surface out of screenshots, screen
+ * recordings, casts and the recent-apps preview for exactly as long as it is
+ * composed. Scoped here rather than set once on the Activity: this is the only
+ * surface holding a password, a passphrase or a host-key decision, and a
+ * process-wide flag would also black out a chat transcript nobody asked to
+ * protect.
+ *
+ * **Secret lifetime.** [onLeave] ends the screen's credential lifetime. It is in
+ * this effect, and ahead of `clearFlags`, on purpose. The ViewModel is
+ * Activity-scoped while this screen is one destination inside a single
+ * composition, so navigating away destroys nothing by itself; putting the wipe
+ * in a second `DisposableEffect` would work but would leave the order to
+ * Compose's disposal sequence rather than stating it. Two statements, one after
+ * the other, is the whole guarantee: nothing secret is still held once the
+ * window has stopped being a secure one.
+ *
+ * [onLeave] is read through [rememberUpdatedState] so a recomposition with a new
+ * lambda does not re-run the effect — re-running it would clear and re-add the
+ * flag, and would fire a wipe while the screen is still on screen.
  */
 @Composable
-private fun SecureWhileVisible() {
+private fun SecureScreenLifetime(onLeave: () -> Unit) {
     val window = LocalContext.current.findActivityWindow()
+    val leave by rememberUpdatedState(onLeave)
 
     DisposableEffect(window) {
         window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+        onDispose {
+            leave()
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 }
 
@@ -365,6 +407,23 @@ private fun HostKeyReview(
     }
 }
 
+/**
+ * A labelled text entry whose *editor* is the touch target.
+ *
+ * The shape this replaces drew a 48 dp bordered [Box] and put a bare
+ * [BasicTextField] inside it. That looks right and measures wrong: the box is
+ * decoration with no semantics, so the focusable, TalkBack-reachable,
+ * tap-to-focus node was the text line itself — about 22 dp, less than half the
+ * Android floor, on a screen where two of the four fields are credentials.
+ *
+ * Handing the border and the padding to `decorationBox` inverts it. The chrome
+ * becomes the field's own decoration, so the node that owns the minimum height
+ * is the node a finger and an accessibility service both address, and the
+ * height is stated once — `HermesTheme.spacing.touchTarget` — rather than on a
+ * wrapper that only looks like the target. `CenterStart` is what keeps typed
+ * and placeholder text on the same optical line once the box is taller than a
+ * line of body text.
+ */
 @Composable
 private fun LabelledField(
     label: String,
@@ -378,36 +437,40 @@ private fun LabelledField(
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionLabel(label)
-        Box(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 11.dp),
-        ) {
-            if (value.isEmpty() && placeholder.isNotEmpty()) {
-                Text(placeholder, style = HermesTheme.type.body, color = tokens.textQuaternary)
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
-                cursorBrush = SolidColor(tokens.accent),
-                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = if (secret) KeyboardType.Password else keyboardType,
-                    // A host name is not a sentence: an IME that capitalises or
-                    // autocorrects it produces a destination that cannot resolve.
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    imeAction = ImeAction.Next,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = label },
-            )
-        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+            cursorBrush = SolidColor(tokens.accent),
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (secret) KeyboardType.Password else keyboardType,
+                // A host name is not a sentence: an IME that capitalises or
+                // autocorrects it produces a destination that cannot resolve.
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                imeAction = ImeAction.Next,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .semantics { contentDescription = label },
+            decorationBox = { editor ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (value.isEmpty() && placeholder.isNotEmpty()) {
+                        Text(placeholder, style = HermesTheme.type.body, color = tokens.textQuaternary)
+                    }
+                    editor()
+                }
+            },
+        )
     }
 }
 

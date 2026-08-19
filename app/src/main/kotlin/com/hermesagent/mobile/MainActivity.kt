@@ -12,9 +12,9 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.hermesagent.mobile.data.demo.DemoSessions
+import com.hermesagent.mobile.data.ssh.KeyDocument
 import com.hermesagent.mobile.data.ssh.KeyImportProblem
-import com.hermesagent.mobile.data.ssh.MAX_KEY_BYTES
-import com.hermesagent.mobile.data.ssh.readBounded
+import com.hermesagent.mobile.data.ssh.readKeyDocument
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.HermesApp
@@ -22,6 +22,7 @@ import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -52,7 +53,7 @@ class MainActivity : ComponentActivity() {
      * can re-read after a restart is a key the app effectively stores.
      */
     private val pickKey = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(::readImportedKey)
+        uri?.let(::importPickedKey)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
                     onAcceptHostKey = sshViewModel::acceptPendingHostKey,
                     onDismissHostKey = sshViewModel::dismissPendingHostKey,
                     onForgetHostKey = sshViewModel::forgetAcceptedHostKey,
+                    onLeaveScreen = sshViewModel::releaseScreen,
                 ),
             )
         }
@@ -110,31 +112,38 @@ class MainActivity : ComponentActivity() {
      * key was "loaded" that could never authenticate. Each of those is now its
      * own [KeyImportProblem] with its own sentence.
      *
-     * The bytes are decoded straight into a `char[]` the ViewModel takes
-     * ownership of, and the byte buffer is wiped on the way out: the only copy
-     * of the key this app keeps is one it can zero.
+     * The picker delivers its result on the main thread and the two provider
+     * calls behind it are IPC, so the read and the name query happen on
+     * [Dispatchers.IO] and only the bounded outcome comes back here. The
+     * coroutine is `lifecycleScope`'s, so an Activity that goes away takes the
+     * pending read with it.
+     *
+     * The one window that leaves open, stated rather than hidden: an Activity
+     * destroyed between the read finishing and this resuming drops the bounded
+     * byte array without zeroing it. It is unreachable by then and the screen
+     * is being torn down; closing it would mean making the read and the
+     * hand-off uncancellable, which is the worse trade.
      */
-    private fun readImportedKey(uri: Uri) {
-        // One byte past the cap, so an oversized file is refused rather than
-        // silently truncated into a key that cannot parse.
-        val bytes = runCatching {
-            contentResolver.openInputStream(uri)?.use { it.readBounded(MAX_KEY_BYTES + 1) }
-        }.getOrNull()
-
-        when {
-            bytes == null -> sshViewModel.reportKeyImportProblem(KeyImportProblem.Unreadable)
-
-            bytes.size > MAX_KEY_BYTES -> {
-                bytes.fill(0)
-                sshViewModel.reportKeyImportProblem(KeyImportProblem.TooLarge)
-            }
-
-            else -> importDecodedKey(bytes, uri)
+    private fun importPickedKey(uri: Uri) = lifecycleScope.launch {
+        val document = readKeyDocument(
+            io = Dispatchers.IO,
+            openStream = { contentResolver.openInputStream(uri) },
+            displayName = { displayNameOf(uri) },
+        )
+        when (document) {
+            is KeyDocument.Refused -> sshViewModel.reportKeyImportProblem(document.problem)
+            is KeyDocument.Read -> importDecodedKey(document.bytes, document.displayName)
         }
     }
 
-    /** Decodes into a wipeable array; Charset.decode would retain an opaque copy. */
-    private fun importDecodedKey(bytes: ByteArray, uri: Uri) {
+    /**
+     * Decodes into a wipeable array; Charset.decode would retain an opaque copy.
+     *
+     * Runs on the main thread on purpose: it is arithmetic over at most 64 KiB
+     * and it ends by handing the array to the ViewModel, which is main-thread
+     * state.
+     */
+    private fun importDecodedKey(bytes: ByteArray, displayName: String) {
         // UTF-8 produces no more UTF-16 code units than input bytes, so this is
         // sufficient without a growable buffer that could retain the key.
         val chars = CharArray(bytes.size)
@@ -152,7 +161,7 @@ class MainActivity : ComponentActivity() {
             }
 
             ownedPem = chars.copyOf(target.position())
-            sshViewModel.importPrivateKey(ownedPem, displayNameOf(uri))
+            sshViewModel.importPrivateKey(ownedPem, displayName)
             // The ViewModel now owns it, including rejection-path wiping.
             ownedPem = null
         } finally {

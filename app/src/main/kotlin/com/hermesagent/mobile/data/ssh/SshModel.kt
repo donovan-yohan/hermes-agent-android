@@ -5,6 +5,9 @@ package com.hermesagent.mobile.data.ssh
  * disk. Passwords, passphrases and private keys are carried separately in
  * [SshCredential], which is never persisted and never logged.
  *
+ * Non-secret is not the same as saved: [importedKeyName] rides along for the
+ * screen and is the one field the store drops on the way past.
+ *
  * The destination the user types is not a seventh field: it is [destination],
  * derived from the parsed host, port and username, so there is exactly one
  * canonical copy of that answer.
@@ -24,7 +27,12 @@ data class HostProfile(
      * this host has never been trusted, so the next probe is a first use.
      */
     val acceptedFingerprint: String? = null,
-    /** Display name of the imported key document, for the UI only. */
+    /**
+     * Display name of the imported key document. **Screen state, not a saved
+     * field:** it is meaningless without the key, which is memory-only, and a
+     * document name can identify a target. `HermesPreferences` neither writes
+     * nor reads it, and this screen drops it whenever it drops the key.
+     */
     val importedKeyName: String? = null,
 ) {
     val isValid: Boolean

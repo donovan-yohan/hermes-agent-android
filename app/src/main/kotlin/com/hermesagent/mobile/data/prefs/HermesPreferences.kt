@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.prefs
 
 import android.content.Context
+import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -16,7 +17,37 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(name = "hermes")
+private val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "hermes",
+    produceMigrations = { listOf(DropImportedKeyName) },
+)
+
+/** The key an earlier build wrote the imported key's display name under. */
+private val LEGACY_IMPORTED_KEY_NAME = stringPreferencesKey("host.single.importedKeyName")
+
+/**
+ * Removes a display name an earlier build left behind.
+ *
+ * The name is useless without the key, which is memory-only and never survives
+ * a restart, and a document name can identify a target or an organisation
+ * (`acme-prod-root.pem`). So it stops being written *and* the value that is
+ * already on disk goes, rather than sitting there until the next save happens
+ * to overwrite it — a process that dies between an import and the first probe
+ * result would otherwise leave it indefinitely.
+ *
+ * Written as a [DataMigration] because that is the one hook that runs before
+ * the first read of the store, exactly once, whatever wakes it first.
+ */
+internal object DropImportedKeyName : DataMigration<Preferences> {
+
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        currentData.contains(LEGACY_IMPORTED_KEY_NAME)
+
+    override suspend fun migrate(currentData: Preferences): Preferences =
+        currentData.toMutablePreferences().apply { remove(LEGACY_IMPORTED_KEY_NAME) }
+
+    override suspend fun cleanUp() = Unit
+}
 
 /**
  * Everything this app puts on disk.
@@ -24,6 +55,10 @@ private val Context.hermesDataStore: DataStore<Preferences> by preferencesDataSt
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
  * - host, port, username, auth *method*, and the accepted host-key fingerprint.
+ *
+ * That is the whole list, and it is the same list the SSH screen prints. The
+ * imported key's display name is deliberately **not** on it: see
+ * [DropImportedKeyName].
  *
  * Passwords, passphrases and private keys are **not** here and have no code
  * path that could put them here — they live in [com.hermesagent.mobile.data.ssh.SshCredential],
@@ -57,7 +92,6 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
             username = prefs[USERNAME] ?: FRESH.username,
             authMethod = prefs[AUTH_METHOD]?.toAuthMethod() ?: FRESH.authMethod,
             acceptedFingerprint = prefs[ACCEPTED_FINGERPRINT],
-            importedKeyName = prefs[IMPORTED_KEY_NAME],
         )
     }
 
@@ -66,7 +100,11 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
     suspend fun setMode(mode: HermesThemeMode) =
         context.hermesDataStore.edit { it[THEME_MODE] = mode.name }
 
-    /** Persists the non-secret fields only. Callers cannot pass a secret in. */
+    /**
+     * Persists the non-secret, *saved* fields only. Callers cannot pass a
+     * secret in — the type will not carry one — and the one non-secret field
+     * that is screen state rather than saved state is dropped here.
+     */
     override suspend fun saveHostProfile(profile: HostProfile) {
         context.hermesDataStore.edit { prefs ->
             prefs[HOST] = profile.host
@@ -75,8 +113,8 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
             prefs[AUTH_METHOD] = profile.authMethod.name
             profile.acceptedFingerprint?.let { prefs[ACCEPTED_FINGERPRINT] = it }
                 ?: prefs.remove(ACCEPTED_FINGERPRINT)
-            profile.importedKeyName?.let { prefs[IMPORTED_KEY_NAME] = it }
-                ?: prefs.remove(IMPORTED_KEY_NAME)
+            // HostProfile.importedKeyName is deliberately absent: it is screen
+            // state, and [DropImportedKeyName] clears any value left on disk.
         }
     }
 
@@ -91,7 +129,6 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
         val USERNAME = stringPreferencesKey("host.single.username")
         val AUTH_METHOD = stringPreferencesKey("host.single.authMethod")
         val ACCEPTED_FINGERPRINT = stringPreferencesKey("host.single.acceptedFingerprint")
-        val IMPORTED_KEY_NAME = stringPreferencesKey("host.single.importedKeyName")
 
         fun String.toThemeMode(): HermesThemeMode =
             HermesThemeMode.entries.firstOrNull { it.name == this } ?: HermesThemeMode.System
