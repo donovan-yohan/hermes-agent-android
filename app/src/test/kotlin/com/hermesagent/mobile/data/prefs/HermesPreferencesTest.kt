@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * What the store keeps, and the one field it deliberately drops.
+ * What the store keeps, and the migration that removes one legacy field.
  *
  * The SSH screen prints a closed list of what is saved — host, port, username,
  * method, fingerprint — and a closed list on a security screen is a promise. An
@@ -44,16 +44,6 @@ class HermesPreferencesTest {
         assertEquals("test-user", loaded.username)
         assertEquals(AuthMethod.PrivateKey, loaded.authMethod)
         assertEquals(FINGERPRINT, loaded.acceptedFingerprint)
-    }
-
-    @Test
-    fun `an imported key display name is never written and never read back`() = runBlocking {
-        preferences.saveHostProfile(SAVED.copy(importedKeyName = "acme-prod-root.pem"))
-
-        assertNull(
-            "the screen's enumeration of what is saved has to be the whole list",
-            preferences.hostProfile.first().importedKeyName,
-        )
     }
 
     @Test

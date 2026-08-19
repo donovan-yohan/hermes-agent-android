@@ -5,6 +5,8 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -106,6 +108,29 @@ class KeyDocumentTest {
         }
 
         assertEquals("", (document as KeyDocument.Read).displayName)
+        assertEquals(PEM, String(document.bytes, Charsets.UTF_8))
+    }
+
+    @Test
+    fun `a document that returns after the screen leaves is wiped and refused`() {
+        val gate = KeyImportGate()
+        val token = gate.begin()
+        val bytes = PEM.toByteArray()
+        gate.invalidate()
+
+        val claimed = gate.claim(token, KeyDocument.Read(bytes, "id_ed25519"))
+
+        assertNull(claimed)
+        assertTrue("stale key bytes must be zeroed before they are dropped", bytes.all { it == 0.toByte() })
+    }
+
+    @Test
+    fun `the current picker result remains owned by its screen`() {
+        val gate = KeyImportGate()
+        val token = gate.begin()
+        val document = KeyDocument.Read(PEM.toByteArray(), "id_ed25519")
+
+        assertSame(document, gate.claim(token, document))
         assertEquals(PEM, String(document.bytes, Charsets.UTF_8))
     }
 

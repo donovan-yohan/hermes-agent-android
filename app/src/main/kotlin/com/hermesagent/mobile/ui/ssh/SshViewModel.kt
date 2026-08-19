@@ -66,6 +66,8 @@ data class SshUiState(
     val password: String = "",
     val keyPassphrase: String = "",
     val privateKeyLoaded: Boolean = false,
+    /** Runtime-only label for the loaded document; never enters [HostProfile]. */
+    val importedKeyName: String? = null,
     val status: ProbeStatus = ProbeStatus.Idle,
     /**
      * The review the last probe produced. Read [pendingHostKey] instead — this
@@ -259,12 +261,11 @@ class SshViewModel(
         privateKeyPem = pem
         _uiState.update {
             it.copy(
-                profile = it.profile.copy(importedKeyName = name),
+                importedKeyName = name,
                 privateKeyLoaded = true,
                 keyImportProblem = null,
             )
         }
-        persistProfile()
     }
 
     /**
@@ -277,8 +278,14 @@ class SshViewModel(
 
     fun forgetPrivateKey() {
         wipePrivateKey()
-        editProfile { it.copy(importedKeyName = null) }
-        _uiState.update { it.copy(privateKeyLoaded = false, keyPassphrase = "", keyImportProblem = null) }
+        _uiState.update {
+            it.copy(
+                importedKeyName = null,
+                privateKeyLoaded = false,
+                keyPassphrase = "",
+                keyImportProblem = null,
+            )
+        }
     }
 
     /**
@@ -484,7 +491,7 @@ class SshViewModel(
         val state = _uiState.value
         val holdsSomething = privateKeyPem != null || state.password.isNotEmpty() ||
             state.keyPassphrase.isNotEmpty() || state.privateKeyLoaded ||
-            state.profile.importedKeyName != null
+            state.importedKeyName != null
         if (!holdsSomething) return
 
         wipePrivateKey()
@@ -493,10 +500,9 @@ class SshViewModel(
                 password = "",
                 keyPassphrase = "",
                 privateKeyLoaded = false,
-                profile = it.profile.copy(importedKeyName = null),
+                importedKeyName = null,
             )
         }
-        persistProfile()
     }
 
     /** Serialises writes so an old suspended save cannot finish last. */

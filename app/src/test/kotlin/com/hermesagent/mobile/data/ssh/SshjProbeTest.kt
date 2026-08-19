@@ -15,7 +15,9 @@ import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.system.measureTimeMillis
 
 /**
  * What the real adapter promises about stopping, and about what counts as
@@ -276,20 +278,29 @@ class SshjProbeTest {
     @Test
     fun `a bring-up that outlasts the deadline times out instead of connecting late`() = runBlocking {
         val transport = FakeTransport()
+        val transportOpened = AtomicBoolean(false)
         // Twenty times the deadline, on a latch nothing counts down: the probe's
         // own timeout is the only thing that can end this, and it can only end
         // it because bring-up is inside `withTimeout`. Outside it — where this
         // call used to live — the same wait would be free, and the probe would
         // go on to connect and succeed with a full deadline of its own.
         val wedged = CountDownLatch(1)
-        val probe = SshjProbe(Dispatchers.IO, { transport }, 20) {
+        val probe = SshjProbe(Dispatchers.IO, {
+            transportOpened.set(true)
+            transport
+        }, 20) {
             wedged.await(400, TimeUnit.MILLISECONDS)
             CryptoProviderStatus.Ready("test")
         }
 
-        val result = probe.probe(profile, SshCredential.none())
+        var result: ProbeResult? = null
+        val elapsed = measureTimeMillis {
+            result = probe.probe(profile, SshCredential.none())
+        }
 
         assertEquals(ProbeFailure.Timeout, (result as ProbeResult.Failed).kind)
+        assertTrue("interruptible bring-up must return near the deadline, not after its 400 ms wedge", elapsed < 300)
+        assertFalse("a probe cancelled during provider bring-up must not open a transport", transportOpened.get())
         assertFalse("a probe past its deadline must not connect", transport.connected)
         assertFalse(transport.authenticated)
     }

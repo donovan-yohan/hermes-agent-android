@@ -176,7 +176,7 @@ fun SshScreen(
 
                 AuthMethod.PrivateKey -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (state.privateKeyLoaded) {
-                        ScaffoldRow(label = "Key loaded: ${state.profile.importedKeyName ?: "unnamed"}")
+                        ScaffoldRow(label = "Key loaded: ${state.importedKeyName ?: "unnamed"}")
                         LabelledField(
                             label = "Passphrase (if the key has one)",
                             value = state.keyPassphrase,

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeout
 import net.schmizz.sshj.transport.TransportException
 import net.schmizz.sshj.userauth.UserAuthException
@@ -73,7 +74,11 @@ class SshjProbe internal constructor(
                     // deadline: `DefaultConfig` decides which ciphers it can
                     // offer while it is being constructed, so a provider
                     // installed afterwards is one that arrived too late.
-                    when (val crypto = ensureCrypto()) {
+                    val crypto = runInterruptible { ensureCrypto() }
+                    // A deadline/cancel that landed during non-cooperative
+                    // provider code must never be followed by a transport.
+                    coroutineContext.ensureActive()
+                    when (crypto) {
                         is CryptoProviderStatus.Unavailable ->
                             ProbeResult.Failed(ProbeFailure.CryptoUnavailable, redact(crypto.reason))
 

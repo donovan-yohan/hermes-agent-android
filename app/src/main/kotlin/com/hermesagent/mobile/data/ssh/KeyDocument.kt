@@ -20,6 +20,30 @@ internal sealed interface KeyDocument {
 }
 
 /**
+ * Main-thread epoch gate for asynchronous document reads.
+ *
+ * A picker result can outlive the Gateways screen while its DocumentsProvider
+ * is still reading on IO. Invalidating the gate makes that result stale; when
+ * it eventually returns, [claim] wipes the bytes instead of handing a key back
+ * to a screen whose secret lifetime already ended.
+ */
+internal class KeyImportGate {
+    private var generation = 0L
+
+    fun begin(): Long = ++generation
+
+    fun invalidate() {
+        generation++
+    }
+
+    fun claim(token: Long, document: KeyDocument): KeyDocument? {
+        if (token == generation) return document
+        if (document is KeyDocument.Read) document.bytes.fill(0)
+        return null
+    }
+}
+
+/**
  * Reads a picked document off the caller's thread.
  *
  * The Storage Access Framework hands its result to an Activity callback on the

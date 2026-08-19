@@ -13,6 +13,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.hermesagent.mobile.data.demo.DemoSessions
 import com.hermesagent.mobile.data.ssh.KeyDocument
+import com.hermesagent.mobile.data.ssh.KeyImportGate
 import com.hermesagent.mobile.data.ssh.KeyImportProblem
 import com.hermesagent.mobile.data.ssh.readKeyDocument
 import com.hermesagent.mobile.ui.AppearanceActions
@@ -46,6 +47,8 @@ class MainActivity : ComponentActivity() {
         ChatViewModel.factory(app.cache, DemoSessions.INITIAL_SESSION_ID)
     }
     private val sshViewModel: SshViewModel by viewModels { SshViewModel.factory(preferences) }
+    private val keyImports = KeyImportGate()
+    private var pendingPickerToken: Long? = null
 
     /**
      * Storage Access Framework: the user picks a key file, we read it once and
@@ -53,7 +56,9 @@ class MainActivity : ComponentActivity() {
      * can re-read after a restart is a key the app effectively stores.
      */
     private val pickKey = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(::importPickedKey)
+        val token = pendingPickerToken
+        pendingPickerToken = null
+        if (uri != null && token != null) importPickedKey(uri, token)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,14 +94,21 @@ class MainActivity : ComponentActivity() {
                     onAuthMethodChange = sshViewModel::setAuthMethod,
                     onPasswordChange = sshViewModel::setPassword,
                     onPassphraseChange = sshViewModel::setKeyPassphrase,
-                    onImportKey = { pickKey.launch(KEY_MIME_TYPES) },
+                    onImportKey = {
+                        pendingPickerToken = keyImports.begin()
+                        pickKey.launch(KEY_MIME_TYPES)
+                    },
                     onForgetKey = sshViewModel::forgetPrivateKey,
                     onProbe = sshViewModel::runProbe,
                     onCancelProbe = sshViewModel::cancelProbe,
                     onAcceptHostKey = sshViewModel::acceptPendingHostKey,
                     onDismissHostKey = sshViewModel::dismissPendingHostKey,
                     onForgetHostKey = sshViewModel::forgetAcceptedHostKey,
-                    onLeaveScreen = sshViewModel::releaseScreen,
+                    onLeaveScreen = {
+                        keyImports.invalidate()
+                        pendingPickerToken = null
+                        sshViewModel.releaseScreen()
+                    },
                 ),
             )
         }
@@ -118,21 +130,25 @@ class MainActivity : ComponentActivity() {
      * coroutine is `lifecycleScope`'s, so an Activity that goes away takes the
      * pending read with it.
      *
-     * The one window that leaves open, stated rather than hidden: an Activity
-     * destroyed between the read finishing and this resuming drops the bounded
-     * byte array without zeroing it. It is unreachable by then and the screen
-     * is being torn down; closing it would mean making the read and the
-     * hand-off uncancellable, which is the worse trade.
+     * The import epoch closes the navigation race: leaving Gateways invalidates
+     * the pending result, and a late result wipes its bounded bytes instead of
+     * repopulating the Activity-scoped ViewModel.
+     *
+     * One Activity-destruction window remains, stated rather than hidden: if
+     * lifecycle cancellation wins after the read returns but before this
+     * continuation resumes, the bounded byte array becomes unreachable without
+     * an explicit wipe. Keeping the lifecycle coroutine alive solely to scrub
+     * that array would let a remote DocumentsProvider outlive the Activity.
      */
-    private fun importPickedKey(uri: Uri) = lifecycleScope.launch {
+    private fun importPickedKey(uri: Uri, token: Long) = lifecycleScope.launch {
         val document = readKeyDocument(
             io = Dispatchers.IO,
             openStream = { contentResolver.openInputStream(uri) },
             displayName = { displayNameOf(uri) },
         )
-        when (document) {
-            is KeyDocument.Refused -> sshViewModel.reportKeyImportProblem(document.problem)
-            is KeyDocument.Read -> importDecodedKey(document.bytes, document.displayName)
+        when (val current = keyImports.claim(token, document) ?: return@launch) {
+            is KeyDocument.Refused -> sshViewModel.reportKeyImportProblem(current.problem)
+            is KeyDocument.Read -> importDecodedKey(current.bytes, current.displayName)
         }
     }
 

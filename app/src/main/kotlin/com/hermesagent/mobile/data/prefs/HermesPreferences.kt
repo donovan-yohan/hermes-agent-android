@@ -113,8 +113,6 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
             prefs[AUTH_METHOD] = profile.authMethod.name
             profile.acceptedFingerprint?.let { prefs[ACCEPTED_FINGERPRINT] = it }
                 ?: prefs.remove(ACCEPTED_FINGERPRINT)
-            // HostProfile.importedKeyName is deliberately absent: it is screen
-            // state, and [DropImportedKeyName] clears any value left on disk.
         }
     }
 

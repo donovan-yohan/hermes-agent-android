@@ -90,10 +90,10 @@ What reaches disk: host, port, username, auth *method*, the accepted host-key
 fingerprint. That is the whole list, it is the same list the screen prints, and
 `HostProfileStore` accepts nothing else by type. The destination is not a sixth
 key — it is derived from the parsed host, port and username, so there is one
-canonical copy. `HostProfile.importedKeyName` rides along in memory for the
-"Key loaded" row and is dropped by the store: it is useless without a key that
-cannot survive a restart, and a document name can identify a target or an
-organisation on its own. A value an earlier build wrote is removed by a
+canonical copy. `SshUiState.importedKeyName` exists only for the runtime
+"Key loaded" row and cannot reach the store by type: it is useless without a
+key that cannot survive a restart, and a document name can identify a target
+or an organisation on its own. A value an earlier build wrote is removed by a
 DataStore migration before the first read. The auth method is persisted by enum *name*, so entries
 can be reordered or added without rewriting an existing install's choice; a
 name this build does not recognise falls back to Password rather than to the
@@ -198,7 +198,7 @@ There are three here, and all are exercised:
 |---|---|---|
 | `SshProbe` | `SshjProbe` (real), `FakeSshProbe` (deterministic) | `SshViewModelTest` drives the full onboarding journey through the fake, but the fake runs the **real** `evaluateHostKey`, so the policy under test is production policy. `HostKeyPolicyTest` additionally drives the real sshj `HostKeyVerifier` with generated EC keys. |
 | Crypto provider bring-up (`SshjProbe`'s `ensureCrypto` parameter) | `SshSecurityProvider::ensureReady` (real), stubs in `SshjProbeTest` | Cold BouncyCastle bring-up is class loading, an algorithm-table copy and a live X25519 agreement, and `runProbe` is started `UNDISPATCHED` so its caller's thread is the main one. The parameter exists so a test can prove bring-up runs on the injected dispatcher, that a bring-up outlasting the deadline times out instead of connecting late, and that cancelling during it opens nothing. |
-| Picked-document I/O (`readKeyDocument`) | The Activity's `ContentResolver` (real), streams and name lambdas in `KeyDocumentTest` | The Storage Access Framework answers on the main thread and both halves are IPC to another process. The seam is two lambdas, so a plain-JVM test pins that the read and the name query leave the caller's thread, that the read is bounded, and that an oversized document is refused whole with its bytes wiped. |
+| Picked-document I/O (`readKeyDocument`) | The Activity's `ContentResolver` (real), streams and name lambdas in `KeyDocumentTest` | The Storage Access Framework answers on the main thread and both halves are IPC to another process. The seam is two lambdas, so a plain-JVM test pins that the read and the name query leave the caller's thread, that the read is bounded, and that an oversized document is refused whole with its bytes wiped. `KeyImportGate` additionally proves a result returning after Gateways closes is wiped rather than adopted. |
 | `SshTransport` | `SshjTransport` (real), focused blocking doubles in `SshjProbeTest` | Proves cancellation/timeout closes the active transport, blocks later auth/commands, bounds command reads, and rejects non-exact probe results without requiring a live server. The seam is internal and has one production implementation. |
 | `HostProfileStore` | `HermesPreferences` (DataStore), an in-memory double in the test source set | Lets the SSH ViewModel run on a plain JVM, and lets a test assert that nothing secret reaches the store. |
 
@@ -274,7 +274,7 @@ is identical at phone reading distance. The table is in `HermesTypography.kt`.
 Commands, and what they proved on 2026-08-19 (JDK 17, `ANDROID_HOME=/opt/android-sdk`):
 
 ```bash
-./gradlew check          # 252 debug + 216 release unit tests, 0 failures;
+./gradlew check          # 263 debug + 220 release unit tests, 0 failures;
                          # lint clean; repo invariants pass
 ./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk, ~16.6 MB
 git diff --check         # clean

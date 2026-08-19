@@ -557,7 +557,7 @@ class SshViewModelTest {
         assertTrue(vm.uiState.value.status is ProbeStatus.Succeeded)
         assertTrue("the key material must be wiped, not garbage", pem.all { it == '\u0000' })
         assertFalse(vm.uiState.value.privateKeyLoaded)
-        assertNull("and the label for a key that is gone is a lie", store.saved.value.importedKeyName)
+        assertNull("and the label for a key that is gone is a lie", vm.uiState.value.importedKeyName)
     }
 
     @Test
@@ -588,7 +588,7 @@ class SshViewModelTest {
         assertTrue(key.all { it == '\u0000' })
         assertFalse(vm.uiState.value.privateKeyLoaded)
         assertEquals("", vm.uiState.value.keyPassphrase)
-        assertNull(vm.uiState.value.profile.importedKeyName)
+        assertNull(vm.uiState.value.importedKeyName)
     }
 
     @Test
@@ -672,7 +672,7 @@ class SshViewModelTest {
         val state = vm.uiState.value
         assertEquals(AuthMethod.PrivateKey, state.profile.authMethod)
         assertTrue(state.privateKeyLoaded)
-        assertEquals("id_ed25519", state.profile.importedKeyName)
+        assertEquals("id_ed25519", state.importedKeyName)
         assertFalse(
             "the pem must never be reachable from a state snapshot",
             state.toString().contains("secretkeymaterial"),
@@ -715,10 +715,8 @@ class SshViewModelTest {
         advanceUntilIdle()
 
         // The bidi override would render `id_ed25519.txt` as `idtxt.912de_di`
-        // in the "Key loaded" row. It is screen state either way — that it is
-        // not written to disk is `HermesPreferencesTest`'s claim, not this
-        // double's, which stores whatever HostProfile it is handed.
-        assertEquals("idgnp.exe", vm.uiState.value.profile.importedKeyName)
+        // in the "Key loaded" row. The label only exists in runtime UI state.
+        assertEquals("idgnp.exe", vm.uiState.value.importedKeyName)
     }
 
     // ── Leaving the screen ────────────────────────────────────────────────
@@ -738,7 +736,7 @@ class SshViewModelTest {
         assertTrue("the key must be zeroed, not merely dropped", pem.all { it == '\u0000' })
         assertFalse(vm.uiState.value.privateKeyLoaded)
         assertEquals("", vm.uiState.value.keyPassphrase)
-        assertNull(vm.uiState.value.profile.importedKeyName)
+        assertNull(vm.uiState.value.importedKeyName)
     }
 
     @Test
