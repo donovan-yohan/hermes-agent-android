@@ -11,18 +11,35 @@ import java.io.InputStream
  * nor a file the user picked may stream unbounded data into memory.
  */
 fun InputStream.readBounded(limit: Int): ByteArray {
-    val out = ByteArrayOutputStream(minOf(limit, DEFAULT_CHUNK))
+    require(limit >= 0) { "limit must not be negative" }
+    val out = WipeableByteArrayOutputStream(minOf(limit, DEFAULT_CHUNK))
     val chunk = ByteArray(DEFAULT_CHUNK)
     var remaining = limit
 
-    while (remaining > 0) {
-        val read = read(chunk, 0, minOf(chunk.size, remaining))
-        if (read < 0) break
-        out.write(chunk, 0, read)
-        remaining -= read
-    }
+    try {
+        while (remaining > 0) {
+            val read = read(chunk, 0, minOf(chunk.size, remaining))
+            if (read < 0) break
+            out.write(chunk, 0, read)
+            remaining -= read
+        }
 
-    return out.toByteArray()
+        // `toByteArray` deliberately makes the one copy the caller owns. The
+        // caller is responsible for wiping it; this method wipes every scratch
+        // buffer before returning or propagating an I/O failure.
+        return out.toByteArray()
+    } finally {
+        chunk.fill(0)
+        out.wipe()
+    }
 }
 
 private const val DEFAULT_CHUNK = 4096
+
+/** ByteArrayOutputStream keeps its backing array after [toByteArray]. */
+private class WipeableByteArrayOutputStream(size: Int) : ByteArrayOutputStream(size) {
+    fun wipe() {
+        buf.fill(0)
+        reset()
+    }
+}

@@ -79,7 +79,7 @@ fingerprint review.
 | Method | How it works | Limit, stated honestly |
 |---|---|---|
 | Tailscale SSH (default for a fresh profile) | Nothing is collected and nothing is sent: `client.auth(username, AuthNone())`. The tailnet already authenticated the node over WireGuard and checked the tailnet SSH policy, so the SSH layer uses auth type `none` (<https://tailscale.com/docs/features/tailscale-ssh>) | Works **only** if the target runs Tailscale SSH *and* the tailnet SSH policy allows the connection. Being on the same tailnet buys reachability and a MagicDNS name (<https://tailscale.com/docs/features/magicdns>) and nothing more — a box running ordinary OpenSSH over Tailscale still wants a password or a key, and says so as `ProbeFailure.TailscaleSshRefused`. There is no automatic fallback to another method. |
-| Password | Typed, held in memory for the screen, zeroed after the probe | Never persisted. Retyped every probe. |
+| Password | Typed and held in memory for the screen, then dropped after the probe | Never persisted. Retyped every probe. It arrives from the text field as a JVM `String`, so it cannot be scrubbed in place. |
 | Imported OpenSSH private key | Picked through the Storage Access Framework, read once (64 KB cap), held in memory | Never persisted, and **no persistable URI permission is taken** — a key the app can silently re-read after a restart is a key the app effectively stores. Re-import each session. |
 
 The three claims that get conflated, kept apart on purpose: the tailnet gives a
@@ -112,9 +112,25 @@ Not yet, and not pretended: hardware-backed keys (AndroidKeystore P-256),
 biometric gating, ProxyJump, key generation on device. The spike's §7.1 has the
 decided design; none of it is stubbed here.
 
+Trust is anchored to `(host, port)` and to the form that asked for it. A review
+carries the pair that offered the key and stops counting the moment the
+destination points elsewhere, so retargeting the field and then tapping accept
+trusts nothing; every edit bumps a generation, cancels a probe in flight, and
+makes a late answer stale rather than letting it paint the screen.
+
+The screen drops the password, passphrase and key as soon as a probe has used
+them — success, refusal, cancellation or timeout alike. A first-use review is
+the one exception: nothing was sent, so accepting and retrying does not ask
+again. `FLAG_SECURE` is applied while the SSH surface is on screen and cleared
+when it leaves, so screenshots, recordings, casting and the recent-apps preview
+skip credential entry and host-key review without blacking out the rest of the
+app. The accepted fingerprint is excluded from cloud backup and device transfer,
+so a restored install reviews the key again on the device that will use it.
+
 Known residual risks: first-use acceptance without out-of-band verification is
-TOFU, the same posture as OpenSSH's default. In-memory secrets are best-effort
-zeroed — the JVM may retain copies. `FLAG_SECURE` is not applied yet.
+TOFU, the same posture as OpenSSH's default. The private key is a `char[]` and
+is really zeroed; the password and passphrase come from a text field as JVM
+`String`s, so they can only be dropped, not scrubbed.
 
 ## 4. Module and state map
 
@@ -161,12 +177,13 @@ Two behaviours worth naming because they are the ones a naive port gets wrong:
 
 ### Seams, and whether the tests hit them
 
-A seam earns its keep when it has two real implementations that differ. There
-are exactly two here, and both are exercised:
+A seam earns its keep when it isolates a real authority or a blocking boundary.
+There are three here, and all are exercised:
 
 | Seam | Implementations | What the tests drive |
 |---|---|---|
 | `SshProbe` | `SshjProbe` (real), `FakeSshProbe` (deterministic) | `SshViewModelTest` drives the full onboarding journey through the fake, but the fake runs the **real** `evaluateHostKey`, so the policy under test is production policy. `HostKeyPolicyTest` additionally drives the real sshj `HostKeyVerifier` with generated EC keys. |
+| `SshTransport` | `SshjTransport` (real), focused blocking doubles in `SshjProbeTest` | Proves cancellation/timeout closes the active transport, blocks later auth/commands, bounds command reads, and rejects non-exact probe results without requiring a live server. The seam is internal and has one production implementation. |
 | `HostProfileStore` | `HermesPreferences` (DataStore), an in-memory double in the test source set | Lets the SSH ViewModel run on a plain JVM, and lets a test assert that nothing secret reaches the store. |
 
 Everything else is a concrete class, on purpose. `SessionCache`,
@@ -186,9 +203,10 @@ Where the tests sit relative to those seams:
   user can see and reach. It does not re-assert what the ViewModel tests
   already pin.
 
-The gap worth naming: `SshjProbe` itself has no test that opens a socket. Its
-policy, its redaction and its verifier are covered; the handshake is not, and
-cannot be without a host.
+The gap worth naming: `SshjProbe` has no test that opens a real socket. Its
+blocking lifecycle is covered through `SshTransport`, and its policy, redaction,
+provider setup and verifier are covered directly; an actual handshake still
+needs a host and physical Android runtime.
 
 The Tailscale SSH branch is covered as far as it goes offline. `AuthMethod`
 maps to an `SshAuthType`, the adapter switches on that value, and
@@ -239,7 +257,7 @@ is identical at phone reading distance. The table is in `HermesTypography.kt`.
 Commands, and what they proved on 2026-08-19 (JDK 17, `ANDROID_HOME=/opt/android-sdk`):
 
 ```bash
-./gradlew check          # 124 debug + 111 release unit tests, 0 failures;
+./gradlew check          # 200 debug + 184 release unit tests, 0 failures;
                          # lint clean; repo invariants pass
 ./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk, ~16.5 MB
 git diff --check         # clean
@@ -255,24 +273,51 @@ swap; and on the SSH screen, one destination field with no separate host/port/
 username, the three auth choices, first-use review through to a successful
 probe, and the Tailscale-SSH-refused copy.
 
+**Verified on a physical device, and what it found:**
+
+- **The real probe was run on a Pixel 10 Pro (Android 17 / API 37) with the
+  Tailscale VPN connected, and it failed** — before host-key review, with
+  `no such algorithm: X25519 for provider BC`. That was not the network: the
+  same phone's Termux reaches the same host. It was a JCE provider-name
+  collision. Android ships a stripped, deprecated provider that owns the name
+  `BC`, so sshj's `SecurityUtils.registerSecurityProvider` cannot install the
+  bundled BouncyCastle (`Security.addProvider` returns `-1`), smoke-tests MD5
+  and DH against the *instance* it built, and then records the provider by
+  **name** — after which every lookup lands on the stripped one and
+  curve25519-sha256, Ed25519, ECDSA, RSA-SHA2 and HmacSHA256 all disappear.
+  `data/ssh/SshSecurityProvider.kt` registers the bundled provider under a name
+  Android does not own, pins sshj to it, and verifies it — including a live
+  X25519 agreement — before anything uses it.
+  `SshSecurityProviderTest` reproduces the failure offline (down to the exact
+  error string) and asserts the repair, its idempotence, that the platform
+  provider keeps its name and its position, and that an incomplete provider is
+  refused rather than half-installed.
+
 **Not verified, and not claimed:**
 
-- **No live SSH probe has been run.** There is no connected device and no test
-  host credentials were provided. `SshjProbe` is compiled, linted, and its
-  policy and redaction are unit-tested with real key material — but "sshj
-  completes a handshake against a real sshd from a real phone" is unproven.
-- **Tailscale SSH has not been observed succeeding.** On the Linux devbox on
-  2026-08-19, `dev` resolved over MagicDNS but
-  `ssh -o BatchMode=yes donovanyohan@dev` answered
-  `Permission denied (publickey,password)`, so that target is running
-  traditional OpenSSH over Tailscale, not Tailscale SSH. The app's Tailscale
-  SSH path is therefore exercised only against `FakeSshProbe`; against that
-  host it is expected to produce `ProbeFailure.TailscaleSshRefused`, which is
-  the honest answer, not a bug. Enabling Tailscale SSH on a target and writing
-  the tailnet policy is out of this slice's scope.
-- **No physical-device dogfood.** Real IME behaviour, gesture navigation, fold
-  and unfold, rendering fidelity, and colour on an actual panel are
-  emulator/device-only.
+- **No SSH handshake has completed against a real sshd from a phone.** The
+  provider repair is proven on the JVM, not on Android: what a JVM test cannot
+  show is that *Android's* `BC` is stripped in exactly the way the device error
+  implies, or that `Provider.putAll` behaves identically on API 26. The Pixel
+  rerun is the evidence for that, and it belongs to Ebi.
+- **API 26 has no coverage at all.** The unit tests run on the JVM and the
+  Compose journeys under Robolectric at SDK 34. Nothing has executed on the
+  minimum supported API level.
+- **Tailscale SSH has not been observed succeeding.** A local development
+  target was confirmed to run traditional OpenSSH over Tailscale rather than
+  Tailscale SSH; endpoint and account details are intentionally not recorded
+  here. The app's Tailscale SSH path is therefore exercised only against
+  `FakeSshProbe`; that path is expected to produce
+  `ProbeFailure.TailscaleSshRefused`, which is the honest answer, not a bug.
+  Enabling Tailscale SSH on a target and writing the tailnet policy is out of
+  this slice's scope.
+- **Insets, `FLAG_SECURE` and the recents preview are device-only.** The SSH
+  column now consumes the IME and navigation-bar insets and sets `FLAG_SECURE`
+  while it is composed, but "the keyboard does not cover the Accept button on a
+  real Pixel" and "the recents card is blank" cannot be asserted from
+  Robolectric.
+- **No other physical-device dogfood.** Fold and unfold, rendering fidelity, and
+  colour on an actual panel are emulator/device-only.
 - **No release build path.** No signing config, no shrinking. `proguard-rules.pro`
   carries the sshj/BouncyCastle keeps so the first release attempt is not a
   surprise, but it has never been exercised.

@@ -4,16 +4,22 @@ import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.FakeSshProbe
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
+import com.hermesagent.mobile.data.ssh.KeyImportProblem
 import com.hermesagent.mobile.data.ssh.ProbeFailure
+import com.hermesagent.mobile.data.ssh.ProbeResult
+import com.hermesagent.mobile.data.ssh.SshCredential
 import com.hermesagent.mobile.data.ssh.SshProbe
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -24,10 +30,14 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 /**
  * The onboarding journey, end to end, against the deterministic probe:
- * first use → review → accept → retry → success, plus the changed-key stop.
+ * first use → review → accept → retry → success, plus the changed-key hard
+ * stop — and what happens when the form moves while work is in flight.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SshViewModelTest {
@@ -49,6 +59,10 @@ class SshViewModelTest {
         setAuthMethod(AuthMethod.Password)
         setPassword("s3cret")
     }
+
+    private fun privateKey(): CharArray =
+        ("-----BEGIN OPENSSH PRIVATE KEY-----\nsecretkeymaterial\n-----END OPENSSH PRIVATE KEY-----\n")
+            .toCharArray()
 
     @Test
     fun `a first probe stops at the fingerprint review instead of connecting`() = runTest(dispatcher) {
@@ -199,16 +213,16 @@ class SshViewModelTest {
     fun `the destination field is the only host, port and username input`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
 
-        vm.setDestination("  donovanyohan@dev  ")
+        vm.setDestination("  test-user@test-host  ")
         advanceUntilIdle()
 
         val implicit = vm.uiState.value.profile
-        assertEquals("donovanyohan", implicit.username)
-        assertEquals("dev", implicit.host)
+        assertEquals("test-user", implicit.username)
+        assertEquals("test-host", implicit.host)
         assertEquals("nobody should have to type port 22", 22, implicit.port)
         assertNull(vm.uiState.value.destinationError)
 
-        vm.setDestination("donovanyohan@dev:2222")
+        vm.setDestination("test-user@test-host:2222")
         advanceUntilIdle()
         assertEquals(2222, vm.uiState.value.profile.port)
     }
@@ -261,35 +275,454 @@ class SshViewModelTest {
         vm.acceptPendingHostKey()
         advanceUntilIdle()
 
-        vm.setDestination("donovanyohan@hermes-box")
+        vm.setDestination("test-user@hermes-box")
         advanceUntilIdle()
         assertEquals(FakeSshProbe.DEFAULT_FINGERPRINT, store.saved.value.acceptedFingerprint)
 
-        vm.setDestination("donovanyohan@other-box")
+        vm.setDestination("test-user@other-box")
         advanceUntilIdle()
         assertNull("a new host has to be reviewed again", store.saved.value.acceptedFingerprint)
+    }
+
+    // ── Work is bound to the form that started it ─────────────────────────────
+
+    @Test
+    fun `retargeting the destination takes the review with it`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@host-a")
+        vm.runProbe()
+        advanceUntilIdle()
+        assertNotNull(vm.uiState.value.pendingHostKey)
+
+        vm.setDestination("hermes@host-b")
+        advanceUntilIdle()
+
+        assertNull(
+            "a fingerprint offered by host-a is not a decision about host-b",
+            vm.uiState.value.pendingHostKey,
+        )
+    }
+
+    @Test
+    fun `accepting after a retarget cannot file one host's key under another`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@host-a")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.setDestination("hermes@host-b")
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+
+        assertEquals("host-b", store.saved.value.host)
+        assertNull("host-a's key must not be stored for host-b", store.saved.value.acceptedFingerprint)
+        assertNull(vm.uiState.value.profile.acceptedFingerprint)
+    }
+
+    @Test
+    fun `an invalid or blank destination cannot accept an old review`() = runTest(dispatcher) {
+        for (destination in listOf("hermes@host a", "")) {
+            val vm = viewModel(FakeSshProbe())
+            vm.setDestination("hermes@host-a")
+            vm.runProbe()
+            advanceUntilIdle()
+            assertNotNull(vm.uiState.value.pendingHostKey)
+
+            vm.setDestination(destination)
+            vm.acceptPendingHostKey()
+            advanceUntilIdle()
+
+            assertNull("$destination must not retain host-a's review", vm.uiState.value.pendingHostKey)
+            assertNull("$destination must not trust a host it cannot name", vm.uiState.value.profile.acceptedFingerprint)
+        }
+    }
+
+    @Test
+    fun `changing only the port also invalidates the review`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@host-a")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.setDestination("hermes@host-a:2222")
+        advanceUntilIdle()
+
+        assertNull("a different port can be a different sshd", vm.uiState.value.pendingHostKey)
+    }
+
+    @Test
+    fun `renaming the user keeps the review, because the box has not moved`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setDestination("hermes@host-a")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.setDestination("test-user@host-a")
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+
+        assertEquals(FakeSshProbe.DEFAULT_FINGERPRINT, store.saved.value.acceptedFingerprint)
+        assertEquals("test-user", store.saved.value.username)
+    }
+
+    @Test
+    fun `an answer that arrives after the destination moved does not paint the screen`() =
+        runTest(dispatcher) {
+            val probe = ManualProbe()
+            val vm = viewModel(probe)
+            vm.setDestination("hermes@host-a")
+            vm.runProbe()
+            advanceUntilIdle()
+            assertEquals(ProbeStatus.Running, vm.uiState.value.status)
+
+            vm.setDestination("hermes@host-b")
+            advanceUntilIdle()
+
+            // The probe ignored the cancellation and answered anyway, which is
+            // exactly what a blocking transport does.
+            probe.finish(ProbeResult.Ok(SshProbe.EXPECTED_OUTPUT, "SSH-2.0-OpenSSH_9.6", 12))
+            advanceUntilIdle()
+
+            assertEquals(
+                "a result about host-a must not report success for host-b",
+                ProbeStatus.Idle,
+                vm.uiState.value.status,
+            )
+            assertNull(vm.uiState.value.pendingHostKey)
+        }
+
+    @Test
+    fun `an answer that arrives after cancelling does not undo the cancellation`() = runTest(dispatcher) {
+        val probe = ManualProbe()
+        val vm = viewModel(probe)
+        vm.setDestination("hermes@host-a")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.cancelProbe()
+        advanceUntilIdle()
+        probe.finish(ProbeResult.Ok(SshProbe.EXPECTED_OUTPUT, "SSH-2.0-OpenSSH_9.6", 12))
+        advanceUntilIdle()
+
+        assertEquals(
+            ProbeFailure.Cancelled,
+            (vm.uiState.value.status as ProbeStatus.Failed).kind,
+        )
+    }
+
+    @Test
+    fun `a review that arrives after the destination moved is never shown`() = runTest(dispatcher) {
+        val probe = ManualProbe()
+        val vm = viewModel(probe)
+        vm.setDestination("hermes@host-a")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.setDestination("hermes@host-b")
+        advanceUntilIdle()
+        probe.finish(ProbeResult.HostKeyPending("SHA256:aKeyHostBneverOffered", "ssh-ed25519"))
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.pendingHostKey)
+        assertNull(vm.uiState.value.hostKeyReview)
+    }
+
+    @Test
+    fun `changing the auth method stops a probe that is already running`() = runTest(dispatcher) {
+        val probe = FakeSshProbe(delayMillis = 10_000)
+        val vm = viewModel(probe)
+        vm.fillValidProfile()
+        vm.runProbe()
+        advanceTimeBy(100)
+        assertEquals(ProbeStatus.Running, vm.uiState.value.status)
+
+        vm.setAuthMethod(AuthMethod.TailscaleSsh)
+        advanceUntilIdle()
+
+        assertEquals(
+            "the credential in flight is not the one the form now describes",
+            ProbeStatus.Idle,
+            vm.uiState.value.status,
+        )
+    }
+
+    @Test
+    fun `editing a credential stops and invalidates the old probe`() = runTest(dispatcher) {
+        val probe = ManualProbe()
+        val vm = viewModel(probe)
+        vm.fillValidProfile()
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.setPassword("replacement")
+        probe.finish(ProbeResult.Ok(SshProbe.EXPECTED_OUTPUT, "SSH-2.0-test", 1))
+        advanceUntilIdle()
+
+        assertEquals(ProbeStatus.Idle, vm.uiState.value.status)
+        assertEquals("replacement", vm.uiState.value.password)
+    }
+
+    // ── The screen stops holding a secret once a probe has used it ────────────
+
+    @Test
+    fun `the state never prints the password or the passphrase`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.setPassword("hunter2correcthorse")
+        vm.setKeyPassphrase("passphrase-value")
+        advanceUntilIdle()
+
+        val printed = vm.uiState.value.toString()
+
+        assertFalse("a state snapshot is a log line waiting to happen", printed.contains("hunter2correcthorse"))
+        assertFalse(printed.contains("passphrase-value"))
+        assertTrue(printed.contains("<redacted>"))
+    }
+
+    @Test
+    fun `a fingerprint review keeps the credential, because nothing was sent`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.fillValidProfile()
+
+        vm.runProbe()
+        advanceUntilIdle()
+
+        assertEquals("accept-then-retry must not ask for the password again", "s3cret", vm.uiState.value.password)
+    }
+
+    @Test
+    fun `a completed probe stops the screen holding the password`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.fillValidProfile()
+        vm.runProbe()
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+
+        vm.runProbe()
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.status is ProbeStatus.Succeeded)
+        assertEquals("", vm.uiState.value.password)
+        assertFalse("and cannot silently dial again with it", vm.uiState.value.canProbe)
+    }
+
+    @Test
+    fun `a refused authentication also drops the credential`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe(authSucceeds = false))
+        vm.fillValidProfile()
+        vm.runProbe()
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+
+        vm.runProbe()
+        advanceUntilIdle()
+
+        assertEquals(ProbeFailure.AuthFailed, (vm.uiState.value.status as ProbeStatus.Failed).kind)
+        assertEquals("", vm.uiState.value.password)
+    }
+
+    @Test
+    fun `cancelling drops the credential the probe was given`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe(delayMillis = 10_000))
+        vm.fillValidProfile()
+        vm.setKeyPassphrase("passphrase-value")
+        vm.runProbe()
+        advanceTimeBy(100)
+
+        vm.cancelProbe()
+        advanceUntilIdle()
+
+        assertEquals("", vm.uiState.value.password)
+        assertEquals("", vm.uiState.value.keyPassphrase)
+    }
+
+    @Test
+    fun `the imported key is zeroed, not merely dropped`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        val pem = privateKey()
+        vm.setDestination("hermes@hermes-box")
+        vm.importPrivateKey(pem, "id_ed25519")
+        advanceUntilIdle()
+
+        vm.runProbe()
+        advanceUntilIdle()
+        vm.acceptPendingHostKey()
+        advanceUntilIdle()
+        vm.runProbe()
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.status is ProbeStatus.Succeeded)
+        assertTrue("the key material must be wiped, not garbage", pem.all { it == '\u0000' })
+        assertFalse(vm.uiState.value.privateKeyLoaded)
+        assertNull("and the label for a key that is gone is a lie", store.saved.value.importedKeyName)
+    }
+
+    @Test
+    fun `replacing a key wipes the previous valid key immediately`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        val old = privateKey()
+        val replacement = privateKey()
+
+        vm.importPrivateKey(old, "old")
+        vm.importPrivateKey(replacement, "replacement")
+        advanceUntilIdle()
+
+        assertTrue("a valid replacement must wipe the previous key", old.all { it == '\u0000' })
+        assertTrue(vm.uiState.value.privateKeyLoaded)
+    }
+
+    @Test
+    fun `an idle auth-method change wipes hidden key material`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        val key = privateKey()
+        vm.importPrivateKey(key, "id_key")
+        vm.setKeyPassphrase("passphrase")
+        advanceUntilIdle()
+
+        vm.setAuthMethod(AuthMethod.TailscaleSsh)
+        advanceUntilIdle()
+
+        assertTrue(key.all { it == '\u0000' })
+        assertFalse(vm.uiState.value.privateKeyLoaded)
+        assertEquals("", vm.uiState.value.keyPassphrase)
+        assertNull(vm.uiState.value.profile.importedKeyName)
+    }
+
+    @Test
+    fun `cancelling after probe start clears the credential copy`() = runTest(dispatcher) {
+        val probe = CapturingCancellableProbe()
+        val vm = viewModel(probe)
+        val key = privateKey()
+        vm.setDestination("hermes@host-a")
+        vm.importPrivateKey(key, "id_key")
+
+        vm.runProbe()
+        val credential = requireNotNull(probe.credential)
+        assertTrue(requireNotNull(credential.privateKey).any { it != '\u0000' })
+
+        vm.cancelProbe()
+
+        assertTrue("the probe-owned copy must be wiped on immediate cancellation",
+            requireNotNull(credential.privateKey).all { it == '\u0000' })
+    }
+
+    @Test
+    fun `editing a passphrase during a key probe clears the old key and cancels`() = runTest(dispatcher) {
+        val probe = ManualProbe()
+        val vm = viewModel(probe)
+        val key = privateKey()
+        vm.setDestination("hermes@host-a")
+        vm.importPrivateKey(key, "id_key")
+        vm.setKeyPassphrase("old-passphrase")
+        vm.runProbe()
+        advanceUntilIdle()
+
+        vm.setKeyPassphrase("replacement-passphrase")
+        probe.finish(ProbeResult.Ok(SshProbe.EXPECTED_OUTPUT, "SSH-2.0-test", 1))
+        advanceUntilIdle()
+
+        assertEquals(ProbeStatus.Idle, vm.uiState.value.status)
+        assertTrue(key.all { it == '\u0000' })
+        assertFalse(vm.uiState.value.privateKeyLoaded)
+        assertEquals("", vm.uiState.value.keyPassphrase)
+    }
+
+    @Test
+    fun `a suspended old save cannot overwrite newer profile intent`() = runTest(dispatcher) {
+        val delayedStore = DelayedFirstSaveStore()
+        val vm = SshViewModel(delayedStore, FakeSshProbe())
+
+        vm.setDestination("hermes@host-a")
+        runCurrent()
+        assertTrue("the first save should be held in the store", delayedStore.firstSaveStarted.isCompleted)
+
+        vm.setDestination("hermes@host-b:2222")
+        runCurrent()
+        delayedStore.releaseFirstSave.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("host-b", delayedStore.saved.value.host)
+        assertEquals(2222, delayedStore.saved.value.port)
+    }
+
+    @Test
+    fun `forgetting the key wipes it on the spot`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        val pem = privateKey()
+        vm.importPrivateKey(pem, "id_ed25519")
+        advanceUntilIdle()
+
+        vm.forgetPrivateKey()
+        advanceUntilIdle()
+
+        assertTrue(pem.all { it == '\u0000' })
+        assertFalse(vm.uiState.value.privateKeyLoaded)
     }
 
     @Test
     fun `importing a key switches method and never puts the pem in ui state`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
-        val pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nsecretkeymaterial\n-----END OPENSSH PRIVATE KEY-----"
 
-        vm.importPrivateKey(pem, "id_ed25519")
+        vm.importPrivateKey(privateKey(), "id_ed25519")
         advanceUntilIdle()
 
         val state = vm.uiState.value
         assertEquals(AuthMethod.PrivateKey, state.profile.authMethod)
         assertTrue(state.privateKeyLoaded)
         assertEquals("id_ed25519", state.profile.importedKeyName)
-        assertFalse("the pem must never be reachable from a state snapshot", state.toString().contains("secretkeymaterial"))
+        assertFalse(
+            "the pem must never be reachable from a state snapshot",
+            state.toString().contains("secretkeymaterial"),
+        )
+    }
+
+    @Test
+    fun `a document that is not a key is refused and wiped, with a reason`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        val junk = "read me for advice about your PRIVATE KEY".toCharArray()
+
+        vm.importPrivateKey(junk, "notes.txt")
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(KeyImportProblem.NotAPrivateKey, state.keyImportProblem)
+        assertFalse("junk must not read as a loaded key", state.privateKeyLoaded)
+        assertTrue(junk.all { it == '\u0000' })
+    }
+
+    @Test
+    fun `a failed import leaves a key that already works alone`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+        vm.importPrivateKey(privateKey(), "id_ed25519")
+        advanceUntilIdle()
+
+        vm.reportKeyImportProblem(KeyImportProblem.Unreadable)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(KeyImportProblem.Unreadable, state.keyImportProblem)
+        assertTrue("a failed replacement is not a reason to forget what works", state.privateKeyLoaded)
+    }
+
+    @Test
+    fun `the imported key name is sanitised before it is shown or saved`() = runTest(dispatcher) {
+        val vm = viewModel(FakeSshProbe())
+
+        vm.importPrivateKey(privateKey(), "id\u202egnp.exe")
+        advanceUntilIdle()
+
+        assertEquals("idgnp.exe", vm.uiState.value.profile.importedKeyName)
+        assertEquals("idgnp.exe", store.saved.value.importedKeyName)
     }
 
     @Test
     fun `nothing secret is ever handed to the store`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
         vm.fillValidProfile()
-        vm.importPrivateKey("-----BEGIN OPENSSH PRIVATE KEY-----\nsecretkeymaterial\n-----END", "id_ed25519")
+        vm.importPrivateKey(privateKey(), "id_ed25519")
         vm.setKeyPassphrase("passphrase-value")
         advanceUntilIdle()
 
@@ -307,7 +740,7 @@ class SshViewModelTest {
 
         assertEquals(AuthMethod.TailscaleSsh, vm.uiState.value.profile.authMethod)
 
-        vm.setDestination("donovanyohan@dev")
+        vm.setDestination("test-user@test-host")
         advanceUntilIdle()
         assertTrue("a destination is the whole form for Tailscale SSH", vm.uiState.value.canProbe)
 
@@ -325,8 +758,8 @@ class SshViewModelTest {
     @Test
     fun `a host that only rides the tailnet is told apart from a wrong password`() = runTest(dispatcher) {
         store.saved.value = HostProfile(
-            host = "dev",
-            username = "donovanyohan",
+            host = "test-host",
+            username = "test-user",
             acceptedFingerprint = FakeSshProbe.DEFAULT_FINGERPRINT,
         )
         val vm = viewModel(FakeSshProbe(tailscaleSshEnabled = false))
@@ -355,6 +788,55 @@ class SshViewModelTest {
         advanceUntilIdle()
 
         assertFalse(probe.calls.single().carriedSecret)
+    }
+
+    /**
+     * A probe that answers only when told to, and does not notice cancellation.
+     *
+     * That last part is the point: a blocking transport can already have its
+     * answer in hand when the user taps cancel or retargets the field, so the
+     * ViewModel cannot rely on the coroutine dying to keep a stale result off
+     * the screen. This drives that exact window.
+     */
+    private class ManualProbe : SshProbe {
+        private var waiting: Continuation<ProbeResult>? = null
+
+        override suspend fun probe(profile: HostProfile, credential: SshCredential): ProbeResult =
+            suspendCoroutine { waiting = it }
+
+        fun finish(result: ProbeResult) {
+            val continuation = requireNotNull(waiting) { "no probe is in flight" }
+            waiting = null
+            continuation.resume(result)
+        }
+    }
+
+    /** Captures the probe-owned copy and cooperates with cancellation. */
+    private class CapturingCancellableProbe : SshProbe {
+        var credential: SshCredential? = null
+            private set
+
+        override suspend fun probe(profile: HostProfile, credential: SshCredential): ProbeResult {
+            this.credential = credential
+            return suspendCancellableCoroutine<ProbeResult> { }
+        }
+    }
+
+    /** Holds the first write after it has captured its stale argument. */
+    private class DelayedFirstSaveStore : HostProfileStore {
+        val saved = MutableStateFlow(HostProfile())
+        override val hostProfile: Flow<HostProfile> = saved
+        val firstSaveStarted = CompletableDeferred<HostProfile>()
+        val releaseFirstSave = CompletableDeferred<Unit>()
+        private var saveCount = 0
+
+        override suspend fun saveHostProfile(profile: HostProfile) {
+            if (saveCount++ == 0) {
+                firstSaveStarted.complete(profile)
+                releaseFirstSave.await()
+            }
+            saved.value = profile
+        }
     }
 
     /** The in-memory half of [HostProfileStore] — the reason the interface exists. */

@@ -4,17 +4,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
-import net.schmizz.sshj.DefaultConfig
-import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.userauth.UserAuthException
-import net.schmizz.sshj.userauth.method.AuthNone
-import net.schmizz.sshj.userauth.password.PasswordUtils
 import net.schmizz.sshj.transport.TransportException
+import net.schmizz.sshj.userauth.UserAuthException
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import kotlin.coroutines.coroutineContext
 
 /**
  * The real probe, over sshj 0.40.0.
@@ -30,36 +28,80 @@ import java.net.UnknownHostException
  * writes to a log: the app ships `slf4j-nop`, so sshj's own logging is
  * compiled in but discarded, which is the cheapest guarantee that a banner or
  * a host name never lands in logcat.
+ *
+ * ## Stopping means stopping
+ *
+ * sshj's exchange is a blocking call on a plain socket. Wrapping it in
+ * `withTimeout` alone stops the *coroutine* and leaves the *connection* — the
+ * screen says "cancelled" while the transport keeps going and can still
+ * authenticate. So the blocking half runs in its own child coroutine and the
+ * awaiting half closes the transport the instant it is cancelled or the
+ * deadline fires; closing the socket is what makes the blocked call return.
+ * The probe re-checks before authenticating and before running the command, so
+ * a cancellation that lands mid-handshake cannot be followed by a credential.
  */
-class SshjProbe(
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+class SshjProbe internal constructor(
+    private val dispatcher: CoroutineDispatcher,
+    private val transports: SshTransports,
+    private val overallTimeoutMillis: Long,
 ) : SshProbe {
 
-    override suspend fun probe(profile: HostProfile, credential: SshCredential): ProbeResult =
-        withContext(dispatcher) {
-            try {
-                withTimeout(SshProbe.OVERALL_TIMEOUT_MILLIS) { runProbe(profile, credential) }
-            } catch (timeout: TimeoutCancellationException) {
-                ProbeResult.Failed(ProbeFailure.Timeout, "The host did not answer in time.")
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            }
+    constructor(dispatcher: CoroutineDispatcher = Dispatchers.IO) :
+        this(dispatcher, SshjTransports, SshProbe.OVERALL_TIMEOUT_MILLIS)
+
+    override suspend fun probe(profile: HostProfile, credential: SshCredential): ProbeResult {
+        // Before anything from sshj is constructed: `DefaultConfig` decides
+        // which ciphers it can offer while it is being built.
+        val crypto = SshSecurityProvider.ensureReady()
+        if (crypto is CryptoProviderStatus.Unavailable) {
+            return ProbeResult.Failed(ProbeFailure.CryptoUnavailable, redact(crypto.reason))
         }
 
-    private fun runProbe(profile: HostProfile, credential: SshCredential): ProbeResult {
-        val verifier = TofuHostKeyVerifier(profile.acceptedFingerprint)
-        val client = SSHClient(DefaultConfig())
-        client.addHostKeyVerifier(verifier)
-        client.connectTimeout = SshProbe.CONNECT_TIMEOUT_MILLIS
-        client.timeout = SshProbe.CONNECT_TIMEOUT_MILLIS
-
+        val handle = TransportHandle(transports)
         val startedAt = System.nanoTime()
         try {
-            client.connect(profile.host, profile.port)
+            return withTimeout(overallTimeoutMillis) {
+                val exchange = async(dispatcher) { runProbe(handle, profile, credential, startedAt) }
+                try {
+                    exchange.await().also { ensureActive() }
+                } catch (stopped: Throwable) {
+                    // Cancellation and the deadline both arrive here while the
+                    // exchange is still blocked on a worker thread. Closing the
+                    // transport from this thread is what unblocks it.
+                    handle.close()
+                    throw stopped
+                }
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            return timedOut()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            return ProbeResult.Failed(ProbeFailure.Unknown, redact(failure.message))
+        } finally {
+            handle.close()
+        }
+    }
 
-            when (val decision = verifier.verdict) {
+    private suspend fun runProbe(
+        handle: TransportHandle,
+        profile: HostProfile,
+        credential: SshCredential,
+        startedAt: Long,
+    ): ProbeResult {
+        val transport = handle.open(profile.acceptedFingerprint)
+        try {
+            // Factory/open calls are blocking. Cancellation marks this worker's
+            // Job immediately even when it cannot interrupt the call, so every
+            // return boundary checks the Job before another wire action starts.
+            coroutineContext.ensureActive()
+            if (remainingMillis(startedAt) <= 0) return timedOut()
+            handle.call(transport) { it.connect(profile.host, profile.port) }
+            coroutineContext.ensureActive()
+
+            when (val decision = transport.hostKeyVerdict) {
                 is HostKeyVerdict.FirstUse ->
-                    return ProbeResult.HostKeyPending(decision.presented, verifier.keyType)
+                    return ProbeResult.HostKeyPending(decision.presented, transport.hostKeyType)
 
                 is HostKeyVerdict.Changed ->
                     return ProbeResult.HostKeyMismatch(decision.expected, decision.presented)
@@ -67,28 +109,26 @@ class SshjProbe(
                 else -> Unit
             }
 
-            authenticate(client, profile, credential)
+            // The credential must not reach the wire after the attempt is over.
+            if (remainingMillis(startedAt) <= 0) return timedOut()
+            handle.call(transport) { it.authenticate(profile, credential) }
+            coroutineContext.ensureActive()
 
-            val output = client.startSession().use { session ->
-                session.exec(SshProbe.COMMAND).use { command ->
-                    val bytes = command.inputStream.readBounded(SshProbe.MAX_OUTPUT_BYTES)
-                    command.join()
-                    String(bytes, Charsets.UTF_8).trim()
-                }
+            val remaining = remainingMillis(startedAt)
+            if (remaining <= 0) return timedOut()
+
+            val outcome = handle.call(transport) {
+                it.runCommand(SshProbe.COMMAND, SshProbe.MAX_OUTPUT_BYTES, remaining)
             }
-
-            return ProbeResult.Ok(
-                output = redact(output),
-                serverVersion = redact(client.transport.serverVersion.orEmpty()),
-                elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000,
-            )
-        } catch (transport: TransportException) {
+            coroutineContext.ensureActive()
+            return classify(outcome, transport.serverVersion, startedAt)
+        } catch (transportFailure: TransportException) {
             // sshj reports a refused verifier as a transport failure; the
             // verdict the verifier already recorded is the truthful answer.
-            return when (val decision = verifier.verdict) {
-                is HostKeyVerdict.FirstUse -> ProbeResult.HostKeyPending(decision.presented, verifier.keyType)
+            return when (val decision = transport.hostKeyVerdict) {
+                is HostKeyVerdict.FirstUse -> ProbeResult.HostKeyPending(decision.presented, transport.hostKeyType)
                 is HostKeyVerdict.Changed -> ProbeResult.HostKeyMismatch(decision.expected, decision.presented)
-                else -> ProbeResult.Failed(ProbeFailure.Unreachable, redact(transport.message))
+                else -> ProbeResult.Failed(ProbeFailure.Unreachable, redact(transportFailure.message))
             }
         } catch (auth: UserAuthException) {
             return when (profile.authMethod.sshAuthType) {
@@ -103,42 +143,138 @@ class SshjProbe(
                 )
             }
         } catch (timeout: SocketTimeoutException) {
-            return ProbeResult.Failed(ProbeFailure.Timeout, "The host did not answer in time.")
+            return timedOut()
         } catch (unknown: UnknownHostException) {
             return ProbeResult.Failed(ProbeFailure.Unreachable, "That host name did not resolve.")
         } catch (io: IOException) {
             return ProbeResult.Failed(ProbeFailure.Unreachable, redact(io.message))
         } finally {
-            runCatching { client.disconnect() }
-            runCatching { client.close() }
+            handle.close()
         }
     }
 
     /**
-     * One attempt, one method. sshj would happily be handed a list to try in
-     * turn; it is not, because a fallback is how a keyless choice quietly turns
-     * into a password on the wire.
+     * What makes a probe a success.
+     *
+     * All three, or it failed: the exact sentinel the command prints, an exit
+     * status of zero, and a finish inside the deadline. A restricted account, a
+     * broken login shell or a host that answers with something else is a
+     * failure with copy of its own — never a green tick. The unexpected output
+     * itself is deliberately not echoed: it is arbitrary remote bytes.
      */
-    private fun authenticate(client: SSHClient, profile: HostProfile, credential: SshCredential) {
-        when (profile.authMethod.sshAuthType) {
-            // Tailscale already authenticated this node over WireGuard and
-            // checked the tailnet SSH policy, so the SSH layer sends type
-            // `none` and no secret exists to send.
-            SshAuthType.None -> client.auth(profile.username, AuthNone())
+    private fun classify(outcome: CommandOutcome, serverVersion: String, startedAt: Long): ProbeResult {
+        val elapsed = elapsedMillis(startedAt)
+        return when {
+            elapsed >= overallTimeoutMillis -> timedOut()
 
-            SshAuthType.Password -> {
-                val password = credential.password
-                    ?: throw UserAuthException("No password supplied.")
-                client.authPassword(profile.username, password)
-            }
+            outcome.exitStatus == null -> ProbeResult.Failed(
+                ProbeFailure.BadCommandResult,
+                "The host ran the probe command but never said whether it succeeded, so the " +
+                    "connection is not proven. Nothing was stored.",
+            )
 
-            SshAuthType.PublicKey -> {
-                val pem = credential.privateKey
-                    ?: throw UserAuthException("No private key supplied.")
-                val finder = credential.passphrase?.let { PasswordUtils.createOneOff(it) }
-                val keys = client.loadKeys(String(pem), null, finder)
-                client.authPublickey(profile.username, keys)
+            outcome.exitStatus != 0 -> ProbeResult.Failed(
+                ProbeFailure.BadCommandResult,
+                "The probe command exited with status ${outcome.exitStatus}. The account may have a " +
+                    "restricted or non-POSIX login shell.",
+            )
+
+            outcome.output != SshProbe.EXPECTED_OUTPUT -> ProbeResult.Failed(
+                ProbeFailure.BadCommandResult,
+                "The host answered, but not with what `${SshProbe.COMMAND}` prints. Something " +
+                    "between the shell and this app is rewriting the output.",
+            )
+
+            else -> ProbeResult.Ok(
+                output = redact(outcome.output),
+                serverVersion = redact(serverVersion),
+                elapsedMillis = elapsed,
+            )
+        }
+    }
+
+    private fun timedOut() = ProbeResult.Failed(ProbeFailure.Timeout, "The host did not answer in time.")
+
+    private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000
+
+    private fun remainingMillis(startedAt: Long): Long = overallTimeoutMillis - elapsedMillis(startedAt)
+}
+
+/**
+ * Owns the one transport a probe opens, so any thread can close it.
+ *
+ * Adoption is guarded rather than assumed: a cancellation that lands between
+ * opening the connection and publishing it here would otherwise leave a live
+ * socket nobody holds. If that happens the transport is closed immediately and
+ * the probe stops before it can connect to anything.
+ */
+private class TransportHandle(private val transports: SshTransports) {
+
+    private val lock = Any()
+    private var transport: SshTransport? = null
+    private var operation: OperationTicket? = null
+    private var stopped = false
+
+    fun open(storedFingerprint: String?): SshTransport {
+        val opened = transports.open(storedFingerprint)
+        val adopted = synchronized(lock) {
+            if (stopped) false else { transport = opened; true }
+        }
+        if (!adopted) {
+            runCatching { opened.close() }
+            throw CancellationException("The probe stopped before it opened a connection.")
+        }
+        return opened
+    }
+
+    /**
+     * Starts one side effect only if cancellation has not already won.
+     *
+     * The admission is the operation's linearization point. Once admitted, a
+     * concurrent close owns the transport and unblocks the operation; if close
+     * gets there first, the operation is never invoked. Keeping the actual I/O
+     * outside the lock matters: `close` has to run while sshj is blocked.
+     */
+    fun <T> call(expected: SshTransport, action: (SshTransport) -> T): T {
+        val ticket = synchronized(lock) {
+            if (stopped || transport !== expected) {
+                throw CancellationException("The probe stopped before it could continue.")
             }
+            OperationTicket().also { operation = it }
+        }
+        try {
+            ticket.start()
+            return action(expected)
+        } finally {
+            synchronized(lock) {
+                if (operation === ticket) operation = null
+            }
+        }
+    }
+
+    /** Idempotent, and safe to call from a thread that is not the worker's. */
+    fun close() {
+        val closing = synchronized(lock) {
+            stopped = true
+            operation?.cancel()
+            operation = null
+            transport.also { transport = null }
+        }
+        closing?.let { runCatching { it.close() } }
+    }
+
+    private class OperationTicket {
+        private val lock = Any()
+        private var cancelled = false
+
+        fun start() {
+            synchronized(lock) {
+                if (cancelled) throw CancellationException("The probe stopped before it could continue.")
+            }
+        }
+
+        fun cancel() {
+            synchronized(lock) { cancelled = true }
         }
     }
 }

@@ -98,7 +98,7 @@ class SecretRedactionTest {
 
     @Test
     fun `clearing a credential zeroes the buffers`() {
-        val credential = SshCredential.privateKey("-----BEGIN OPENSSH PRIVATE KEY-----", "pass")
+        val credential = SshCredential.privateKey("-----BEGIN OPENSSH PRIVATE KEY-----".toCharArray(), "pass")
         val key = requireNotNull(credential.privateKey)
         val passphrase = requireNotNull(credential.passphrase)
         assertTrue("precondition: the material is really there", key.any { it != NUL })

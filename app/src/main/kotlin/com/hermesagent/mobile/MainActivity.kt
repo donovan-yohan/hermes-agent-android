@@ -2,6 +2,7 @@ package com.hermesagent.mobile
 
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,6 +12,8 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.hermesagent.mobile.data.demo.DemoSessions
+import com.hermesagent.mobile.data.ssh.KeyImportProblem
+import com.hermesagent.mobile.data.ssh.MAX_KEY_BYTES
 import com.hermesagent.mobile.data.ssh.readBounded
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
@@ -20,6 +23,9 @@ import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.launch
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 
 /**
  * The single activity, and the single wiring site.
@@ -94,22 +100,81 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Reads the picked document once, bounded, and says what went wrong.
+     *
+     * The version this replaces swallowed every failure into
+     * `runCatching { … }.getOrNull()` and then accepted anything containing the
+     * words `PRIVATE KEY`, so an unreadable file, a 2 GB file and a blog post
+     * about SSH all looked identical from the screen: nothing happened, or a
+     * key was "loaded" that could never authenticate. Each of those is now its
+     * own [KeyImportProblem] with its own sentence.
+     *
+     * The bytes are decoded straight into a `char[]` the ViewModel takes
+     * ownership of, and the byte buffer is wiped on the way out: the only copy
+     * of the key this app keeps is one it can zero.
+     */
     private fun readImportedKey(uri: Uri) {
-        val name = uri.lastPathSegment?.substringAfterLast('/') ?: "imported key"
-        val pem = runCatching {
-            contentResolver.openInputStream(uri)?.use { stream ->
-                // A private key is a few KB; refuse to slurp an arbitrary file.
-                String(stream.readBounded(MAX_KEY_BYTES), Charsets.UTF_8)
-            }
+        // One byte past the cap, so an oversized file is refused rather than
+        // silently truncated into a key that cannot parse.
+        val bytes = runCatching {
+            contentResolver.openInputStream(uri)?.use { it.readBounded(MAX_KEY_BYTES + 1) }
         }.getOrNull()
 
-        if (pem != null && pem.contains("PRIVATE KEY")) {
-            sshViewModel.importPrivateKey(pem, name)
+        when {
+            bytes == null -> sshViewModel.reportKeyImportProblem(KeyImportProblem.Unreadable)
+
+            bytes.size > MAX_KEY_BYTES -> {
+                bytes.fill(0)
+                sshViewModel.reportKeyImportProblem(KeyImportProblem.TooLarge)
+            }
+
+            else -> importDecodedKey(bytes, uri)
         }
     }
 
+    /** Decodes into a wipeable array; Charset.decode would retain an opaque copy. */
+    private fun importDecodedKey(bytes: ByteArray, uri: Uri) {
+        // UTF-8 produces no more UTF-16 code units than input bytes, so this is
+        // sufficient without a growable buffer that could retain the key.
+        val chars = CharArray(bytes.size)
+        var ownedPem: CharArray? = null
+        try {
+            val decoder = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            val target = CharBuffer.wrap(chars)
+            val decoded = decoder.decode(ByteBuffer.wrap(bytes), target, true)
+            val flushed = if (decoded.isUnderflow) decoder.flush(target) else decoded
+            if (!decoded.isUnderflow || !flushed.isUnderflow) {
+                sshViewModel.reportKeyImportProblem(KeyImportProblem.NotAPrivateKey)
+                return
+            }
+
+            ownedPem = chars.copyOf(target.position())
+            sshViewModel.importPrivateKey(ownedPem, displayNameOf(uri))
+            // The ViewModel now owns it, including rejection-path wiping.
+            ownedPem = null
+        } finally {
+            bytes.fill(0)
+            chars.fill('\u0000')
+            ownedPem?.fill('\u0000')
+        }
+    }
+
+    /**
+     * The provider's own name for the document, which is the one the user
+     * recognises. It is also attacker-controlled text, so
+     * [com.hermesagent.mobile.data.ssh.sanitizeKeyDisplayName] — not this
+     * method — decides what is safe to show.
+     */
+    private fun displayNameOf(uri: Uri): String = runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull() ?: uri.lastPathSegment.orEmpty()
+
     private companion object {
         val KEY_MIME_TYPES = arrayOf("*/*")
-        const val MAX_KEY_BYTES = 64 * 1024
     }
 }

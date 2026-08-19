@@ -55,7 +55,22 @@ data class HostProfile(
         acceptedFingerprint = acceptedFingerprint
             ?.takeIf { destination.host == host && destination.port == port },
     )
+
+    /** What trust is scoped to. See [HostAnchor]. */
+    val anchor: HostAnchor get() = HostAnchor(host, port)
 }
+
+/**
+ * The `(host, port)` a host key belongs to.
+ *
+ * Trust is anchored here and nowhere else: an account rename is still the same
+ * box with the same key, while a different host or port is a different sshd
+ * whose key has never been reviewed. Carrying it as a value — rather than
+ * comparing two strings at the call site — is what lets a pending review and a
+ * completed probe be checked against the profile they were actually started
+ * for, so host A's fingerprint can never be stored under host B.
+ */
+data class HostAnchor(val host: String, val port: Int)
 
 /**
  * How the SSH layer proves who the user is.
@@ -122,8 +137,12 @@ class SshCredential private constructor(
 
         fun password(value: String) = SshCredential(value.toCharArray(), null, null)
 
-        fun privateKey(pem: String, passphrase: String?) =
-            SshCredential(null, pem.toCharArray(), passphrase?.takeIf { it.isNotEmpty() }?.toCharArray())
+        /**
+         * Copies [pem] rather than adopting it: the screen keeps its own array
+         * so it can still offer a retry, and each side wipes what it holds.
+         */
+        fun privateKey(pem: CharArray, passphrase: String?) =
+            SshCredential(null, pem.copyOf(), passphrase?.takeIf { it.isNotEmpty() }?.toCharArray())
     }
 }
 
@@ -159,5 +178,30 @@ sealed interface ProbeResult {
  * not a string we parse back out of stderr. [TailscaleSshRefused] has no
  * Desktop equivalent at all — Desktop's OpenSSH would simply move on to the
  * next auth method, and this app deliberately does not.
+ *
+ * [CryptoUnavailable] and [BadCommandResult] have no Desktop equivalent either:
+ * Desktop shells out to OpenSSH, so it has neither a JCE provider to resolve
+ * nor a sentinel to check.
  */
-enum class ProbeFailure { Unreachable, AuthFailed, TailscaleSshRefused, Timeout, Cancelled, Unknown }
+enum class ProbeFailure {
+    Unreachable,
+    AuthFailed,
+    TailscaleSshRefused,
+    Timeout,
+    Cancelled,
+
+    /**
+     * This runtime cannot supply the algorithms an SSH handshake needs. See
+     * [SshSecurityProvider]; the probe fails closed rather than negotiating
+     * down to whatever is left.
+     */
+    CryptoUnavailable,
+
+    /**
+     * Connected and authenticated, but the probe command did not produce the
+     * exact sentinel with exit status zero. Not a success.
+     */
+    BadCommandResult,
+
+    Unknown,
+}

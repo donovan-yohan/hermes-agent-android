@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Legacy (API < 31) counterpart of data_extraction_rules.xml. -->
+<!--
+  Legacy (API < 31) counterpart of data_extraction_rules.xml. The two have to
+  say the same thing, or the accepted host key travels on old devices and not on
+  new ones; `BackupRulesTest` checks both.
+-->
 <full-backup-content>
+    <exclude domain="file" path="datastore" />
     <exclude domain="sharedpref" path="secrets" />
     <exclude domain="file" path="secrets" />
 </full-backup-content>

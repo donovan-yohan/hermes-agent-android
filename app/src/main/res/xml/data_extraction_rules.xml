@@ -1,15 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Host profiles and appearance settings may travel; nothing secret is stored on
-  disk in Phase 1 (passwords and private keys live in memory only), but the rule
-  set is written now so a later secret store cannot be backed up by default.
+  What may leave this device.
+
+  The accepted host-key fingerprint may not. It is a decision a person made
+  after comparing a fingerprint out of band on *this* device; restoring it onto
+  a new phone would hand that phone a trusted host it never reviewed, and would
+  do it silently. Excluding it means the first probe on a restored install is a
+  first use again — one extra fingerprint review, which is the safe direction.
+
+  The whole `datastore` directory is excluded rather than one key, because
+  DataStore stores every preference in one `hermes.preferences_pb` file plus its
+  temporary siblings, and a rule that names a key inside a protobuf blob is a
+  rule that does not exist. The appearance choice lives in the same file and so
+  does not travel either; that is a theme, and re-picking it costs one tap.
+
+  Nothing secret is stored on disk at all — passwords, passphrases and private
+  keys live in memory only — but the `secrets` rules stay so that a later secret
+  store cannot be backed up by default.
+
+  `BackupRulesTest` is the gate; this comment is not.
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="file" path="datastore" />
         <exclude domain="sharedpref" path="secrets" />
         <exclude domain="file" path="secrets" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="file" path="datastore" />
         <exclude domain="sharedpref" path="secrets" />
         <exclude domain="file" path="secrets" />
     </device-transfer>

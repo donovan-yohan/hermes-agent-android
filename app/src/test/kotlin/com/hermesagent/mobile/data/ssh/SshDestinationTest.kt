@@ -29,7 +29,7 @@ class SshDestinationTest {
 
     @Test
     fun `a bare user and host default to port 22`() {
-        assertEquals(SshDestination("donovanyohan", "dev", 22), parse("donovanyohan@dev"))
+        assertEquals(SshDestination("test-user", "test-host", 22), parse("test-user@test-host"))
         assertEquals(SshDestination("hermes", "hermes-box.local", 22), parse("hermes@hermes-box.local"))
     }
 
@@ -49,37 +49,37 @@ class SshDestinationTest {
 
     @Test
     fun `outer whitespace is trimmed, because a paste usually carries some`() {
-        assertEquals(SshDestination("hermes", "dev", 22), parse("  hermes@dev\n"))
-        assertEquals(SshDestination("hermes", "dev", 2222), parse("\thermes@dev:2222 "))
+        assertEquals(SshDestination("hermes", "test-host", 22), parse("  hermes@test-host\n"))
+        assertEquals(SshDestination("hermes", "test-host", 2222), parse("\thermes@test-host:2222 "))
     }
 
     @Test
     fun `whitespace inside is refused rather than stripped`() {
         // Silently deleting it would turn a typo into a different, valid host.
-        reject("her mes@dev")
+        reject("her mes@test-host")
         reject("hermes@he rmes-box")
-        reject("hermes @dev")
+        reject("hermes @test-host")
     }
 
     @Test
     fun `a missing user or host is refused`() {
         reject("")
         reject("   ")
-        reject("dev")
-        reject("@dev")
+        reject("test-host")
+        reject("@test-host")
         reject("hermes@")
         reject("hermes@:2222")
     }
 
     @Test
     fun `an unusable port is refused instead of falling back to 22`() {
-        reject("hermes@dev:")
-        reject("hermes@dev:0")
-        reject("hermes@dev:65536")
-        reject("hermes@dev:ssh")
-        reject("hermes@dev:+22")
-        reject("hermes@dev:-22")
-        reject("hermes@dev:2 2")
+        reject("hermes@test-host:")
+        reject("hermes@test-host:0")
+        reject("hermes@test-host:65536")
+        reject("hermes@test-host:ssh")
+        reject("hermes@test-host:+22")
+        reject("hermes@test-host:-22")
+        reject("hermes@test-host:2 2")
     }
 
     @Test
@@ -95,8 +95,8 @@ class SshDestinationTest {
 
     @Test
     fun `formatting leaves port 22 implicit and brackets IPv6`() {
-        assertEquals("hermes@dev", SshDestination("hermes", "dev").format())
-        assertEquals("hermes@dev:2222", SshDestination("hermes", "dev", 2222).format())
+        assertEquals("hermes@test-host", SshDestination("hermes", "test-host").format())
+        assertEquals("hermes@test-host:2222", SshDestination("hermes", "test-host", 2222).format())
         assertEquals("hermes@[fd7a:115c::1]", SshDestination("hermes", "fd7a:115c::1").format())
         assertEquals("hermes@[fd7a:115c::1]:2222", SshDestination("hermes", "fd7a:115c::1", 2222).format())
     }
@@ -104,7 +104,7 @@ class SshDestinationTest {
     @Test
     fun `formatting round-trips through the parser`() {
         val destinations = listOf(
-            SshDestination("donovanyohan", "dev"),
+            SshDestination("test-user", "test-host"),
             SshDestination("hermes", "hermes-box.local", 2222),
             SshDestination("hermes", "100.64.0.1", 22),
             SshDestination("hermes", "fd7a:115c::1"),
@@ -117,11 +117,11 @@ class SshDestinationTest {
 
     @Test
     fun `parsing round-trips through the formatter`() {
-        for (text in listOf("hermes@dev", "hermes@dev:2222", "hermes@[fd7a:115c::1]:2222")) {
+        for (text in listOf("hermes@test-host", "hermes@test-host:2222", "hermes@[fd7a:115c::1]:2222")) {
             assertEquals(text, parse(text).format())
         }
         // Port 22 typed out loud is the one non-identity case, and it is a
         // normalisation, not a loss.
-        assertEquals("hermes@dev", parse("hermes@dev:22").format())
+        assertEquals("hermes@test-host", parse("hermes@test-host:22").format())
     }
 }

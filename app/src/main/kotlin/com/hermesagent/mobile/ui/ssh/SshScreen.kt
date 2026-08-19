@@ -1,5 +1,10 @@
 package com.hermesagent.mobile.ui.ssh
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.Window
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +15,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,10 +25,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -32,9 +41,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.ssh.AuthMethod
+import com.hermesagent.mobile.data.ssh.HostAnchor
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.ProbeFailure
 import com.hermesagent.mobile.data.ssh.SshProbe
+import com.hermesagent.mobile.data.ssh.hostKeyPublicKeyPath
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -66,10 +77,18 @@ fun SshScreen(
     val tokens = HermesTheme.tokens
     val inset = HermesTheme.spacing.pageInset
 
+    SecureWhileVisible()
+
     Column(
         modifier
             .fillMaxSize()
             .background(tokens.chatSurface)
+            // Edge to edge means the keyboard and the gesture bar draw over
+            // this column, and the actions that matter are at the bottom of it.
+            // `imePadding` consumes the IME inset first, so the navigation-bar
+            // pass only adds what is left rather than doubling it.
+            .imePadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = inset, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -155,12 +174,19 @@ fun SshScreen(
             }
 
             Text(
-                "Credentials stay in memory for this screen only. Nothing secret is written to " +
+                "Credentials stay in memory for this screen only, and are dropped as soon as a " +
+                    "probe has used them — a probe that stops at the fingerprint review has not, " +
+                    "so accepting and retrying does not ask again. Nothing secret is written to " +
                     "disk, logged, or backed up. Only host, port, username, method and the " +
-                    "fingerprint you accept are saved.",
+                    "fingerprint you accept are saved. This screen is excluded from screenshots " +
+                    "and from the recent-apps preview.",
                 style = HermesTheme.type.scaffoldMeta,
                 color = tokens.scaffoldMeta,
             )
+        }
+
+        state.keyImportProblem?.let { problem ->
+            ErrorState(title = "That key was not imported", description = problem.message())
         }
 
         state.destinationError?.let { problem ->
@@ -259,7 +285,35 @@ private fun ProbeFailure.title(): String = when (this) {
     ProbeFailure.TailscaleSshRefused -> "Reachable, but not over Tailscale SSH"
     ProbeFailure.Timeout -> "The host did not answer"
     ProbeFailure.Cancelled -> "Probe cancelled"
+    ProbeFailure.CryptoUnavailable -> "This device cannot run the handshake"
+    ProbeFailure.BadCommandResult -> "Connected, but the probe command did not check out"
     ProbeFailure.Unknown -> "The probe failed"
+}
+
+/**
+ * Keeps this surface out of screenshots, screen recordings, casts and the
+ * recent-apps preview for exactly as long as it is on screen.
+ *
+ * Scoped to the composable rather than set once on the Activity: this is the
+ * only surface that holds a password, a passphrase or a host-key decision, and
+ * a process-wide `FLAG_SECURE` would also block screenshots of a chat transcript
+ * nobody asked to protect.
+ */
+@Composable
+private fun SecureWhileVisible() {
+    val window = LocalContext.current.findActivityWindow()
+
+    DisposableEffect(window) {
+        window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+}
+
+/** Null in a `@Preview` or any other host that is not an Activity. */
+private tailrec fun Context.findActivityWindow(): Window? = when (this) {
+    is Activity -> window
+    is ContextWrapper -> baseContext.findActivityWindow()
+    else -> null
 }
 
 /** Short enough for a third of a segmented control, and still the real name. */
@@ -291,9 +345,15 @@ private fun HostKeyReview(
     ) {
         Text("First connection to this host", style = HermesTheme.type.bodyStrong, color = tokens.textPrimary)
         Text(
-            "Hermes has never seen this host's key. Compare the fingerprint with what the " +
-                "server reports (`ssh-keygen -lf /etc/ssh/ssh_host_${keyType.removePrefix("ssh-")}_key.pub`) " +
-                "before accepting. Nothing has been authenticated yet.",
+            buildString {
+                append("Hermes has never seen this host's key. Compare the fingerprint with what ")
+                append("the server reports")
+                // The wire name is not the file name — `ecdsa-sha2-nistp256`
+                // lives in `ssh_host_ecdsa_key.pub`. A type with no known file
+                // gets no command rather than a path that is not there.
+                hostKeyPublicKeyPath(keyType)?.let { append(" (`ssh-keygen -lf $it`)") }
+                append(" before accepting. Nothing has been authenticated yet.")
+            },
             style = HermesTheme.type.caption,
             color = tokens.textSecondary,
         )
@@ -319,9 +379,9 @@ private fun LabelledField(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionLabel(label)
         Box(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                 .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp, vertical = 11.dp),
         ) {
@@ -365,9 +425,10 @@ private fun SshPreviewFirstUse() {
                 ),
                 destination = "hermes@hermes-box.local",
                 password = "••••",
-                pendingHostKey = PendingHostKey(
+                hostKeyReview = PendingHostKey(
                     fingerprint = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01",
                     keyType = "ssh-ed25519",
+                    anchor = HostAnchor("hermes-box.local", 22),
                 ),
             ),
             actions = SshActions(),

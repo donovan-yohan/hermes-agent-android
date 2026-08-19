@@ -43,3 +43,25 @@ fun sha256Fingerprint(publicKeyBlob: ByteArray): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(publicKeyBlob)
     return "SHA256:" + Base64.getEncoder().withoutPadding().encodeToString(digest)
 }
+
+/**
+ * The OpenSSH public-key file for a key of this wire type, or null.
+ *
+ * The review screen prints an `ssh-keygen -lf …` command so a fingerprint can
+ * be checked out of band, and that command is only useful if the path exists.
+ * The wire name is not the file name: `sshd` stores one key per *algorithm*, so
+ * all three `ecdsa-sha2-nistp*` types live in `ssh_host_ecdsa_key`, and `ssh-dss`
+ * is stored as `dsa`. Null for a type this app has no mapping for, which is the
+ * screen's cue to leave the command out rather than print a path that is not
+ * there.
+ */
+fun hostKeyPublicKeyPath(keyType: String): String? {
+    val base = when (keyType.substringBefore("-cert-v01@openssh.com")) {
+        "ssh-ed25519" -> "ed25519"
+        "ssh-rsa" -> "rsa"
+        "ssh-dss" -> "dsa"
+        "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521" -> "ecdsa"
+        else -> return null
+    }
+    return "/etc/ssh/ssh_host_${base}_key.pub"
+}

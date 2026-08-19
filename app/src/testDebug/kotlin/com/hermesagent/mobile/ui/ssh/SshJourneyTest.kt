@@ -50,7 +50,7 @@ class SshJourneyTest {
 
     private val store = InMemoryHostProfileStore()
 
-    private fun launch(probe: SshProbe = FakeSshProbe(delayMillis = 0)) {
+    private fun launch(probe: SshProbe = FakeSshProbe(delayMillis = 0)): SshViewModel {
         val viewModel = SshViewModel(store, probe)
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
@@ -72,6 +72,7 @@ class SshJourneyTest {
                 )
             }
         }
+        return viewModel
     }
 
     @Test
@@ -110,7 +111,7 @@ class SshJourneyTest {
     fun `a destination alone reaches the host-key review and then a probe`() {
         launch()
 
-        compose.onNodeWithContentDescription("SSH destination").performTextInput("donovanyohan@dev")
+        compose.onNodeWithContentDescription("SSH destination").performTextInput("test-user@test-host")
         compose.waitForIdle()
         compose.onNodeWithText("Run probe").performClick()
 
@@ -128,8 +129,8 @@ class SshJourneyTest {
     @Test
     fun `a box that is only on the tailnet is told so, not asked for a password`() {
         store.saved.value = HostProfile(
-            host = "dev",
-            username = "donovanyohan",
+            host = "test-host",
+            username = "test-user",
             acceptedFingerprint = FakeSshProbe.DEFAULT_FINGERPRINT,
         )
         launch(FakeSshProbe(tailscaleSshEnabled = false, delayMillis = 0))
@@ -143,6 +144,64 @@ class SshJourneyTest {
             "the copy has to separate the tailnet from Tailscale SSH",
             1,
             compose.countWithText("sharing a tailnet only provides the route", substring = true),
+        )
+    }
+
+    @Test
+    fun `retargeting the destination takes the fingerprint review off the screen`() {
+        launch()
+
+        compose.onNodeWithContentDescription("SSH destination").performTextInput("test-user@host-a")
+        compose.waitForIdle()
+        compose.onNodeWithText("Run probe").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.countWithText("First connection to this host") == 1
+        }
+
+        // The field stays editable while a review is up, so the review has to
+        // stop being about this form the moment the form moves.
+        compose.onNodeWithContentDescription("SSH destination").performTextInput("2")
+        compose.waitForIdle()
+
+        assertEquals(
+            "a review for host-a is not a decision about host-a2",
+            0,
+            compose.countWithText("First connection to this host"),
+        )
+        assertEquals(0, compose.countWithText("Accept this key"))
+    }
+
+    @Test
+    fun `a document that is not a key says so instead of going quiet`() {
+        val viewModel = launch()
+
+        viewModel.importPrivateKey("notes about my PRIVATE KEY".toCharArray(), "notes.txt")
+        compose.waitForIdle()
+
+        assertEquals(1, compose.countWithText("That key was not imported"))
+        assertEquals(
+            "and says what would have been accepted",
+            1,
+            compose.countWithText("OpenSSH or PKCS#8 private key", substring = true),
+        )
+        assertEquals("junk must not read as a loaded key", 0, compose.countWithText("Key loaded", substring = true))
+    }
+
+    @Test
+    fun `the fingerprint review names the file the key is actually kept in`() {
+        launch()
+
+        compose.onNodeWithContentDescription("SSH destination").performTextInput("test-user@test-host")
+        compose.waitForIdle()
+        compose.onNodeWithText("Run probe").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.countWithText("First connection to this host") == 1
+        }
+
+        assertEquals(
+            "the prescribed out-of-band check has to be runnable",
+            1,
+            compose.countWithText("ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub", substring = true),
         )
     }
 

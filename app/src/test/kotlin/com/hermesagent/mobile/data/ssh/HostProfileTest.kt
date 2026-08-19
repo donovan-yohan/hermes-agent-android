@@ -21,9 +21,9 @@ class HostProfileTest {
 
     @Test
     fun `renaming only the user keeps the fingerprint accepted for this box`() {
-        val renamed = trusted.withDestination(SshDestination("donovanyohan", "hermes-box", 22))
+        val renamed = trusted.withDestination(SshDestination("test-user", "hermes-box", 22))
 
-        assertEquals("donovanyohan", renamed.username)
+        assertEquals("test-user", renamed.username)
         assertEquals(
             "trust is scoped to the host key, not to the account",
             trusted.acceptedFingerprint,
@@ -102,6 +102,6 @@ class HostProfileTest {
     fun `the Tailscale SSH credential carries nothing`() {
         assertFalse(SshCredential.none().carriesSecret)
         assertTrue(SshCredential.password("s3cret").carriesSecret)
-        assertTrue(SshCredential.privateKey("-----BEGIN OPENSSH PRIVATE KEY-----", null).carriesSecret)
+        assertTrue(SshCredential.privateKey("-----BEGIN OPENSSH PRIVATE KEY-----".toCharArray(), null).carriesSecret)
     }
 }

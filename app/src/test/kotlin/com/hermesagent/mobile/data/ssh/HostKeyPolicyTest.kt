@@ -3,6 +3,7 @@ package com.hermesagent.mobile.data.ssh
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.KeyPairGenerator
@@ -94,6 +95,51 @@ class HostKeyPolicyTest {
         val verifier = TofuHostKeyVerifier(storedFingerprint = null)
         verifier.verify("hermes-box", 22, generateHostKey())
         assertEquals("ecdsa-sha2-nistp256", verifier.keyType)
+    }
+
+    @Test
+    fun `the verification command names the file sshd actually keeps the key in`() {
+        // The wire name is not the file name: sshd stores one key per algorithm,
+        // so every nistp curve lives in the same `ssh_host_ecdsa_key`. Building
+        // the path by string-substituting the wire name produced
+        // `/etc/ssh/ssh_host_ecdsa-sha2-nistp256_key.pub`, which does not exist,
+        // so the out-of-band check this screen prescribes could not be run.
+        assertEquals("/etc/ssh/ssh_host_ecdsa_key.pub", hostKeyPublicKeyPath("ecdsa-sha2-nistp256"))
+        assertEquals("/etc/ssh/ssh_host_ecdsa_key.pub", hostKeyPublicKeyPath("ecdsa-sha2-nistp384"))
+        assertEquals("/etc/ssh/ssh_host_ecdsa_key.pub", hostKeyPublicKeyPath("ecdsa-sha2-nistp521"))
+        assertEquals("/etc/ssh/ssh_host_ed25519_key.pub", hostKeyPublicKeyPath("ssh-ed25519"))
+        assertEquals("/etc/ssh/ssh_host_rsa_key.pub", hostKeyPublicKeyPath("ssh-rsa"))
+        assertEquals("/etc/ssh/ssh_host_dsa_key.pub", hostKeyPublicKeyPath("ssh-dss"))
+    }
+
+    @Test
+    fun `a certificate host key points at the key it certifies`() {
+        assertEquals(
+            "/etc/ssh/ssh_host_ed25519_key.pub",
+            hostKeyPublicKeyPath("ssh-ed25519-cert-v01@openssh.com"),
+        )
+        assertEquals(
+            "/etc/ssh/ssh_host_ecdsa_key.pub",
+            hostKeyPublicKeyPath("ecdsa-sha2-nistp256-cert-v01@openssh.com"),
+        )
+    }
+
+    @Test
+    fun `an unknown key type gets no command rather than a path that is not there`() {
+        assertNull(hostKeyPublicKeyPath("unknown"))
+        assertNull(hostKeyPublicKeyPath(""))
+        assertNull(hostKeyPublicKeyPath("sk-ssh-ed25519@openssh.com"))
+    }
+
+    @Test
+    fun `every type the verifier can report has a file or is deliberately absent`() {
+        // The verifier reports whatever `KeyType.fromKey` names, so the mapping
+        // and the wire names have to be checked against each other, not assumed.
+        val key = generateHostKey()
+        val verifier = TofuHostKeyVerifier(storedFingerprint = null)
+        verifier.verify("hermes-box", 22, key)
+
+        assertEquals("/etc/ssh/ssh_host_ecdsa_key.pub", hostKeyPublicKeyPath(verifier.keyType))
     }
 
     /** P-256 because every JVM has it; the policy is key-type agnostic. */

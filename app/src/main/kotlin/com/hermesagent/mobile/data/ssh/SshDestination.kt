@@ -6,7 +6,7 @@ package com.hermesagent.mobile.data.ssh
  * Three fields on a phone keyboard is three chances to mistype and two fields
  * whose answer is almost always the same. `ssh` itself takes one argument, and
  * so does this — on a tailnet the normal value is a MagicDNS short name
- * (`you@dev`), which resolves on any signed-in device
+ * (`you@test-host`), which resolves on any signed-in device
  * (https://tailscale.com/docs/features/magicdns).
  *
  * Port 22 is implicit in both directions: it is never required on input and
