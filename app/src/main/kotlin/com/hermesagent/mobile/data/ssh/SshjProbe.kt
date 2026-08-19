@@ -226,28 +226,23 @@ class SshjProbe internal constructor(
 /**
  * Owns the one transport a probe opens, so any thread can close it.
  *
- * Adoption is guarded rather than assumed: a cancellation that lands between
- * opening the connection and publishing it here would otherwise leave a live
- * socket nobody holds. If that happens the transport is closed immediately and
- * the probe stops before it can connect to anything.
+ * Admission is guarded rather than assumed. If cancellation gets the lock first,
+ * no transport factory runs; if opening gets there first, the transport is
+ * published before cancellation can continue, so cancellation owns and closes
+ * it before any later wire operation is admitted.
  */
-private class TransportHandle(private val transports: SshTransports) {
+internal class TransportHandle(private val transports: SshTransports) {
 
     private val lock = Any()
     private var transport: SshTransport? = null
     private var operation: OperationTicket? = null
     private var stopped = false
 
-    fun open(storedFingerprint: String?): SshTransport {
-        val opened = transports.open(storedFingerprint)
-        val adopted = synchronized(lock) {
-            if (stopped) false else { transport = opened; true }
+    fun open(storedFingerprint: String?): SshTransport = synchronized(lock) {
+        if (stopped) {
+            throw CancellationException("The probe stopped before it opened a transport.")
         }
-        if (!adopted) {
-            runCatching { opened.close() }
-            throw CancellationException("The probe stopped before it opened a connection.")
-        }
-        return opened
+        transports.open(storedFingerprint).also { transport = it }
     }
 
     /**

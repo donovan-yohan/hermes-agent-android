@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.ssh
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancelAndJoin
@@ -9,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -273,6 +275,19 @@ class SshjProbeTest {
 
         assertEquals(ProbeFailure.CryptoUnavailable, (result as ProbeResult.Failed).kind)
         assertEquals("no X25519", result.message)
+    }
+
+    @Test
+    fun `a cancellation that wins transport admission invokes no factory`() {
+        val opened = AtomicBoolean(false)
+        val handle = TransportHandle {
+            opened.set(true)
+            FakeTransport()
+        }
+        handle.close()
+
+        assertThrows(CancellationException::class.java) { handle.open(trusted) }
+        assertFalse("a stopped probe must not invoke the transport factory", opened.get())
     }
 
     @Test
