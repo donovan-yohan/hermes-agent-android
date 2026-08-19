@@ -59,27 +59,29 @@ fun Composer(
 
     Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
         Hairline()
-        Row(
-            modifier = Modifier
+        Column(
+            Modifier
                 .fillMaxWidth()
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 10.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Attachments are visibly present and visibly unavailable, rather
-            // than hidden — the capability is real on Desktop and this build
-            // has not ported it.
-            QuietIconButton(
-                icon = Icons.Filled.Add,
-                contentDescription = "Attach a file (not available in this build)",
-                onClick = {},
-                enabled = false,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // Attachments are visibly present and visibly unavailable, rather
+                // than hidden — the capability is real on Desktop and this build
+                // has not ported it.
+                QuietIconButton(
+                    icon = Icons.Filled.Add,
+                    contentDescription = "Attach a file (not available in this build)",
+                    onClick = {},
+                    enabled = false,
+                )
 
-            Column(Modifier.weight(1f)) {
                 Box(
                     Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .border(
                             width = 1.dp,
                             color = if (isStreaming) tokens.composerRing else tokens.strokeSecondary,
@@ -111,19 +113,23 @@ fun Composer(
                             .semantics { contentDescription = "Message Hermes" },
                     )
                 }
-                Text(
-                    text = statusLine,
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.scaffoldMeta,
-                    modifier = Modifier.padding(top = 4.dp, start = 2.dp),
-                )
+
+                if (isStreaming) {
+                    StopButton(onStop)
+                } else {
+                    SendButton(onSend, enabled = canSend)
+                }
             }
 
-            if (isStreaming) {
-                StopButton(onStop)
-            } else {
-                SendButton(onSend, enabled = canSend)
-            }
+            Text(
+                text = statusLine,
+                style = HermesTheme.type.scaffoldMeta,
+                color = tokens.scaffoldMeta,
+                modifier = Modifier.padding(
+                    top = 4.dp,
+                    start = HermesTheme.spacing.touchTarget + 6.dp,
+                ),
+            )
         }
     }
 }
