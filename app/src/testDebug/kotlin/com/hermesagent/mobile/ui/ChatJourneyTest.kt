@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -30,6 +31,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.math.abs
 
 /**
  * The core phone journey, driven through real Compose semantics on the JVM
@@ -190,9 +192,23 @@ class ChatJourneyTest {
     }
 
     @Test
-    fun `the attachment affordance is present and visibly unavailable`() {
+    fun `the composer omits unavailable attachments and centers typed text`() {
         launch()
-        compose.onNodeWithContentDescription("Attach a file (not available in this build)").assertIsDisplayed()
+        assertEquals(
+            "an unavailable attachment action must not steal composer width",
+            0,
+            compose.countWithContentDescription("Attach a file (not available in this build)"),
+        )
+
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("vertically centered")
+        compose.waitForIdle()
+
+        val shell = compose.onNodeWithTag("Composer field shell").fetchSemanticsNode().boundsInRoot
+        val input = compose.onNodeWithContentDescription("Message Hermes").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "the typed line must stay vertically centered in the composer field",
+            abs(shell.center.y - input.center.y) <= 1f,
+        )
     }
 
     @Test

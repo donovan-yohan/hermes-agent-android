@@ -16,7 +16,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -24,13 +23,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.common.Hairline
-import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
@@ -69,25 +68,18 @@ fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // Attachments are visibly present and visibly unavailable, rather
-                // than hidden — the capability is real on Desktop and this build
-                // has not ported it.
-                QuietIconButton(
-                    icon = Icons.Filled.Add,
-                    contentDescription = "Attach a file (not available in this build)",
-                    onClick = {},
-                    enabled = false,
-                )
-
                 Box(
                     Modifier
                         .weight(1f)
+                        .heightIn(min = HermesTheme.spacing.touchTarget)
                         .border(
                             width = 1.dp,
                             color = if (isStreaming) tokens.composerRing else tokens.strokeSecondary,
                             shape = RoundedCornerShape(16.dp),
                         )
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .testTag("Composer field shell"),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
                     if (draft.isEmpty()) {
                         Text(
@@ -127,7 +119,7 @@ fun Composer(
                 color = tokens.scaffoldMeta,
                 modifier = Modifier.padding(
                     top = 4.dp,
-                    start = HermesTheme.spacing.touchTarget + 6.dp,
+                    start = 14.dp,
                 ),
             )
         }
