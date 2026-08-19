@@ -118,9 +118,7 @@ class ChatViewModel(
      */
     fun selectSession(id: String) {
         if (activeSessionId.value == id) return
-        activeSessionId.value = id
-        draft.value = ""
-        markRead(id)
+        rehome(id)
     }
 
     fun createSession(): String {
@@ -135,9 +133,24 @@ class ChatViewModel(
                 status = SessionStatus.Idle,
             ),
         )
+        rehome(id)
+        return id
+    }
+
+    /**
+     * Point the foreground at [id] and drop the draft that belonged to the
+     * session being left.
+     *
+     * The draft is session-scoped state the cache deliberately does not hold,
+     * so every path that moves the foreground has to go through here — a
+     * half-written prompt appearing under, and sendable to, a session the user
+     * never typed it in is the bug this exists to prevent. `null` is a real
+     * outcome: archiving the last live session leaves nothing to land on.
+     */
+    private fun rehome(id: String?) {
         activeSessionId.value = id
         draft.value = ""
-        return id
+        id?.let(::markRead)
     }
 
     fun renameSession(id: String, title: String) {
@@ -148,11 +161,15 @@ class ChatViewModel(
 
     fun setArchived(id: String, archived: Boolean) {
         cache.session(id)?.let { cache.upsertSession(it.copy(archived = archived)) }
+        // Archiving what the user is looking at picks a replacement, which is a
+        // re-home like any other — not a quiet id swap under a live draft.
         if (archived && activeSessionId.value == id) {
-            activeSessionId.value = cache.state.value.sessions.values
-                .filterNot { it.archived }
-                .maxByOrNull { it.lastActiveAtMillis }
-                ?.id
+            rehome(
+                cache.state.value.sessions.values
+                    .filterNot { it.archived }
+                    .maxByOrNull { it.lastActiveAtMillis }
+                    ?.id,
+            )
         }
     }
 

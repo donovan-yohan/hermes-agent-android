@@ -112,6 +112,17 @@ private fun UserBubble(turn: UserTurn) {
     }
 }
 
+/**
+ * What a screen reader hears when a turn starts producing.
+ *
+ * Deliberately constant. A live region re-announces whenever its description
+ * changes, so anything derived from the streamed text would read the reply
+ * aloud a token at a time — the sighted equivalent of the dots being the only
+ * cue is one announcement, not a running commentary. The finished prose is
+ * readable as ordinary text once it lands.
+ */
+private const val WORKING_STATUS = "Hermes is working"
+
 @Composable
 private fun AssistantProse(turn: AssistantTurn) {
     val blocks = remember(turn.markdown) { parseMarkdown(turn.markdown) }
@@ -125,12 +136,12 @@ private fun AssistantProse(turn: AssistantTurn) {
         for ((index, block) in blocks.withIndex()) {
             MarkdownBlockView(block)
             if (turn.streaming && index == blocks.lastIndex) {
-                WorkingDots()
+                WorkingDots(status = WORKING_STATUS)
             }
         }
 
         if (blocks.isEmpty() && turn.streaming) {
-            WorkingDots()
+            WorkingDots(status = WORKING_STATUS)
         }
 
         if (turn.stopped) {

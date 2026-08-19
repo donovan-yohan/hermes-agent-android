@@ -76,6 +76,23 @@ fun contrastRatio(a: Color, b: Color): Float {
 fun readableOn(color: Color): Color =
     if (relativeLuminance(color) > 0.58f) Color(0xFF161616) else Color(0xFFFFFFFF)
 
+/**
+ * Desktop `renderedModeFor` (`themes/context.tsx:148-158`): a palette may keep
+ * a bright background even when the user asked for dark, so the mode the app
+ * *paints* is decided by the background, not by the request. This is what
+ * chooses which per-mode knobs [HermesTokens] uses, so a preset that breaks the
+ * convention stays a data edit.
+ *
+ * The luma here is deliberately **not** [relativeLuminance]: Desktop weights
+ * the raw sRGB channels without gamma-correcting them, and matching that is the
+ * point.
+ */
+fun rendersDark(background: Color, requestedDark: Boolean): Boolean {
+    if (background.alpha <= 0f) return requestedDark
+    val luma = 0.2126f * background.red + 0.7152f * background.green + 0.0722f * background.blue
+    return luma <= 0.5f
+}
+
 /** Same colour at a different alpha. Used for the text/hairline ladders. */
 fun Color.withAlpha(alpha: Float): Color = copy(alpha = alpha.coerceIn(0f, 1f))
 

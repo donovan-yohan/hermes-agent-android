@@ -17,10 +17,13 @@ class SessionGroupingTest {
     private val locale: Locale = Locale.UK // week starts Monday
 
     /** Wednesday 2026-08-19, 12:00 UTC. */
-    private val now: Long = Calendar.getInstance(zone, locale).apply {
-        clear()
-        set(2026, Calendar.AUGUST, 19, 12, 0, 0)
-    }.timeInMillis
+    private val now: Long = at(2026, Calendar.AUGUST, 19, hour = 12)
+
+    private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0): Long =
+        Calendar.getInstance(zone, locale).apply {
+            clear()
+            set(year, month, day, hour, minute, 0)
+        }.timeInMillis
 
     private fun bucketOf(daysAgo: Int, hoursAgo: Int = 0): SessionBucket =
         calendarBucket(now - daysAgo * DAY - hoursAgo * HOUR, now, zone, locale)
@@ -28,7 +31,7 @@ class SessionGroupingTest {
     @Test
     fun `same day is today, even hours apart`() {
         assertEquals(SessionBucket.Today, bucketOf(0))
-        assertEquals(SessionBucket.Today, bucketOf(0, hoursAgo = 11))
+        assertEquals(SessionBucket.Today, bucketOf(0, hoursAgo = 7))
     }
 
     @Test
@@ -59,8 +62,49 @@ class SessionGroupingTest {
         assertEquals(SessionBucket.Older, bucketOf(400))
     }
 
+    /**
+     * Desktop's nominal day rolls over at 04:00 local, not midnight
+     * (`lib/time.ts:87-95`, `DAY_ROLLOVER_HOUR`): the small hours belong to the
+     * previous evening's run. 03:59 on Wednesday is still Tuesday's day; 04:00
+     * starts Wednesday's.
+     */
     @Test
-    fun `rows carry one divider per bucket, newest first`() {
+    fun `the nominal day boundary is 0400 local, not midnight`() {
+        val lateNight = at(2026, Calendar.AUGUST, 19, hour = 3, minute = 59)
+        val earlyMorning = at(2026, Calendar.AUGUST, 19, hour = 4, minute = 0)
+
+        assertEquals(SessionBucket.Yesterday, calendarBucket(lateNight, now, zone, locale))
+        assertEquals(SessionBucket.Today, calendarBucket(earlyMorning, now, zone, locale))
+
+        // The same boundary one day down: 03:59 on Wednesday and 23:50 on
+        // Tuesday are the same nominal day, which is the whole point of the rule.
+        val tuesdayEvening = at(2026, Calendar.AUGUST, 18, hour = 23, minute = 50)
+        assertEquals(
+            calendarBucket(tuesdayEvening, now, zone, locale),
+            calendarBucket(lateNight, now, zone, locale),
+        )
+    }
+
+    @Test
+    fun `the reference clock rolls over too`() {
+        // "Now" at 02:00 Wednesday is still nominally Tuesday, so a Tuesday
+        // afternoon session is Today rather than Yesterday.
+        val smallHours = at(2026, Calendar.AUGUST, 19, hour = 2)
+        val tuesdayAfternoon = at(2026, Calendar.AUGUST, 18, hour = 15)
+
+        assertEquals(SessionBucket.Today, calendarBucket(tuesdayAfternoon, smallHours, zone, locale))
+        assertEquals(
+            SessionBucket.Yesterday,
+            calendarBucket(at(2026, Calendar.AUGUST, 17, hour = 15), smallHours, zone, locale),
+        )
+    }
+
+    /**
+     * `session-date-groups.ts:136-140`: a divider only ever separates two
+     * groups, so whatever group renders first is never labelled.
+     */
+    @Test
+    fun `the first group is never labelled, later ones are`() {
         val sessions = listOf(
             session("a", now - HOUR),
             session("b", now - 2 * HOUR),
@@ -72,7 +116,7 @@ class SessionGroupingTest {
 
         assertEquals(
             listOf(
-                "divider:Today", "row:a", "row:b",
+                "row:a", "row:b",
                 "divider:Yesterday", "row:c",
                 "divider:LastWeek", "row:d",
             ),
@@ -81,12 +125,26 @@ class SessionGroupingTest {
     }
 
     @Test
+    fun `the first-group rule follows the list, not the calendar`() {
+        // Nothing recent at all: the oldest bucket is now the head, and it is
+        // unlabelled for exactly the same reason.
+        val rows = buildSessionRows(
+            listOf(session("old", now - 40 * DAY), session("older", now - 400 * DAY)),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(listOf("row:old", "row:older"), rows.map(::describe))
+    }
+
+    @Test
     fun `archived sessions are hidden unless asked for`() {
         val sessions = listOf(session("live", now - HOUR), session("old", now - 2 * HOUR, archived = true))
 
-        assertEquals(listOf("divider:Today", "row:live"), buildSessionRows(sessions, now, timeZone = zone, locale = locale).map(::describe))
+        assertEquals(listOf("row:live"), buildSessionRows(sessions, now, timeZone = zone, locale = locale).map(::describe))
         assertEquals(
-            listOf("divider:Today", "row:live", "row:old"),
+            listOf("row:live", "row:old"),
             buildSessionRows(sessions, now, includeArchived = true, timeZone = zone, locale = locale).map(::describe),
         )
     }
@@ -101,10 +159,10 @@ class SessionGroupingTest {
 
         val rows = buildSessionRows(sessions, now, query = "TUNNEL", timeZone = zone, locale = locale)
 
-        assertEquals(listOf("divider:Today", "row:tunnel", "divider:LastWeek", "row:old"), rows.map(::describe))
+        assertEquals(listOf("row:tunnel", "divider:LastWeek", "row:old"), rows.map(::describe))
 
         val byPreview = buildSessionRows(sessions, now, query = "presets", timeZone = zone, locale = locale)
-        assertEquals(listOf("divider:Today", "row:theme"), byPreview.map(::describe))
+        assertEquals(listOf("row:theme"), byPreview.map(::describe))
     }
 
     @Test

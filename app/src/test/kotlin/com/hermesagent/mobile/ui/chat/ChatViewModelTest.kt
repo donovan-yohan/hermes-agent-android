@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -270,6 +271,46 @@ class ChatViewModelTest {
 
         assertEquals("s-2", viewModel.uiState.value.activeSession?.id)
         assertTrue(cache.session("s-1")!!.archived)
+    }
+
+    @Test
+    fun `archiving the active session does not carry its draft into the replacement`() = runTest(dispatcher) {
+        collectState()
+        viewModel.setDraft("half-written prompt for s-1")
+        settle()
+
+        viewModel.setArchived("s-1", archived = true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("s-2", state.activeSession?.id)
+        assertEquals("the draft belonged to the archived session", "", state.draft)
+        assertFalse("an empty draft cannot be sent to the replacement", state.canSend)
+    }
+
+    @Test
+    fun `archiving the last live session clears the draft along with the foreground`() = runTest(dispatcher) {
+        collectState()
+        viewModel.setDraft("still typing")
+        viewModel.setArchived("s-2", archived = true)
+        viewModel.setArchived("s-1", archived = true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNull("nothing live is left to land on", state.activeSession)
+        assertEquals("", state.draft)
+    }
+
+    @Test
+    fun `archiving a session the user is not in leaves the draft alone`() = runTest(dispatcher) {
+        collectState()
+        viewModel.setDraft("keep me")
+
+        viewModel.setArchived("s-2", archived = true)
+        advanceUntilIdle()
+
+        assertEquals("s-1", viewModel.uiState.value.activeSession?.id)
+        assertEquals("keep me", viewModel.uiState.value.draft)
     }
 
     @Test

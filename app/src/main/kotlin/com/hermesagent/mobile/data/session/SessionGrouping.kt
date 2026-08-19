@@ -8,11 +8,13 @@ import java.util.TimeZone
  * Calendar buckets for the session list, ported from Desktop's `calendarBucket`
  * (`apps/desktop/src/lib/time.ts:125-165` @ `f82f2dba`).
  *
- * Desktop additionally leaves the newest run of sessions unlabelled above the
- * first divider (`session-date-groups.ts`, `headRunCutoffMs`). That heuristic
- * is worth porting when the list is long enough for it to matter; on a phone
- * with a demo dataset it would only hide the grouping being tested, so Phase 1
- * ships the calendar buckets alone and the workflow doc records the gap.
+ * Desktop additionally leaves the newest *run* of sessions unlabelled above the
+ * first divider (`session-date-groups.ts`, `headRunCutoffMs`) — a gap-scoring
+ * heuristic that needs a long list to mean anything. Phase 1 does not ship it;
+ * the workflow doc records the gap. What Phase 1 does ship is the other half of
+ * that rule, which needs no heuristic: **whatever group renders first is never
+ * labelled** (`session-date-groups.ts:136-140`). A divider separates two
+ * groups; there is nothing above the first one to separate it from.
  */
 enum class SessionBucket { Today, Yesterday, ThisWeek, LastWeek, ThisMonth, Older }
 
@@ -37,8 +39,8 @@ fun calendarBucket(
     timeZone: TimeZone = TimeZone.getDefault(),
     locale: Locale = Locale.getDefault(),
 ): SessionBucket {
-    val at = startOfDay(atMillis, timeZone, locale)
-    val today = startOfDay(nowMillis, timeZone, locale)
+    val at = nominalDayStart(atMillis, timeZone, locale)
+    val today = nominalDayStart(nowMillis, timeZone, locale)
     val dayDiff = Math.round((today.timeInMillis - at.timeInMillis).toDouble() / DAY_MILLIS)
 
     if (dayDiff <= 0L) return SessionBucket.Today
@@ -57,7 +59,8 @@ fun calendarBucket(
 }
 
 /**
- * Newest first, grouped by calendar bucket with a divider before each group.
+ * Newest first, grouped by calendar bucket with a divider *between* groups —
+ * never above the first one.
  *
  * Search filters rows but not the grouping rules, so a filtered list still
  * reads as the same list — Desktop's "ranking and grouping are separate
@@ -83,8 +86,10 @@ fun buildSessionRows(
     var currentBucket: SessionBucket? = null
     for (session in visible) {
         val bucket = calendarBucket(session.lastActiveAtMillis, nowMillis, timeZone, locale)
+        // `rows.isNotEmpty()` is the first-group rule: the top of the list is
+        // already "the newest", so labelling it says nothing.
         if (bucket != currentBucket) {
-            rows += SessionListRow.Divider(bucket)
+            if (rows.isNotEmpty()) rows += SessionListRow.Divider(bucket)
             currentBucket = bucket
         }
         rows += SessionListRow.Row(session)
@@ -97,9 +102,18 @@ private fun SessionSummary.matches(needle: String, locale: Locale): Boolean =
 
 private const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
-private fun startOfDay(millis: Long, timeZone: TimeZone, locale: Locale): Calendar =
+/**
+ * The human day does not end at midnight — it ends when you sleep, so Desktop
+ * puts the boundary at 04:00 local (`time.ts:87-95`, `DAY_ROLLOVER_HOUR`). A
+ * 00:30 session groups with the 23:50 one before it instead of splitting off
+ * into its own "Today".
+ */
+private const val DAY_ROLLOVER_HOUR = 4
+
+/** Desktop's `nominalDayStart`: `startOfLocalDay(ms - 4h)` (`time.ts:95`). */
+private fun nominalDayStart(millis: Long, timeZone: TimeZone, locale: Locale): Calendar =
     Calendar.getInstance(timeZone, locale).apply {
-        timeInMillis = millis
+        timeInMillis = millis - DAY_ROLLOVER_HOUR * 60L * 60 * 1000
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)

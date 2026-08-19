@@ -34,8 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -230,7 +232,7 @@ fun <T> SegmentedControl(
             Box(
                 Modifier
                     .weight(1f)
-                    .heightIn(min = 44.dp)
+                    .heightIn(min = HermesTheme.spacing.touchTarget)
                     .background(
                         if (active) tokens.accent.copy(alpha = 0.16f) else Color.Transparent,
                         RoundedCornerShape(8.dp),
@@ -252,7 +254,14 @@ fun <T> SegmentedControl(
     }
 }
 
-/** Primary action. Flat fill, small radius, no shadow. */
+/**
+ * Primary action. Flat fill, small radius, no shadow.
+ *
+ * The height floor is the Android touch target, not a visual choice: caption
+ * type plus the padding this design wants lands around 42dp, which is under the
+ * platform minimum. Padding stays as the *visual* rhythm; the floor only ever
+ * makes the box taller.
+ */
 @Composable
 fun PrimaryButton(
     label: String,
@@ -263,6 +272,7 @@ fun PrimaryButton(
     val tokens = HermesTheme.tokens
     Box(
         modifier = modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
             .background(
                 if (enabled) tokens.accent else tokens.accent.copy(alpha = 0.3f),
                 RoundedCornerShape(8.dp),
@@ -279,7 +289,14 @@ fun PrimaryButton(
     }
 }
 
-/** Quiet inline affordance — "Change", "Forget key". Text, not a box. */
+/**
+ * Quiet inline affordance — "Change", "Forget key".
+ *
+ * Reads as a text link and hits like a button: no fill, no border, no chip,
+ * but the tappable area around the label meets the same floor as every other
+ * control here. These sit next to destructive and security choices, which is
+ * the worst place to make someone aim.
+ */
 @Composable
 fun TextButton(
     label: String,
@@ -288,14 +305,19 @@ fun TextButton(
     enabled: Boolean = true,
     color: Color = HermesTheme.tokens.accent,
 ) {
-    Text(
-        text = label,
-        style = HermesTheme.type.caption,
-        color = if (enabled) color else HermesTheme.tokens.textQuaternary,
+    Box(
         modifier = modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-    )
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = HermesTheme.type.caption,
+            color = if (enabled) color else HermesTheme.tokens.textQuaternary,
+        )
+    }
 }
 
 /** Plain-body empty state. Centered, no icon pile, no card. */
@@ -356,12 +378,29 @@ fun LogView(text: String, modifier: Modifier = Modifier) {
  * A reduced-motion-safe "working" indicator: three dots whose *opacity* is
  * driven by an infinite transition, which the system animator scales to zero
  * duration when animations are disabled. Nothing about state depends on it.
+ *
+ * @param status what a screen reader should hear when these dots appear. The
+ *   dots are decoration — three moving circles have no reading — so by default
+ *   they are cleared out of the semantics tree entirely. Where they are the
+ *   *only* signal that the agent is working, pass a status: the row becomes a
+ *   polite live region announced once, on appearance. It must be a constant
+ *   string. Deriving it from the streamed text would turn a live region into a
+ *   per-token announcement, which is worse than silence.
  */
 @Composable
-fun WorkingDots(modifier: Modifier = Modifier, color: Color = HermesTheme.tokens.accent) {
+fun WorkingDots(
+    modifier: Modifier = Modifier,
+    color: Color = HermesTheme.tokens.accent,
+    status: String? = null,
+) {
     val transition = rememberInfiniteTransition(label = "working")
     Row(
-        modifier = modifier.clearAndSetSemantics { },
+        modifier = modifier.clearAndSetSemantics {
+            if (status != null) {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = status
+            }
+        },
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

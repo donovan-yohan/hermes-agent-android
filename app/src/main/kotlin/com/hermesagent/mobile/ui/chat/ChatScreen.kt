@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -27,6 +29,8 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -168,14 +172,30 @@ private fun SessionsPane(
 @Composable
 private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
-    val entryCount = state.transcript.size
-    val lastEntryId = state.transcript.lastOrNull()?.id
+    val transcript = rememberUpdatedState(state.transcript)
 
-    // Follow the tail while a turn streams. Keyed on the id *and* the count so
-    // a rewritten tail block (the streaming case) still scrolls, and a
-    // background session's growth never moves the foreground list.
-    LaunchedEffect(lastEntryId, entryCount, state.isStreaming) {
-        if (entryCount > 0) listState.animateScrollToItem(entryCount - 1)
+    // Landing on a session jumps to the tail; growth after that only follows a
+    // reader who is still there. Scrolling up is deliberate, and yanking
+    // someone back mid-sentence is the worse failure.
+    //
+    // Two details carry the behaviour. The trigger is the last entry's *value*,
+    // because a streamed delta rewrites the same entry under the same id — an
+    // id/count key stops firing after the first delta and the reply grows
+    // off-screen. And "still there" compares the scroll anchor against where
+    // the last follow parked it, not `canScrollForward`: growing the tail block
+    // makes the list scrollable again at once, which would read as "the reader
+    // left" on every delta. `canScrollForward` earns its place in the trigger
+    // instead, so a re-measure that lands after the state change still follows.
+    LaunchedEffect(listState, state.activeSession?.id) {
+        listState.scrollToTail()
+        var parked = listState.anchor()
+
+        snapshotFlow { Triple(transcript.value.lastOrNull(), transcript.value.size, listState.canScrollForward) }
+            .collect {
+                if (listState.anchor() != parked) return@collect
+                listState.scrollToTail()
+                parked = listState.anchor()
+            }
     }
 
     Box(modifier.fillMaxWidth()) {
@@ -191,6 +211,34 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * Scroll to the *bottom* of the transcript, not merely to its last item.
+ *
+ * A streaming block routinely outgrows the viewport, and `scrollToItem` only
+ * puts an item's top edge on screen — which is precisely where the tail
+ * disappears. Walking forward until the list reports it cannot scroll any
+ * further lands on the growing bottom edge instead. The step count is bounded
+ * because a list that always claims it can scroll would otherwise spin.
+ */
+private suspend fun LazyListState.scrollToTail() {
+    val lastIndex = layoutInfo.totalItemsCount - 1
+    if (lastIndex < 0) return
+
+    if (firstVisibleItemIndex != lastIndex) scrollToItem(lastIndex)
+    val viewport = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).toFloat()
+    if (viewport <= 0f) return
+
+    var steps = 0
+    while (canScrollForward && steps++ < MAX_TAIL_STEPS) scrollBy(viewport)
+}
+
+/** A tail block taller than 24 viewports is not a transcript entry any more. */
+private const val MAX_TAIL_STEPS = 24
+
+/** Where the list is parked: the first visible item and how far into it. */
+private fun LazyListState.anchor(): Pair<Int, Int> =
+    firstVisibleItemIndex to firstVisibleItemScrollOffset
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions) {

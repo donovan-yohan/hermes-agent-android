@@ -109,7 +109,12 @@ class ChatJourneyTest {
 
         compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("TODAY").assertIsDisplayed()
+
+        // Desktop labels the *breaks* between groups, never the group at the top
+        // of the list (`session-date-groups.ts:136-140`), so the newest sessions
+        // carry no "Today" header while the older groups keep theirs.
+        assertEquals("the first group must not be labelled", 0, compose.countWithText("TODAY"))
+        assertTrue("later groups are still labelled", compose.countWithText("YESTERDAY") >= 1)
 
         compose.onNodeWithText("Theme parity with Desktop").performClick()
         compose.waitForIdle()

@@ -66,8 +66,12 @@ fun HermesTheme(
 ) {
     val systemDark = isSystemInDarkTheme()
     val preset = remember(selection.themeName) { BuiltinThemes.resolve(selection.themeName) }
-    val dark = remember(selection.mode, systemDark) { selection.mode.resolvesToDark(systemDark) }
-    val palette = remember(preset, dark) { preset.paletteFor(dark) }
+    val requestedDark = remember(selection.mode, systemDark) { selection.mode.resolvesToDark(systemDark) }
+    // The palette is picked by what the user asked for; everything painted from
+    // it is picked by what that palette actually *renders* as (`rendersDark`),
+    // which is Desktop's split between `getBaseColors` and `renderedModeFor`.
+    val palette = remember(preset, requestedDark) { preset.paletteFor(requestedDark) }
+    val dark = remember(palette, requestedDark) { rendersDark(palette.background, requestedDark) }
     val tokens = remember(palette, dark) { HermesTokens.from(palette, dark) }
     val typeScale = remember(preset.fonts) { hermesTypeScale(preset.fonts) }
 
@@ -79,7 +83,7 @@ fun HermesTheme(
         LocalContentColor provides tokens.textPrimary,
     ) {
         MaterialTheme(
-            colorScheme = palette.toMaterialColorScheme(dark),
+            colorScheme = palette.toMaterialColorScheme(dark, tokens),
             typography = typeScale.toMaterialTypography(),
             content = content,
         )
@@ -98,8 +102,13 @@ fun HermesThemeMode.resolvesToDark(systemDark: Boolean): Boolean = when (this) {
  * flat — `surface` is the card, `surfaceVariant` is muted, `outline` is the
  * border — because Desktop has no tonal-elevation concept and faking one would
  * reintroduce exactly the boxed look DESIGN.md forbids.
+ *
+ * The two surfaces Desktop derives rather than seeds (`--dt-card` is
+ * `--ui-bg-editor`, `--dt-background` is `--ui-bg-chrome`; `styles.css:370-372`)
+ * come from [tokens], so a stock Material component lands on the same fill a
+ * Hermes component would.
  */
-private fun HermesPalette.toMaterialColorScheme(dark: Boolean) = run {
+private fun HermesPalette.toMaterialColorScheme(dark: Boolean, tokens: HermesTokens) = run {
     val base = if (dark) darkColorScheme() else lightColorScheme()
     base.copy(
         primary = primary,
@@ -112,17 +121,17 @@ private fun HermesPalette.toMaterialColorScheme(dark: Boolean) = run {
         onSecondaryContainer = secondaryForeground,
         tertiary = midground ?: ring,
         onTertiary = midgroundForeground ?: readableOn(midground ?: ring),
-        background = background,
+        background = tokens.chatSurface,
         onBackground = foreground,
-        surface = card,
+        surface = tokens.cardSurface,
         onSurface = cardForeground,
         surfaceVariant = muted,
         onSurfaceVariant = mutedForeground,
         surfaceContainer = popover,
         surfaceContainerHigh = popover,
         surfaceContainerHighest = popover,
-        surfaceContainerLow = card,
-        surfaceContainerLowest = background,
+        surfaceContainerLow = tokens.cardSurface,
+        surfaceContainerLowest = tokens.chatSurface,
         outline = border,
         outlineVariant = mixPremultiplied(midground ?: ring, 10f, foreground.withAlpha(0.05f)),
         error = destructive,

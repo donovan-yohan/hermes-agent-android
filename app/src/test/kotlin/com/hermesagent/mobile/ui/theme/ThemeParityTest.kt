@@ -121,37 +121,12 @@ class ThemeParityTest {
                     palette.composerRing ?: palette.midground ?: palette.ring,
                     tokens.composerRing,
                 )
-                assertEquals(
-                    "$where: sidebar surface must resolve sidebarBackground ?: background",
-                    palette.sidebarBackground ?: palette.background,
-                    tokens.sidebarSurface,
-                )
-                assertEquals(
-                    "$where: user bubble must resolve userBubble ?: card",
-                    palette.userBubble ?: palette.card,
-                    tokens.userBubble,
-                )
             }
         }
     }
 
-    @Test
-    fun `body text is legible against the chat surface in every preset and mode`() {
-        // Not a WCAG certification — a floor that catches a palette that
-        // resolved wrong (e.g. a synthesised light variant landing white-on-white).
-        for (preset in BuiltinThemes.ALL) {
-            for (dark in listOf(false, true)) {
-                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
-                val ratio = contrastRatio(tokens.textPrimary, tokens.chatSurface)
-                assertTrue(
-                    "${preset.name}/${if (dark) "dark" else "light"}: primary text on the chat surface " +
-                        "is ${"%.2f".format(ratio)}:1 (${tokens.textPrimary.toHex()} on " +
-                        "${tokens.chatSurface.toHex()})",
-                    ratio >= 4.0f,
-                )
-            }
-        }
-    }
+    // Legibility floors live with the value table in `ThemeSemanticParityTest`,
+    // which checks the same chat surface plus the three other derived surfaces.
 
     @Test
     fun `cyberpunk keeps desktop's whole-ui monospace behaviour`() {
