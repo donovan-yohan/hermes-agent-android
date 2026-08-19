@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.ssh
 
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,7 +41,12 @@ class BoundedReadTest {
         val read = stream.readBounded(source.size)
 
         assertArrayEquals(source, read)
-        assertTrue("a bounded read must not grow through abandoned scratch arrays", scratchArrays.size == 1)
+        assertEquals("a bounded read must expose exactly one scratch array", 1, scratchArrays.size)
+        assertEquals(
+            "the scratch array must be fixed at the full bound, not a growable chunk",
+            source.size,
+            scratchArrays.single().size,
+        )
         assertTrue("the scratch array must be wiped before returning", scratchArrays.single().all { it == 0.toByte() })
     }
 
