@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
@@ -24,19 +25,17 @@ import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.QuietIconButton
-import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.settings.SettingsScreen
 import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
- * Destinations. Chat is the home surface; Appearance and Host are short tasks
- * that return to it (`apps/desktop/DESIGN.md:50-56` @ `f82f2dba`), so they are
- * a single saved key rather than a navigation library — three destinations do
- * not earn a graph.
+ * Chat is home. Settings has two Phase-1 children, so a saved destination is
+ * sufficient without a navigation graph.
  */
-enum class HermesDestination { Chat, Appearance, Host }
+enum class HermesDestination { Chat, Settings, Appearance, Gateways }
 
 @Composable
 fun HermesApp(
@@ -49,9 +48,9 @@ fun HermesApp(
 ) {
     var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
 
-    // One cancel gesture does exactly one thing: leave the overlay.
+    val onBack = { destination = destination.backDestination() }
     BackHandler(enabled = destination != HermesDestination.Chat) {
-        destination = HermesDestination.Chat
+        onBack()
     }
 
     HermesTheme(appearance) {
@@ -59,20 +58,29 @@ fun HermesApp(
             HermesDestination.Chat -> ChatScreen(
                 state = chatState,
                 actions = chatActions,
-                onOpenSettings = { destination = HermesDestination.Appearance },
+                onOpenSettings = { destination = HermesDestination.Settings },
             )
+
+            HermesDestination.Settings -> OverlayScaffold(
+                title = "Settings",
+                onBack = onBack,
+            ) {
+                SettingsScreen(
+                    onOpenAppearance = { destination = HermesDestination.Appearance },
+                    onOpenGateways = { destination = HermesDestination.Gateways },
+                )
+            }
 
             HermesDestination.Appearance -> OverlayScaffold(
                 title = "Appearance",
-                onBack = { destination = HermesDestination.Chat },
-                action = Pair("Host & SSH", { destination = HermesDestination.Host }),
+                onBack = onBack,
             ) {
                 AppearanceScreen(selection = appearance, actions = appearanceActions)
             }
 
-            HermesDestination.Host -> OverlayScaffold(
-                title = "Host & SSH",
-                onBack = { destination = HermesDestination.Appearance },
+            HermesDestination.Gateways -> OverlayScaffold(
+                title = "Gateways",
+                onBack = onBack,
             ) {
                 SshScreen(state = sshState, actions = sshActions)
             }
@@ -85,11 +93,15 @@ fun HermesApp(
 private fun OverlayScaffold(
     title: String,
     onBack: () -> Unit,
-    action: Pair<String, () -> Unit>? = null,
     content: @Composable () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
-    Column(Modifier.fillMaxSize().background(tokens.chatSurface)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(tokens.chatSurface)
+            .navigationBarsPadding(),
+    ) {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -105,9 +117,16 @@ private fun OverlayScaffold(
                 color = tokens.textPrimary,
                 modifier = Modifier.weight(1f),
             )
-            action?.let { (label, onClick) -> TextButton(label = label, onClick = onClick) }
         }
         Hairline()
         content()
     }
+}
+
+internal fun HermesDestination.backDestination(): HermesDestination = when (this) {
+    HermesDestination.Chat -> HermesDestination.Chat
+    HermesDestination.Settings -> HermesDestination.Chat
+    HermesDestination.Appearance,
+    HermesDestination.Gateways,
+    -> HermesDestination.Settings
 }

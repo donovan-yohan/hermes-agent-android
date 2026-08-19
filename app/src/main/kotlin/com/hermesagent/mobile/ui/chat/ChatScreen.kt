@@ -298,7 +298,7 @@ private fun ChatTopBar(
             }
             QuietIconButton(
                 icon = Icons.Filled.Settings,
-                contentDescription = "Settings",
+                contentDescription = "Open settings",
                 onClick = onOpenSettings,
             )
         }
