@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -34,11 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -147,10 +150,13 @@ fun SearchField(
     val tokens = HermesTheme.tokens
     Column(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                if (value.isEmpty()) {
-                    Text(placeholder, style = HermesTheme.type.caption, color = tokens.textTertiary)
-                }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = HermesTheme.spacing.touchTarget)
+                    .testTag("Search field shell"),
+                contentAlignment = Alignment.CenterStart,
+            ) {
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -160,7 +166,23 @@ fun SearchField(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     modifier = Modifier
                         .fillMaxWidth()
+                        // The editable node owns the complete touch target.
+                        .heightIn(min = HermesTheme.spacing.touchTarget)
                         .semantics { contentDescription = placeholder },
+                    decorationBox = { innerTextField ->
+                        CenteredTextFieldContent(
+                            isEmpty = value.isEmpty(),
+                            contentTag = "Search text content",
+                            placeholder = {
+                                Text(
+                                    placeholder,
+                                    style = HermesTheme.type.caption,
+                                    color = tokens.textTertiary,
+                                )
+                            },
+                            innerTextField = innerTextField,
+                        )
+                    },
                 )
             }
             if (value.isNotEmpty()) {
@@ -173,6 +195,26 @@ fun SearchField(
         }
         Spacer(Modifier.height(4.dp))
         Hairline(color = if (value.isEmpty()) tokens.strokeQuaternary else tokens.accent)
+    }
+}
+
+/** Centers natural-height text inside a full-size editor without changing its wrap width. */
+@Composable
+internal fun CenteredTextFieldContent(
+    isEmpty: Boolean,
+    contentTag: String,
+    placeholder: @Composable () -> Unit,
+    innerTextField: @Composable () -> Unit,
+    horizontalPadding: Dp = 0.dp,
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(Modifier.fillMaxWidth().testTag(contentTag)) {
+            if (isEmpty) placeholder()
+            innerTextField()
+        }
     }
 }
 
@@ -223,6 +265,7 @@ fun <T> SegmentedControl(
     Row(
         modifier
             .fillMaxWidth()
+            .selectableGroup()
             .border(1.dp, tokens.strokeTertiary, RoundedCornerShape(10.dp))
             .padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -237,9 +280,12 @@ fun <T> SegmentedControl(
                         if (active) tokens.accent.copy(alpha = 0.16f) else Color.Transparent,
                         RoundedCornerShape(8.dp),
                     )
-                    .clickable { onSelect(option) }
+                    .selectable(
+                        selected = active,
+                        onClick = { onSelect(option) },
+                        role = Role.RadioButton,
+                    )
                     .semantics {
-                        this.selected = active
                         contentDescription = describe(option)
                     },
                 contentAlignment = Alignment.Center,

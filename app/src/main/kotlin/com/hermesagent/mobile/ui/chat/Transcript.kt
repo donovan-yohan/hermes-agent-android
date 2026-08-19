@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -105,9 +106,22 @@ private fun UserBubble(turn: UserTurn) {
                 .background(tokens.userBubble, RoundedCornerShape(14.dp))
                 .border(1.dp, tokens.userBubbleBorder, RoundedCornerShape(14.dp))
                 .padding(horizontal = 12.dp, vertical = 9.dp)
-                .semantics { contentDescription = "You said: ${turn.text}" },
+                // Keep the bubble as one accessible message. Merging removes
+                // the duplicate readable Text child while preserving any
+                // descendant actions if the bubble gains one later.
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "You said: ${turn.text}"
+                },
         ) {
-            Text(turn.text, style = HermesTheme.type.body, color = tokens.textPrimary)
+            // The parent retains its accessible label and any future actions;
+            // only this visual leaf is silent so TalkBack does not read the
+            // message twice through the merged subtree.
+            Text(
+                turn.text,
+                style = HermesTheme.type.body,
+                color = tokens.textPrimary,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
         }
     }
 }

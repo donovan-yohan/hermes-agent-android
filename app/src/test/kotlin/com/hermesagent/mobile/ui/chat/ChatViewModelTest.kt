@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -212,6 +213,24 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `a recreated view model creates a new empty transcript without clobbering local session data`() = runTest(dispatcher) {
+        val firstId = viewModel.createSession()
+        val firstSession = cache.session(firstId)!!.copy(title = "Existing local session", preview = "kept")
+        val firstTranscript = UserTurn(id = "$firstId-u1", text = "keep this", atMillis = CLOCK)
+        cache.upsertSession(firstSession)
+        cache.appendEntry(firstId, firstTranscript)
+
+        val recreated = ChatViewModel(cache, DemoTurnEngine(timing), clock = { CLOCK })
+        val secondId = recreated.createSession()
+
+        assertNotEquals("a recreated ViewModel must not reuse a process-cache id", firstId, secondId)
+        assertEquals(firstSession, cache.session(firstId))
+        assertEquals(listOf(firstTranscript), cache.transcript(firstId))
+        assertEquals("New session", cache.session(secondId)?.title)
+        assertTrue("the new session cannot inherit another transcript", cache.transcript(secondId).isEmpty())
+    }
+
+    @Test
     fun `a new session takes its title from the first prompt`() = runTest(dispatcher) {
         collectState()
         viewModel.createSession()
@@ -299,6 +318,30 @@ class ChatViewModelTest {
         val state = viewModel.uiState.value
         assertNull("nothing live is left to land on", state.activeSession)
         assertEquals("", state.draft)
+    }
+
+    @Test
+    fun `restoring the final archived session selects it and makes sending executable`() = runTest(dispatcher) {
+        collectState()
+        viewModel.setArchived("s-2", archived = true)
+        viewModel.setArchived("s-1", archived = true)
+        settle()
+
+        viewModel.setDraft("nowhere to send")
+        settle()
+        assertNull(viewModel.uiState.value.activeSession)
+        assertFalse("send must not be offered without a foreground", viewModel.uiState.value.canSend)
+
+        viewModel.setArchived("s-1", archived = false)
+        settle()
+        assertEquals("s-1", viewModel.uiState.value.activeSession?.id)
+
+        viewModel.setDraft("continue here")
+        settle()
+        assertTrue(viewModel.uiState.value.canSend)
+        viewModel.submit()
+
+        assertEquals("continue here", (cache.transcript("s-1").last() as UserTurn).text)
     }
 
     @Test

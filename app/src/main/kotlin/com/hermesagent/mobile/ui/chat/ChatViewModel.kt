@@ -37,7 +37,8 @@ data class ChatUiState(
     val runningCount: Int = 0,
     val showArchived: Boolean = false,
 ) {
-    val canSend: Boolean get() = draft.isNotBlank() && !isStreaming
+    /** A visible send control always has a foreground session [submit] can use. */
+    val canSend: Boolean get() = activeSession != null && draft.isNotBlank() && !isStreaming
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
 }
 
@@ -122,8 +123,7 @@ class ChatViewModel(
     }
 
     fun createSession(): String {
-        createdSessionCount += 1
-        val id = "s-new-$createdSessionCount"
+        val id = nextLocalSessionId()
         cache.upsertSession(
             SessionSummary(
                 id = id,
@@ -160,7 +160,8 @@ class ChatViewModel(
     }
 
     fun setArchived(id: String, archived: Boolean) {
-        cache.session(id)?.let { cache.upsertSession(it.copy(archived = archived)) }
+        val session = cache.session(id) ?: return
+        cache.upsertSession(session.copy(archived = archived))
         // Archiving what the user is looking at picks a replacement, which is a
         // re-home like any other — not a quiet id swap under a live draft.
         if (archived && activeSessionId.value == id) {
@@ -170,7 +171,28 @@ class ChatViewModel(
                     .maxByOrNull { it.lastActiveAtMillis }
                     ?.id,
             )
+        } else if (!archived && activeSessionId.value == null) {
+            // Restoring the final archived session gives the user somewhere to
+            // continue. Do not steal focus from an existing live foreground.
+            rehome(id)
         }
+    }
+
+    /**
+     * Local ids must not restart with a ViewModel. [SessionCache] is process
+     * scoped, so a recreated screen has to avoid both session rows and any
+     * already-cached transcript keyed by an earlier local id.
+     */
+    private fun nextLocalSessionId(): String {
+        var id: String
+        do {
+            createdSessionCount += 1
+            id = "s-new-$createdSessionCount"
+        } while (
+            cache.state.value.sessions.containsKey(id) ||
+                cache.state.value.transcripts.containsKey(id)
+        )
+        return id
     }
 
     fun submit() {

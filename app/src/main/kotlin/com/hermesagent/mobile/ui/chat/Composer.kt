@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -77,17 +78,9 @@ fun Composer(
                             color = if (isStreaming) tokens.composerRing else tokens.strokeSecondary,
                             shape = RoundedCornerShape(16.dp),
                         )
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
                         .testTag("Composer field shell"),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    if (draft.isEmpty()) {
-                        Text(
-                            text = "Message Hermes",
-                            style = HermesTheme.type.body,
-                            color = tokens.textTertiary,
-                        )
-                    }
                     BasicTextField(
                         value = draft,
                         onValueChange = onDraftChange,
@@ -101,8 +94,24 @@ fun Composer(
                         maxLines = 6,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 22.dp)
+                            // The editable node owns the complete touch target.
+                            .heightIn(min = HermesTheme.spacing.touchTarget)
                             .semantics { contentDescription = "Message Hermes" },
+                        decorationBox = { innerTextField ->
+                            CenteredTextFieldContent(
+                                isEmpty = draft.isEmpty(),
+                                contentTag = "Composer text content",
+                                horizontalPadding = 14.dp,
+                                placeholder = {
+                                    Text(
+                                        text = "Message Hermes",
+                                        style = HermesTheme.type.body,
+                                        color = tokens.textTertiary,
+                                    )
+                                },
+                                innerTextField = innerTextField,
+                            )
+                        },
                     )
                 }
 

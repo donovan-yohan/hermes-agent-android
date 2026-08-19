@@ -47,10 +47,15 @@ fun calendarBucket(
     if (dayDiff == 1L) return SessionBucket.Yesterday
 
     val weekStart = startOfWeek(today)
-    if (at.timeInMillis >= weekStart) return SessionBucket.ThisWeek
+    if (at.timeInMillis >= weekStart.timeInMillis) return SessionBucket.ThisWeek
 
-    val previousWeekStart = weekStart - 7 * DAY_MILLIS
-    if (at.timeInMillis >= previousWeekStart) return SessionBucket.LastWeek
+    // A week is seven local calendar dates, not always 7 * 24 hours. The
+    // fall-back week has an extra hour, so subtracting milliseconds makes the
+    // previous Monday begin at 01:00 and wrongly excludes its midnight.
+    val previousWeekStart = (weekStart.clone() as Calendar).apply {
+        add(Calendar.WEEK_OF_YEAR, -1)
+    }
+    if (at.timeInMillis >= previousWeekStart.timeInMillis) return SessionBucket.LastWeek
 
     val sameYear = at.get(Calendar.YEAR) == today.get(Calendar.YEAR)
     if (sameYear && at.get(Calendar.MONTH) == today.get(Calendar.MONTH)) return SessionBucket.ThisMonth
@@ -120,7 +125,7 @@ private fun nominalDayStart(millis: Long, timeZone: TimeZone, locale: Locale): C
         set(Calendar.MILLISECOND, 0)
     }
 
-private fun startOfWeek(dayStart: Calendar): Long {
+private fun startOfWeek(dayStart: Calendar): Calendar {
     val calendar = dayStart.clone() as Calendar
     val firstDay = calendar.firstDayOfWeek
     var guard = 0
@@ -128,5 +133,5 @@ private fun startOfWeek(dayStart: Calendar): Long {
         calendar.add(Calendar.DAY_OF_MONTH, -1)
         guard++
     }
-    return calendar.timeInMillis
+    return calendar
 }

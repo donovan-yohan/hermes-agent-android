@@ -5,6 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
@@ -13,11 +16,14 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.demo.DemoSessions
 import com.hermesagent.mobile.data.demo.DemoTurnEngine
 import com.hermesagent.mobile.data.demo.TurnTiming
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -62,14 +68,17 @@ class ChatJourneyTest {
     private lateinit var viewModel: ChatViewModel
     private var themeName by mutableStateOf(BuiltinThemes.DEFAULT_NAME)
 
-    private fun launch() {
-        DemoSessions.seed(cache, NOW)
+    private fun launch(
+        initialSessionId: String = DemoSessions.INITIAL_SESSION_ID,
+        seed: () -> Unit = { DemoSessions.seed(cache, NOW) },
+    ) {
+        seed()
         viewModel = ChatViewModel(
             cache = cache,
             turnEngine = DemoTurnEngine(TurnTiming(firstDelayMillis = 10, deltaDelayMillis = 5, toolRunMillis = 20)),
             clock = { NOW },
         )
-        viewModel.selectSession(DemoSessions.INITIAL_SESSION_ID)
+        viewModel.selectSession(initialSessionId)
 
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
@@ -176,7 +185,9 @@ class ChatJourneyTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.countWithText("six Desktop themes", substring = true) == 1
         }
-        compose.onNodeWithContentDescription("Send message").assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.countWithContentDescription("Send message") == 1
+        }
     }
 
     @Test
@@ -189,6 +200,75 @@ class ChatJourneyTest {
         compose.waitForIdle()
 
         compose.onNodeWithText("No messages yet").assertIsDisplayed()
+    }
+
+    @Test
+    fun `restoring the final archived session selects it and enables a new turn`() {
+        launch(initialSessionId = "s-last") {
+            cache.upsertSession(
+                SessionSummary(
+                    id = "s-last",
+                    title = "Last session",
+                    preview = "",
+                    lastActiveAtMillis = NOW,
+                ),
+            )
+        }
+
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithText("Archive").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("No sessions").assertIsDisplayed()
+
+        compose.onNodeWithText("Show archived").performClick()
+        compose.onNodeWithText("Restore").performClick()
+        compose.waitForIdle()
+        val restoredRow = compose.onNodeWithContentDescription("Last session. Idle")
+        assertTrue(restoredRow.fetchSemanticsNode().config[SemanticsProperties.Selected])
+        // Restoring selects the only live session. Selecting its row closes the
+        // drawer so the next actions are the same type-and-send path as normal.
+        restoredRow.performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("continue here")
+        compose.onNodeWithContentDescription("Send message").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.countWithText("continue here", substring = true) >= 1
+        }
+    }
+
+    @Test
+    fun `long pressing a session cancels edits and trims confirmed titles`() {
+        launch()
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.waitForIdle()
+
+        val row = compose.onNodeWithTag("Session row ${DemoSessions.INITIAL_SESSION_ID}")
+        row.performSemanticsAction(SemanticsActions.OnLongClick)
+        assertEquals(
+            "SSH tunnel bring-up",
+            compose.onNodeWithContentDescription("Session title")
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText]
+                .text,
+        )
+        compose.onNodeWithContentDescription("Session title").performTextClearance()
+        compose.onNodeWithContentDescription("Session title").performTextInput("Discarded rename")
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(0, compose.countWithText("Rename session"))
+        compose.onNodeWithTag("Session row ${DemoSessions.INITIAL_SESSION_ID}").assertIsDisplayed()
+        assertEquals("SSH tunnel bring-up", cache.session(DemoSessions.INITIAL_SESSION_ID)?.title)
+
+        compose.onNodeWithTag("Session row ${DemoSessions.INITIAL_SESSION_ID}")
+            .performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithContentDescription("Session title").performTextClearance()
+        compose.onNodeWithText("Rename").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Session title").performTextInput("  Tunnel renamed  ")
+        compose.onNodeWithText("Rename").performClick()
+        compose.waitForIdle()
+
+        assertTrue(compose.countWithText("Tunnel renamed") >= 1)
+        assertEquals("Tunnel renamed", cache.session(DemoSessions.INITIAL_SESSION_ID)?.title)
     }
 
     @Test

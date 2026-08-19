@@ -20,10 +20,19 @@ class SessionGroupingTest {
     private val now: Long = at(2026, Calendar.AUGUST, 19, hour = 12)
 
     private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0): Long =
-        Calendar.getInstance(zone, locale).apply {
-            clear()
-            set(year, month, day, hour, minute, 0)
-        }.timeInMillis
+        at(zone, year, month, day, hour, minute)
+
+    private fun at(
+        timeZone: TimeZone,
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int = 0,
+    ): Long = Calendar.getInstance(timeZone, locale).apply {
+        clear()
+        set(year, month, day, hour, minute, 0)
+    }.timeInMillis
 
     private fun bucketOf(daysAgo: Int, hoursAgo: Int = 0): SessionBucket =
         calendarBucket(now - daysAgo * DAY - hoursAgo * HOUR, now, zone, locale)
@@ -48,6 +57,30 @@ class SessionGroupingTest {
     @Test
     fun `the previous week groups as last week`() {
         assertEquals(SessionBucket.LastWeek, bucketOf(8))
+    }
+
+    @Test
+    fun `previous week subtracts a local calendar week across New York fall back`() {
+        val newYork = TimeZone.getTimeZone("America/New_York")
+        // The source times are 04:00 because the app's nominal-day rollover
+        // normalizes both to the exact Monday midnights being compared:
+        // 2025-11-03 00:00 EST and 2025-10-27 00:00 EDT.
+        val fallbackMonday = at(newYork, 2025, Calendar.NOVEMBER, 3, hour = 4)
+        val previousMonday = at(newYork, 2025, Calendar.OCTOBER, 27, hour = 4)
+
+        assertEquals(
+            SessionBucket.LastWeek,
+            calendarBucket(previousMonday, fallbackMonday, newYork, locale),
+        )
+
+        // UTC remains the same seven-day boundary; this protects the ordinary
+        // case while pinning the local-calendar implementation.
+        val utcFallbackMonday = at(zone, 2025, Calendar.NOVEMBER, 3, hour = 4)
+        val utcPreviousMonday = at(zone, 2025, Calendar.OCTOBER, 27, hour = 4)
+        assertEquals(
+            SessionBucket.LastWeek,
+            calendarBucket(utcPreviousMonday, utcFallbackMonday, zone, locale),
+        )
     }
 
     @Test

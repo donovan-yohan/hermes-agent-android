@@ -8,14 +8,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -33,6 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -69,10 +73,12 @@ fun ChatScreen(
     actions: ChatActions,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Injectable only for layout tests; production uses the device navigation bars. */
+    wideRailInsets: WindowInsets = WindowInsets.navigationBars,
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings)
+            WideLayout(state, actions, onOpenSettings, wideRailInsets)
         } else {
             CompactLayout(state, actions, onOpenSettings)
         }
@@ -82,6 +88,7 @@ fun ChatScreen(
 /** Two panes need roughly a rail plus a readable column; below that, one. */
 private val WIDE_BREAKPOINT: Dp = 720.dp
 private val RAIL_WIDTH: Dp = 300.dp
+private const val WIDE_RAIL_TAG = "Wide sessions rail"
 
 @Composable
 private fun CompactLayout(state: ChatUiState, actions: ChatActions, onOpenSettings: () -> Unit) {
@@ -129,9 +136,29 @@ private fun CompactLayout(state: ChatUiState, actions: ChatActions, onOpenSettin
 }
 
 @Composable
-private fun WideLayout(state: ChatUiState, actions: ChatActions, onOpenSettings: () -> Unit) {
+private fun WideLayout(
+    state: ChatUiState,
+    actions: ChatActions,
+    onOpenSettings: () -> Unit,
+    railInsets: WindowInsets,
+) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
-        SessionsPane(state, actions, Modifier.width(RAIL_WIDTH))
+        // The rail owns its bottom edge in the wide layout. Keep its surface
+        // painted through the inset, but keep its footer above three-button
+        // navigation. Compact drawer content deliberately does not inherit
+        // this: the drawer has its own window boundary.
+        SessionsPane(
+            state,
+            actions,
+            Modifier
+                .width(RAIL_WIDTH)
+                .fillMaxHeight()
+                // This tag stays on the full rail surface; the inset only
+                // changes the content area inside it.
+                .testTag(WIDE_RAIL_TAG)
+                .background(HermesTheme.tokens.sidebarSurface)
+                .windowInsetsPadding(railInsets),
+        )
         VerticalHairline(Modifier.fillMaxHeight())
         Column(Modifier.weight(1f)) {
             ChatTopBar(
@@ -218,8 +245,9 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
  * A streaming block routinely outgrows the viewport, and `scrollToItem` only
  * puts an item's top edge on screen — which is precisely where the tail
  * disappears. Walking forward until the list reports it cannot scroll any
- * further lands on the growing bottom edge instead. The step count is bounded
- * because a list that always claims it can scroll would otherwise spin.
+ * further lands on the growing bottom edge instead. A failed scroll is the
+ * terminating condition: it cannot spin if layout cannot make progress, and
+ * it does not impose an arbitrary cap on a legitimately long reply.
  */
 private suspend fun LazyListState.scrollToTail() {
     val lastIndex = layoutInfo.totalItemsCount - 1
@@ -229,12 +257,12 @@ private suspend fun LazyListState.scrollToTail() {
     val viewport = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).toFloat()
     if (viewport <= 0f) return
 
-    var steps = 0
-    while (canScrollForward && steps++ < MAX_TAIL_STEPS) scrollBy(viewport)
+    while (canScrollForward) {
+        val before = anchor()
+        val consumed = scrollBy(viewport)
+        if (consumed <= 0f || anchor() == before) return
+    }
 }
-
-/** A tail block taller than 24 viewports is not a transcript entry any more. */
-private const val MAX_TAIL_STEPS = 24
 
 /** Where the list is parked: the first visible item and how far into it. */
 private fun LazyListState.anchor(): Pair<Int, Int> =

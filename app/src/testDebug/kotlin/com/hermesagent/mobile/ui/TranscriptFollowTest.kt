@@ -94,8 +94,10 @@ class TranscriptFollowTest {
         grow(paragraphs = 40)
         compose.onNodeWithText("Paragraph 40 of the reply.").assertIsDisplayed()
 
-        grow(paragraphs = 80)
-        compose.onNodeWithText("Paragraph 80 of the reply.").assertIsDisplayed()
+        // More than 24 viewports tall. The old fixed 24-scroll cap stopped
+        // above this tail even though the reader had not left it.
+        grow(paragraphs = 750)
+        compose.onNodeWithText("Paragraph 750 of the reply.").assertIsDisplayed()
     }
 
     @Test
