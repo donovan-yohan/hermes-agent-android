@@ -1,0 +1,14 @@
+
+# chalkbag — generated artifacts
+/.agents/
+/.claude/
+/.codex/
+/opencode.json
+/.opencode/
+!/AGENTS.md
+!/CLAUDE.md
+
+# chalkbag — state
+/.chalk/.state.json
+/.chalk/.state.lock
+/.chalk-tmp/

@@ -1,0 +1,7 @@
+providers:
+  claude:
+    enabled: true
+  codex:
+    enabled: true
+  opencode:
+    enabled: true
