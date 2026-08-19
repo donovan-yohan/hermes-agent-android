@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Host profiles and appearance settings may travel; nothing secret is stored on
+  disk in Phase 1 (passwords and private keys live in memory only), but the rule
+  set is written now so a later secret store cannot be backed up by default.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="secrets" />
+        <exclude domain="file" path="secrets" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="secrets" />
+        <exclude domain="file" path="secrets" />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,72 +1,92 @@
-# Optional. When present, this file translates into per-provider
-# permission outputs:
-#   - Claude: `.claude/settings.json#permissions`
-#   - Codex:  `.codex/config.toml` (sandbox_mode, approval_policy,
-#             [permissions.default.filesystem], [sandbox_workspace_write])
-#   - opencode: `opencode.json#permission`
+# Permissions for agents working in this repo. Rendered by chalkbag into
+# .claude/settings.json, .codex/config.toml and opencode.json.
 #
-# Delete any section you don't want to set — all fields are optional.
+# Two rules shape everything here:
+#   1. The upstream Hermes checkout is READ-ONLY reference material.
+#   2. Nothing secret lives in this repo, and nothing should try to read one.
 
 bash:
   allow:
-    - "git pull"
-    - "git fetch *"
+    - "./gradlew *"
+    - "git status*"
+    - "git diff*"
+    - "git log*"
+    - "git show*"
+    - "./scripts/check-repo-invariants.sh"
+    - "adb devices"
+    - "adb logcat*"
   ask:
+    - "adb install*"
+    - "adb uninstall*"
+    - "chalkbag build*"
     - "curl *"
   deny:
+    # The reference checkout must never be mutated.
+    - "git -C /home/donovanyohan/.hermes/*"
     - "git push --force*"
+    - "git push*"
     - "rm -rf *"
+    # A key that leaves the device is a key that has to be rotated.
+    - "ssh-keygen *"
+    - "cat ~/.ssh/*"
 
 read:
   allow:
-    - "./src/**"
-    - "./tests/**"
+    - "./app/**"
+    - "./docs/**"
+    - "./scripts/**"
+    - "./.chalk/**"
+    - "./gradle/**"
+    # Pinned upstream reference. Read-only by policy and by the bash rules above.
+    - "/home/donovanyohan/.hermes/hermes-agent/**"
   deny:
-    - "./secrets/**"
+    - "~/.ssh/**"
+    - "**/*.pem"
+    - "**/id_rsa*"
+    - "**/id_ed25519*"
+    - "**/.env"
+    - "**/.env.*"
 
 write:
   allow:
-    - "./src/**"
-    - "./tests/**"
+    - "./app/**"
+    - "./docs/**"
+    - "./scripts/**"
+    - "./.chalk/**"
+    - "./gradle/**"
+    - "./AGENTS.md"
+    - "./README.md"
+    - "./build.gradle.kts"
+    - "./settings.gradle.kts"
+    - "./gradle.properties"
   deny:
-    - "./secrets/**"
+    # Upstream, credentials, and chalkbag's generated output.
+    - "/home/donovanyohan/.hermes/**"
+    - "~/.ssh/**"
+    - "./.agents/**"
+    - "./.claude/**"
+    - "./.codex/**"
+    - "./.opencode/**"
+    - "./opencode.json"
 
 webfetch:
   allow:
+    - "domain:developer.android.com"
+    - "domain:developers.google.com"
     - "domain:github.com"
+    - "domain:maven.org"
+    - "domain:repo1.maven.org"
+    - "domain:dl.google.com"
   deny:
     - "domain:*"
 
-# MCP tool patterns. Applied to Claude/opencode; Codex does not support
-# MCP permission rules and will emit a warning at render time.
-mcp:
-  allow:
-    - "mcp__github__repo_*"
-  deny:
-    - "mcp__puppeteer__*"
-
-# Claude permission mode. Mapped to the closest equivalent on each
-# provider:
-#   default / acceptEdits → codex on-request, opencode default
-#   plan                  → codex untrusted, opencode plan
-#   auto / dontAsk        → codex never, opencode auto
 defaultMode: "default"
 
-# Codex-focused sandbox switches. `mode` is emitted as `sandbox_mode`;
-# `networkAccess` flows into `[sandbox_workspace_write]` only when
-# `mode = workspace-write` (codex ignores it otherwise).
 sandbox:
   mode: "workspace-write"
+  # Gradle resolves dependencies from Google Maven and Maven Central.
   networkAccess: true
 
-# Extra directories the agent can reach outside the repo cwd. Mapped to:
-#   - Claude: `.claude/settings.json#permissions.additionalDirectories`
-#             (extends Read scope)
-#   - Codex:  `[sandbox_workspace_write].writable_roots`
-#             (extends Write scope; only active when sandbox.mode =
-#             "workspace-write" — codex ignores it in other modes and the
-#             renderer warns)
-# opencode has no equivalent and silently skips this field.
-# additionalRoots:
-#   - "/tmp/nightshift-monitor"
-#   - "/workspace"
+# The upstream Hermes checkout, so read rules above can reach it.
+additionalRoots:
+  - "/home/donovanyohan/.hermes/hermes-agent"

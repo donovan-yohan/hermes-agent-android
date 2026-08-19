@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy (API < 31) counterpart of data_extraction_rules.xml. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="secrets" />
+    <exclude domain="file" path="secrets" />
+</full-backup-content>

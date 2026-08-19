@@ -1,0 +1,386 @@
+package com.hermesagent.mobile.ui.common
+
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.ui.theme.HermesTheme
+
+/**
+ * The shared primitives. DESIGN.md's rule is "one primitive per concern"
+ * (`apps/desktop/DESIGN.md:32-34` @ `f82f2dba`), and these are the concerns
+ * this slice actually has. Anything that needs a padding or a colour override
+ * at the call site belongs here instead, as a variant.
+ */
+
+/** The single hairline. `--ui-stroke-tertiary` is the default in-panel divider. */
+@Composable
+fun Hairline(modifier: Modifier = Modifier, color: Color = HermesTheme.tokens.strokeTertiary) {
+    Box(modifier.fillMaxWidth().height(1.dp).background(color))
+}
+
+/** Quiet uppercase field label. Groups a list; never a chrome heading. */
+@Composable
+fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text.uppercase(),
+        style = HermesTheme.type.sectionLabel,
+        color = HermesTheme.tokens.textTertiary,
+        modifier = modifier,
+    )
+}
+
+/**
+ * A transcript scaffold line: what the agent *did*, as opposed to what it
+ * said. One colour and one size for all of them, per Desktop's `ScaffoldRow`
+ * (`apps/desktop/src/components/chat/scaffold-row.tsx:5-23`).
+ */
+@Composable
+fun ScaffoldRow(
+    label: String,
+    modifier: Modifier = Modifier,
+    meta: String? = null,
+    leading: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        leading?.invoke()
+        Text(
+            text = label,
+            style = HermesTheme.type.scaffold,
+            color = HermesTheme.tokens.scaffoldText,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (meta != null) {
+            Text(
+                text = meta,
+                style = HermesTheme.type.scaffoldMeta,
+                color = HermesTheme.tokens.scaffoldMeta,
+            )
+        }
+    }
+}
+
+/**
+ * Session status dot. Three colours and one fill/hollow axis, none of it
+ * moving — Desktop's reasoning verbatim
+ * (`apps/desktop/src/app/chat/session-status-dot.tsx:22-27`): motion on a 6px
+ * circle can only say "something is happening"; colour and fill say *what*.
+ */
+@Composable
+fun StatusDot(
+    color: Color,
+    filled: Boolean,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    size: Dp = 7.dp,
+) {
+    val description = contentDescription
+    val base = modifier
+        .size(size)
+        .semantics { description?.let { this.contentDescription = it } }
+    Box(
+        if (filled) {
+            base.background(color, CircleShape)
+        } else {
+            base.border(1.dp, color, CircleShape)
+        },
+    )
+}
+
+/**
+ * Borderless search: underline on focus, no boxed tile. The only search input
+ * (`apps/desktop/DESIGN.md:158-160`).
+ */
+@Composable
+fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                if (value.isEmpty()) {
+                    Text(placeholder, style = HermesTheme.type.caption, color = tokens.textTertiary)
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = HermesTheme.type.caption.copy(color = tokens.textPrimary),
+                    cursorBrush = SolidColor(tokens.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = placeholder },
+                )
+            }
+            if (value.isNotEmpty()) {
+                QuietIconButton(
+                    icon = Icons.Filled.Clear,
+                    contentDescription = "Clear search",
+                    onClick = { onValueChange("") },
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Hairline(color = if (value.isEmpty()) tokens.strokeQuaternary else tokens.accent)
+    }
+}
+
+/**
+ * Quiet chrome button. Boxless, 48dp touch target with a smaller visual glyph
+ * — the Android floor, which Desktop does not have to care about.
+ */
+@Composable
+fun QuietIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = HermesTheme.tokens.textSecondary,
+) {
+    Box(
+        modifier = modifier
+            .size(HermesTheme.spacing.touchTarget)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) tint else HermesTheme.tokens.textQuaternary,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/**
+ * The choice control for a small mutually-exclusive set — colour mode, auth
+ * method (`apps/desktop/DESIGN.md:161-163`). Replaces radio piles and pill
+ * rows; there is no second segmented control in this app.
+ */
+@Composable
+fun <T> SegmentedControl(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    describe: (T) -> String = label,
+) {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier
+            .fillMaxWidth()
+            .border(1.dp, tokens.strokeTertiary, RoundedCornerShape(10.dp))
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        for (option in options) {
+            val active = option == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
+                    .background(
+                        if (active) tokens.accent.copy(alpha = 0.16f) else Color.Transparent,
+                        RoundedCornerShape(8.dp),
+                    )
+                    .clickable { onSelect(option) }
+                    .semantics {
+                        this.selected = active
+                        contentDescription = describe(option)
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label(option),
+                    style = HermesTheme.type.caption,
+                    color = if (active) tokens.textPrimary else tokens.textTertiary,
+                )
+            }
+        }
+    }
+}
+
+/** Primary action. Flat fill, small radius, no shadow. */
+@Composable
+fun PrimaryButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val tokens = HermesTheme.tokens
+    Box(
+        modifier = modifier
+            .background(
+                if (enabled) tokens.accent else tokens.accent.copy(alpha = 0.3f),
+                RoundedCornerShape(8.dp),
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = HermesTheme.type.caption,
+            color = if (enabled) tokens.accentForeground else tokens.accentForeground.copy(alpha = 0.6f),
+        )
+    }
+}
+
+/** Quiet inline affordance — "Change", "Forget key". Text, not a box. */
+@Composable
+fun TextButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    color: Color = HermesTheme.tokens.accent,
+) {
+    Text(
+        text = label,
+        style = HermesTheme.type.caption,
+        color = if (enabled) color else HermesTheme.tokens.textQuaternary,
+        modifier = modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+    )
+}
+
+/** Plain-body empty state. Centered, no icon pile, no card. */
+@Composable
+fun EmptyState(title: String, description: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(title, style = HermesTheme.type.bodyStrong, color = HermesTheme.tokens.textSecondary)
+        Text(
+            description,
+            style = HermesTheme.type.caption,
+            color = HermesTheme.tokens.textTertiary,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+    }
+}
+
+/**
+ * One look for every error the user can see. Destructive ink, hairline, no
+ * background chip (`apps/desktop/DESIGN.md:184-187`).
+ */
+@Composable
+fun ErrorState(title: String, description: String, modifier: Modifier = Modifier) {
+    val tokens = HermesTheme.tokens
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, tokens.destructive.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(title, style = HermesTheme.type.caption, color = tokens.destructive)
+        Text(description, style = HermesTheme.type.caption, color = tokens.textSecondary)
+    }
+}
+
+/**
+ * Raw output: no fill, hairline border, tight padding, small mono
+ * (`apps/desktop/DESIGN.md:188-189`).
+ */
+@Composable
+fun LogView(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = HermesTheme.type.code,
+        color = HermesTheme.tokens.textSecondary,
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, HermesTheme.tokens.strokeTertiary, RoundedCornerShape(6.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    )
+}
+
+/**
+ * A reduced-motion-safe "working" indicator: three dots whose *opacity* is
+ * driven by an infinite transition, which the system animator scales to zero
+ * duration when animations are disabled. Nothing about state depends on it.
+ */
+@Composable
+fun WorkingDots(modifier: Modifier = Modifier, color: Color = HermesTheme.tokens.accent) {
+    val transition = rememberInfiniteTransition(label = "working")
+    Row(
+        modifier = modifier.clearAndSetSemantics { },
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(3) { index ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 600, delayMillis = index * 140),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "dot$index",
+            )
+            Box(Modifier.size(4.dp).background(color.copy(alpha = alpha), CircleShape))
+        }
+    }
+}
+
+@Composable
+fun VerticalHairline(modifier: Modifier = Modifier) {
+    Box(modifier.width(1.dp).background(HermesTheme.tokens.strokeTertiary))
+}

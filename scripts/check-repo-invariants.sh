@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Repo invariants that a Kotlin test cannot see, checked as part of `./gradlew check`.
+#
+# Each check fails loudly with the exact fix. Add one only when it protects
+# something a reviewer would otherwise have to remember.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+fail=0
+note() { printf '  %s\n' "$1"; }
+problem() { printf 'FAIL  %s\n' "$1"; fail=1; }
+ok() { printf 'ok    %s\n' "$1"; }
+
+# ── 1. CLAUDE.md must stay a symlink to AGENTS.md ─────────────────────────────
+# chalkbag renders provider files from .chalk/; AGENTS.md is the one tracked,
+# hand-written map. If CLAUDE.md becomes a regular file the two drift silently
+# and Claude reads a stale copy.
+if [[ ! -L CLAUDE.md ]]; then
+  problem "CLAUDE.md is not a symlink."
+  note "fix: rm -f CLAUDE.md && ln -s AGENTS.md CLAUDE.md"
+elif [[ "$(readlink CLAUDE.md)" != "AGENTS.md" ]]; then
+  problem "CLAUDE.md points at '$(readlink CLAUDE.md)', not AGENTS.md."
+  note "fix: ln -sfn AGENTS.md CLAUDE.md"
+elif [[ ! -f AGENTS.md ]]; then
+  problem "CLAUDE.md -> AGENTS.md but AGENTS.md does not exist."
+else
+  ok "CLAUDE.md -> AGENTS.md"
+fi
+
+# Git must agree: a symlink committed as a regular file is the failure mode
+# that survives a fresh clone.
+mode="$(git ls-files --stage CLAUDE.md | awk '{print $1}' || true)"
+if [[ -n "$mode" && "$mode" != "120000" ]]; then
+  problem "git has CLAUDE.md staged as mode $mode; a symlink is mode 120000."
+  note "fix: git rm --cached CLAUDE.md && ln -sfn AGENTS.md CLAUDE.md && git add CLAUDE.md"
+elif [[ -n "$mode" ]]; then
+  ok "git tracks CLAUDE.md as a symlink (mode 120000)"
+fi
+
+# ── 2. Generated agent trees must never be committed ─────────────────────────
+for generated in .agents .claude .codex .opencode opencode.json; do
+  if git ls-files --error-unmatch "$generated" >/dev/null 2>&1; then
+    problem "$generated is tracked; chalkbag generates it and .gitignore excludes it."
+    note "fix: git rm -r --cached $generated"
+  fi
+done
+[[ $fail -eq 0 ]] && ok "no generated chalkbag output is tracked"
+
+# ── 3. No private-key material in tracked files ──────────────────────────────
+# The repo must stay safe to publish. A bare PEM *header* is legitimate — the
+# redaction tests need one as a fixture — so this looks for a header followed
+# by an actual base64 body, which is the thing that would be a leak.
+#
+# `git grep -A 1` prints the match as `path:line:text` and the context line as
+# `path-line-text`; a body directly under a header is therefore a context line
+# whose text is a long base64 run.
+leaked="$(
+  git grep -In -A 1 -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' -- . 2>/dev/null |
+    grep -E -- '-[0-9]+-[A-Za-z0-9+/=]{40,}[[:space:]]*$' |
+    sed -E 's/-[0-9]+-.*$//' |
+    sort -u || true
+)"
+if [[ -n "$leaked" ]]; then
+  problem "private-key material in tracked file(s): $(echo "$leaked" | tr '\n' ' ')"
+  note "fix: remove it and rotate the key; credentials never belong in this repo."
+else
+  ok "no private-key material in tracked files"
+fi
+
+# ── 4. The theme ledger records a real upstream pin ──────────────────────────
+ledger="app/src/test/kotlin/com/hermesagent/mobile/ui/theme/DesktopThemeLedger.kt"
+if [[ ! -f "$ledger" ]]; then
+  problem "$ledger is missing; the offline theme-parity gate depends on it."
+elif ! grep -qE 'PINNED_SHA = "[0-9a-f]{40}"' "$ledger"; then
+  problem "$ledger does not record a 40-character upstream SHA."
+  note "fix: set PINNED_SHA to the hermes-agent commit the presets were read from."
+else
+  ok "theme ledger pins $(grep -oE '[0-9a-f]{40}' "$ledger" | head -1)"
+fi
+
+exit $fail

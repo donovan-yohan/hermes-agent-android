@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Platform theme only. Every colour the user sees comes from the Compose
+      theme registry (ui/theme/), not from resource qualifiers — that is what
+      makes the six Hermes presets independent of the OS light/dark switch.
+      This entry exists so the window has a sane pre-Compose background and no
+      ActionBar.
+    -->
+    <style name="Theme.HermesMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

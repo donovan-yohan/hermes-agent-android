@@ -1,34 +1,90 @@
 # hermes-mobile
 
-<!-- Write this file as a MAP, not a README. Keep it ~60-120 lines: point at the
-     real docs instead of duplicating them. Doctrine, with good/bad examples:
-     https://github.com/donovan-yohan/chalk-bag/blob/master/chalkbag/docs/authoring-agents-md.md -->
-
-One line: what this repository is and does.
+Native Kotlin/Jetpack Compose Android client for a self-hosted Hermes Agent,
+reached over an app-managed SSH tunnel. Phase 1 ships the chat/session surface
+and a real SSH probe; there is no gateway transport yet.
 
 ## Directory map
 
 | Path | What lives there | When to read it |
 |---|---|---|
-| `src/` | Application source | Changing behavior |
-| `tests/` | Test suites | Adding or fixing tests |
-| `.chalk/` | chalkbag source (skills, permissions, provider config) | Editing agent config; see `.chalk/README.md` |
+| `app/src/main/kotlin/.../ui/theme/` | Theme registry, palette, semantic tokens, type scale | Any colour, font or spacing question |
+| `app/src/main/kotlin/.../ui/` | Compose surfaces: `chat/`, `sessions/`, `appearance/`, `ssh/`, `common/` primitives | Changing what the app looks like or does |
+| `app/src/main/kotlin/.../data/session/` | `SessionCache` (backend-authoritative), model, calendar grouping | Anything about sessions or transcripts |
+| `app/src/main/kotlin/.../data/ssh/` | `SshProbe` seam, sshj adapter, TOFU policy, redaction | SSH, host keys, secrets |
+| `app/src/main/kotlin/.../data/demo/` | Deterministic demo sessions + turn engine | Understanding what is fake; deleted by the gateway slice |
+| `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
+| `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
+| `docs/workflows/` | Durable port + theme-sync checklists | Before porting a Desktop surface or syncing themes |
+| `docs/adr/` | Decisions with consequences | Before changing the SSH seam |
+| `docs/spikes/` | The research this repo was founded on | Background; long |
+| `.chalk/` | chalkbag source (skills, permissions, providers) | Editing agent config; see `.chalk/README.md` |
+| `scripts/` | Repo invariants, run by `./gradlew check` | Adding a repo-level gate |
+
+Start with `docs/phase-1-architecture.md` — real vs demo, state map, evidence.
 
 ## Commands
 
-- Install: `<install command>`
-- Build: `<build command>`
-- Test: `<test command>` — single file: `<single-test command>`
-- Lint: `<lint command>`
+```bash
+export ANDROID_HOME=/opt/android-sdk        # JDK 17; platform 36, build-tools 35/36
+./gradlew check                             # unit tests (debug+release) + lint + repo invariants
+./gradlew assembleDebug                     # app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:testDebugUnitTest --tests '*ThemeParityTest*'   # one test class
+./gradlew :app:lintDebug
+./scripts/check-repo-invariants.sh          # symlink, ignore rules, theme pin
+python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
+  --upstream /home/donovanyohan/.hermes/hermes-agent          # live upstream diff
+chalkbag validate && chalkbag build --yes && chalkbag doctor  # after editing .chalk/
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
-## Working rules
+## Non-obvious rules
 
-- Preserve the repo's established file organization.
-- Keep thin entrypoints thin; move substantial logic into libraries or focused helper modules.
-- When behavior changes, update the nearest spec/plan/docs that explain it.
+**Upstream is read-only.** `/home/donovanyohan/.hermes/hermes-agent` is a
+reference checkout pinned at `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. Never
+write to it, never fetch or check out inside it. Cite `path:line` **with** that
+SHA or the citation means nothing.
+
+**Theme parity is an invariant.** Every Desktop built-in at the pinned SHA has
+an Android preset with the same name, label, description and registry order.
+Adding a theme must be a data edit to `BuiltinThemes.ALL` — if a chat component
+has to change, that is the bug. Components read `HermesTheme.tokens`, never a
+palette field, never a raw colour, never a preset name. `ThemeParityTest`
+enforces it offline; the parity script diffs a live upstream checkout.
+
+**Secrets policy.** Passwords, passphrases and private keys are in-memory only
+and are zeroed after use. Only host, port, username, auth method, accepted
+fingerprint and an imported key's display name reach disk — enforced by
+`HostProfileStore` accepting nothing else. Everything user-visible goes through
+`redact()`. No credential, host name or fingerprint belongs in this repo, in a
+test, or in a screenshot. There is no accept-all host-key verifier and a changed
+host key has no accept path.
+
+**Backend-authoritative data merges, never clobbers.** `SessionCache` is the
+cache of gateway truth even though the gateway does not exist yet: partial
+refreshes layer, rows leave only through an explicit tombstone, and a no-op
+upsert preserves reference identity. UI-only state (draft, search, drawer) never
+goes in there.
+
+**Foreground isolation.** A running turn writes to the session that started it.
+Switching sessions never cancels it and never paints into the session now on
+screen; it lands as an unread dot.
+
+**`CLAUDE.md` is a symlink to `AGENTS.md`** and `./gradlew check` fails if it
+stops being one. Generated `.agents/`, `.claude/`, `.codex/`, `.opencode/` and
+`opencode.json` are ignored and must never be committed.
+
+**Testing shape.** Coroutines are tested on virtual time with injected timing —
+never real delays. A `combine` + `WhileSubscribed` state flow needs a live
+collector *and* a `runCurrent()` before you assert. Compose journeys go in
+`src/testDebug/`. Fixed clock, fixed timezone, fixed locale for anything
+calendar-shaped.
 
 ## Scoped guides
 
 | Path | Covers |
 |---|---|
-| _(add scoped AGENTS.md files here as the repo grows)_ | |
+| `docs/workflows/port-desktop-surface.md` | Porting any Desktop UI/capability: pinning, source-and-test reading, state classification, mobile adaptation, evidence |
+| `docs/workflows/sync-desktop-themes.md` | Desktop theme/token changes: inventory diff, mapping, fonts, parity, visual checks |
+| `docs/adr/0001-ssh-probe-to-tunnel.md` | Why the SSH seam is one method wide, and how it grows into the tunnel |
+| `.chalk/README.md` | chalkbag source-of-truth rules |
