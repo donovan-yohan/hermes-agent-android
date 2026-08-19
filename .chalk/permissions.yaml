@@ -37,15 +37,16 @@ read:
     - "./scripts/**"
     - "./.chalk/**"
     - "./gradle/**"
-    # Pinned upstream reference. Read-only by policy and by the bash rules above.
-    - "/home/donovanyohan/.hermes/hermes-agent/**"
+
   deny:
+    # Codex accepts exact paths and subtree patterns for deny rules, not
+    # filename globs such as **/*.pem. Keep the real credential stores closed;
+    # AGENTS.md and the tracked-file invariant prohibit secret fixtures here.
     - "~/.ssh/**"
-    - "**/*.pem"
-    - "**/id_rsa*"
-    - "**/id_ed25519*"
-    - "**/.env"
-    - "**/.env.*"
+    - "./.env"
+    - "./secrets/**"
+    - "./id_rsa"
+    - "./id_ed25519"
 
 write:
   allow:
@@ -60,8 +61,7 @@ write:
     - "./settings.gradle.kts"
     - "./gradle.properties"
   deny:
-    # Upstream, credentials, and chalkbag's generated output.
-    - "/home/donovanyohan/.hermes/**"
+    # Credentials and chalkbag's generated output.
     - "~/.ssh/**"
     - "./.agents/**"
     - "./.claude/**"
@@ -86,7 +86,3 @@ sandbox:
   mode: "workspace-write"
   # Gradle resolves dependencies from Google Maven and Maven Central.
   networkAccess: true
-
-# The upstream Hermes checkout, so read rules above can reach it.
-additionalRoots:
-  - "/home/donovanyohan/.hermes/hermes-agent"
