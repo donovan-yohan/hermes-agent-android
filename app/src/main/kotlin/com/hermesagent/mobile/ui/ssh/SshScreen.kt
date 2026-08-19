@@ -7,7 +7,6 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -48,7 +46,7 @@ import com.hermesagent.mobile.data.ssh.HostAnchor
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.ProbeFailure
 import com.hermesagent.mobile.data.ssh.SshProbe
-import com.hermesagent.mobile.data.ssh.hostKeyPublicKeyPath
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -70,16 +68,9 @@ internal const val SECTION_HOST_KEY = "ssh-section-host-key"
 internal const val SECTION_PROBE = "ssh-section-probe"
 
 /**
- * SSH onboarding + probe — Desktop's *Connect via SSH*, minus everything Phase 1
- * does not have (`apps/desktop/src/i18n/en.ts:866-874` @ `f82f2dba`).
- *
- * The copy is load-bearing, not decoration, and it carries four claims the code
- * has to keep true: this build tests SSH access and nothing more; Android
- * sandboxes packages, so Termux's SSH files are unreachable here; the first host
- * key is reviewed and pinned and a change fails closed; and credentials live in
- * memory for this screen only. The last of those is why [SecureScreenLifetime]
- * exists — the ViewModel outlives the screen, so leaving has to end the lifetime
- * the copy promises.
+ * Connect via SSH, adapted from Hermes Desktop's remote connection task at the
+ * frozen `f82f2dba` authority contract. Security mechanics stay in code/docs;
+ * the primary surface is task, state, outcome, and next action.
  */
 @Composable
 fun SshScreen(
@@ -106,22 +97,11 @@ fun SshScreen(
             .padding(horizontal = inset, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                "Tests SSH access to a Hermes host. Launching Hermes there and tunneling the " +
-                    "gateway are not implemented yet.",
-                style = HermesTheme.type.caption,
-                color = tokens.textSecondary,
-            )
-            Text(
-                "Reaching the host from Termux proves the route, not this app's access: Android " +
-                    "sandboxes packages, so Termux's keys, agent and ~/.ssh/config are unreadable " +
-                    "here. Hermes brings its own — credentials it holds in memory, or Tailscale " +
-                    "SSH, which needs none.",
-                style = HermesTheme.type.caption,
-                color = tokens.textTertiary,
-            )
-        }
+        Text(
+            "Connect this app to a remote Hermes Gateway over SSH.",
+            style = HermesTheme.type.caption,
+            color = tokens.textSecondary,
+        )
 
         Hairline()
 
@@ -134,13 +114,24 @@ fun SshScreen(
                 keyboardType = KeyboardType.Email,
             )
             Text(
-                "`user@host`, as you would type it after `ssh`. Port 22 unless you add one " +
-                    "(`you@hermes-box:2222`); an IPv6 address goes in brackets.",
+                "Use user@host. Add :port only when the host does not use port 22.",
                 style = HermesTheme.type.scaffoldMeta,
                 color = tokens.scaffoldMeta,
             )
             state.destinationError?.let { problem ->
                 ErrorState(title = "Fix the destination", description = problem)
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LabelledField(
+                label = "Hermes profile (optional)",
+                value = state.profile.remoteHermesProfile,
+                placeholder = "default",
+                onValueChange = actions.onRemoteProfileChange,
+            )
+            state.remoteProfileError?.let { problem ->
+                ErrorState(title = "Check the profile name", description = problem)
             }
         }
 
@@ -158,21 +149,21 @@ fun SshScreen(
 
             when (state.profile.authMethod) {
                 AuthMethod.TailscaleSsh -> Text(
-                    "Nothing to type: the tailnet already authenticated this device, so SSH " +
-                        "uses auth type `none`. It works only if the target runs Tailscale SSH " +
-                        "and your tailnet SSH policy allows this connection — a box running " +
-                        "ordinary OpenSSH over Tailscale still wants a password or a key.",
+                    "Uses Tailscale SSH; the host and tailnet policy must allow this connection.",
                     style = HermesTheme.type.caption,
                     color = tokens.textSecondary,
                 )
 
-                AuthMethod.Password -> LabelledField(
-                    label = "Password",
-                    value = state.password,
-                    placeholder = "",
-                    onValueChange = actions.onPasswordChange,
-                    secret = true,
-                )
+                AuthMethod.Password -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LabelledField(
+                        label = "Password",
+                        value = state.password,
+                        placeholder = "",
+                        onValueChange = actions.onPasswordChange,
+                        secret = true,
+                    )
+                    Text("Used for this connection only.", style = HermesTheme.type.scaffoldMeta, color = tokens.scaffoldMeta)
+                }
 
                 AuthMethod.PrivateKey -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (state.privateKeyLoaded) {
@@ -196,25 +187,12 @@ fun SshScreen(
             state.keyImportProblem?.let { problem ->
                 ErrorState(title = "That key was not imported", description = problem.message())
             }
-
-            Text(
-                "Credentials stay in memory for this screen and are dropped when a probe uses " +
-                    "them or when you leave. A probe that stops at the fingerprint review has " +
-                    "not used them, so accepting and retrying does not ask again. Nothing " +
-                    "secret is written to disk, logged, or backed up: only host, port, " +
-                    "username, method and the fingerprint you accept are saved. Screenshots and " +
-                    "the recent-apps preview are blocked here.",
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.scaffoldMeta,
-            )
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionLabel("Host key", Modifier.testTag(SECTION_HOST_KEY))
             Text(
-                "The first key a host presents is reviewed by you and pinned; a later change " +
-                    "fails closed, and there is no accept path for it here. Tailscale SSH is " +
-                    "reviewed the same way — this app cannot read Tailscale's known_hosts.",
+                "Review the host key on first connect; a changed key is blocked.",
                 style = HermesTheme.type.caption,
                 color = tokens.textTertiary,
             )
@@ -228,35 +206,93 @@ fun SshScreen(
                 )
             }
 
-            state.profile.acceptedFingerprint?.let { accepted ->
-                LogView(accepted)
-                TextButton("Forget this host key", actions.onForgetHostKey, color = tokens.textTertiary)
+            state.profile.acceptedFingerprint?.let {
+                ScaffoldRow(label = "Host key trusted")
+                TextButton("Forget host key", actions.onForgetHostKey, color = tokens.textTertiary)
             }
         }
 
-        ProbeSection(state = state, onProbe = actions.onProbe, onCancel = actions.onCancelProbe)
+        GatewaySection(state, actions)
+        DiagnosticSection(state = state, onProbe = actions.onProbe, onCancel = actions.onCancelProbe)
     }
 }
 
 @Composable
-private fun ProbeSection(state: SshUiState, onProbe: () -> Unit, onCancel: () -> Unit) {
+private fun GatewaySection(state: SshUiState, actions: SshActions) {
     val tokens = HermesTheme.tokens
-
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionLabel("Probe", Modifier.testTag(SECTION_PROBE))
-        Text(
-            "Connects, verifies the host key, authenticates, runs " +
-                "`printf HERMES_ANDROID_SSH_OK`, and disconnects. Nothing else.",
-            style = HermesTheme.type.caption,
-            color = tokens.textTertiary,
+        SectionLabel("Gateway", Modifier.testTag(SECTION_PROBE))
+        ScaffoldRow(
+            label = state.connection.status.label,
+            leading = {
+                StatusDot(
+                    color = when (state.connection.status) {
+                        GatewayConnectionStatus.Connected -> tokens.statusUnread
+                        GatewayConnectionStatus.Connecting -> tokens.statusWorking
+                        GatewayConnectionStatus.NeedsAttention -> tokens.destructive
+                        GatewayConnectionStatus.Disconnected -> tokens.statusIdle
+                    },
+                    filled = state.connection.status != GatewayConnectionStatus.Disconnected,
+                    contentDescription = null,
+                    size = 7.dp,
+                )
+            },
         )
+        if (state.connection.status == GatewayConnectionStatus.NeedsAttention) {
+            ErrorState(
+                title = "Gateway needs attention",
+                description = state.connection.message ?: "Check the connection settings and try again.",
+            )
+        }
+
+        when (state.connection.status) {
+            GatewayConnectionStatus.Connected ->
+                PrimaryButton("Disconnect", actions.onDisconnect, Modifier.fillMaxWidth())
+
+            GatewayConnectionStatus.Connecting -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                WorkingDots()
+                Text("Connecting…", style = HermesTheme.type.caption, color = tokens.textSecondary)
+                TextButton("Cancel", actions.onDisconnect, color = tokens.textTertiary)
+            }
+
+            GatewayConnectionStatus.Disconnected,
+            GatewayConnectionStatus.NeedsAttention,
+            -> PrimaryButton("Connect", actions.onConnect, Modifier.fillMaxWidth(), state.canConnect)
+        }
+
+        if (
+            state.connection.status != GatewayConnectionStatus.Connected &&
+            state.connection.status != GatewayConnectionStatus.Connecting
+        ) {
+            state.connectionCredentialPrompt?.let { prompt ->
+                Text(prompt, style = HermesTheme.type.caption, color = tokens.textSecondary)
+            }
+        }
+
+        if (state.status is ProbeStatus.KeyMismatch) {
+            ErrorState(
+                title = "Host key changed",
+                description = "Verify the host, then forget the saved key before reconnecting.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticSection(state: SshUiState, onProbe: () -> Unit, onCancel: () -> Unit) {
+    val tokens = HermesTheme.tokens
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SectionLabel("Diagnostics")
 
         when (val status = state.status) {
-            ProbeStatus.Idle -> PrimaryButton(
-                label = "Run probe",
+            ProbeStatus.Idle -> TextButton(
+                label = "Test SSH only",
                 onClick = onProbe,
                 enabled = state.canProbe,
-                modifier = Modifier.fillMaxWidth(),
+                color = tokens.textSecondary,
             )
 
             ProbeStatus.Running -> Row(
@@ -264,41 +300,18 @@ private fun ProbeSection(state: SshUiState, onProbe: () -> Unit, onCancel: () ->
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 WorkingDots()
-                Text("Connecting…", style = HermesTheme.type.caption, color = tokens.textSecondary)
+                Text("Testing SSH…", style = HermesTheme.type.caption, color = tokens.textSecondary)
                 TextButton("Cancel", onCancel, color = tokens.textTertiary)
             }
 
-            is ProbeStatus.Succeeded -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ScaffoldRow(
-                    label = "Probe succeeded",
-                    meta = "${status.elapsedMillis}ms",
-                    leading = {
-                        StatusDot(
-                            color = tokens.statusUnread,
-                            filled = true,
-                            contentDescription = null,
-                            size = 7.dp,
-                        )
-                    },
-                )
-                LogView("${status.serverVersion}\n${status.output}")
-                PrimaryButton("Run probe again", onProbe, Modifier.fillMaxWidth(), state.canProbe)
-            }
+            is ProbeStatus.Succeeded -> ScaffoldRow(label = "SSH test passed", meta = "${status.elapsedMillis}ms")
 
             is ProbeStatus.Failed -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ErrorState(title = status.kind.title(), description = status.message)
-                PrimaryButton("Try again", onProbe, Modifier.fillMaxWidth(), state.canProbe)
+                ErrorState(title = status.kind.title(), description = status.kind.nextAction())
+                TextButton("Test again", onProbe, enabled = state.canProbe, color = tokens.textSecondary)
             }
 
-            is ProbeStatus.KeyMismatch -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ErrorState(
-                    title = "Host key CHANGED — refusing to connect",
-                    description = "The key this host presents is not the one you trusted. That means " +
-                        "the server was rebuilt, or someone is between you and it. Nothing was sent. " +
-                        "Verify out of band, then forget the stored key above and probe again.",
-                )
-                LogView("expected ${status.expected}\npresented ${status.presented}")
-            }
+            is ProbeStatus.KeyMismatch -> Unit
         }
     }
 }
@@ -308,10 +321,21 @@ private fun ProbeFailure.title(): String = when (this) {
     ProbeFailure.AuthFailed -> "Authentication was refused"
     ProbeFailure.TailscaleSshRefused -> "Reachable, but not over Tailscale SSH"
     ProbeFailure.Timeout -> "The host did not answer"
-    ProbeFailure.Cancelled -> "Probe cancelled"
+    ProbeFailure.Cancelled -> "SSH test cancelled"
     ProbeFailure.CryptoUnavailable -> "This device cannot run the handshake"
     ProbeFailure.BadCommandResult -> "Connected, but the probe command did not check out"
-    ProbeFailure.Unknown -> "The probe failed"
+    ProbeFailure.Unknown -> "The SSH test failed"
+}
+
+private fun ProbeFailure.nextAction(): String = when (this) {
+    ProbeFailure.Unreachable -> "Check the destination and network, then try again."
+    ProbeFailure.AuthFailed -> "Check the selected credentials and try again."
+    ProbeFailure.TailscaleSshRefused -> "Enable and allow Tailscale SSH, or choose another method."
+    ProbeFailure.Timeout -> "Check the host and network, then try again."
+    ProbeFailure.Cancelled -> "Run the test again when you are ready."
+    ProbeFailure.CryptoUnavailable -> "Update the app or use another supported device."
+    ProbeFailure.BadCommandResult -> "Check the account's login shell and try again."
+    ProbeFailure.Unknown -> "Check the connection settings and try again."
 }
 
 /**
@@ -387,15 +411,7 @@ private fun HostKeyReview(
     ) {
         Text("First connection to this host", style = HermesTheme.type.bodyStrong, color = tokens.textPrimary)
         Text(
-            buildString {
-                append("Hermes has never seen this host's key. Compare the fingerprint with what ")
-                append("the server reports")
-                // The wire name is not the file name — `ecdsa-sha2-nistp256`
-                // lives in `ssh_host_ecdsa_key.pub`. A type with no known file
-                // gets no command rather than a path that is not there.
-                hostKeyPublicKeyPath(keyType)?.let { append(" (`ssh-keygen -lf $it`)") }
-                append(" before accepting. Nothing has been authenticated yet.")
-            },
+            "Compare this fingerprint with the host before accepting.",
             style = HermesTheme.type.caption,
             color = tokens.textSecondary,
         )

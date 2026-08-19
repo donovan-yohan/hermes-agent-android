@@ -6,30 +6,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import com.hermesagent.mobile.data.demo.DemoSessions
-import com.hermesagent.mobile.data.demo.DemoTurnEngine
-import com.hermesagent.mobile.data.demo.TurnTiming
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
+import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.ToolActivity
+import com.hermesagent.mobile.data.session.ToolState
+import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -37,48 +37,38 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import kotlin.math.abs
 
-/**
- * The core phone journey, driven through real Compose semantics on the JVM
- * (Robolectric — no emulator, so it runs here and in CI).
- *
- * It is deliberately a *journey*, not a screenshot: open the session drawer,
- * search it, switch session, create one, type, send, and see the reply land.
- * Those are the interactions the slice claims, and this is what proves them
- * without a device.
- *
- * Assertion style note: the compact layout keeps the drawer composed while it
- * is closed, so a session title or preview legitimately exists twice in the
- * tree. Tests therefore assert on **counts and existence** for anything the
- * drawer also shows, and reserve `assertIsDisplayed` for nodes that are unique
- * to one surface.
- *
- * What still needs a physical device: real IME behaviour, gesture navigation,
- * fold/unfold, and rendering fidelity. See `docs/phase-1-architecture.md`.
- */
+/** Real Compose semantics over live-repository-shaped state; no demo engine. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ChatJourneyTest {
-
     @get:Rule
     val compose = createComposeRule()
 
     private val cache = SessionCache()
+    private lateinit var repository: JourneyRepository
     private lateinit var viewModel: ChatViewModel
     private var themeName by mutableStateOf(BuiltinThemes.DEFAULT_NAME)
 
-    private fun launch(
-        initialSessionId: String = DemoSessions.INITIAL_SESSION_ID,
-        seed: () -> Unit = { DemoSessions.seed(cache, NOW) },
-    ) {
-        seed()
-        viewModel = ChatViewModel(
-            cache = cache,
-            turnEngine = DemoTurnEngine(TurnTiming(firstDelayMillis = 10, deltaDelayMillis = 5, toolRunMillis = 20)),
-            clock = { NOW },
-        )
-        viewModel.selectSession(initialSessionId)
+    private fun launch(connected: Boolean = true, withSessions: Boolean = true) {
+        if (withSessions) {
+            cache.upsertSessions(
+                listOf(
+                    SessionSummary("live-a", "Remote planning", "Gateway preview", NOW),
+                    SessionSummary("live-b", "Second remote session", "Other preview", NOW - 86_400_000),
+                ),
+            )
+            cache.setTranscript(
+                "live-a",
+                listOf(
+                    UserTurn("row-u", "What is live?", NOW - 2),
+                    AssistantTurn("row-a", "Live reply from Gateway", NOW - 1),
+                ),
+            )
+            cache.setTranscript("live-b", listOf(AssistantTurn("row-b", "Second live transcript", NOW - 1)))
+        }
+        repository = JourneyRepository(cache, connected)
+        viewModel = ChatViewModel(cache, repository, clock = { NOW })
 
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
@@ -89,235 +79,156 @@ class ChatJourneyTest {
                         onQueryChange = viewModel::setQuery,
                         onDraftChange = viewModel::setDraft,
                         onSelectSession = viewModel::selectSession,
-                        onCreateSession = { viewModel.createSession() },
-                        onArchiveToggle = viewModel::setArchived,
-                        onRenameSession = viewModel::renameSession,
+                        onCreateSession = viewModel::createSession,
                         onSend = viewModel::submit,
                         onStop = viewModel::stop,
-                        onToggleArchived = { viewModel.setShowArchived(!state.showArchived) },
                     ),
                     onOpenSettings = {},
                 )
             }
         }
-    }
-
-    @Test
-    fun `chat opens on the newest session with its transcript`() {
-        launch()
-
-        assertTrue("the active session's title must be on screen", compose.countWithText("SSH tunnel bring-up") >= 1)
-        // The assistant's reply is unique to the transcript. `exists` rather
-        // than `isDisplayed`: the transcript opens scrolled to its tail, so an
-        // earlier block is legitimately off-screen.
-        assertEquals(1, compose.countWithText("Termux and this app are separate", substring = true))
-        assertTrue("the tool scaffold row renders", compose.countWithText("probe hermes-box:22") >= 1)
-    }
-
-    @Test
-    fun `the session drawer opens, groups by date, and switches session`() {
-        launch()
-
-        compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.waitForIdle()
-
-        // Desktop labels the *breaks* between groups, never the group at the top
-        // of the list (`session-date-groups.ts:136-140`), so the newest sessions
-        // carry no "Today" header while the older groups keep theirs.
-        assertEquals("the first group must not be labelled", 0, compose.countWithText("TODAY"))
-        assertTrue("later groups are still labelled", compose.countWithText("YESTERDAY") >= 1)
-
-        compose.onNodeWithText("Theme parity with Desktop").performClick()
-        compose.waitForIdle()
-
-        // The transcript really swapped: the new session's reply is present and
-        // the previous one's is gone.
-        assertEquals(1, compose.countWithText("Append one entry to", substring = true))
-        assertEquals(0, compose.countWithText("Termux and this app are separate", substring = true))
     }
 
     @Test
-    fun `searching the drawer narrows the list`() {
+    fun `chat opens on newest backend session with connected state`() {
+        launch()
+        assertTrue(compose.countWithText("Remote planning") >= 1)
+        compose.onNodeWithText("Live reply from Gateway").assertIsDisplayed()
+        assertTrue(compose.countWithText("Connected") >= 1)
+    }
+
+    @Test
+    fun `drawer searches and resumes selected durable session`() {
         launch()
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Search sessions").performTextInput("second")
+        assertEquals(1, compose.countWithText("Second remote session"))
+        assertEquals(0, compose.countWithText("Gateway preview"))
 
-        compose.onNodeWithContentDescription("Search sessions").performTextInput("theme")
+        compose.onNodeWithText("Second remote session").performClick()
         compose.waitForIdle()
-
-        assertEquals("the matching session stays", 1, compose.countWithText("Theme parity with Desktop"))
-        assertEquals("the non-matching session leaves the list", 0, compose.countWithText("Approval flow sketch"))
+        compose.onNodeWithText("Second live transcript").assertIsDisplayed()
+        assertTrue(repository.opened.contains("live-b"))
     }
 
     @Test
-    fun `submitting swaps send for stop, and stopping keeps the partial turn`() {
+    fun `send uses live repository and create opens its returned durable session`() {
         launch()
-
-        compose.onNodeWithContentDescription("Message Hermes").performTextInput("what is real?")
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("send through Gateway")
         compose.onNodeWithContentDescription("Send message").performClick()
         compose.waitForIdle()
-
-        // The user turn paints immediately (transcript bubble + drawer preview),
-        // and send has become stop, in the same position.
-        assertTrue(compose.countWithText("what is real?", substring = true) >= 1)
-        compose.onNodeWithContentDescription("Stop generating").assertIsDisplayed()
-        assertEquals(
-            "send must not be reachable while a turn runs",
-            0,
-            compose.countWithContentDescription("Send message"),
-        )
-
-        compose.onNodeWithContentDescription("Stop generating").performClick()
-        compose.waitForIdle()
-
-        compose.onNodeWithContentDescription("Send message").assertIsDisplayed()
-        assertEquals(0, compose.countWithContentDescription("Stop generating"))
-        assertTrue("the partial reply is kept and labelled", compose.countWithText("Stopped by you") >= 1)
-    }
-
-    @Test
-    fun `a turn left running lands its reply in the transcript`() {
-        launch()
-
-        compose.onNodeWithContentDescription("Message Hermes").performTextInput("what is real?")
-        compose.onNodeWithContentDescription("Send message").performClick()
-
-        compose.waitUntil(timeoutMillis = 10_000) {
-            compose.countWithText("six Desktop themes", substring = true) == 1
-        }
-        compose.waitUntil(timeoutMillis = 10_000) {
-            compose.countWithContentDescription("Send message") == 1
-        }
-    }
-
-    @Test
-    fun `creating a session opens an empty transcript`() {
-        launch()
+        assertEquals(listOf("live-a" to "send through Gateway"), repository.submitted)
+        assertEquals("send through Gateway", (cache.transcript("live-a").last() as UserTurn).text)
 
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.waitForIdle()
         compose.onNodeWithContentDescription("New session").performClick()
         compose.waitForIdle()
-
         compose.onNodeWithText("No messages yet").assertIsDisplayed()
+        assertEquals("created-live", viewModel.uiState.value.activeSession?.id)
     }
 
     @Test
-    fun `restoring the final archived session selects it and enables a new turn`() {
-        launch(initialSessionId = "s-last") {
-            cache.upsertSession(
-                SessionSummary(
-                    id = "s-last",
-                    title = "Last session",
-                    preview = "",
-                    lastActiveAtMillis = NOW,
-                ),
-            )
-        }
+    fun `disconnected chat shows truthful status and disables send`() {
+        launch(connected = false)
+        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        compose.waitForIdle()
+        compose.onNodeWithText("Disconnected").assertIsDisplayed()
+        assertEquals(0, compose.countWithText("Streaming · Connected"))
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("not sent")
+        compose.onNodeWithContentDescription("Send message").assertIsNotEnabled()
+        assertTrue(repository.submitted.isEmpty())
+    }
+
+    @Test
+    fun `fresh disconnected chat disables new session and points to Gateway setup`() {
+        launch(connected = false, withSessions = false)
 
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.onNodeWithText("Archive").performClick()
-        compose.waitForIdle()
-        compose.onNodeWithText("No sessions").assertIsDisplayed()
-
-        compose.onNodeWithText("Show archived").performClick()
-        compose.onNodeWithText("Restore").performClick()
-        compose.waitForIdle()
-        val restoredRow = compose.onNodeWithContentDescription("Last session. Idle")
-        assertTrue(restoredRow.fetchSemanticsNode().config[SemanticsProperties.Selected])
-        // Restoring selects the only live session. Selecting its row closes the
-        // drawer so the next actions are the same type-and-send path as normal.
-        restoredRow.performClick()
-        compose.waitForIdle()
-
-        compose.onNodeWithContentDescription("Message Hermes").performTextInput("continue here")
-        compose.onNodeWithContentDescription("Send message").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            compose.countWithText("continue here", substring = true) >= 1
-        }
+        compose.onNodeWithContentDescription("New session").assertIsNotEnabled()
+        compose.onNodeWithText("Connect to a Gateway to start a session.").assertIsDisplayed()
     }
 
     @Test
-    fun `long pressing a session cancels edits and trims confirmed titles`() {
+    fun `tool completion keeps concise duration while stopped tools do not look successful`() {
         launch()
-        compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.waitForIdle()
-
-        val row = compose.onNodeWithTag("Session row ${DemoSessions.INITIAL_SESSION_ID}")
-        row.performSemanticsAction(SemanticsActions.OnLongClick)
-        assertEquals(
-            "SSH tunnel bring-up",
-            compose.onNodeWithContentDescription("Session title")
-                .fetchSemanticsNode()
-                .config[SemanticsProperties.EditableText]
-                .text,
+        cache.setTranscript(
+            "live-a",
+            listOf(
+                ToolActivity("tool-whole", "Whole", "done", ToolState.Done, 2.0),
+                ToolActivity("tool-fraction", "Fraction", "done", ToolState.Done, 1.234),
+                ToolActivity("tool-stopped", "Stopped", "partial", ToolState.Stopped, 7.5),
+            ),
         )
-        compose.onNodeWithContentDescription("Session title").performTextClearance()
-        compose.onNodeWithContentDescription("Session title").performTextInput("Discarded rename")
-        compose.onNodeWithText("Cancel").performClick()
-        assertEquals(0, compose.countWithText("Rename session"))
-        compose.onNodeWithTag("Session row ${DemoSessions.INITIAL_SESSION_ID}").assertIsDisplayed()
-        assertEquals("SSH tunnel bring-up", cache.session(DemoSessions.INITIAL_SESSION_ID)?.title)
-
-        compose.onNodeWithTag("Session row ${DemoSessions.INITIAL_SESSION_ID}")
-            .performSemanticsAction(SemanticsActions.OnLongClick)
-        compose.onNodeWithContentDescription("Session title").performTextClearance()
-        compose.onNodeWithText("Rename").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Session title").performTextInput("  Tunnel renamed  ")
-        compose.onNodeWithText("Rename").performClick()
         compose.waitForIdle()
 
-        assertTrue(compose.countWithText("Tunnel renamed") >= 1)
-        assertEquals("Tunnel renamed", cache.session(DemoSessions.INITIAL_SESSION_ID)?.title)
+        compose.onNodeWithContentDescription("Tool Whole, done").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tool Fraction, done").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tool Stopped, stopped").assertIsDisplayed()
+        compose.onNodeWithText("2s").assertIsDisplayed()
+        compose.onNodeWithText("1.2s").assertIsDisplayed()
+        assertEquals(0, compose.countWithText("7.5s"))
     }
 
     @Test
-    fun `the composer omits unavailable attachments and centers typed text`() {
+    fun `another running turn keeps stream ownership and disables a second submit`() {
         launch()
-        assertEquals(
-            "an unavailable attachment action must not steal composer width",
-            0,
-            compose.countWithContentDescription("Attach a file (not available in this build)"),
-        )
-
-        compose.onNodeWithContentDescription("Message Hermes").performTextInput("vertically centered")
+        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        viewModel.selectSession("live-b")
         compose.waitForIdle()
 
-        val shell = compose.onNodeWithTag("Composer field shell").fetchSemanticsNode().boundsInRoot
-        val input = compose.onNodeWithContentDescription("Message Hermes").fetchSemanticsNode().boundsInRoot
-        assertTrue(
-            "the typed line must stay vertically centered in the composer field",
-            abs(shell.center.y - input.center.y) <= 1f,
-        )
+        compose.onNodeWithText("Wait for the running turn to finish").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("not ambiguous")
+        compose.onNodeWithContentDescription("Send message").assertIsNotEnabled()
+        assertTrue(repository.submitted.isEmpty())
     }
 
     @Test
     @Config(sdk = [34], qualifiers = "w1000dp-h800dp")
-    fun `the wide layout shows a persistent rail and no drawer affordance`() {
+    fun `wide layout keeps persistent sessions rail`() {
         launch()
-
         compose.onNodeWithText("Sessions").assertIsDisplayed()
-        compose.onNodeWithText("Theme parity with Desktop").assertIsDisplayed()
-        assertEquals(
-            "a persistent rail must not also ship a drawer button",
-            0,
-            compose.countWithContentDescription("Open sessions"),
-        )
+        compose.onNodeWithText("Second remote session").assertIsDisplayed()
+        assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Open sessions")).fetchSemanticsNodes().size)
     }
 
     @Test
-    fun `every builtin theme renders the home surface`() {
-        // Cheap smoke over the registry: a preset whose palette or tokens fail
-        // to resolve blows up here rather than on someone's phone.
+    fun `every builtin theme renders live transcript`() {
         launch()
         for (preset in BuiltinThemes.ALL) {
             themeName = preset.name
             compose.waitForIdle()
-            assertTrue(
-                "${preset.name} failed to render the transcript",
-                compose.countWithText("Termux and this app are separate", substring = true) == 1,
-            )
+            compose.onNodeWithText("Live reply from Gateway").assertIsDisplayed()
         }
+    }
+
+    private class JourneyRepository(private val cache: SessionCache, connected: Boolean) : GatewaySessionRepository {
+        override val connectionState = MutableStateFlow(
+            GatewayConnectionState(
+                if (connected) GatewayConnectionStatus.Connected else GatewayConnectionStatus.Disconnected,
+            ),
+        )
+        val opened = mutableListOf<String>()
+        val submitted = mutableListOf<Pair<String, String>>()
+
+        override suspend fun refreshSessions() = Unit
+        override suspend fun openSession(durableId: String): String {
+            opened += durableId
+            return durableId
+        }
+
+        override suspend fun createSession(): String {
+            cache.upsertSession(SessionSummary("created-live", "New session", "", NOW + 1))
+            return "created-live"
+        }
+
+        override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
+            submitted += durableId to text
+            cache.appendEntry(durableId, UserTurn("submitted", text, NOW))
+            return GatewaySubmitOutcome.Accepted
+        }
+
+        override suspend fun interrupt(durableId: String) = Unit
     }
 
     private companion object {
@@ -327,6 +238,3 @@ class ChatJourneyTest {
 
 private fun ComposeContentTestRule.countWithText(text: String, substring: Boolean = false): Int =
     onAllNodes(hasText(text, substring = substring)).fetchSemanticsNodes().size
-
-private fun ComposeContentTestRule.countWithContentDescription(description: String): Int =
-    onAllNodes(hasContentDescription(description)).fetchSemanticsNodes().size

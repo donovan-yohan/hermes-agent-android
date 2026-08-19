@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.ssh
  * A saved host. **Non-secret fields only** — this is the type that reaches
  * disk. Passwords, passphrases and private keys are carried separately in
  * [SshCredential], which is never persisted and never logged.
- * The destination the user types is not a seventh field: it is [destination],
+ * The destination the user types is not another persisted field: it is [destination],
  * derived from the parsed host, port and username, so there is exactly one
  * canonical copy of that answer.
  */
@@ -12,6 +12,8 @@ data class HostProfile(
     val host: String = "",
     val port: Int = SshDestination.DEFAULT_PORT,
     val username: String = "",
+    /** Optional remote Hermes profile name. Non-secret and validated before use. */
+    val remoteHermesProfile: String = "",
     /**
      * Tailscale SSH by default, because on a tailnet it is the choice that
      * needs no secret at all. It is still a choice: a target running ordinary
@@ -98,7 +100,7 @@ val AuthMethod.sshAuthType: SshAuthType
     }
 
 /**
- * In-memory auth material for exactly one probe.
+ * In-memory auth material for exactly one SSH attempt.
  *
  * There is no `toString` override needed because there is no data class here:
  * this is a plain class with no generated `toString`, so it cannot leak into a

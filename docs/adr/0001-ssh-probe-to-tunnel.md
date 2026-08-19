@@ -1,190 +1,161 @@
-# ADR 0001 — The SSH seam: probe now, tunnel next
+# ADR 0001 — App-owned SSH transport and remote Gateway lifecycle
 
-**Status:** accepted, 2026-08-19
-**Scope:** Phase 1 (this commit) and the shape of the next vertical slice
+**Status:** implemented for the Phase 2 vertical slice, 2026-08-19
 **Source:** `docs/spikes/native-kotlin-ssh-client-scope.md` §5, §7
-**Upstream pin:** `NousResearch/hermes-agent` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
+**Authority:** `NousResearch/hermes-agent` @
+`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
 
 ## Context
 
-Hermes Desktop never links an SSH library. It shells out to the system OpenSSH
-client precisely so it inherits `~/.ssh/config`, the agent, ProxyJump and
-hardware keys for free (`apps/desktop/electron/ssh-connection.ts:4-8`).
+Hermes Desktop can shell out to system OpenSSH and inherit machine config,
+agents, and keys. Android cannot: this app cannot read Termux files or agent
+sockets and has no supported system SSH binary to delegate to. The app must own
+SSH transport while preserving Desktop's remote lifecycle and Gateway
+contracts.
 
-None of that exists on Android. There is no system `ssh` binary an app may
-exec, no agent socket, and — the part users are most surprised by — no access
-to another app's files. Termux having a working key proves the host is
-reachable and that `sshd` accepts the account; it grants this app nothing.
-
-So on Android the layer below `ssh.exec()` has to be rebuilt, while everything
-*above* it — the remote command strings, the lockfile dance, the token
-handling — ports unchanged, because those are the protocol.
+The Phase 1 probe established sshj, mandatory trust-on-first-use review,
+changed-key refusal, one auth method with no fallback, in-memory credentials,
+redaction, cancellation by socket close, and deterministic provider setup.
+Phase 2 needs the authenticated connection to outlive one command.
 
 ## Decision
 
-**Phase 1 ships exactly one SSH capability: `probe`.** One method, one
-interface:
+Extend the existing internal `SshTransport` with only the capabilities consumed
+by the vertical slice:
 
-```kotlin
-interface SshProbe {
-    suspend fun probe(profile: HostProfile, credential: SshCredential): ProbeResult
-}
+- bounded exec with optional stdin;
+- a bind-and-hold loopback local forward;
+- client-owned keepalive;
+- transport close that closes active exec/socket/forward work.
+
+`SshSessionOpener` performs the same crypto and host-key policy as the probe,
+authenticates exactly once, clears credentials immediately, and transfers the
+live transport to `GatewayConnectionManager`.
+
+The connection manager owns this graph:
+
+```text
+SSH transport
+  -> positively owned remote hermes serve
+  -> 127.0.0.1 local forward
+  -> spawn-token HTTP health and ownership
+  -> served-dashboard token adoption plus exact child reinspection
+  -> adopted-token JSON-RPC WebSocket and readiness request
 ```
 
-It connects, verifies the host key, authenticates, runs
-`printf HERMES_ANDROID_SSH_OK`, and closes. Implementation: **sshj 0.40.0**,
-the spike's recommendation (§7.2) — the only candidate that satisfied all ten
-traced capabilities from primary sources, with a pluggable `HostKeyVerifier`
-that maps one-to-one onto the TOFU design. Nothing found while building this
-slice argued for Apache MINA SSHD instead, and the swap stays cheap because the
-interface is one method wide.
+Connected is published only after every leg succeeds. Close proceeds in the
+reverse direction and clears the repository's live client.
 
-Six rules are load-bearing and are asserted by tests, not by convention:
+## Remote lifecycle invariants
 
-1. **Host-key policy is real code, not a flag.** `evaluateHostKey` returns
-   `Trusted` / `FirstUse` / `Changed`. A first use aborts the transport *before*
-   authentication, so no credential is ever sent to an unverified host. A
-   changed key is a hard failure with no accept path anywhere in the app —
-   stricter than Desktop's stderr-regex plus banner
-   (`ssh-connection.ts:368-374`). There is no accept-all verifier in the
-   codebase; `HostKeyPolicyTest` drives the real sshj verifier with real keys.
-2. **Secrets are in-memory only, and not for longer than one probe.**
-   `SshCredential` is a plain class with a redacting `toString`, zeroed after
-   use, and `SshUiState` hand-writes its `toString` so the generated one cannot
-   print the password and the passphrase it holds. The screen drops what it was
-   holding as soon as a probe has used it — success, refusal, cancellation or
-   timeout alike; a first-use review is the single exception, because nothing
-   was sent and the retry after accepting is the same attempt. The key is a
-   `char[]` end to end (`CharArrayReader` into sshj's `FileKeyProvider` seam
-   rather than `SSHClient.loadKeys(String)`), so it is really wiped; the
-   password and passphrase arrive from a text field as `String`s and can only be
-   dropped, which the code says rather than dresses up. The screen's whole
-   lifetime is bounded the same way: leaving Gateways cancels the probe and
-   wipes what it held before the secure-window flag is cleared, because the
-   ViewModel is Activity-scoped and the screen is not. The only thing that
-   touches disk is host, port, username, auth *method* and the accepted
-   fingerprint; the imported document name exists only in `SshUiState` and
-   cannot enter the store. The type system enforces the rest —
-   `HostProfileStore` accepts nothing else — and the accepted fingerprint is
-   excluded from cloud backup and device transfer, so a restored install starts
-   at a first use rather than inheriting a decision made on another phone.
-3. **One method, one attempt, no fallback.** sshj will happily be handed a list
-   of auth methods to try in turn; it is not. `AuthMethod` maps to an
-   `SshAuthType` and the adapter switches on that, so `SshAuthType.None` — SSH
-   auth type `none`, which is what Tailscale SSH uses after WireGuard and the
-   tailnet SSH policy have already authenticated the node
-   (<https://tailscale.com/docs/features/tailscale-ssh>) — is a deliberate
-   choice and never a step in a chain. A fallback is how a keyless choice
-   quietly becomes a password on the wire. A refusal is its own typed failure,
-   `ProbeFailure.TailscaleSshRefused`, because "this host is not running
-   Tailscale SSH" and "your password is wrong" are different problems with
-   different fixes.
-4. **Everything user-visible is redacted.** `redact()` ports Desktop's
-   `redactSecrets` (`ssh-connection.ts:130-157`) plus two Android-specific
-   shapes (a pasted PEM, a labelled password). `SecretRedactionTest` feeds known
-   secrets through every carrier the app emits.
-5. **Stopping stops the transport, and only an exact answer is a success.**
-   `withTimeout` around a blocking call stops the coroutine and leaves the
-   socket, so the exchange runs in its own child coroutine and the awaiting half
-   closes the transport the instant it is cancelled or the deadline fires —
-   closing it is what unblocks the worker. The probe re-checks before
-   authenticating and before running the command, so a cancellation mid-handshake
-   is never followed by a credential; the command wait is bounded by what is
-   left of the deadline; and a result only paints the screen if the form has not
-   moved on since the probe started. `ProbeResult.Ok` needs all three of the
-   exact sentinel, exit status zero, and finishing inside the deadline —
-   anything else is a typed, redacted failure that does not echo the remote
-   output back. `SshjProbeTest` drives this through an injected transport that
-   blocks where sshj blocks.
-6. **The crypto provider is resolved deterministically and fails closed.** See
-   `data/ssh/SshSecurityProvider.kt`: Android ships a stripped,
-   deprecated provider that owns the name `BC`, so sshj's own registration
-   silently leaves it in charge and every modern algorithm disappears behind
-   that name. The app registers its bundled BouncyCastle under a name nobody
-   else owns and pins sshj to it — nothing existing is removed, replaced or
-   reordered. Installation happens at most once; each ready check re-verifies
-   the required key-exchange, host-key, hash and MAC algorithms and re-pins
-   sshj, plus a live X25519 agreement before anything uses it (sshj
-   self-tests optional ciphers while building `DefaultConfig`), and reports
-   `ProbeFailure.CryptoUnavailable` rather than negotiating down if that check
-   fails.
+- Linux is the required physical target. Unsupported operating systems and
+  architectures fail before process creation.
+- A configured executable must be a strict absolute path. Otherwise discovery
+  checks login-shell `command -v hermes` and the frozen candidate list, then
+  verifies executability. This preserves the launcher path instead of rewriting
+  it to an interpreter (`apps/desktop/electron/remote-lifecycle.ts:136-205` at
+  the pinned SHA).
+- `serve --help` must expose `ssh-session-token-file` and `ssh-owner-nonce`.
+- The ownership namespace is a persistent random 32-hex install id. A spawn
+  nonce is random 16 hex. Neither is derived from an endpoint.
+- The ownership directory is `~/.hermes/desktop-ssh/<ownershipId>`, mode 0700.
+  Remote Python opens that directory and validates its descriptor. The token is
+  a bounded stdin read into a no-follow, exclusive, descriptor-relative regular
+  file whose owner, link count, and 0600 mode are checked.
+- The 32-byte random spawn token is encoded for the file and sent only through SSH
+  exec stdin. It never appears in argv, persistence, UI, logs, errors, or test
+  snapshots. Its immutable fingerprint remains the guarded token-artifact
+  deletion proof even if the dashboard serves a different final token.
+- Spawn uses `HERMES_DESKTOP=1`, optional profile before `serve`, `--isolated`,
+  host `127.0.0.1`, port `0`, token-file path, and nonce under
+  `setsid`/`nohup`.
+- Readiness accepts only exact `HERMES_BACKEND_READY port=<n>` or
+  `HERMES_DASHBOARD_READY port=<n>` lines from a bounded log.
+- The ownership lock is written with `port: 0` before readiness is consumed.
+  It remains at port zero until authenticated readiness, served-token adoption,
+  and post-fetch exact child inspection have all passed. The final lock exactly uses
+  schema version 2 and protocol version 1, the pinned camel-case required
+  fields/types/bounds, canonical
+  `~/.hermes/desktop-ssh/<ownershipId>/<nonce>.log` path, and a 32-hex truncated
+  SHA-256 fingerprint of the token used for final authentication
+  (`apps/desktop/electron/remote-lifecycle.ts:876-960` and
+  `hermes_cli/dashboard_procs.py:722-783` at the pinned SHA).
+- A pid receives TERM only when live argv proves one exact executable, `serve`,
+  isolated flag, nonce, token path, and profile shape. Cleanup waits at most
+  five seconds and needs two death observations before touching artifacts.
+  There is no KILL escalation because pinned Desktop's lifecycle cleanup does
+  not define one (`apps/desktop/electron/remote-lifecycle.ts:474-518`). A live
+  or ambiguous process retains every artifact; a dead process gets
+  descriptor/fingerprint/inode-guarded token cleanup and exact-lock-guarded
+  log/lock cleanup. If the final atomic lock rewrite reports failure, cleanup
+  accepts only the known port-zero or positive-port record and removes the
+  nonce-scoped temporary record only after the same exact descriptor/body/inode
+  proof.
 
-**Deliberately not in Phase 1:** port forwarding, `hermes serve` lifecycle,
-token adoption, gateway chat, a foreground service, ProxyJump, key generation
-in the Keystore. None of it is stubbed, mocked, or hinted at in an interface.
+## Forward and Gateway readiness
 
-## Why one method and not a `SshTransport` interface family
+The local listener is bound directly to `127.0.0.1:0` and handed to sshj; there
+is no pick-port-then-bind window. It is part of the SSH connection lifetime.
 
-The spike's module graph is a good map of where this ends up, and it would have
-been easy to write the destination's interfaces today. That would have been
-four interfaces with one implementation each and no second caller — shape
-without content, and shape that would have to be rewritten the moment the real
-constraints (Doze, network handoff, foreground-service policy) arrive.
+Readiness is ordered:
 
-The seam that exists is the one with two real implementations: `SshjProbe` and
-`FakeSshProbe`, which genuinely differ and are both used.
+1. `GET /api/health` with `X-Hermes-Session-Token`;
+2. `GET /api/ssh/ownership` with the same header and an exact `ok: true`,
+   spawned `sshOwnerNonce`, and `protocolVersion: 1` match; the install
+   ownership id remains a local cleanup namespace only;
+3. unauthenticated `GET /` at the strict loopback-forward origin with redirects
+   disabled, a three-second timeout, a bounded body, strict UTF-8, and only the
+   exact injected `window.__HERMES_SESSION_TOKEN__=<JSON string>;` bootstrap;
+4. exact live-child argv reinspection, deliberate spawn-token fallback when no
+   valid served token is available, and the final lock write using the adopted
+   token fingerprint;
+5. `/api/ws?token=<encoded>` WebSocket upgrade using the adopted token;
+6. correlated `session.list` JSON-RPC round trip.
 
-## How probe becomes a tunnel
+This ordering ports pinned Desktop's served-token contract at
+`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+`apps/desktop/electron/dashboard-token.ts:10-101`,
+`apps/desktop/electron/remote-lifecycle.ts:733-751,920-931`, and
+`hermes_cli/web_server.py:17242-17310`. The public dashboard token may drift
+benignly only while the exact spawned child remains owned; a mismatched token
+after child death/replacement is refused as foreign.
 
-The next slice adds siblings to `probe`, not a rewrite:
+A health 200 without WebSocket auth and JSON-RPC is not Connected. Requests
+have bounded timeouts, close rejects pending calls, malformed unsolicited
+frames and unknown events are ignored, malformed matching responses fail their
+request, and protocol errors are typed without echoing secrets.
 
-```kotlin
-interface SshTransport {           // SshProbe grows into this
-    suspend fun probe(...): ProbeResult
-    suspend fun openForward(local: Int, remote: Int): Forward   // direct-tcpip, loopback only
-    suspend fun exec(command: String, stdin: ByteArray?): ExecResult
-}
-```
+## Session identity and isolation
 
-Ordered, from the spike's §5.2 sequence:
+`SessionSummary.id` remains durable navigation identity. The live repository
+holds a connection-scoped durable-to-runtime map: resume accepts a durable id;
+activate, history, submit, and interrupt receive runtime ids only. Reconnect
+clears the map.
 
-1. **`exec`** — the same connection, a bounded command with optional stdin.
-   Everything the remote lifecycle needs is a command string, and Desktop's are
-   reusable verbatim (`remote-lifecycle.ts`, 21 call sites, ~14 distinct
-   commands).
-2. **Gate and discover** — `uname -s` / `uname -m`, then `command -v hermes`
-   and the candidate paths (`remote-lifecycle.ts:39`, `:182-205`).
-3. **Reuse or spawn** — read `backend.lock.json`, `kill -0`, argv-audit
-   ownership proof, token-fingerprint match (`:292-472`, `:787-874`). Never kill
-   an unproven pid.
-4. **Spawn** — mint a 32-byte token and an 8-byte nonce, upload the token *via
-   exec stdin, never argv* (`:606-637`), then `setsid sh -c "env HERMES_DESKTOP=1
-   HERMES_TUI_WS_ORPHAN_REAP_GRACE_S=300 hermes serve --isolated --host 127.0.0.1
-   --port 0 …"` (`:523-540`). The reap-grace injection is the spike's verified
-   mobile fix for the 20 s orphan reap (§5.2).
-5. **`openForward`** — `direct-tcpip` to `127.0.0.1:<remote>`, with a
-   **bind-and-hold** local listener. Bind first, then use the port: Desktop's
-   `pickLocalPort` has a TOCTOU race (`ssh-connection.ts:971-985`) that this app
-   should not inherit.
-6. **Health, then one live chat turn** — `GET /api/health` with
-   `X-Hermes-Session-Token`, then the WebSocket dial. Prove the leg you will
-   actually use: an HTTP 200 while the WS/auth leg fails is the classic false
-   positive (`apps/desktop/AGENTS.md`).
+An event carrying a runtime id maps directly. An unscoped live-turn event is
+pinned to the runtime that last submitted the turn. Selecting another session
+does not retarget it; completion can mark its source session unread. The app
+allows one outstanding submitted turn at a time because two interleaved
+unscoped streams have no truthful routing key.
 
-Two mobile facts that shape the design and have no Desktop equivalent:
-**client-owned keepalive** (Desktop sets no `ServerAliveInterval` anywhere;
-mobile NAT drops idle TCP in 30–300 s) and **tear-down-and-re-dial on network
-handoff** (holding the old `Network` turns a minutes-long stall into ~2 s).
+## Current limitation: restart, not reuse
 
-## Consequences
+Safe reuse requires lock schema validation, exact ownership, live pid, argv,
+profile/path/home/token-fingerprint checks, authenticated ownership HTTP, and
+WebSocket readiness. This slice does not implement that full decision.
 
-- Phase 1 can be dogfooded against a real host today, and the answer it gives —
-  "your credentials work from this app" — is the actual unknown.
-- The UI already carries the honest story about Termux, so the tunnel slice
-  inherits correct expectations instead of correcting them.
-- APK cost is paid up front: BouncyCastle is ~8 MB of the 16.5 MB debug APK, and
-  it is needed regardless of which JVM SSH library wins. A Conscrypt
-  `SecurityProviderRegistrar` is the long-term route off it (spike §7.2) — and
-  the provider collision below is a second reason to want it: Conscrypt does not
-  fight Android over a name.
-- **sshj did fail on-device, exactly where a library-shaped seam predicted.** A
-  Pixel 10 Pro on Android 17 reported `no such algorithm: X25519 for provider
-  BC` before host-key review. The cause was sshj resolving algorithms by
-  provider *name* while Android's platform provider owns that name; provider
-  setup stays behind `SshProbe` rather than leaking through the UI. The same
-  narrowness would make a swap to Apache MINA SSHD days, not weeks.
-- The provider repair adds at most one entry to the process's JCE provider list.
-  That is a process-global effect, so every ready check re-verifies and re-pins
-  it before use; it removes and reorders nothing, so no other caller's algorithm
-  resolution changes. A failed installation is removed again and recorded as a
-  typed unavailable result.
+Reconnect therefore starts a fresh nonce and backend. It never kills a prior
+or foreign pid without current positive argv proof. This can leave an owned
+backend for its server-side isolation/reaping policy after an abrupt client
+loss; it cannot turn incomplete evidence into a kill decision. Future reuse
+must implement the full proof, not weaken it.
+
+## Mobile lifecycle consequence
+
+sshj keepalive is client-owned. Android default-network loss or handoff closes
+the stale connect/SSH/forward/WebSocket state and exposes reconnect. Holding an
+old network until TCP timeout is explicitly rejected.
+
+No foreground service is included. The app does not claim durable background
+connectivity, and the limitation belongs here rather than in primary product
+copy.

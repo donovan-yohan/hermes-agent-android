@@ -5,8 +5,8 @@ package com.hermesagent.mobile.data.session
  *
  * These are deliberately modelled on what the Hermes gateway is authoritative
  * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `f82f2dba`),
- * not on what the Phase 1 demo happens to produce. When the gateway lands, the
- * demo source is replaced; these types and [SessionCache] are not.
+ * not on UI-local convenience. The live Gateway repository maps protocol data
+ * into these types while [SessionCache] preserves backend authority.
  */
 
 /**
@@ -39,17 +39,27 @@ enum class SessionStatus {
  *
  * @param id the durable identity — what navigation, persistence and the
  *   transcript map key off. Desktop keeps runtime and durable ids separate
- *   (`apps/desktop/AGENTS.md`, "Identity is not incidental"); Phase 1 has no
- *   runtime id yet, and adding a second id with no second producer would be
- *   the speculative kind of seam.
+ *   (`apps/desktop/AGENTS.md`, "Identity is not incidental"). Runtime ids stay
+ *   connection-scoped in the Gateway repository and never become navigation
+ *   identity here.
  */
 data class SessionSummary(
     val id: String,
     val title: String,
     val preview: String,
     val lastActiveAtMillis: Long,
+    val messageCount: Int = 0,
+    val source: String? = null,
+    val remoteProfile: String? = null,
     val status: SessionStatus = SessionStatus.Idle,
-    val archived: Boolean = false,
+    /** Latest coalesced Gateway `status.update` (`{kind,text}`), if useful. */
+    val progress: SessionProgress? = null,
+)
+
+/** A transient backend progress notice; one value per session, never a transcript row. */
+data class SessionProgress(
+    val kind: String,
+    val text: String,
 )
 
 /** One block in a transcript. */
@@ -81,7 +91,7 @@ data class ToolActivity(
     val label: String,
     val detail: String,
     val state: ToolState,
-    val elapsedSeconds: Int = 0,
+    val elapsedSeconds: Double = 0.0,
 ) : TranscriptEntry
 
-enum class ToolState { Running, Done, Failed }
+enum class ToolState { Running, Done, Failed, Stopped }

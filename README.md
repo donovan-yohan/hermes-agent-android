@@ -1,18 +1,24 @@
 # hermes-mobile
 
-Native Kotlin/Jetpack Compose client for operating a remote Hermes Agent
-installation over an app-managed SSH tunnel.
+Native Kotlin/Jetpack Compose client for operating a remote Hermes Agent over
+an app-managed SSH tunnel.
 
 ## Status
 
-**Phase 1 vertical slice — builds and runs.** The chat and session surface is
-real and usable offline against deterministic demo data. The SSH onboarding and
-`probe` path is real code over sshj, with a strict trust-on-first-use host-key
-policy.
+**Phase 2 gateway vertical slice — `0.2.0-phase2`.** The app opens a verified
+SSH connection, starts a loopback-bound remote `hermes serve`, holds a
+loopback-only local forward, proves authenticated HTTP ownership and JSON-RPC
+WebSocket readiness, then lists/resumes/creates real sessions and sends,
+streams, or interrupts a live turn.
 
-There is no Hermes gateway transport yet: no WebSocket, no real sessions, no
-model output. `docs/phase-1-architecture.md` is the honest inventory of what is
-real, what is demo, and what has not been verified.
+Production startup has no demo seed or local turn engine. Offline tests use
+fakes at SSH, process, HTTP, and WebSocket seams.
+
+The slice deliberately starts a fresh positively-owned remote process after a
+reconnect; safe lockfile reuse is not implemented yet. It also has no Android
+foreground service, so it does not promise an uninterrupted background
+connection. Submitted turns are serialized because upstream stream events may
+omit their session id. See [the Phase 2 architecture](docs/phase-2-architecture.md).
 
 ## Build
 
@@ -26,36 +32,39 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 minSdk 26, compile/target 36. The debug build installs as
 `com.hermesagent.mobile.debug`.
 
-## What Phase 1 contains
+## What Phase 2 contains
 
-- The six Hermes Desktop themes (`nous`, `midnight`, `ember`, `mono`,
-  `cyberpunk`, `slate`) ported from upstream at a pinned SHA, with light and
-  dark for each, an in-app picker, and a parity test that fails on drift.
-- Chat as the home surface: transcript with markdown blocks, inline tool
-  scaffolding, streaming and stop; a composer; and a session list with calendar
-  grouping, search, status dots and create/rename/archive. Adaptive: a drawer on
-  a phone, a persistent rail at 720dp and above.
-- A real SSH slice: host profile, password or SAF-imported private key,
-  trust-on-first-use with an explicit fingerprint review, a hard stop on a
-  changed key, and a bounded `probe` that runs one harmless command. Credentials
-  stay in memory; only non-secret profile fields reach disk.
+- The six pinned Hermes Desktop themes with light/dark resolution, semantic
+  tokens, an in-app picker, and an offline parity gate.
+- Native chat and sessions backed by authenticated Gateway JSON-RPC:
+  `session.list`, `session.create`, `session.resume`, `session.activate`,
+  `session.history`, `prompt.submit`, and `session.interrupt`.
+- Explicit durable-to-runtime session identity and connection-generation
+  handling, so switching sessions cannot steal an unscoped live stream.
+- SSH password, SAF-imported private key, or Tailscale SSH auth with mandatory
+  host-key review, no auth fallback, memory-only credentials, and redacted
+  failures.
+- Linux remote discovery/capability checks, per-install ownership namespace,
+  stdin-only token upload, owned-process cleanup, and a bind-and-hold
+  `127.0.0.1` forward.
+- Concise Gateway copy plus a tracked review workflow and deterministic source
+  gate for essay-length primary UI strings.
 
-Termux reaching the host proves the route and that `sshd` accepts your account.
-It does **not** give this app Termux's keys, agent or `~/.ssh/config` — separate
-Android packages, separate sandboxes. The app asks for its own credentials and
-says so on screen.
+Rename and archive are not presented as local durable actions in this slice;
+search remains UI-local and session creation/navigation are backend-authoritative.
 
 ## Product boundary
 
-SSH-only for the first backend path: connect to a host, start or reuse the
-remote Hermes backend, tunnel it to the device, present a native Android
-interface. Running Hermes locally on Android, Hermes Cloud, and direct public
-gateway URLs are not initial targets.
+SSH is the backend path: connect to a host, start remote Hermes, forward the
+private Gateway to the device, and present a native Android interface. Running
+Hermes locally on Android, Hermes Cloud, and direct public Gateway URLs are not
+targets of this slice.
 
 ## Docs
 
-- [Phase 1 architecture and next slice](docs/phase-1-architecture.md) — start here
-- [ADR 0001: the SSH seam](docs/adr/0001-ssh-probe-to-tunnel.md)
+- [Phase 2 architecture and evidence](docs/phase-2-architecture.md) — start here
+- [ADR 0001: SSH transport and Gateway lifecycle](docs/adr/0001-ssh-probe-to-tunnel.md)
+- [Product-copy review](docs/workflows/review-product-copy.md)
 - [Porting a Desktop surface](docs/workflows/port-desktop-surface.md)
 - [Syncing Desktop themes](docs/workflows/sync-desktop-themes.md)
-- [Native Kotlin SSH client scope](docs/spikes/native-kotlin-ssh-client-scope.md) — the founding research
+- [Phase 1 historical baseline](docs/phase-1-architecture.md)

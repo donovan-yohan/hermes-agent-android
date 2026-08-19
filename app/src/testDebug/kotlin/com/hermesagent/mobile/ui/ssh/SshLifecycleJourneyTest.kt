@@ -17,6 +17,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import com.hermesagent.mobile.data.gateway.GatewayConnectResult
+import com.hermesagent.mobile.data.gateway.GatewayConnectionController
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.ssh.FakeSshProbe
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.ProbeResult
@@ -28,6 +32,8 @@ import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -111,13 +117,62 @@ class SshLifecycleJourneyTest {
     }
 
     @Test
+    fun `Connect and Disconnect drive the Gateway manager and clear the connection credential`() {
+        val gateway = FakeGatewayConnectionController()
+        launch(gatewayConnection = gateway)
+        openGateways()
+        typeDestination("fixture-user@gateway.invalid")
+        compose.onNodeWithContentDescription("Hermes profile (optional)").performTextInput("fixture-profile")
+        compose.waitForIdle()
+        typePassword("fixture-password")
+
+        assertEquals("fixture-password", viewModel.uiState.value.password)
+        assertTrue("the password is entered only on a protected surface", isSecure())
+
+        compose.onNodeWithText("Connect").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.countWithText("Connected") == 1
+        }
+
+        assertEquals(1, gateway.connectCalls)
+        assertEquals("gateway.invalid", gateway.connectedProfile?.host)
+        assertEquals("fixture-user", gateway.connectedProfile?.username)
+        assertEquals("fixture-profile", gateway.connectedProfile?.remoteHermesProfile)
+        assertTrue("the manager must receive the selected password", gateway.receivedPassword)
+        assertTrue(
+            "the attempt-owned credential copy must be zeroed after connect returns",
+            requireNotNull(gateway.credential).password?.all { it == '\u0000' } == true,
+        )
+        assertEquals("the form must stop retaining the password", "", viewModel.uiState.value.password)
+        assertEquals(GatewayConnectionStatus.Connected, viewModel.uiState.value.connection.status)
+        assertEquals(1, compose.countWithText("Disconnect"))
+        assertTrue("connection state does not end the protected screen lifetime", isSecure())
+
+        compose.onNodeWithText("Disconnect").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            gateway.disconnectCalls == 1 && compose.countWithText("Disconnected") == 1
+        }
+
+        assertEquals(GatewayConnectionStatus.Disconnected, viewModel.uiState.value.connection.status)
+        assertEquals(1, compose.countWithText("Connect"))
+        assertTrue("disconnecting does not navigate away or clear the window flag", isSecure())
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitForIdle()
+
+        assertEquals("screen cleanup runs before FLAG_SECURE is cleared", true, secureWhenCleaned)
+        assertFalse(isSecure())
+        assertEquals(1, cleanups)
+    }
+
+    @Test
     fun `a probe in flight is cancelled by leaving, not left running`() {
         val probe = HeldProbe()
         launch(probe)
         openGateways()
         typeDestination("test-user@test-host")
 
-        compose.onNodeWithText("Run probe").performClick()
+        compose.onNodeWithText("Test SSH only").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { probe.started }
         assertEquals(ProbeStatus.Running, viewModel.uiState.value.status)
 
@@ -135,7 +190,7 @@ class SshLifecycleJourneyTest {
         openGateways()
         typeDestination("test-user@test-host")
 
-        compose.onNodeWithText("Run probe").performClick()
+        compose.onNodeWithText("Test SSH only").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { probe.inFlight }
 
         compose.onNodeWithContentDescription("Back").performClick()
@@ -147,8 +202,8 @@ class SshLifecycleJourneyTest {
 
         gatewaysFromSettings()
 
-        assertEquals(0, compose.countWithText("Probe succeeded"))
-        assertEquals("a reopened screen offers a fresh probe", 1, compose.countWithText("Run probe"))
+        assertEquals(0, compose.countWithText("SSH test passed"))
+        assertEquals("a reopened screen offers a fresh diagnostic", 1, compose.countWithText("Test SSH only"))
     }
 
     @Test
@@ -178,13 +233,17 @@ class SshLifecycleJourneyTest {
 
         // Non-secret, reviewed-out-of-band state is exactly what should survive.
         assertEquals("test-user@test-host", viewModel.uiState.value.destination)
-        assertEquals(1, compose.countWithText(FakeSshProbe.DEFAULT_FINGERPRINT))
+        assertEquals(1, compose.countWithText("Host key trusted"))
+        assertEquals(0, compose.countWithText(FakeSshProbe.DEFAULT_FINGERPRINT))
     }
 
     // ── Harness ───────────────────────────────────────────────────────────
 
-    private fun launch(probe: SshProbe = FakeSshProbe(delayMillis = 0)) {
-        viewModel = SshViewModel(store, probe)
+    private fun launch(
+        probe: SshProbe = FakeSshProbe(delayMillis = 0),
+        gatewayConnection: GatewayConnectionController? = null,
+    ) {
+        viewModel = SshViewModel(store, probe, gatewayConnection)
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
             val context = LocalContext.current
@@ -202,10 +261,13 @@ class SshLifecycleJourneyTest {
                 appearanceActions = AppearanceActions(),
                 sshActions = SshActions(
                     onDestinationChange = viewModel::setDestination,
+                    onRemoteProfileChange = viewModel::setRemoteHermesProfile,
                     onAuthMethodChange = viewModel::setAuthMethod,
                     onPasswordChange = viewModel::setPassword,
                     onPassphraseChange = viewModel::setKeyPassphrase,
                     onForgetKey = viewModel::forgetPrivateKey,
+                    onConnect = viewModel::connect,
+                    onDisconnect = viewModel::disconnect,
                     onProbe = viewModel::runProbe,
                     onCancelProbe = viewModel::cancelProbe,
                     onAcceptHostKey = viewModel::acceptPendingHostKey,
@@ -286,6 +348,40 @@ class SshLifecycleJourneyTest {
             val continuation = requireNotNull(waiting) { "no probe is in flight" }
             waiting = null
             continuation.resume(result)
+        }
+    }
+
+    /** Process-manager double: no SSH, remote command, socket, token, or real credential. */
+    private class FakeGatewayConnectionController : GatewayConnectionController {
+        private val mutableState = MutableStateFlow(GatewayConnectionState())
+        override val state: StateFlow<GatewayConnectionState> = mutableState
+
+        var connectCalls = 0
+            private set
+        var disconnectCalls = 0
+            private set
+        var connectedProfile: HostProfile? = null
+            private set
+        var credential: SshCredential? = null
+            private set
+        var receivedPassword = false
+            private set
+
+        override suspend fun connect(
+            profile: HostProfile,
+            credential: SshCredential,
+        ): GatewayConnectResult {
+            connectCalls++
+            connectedProfile = profile
+            this.credential = credential
+            receivedPassword = credential.password?.contentEquals("fixture-password".toCharArray()) == true
+            mutableState.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+            return GatewayConnectResult.Connected
+        }
+
+        override suspend fun disconnect() {
+            disconnectCalls++
+            mutableState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
         }
     }
 

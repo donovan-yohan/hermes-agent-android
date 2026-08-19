@@ -80,4 +80,18 @@ else
   ok "theme ledger pins $(grep -oE '[0-9a-f]{40}' "$ledger" | head -1)"
 fi
 
+# ── 5. Primary product copy stays concise ───────────────────────────────────
+python3 scripts/check-product-copy.py --self-test || fail=1
+if ! python3 scripts/check-product-copy.py; then
+  fail=1
+fi
+
+# ── 6. Production must never fall back to Phase 1 demo data ──────────────────
+if grep -R -nE 'data\.demo|DemoSessions|DemoTurnEngine' app/src/main/kotlin >/dev/null 2>&1; then
+  problem "production source still references the Phase 1 demo session/turn path."
+  note "fix: route production startup, sessions and turns through the live Gateway repository."
+else
+  ok "production startup has no demo session or turn source"
+fi
+
 exit $fail

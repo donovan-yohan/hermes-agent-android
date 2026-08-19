@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
-/** Phase-1 Settings destinations, ordered as their Desktop peers. */
+/** Settings destinations, ordered as their Desktop peers. */
 @Composable
 fun SettingsScreen(
     onOpenAppearance: () -> Unit,

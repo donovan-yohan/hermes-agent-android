@@ -12,8 +12,8 @@ android {
         applicationId = "com.hermesagent.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-phase1"
+        versionCode = 2
+        versionName = "0.2.0-phase2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -22,7 +22,7 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            // Phase 1 ships debug APKs only; keep release honest rather than
+            // This slice ships debug APKs only; keep release honest rather than
             // pretending a signing/shrinking config exists.
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -125,6 +125,8 @@ dependencies {
     // No SSH-library logging at all: the cheapest way to guarantee sshj never
     // writes host names, banners, or auth detail into logcat.
     implementation(libs.slf4j.nop)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     // ThemeParityTest walks the palette/token contract reflectively so a new

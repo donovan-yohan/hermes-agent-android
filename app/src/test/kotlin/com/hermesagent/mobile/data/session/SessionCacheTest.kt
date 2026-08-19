@@ -78,6 +78,23 @@ class SessionCacheTest {
         assertEquals(listOf("b-1"), cache.transcript("b").map { it.id })
     }
 
+    @Test
+    fun `rehome atomically moves a session and its transcript to canonical identity`() {
+        cache.upsertSession(row("parent", title = "Long chat"))
+        cache.appendEntry("parent", UserTurn("turn-1", "hello", 0))
+
+        cache.rehomeSession(
+            fromId = "parent",
+            row = row("tip", title = "Long chat"),
+            entries = cache.transcript("parent"),
+        )
+
+        assertEquals(setOf("tip"), cache.state.value.sessions.keys)
+        assertEquals(listOf("turn-1"), cache.transcript("tip").map { it.id })
+        assertTrue(cache.transcript("parent").isEmpty())
+        assertEquals("tip", cache.state.value.rehomes["parent"])
+    }
+
     private fun row(id: String, title: String = "Session $id") =
         SessionSummary(id = id, title = title, preview = "", lastActiveAtMillis = 0)
 }

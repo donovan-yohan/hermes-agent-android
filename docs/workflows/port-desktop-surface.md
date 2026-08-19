@@ -49,6 +49,28 @@ disagree, the component is the current contract and the doc is a bug.
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
 | SSH mechanics | `apps/desktop/electron/ssh-connection.ts:130-157,324-374` | `redactSecrets`, error classification, host-key change detection |
+| Remote lifecycle | `apps/desktop/electron/remote-lifecycle.ts`, `remote-lifecycle.test.ts`; `hermes_cli/main.py:510-518,664-689,10947-11021`; `hermes_cli/profiles.py:2458-2492` | Login-shell discovery, explicit default/named profile home resolution, OS-home-only token allowlist, exact ownership lock, exclusive/no-follow token upload, spawn-failure cleanup, and bounded TERM proof |
+| Served dashboard token | `apps/desktop/electron/dashboard-token.ts`, `dashboard-token.test.ts`, and `remote-lifecycle.ts:733-751,876-960` | The token injected by the served dashboard becomes final only after a post-fetch owned-child check; fetch/parse failure deliberately falls back |
+| Remote lock consumer | `hermes_cli/dashboard_procs.py:722-838` and `tests/hermes_cli/test_orphan_desktop_serve_reap.py:113-187` | The lock is a cross-runtime ABI: exact schema/field names/types/bounds/log suffix determine whether Hermes spares the live remote backend |
+| Connection config | `apps/desktop/electron/connection-config.ts` | Remote profile and connection terminology |
+| JSON-RPC contract | `apps/shared/src/json-rpc-gateway.ts` | Request/error/event envelope and method names |
+| Web client | `web/src/lib/gatewayClient.ts` | WebSocket auth, correlation, close and event handling |
+| Gateway HTTP/WS | `hermes_cli/web_server.py` | `/api/health`, `/api/ssh/ownership`, public index token injection, and `/api/ws` authentication |
+| Sessions and prompts | `tui_gateway/server.py` plus its tests | Durable/runtime identity, session methods, `prompt.submit`, event payloads |
+
+Treat lifecycle files as contracts with every process that consumes them, not
+as Android-private metadata. A structurally plausible lock with renamed keys or
+a longer fingerprint is rejected by Hermes' local orphan reaper and can turn a
+healthy SSH-owned backend into a reap target. Test the production-shaped JSON,
+the consumer validator, and cleanup failure paths together.
+
+The token uploaded to start a remote backend is not necessarily the token the
+dashboard ultimately serves. Keep the lock at `port: 0` through the forwarded
+public-index read, adopt only the exact injected JSON string, then re-inspect
+the owned child before publishing the positive port and final fingerprint.
+Keep the uploaded artifact fingerprint separate so adoption cannot weaken
+descriptor-guarded cleanup. These lifecycle paths were inspected at pinned SHA
+`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
 
 ## 2. Classify the state before writing UI
 
@@ -57,8 +79,8 @@ Desktop's authority model, and where each kind lives here:
 | Desktop authority | Android home | Rule |
 |---|---|---|
 | Backend-authoritative (sessions, transcripts, config) | `data/session/SessionCache` | Merge, never clobber; rows leave only on an explicit tombstone |
-| Machine/runtime facts | the adapter that owns them (`SshProbe` today) | One resolver per policy |
-| Connection-scoped (turn buffers, in-flight tools, generation) | ViewModel fields | Dies with the scope; if it must survive a reconnect it was never connection-scoped |
+| Machine/runtime facts | `GatewayConnectionManager`, `RemoteHermesLifecycle`, SSH adapter | One resolver per policy |
+| Connection-scoped (runtime ids, turn buffers, in-flight tools, generation) | `LiveGatewaySessionRepository` / connection owner | Dies with the connection; durable ids never enter runtime-only calls |
 | UI-only (drafts, search, drawer, scroll) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
 
 If you cannot say which row a piece of state belongs to, stop and decide. That
@@ -88,7 +110,7 @@ and no state that depends on an animation running.
 
 - Unit-test the pure parts (grouping, parsing, policy) with fixed clocks and
   fixed locales. A test that reads the machine's timezone is not a test.
-- Drive coroutines on **virtual time**: inject the timing, use
+- Drive coroutines on **virtual time**: inject timing or timeouts, use
   `StandardTestDispatcher`, assert the mid-stream state, not just the end state.
 - `uiState` built with `combine` + `WhileSubscribed` needs a live collector
   *and* a `runCurrent()` before assertions; without both you assert a stale
@@ -101,10 +123,8 @@ and no state that depends on an animation running.
   `assertIsDisplayed` for nodes unique to one surface.
 - Use `androidx.compose.ui.test.junit4.v2.createComposeRule`. The v1 rule runs
   on an `UnconfinedTestDispatcher`, so every assertion drains the main looper
-  and a running turn always completes before you can see it — mid-stream states
-  are unassertable. v2 uses `StandardTestDispatcher` and queues instead, which
-  is what makes "send became stop" testable at all. Use `waitUntil` when you
-  *do* want the turn to finish.
+  and a running turn always completes before you can see it. v2 queues work;
+  use `waitUntil` when you do want a network-shaped fake to finish.
 - The transcript opens scrolled to its tail, so an earlier block is
   legitimately off-screen: assert existence, not display, for anything above
   the fold.

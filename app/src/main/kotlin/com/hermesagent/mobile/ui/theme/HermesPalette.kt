@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.Color
  * fallbacks are behaviour, not defaults, so they live in exactly one place.
  *
  * Deliberately absent: `terminal` / `darkTerminal` (Desktop's xterm ANSI
- * palette). Android has no terminal surface in Phase 1, and inventing one
+ * palette). Android has no terminal surface in this slice, and inventing one
  * would be theme surface with no consumer.
  */
 data class HermesPalette(

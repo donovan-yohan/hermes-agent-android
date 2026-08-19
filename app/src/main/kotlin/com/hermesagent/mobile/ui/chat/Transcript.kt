@@ -46,6 +46,7 @@ import com.hermesagent.mobile.ui.common.ScaffoldRow
 import com.hermesagent.mobile.ui.common.StatusDot
 import com.hermesagent.mobile.ui.common.WorkingDots
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import kotlin.math.roundToInt
 
 /**
  * The transcript.
@@ -74,7 +75,7 @@ fun Transcript(
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             EmptyState(
                 title = "No messages yet",
-                description = "Ask something to see a demo turn stream. Nothing leaves the device in this build.",
+                description = "Start a conversation with Hermes.",
             )
         }
         return
@@ -175,6 +176,7 @@ private fun ToolRow(activity: ToolActivity) {
         ToolState.Running -> "running"
         ToolState.Done -> "done"
         ToolState.Failed -> "failed"
+        ToolState.Stopped -> "stopped"
     }
 
     Column(
@@ -185,12 +187,13 @@ private fun ToolRow(activity: ToolActivity) {
     ) {
         ScaffoldRow(
             label = activity.label,
-            meta = if (activity.state == ToolState.Done) "${activity.elapsedSeconds}s" else null,
+            meta = if (activity.state == ToolState.Done) activity.elapsedSeconds.elapsedLabel() else null,
             leading = {
                 when (activity.state) {
                     ToolState.Running -> WorkingDots(Modifier.size(width = 22.dp, height = 8.dp))
                     ToolState.Done -> StatusDot(tokens.statusUnread, filled = true, contentDescription = null, size = 6.dp)
                     ToolState.Failed -> StatusDot(tokens.destructive, filled = true, contentDescription = null, size = 6.dp)
+                    ToolState.Stopped -> StatusDot(tokens.statusIdle, filled = false, contentDescription = null, size = 6.dp)
                 }
             },
         )
@@ -206,6 +209,14 @@ private fun ToolRow(activity: ToolActivity) {
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
+}
+
+/** One decimal at most keeps fractional Gateway durations useful without float noise. */
+private fun Double.elapsedLabel(): String {
+    val tenths = (coerceAtLeast(0.0) * 10).roundToInt()
+    val whole = tenths / 10
+    val fraction = tenths % 10
+    return if (fraction == 0) "${whole}s" else "$whole.${fraction}s"
 }
 
 @Composable

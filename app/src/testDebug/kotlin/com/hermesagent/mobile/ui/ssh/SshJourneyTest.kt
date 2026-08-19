@@ -2,11 +2,13 @@ package com.hermesagent.mobile.ui.ssh
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -14,8 +16,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.ssh.FakeSshProbe
+import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
+import com.hermesagent.mobile.data.ssh.ProbeFailure
 import com.hermesagent.mobile.data.ssh.SshProbe
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
@@ -88,6 +94,53 @@ class SshJourneyTest {
     }
 
     @Test
+    fun `connected Gateway shows one clear disconnect action`() {
+        compose.setContent {
+            HermesTheme(AppearanceSelection(BuiltinThemes.DEFAULT_NAME, HermesThemeMode.Dark)) {
+                SshScreen(
+                    state = SshUiState(
+                        profile = HostProfile(host = "test-host", username = "test-user"),
+                        destination = "test-user@test-host",
+                        connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
+                    ),
+                    actions = SshActions(),
+                )
+            }
+        }
+
+        assertEquals(1, compose.countWithText("Connected"))
+        assertEquals(1, compose.countWithText("Disconnect"))
+        assertEquals(0, compose.countWithText("Connect"))
+    }
+
+    @Test
+    fun `a trusted Gateway host says how to restore a cleared secret`() {
+        fun state(method: AuthMethod) = SshUiState(
+            profile = HostProfile(
+                host = "test-host",
+                username = "test-user",
+                authMethod = method,
+                acceptedFingerprint = FakeSshProbe.DEFAULT_FINGERPRINT,
+            ),
+            destination = "test-user@test-host",
+        )
+        val current = mutableStateOf(state(AuthMethod.Password))
+        compose.setContent {
+            HermesTheme(AppearanceSelection(BuiltinThemes.DEFAULT_NAME, HermesThemeMode.Dark)) {
+                SshScreen(state = current.value, actions = SshActions())
+            }
+        }
+
+        assertEquals(1, compose.countWithText("Re-enter your password, then Connect."))
+
+        current.value = state(AuthMethod.PrivateKey)
+        compose.waitForIdle()
+
+        assertEquals(0, compose.countWithText("Re-enter your password, then Connect."))
+        assertEquals(1, compose.countWithText("Re-import your private key, then Connect."))
+    }
+
+    @Test
     fun `Tailscale SSH is the starting choice and shows no secret field`() {
         launch()
 
@@ -99,14 +152,14 @@ class SshJourneyTest {
         assertEquals(
             "and the screen says what it does need",
             1,
-            compose.countWithText("target runs Tailscale SSH", substring = true),
+            compose.countWithText("host and tailnet policy must allow", substring = true),
         )
 
         compose.onNodeWithContentDescription("Authenticate with Password").performClick()
         compose.waitForIdle()
 
         assertEquals("switching reveals the field", 1, compose.countWithContentDescription("Password"))
-        assertEquals(0, compose.countWithText("target runs Tailscale SSH", substring = true))
+        assertEquals(0, compose.countWithText("host and tailnet policy must allow", substring = true))
     }
 
     @Test
@@ -115,7 +168,7 @@ class SshJourneyTest {
 
         compose.onNodeWithContentDescription("SSH destination").performTextInput("test-user@test-host")
         compose.waitForIdle()
-        compose.onNodeWithText("Run probe").performClick()
+        compose.onNodeWithText("Test SSH only").performClick()
 
         // Still stops before authenticating, keyless method or not.
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -124,8 +177,8 @@ class SshJourneyTest {
         compose.onNodeWithText("Accept this key").performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithText("Run probe").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { compose.countWithText("Probe succeeded") == 1 }
+        compose.onNodeWithText("Test SSH only").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.countWithText("SSH test passed") == 1 }
     }
 
     @Test
@@ -138,14 +191,14 @@ class SshJourneyTest {
         launch(FakeSshProbe(tailscaleSshEnabled = false, delayMillis = 0))
         compose.waitForIdle()
 
-        compose.onNodeWithText("Run probe").performClick()
+        compose.onNodeWithText("Test SSH only").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.countWithText("Reachable, but not over Tailscale SSH") == 1
         }
         assertEquals(
             "the copy has to separate the tailnet from Tailscale SSH",
             1,
-            compose.countWithText("sharing a tailnet only provides the route", substring = true),
+            compose.countWithText("Enable and allow Tailscale SSH", substring = true),
         )
     }
 
@@ -155,7 +208,7 @@ class SshJourneyTest {
 
         compose.onNodeWithContentDescription("SSH destination").performTextInput("test-user@host-a")
         compose.waitForIdle()
-        compose.onNodeWithText("Run probe").performClick()
+        compose.onNodeWithText("Test SSH only").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.countWithText("First connection to this host") == 1
         }
@@ -190,21 +243,22 @@ class SshJourneyTest {
     }
 
     @Test
-    fun `the fingerprint review names the file the key is actually kept in`() {
+    fun `the fingerprint review stays concise and actionable`() {
         launch()
 
         compose.onNodeWithContentDescription("SSH destination").performTextInput("test-user@test-host")
         compose.waitForIdle()
-        compose.onNodeWithText("Run probe").performClick()
+        compose.onNodeWithText("Test SSH only").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.countWithText("First connection to this host") == 1
         }
 
         assertEquals(
-            "the prescribed out-of-band check has to be runnable",
+            "the primary surface gives the next action",
             1,
-            compose.countWithText("ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub", substring = true),
+            compose.countWithText("Compare this fingerprint with the host", substring = true),
         )
+        assertEquals(0, compose.countWithText("ssh-keygen", substring = true))
     }
 
     // ── Field geometry and semantics ──────────────────────────────────────
@@ -245,51 +299,55 @@ class SshJourneyTest {
     // ── Copy the screen is answerable for ─────────────────────────────────
 
     @Test
-    fun `the screen states what this build does and does not do`() {
+    fun `the primary screen speaks to connection outcome without phase caveats`() {
         launch()
 
-        assertEquals(1, compose.countWithText("Tests SSH access to a Hermes host", substring = true))
-        assertEquals(
-            "launching Hermes and tunneling the gateway must not be implied",
-            1,
-            compose.countWithText("not implemented yet", substring = true),
-        )
-        assertEquals(
-            "and the Android sandbox exception stays, because it is the whole reason for this screen",
-            1,
-            compose.countWithText("Android sandboxes packages", substring = true),
-        )
+        assertEquals(1, compose.countWithText("Connect this app to a remote Hermes Gateway", substring = true))
+        assertEquals(1, compose.countWithText("Disconnected"))
+        assertEquals(1, compose.countWithText("Connect"))
+        assertEquals(0, compose.countWithText("not implemented", substring = true))
+        assertEquals(0, compose.countWithText("Android sandboxes", substring = true))
     }
 
     @Test
     fun `the host-key contract is on screen before any key is trusted`() {
         launch()
 
-        assertEquals(1, compose.countWithText("reviewed by you and pinned", substring = true))
-        assertEquals(1, compose.countWithText("fails closed", substring = true))
-        assertEquals(
-            "Tailscale SSH is not an exemption from the review",
-            1,
-            compose.countWithText("cannot read Tailscale's known_hosts", substring = true),
-        )
+        assertEquals(1, compose.countWithText("Review the host key on first connect", substring = true))
+        assertEquals(1, compose.countWithText("a changed key is blocked", substring = true))
+        assertEquals(0, compose.countWithText("known_hosts", substring = true))
     }
 
     @Test
-    fun `the persistence disclosure is the same closed list the store keeps`() {
+    fun `profile selection and diagnostics stay secondary to connect`() {
         launch()
 
-        assertEquals(
-            1,
-            compose.countWithText(
-                "only host, port, username, method and the fingerprint you accept are saved",
-                substring = true,
+        compose.onNodeWithContentDescription("Hermes profile (optional)").assertIsDisplayed()
+        assertEquals(1, compose.countWithText("Connect"))
+        assertEquals(1, compose.countWithText("Test SSH only"))
+        assertEquals(0, compose.countWithText("credential", substring = true))
+    }
+
+    @Test
+    fun `unavailable SSH diagnostics are disabled instead of silently ignoring taps`() {
+        val state = mutableStateOf(SshUiState())
+        compose.setContent {
+            HermesTheme(AppearanceSelection(BuiltinThemes.DEFAULT_NAME, HermesThemeMode.Dark)) {
+                SshScreen(state = state.value, actions = SshActions(onProbe = {}))
+            }
+        }
+
+        compose.onNodeWithText("Test SSH only").assertIsNotEnabled()
+
+        state.value = state.value.copy(
+            status = ProbeStatus.Failed(
+                ProbeFailure.Unreachable,
+                "fixture",
             ),
         )
-        assertEquals(
-            "leaving the screen is part of the promise, not only a completed probe",
-            1,
-            compose.countWithText("dropped when a probe uses them or when you leave", substring = true),
-        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Test again").assertIsNotEnabled()
     }
 
     @Test

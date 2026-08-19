@@ -172,17 +172,6 @@ class SessionGroupingTest {
     }
 
     @Test
-    fun `archived sessions are hidden unless asked for`() {
-        val sessions = listOf(session("live", now - HOUR), session("old", now - 2 * HOUR, archived = true))
-
-        assertEquals(listOf("row:live"), buildSessionRows(sessions, now, timeZone = zone, locale = locale).map(::describe))
-        assertEquals(
-            listOf("row:live", "row:old"),
-            buildSessionRows(sessions, now, includeArchived = true, timeZone = zone, locale = locale).map(::describe),
-        )
-    }
-
-    @Test
     fun `search matches title and preview, case-insensitively, and keeps grouping`() {
         val sessions = listOf(
             session("tunnel", now - HOUR, title = "SSH tunnel", preview = "probe ok"),
@@ -209,8 +198,7 @@ class SessionGroupingTest {
         at: Long,
         title: String = "Session $id",
         preview: String = "",
-        archived: Boolean = false,
-    ) = SessionSummary(id = id, title = title, preview = preview, lastActiveAtMillis = at, archived = archived)
+    ) = SessionSummary(id = id, title = title, preview = preview, lastActiveAtMillis = at)
 
     private fun describe(row: SessionListRow): String = when (row) {
         is SessionListRow.Divider -> "divider:${row.bucket.name}"

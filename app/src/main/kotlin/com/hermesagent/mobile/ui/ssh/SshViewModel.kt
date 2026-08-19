@@ -3,6 +3,12 @@ package com.hermesagent.mobile.ui.ssh
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.hermesagent.mobile.data.gateway.GatewayConnectResult
+import com.hermesagent.mobile.data.gateway.GatewayConnectionController
+import com.hermesagent.mobile.data.gateway.GatewayConnectionManager
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.requireProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.DestinationParse
 import com.hermesagent.mobile.data.ssh.HostAnchor
@@ -22,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +76,7 @@ data class SshUiState(
     /** Runtime-only label for the loaded document; never enters [HostProfile]. */
     val importedKeyName: String? = null,
     val status: ProbeStatus = ProbeStatus.Idle,
+    val connection: GatewayConnectionState = GatewayConnectionState(),
     /**
      * The review the last probe produced. Read [pendingHostKey] instead — this
      * is the raw record, not the decision the form is waiting on.
@@ -116,6 +124,11 @@ data class SshUiState(
             ?.reason
             ?.takeIf { destination.isNotBlank() }
 
+    val remoteProfileError: String?
+        get() = profile.remoteHermesProfile.takeIf(String::isNotBlank)?.let { value ->
+            runCatching { requireProfile(value) }.exceptionOrNull()?.message
+        }
+
     /**
      * Both halves have to agree: the field must parse, *and* the profile it
      * parsed into must be dialable. Otherwise a field the user has emptied
@@ -124,6 +137,23 @@ data class SshUiState(
     val canProbe: Boolean
         get() = parsedDestination is DestinationParse.Valid && profile.isValid &&
             status != ProbeStatus.Running && hasCredential
+
+    val canConnect: Boolean
+        get() = parsedDestination is DestinationParse.Valid && profile.isValid &&
+            remoteProfileError == null &&
+            connection.status != GatewayConnectionStatus.Connecting && hasCredential
+
+    /** The next action after a trusted host key outlives a Gateway attempt's secret. */
+    val connectionCredentialPrompt: String?
+        get() = if (profile.acceptedFingerprint == null || hasCredential) {
+            null
+        } else {
+            when (profile.authMethod) {
+                AuthMethod.TailscaleSsh -> null
+                AuthMethod.Password -> "Re-enter your password, then Connect."
+                AuthMethod.PrivateKey -> "Re-import your private key, then Connect."
+            }
+        }
 
     private val hasCredential: Boolean
         get() = when (profile.authMethod) {
@@ -139,9 +169,10 @@ data class SshUiState(
      * crash report, a diagnostic dump or a stray log line as its `toString`, so
      * the generated one is a credential leak with no call site to grep for.
      */
+    // product-copy-allow: redacted diagnostic state is never rendered as primary UI
     override fun toString(): String = "SshUiState(profile=$profile, destination=$destination, " +
         "password=<redacted>, keyPassphrase=<redacted>, privateKeyLoaded=$privateKeyLoaded, " +
-        "status=$status, hostKeyReview=$hostKeyReview, keyImportProblem=$keyImportProblem, " +
+        "status=$status, connection=$connection, hostKeyReview=$hostKeyReview, keyImportProblem=$keyImportProblem, " +
         "generation=$generation)"
 }
 
@@ -161,15 +192,18 @@ data class SshUiState(
  *   its answer is dropped if it arrives anyway. A host-key review carries the
  *   `(host, port)` that offered it and stops counting the moment the form
  *   points somewhere else.
- * - **The screen stops holding a secret once a probe has used it.** A first-use
- *   review is the one exception, because nothing was sent yet and the retry
- *   after accepting is the same attempt. Leaving the screen ends that lifetime
- *   too — see [releaseScreen], which is what makes "for this screen only" true
- *   of a ViewModel that outlives the screen.
+ * - **The screen stops holding a secret once an attempt has used it.** A
+ *   probe-only first-use review retains material because its retry is the same
+ *   diagnostic flow and nothing was sent. A Gateway attempt clears form
+ *   material even when it stops for first-use trust; after accepting, Password
+ *   and Private key users re-enter or re-import before connecting. Leaving the
+ *   screen ends that lifetime too — see [releaseScreen], which is what makes
+ *   "for this screen only" true of a ViewModel that outlives the screen.
  */
-class SshViewModel(
+internal class SshViewModel(
     private val store: HostProfileStore,
     private val probe: SshProbe = SshjProbe(),
+    private val gatewayConnection: GatewayConnectionController? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SshUiState())
@@ -182,6 +216,7 @@ class SshViewModel(
      */
     private var privateKeyPem: CharArray? = null
     private var probeJob: Job? = null
+    private var connectJob: Job? = null
     /** The credential copy owned by [probeJob], retained only so stop is a synchronous wipe. */
     private var probeCredential: SshCredential? = null
     private val persistenceMutex = Mutex()
@@ -200,6 +235,13 @@ class SshViewModel(
             val stored = store.hostProfile.first()
             if (!edited) _uiState.update { it.copy(profile = stored, destination = stored.destination) }
         }
+        gatewayConnection?.let { gateway ->
+            viewModelScope.launch {
+                gateway.state.collect { connection ->
+                    _uiState.update { it.copy(connection = connection) }
+                }
+            }
+        }
     }
 
     /**
@@ -217,6 +259,10 @@ class SshViewModel(
             if (parsed is DestinationParse.Valid) profile.withDestination(parsed.destination) else profile
         }
         _uiState.update { it.copy(destination = value) }
+    }
+
+    fun setRemoteHermesProfile(value: String) {
+        editProfile { it.copy(remoteHermesProfile = value) }
     }
 
     fun setAuthMethod(method: AuthMethod) {
@@ -330,6 +376,11 @@ class SshViewModel(
      */
     fun releaseScreen() {
         stopProbe()
+        // The collected UI state can lag the manager by one dispatch. The job
+        // itself is the authoritative answer: cancelling a completed job is a
+        // no-op, while cancelling an in-flight one closes its transport.
+        connectJob?.cancel()
+        connectJob = null
         dropScreenSecrets()
         // The generation bump is what makes a probe that had already answered
         // stale: cancelling its job does not unqueue a result that is a few
@@ -369,6 +420,74 @@ class SshViewModel(
             }
             applyResult(result, generation, profile.anchor)
         }
+    }
+
+    /** Connects the process-scoped Gateway; the screen never owns the socket. */
+    fun connect() {
+        val gateway = gatewayConnection ?: return
+        val state = _uiState.value
+        if (!state.canConnect) return
+        val generation = state.generation
+        val profile = state.profile
+        val credential = state.credential(privateKeyPem)
+
+        connectJob?.cancel()
+        connectJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val result = try {
+                gateway.connect(profile, credential)
+            } finally {
+                credential.clear()
+            }
+            if (_uiState.value.generation != generation) return@launch
+            when (result) {
+                GatewayConnectResult.Connected -> {
+                    _uiState.update { it.copy(status = ProbeStatus.Idle, hostKeyReview = null) }
+                    dropScreenSecrets()
+                }
+
+                is GatewayConnectResult.HostKeyPending -> {
+                    _uiState.update {
+                        it.copy(
+                            status = ProbeStatus.Idle,
+                            hostKeyReview = PendingHostKey(result.fingerprint, result.keyType, result.anchor),
+                        )
+                    }
+                    // Gateway first-use trust is still the end of this attempt.
+                    // Probe-only retry retention does not apply: clear the form.
+                    dropScreenSecrets()
+                }
+
+                is GatewayConnectResult.HostKeyMismatch -> {
+                    _uiState.update {
+                        it.copy(
+                            status = ProbeStatus.KeyMismatch(result.expected, result.actual),
+                            hostKeyReview = null,
+                        )
+                    }
+                    dropScreenSecrets()
+                }
+
+                is GatewayConnectResult.Failed -> {
+                    _uiState.update {
+                        it.copy(
+                            status = ProbeStatus.Failed(result.kind ?: ProbeFailure.Unknown, result.message),
+                            hostKeyReview = null,
+                        )
+                    }
+                    dropScreenSecrets()
+                }
+            }
+        }
+        // The connection attempt owns its mutable credential copy now. The
+        // screen should not retain another copy while remote startup runs.
+        dropScreenSecrets()
+    }
+
+    fun disconnect() {
+        val gateway = gatewayConnection ?: return
+        connectJob?.cancel()
+        connectJob = null
+        viewModelScope.launch { gateway.disconnect() }
     }
 
     /**
@@ -422,8 +541,8 @@ class SshViewModel(
             }
         }
 
-        // A first use sent nothing and is one tap from a retry, so the material
-        // it did not use stays. Everything else is done with it.
+        // A probe-only first use sent nothing and is one tap from a diagnostic
+        // retry, so its material stays. Everything else is done with it.
         if (result !is ProbeResult.HostKeyPending) dropScreenSecrets()
     }
 
@@ -439,6 +558,8 @@ class SshViewModel(
         val interrupted = before.status == ProbeStatus.Running
 
         stopProbe()
+        connectJob?.cancel()
+        connectJob = null
         _uiState.update { state ->
             state.copy(
                 profile = updated,
@@ -449,6 +570,9 @@ class SshViewModel(
         }
 
         if (interrupted) dropScreenSecrets()
+        gatewayConnection
+            ?.takeIf { it.state.value.status != GatewayConnectionStatus.Disconnected }
+            ?.let { gateway -> viewModelScope.launch { gateway.disconnect() } }
         if (updated != before.profile) persistProfile()
     }
 
@@ -457,6 +581,8 @@ class SshViewModel(
         edited = true
         val interrupted = _uiState.value.status == ProbeStatus.Running
         stopProbe()
+        connectJob?.cancel()
+        connectJob = null
         if (interrupted) dropScreenSecrets()
         _uiState.update { state ->
             transform(state).copy(
@@ -528,6 +654,7 @@ class SshViewModel(
 
     override fun onCleared() {
         stopProbe()
+        connectJob?.cancel()
         wipePrivateKey()
         super.onCleared()
     }
@@ -536,10 +663,11 @@ class SshViewModel(
         /** Explicit NUL: an invisible space literal in a wipe is a bug in waiting. */
         private const val NUL = '\u0000'
 
-        fun factory(store: HostProfileStore): ViewModelProvider.Factory =
+        fun factory(store: HostProfileStore, gatewayConnection: GatewayConnectionManager): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = SshViewModel(store) as T
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    SshViewModel(store, gatewayConnection = gatewayConnection) as T
             }
     }
 }

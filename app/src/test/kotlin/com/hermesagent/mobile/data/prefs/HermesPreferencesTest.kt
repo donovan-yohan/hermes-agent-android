@@ -19,10 +19,10 @@ import org.robolectric.annotation.Config
 /**
  * What the store keeps, and the migration that removes one legacy field.
  *
- * The SSH screen prints a closed list of what is saved — host, port, username,
- * method, fingerprint — and a closed list on a security screen is a promise. An
- * imported key's display name used to be a sixth entry that the copy never
- * named: useless without the key, which is memory-only and cannot survive a
+ * The store's closed list is host, port, username, optional remote profile,
+ * method, fingerprint, and a per-install ownership id. An imported key's
+ * display name used to be an extra entry: useless without the key, which is
+ * memory-only and cannot survive a
  * restart, and capable of naming a target or an organisation all on its own
  * (`acme-prod-root.pem`). It is now screen state, and any value an earlier
  * build wrote is removed before the first read.
@@ -42,6 +42,7 @@ class HermesPreferencesTest {
         assertEquals("test-host", loaded.host)
         assertEquals(2222, loaded.port)
         assertEquals("test-user", loaded.username)
+        assertEquals("test-profile", loaded.remoteHermesProfile)
         assertEquals(AuthMethod.PrivateKey, loaded.authMethod)
         assertEquals(FINGERPRINT, loaded.acceptedFingerprint)
     }
@@ -67,6 +68,17 @@ class HermesPreferencesTest {
         assertFalse(DropImportedKeyName.shouldMigrate(stored))
     }
 
+    @Test
+    fun `ownership id is stable per install and has no endpoint identity`() = runBlocking {
+        val first = preferences.ownershipId()
+        val second = preferences.ownershipId()
+
+        assertEquals(first, second)
+        assertTrue(first.matches(Regex("[0-9a-f]{32}")))
+        assertFalse(first.contains("test-host"))
+        assertFalse(first.contains("test-user"))
+    }
+
     private companion object {
         val LEGACY = stringPreferencesKey("host.single.importedKeyName")
         val HOST = stringPreferencesKey("host.single.host")
@@ -78,6 +90,7 @@ class HermesPreferencesTest {
             host = "test-host",
             port = 2222,
             username = "test-user",
+            remoteHermesProfile = "test-profile",
             authMethod = AuthMethod.PrivateKey,
             acceptedFingerprint = FINGERPRINT,
         )

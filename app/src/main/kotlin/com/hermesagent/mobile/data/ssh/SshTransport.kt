@@ -12,14 +12,17 @@ import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.CharArrayReader
 import java.io.Closeable
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
+import net.schmizz.sshj.connection.channel.direct.Parameters
 
 /**
- * The five things one probe does to a live SSH connection.
+ * The internal transport shared by the SSH diagnostic and live Gateway path.
  *
- * It exists so the lifecycle contract — a cancelled or timed-out probe closes
- * the socket, never authenticates afterwards, and never publishes a result —
- * can be proven by a test without a server, a network, or a credential.
+ * Its seam lets cancellation, bounded exec, forwarding, and close ownership be
+ * proven by tests without a server, network, or credential.
  * [SshjTransport] is the only production implementation; the seam is
  * `internal`, so it is a test affordance and not a second public API.
  */
@@ -47,6 +50,42 @@ internal interface SshTransport : Closeable {
      * reported one.
      */
     fun runCommand(command: String, maxBytes: Int, timeoutMillis: Long): CommandOutcome
+
+    /**
+     * Runs a bounded command on this authenticated connection.
+     *
+     * [stdin] is written to the channel and never placed in argv. Implementors
+     * must cap both output streams and report truncation rather than returning
+     * an apparently complete value. The default preserves probe doubles; the
+     * live transport implements stdin and stderr fully.
+     */
+    fun exec(
+        command: String,
+        stdin: ByteArray? = null,
+        maxBytes: Int = DEFAULT_EXEC_BYTES,
+        timeoutMillis: Long = DEFAULT_EXEC_TIMEOUT_MILLIS,
+    ): ExecOutcome {
+        require(stdin == null) { "This transport does not support command stdin." }
+        val outcome = runCommand(command, maxBytes, timeoutMillis)
+        return ExecOutcome(
+            stdout = outcome.output.toByteArray(),
+            stderr = ByteArray(0),
+            exitStatus = outcome.exitStatus,
+            truncated = false,
+        )
+    }
+
+    /** Starts a forward whose actual listener is already bound to 127.0.0.1. */
+    fun openLoopbackForward(remotePort: Int): SshForward =
+        throw UnsupportedOperationException("This transport does not support forwarding.")
+
+    /** Enables client-owned keepalive for a connection that outlives one exec. */
+    fun enableKeepAlive(intervalSeconds: Int) = Unit
+
+    companion object {
+        const val DEFAULT_EXEC_BYTES: Int = 64 * 1024
+        const val DEFAULT_EXEC_TIMEOUT_MILLIS: Long = 15_000
+    }
 }
 
 /**
@@ -57,6 +96,25 @@ internal interface SshTransport : Closeable {
  * modelling it as `null` rather than as `0` is what keeps it one.
  */
 internal data class CommandOutcome(val output: String, val exitStatus: Int?)
+
+internal data class ExecOutcome(
+    val stdout: ByteArray,
+    val stderr: ByteArray,
+    val exitStatus: Int?,
+    val truncated: Boolean,
+) {
+    fun clear() {
+        stdout.fill(0)
+        stderr.fill(0)
+    }
+}
+
+/** One loopback listener carried by the authenticated SSH connection. */
+internal interface SshForward : Closeable {
+    val localPort: Int
+    val bindAddress: String
+    val isOpen: Boolean
+}
 
 /** Opens a transport for a probe. One call, one connection. */
 internal fun interface SshTransports {
@@ -76,7 +134,7 @@ internal object SshjTransports : SshTransports {
  * the only way to stop it from another thread is to close the transport under
  * it and let the blocked call fail.
  */
-private class SshjTransport(storedFingerprint: String?) : SshTransport {
+internal class SshjTransport(storedFingerprint: String?) : SshTransport {
 
     private val verifier = TofuHostKeyVerifier(storedFingerprint)
 
@@ -92,6 +150,7 @@ private class SshjTransport(storedFingerprint: String?) : SshTransport {
         connectTimeout = SshProbe.CONNECT_TIMEOUT_MILLIS
         timeout = SshProbe.CONNECT_TIMEOUT_MILLIS
     }
+    private val forwards = mutableSetOf<SshForward>()
 
     override fun connect(host: String, port: Int) = client.connect(host, port)
 
@@ -147,7 +206,57 @@ private class SshjTransport(storedFingerprint: String?) : SshTransport {
             }
         }
 
+    override fun exec(
+        command: String,
+        stdin: ByteArray?,
+        maxBytes: Int,
+        timeoutMillis: Long,
+    ): ExecOutcome = client.run {
+        require(maxBytes in 1..MAX_EXEC_BYTES) { "maxBytes is outside the bounded exec limit." }
+        timeout = timeoutMillis.coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+        startSession().use { session ->
+            session.exec(command).use { running ->
+                stdin?.let { input ->
+                    running.outputStream.use { stream ->
+                        stream.write(input)
+                        stream.flush()
+                    }
+                }
+                val stdoutRead = running.inputStream.readBounded(maxBytes + 1)
+                val stderrRead = running.errorStream.readBounded(maxBytes + 1)
+                val truncated = stdoutRead.size > maxBytes || stderrRead.size > maxBytes
+                val stdout = stdoutRead.copyOf(minOf(stdoutRead.size, maxBytes))
+                val stderr = stderrRead.copyOf(minOf(stderrRead.size, maxBytes))
+                stdoutRead.fill(0)
+                stderrRead.fill(0)
+                if (truncated) runCatching { running.close() }
+                runCatching { running.join(timeoutMillis.coerceAtLeast(1), TimeUnit.MILLISECONDS) }
+                ExecOutcome(stdout, stderr, running.exitStatus, truncated)
+            }
+        }
+    }
+
+    override fun openLoopbackForward(remotePort: Int): SshForward {
+        require(remotePort in 1..65535) { "Remote port is outside 1..65535." }
+        val listener = bindLoopbackListener()
+        val parameters = Parameters(LOOPBACK, listener.localPort, LOOPBACK, remotePort)
+        val forwarder = client.newLocalPortForwarder(parameters, listener)
+        val handle = SshjForward(listener, forwarder) { closed ->
+            synchronized(forwards) { forwards.remove(closed) }
+        }
+        synchronized(forwards) { forwards += handle }
+        handle.start()
+        return handle
+    }
+
+    override fun enableKeepAlive(intervalSeconds: Int) {
+        require(intervalSeconds > 0)
+        client.connection.keepAlive.keepAliveInterval = intervalSeconds
+    }
+
     override fun close() {
+        val active = synchronized(forwards) { forwards.toList().also { forwards.clear() } }
+        active.forEach { runCatching { it.close() } }
         // `disconnect()` first sends transport data and can contend with the
         // worker. Closing the raw socket wakes a thread blocked in connect,
         // KEX, authentication, or stdout read before that best-effort cleanup.
@@ -172,5 +281,47 @@ private class SshjTransport(storedFingerprint: String?) : SshTransport {
             ?: throw UserAuthException("That key is not in a format this app can read.")
         provider.init(CharArrayReader(pem), null, finder)
         return provider
+    }
+
+    private companion object {
+        const val LOOPBACK = "127.0.0.1"
+        const val MAX_EXEC_BYTES = 256 * 1024
+    }
+}
+
+/** Bind first and hand this exact listener to sshj; there is no pick-then-bind gap. */
+internal fun bindLoopbackListener(): ServerSocket = ServerSocket().apply {
+    reuseAddress = false
+    bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 16)
+}
+
+private class SshjForward(
+    private val listener: ServerSocket,
+    private val forwarder: net.schmizz.sshj.connection.channel.direct.LocalPortForwarder,
+    private val onClosed: (SshForward) -> Unit,
+) : SshForward {
+    @Volatile
+    private var open = true
+
+    override val localPort: Int = listener.localPort
+    override val bindAddress: String = listener.inetAddress.hostAddress ?: ""
+    override val isOpen: Boolean get() = open && !listener.isClosed
+
+    private val thread = Thread({
+        try {
+            forwarder.listen()
+        } finally {
+            close()
+        }
+    }, "hermes-ssh-forward-$localPort").apply { isDaemon = true }
+
+    fun start() = thread.start()
+
+    override fun close() {
+        if (!open) return
+        open = false
+        runCatching { forwarder.close() }
+        runCatching { listener.close() }
+        onClosed(this)
     }
 }

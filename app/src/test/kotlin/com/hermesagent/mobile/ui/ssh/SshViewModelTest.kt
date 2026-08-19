@@ -492,6 +492,29 @@ class SshViewModelTest {
     }
 
     @Test
+    fun `a trusted Gateway host with no secret explains how to reconnect`() = runTest(dispatcher) {
+        fun state(method: AuthMethod) = SshUiState(
+            profile = HostProfile(
+                host = "hermes-box.local",
+                username = "hermes",
+                authMethod = method,
+                acceptedFingerprint = FakeSshProbe.DEFAULT_FINGERPRINT,
+            ),
+            destination = "hermes@hermes-box.local",
+        )
+
+        val password = state(AuthMethod.Password)
+        assertFalse(password.canConnect)
+        assertEquals("Re-enter your password, then Connect.", password.connectionCredentialPrompt)
+
+        val privateKey = state(AuthMethod.PrivateKey)
+        assertFalse(privateKey.canConnect)
+        assertEquals("Re-import your private key, then Connect.", privateKey.connectionCredentialPrompt)
+
+        assertNull(state(AuthMethod.TailscaleSsh).connectionCredentialPrompt)
+    }
+
+    @Test
     fun `a completed probe stops the screen holding the password`() = runTest(dispatcher) {
         val vm = viewModel(FakeSshProbe())
         vm.fillValidProfile()

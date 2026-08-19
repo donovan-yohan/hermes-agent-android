@@ -15,6 +15,7 @@ val verifyRepoInvariants by tasks.registering(Exec::class) {
     description = "Checks repository invariants (see scripts/check-repo-invariants.sh)."
     val script = layout.projectDirectory.file("scripts/check-repo-invariants.sh")
     inputs.file(script)
+    inputs.file(layout.projectDirectory.file("scripts/check-product-copy.py"))
     inputs.files(layout.projectDirectory.file("AGENTS.md"))
     commandLine(script.asFile.absolutePath)
 }

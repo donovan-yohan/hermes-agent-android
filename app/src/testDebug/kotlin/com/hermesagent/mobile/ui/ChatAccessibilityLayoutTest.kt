@@ -67,22 +67,20 @@ class ChatAccessibilityLayoutTest {
 
         val sessions = compose.onNodeWithText("Sessions").fetchSemanticsNode()
         val newSession = compose.onNodeWithContentDescription("New session").fetchSemanticsNode()
-        val showArchived = compose.onNodeWithText("Show archived").fetchSemanticsNode()
 
-        // The three controls are all in the rail, left of the 300dp content
+        // The controls are in the rail, left of the 300dp content
         // boundary. Their presence also proves this isn't the compact drawer.
         assertTrue(newSession.boundsInRoot.center.x < railBoundaryPx())
-        assertTrue(showArchived.boundsInRoot.center.x < railBoundaryPx())
         assertTrue(sessions.boundsInRoot.right <= railBoundaryPx())
         assertFalse(compose.nodesWithContentDescription("Open sessions").isNotEmpty())
 
         val rail = compose.onNodeWithTag("Wide sessions rail").fetchSemanticsNode().boundsInRoot
-        val footer = compose.onNodeWithTag("Session archive footer").fetchSemanticsNode().boundsInRoot
+        val list = compose.onNodeWithTag("Session list").fetchSemanticsNode().boundsInRoot
         val tolerance = geometryTolerancePx()
 
         assertEquals("the rail surface remains 300dp wide", railBoundaryPx(), rail.width, tolerance)
-        assertTrue("the rail footer must sit above the injected navigation inset", rail.bottom - footer.bottom >= WIDE_RAIL_INSET_PX - tolerance)
-        assertTrue("the footer stays within the rail surface", footer.bottom <= rail.bottom + tolerance)
+        assertTrue("the session list must sit above the injected navigation inset", rail.bottom - list.bottom >= WIDE_RAIL_INSET_PX - tolerance)
+        assertTrue("the session list stays within the rail surface", list.bottom <= rail.bottom + tolerance)
     }
 
     @Test
@@ -97,16 +95,16 @@ class ChatAccessibilityLayoutTest {
         )
         compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.waitForIdle()
-        val baselineFooter = compose.onNodeWithTag("Session archive footer").fetchSemanticsNode().boundsInRoot
+        val baselineList = compose.onNodeWithTag("Session list").fetchSemanticsNode().boundsInRoot
 
         injectWideRailInset = true
         compose.waitForIdle()
-        val injectedFooter = compose.onNodeWithTag("Session archive footer").fetchSemanticsNode().boundsInRoot
+        val injectedList = compose.onNodeWithTag("Session list").fetchSemanticsNode().boundsInRoot
 
         assertEquals(
             "the compact drawer must not inherit wide-rail-only bottom padding",
-            baselineFooter.bottom,
-            injectedFooter.bottom,
+            baselineList.bottom,
+            injectedList.bottom,
             geometryTolerancePx(),
         )
     }

@@ -11,7 +11,6 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.hermesagent.mobile.data.demo.DemoSessions
 import com.hermesagent.mobile.data.ssh.KeyDocument
 import com.hermesagent.mobile.data.ssh.KeyImportGate
 import com.hermesagent.mobile.data.ssh.KeyImportProblem
@@ -32,11 +31,9 @@ import java.nio.charset.CodingErrorAction
 /**
  * The single activity, and the single wiring site.
  *
- * Phase 1's object graph is a cache, a preferences store and two ViewModels —
- * small enough that a DI framework would be indirection with no payoff. The
- * process-scoped half lives in [HermesApplication]; this class only binds it to
- * the UI. When a gateway client and a tunnel service join, this is the place
- * that grows, and the decision gets revisited with real weight behind it.
+ * The process-scoped Gateway graph lives in [HermesApplication]; this class
+ * only binds it to two ViewModels and the UI. The graph remains small enough
+ * that a DI framework would add indirection without a second composition root.
  */
 class MainActivity : ComponentActivity() {
 
@@ -44,9 +41,11 @@ class MainActivity : ComponentActivity() {
     private val preferences get() = app.preferences
 
     private val chatViewModel: ChatViewModel by viewModels {
-        ChatViewModel.factory(app.cache, DemoSessions.INITIAL_SESSION_ID)
+        ChatViewModel.factory(app.cache, app.sessionRepository)
     }
-    private val sshViewModel: SshViewModel by viewModels { SshViewModel.factory(preferences) }
+    private val sshViewModel: SshViewModel by viewModels {
+        SshViewModel.factory(preferences, app.gatewayConnection)
+    }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
 
@@ -79,11 +78,8 @@ class MainActivity : ComponentActivity() {
                     onDraftChange = chatViewModel::setDraft,
                     onSelectSession = chatViewModel::selectSession,
                     onCreateSession = { chatViewModel.createSession() },
-                    onArchiveToggle = chatViewModel::setArchived,
-                    onRenameSession = chatViewModel::renameSession,
                     onSend = chatViewModel::submit,
                     onStop = chatViewModel::stop,
-                    onToggleArchived = { chatViewModel.setShowArchived(!chatState.showArchived) },
                 ),
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },
@@ -91,6 +87,7 @@ class MainActivity : ComponentActivity() {
                 ),
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,
+                    onRemoteProfileChange = sshViewModel::setRemoteHermesProfile,
                     onAuthMethodChange = sshViewModel::setAuthMethod,
                     onPasswordChange = sshViewModel::setPassword,
                     onPassphraseChange = sshViewModel::setKeyPassphrase,
@@ -99,6 +96,8 @@ class MainActivity : ComponentActivity() {
                         pickKey.launch(KEY_MIME_TYPES)
                     },
                     onForgetKey = sshViewModel::forgetPrivateKey,
+                    onConnect = sshViewModel::connect,
+                    onDisconnect = sshViewModel::disconnect,
                     onProbe = sshViewModel::runProbe,
                     onCancelProbe = sshViewModel::cancelProbe,
                     onAcceptHostKey = sshViewModel::acceptPendingHostKey,

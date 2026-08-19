@@ -96,7 +96,7 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
 /**
  * Android has no bundled Hermes webfont and does not fetch one at runtime, so
  * every family a preset names collapses to a platform family. See
- * `docs/phase-1-architecture.md` for the per-preset substitution table.
+ * `docs/workflows/sync-desktop-themes.md` for the per-preset substitution table.
  */
 private fun HermesFontFamily.toFontFamily(): FontFamily = when (this) {
     HermesFontFamily.Sans -> FontFamily.SansSerif

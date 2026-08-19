@@ -281,6 +281,17 @@ internal class TransportHandle(private val transports: SshTransports) {
         closing?.let { runCatching { it.close() } }
     }
 
+    /** Transfers the live transport to a longer-lived authenticated owner. */
+    fun release(expected: SshTransport): SshTransport = synchronized(lock) {
+        if (stopped || transport !== expected) {
+            throw CancellationException("The connection stopped before ownership transferred.")
+        }
+        operation = null
+        transport = null
+        stopped = true
+        expected
+    }
+
     private class OperationTicket {
         private val lock = Any()
         private var cancelled = false

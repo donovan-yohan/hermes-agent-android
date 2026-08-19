@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -141,8 +142,11 @@ private fun SendButton(onClick: () -> Unit, enabled: Boolean) {
     Box(
         modifier = Modifier
             .size(HermesTheme.spacing.touchTarget)
-            .semantics { contentDescription = "Send message" }
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Send message"
+                if (!enabled) disabled()
+            },
         contentAlignment = Alignment.Center,
     ) {
         Box(

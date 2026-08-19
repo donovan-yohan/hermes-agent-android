@@ -1,7 +1,7 @@
 package com.hermesagent.mobile.ui.sessions
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,21 +19,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton as MaterialTextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,7 +39,6 @@ import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.common.SearchField
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.StatusDot
-import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesTokens
 
@@ -68,17 +59,13 @@ fun SessionList(
     rows: List<SessionListRow>,
     activeSessionId: String?,
     query: String,
-    showArchived: Boolean,
+    canCreate: Boolean,
     onQueryChange: (String) -> Unit,
     onSelect: (String) -> Unit,
     onCreate: () -> Unit,
-    onToggleArchived: () -> Unit,
-    onArchive: (SessionSummary) -> Unit,
-    onRename: (SessionSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = HermesTheme.tokens
-    var renameDraft by remember { mutableStateOf<RenameDraft?>(null) }
 
     Column(modifier.fillMaxSize().background(tokens.sidebarSurface)) {
         Row(
@@ -97,6 +84,7 @@ fun SessionList(
                 icon = Icons.Filled.Add,
                 contentDescription = "New session",
                 onClick = onCreate,
+                enabled = canCreate,
                 tint = tokens.accent,
             )
         }
@@ -111,15 +99,15 @@ fun SessionList(
         if (rows.isEmpty()) {
             EmptyState(
                 title = if (query.isBlank()) "No sessions" else "Nothing matches",
-                description = if (query.isBlank()) {
-                    "Start one with the + above."
-                } else {
-                    "No session title or preview contains “$query”."
+                description = when {
+                    query.isNotBlank() -> "No session title or preview contains “$query”."
+                    canCreate -> "Start one with the + above."
+                    else -> "Connect to a Gateway to start a session."
                 },
             )
         } else {
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).testTag("Session list"),
                 contentPadding = PaddingValues(bottom = 12.dp),
             ) {
                 items(items = rows, key = { it.key() }) { row ->
@@ -137,36 +125,12 @@ fun SessionList(
                             session = row.session,
                             active = row.session.id == activeSessionId,
                             onClick = { onSelect(row.session.id) },
-                            onLongClick = {
-                                renameDraft = RenameDraft(row.session, row.session.title)
-                            },
-                            onArchiveToggle = { onArchive(row.session) },
                         )
                     }
                 }
             }
         }
 
-        TextButton(
-            label = if (showArchived) "Hide archived" else "Show archived",
-            onClick = onToggleArchived,
-            color = tokens.textTertiary,
-            modifier = Modifier
-                .testTag("Session archive footer")
-                .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 2.dp),
-        )
-    }
-
-    renameDraft?.let { draft ->
-        RenameSessionDialog(
-            title = draft.title,
-            onTitleChange = { renameDraft = renameDraft?.copy(title = it) },
-            onCancel = { renameDraft = null },
-            onConfirm = {
-                onRename(draft.session.copy(title = draft.title.trim()))
-                renameDraft = null
-            },
-        )
     }
 }
 
@@ -175,15 +139,11 @@ private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.Row -> session.id
 }
 
-private data class RenameDraft(val session: SessionSummary, val title: String)
-
 @Composable
 private fun SessionRow(
     session: SessionSummary,
     active: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onArchiveToggle: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     val dot = session.status.dot(tokens)
@@ -192,21 +152,13 @@ private fun SessionRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = HermesTheme.spacing.touchTarget)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClickLabel = "Rename ${session.title}",
-                onLongClick = onLongClick,
-            )
+            .clickable(onClick = onClick)
             .testTag("Session row ${session.id}")
             .background(if (active) tokens.widgetSurface else tokens.sidebarSurface)
             .padding(start = HermesTheme.spacing.pageInset - 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
             .semantics {
                 selected = active
                 contentDescription = "${session.title}. ${dot.description}"
-                onLongClick(label = "Rename ${session.title}") {
-                    onLongClick()
-                    true
-                }
             },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -247,48 +199,7 @@ private fun SessionRow(
                 )
             }
         }
-
-        TextButton(
-            label = if (session.archived) "Restore" else "Archive",
-            onClick = onArchiveToggle,
-            color = tokens.textTertiary,
-        )
     }
-}
-
-@Composable
-private fun RenameSessionDialog(
-    title: String,
-    onTitleChange: (String) -> Unit,
-    onCancel: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val trimmedTitle = title.trim()
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text("Rename session") },
-        text = {
-            OutlinedTextField(
-                value = title,
-                onValueChange = onTitleChange,
-                label = { Text("Session title") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().semantics {
-                    contentDescription = "Session title"
-                },
-            )
-        },
-        confirmButton = {
-            MaterialTextButton(onClick = onConfirm, enabled = trimmedTitle.isNotEmpty()) {
-                Text("Rename")
-            }
-        },
-        dismissButton = {
-            MaterialTextButton(onClick = onCancel) {
-                Text("Cancel")
-            }
-        },
-    )
 }
 
 /** The dot lookup. Colour and fill carry the meaning; nothing animates. */

@@ -11,11 +11,13 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
+import com.hermesagent.mobile.data.gateway.GatewayInstallStore
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.security.SecureRandom
 
 private val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "hermes",
@@ -54,22 +56,25 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  *
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
- * - host, port, username, auth *method*, and the accepted host-key fingerprint.
+ * - host, port, username, remote Hermes profile, auth *method*, and the
+ *   accepted host-key fingerprint;
+ * - one random per-install Gateway ownership id.
  *
- * That is the whole list, and it is the same list the SSH screen prints. The
+ * That is the whole list. Product UI does not carry the storage lecture; the
+ * review workflow and this typed store are the detailed authority. The
  * imported key's display name is deliberately **not** on it: see
  * [DropImportedKeyName].
  *
  * Passwords, passphrases and private keys are **not** here and have no code
  * path that could put them here — they live in [com.hermesagent.mobile.data.ssh.SshCredential],
- * which is built in the UI, handed to a probe, and cleared.
+ * which is built in the UI, handed to one SSH attempt, and cleared.
  *
  * Keys carry their scope, per `apps/desktop/AGENTS.md` ("Persisted state must
- * declare its scope in its own key"). Phase 1 has exactly one host profile, so
+ * declare its scope in its own key"). This slice has exactly one host profile, so
  * the scope is `host.single.*`; when profiles become a list the key becomes
  * `host.<id>.*` and the single-profile keys are migrated, not overloaded.
  */
-class HermesPreferences(private val context: Context) : HostProfileStore {
+class HermesPreferences(private val context: Context) : HostProfileStore, GatewayInstallStore {
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
         AppearanceSelection(
@@ -90,6 +95,7 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
             host = prefs[HOST] ?: FRESH.host,
             port = prefs[PORT] ?: FRESH.port,
             username = prefs[USERNAME] ?: FRESH.username,
+            remoteHermesProfile = prefs[REMOTE_HERMES_PROFILE] ?: FRESH.remoteHermesProfile,
             authMethod = prefs[AUTH_METHOD]?.toAuthMethod() ?: FRESH.authMethod,
             acceptedFingerprint = prefs[ACCEPTED_FINGERPRINT],
         )
@@ -110,10 +116,24 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
             prefs[HOST] = profile.host
             prefs[PORT] = profile.port
             prefs[USERNAME] = profile.username
+            if (profile.remoteHermesProfile.isBlank()) prefs.remove(REMOTE_HERMES_PROFILE)
+            else prefs[REMOTE_HERMES_PROFILE] = profile.remoteHermesProfile
             prefs[AUTH_METHOD] = profile.authMethod.name
             profile.acceptedFingerprint?.let { prefs[ACCEPTED_FINGERPRINT] = it }
                 ?: prefs.remove(ACCEPTED_FINGERPRINT)
         }
+    }
+
+    /** Per-install ownership namespace; excluded from backup with the DataStore. */
+    override suspend fun ownershipId(): String {
+        var resolved: String? = null
+        context.hermesDataStore.edit { prefs ->
+            resolved = prefs[GATEWAY_OWNERSHIP_ID]?.takeIf { it.isOwnershipId() } ?: ByteArray(16)
+                .also(SecureRandom()::nextBytes)
+                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+                .also { prefs[GATEWAY_OWNERSHIP_ID] = it }
+        }
+        return requireNotNull(resolved)
     }
 
     private companion object {
@@ -125,8 +145,10 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
         val HOST = stringPreferencesKey("host.single.host")
         val PORT = intPreferencesKey("host.single.port")
         val USERNAME = stringPreferencesKey("host.single.username")
+        val REMOTE_HERMES_PROFILE = stringPreferencesKey("host.single.remoteHermesProfile")
         val AUTH_METHOD = stringPreferencesKey("host.single.authMethod")
         val ACCEPTED_FINGERPRINT = stringPreferencesKey("host.single.acceptedFingerprint")
+        val GATEWAY_OWNERSHIP_ID = stringPreferencesKey("gateway.install.ownershipId")
 
         fun String.toThemeMode(): HermesThemeMode =
             HermesThemeMode.entries.firstOrNull { it.name == this } ?: HermesThemeMode.System
@@ -139,5 +161,8 @@ class HermesPreferences(private val context: Context) : HostProfileStore {
          */
         fun String.toAuthMethod(): AuthMethod =
             AuthMethod.entries.firstOrNull { it.name == this } ?: AuthMethod.Password
+
+        fun String.isOwnershipId(): Boolean =
+            length == 32 && all { it in "0123456789abcdef" }
     }
 }

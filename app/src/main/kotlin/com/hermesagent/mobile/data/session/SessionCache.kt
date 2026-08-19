@@ -9,13 +9,14 @@ import kotlinx.coroutines.flow.update
 data class SessionCacheState(
     val sessions: Map<String, SessionSummary> = emptyMap(),
     val transcripts: Map<String, List<TranscriptEntry>> = emptyMap(),
+    /** Canonical durable-id aliases published atomically with a re-home. */
+    val rehomes: Map<String, String> = emptyMap(),
 )
 
 /**
  * The cache of backend truth.
  *
- * Phase 1 has no gateway, so the only writer is the demo source — but the
- * *rules* are the ones the gateway will need, taken from
+ * The live Gateway repository is the writer. Its merge rules are taken from
  * `apps/desktop/AGENTS.md` ("Server truth is cached, not owned" @ `f82f2dba`):
  *
  * - **Merge, don't clobber.** [upsertSessions] layers new information over
@@ -52,12 +53,13 @@ class SessionCache {
     /** Explicit tombstone. The only way a session leaves the cache. */
     fun removeSession(id: String) {
         _state.update { current ->
-            if (!current.sessions.containsKey(id)) {
+            if (!current.sessions.containsKey(id) && !current.transcripts.containsKey(id)) {
                 current
             } else {
                 current.copy(
                     sessions = current.sessions - id,
                     transcripts = current.transcripts - id,
+                    rehomes = current.rehomes.filter { (from, to) -> from != id && to != id },
                 )
             }
         }
@@ -96,6 +98,37 @@ class SessionCache {
                 current
             } else {
                 current.copy(transcripts = current.transcripts + (sessionId to entries))
+            }
+        }
+    }
+
+    /**
+     * Atomically move a backend session to its canonical durable id. This is
+     * used when `session.resume` follows a compression continuation: the
+     * summary and transcript move together, so observers never see a canonical
+     * row without its conversation.
+     */
+    fun rehomeSession(fromId: String, row: SessionSummary, entries: List<TranscriptEntry>) {
+        _state.update { current ->
+            val targetId = row.id
+            val sessions = current.sessions.toMutableMap().apply {
+                remove(fromId)
+                this[targetId] = row
+            }
+            val transcripts = current.transcripts.toMutableMap().apply {
+                remove(fromId)
+                this[targetId] = entries
+            }
+            val rehomes = current.rehomes.mapValues { (_, to) -> if (to == fromId) targetId else to }
+                .toMutableMap()
+                .apply {
+                    remove(targetId)
+                    if (fromId != targetId) this[fromId] = targetId
+                }
+            if (sessions == current.sessions && transcripts == current.transcripts && rehomes == current.rehomes) {
+                current
+            } else {
+                current.copy(sessions = sessions, transcripts = transcripts, rehomes = rehomes)
             }
         }
     }

@@ -41,8 +41,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.hermesagent.mobile.data.demo.DemoSessions
-import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.SessionStatus
+import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.common.Hairline
@@ -144,9 +148,8 @@ private fun WideLayout(
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         // The rail owns its bottom edge in the wide layout. Keep its surface
-        // painted through the inset, but keep its footer above three-button
-        // navigation. Compact drawer content deliberately does not inherit
-        // this: the drawer has its own window boundary.
+        // painted through the inset, but keep its list above three-button
+        // navigation. Compact drawer content deliberately does not inherit it.
         SessionsPane(
             state,
             actions,
@@ -185,13 +188,10 @@ private fun SessionsPane(
         rows = state.sessionRows,
         activeSessionId = state.activeSession?.id,
         query = state.query,
-        showArchived = state.showArchived,
+        canCreate = state.canCreateSession,
         onQueryChange = actions.onQueryChange,
         onSelect = onSelectSession,
         onCreate = onCreateSession,
-        onToggleArchived = actions.onToggleArchived,
-        onArchive = { actions.onArchiveToggle(it.id, !it.archived) },
-        onRename = { actions.onRenameSession(it.id, it.title) },
         modifier = modifier,
     )
 }
@@ -275,7 +275,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
         onDraftChange = actions.onDraftChange,
         onSend = actions.onSend,
         onStop = actions.onStop,
-        isStreaming = state.isStreaming,
+        isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
         canSend = state.canSend,
         statusLine = state.composerStatus(),
         modifier = Modifier.imePadding().navigationBarsPadding(),
@@ -334,35 +334,47 @@ private fun ChatTopBar(
     }
 }
 
-/**
- * Chrome subtitle. Says what is true — a demo backend — rather than borrowing
- * Desktop's connection copy for a connection that does not exist yet.
- */
 private fun ChatUiState.chromeSubtitle(): String = when {
-    isStreaming -> "Streaming · demo backend"
-    runningCount > 0 -> "$runningCount running in background · demo backend"
-    else -> "Demo backend · no gateway connected"
+    connection.status != GatewayConnectionStatus.Connected -> connection.status.label
+    isStreaming -> "Streaming · Connected"
+    runningCount > 0 && connection.status == GatewayConnectionStatus.Connected ->
+        "$runningCount running · Connected"
+    else -> connection.status.label
 }
 
-private fun ChatUiState.composerStatus(): String =
-    if (isStreaming) "hermes-demo · streaming — tap ■ to stop" else "hermes-demo · offline"
+private fun ChatUiState.composerStatus(): String = notice ?: when {
+    connection.status == GatewayConnectionStatus.Connecting -> "Connecting to Gateway"
+    connection.status == GatewayConnectionStatus.NeedsAttention ->
+        connection.message ?: "Open Gateways to reconnect"
+    connection.status == GatewayConnectionStatus.Disconnected -> "Open Gateways to connect"
+    liveStatusText != null -> liveStatusText.orEmpty()
+    isStreaming -> "Hermes is responding — tap ■ to stop"
+    runningCount > 0 -> "Wait for the running turn to finish"
+    else -> "Connected to Gateway"
+}
 
 // ── Previews ──────────────────────────────────────────────────────────────
-// Phone dark, phone light, the monospace-everything preset and a wide layout,
-// all off the same demo seed. They are the cheapest check that a theme change
-// did not break a surface.
+// Phone dark, phone light, the monospace-everything preset and a wide layout.
 
 private const val PREVIEW_NOW = 1_755_600_000_000L
+private const val PREVIEW_SESSION = "preview-session"
 
 private fun previewState(): ChatUiState {
-    val cache = SessionCache()
-    DemoSessions.seed(cache, PREVIEW_NOW)
-    val snapshot = cache.state.value
+    val session = SessionSummary(
+        id = PREVIEW_SESSION,
+        title = "Remote Hermes session",
+        preview = "Gateway transport is ready",
+        lastActiveAtMillis = PREVIEW_NOW,
+    )
     return ChatUiState(
-        sessionRows = buildSessionRows(sessions = snapshot.sessions.values, nowMillis = PREVIEW_NOW),
-        activeSession = snapshot.sessions[DemoSessions.INITIAL_SESSION_ID],
-        transcript = snapshot.transcripts[DemoSessions.INITIAL_SESSION_ID].orEmpty(),
+        sessionRows = buildSessionRows(sessions = listOf(session), nowMillis = PREVIEW_NOW),
+        activeSession = session,
+        transcript = listOf(
+            UserTurn("preview-user", "Show the current Gateway status.", PREVIEW_NOW),
+            AssistantTurn("preview-assistant", "The Gateway is connected and ready.", PREVIEW_NOW),
+        ),
         draft = "How do I import a key?",
+        connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
     )
 }
 

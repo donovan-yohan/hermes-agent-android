@@ -1,8 +1,5 @@
-# The Gradle wrapper's Windows batch script is CRLF by contract — `cmd.exe`
-# mis-parses it otherwise — so it is pinned to CRLF on every platform and
-# exempted from whitespace checking. Without the exemption `git diff --check`
-# reads all 93 of its line endings as trailing whitespace and exits 2, which
-# makes the same command disagree across machines and turns a delivery gate
-# into a coin flip. Nothing else in the repository is touched: there is no
-# blanket `text=auto`, so no other file's line endings are renormalised.
-/gradlew.bat text eol=crlf -whitespace
+# The Gradle wrapper's Windows batch script is CRLF by contract. Preserve its
+# bytes raw and exempt it from whitespace checking: a text clean filter would
+# normalize the current CRLF blob into an always-dirty LF worktree. Nothing
+# else opts out of normal text handling.
+/gradlew.bat -text -whitespace

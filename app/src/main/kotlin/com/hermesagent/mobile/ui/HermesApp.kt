@@ -32,8 +32,8 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
- * Chat is home. Settings has two Phase-1 children, so a saved destination is
- * sufficient without a navigation graph.
+ * Chat is home. Settings has two short child surfaces, so a saved destination
+ * is sufficient without a navigation graph.
  */
 enum class HermesDestination { Chat, Settings, Appearance, Gateways }
 

@@ -1,27 +1,34 @@
 package com.hermesagent.mobile
 
 import android.app.Application
-import com.hermesagent.mobile.data.demo.DemoSessions
+import com.hermesagent.mobile.data.gateway.GatewayConnectionManager
+import com.hermesagent.mobile.data.gateway.GatewayNetworkMonitor
+import com.hermesagent.mobile.data.gateway.LiveGatewaySessionRepository
 import com.hermesagent.mobile.data.prefs.HermesPreferences
 import com.hermesagent.mobile.data.session.SessionCache
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
-/**
- * Process-scoped state, and the reason it is not on the Activity.
- *
- * The session cache outlives any one Activity: a retained `ViewModel` survives
- * a configuration change while the Activity does not, so an Activity-owned
- * cache would leave the ViewModel writing into an orphaned copy — and the demo
- * seed would re-run on every recreation, quietly undoing an archive or a
- * rename. Both live here instead, created once per process.
- *
- * When the gateway lands, the transport and its connection scope join this
- * object, and the seed call goes away.
- */
+/** Process-scoped live Gateway graph and backend-authoritative session cache. */
 class HermesApplication : Application() {
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val cache: SessionCache by lazy {
-        SessionCache().also { DemoSessions.seed(it, System.currentTimeMillis()) }
-    }
-
+    val cache: SessionCache by lazy(::SessionCache)
     val preferences: HermesPreferences by lazy { HermesPreferences(this) }
+    internal val gatewayConnection: GatewayConnectionManager by lazy {
+        GatewayConnectionManager(appScope, preferences)
+    }
+    internal val sessionRepository: LiveGatewaySessionRepository by lazy {
+        LiveGatewaySessionRepository(cache, gatewayConnection, appScope)
+    }
+    private var networkMonitor: GatewayNetworkMonitor? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        // Force the process graph once. There is no demo seed: sessions arrive
+        // only from an authenticated Gateway connection.
+        sessionRepository
+        networkMonitor = GatewayNetworkMonitor(this, gatewayConnection::networkChanged).also { it.start() }
+    }
 }

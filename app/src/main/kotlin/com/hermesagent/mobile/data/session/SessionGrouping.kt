@@ -10,8 +10,8 @@ import java.util.TimeZone
  *
  * Desktop additionally leaves the newest *run* of sessions unlabelled above the
  * first divider (`session-date-groups.ts`, `headRunCutoffMs`) — a gap-scoring
- * heuristic that needs a long list to mean anything. Phase 1 does not ship it;
- * the workflow doc records the gap. What Phase 1 does ship is the other half of
+ * heuristic that needs a long list to mean anything. This slice does not ship
+ * it; the workflow doc records the gap. What the app does ship is the other half of
  * that rule, which needs no heuristic: **whatever group renders first is never
  * labelled** (`session-date-groups.ts:136-140`). A divider separates two
  * groups; there is nothing above the first one to separate it from.
@@ -75,14 +75,12 @@ fun buildSessionRows(
     sessions: Collection<SessionSummary>,
     nowMillis: Long,
     query: String = "",
-    includeArchived: Boolean = false,
     timeZone: TimeZone = TimeZone.getDefault(),
     locale: Locale = Locale.getDefault(),
 ): List<SessionListRow> {
     val needle = query.trim().lowercase(locale)
     val visible = sessions
         .asSequence()
-        .filter { includeArchived || !it.archived }
         .filter { needle.isEmpty() || it.matches(needle, locale) }
         .sortedByDescending { it.lastActiveAtMillis }
         .toList()

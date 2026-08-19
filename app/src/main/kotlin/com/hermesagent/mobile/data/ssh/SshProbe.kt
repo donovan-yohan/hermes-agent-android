@@ -1,13 +1,11 @@
 package com.hermesagent.mobile.data.ssh
 
 /**
- * The only SSH capability Phase 1 owns.
+ * Secondary SSH-only diagnostic.
  *
- * The seam is one method wide on purpose. The scope doc's next slice adds a
- * local port forward and a `hermes serve` bootstrap
- * (`docs/spikes/native-kotlin-ssh-client-scope.md` §5.2); those become
- * *siblings* of [probe] on a `SshTransport`, not a pre-built interface forest
- * nobody implements yet. See `docs/adr/0001-ssh-probe-to-tunnel.md`.
+ * The live Gateway path uses [SshSessionOpener] and the same transport and
+ * host-key policy. This method remains useful for separating SSH/auth trouble
+ * from remote Gateway lifecycle trouble without becoming the primary action.
  */
 interface SshProbe {
     /**
@@ -44,11 +42,8 @@ interface SshProbe {
          * is enabled and the policy allows you".
          */
         const val TAILSCALE_SSH_REFUSED: String =
-            "This host answered and its key is trusted, but it refused Tailscale SSH. " +
-                "Either the target is not running Tailscale SSH, or your tailnet SSH policy " +
-                "does not allow this connection — sharing a tailnet only provides the route " +
-                "and the name. Enable Tailscale SSH on the target and allow it in the policy, " +
-                "or switch to Password or Private key. Nothing was sent."
+            "This trusted host refused Tailscale SSH. Enable Tailscale SSH on the target and " +
+                "allow this connection in your tailnet policy, or choose Password or Private key. Nothing was sent."
 
         const val CONNECT_TIMEOUT_MILLIS: Int = 15_000
         const val OVERALL_TIMEOUT_MILLIS: Long = 30_000

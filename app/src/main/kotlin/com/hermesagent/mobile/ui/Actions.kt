@@ -17,12 +17,8 @@ class ChatActions(
     val onDraftChange: (String) -> Unit = {},
     val onSelectSession: (String) -> Unit = {},
     val onCreateSession: () -> Unit = {},
-    val onArchiveToggle: (id: String, archived: Boolean) -> Unit = { _, _ -> },
-    val onRenameSession: (id: String, title: String) -> Unit = { _, _ -> },
     val onSend: () -> Unit = {},
     val onStop: () -> Unit = {},
-    val onToggleArchived: () -> Unit = {},
-    val onOpenSettings: () -> Unit = {},
 )
 
 class AppearanceActions(
@@ -32,11 +28,14 @@ class AppearanceActions(
 
 class SshActions(
     val onDestinationChange: (String) -> Unit = {},
+    val onRemoteProfileChange: (String) -> Unit = {},
     val onAuthMethodChange: (AuthMethod) -> Unit = {},
     val onPasswordChange: (String) -> Unit = {},
     val onPassphraseChange: (String) -> Unit = {},
     val onImportKey: () -> Unit = {},
     val onForgetKey: () -> Unit = {},
+    val onConnect: () -> Unit = {},
+    val onDisconnect: () -> Unit = {},
     val onProbe: () -> Unit = {},
     val onCancelProbe: () -> Unit = {},
     val onAcceptHostKey: () -> Unit = {},
