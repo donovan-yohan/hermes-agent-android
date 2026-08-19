@@ -171,7 +171,7 @@ Full 114-row enumeration with per-row citations lives in the lane-B dossier (§1
 | Models: picker, catalog, MoA, visibility | R+U | `/api/model/*` (`web_server.py:6843-7211`) | Exact | none | W1–W2 |
 | **Gateways & Connections registry** | **E only** | 21+ `hermes:connections:*`/`connection-config:*`/`ssh-config:*` channels (`main.ts:12459-13140`) — nothing gateway-served | **Redesign — this IS the app's native core**: host store, SSH engine, tunnel, token adoption, liveness. Largest single build item. | none | W0–W1 |
 | Memory settings | R | `/api/memory*` (`web_server.py:13864-13909`, `:6706-6751`) | Exact | none | W2 |
-| Appearance / themes / skins | U+R+E | theme = 26 color tokens in TS objects (`src/themes/types.ts:13-48`); backend sync via `skin.changed` + `/api/dashboard/theme|font` | Degraded-by-design — token-subset port to Material3 (~20/26 map cleanly), reimplement the 144 `color-mix()` derivations in Kotlin; VS Code `.vsix` import cut | none | W2 |
+| Appearance / themes / skins | U+R+E | theme = 26 color tokens in TS objects (`src/themes/types.ts:13-48`); backend sync via `skin.changed` + `/api/dashboard/theme\|font` | Degraded-by-design — token-subset port to Material3 (~20/26 map cleanly), reimplement the 144 `color-mix()` derivations in Kotlin; VS Code `.vsix` import cut | none | W2 |
 | Keybinds | U | localStorage | Degraded (hardware keyboards only) | none | W3 |
 | Notifications settings | E+U | `hermes:notify` — **no push infrastructure upstream** (zero fcm/apns/webpush hits across `hermes_cli/`, `agent/`, `gateway/`) | Degraded — local notifications from WS events while service alive; honest copy about death | G-P1: Web Push/UnifiedPush endpoint (product quality) | W1 |
 | Billing | R+E | `/api/portal`, `/api/analytics/*`; external browser hop | Exact (Custom Tab) | none | W3 |
@@ -196,7 +196,7 @@ Full 114-row enumeration with per-row citations lives in the lane-B dossier (§1
 |---|---|---|---|---|---|
 | Floating HUD, Quick Entry window, pet overlay window, vibrancy/translucency, remote-display banner, wake indicator | E | window-manager machinery | Non-portable (12 desktop-window-manager surfaces; no mobile analogue) | none | n/a |
 | Notifications (toasts + OS) | E | `hermes:notify` | Exact — Android channels are a first-class fit | none | W1 |
-| Clipboard, save-image, downloads | E | `hermes:*clipboard*`, `saveGatewayFile` → `/api/files/download|stream` (Range-capable) | Exact (MediaStore/SAF) | none | W2 |
+| Clipboard, save-image, downloads | E | `hermes:*clipboard*`, `saveGatewayFile` → `/api/files/download\|stream` (Range-capable) | Exact (MediaStore/SAF) | none | W2 |
 | Find in page | E (Chromium findInPage) | none | Redesign — client-side transcript search | none | W3 |
 | Zoom / font scale | E | webFrame zoom | Redesign (font-scale setting) | none | W3 |
 | Keep awake, battery/power state | E | `hermes:keep-awake`, `power-battery` | Exact (`FLAG_KEEP_SCREEN_ON`; battery matters more on mobile) | none | W1 |
@@ -269,7 +269,7 @@ sequenceDiagram
   Host-->>SSH: host key offered
   SSH->>App: TOFU review (SHA256 fingerprint, ssh-keygen -lf format)
   App-->>SSH: user accepts (or verified-first-use QR match)
-  SSH->>Host: exec uname -s; uname -m (gate Linux/Darwin, remote-lifecycle.ts:39)
+  SSH->>Host: exec uname -s and uname -m (gate Linux/Darwin, remote-lifecycle.ts:39)
   SSH->>Host: exec bash -lc command -v hermes, then candidate paths (:182-205)
   SSH->>Host: exec hermes --version, serve --help capability grep (:542-554)
   SSH->>Host: exec cat backend.lock.json + kill -0 + python3 argv-audit (:292-472)
@@ -289,7 +289,7 @@ sequenceDiagram
   Svc->>Serve: GET /api/health with X-Hermes-Session-Token (backend-health.ts:96-169)
   GW->>Serve: WS dial ws://127.0.0.1:lp/api/ws?token=…
   Serve-->>GW: gateway.ready {skin, change_events} (tui_gateway/ws.py:314-326)
-  GW->>Serve: session.resume / session.create; approval.pending refetch
+  GW->>Serve: session.resume / session.create and approval.pending refetch
   loop steady state
     GW->>Serve: client-owned WS ping (OkHttp pingInterval, aligned with SSH keepalive ~60 s)
     Svc->>Svc: NetworkCallback change → teardown + immediate re-dial (new default network)
@@ -636,6 +636,6 @@ Suitable for direct conversion to GitHub issues; dependencies flow top to bottom
 - The 114-surface inventory is complete at the granularity of user-meaningful surfaces, but WS payload *shapes* were not exhaustively schema'd (there is no upstream schema to diff against — that is gap G-Q3 and the golden-corpus plan).
 - Lane dossiers carry ~10 explicitly `UNVERIFIED`-tagged minor claims (e.g., exact javadoc wording for two Android APIs, the current dev home of legacy sshlib 2.2.x); none are load-bearing for the recommendation.
 - Estimates are ranges with stated assumptions (§10); they are calibrated against the inventory and prior-art feature lists, not against a delivered comparable, because **no native Hermes client exists anywhere** — this project would be the first.
-- Research working files (six lane dossiers and three shallow prior-art clones) live under `/tmp/hermes-mobile-native-scope/` and are listed in the run's completion report; they are corroborating evidence, not part of the deliverable.
+- Research working files retained under `/tmp/hermes-mobile-native-scope/` are limited to the six lane dossiers; all shallow prior-art clones and other scratch files were removed. The dossiers are corroborating evidence, not part of the deliverable.
 
 
