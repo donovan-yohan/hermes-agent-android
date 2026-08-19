@@ -257,7 +257,7 @@ is identical at phone reading distance. The table is in `HermesTypography.kt`.
 Commands, and what they proved on 2026-08-19 (JDK 17, `ANDROID_HOME=/opt/android-sdk`):
 
 ```bash
-./gradlew check          # 200 debug + 184 release unit tests, 0 failures;
+./gradlew check          # 220 debug + 195 release unit tests, 0 failures;
                          # lint clean; repo invariants pass
 ./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk, ~16.5 MB
 git diff --check         # clean
