@@ -13,7 +13,7 @@ function usage(message) {
 options:
   --out <dir>          default: build/visual-parity/<name>/desktop
   --port <port>        default: 9222
-  --match <text>       require this substring in the page URL
+  --match <text>       required; select the one page whose URL contains this text
   --upstream <dir>     default: $HERMES_AGENT_UPSTREAM or ~/.hermes/hermes-agent
   --expect-sha <sha>   required; fail unless the upstream checkout is at this exact SHA
   --help
@@ -33,6 +33,7 @@ function parseArgs(argv) {
   }
   if (!args.name) usage('--name is required')
   if (!args.selector) usage('--selector is required')
+  if (!args.match) usage('--match is required')
   if (!args['expect-sha']) usage('--expect-sha is required')
   return args
 }
@@ -46,11 +47,12 @@ async function discoverTarget(port, match) {
   if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}`)
   const targets = await response.json()
   const pages = targets.filter(target => target.type === 'page' && target.webSocketDebuggerUrl)
-  const target = match
-    ? pages.find(page => String(page.url).includes(match))
-    : pages.find(page => String(page.url).startsWith('http')) ?? pages[0]
-  if (!target) throw new Error(`no CDP page target on :${port}${match ? ` matching ${JSON.stringify(match)}` : ''}`)
-  return target
+  const matches = pages.filter(page => String(page.url).includes(match))
+  if (matches.length !== 1) {
+    const urls = matches.map(page => page.url).join('\n') || '(none)'
+    throw new Error(`expected exactly one CDP page on :${port} matching ${JSON.stringify(match)}, found ${matches.length}:\n${urls}`)
+  }
+  return matches[0]
 }
 
 class CDP {
@@ -161,11 +163,6 @@ try {
       }
     }
     const descendants = [...root.querySelectorAll('*')]
-      .filter(element => {
-        const text = (element.innerText || '').trim()
-        return text || element.matches('button, input, textarea, select, [role], [aria-label], [data-slot], .codicon')
-      })
-      .slice(0, 300)
     const rootRect = root.getBoundingClientRect()
     return {
       capturedAt: new Date().toISOString(),
@@ -185,6 +182,7 @@ try {
         height: rootRect.height,
         scale: 1
       },
+      nodeCount: descendants.length + 1,
       nodes: [describe(root, 0), ...descendants.map((element, index) => describe(element, index + 1))]
     }
   })()`)
