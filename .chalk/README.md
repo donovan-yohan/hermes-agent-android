@@ -30,6 +30,10 @@ chalkbag source of truth for this repo: skills, permissions, provider config.
   chalkbag doctor
   ```
 
+  If `chalkbag build` reports a stale daemon heartbeat, run
+  `chalkbag daemon reload`, then rerun all three commands. That is renderer
+  state, not a reason to skip validation.
+
 - `chalkbag build` defaults to every enabled provider (or the last rendered
   set). Use `--provider <ids>` only for a deliberate one-off.
 - While iterating, `chalkbag watch` re-renders on save. On macOS,

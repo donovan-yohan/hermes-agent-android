@@ -49,6 +49,12 @@ disagree, the component is the current contract and the doc is a bug.
 | Session status | `apps/desktop/src/app/chat/session-status-dot.tsx:22-77` | Six states; colour + fill/hollow, never motion |
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
+| Project catalog and selection | `apps/desktop/src/store/projects.ts`; `apps/desktop/src/app/chat/sidebar/index.tsx` | Backend-authored project identity, active project, overview vs drill-in navigation |
+| Project grouping and order | `apps/desktop/src/app/chat/sidebar/projects/workspace-groups.ts`; `apps/desktop/src/app/chat/sidebar/order.ts` | Home/explicit/auto tiers, previews, and deterministic fallback ordering |
+| Project Gateway RPCs | `tui_gateway/project_tree.py`; `tui_gateway/methods_config.py` | `projects.tree` overview and complete `projects.project_sessions` membership snapshots |
+| Sidebar section header | `apps/desktop/src/app/shell/sidebar-label.tsx`; `apps/desktop/src/app/chat/sidebar/sessions-section.tsx:55-93` | Uppercase accent label, tracking, dither mark, header rhythm and trailing action cluster |
+| Sidebar header actions | `apps/desktop/src/app/chat/sidebar/index.tsx:245-255,1696-1777`; `apps/desktop/src/app/chat/sidebar/filter-menu.tsx:205-223` | Add-before-filter order, Codicon glyphs, 12px visual size, hover vs always-visible navigation treatment |
+| Project creation | `apps/desktop/src/app/chat/sidebar/project-dialog.tsx`; `apps/desktop/src/store/projects.ts:898-960` | New Project owns name + folder input and calls `projects.create`; the header plus is not New Session in overview mode |
 | SSH mechanics | `apps/desktop/electron/ssh-connection.ts:130-157,324-374` | `redactSecrets`, error classification, host-key change detection |
 | Remote lifecycle | `apps/desktop/electron/remote-lifecycle.ts`, `remote-lifecycle.test.ts`; `hermes_cli/main.py:510-518,664-689,10947-11021`; `hermes_cli/profiles.py:2458-2492` | Login-shell discovery, explicit default/named profile home resolution, OS-home-only token allowlist, exact ownership lock, exclusive/no-follow token upload, spawn-failure cleanup, and bounded TERM proof |
 | Served dashboard token | `apps/desktop/electron/dashboard-token.ts`, `dashboard-token.test.ts`, and `remote-lifecycle.ts:733-751,876-960` | The token injected by the served dashboard becomes final only after a post-fetch owned-child check; fetch/parse failure deliberately falls back |
@@ -73,13 +79,71 @@ Keep the uploaded artifact fingerprint separate so adoption cannot weaken
 descriptor-guarded cleanup. These lifecycle paths were inspected at pinned SHA
 `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
 
-## 2. Classify the state before writing UI
+## 2. Freeze the rendered visual contract
+
+Source tells you intent; the renderer tells you what won. Capture both before
+styling Android. Do not use a screenshot as a substitute for reading source,
+and do not use source as an excuse to skip looking at the actual pixels.
+
+The Desktop app must be a dev renderer with CDP enabled. Never relaunch or kill
+the user's app to obtain a port. Use the running dev app, or launch an isolated
+instance from the Desktop checkout as described by its perf harness. Put the
+target surface into a synthetic state containing no private session text, host,
+fingerprint, path, token, or credential.
+
+```bash
+node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
+  --name projects-overview \
+  --selector '[data-slot="sidebar"]' \
+  --expect-sha f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 \
+  --match 5174
+
+python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
+  --name projects-overview
+
+python3 .chalk/skills/port-hermes-desktop-surface/scripts/build-visual-report.py \
+  --name projects-overview
+```
+
+The Desktop capture writes `reference.png` plus `contract.json`. The JSON is
+not a DOM dump: it records the selected subtree's rendered rectangles,
+typography, spacing, colour, borders, opacity, labels, roles, and pseudo-element
+font glyphs. The Android capture records the screenshot and device geometry.
+Both land under `build/visual-parity/`, which stays untracked. The report script
+writes `report.html` there; open that file and judge both surfaces together.
+
+For every surface, compare this inventory explicitly:
+
+| Contract | Default |
+|---|---|
+| Header copy and capitalization | Same words and casing |
+| Typeface category, weight, tracking, line height | Same treatment; scale only for phone readability |
+| Icon family, glyph, visual size | Same family and glyph; keep Android's 48dp hit box around it |
+| Control order and alignment | Same order and edge alignment |
+| Insets, gaps, row rhythm, radii | Same rhythm, scaled only where touch/readability requires it |
+| Surface, stroke, accent and text roles | Same semantic token |
+| Visible states | Capture default, selected/open, loading, empty, error and disabled when they exist |
+
+Write a deviation ledger beside the implementation evidence:
+
+```text
+Desktop: hover-revealed 12px Add glyph inside a 24px header action.
+Android: always-visible same glyph inside a 48dp target.
+Reason: touch has no hover; visual weight and placement are unchanged.
+```
+
+Valid reasons: touch mechanics, viewport space, accessibility, or an explicit
+mobile priority. “Material does this by default” is not a reason. Neither is
+“not implemented yet”: call that an omission and keep the port incomplete.
+
+## 3. Classify the state before writing UI
 
 Desktop's authority model, and where each kind lives here:
 
 | Desktop authority | Android home | Rule |
 |---|---|---|
-| Backend-authoritative (sessions, transcripts, config) | `data/session/SessionCache` | Merge, never clobber; rows leave only on an explicit tombstone |
+| Backend-authoritative sessions/transcripts | `data/session/SessionCache` | Merge, never clobber; rows leave only on an explicit tombstone |
+| Backend-authoritative project catalog/membership | `data/session/SessionCache` | Replace the overview snapshot and one selected project's hydrated membership; never infer from cwd |
 | Machine/runtime facts | `GatewayConnectionManager`, `RemoteHermesLifecycle`, SSH adapter | One resolver per policy |
 | Connection-scoped (runtime ids, turn buffers, in-flight tools, generation) | `LiveGatewaySessionRepository` / connection owner | Dies with the connection; durable ids never enter runtime-only calls |
 | UI-only (drafts, search, drawer, scroll) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
@@ -87,10 +151,11 @@ Desktop's authority model, and where each kind lives here:
 If you cannot say which row a piece of state belongs to, stop and decide. That
 choice is the port.
 
-## 3. Adapt to the phone
+## 4. Adapt to the phone
 
-Preserve: hierarchy, density, typography *ratios*, colour semantics, flatness,
-transcript grammar (bubble vs flat prose vs scaffolding), session identity.
+Preserve: hierarchy, density, typography ratios and treatment, icon family,
+control order, spacing rhythm, colour semantics, flatness, transcript grammar
+(bubble vs flat prose vs scaffolding), and session identity.
 
 Replace, and say so in the PR:
 
@@ -107,10 +172,12 @@ Non-negotiables on this side: 48dp touch targets, a `contentDescription` on
 every icon-only control, `imePadding()` where a composer meets the keyboard,
 and no state that depends on an animation running.
 
-## 4. Prove it
+## 5. Prove it
 
 - Unit-test the pure parts (grouping, parsing, policy) with fixed clocks and
   fixed locales. A test that reads the machine's timezone is not a test.
+- Capture Desktop and Android in the same named state. Inspect the images and
+  computed contract; a green Compose test cannot prove visual parity.
 - Drive coroutines on **virtual time**: inject timing or timeouts, use
   `StandardTestDispatcher`, assert the mid-stream state, not just the end state.
 - `uiState` built with `combine` + `WhileSubscribed` needs a live collector
@@ -138,7 +205,7 @@ Commands:
 git diff --check
 ```
 
-## 5. Capture what you learned
+## 6. Capture what you learned
 
 Before you call it done, edit **this file**: add the upstream paths that
 mattered, the pitfalls you hit, and delete steps that turned out to be noise.
