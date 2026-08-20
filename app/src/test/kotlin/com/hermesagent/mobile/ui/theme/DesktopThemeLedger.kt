@@ -6,7 +6,7 @@ package com.hermesagent.mobile.ui.theme
  * **Provenance:** `NousResearch/hermes-agent` @
  * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`, file
  * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-19 from the
- * read-only checkout at `/home/donovanyohan/.hermes/hermes-agent`.
+ * read-only checkout at `~/.hermes/hermes-agent`.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
  * upstream checkout, and a test that silently skips when a path is missing is

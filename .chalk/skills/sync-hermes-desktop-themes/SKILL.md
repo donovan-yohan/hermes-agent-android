@@ -16,7 +16,7 @@ Run the diff before you edit anything:
 
 ```bash
 python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
-  --upstream /home/donovanyohan/.hermes/hermes-agent
+  --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
 ```
 
 Exit codes: `0` parity, `1` drift (it prints exactly what), `2` the upstream

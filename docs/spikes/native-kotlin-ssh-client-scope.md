@@ -2,7 +2,7 @@
 
 **Spike type:** research-only architecture scope. No production code was written.
 **Date:** 2026-08-19.
-**Upstream pin:** `NousResearch/hermes-agent` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` (branch `main`, local read-only checkout `/home/donovanyohan/.hermes/hermes-agent`, verified clean before and after research).
+**Upstream pin:** `NousResearch/hermes-agent` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` (branch `main`, local read-only checkout `~/.hermes/hermes-agent`, verified clean before and after research).
 All `path:line` citations in this document are relative to that repository at that SHA unless prefixed otherwise.
 
 ---

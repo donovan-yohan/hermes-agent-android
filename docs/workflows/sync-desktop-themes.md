@@ -10,10 +10,11 @@ one place in the port where "looks about right" is not good enough.
 ## 1. Pin and diff
 
 ```bash
-git -C /home/donovanyohan/.hermes/hermes-agent rev-parse HEAD
+HERMES_AGENT_UPSTREAM="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
+git -C "$HERMES_AGENT_UPSTREAM" rev-parse HEAD
 
 python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
-  --upstream /home/donovanyohan/.hermes/hermes-agent
+  --upstream "$HERMES_AGENT_UPSTREAM"
 ```
 
 `0` parity · `1` drift, printed · `2` no upstream checkout.

@@ -10,8 +10,9 @@ Every step here earned its place by being something a port gets wrong.
 ## 0. Pin
 
 ```bash
-git -C /home/donovanyohan/.hermes/hermes-agent rev-parse HEAD
-git -C /home/donovanyohan/.hermes/hermes-agent status --porcelain   # must be empty
+HERMES_AGENT_UPSTREAM="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
+git -C "$HERMES_AGENT_UPSTREAM" rev-parse HEAD
+git -C "$HERMES_AGENT_UPSTREAM" status --porcelain   # must be empty
 ```
 
 Record the SHA in the change. Every `path:line` you cite is meaningless without

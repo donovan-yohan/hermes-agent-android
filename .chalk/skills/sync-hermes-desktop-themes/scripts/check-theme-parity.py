@@ -21,7 +21,7 @@ Exit codes
 Usage
 -----
     python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
-      --upstream /home/donovanyohan/.hermes/hermes-agent
+      --upstream ~/.hermes/hermes-agent
 """
 
 from __future__ import annotations
@@ -181,7 +181,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--upstream",
-        default="/home/donovanyohan/.hermes/hermes-agent",
+        default=str(pathlib.Path.home() / ".hermes" / "hermes-agent"),
         help="path to a read-only hermes-agent checkout",
     )
     parser.add_argument(

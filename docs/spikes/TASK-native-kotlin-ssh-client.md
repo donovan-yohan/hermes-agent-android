@@ -6,7 +6,7 @@ You are Claude Code running the **Fable** model. Follow the user-level Fable orc
 
 Inspect the current clean upstream checkout:
 
-- Repository: `/home/donovanyohan/.hermes/hermes-agent`
+- Repository: `~/.hermes/hermes-agent`
 - Upstream: `NousResearch/hermes-agent`
 - Pinned starting SHA: `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
 - Branch: `main`
@@ -84,7 +84,7 @@ Use additional Opus lanes if the source surface warrants it.
 
 Write exactly one primary deliverable in the new local-only product repository:
 
-`/home/donovanyohan/Documents/Programs/personal/hermes-mobile/docs/spikes/native-kotlin-ssh-client-scope.md`
+`docs/spikes/native-kotlin-ssh-client-scope.md`
 
 It must be a professional, implementation-ready technical spike with:
 
@@ -108,7 +108,7 @@ Every significant claim about Hermes must cite a pinned `file:line` source refer
 
 ## Safety and repository boundaries
 
-- Treat `/home/donovanyohan/.hermes/hermes-agent` as read-only. Do not edit, commit, switch branches, fetch, pull, reset, clean, or create worktrees there.
+- Treat `~/.hermes/hermes-agent` as read-only. Do not edit, commit, switch branches, fetch, pull, reset, clean, or create worktrees there.
 - Do not open GitHub issues/PRs or publish anything.
 - Do not modify Hermes profiles, Claude/Codex config, global instruction files, credentials, or services.
 - Do not expose tokens, auth files, SSH private keys, hostnames from private configs, or other secrets.

@@ -16,7 +16,7 @@ Follow it; this file is the contract it enforces.
 
 1. **Pin first.** Record the upstream SHA before reading anything, and cite
    `path:line` against that SHA in every comment, doc and test you write. The
-   read-only checkout is `/home/donovanyohan/.hermes/hermes-agent`; never write
+   read-only checkout is `~/.hermes/hermes-agent`; never write
    to it. A citation without a SHA is a citation to nothing.
 2. **Read the code and its tests.** Upstream tests state the invariants prose
    omits. When a doc and the code disagree, the code wins.
