@@ -34,14 +34,14 @@ export ANDROID_HOME=/opt/android-sdk        # JDK 17; platform 36, build-tools 3
 ./gradlew :app:lintDebug
 ./scripts/check-repo-invariants.sh          # symlink, ignore rules, theme pin
 python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
-  --upstream /home/donovanyohan/.hermes/hermes-agent          # live upstream diff
+  --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" # live upstream diff
 chalkbag validate && chalkbag build --yes && chalkbag doctor  # after editing .chalk/
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## Non-obvious rules
 
-**Upstream is read-only.** `/home/donovanyohan/.hermes/hermes-agent` is a
+**Upstream is read-only.** `~/.hermes/hermes-agent` is a
 reference checkout pinned at `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. Never
 write to it, never fetch or check out inside it. Cite `path:line` **with** that
 SHA or the citation means nothing.
