@@ -39,5 +39,9 @@ class SessionDraftStoreTest {
         assertTrue("a successful rehome removes the obsolete key", "source" !in store.drafts.first())
         store.replace("oversized", "x".repeat(70 * 1024))
         assertTrue("a record the codec cannot restore must not be persisted", "oversized" !in store.drafts.first())
+
+        val pendingWriteStore = TransientSessionDraftStore()
+        pendingWriteStore.migrateIfDestinationEmpty("pending-source", "pending-tip", "not debounced yet")
+        assertEquals("not debounced yet", pendingWriteStore.drafts.first()["pending-tip"])
     }
 }

@@ -24,7 +24,9 @@ class ComposerContractTest {
 
     @Test
     fun `modified soft composing and process enter stay native`() {
-        assertEquals(ComposerKeyAction.None, action(KeyEvent.KEYCODE_ENTER, hasModifier = true))
+        assertEquals(ComposerKeyAction.None, action(KeyEvent.KEYCODE_ENTER, isShiftPressed = true))
+        assertEquals(ComposerKeyAction.None, action(KeyEvent.KEYCODE_ENTER, isAltPressed = true))
+        assertEquals(ComposerKeyAction.Consume, action(KeyEvent.KEYCODE_ENTER, isCtrlOrMetaPressed = true))
         assertEquals(ComposerKeyAction.None, action(KeyEvent.KEYCODE_ENTER, isSoftKeyboard = true))
         assertEquals(ComposerKeyAction.None, action(KeyEvent.KEYCODE_ENTER, isComposing = true))
         assertEquals(ComposerKeyAction.None, action(229))
@@ -37,14 +39,16 @@ class ComposerContractTest {
         assertEquals(ComposerKeyAction.None, action(KeyEvent.KEYCODE_ESCAPE, isStreaming = false))
         assertEquals(
             ComposerKeyAction.None,
-            action(KeyEvent.KEYCODE_ESCAPE, isStreaming = true, hasModifier = true),
+            action(KeyEvent.KEYCODE_ESCAPE, isStreaming = true, isShiftPressed = true),
         )
     }
 
     private fun action(
         keyCode: Int,
         isKeyDown: Boolean = true,
-        hasModifier: Boolean = false,
+        isShiftPressed: Boolean = false,
+        isCtrlOrMetaPressed: Boolean = false,
+        isAltPressed: Boolean = false,
         isSoftKeyboard: Boolean = false,
         isComposing: Boolean = false,
         isStreaming: Boolean = false,
@@ -52,7 +56,9 @@ class ComposerContractTest {
     ) = composerKeyAction(
         keyCode = keyCode,
         isKeyDown = isKeyDown,
-        hasModifier = hasModifier,
+        isShiftPressed = isShiftPressed,
+        isCtrlOrMetaPressed = isCtrlOrMetaPressed,
+        isAltPressed = isAltPressed,
         isSoftKeyboard = isSoftKeyboard,
         isComposing = isComposing,
         isStreaming = isStreaming,

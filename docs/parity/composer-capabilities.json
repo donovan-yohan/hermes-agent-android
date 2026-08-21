@@ -85,12 +85,14 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose text input and Gateway session identity",
       "android_status": "partial",
-      "android_behavior": "Current Composer is a six-line multiline field with an in-memory active-session draft; it has no per-session durable draft or reference model.",
-      "android_tests": "AccessibilityTest and ChatViewModelTest cover multiline input and rejected-submit restoration; later slice adds identity/reference regression coverage.",
+      "android_behavior": "Composer now provides a multiline editor, IME-safe hardware shortcuts, and private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store. Rich inline references remain missing.",
+      "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, and ChatJourneyTest cover draft retention/fencing, process recreation, multiline input, and keyboard guards; reference coverage remains deferred.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/index.tsx:880-1085",
-          "apps/desktop/src/app/chat/composer/rich-editor.ts:1"
+          "apps/desktop/src/app/chat/composer/rich-editor.ts:1",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-draft.ts:290-485",
+          "apps/desktop/src/store/composer.ts:365-437"
         ],
         "tests": [
           "apps/desktop/src/app/chat/composer/rich-editor.test.ts:1",
@@ -114,8 +116,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Gateway prompt.submit and interrupt RPCs",
       "android_status": "partial",
-      "android_behavior": "Current app submits a prompt and exposes interrupt; it deliberately has no steer or queue UI/transport contract yet.",
-      "android_tests": "ChatViewModelTest proves accepted, rejected, ambiguous submit and stop seam; later slice owns queue/steer journeys.",
+      "android_behavior": "Composer exposes explicit circular send/stop actions, safe physical Enter/Escape handling, and truthful navigation to another session that owns the running turn. Steer and queue remain missing.",
+      "android_tests": "ComposerContractTest, ChatViewModelTest, and ChatJourneyTest cover send/stop, rejected and ambiguous submit, IME/modifier guards, and running-owner navigation; later slice owns queue/steer journeys.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
@@ -306,11 +308,12 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose constraints and IME insets",
       "android_status": "partial",
-      "android_behavior": "Chat uses a 720dp rail breakpoint and IME padding, but does not implement the Desktop composer-container width ladder.",
-      "android_tests": "Existing ChatScreen journeys cover chat rail layouts; later slice must add exact composer-width threshold evidence.",
+      "android_behavior": "Composer measures its own container and implements the exact Full/Compact/Stacked thresholds at 561/560/321/320/319dp with IME padding and 48dp Android targets; full orientation and capture evidence remains incomplete.",
+      "android_tests": "ComposerContractTest proves the exact measured-width ladder; final visual capture still must cover required themes, orientations, font scale, IME, and motion variants.",
       "desktop_citations": {
         "source": [
-          "apps/desktop/src/app/chat/composer/index.tsx:880-1085"
+          "apps/desktop/src/app/chat/composer/index.tsx:880-1085",
+          "apps/desktop/src/app/chat/composer/composer-utils.ts:9-28"
         ],
         "tests": [
           "apps/desktop/src/app/chat/composer/controls.test.tsx:1"
@@ -336,8 +339,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Android lifecycle, TalkBack semantics, permissions, and process-death policies",
       "android_status": "partial",
-      "android_behavior": "Composer exposes content descriptions, 48dp controls, multiline IME behavior and IME padding; lifecycle/large-font/reduced-motion capture coverage is not complete.",
-      "android_tests": "AccessibilityTest checks composer semantics and geometry; lifecycle/capture matrix is contract-only in this foundation slice.",
+      "android_behavior": "Composer exposes 48dp semantic actions, explicit send/stop descriptions, multiline IME behavior, guarded physical shortcuts, no-backup per-session draft restoration, background flush, and canonical rehome fencing. TalkBack, large-font, reduced-motion, and physical IME evidence remains incomplete.",
+      "android_tests": "BackupRulesTest, ComposerContractTest, ChatViewModelTest, and ChatJourneyTest cover no-backup storage, process recreation, shortcut guards, action semantics, and running-owner navigation; final capture/device matrix remains open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
@@ -437,7 +440,8 @@
       "path": "apps/desktop/src/app/chat/composer/composer-utils.ts",
       "kind": "source",
       "capability_ids": [
-        "editor-draft-references"
+        "editor-draft-references",
+        "responsiveness"
       ]
     },
     {

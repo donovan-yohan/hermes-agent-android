@@ -48,7 +48,6 @@ data class ChatUiState(
     val runningCount: Int = 0,
     /** Another durable session owns the app-wide single submitted turn. */
     val runningOwner: SessionSummary? = null,
-    val runningOwnerCount: Int = 0,
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val notice: String? = null,
 ) {
@@ -151,7 +150,6 @@ internal class ChatViewModel(
             isStreaming = active?.status in STREAMING_STATUSES,
             runningCount = running,
             runningOwner = runningOwner,
-            runningOwnerCount = otherOwners.size,
             connection = navigation.connection,
             notice = navigation.notice,
         )
@@ -196,13 +194,7 @@ internal class ChatViewModel(
                     choseInitialSession = true
                     state.sessions.values.maxByOrNull { it.lastActiveAtMillis }?.id?.let { initialId ->
                         rehome(initialId)
-                        runCatching { repository.openSession(initialId) }
-                            .onSuccess { canonicalId -> adoptCanonicalSession(initialId, canonicalId) }
-                            .onFailure {
-                                if (activeSessionId.value == initialId) {
-                                    notice.value = "This session could not be opened. Check the Gateway and try again."
-                                }
-                            }
+                        openAndAdopt(initialId)
                     }
                 }
                 for ((id, session) in state.sessions) {
@@ -225,8 +217,7 @@ internal class ChatViewModel(
         draft.value = value
         val id = activeSessionId.value ?: return
         rememberDraft(id, value)
-        val revision = ++draftRevision
-        draftWrite?.cancel()
+        val revision = invalidatePendingDraftWrite()
         draftWrite = viewModelScope.launch {
             kotlinx.coroutines.delay(DRAFT_DEBOUNCE_MILLIS)
             if (revision == draftRevision && id == activeSessionId.value) draftStore.replace(id, value)
@@ -327,13 +318,7 @@ internal class ChatViewModel(
         flushDraft()
         rehome(id)
         viewModelScope.launch {
-            runCatching { repository.openSession(id) }
-                .onSuccess { canonicalId -> adoptCanonicalSession(id, canonicalId) }
-                .onFailure {
-                    if (activeSessionId.value == id) {
-                        notice.value = "This session could not be opened. Check the Gateway and try again."
-                    }
-                }
+            openAndAdopt(id)
         }
     }
 
@@ -357,34 +342,42 @@ internal class ChatViewModel(
 
     private fun rehome(id: String?) {
         activeSessionId.value = id
-        draftRevision += 1
-        draftWrite?.cancel()
+        invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
         notice.value = null
         id?.let(::markRead)
     }
 
     /** Adopt a compressed session tip without clearing a draft for the same logical session. */
-    private fun adoptCanonicalSession(requestedId: String, canonicalId: String) {
+    private suspend fun adoptCanonicalSession(requestedId: String, canonicalId: String) {
         createdProjectBySession.remove(requestedId)?.let { projectId ->
             createdProjectBySession[canonicalId] = projectId
         }
-        draftRevision += 1
-        draftWrite?.cancel()
+        if (canonicalId == requestedId) return
+        draftStoreReady.await()
+        val transitionRevision = invalidatePendingDraftWrite()
         val source = draftSnapshot[requestedId]
         val destination = draftSnapshot[canonicalId]
-        if (destination.isNullOrBlank() && !source.isNullOrBlank()) {
-            val sourceWasTouched = requestedId in locallyTouchedDrafts
+        val sourceWasTouched = requestedId in locallyTouchedDrafts
+        var winner = draftStore.migrateIfDestinationEmpty(requestedId, canonicalId, source)
+            ?: destination
+            ?: source
+        val editedDuringTransition = activeSessionId.value == requestedId && draftRevision != transitionRevision
+        if (editedDuringTransition) {
+            winner = draftSnapshot[requestedId]
+            draftStore.replace(canonicalId, winner.orEmpty())
+            draftStore.replace(requestedId, "")
+        }
+        if ((destination.isNullOrBlank() && !winner.isNullOrBlank()) || editedDuringTransition) {
             draftSnapshot.remove(requestedId)
             draftSnapshot.remove(canonicalId)
-            draftSnapshot[canonicalId] = source
+            winner?.takeIf(String::isNotBlank)?.let { draftSnapshot[canonicalId] = it }
             locallyTouchedDrafts += requestedId
-            if (sourceWasTouched) locallyTouchedDrafts += canonicalId
+            if (sourceWasTouched || editedDuringTransition) locallyTouchedDrafts += canonicalId
         }
-        viewModelScope.launch { draftStore.migrateIfDestinationEmpty(requestedId, canonicalId) }
-        if (activeSessionId.value != requestedId || canonicalId == requestedId) return
+        if (activeSessionId.value != requestedId) return
         activeSessionId.value = canonicalId
-        draft.value = draftSnapshot[canonicalId].orEmpty()
+        draft.value = winner.orEmpty()
         markRead(canonicalId)
     }
 
@@ -396,8 +389,7 @@ internal class ChatViewModel(
         ) return
 
         draft.value = ""
-        draftRevision += 1
-        draftWrite?.cancel()
+        invalidatePendingDraftWrite()
         rememberDraft(sessionId, "")
         viewModelScope.launch { draftStore.replace(sessionId, "") }
         notice.value = null
@@ -436,8 +428,7 @@ internal class ChatViewModel(
     internal fun flushDraft() {
         val id = activeSessionId.value ?: return
         val text = draft.value
-        draftRevision += 1
-        draftWrite?.cancel()
+        invalidatePendingDraftWrite()
         rememberDraft(id, text)
         viewModelScope.launch { draftStore.replace(id, text) }
     }
@@ -453,6 +444,24 @@ internal class ChatViewModel(
         draftSnapshot.remove(id)
         if (text.isNotBlank()) draftSnapshot[id] = text
         locallyTouchedDrafts += id
+    }
+
+    private fun invalidatePendingDraftWrite(): Long {
+        val revision = ++draftRevision
+        draftWrite?.cancel()
+        return revision
+    }
+
+    private suspend fun openAndAdopt(id: String) {
+        try {
+            adoptCanonicalSession(id, repository.openSession(id))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            if (activeSessionId.value == id) {
+                notice.value = "This session could not be opened. Check the Gateway and try again."
+            }
+        }
     }
 
     private fun markRead(id: String) {

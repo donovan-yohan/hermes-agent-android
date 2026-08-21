@@ -28,8 +28,13 @@ interface SessionDraftStore {
     val drafts: Flow<LinkedHashMap<String, String>>
 
     suspend fun replace(durableSessionId: String, text: String)
+
     /** Atomically migrates when safe and returns the destination text after the decision. */
-    suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String): String?
+    suspend fun migrateIfDestinationEmpty(
+        fromDurableId: String,
+        toDurableId: String,
+        sourceText: String? = null,
+    ): String?
 }
 
 /**
@@ -49,31 +54,27 @@ class AndroidSessionDraftStore(context: Context) : SessionDraftStore {
         mutationMutex.withLock {
             dataStore.edit { prefs ->
                 val next = SessionDraftCodec.decode(prefs[DRAFTS_KEY])
-                next.remove(durableSessionId)
-                if (text.isNotBlank()) {
-                    next[durableSessionId] = text
-                    while (next.size > MAX_DRAFTS) next.remove(next.entries.first().key)
-                }
-                next.trimToStorageLimit()
-                if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = SessionDraftCodec.encode(next)
+                next.applyReplacement(durableSessionId, text)
+                val encoded = next.trimToStorageLimitAndEncode()
+                if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = encoded
             }
         }
     }
 
-    override suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String): String? {
+    override suspend fun migrateIfDestinationEmpty(
+        fromDurableId: String,
+        toDurableId: String,
+        sourceText: String?,
+    ): String? {
         if (!fromDurableId.isDurableId() || !toDurableId.isDurableId() || fromDurableId == toDurableId) return null
         return mutationMutex.withLock {
             var destination: String? = null
             dataStore.edit { prefs ->
                 val next = SessionDraftCodec.decode(prefs[DRAFTS_KEY])
-                val source = next[fromDurableId]
-                if (next[toDurableId].isNullOrBlank() && !source.isNullOrBlank()) {
-                    next.remove(fromDurableId)
-                    next[toDurableId] = source
-                }
-                next.trimToStorageLimit()
+                next.applyMigration(fromDurableId, toDurableId, sourceText)
+                val encoded = next.trimToStorageLimitAndEncode()
                 destination = next[toDurableId]
-                if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = SessionDraftCodec.encode(next)
+                if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = encoded
             }
             destination
         }
@@ -90,26 +91,22 @@ internal class TransientSessionDraftStore : SessionDraftStore {
         if (!durableSessionId.isDurableId()) return
         mutationMutex.withLock {
             state.value = LinkedHashMap(state.value).apply {
-                remove(durableSessionId)
-                if (text.isNotBlank()) {
-                    put(durableSessionId, text)
-                    while (size > MAX_DRAFTS) remove(entries.first().key)
-                }
-                trimToStorageLimit()
+                applyReplacement(durableSessionId, text)
+                trimToStorageLimitAndEncode()
             }
         }
     }
 
-    override suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String): String? {
+    override suspend fun migrateIfDestinationEmpty(
+        fromDurableId: String,
+        toDurableId: String,
+        sourceText: String?,
+    ): String? {
         if (!fromDurableId.isDurableId() || !toDurableId.isDurableId() || fromDurableId == toDurableId) return null
         return mutationMutex.withLock {
             state.value = LinkedHashMap(state.value).apply {
-                val source = this[fromDurableId]
-                if (this[toDurableId].isNullOrBlank() && !source.isNullOrBlank()) {
-                    remove(fromDurableId)
-                    put(toDurableId, source)
-                }
-                trimToStorageLimit()
+                applyMigration(fromDurableId, toDurableId, sourceText)
+                trimToStorageLimitAndEncode()
             }
             state.value[toDurableId]
         }
@@ -142,8 +139,31 @@ internal object SessionDraftCodec {
 
 private fun String.isDurableId(): Boolean = isNotBlank() && length <= 512
 
-private fun LinkedHashMap<String, String>.trimToStorageLimit() {
-    while (isNotEmpty() && SessionDraftCodec.encode(this).toByteArray(Charsets.UTF_8).size > MAX_SERIALIZED_BYTES) {
-        remove(entries.first().key)
+private fun LinkedHashMap<String, String>.applyReplacement(durableSessionId: String, text: String) {
+    remove(durableSessionId)
+    if (text.isNotBlank()) {
+        put(durableSessionId, text)
+        while (size > MAX_DRAFTS) remove(entries.first().key)
     }
+}
+
+private fun LinkedHashMap<String, String>.applyMigration(
+    fromDurableId: String,
+    toDurableId: String,
+    sourceText: String?,
+) {
+    val source = this[fromDurableId] ?: sourceText
+    if (this[toDurableId].isNullOrBlank() && !source.isNullOrBlank()) {
+        remove(fromDurableId)
+        put(toDurableId, source)
+    }
+}
+
+private fun LinkedHashMap<String, String>.trimToStorageLimitAndEncode(): String {
+    var encoded = SessionDraftCodec.encode(this)
+    while (isNotEmpty() && encoded.toByteArray(Charsets.UTF_8).size > MAX_SERIALIZED_BYTES) {
+        remove(entries.first().key)
+        encoded = SessionDraftCodec.encode(this)
+    }
+    return encoded
 }

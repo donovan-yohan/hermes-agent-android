@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,7 +33,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
@@ -44,14 +42,17 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.hermesagent.mobile.R
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
+import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 private const val IME_PROCESS_KEY_CODE = 229
 
 internal enum class ComposerLayoutMode { Full, Compact, Stacked }
-internal enum class ComposerKeyAction { None, Send, Stop }
+internal enum class ComposerKeyAction { None, Consume, Send, Stop }
 
 /** Desktop's measured container thresholds, intentionally expressed in dp. */
 internal fun composerLayoutMode(width: Dp): ComposerLayoutMode = when {
@@ -63,15 +64,19 @@ internal fun composerLayoutMode(width: Dp): ComposerLayoutMode = when {
 internal fun composerKeyAction(
     keyCode: Int,
     isKeyDown: Boolean,
-    hasModifier: Boolean,
+    isShiftPressed: Boolean,
+    isCtrlOrMetaPressed: Boolean,
+    isAltPressed: Boolean,
     isSoftKeyboard: Boolean,
     isComposing: Boolean,
     isStreaming: Boolean,
     canSend: Boolean,
 ): ComposerKeyAction {
-    if (!isKeyDown || hasModifier || isSoftKeyboard || isComposing ||
+    if (!isKeyDown || isSoftKeyboard || isComposing ||
         keyCode == android.view.KeyEvent.KEYCODE_UNKNOWN || keyCode == IME_PROCESS_KEY_CODE
     ) return ComposerKeyAction.None
+    if (keyCode == android.view.KeyEvent.KEYCODE_ENTER && isCtrlOrMetaPressed) return ComposerKeyAction.Consume
+    if (isShiftPressed || isCtrlOrMetaPressed || isAltPressed) return ComposerKeyAction.None
     return when (keyCode) {
         android.view.KeyEvent.KEYCODE_ENTER -> if (!isStreaming && canSend) ComposerKeyAction.Send else ComposerKeyAction.None
         android.view.KeyEvent.KEYCODE_ESCAPE -> if (isStreaming) ComposerKeyAction.Stop else ComposerKeyAction.None
@@ -118,7 +123,6 @@ fun Composer(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     ComposerEditor(draft, onDraftChange, onSend, onStop, isStreaming, canSend, Modifier.weight(1f))
-                    ComposerTrailingSlot(layoutMode)
                     ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
             }
@@ -134,15 +138,14 @@ fun Composer(
                     modifier = Modifier.padding(start = 6.dp).weight(1f),
                 )
                 if (runningOwnerTitle != null && onViewRunningOwner != null) {
-                    Box(
+                    TextButton(
+                        label = "View",
+                        onClick = onViewRunningOwner,
+                        color = tokens.textPrimary,
                         modifier = Modifier
-                            .size(HermesTheme.spacing.touchTarget)
-                            .clickable(onClick = onViewRunningOwner)
+                            .widthIn(min = HermesTheme.spacing.touchTarget)
                             .semantics { contentDescription = "View running session $runningOwnerTitle" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("View", style = HermesTheme.type.scaffoldMeta, color = tokens.textPrimary)
-                    }
+                    )
                 }
             }
         }
@@ -184,13 +187,16 @@ private fun ComposerEditor(
                 val action = composerKeyAction(
                     keyCode = native.keyCode,
                     isKeyDown = event.type == KeyEventType.KeyDown,
-                    hasModifier = native.isShiftPressed || native.isCtrlPressed || native.isMetaPressed || native.isAltPressed,
+                    isShiftPressed = native.isShiftPressed,
+                    isCtrlOrMetaPressed = native.isCtrlPressed || native.isMetaPressed,
+                    isAltPressed = native.isAltPressed,
                     isSoftKeyboard = native.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD != 0,
                     isComposing = editorValue.composition != null,
                     isStreaming = isStreaming,
                     canSend = canSend,
                 )
                 when (action) {
+                    ComposerKeyAction.Consume -> true
                     ComposerKeyAction.Send -> { onSend(); true }
                     ComposerKeyAction.Stop -> { onStop(); true }
                     ComposerKeyAction.None -> false
@@ -199,7 +205,7 @@ private fun ComposerEditor(
             .semantics { contentDescription = "Message Hermes" },
         decorationBox = { inner ->
             CenteredTextFieldContent(
-                isEmpty = draft.isEmpty(),
+                isEmpty = editorValue.text.isEmpty(),
                 contentTag = "Composer text content",
                 horizontalPadding = 6.dp,
                 placeholder = { Text("Message Hermes", style = HermesTheme.type.body, color = tokens.textTertiary) },
@@ -208,10 +214,6 @@ private fun ComposerEditor(
         },
     )
 }
-
-/** Slice 3 fills this measured control seam; slice 2 deliberately ships no fake model control. */
-@Composable
-private fun ComposerTrailingSlot(@Suppress("UNUSED_PARAMETER") layoutMode: ComposerLayoutMode) = Unit
 
 @Composable
 private fun ComposerPrimaryAction(onSend: () -> Unit, onStop: () -> Unit, streaming: Boolean, canSend: Boolean) {
@@ -237,12 +239,7 @@ private fun ComposerPrimaryAction(onSend: () -> Unit, onStop: () -> Unit, stream
             if (streaming) {
                 Box(Modifier.size(10.dp).background(tokens.cardSurface, RoundedCornerShape(3.dp)))
             } else {
-                Icon(
-                    painter = painterResource(R.drawable.ic_codicon_arrow_up),
-                    contentDescription = null,
-                    tint = tokens.cardSurface,
-                    modifier = Modifier.size(14.dp),
-                )
+                HermesIconGlyph(HermesIcon.ArrowUp, color = tokens.cardSurface, size = 14.sp)
             }
         }
     }

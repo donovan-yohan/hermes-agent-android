@@ -132,6 +132,28 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `definite rejection after navigation restores only the source draft`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        repository.submitGate = CompletableDeferred()
+        repository.failSubmit = true
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("restore in A")
+        subject.submit()
+        runCurrent()
+        subject.selectSession("session-b")
+        runCurrent()
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+
+        assertEquals("session-b", subject.uiState.value.activeSession?.id)
+        assertEquals("", subject.uiState.value.draft)
+        assertEquals("restore in A", draftStore.drafts.first()["session-a"])
+    }
+
+    @Test
     fun `canonical destination draft wins without deleting the obsolete source`() = runTest(dispatcher) {
         val draftStore = TransientSessionDraftStore()
         draftStore.replace("session-a", "source draft")
@@ -146,6 +168,43 @@ class ChatViewModelTest {
         assertEquals("session-tip", subject.uiState.value.activeSession?.id)
         assertEquals("newer destination", subject.uiState.value.draft)
         assertEquals("source draft", draftStore.drafts.first()["session-a"])
+    }
+
+    @Test
+    fun `canonical rehome persists a local draft before its debounce fires`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("pending local draft")
+        repository.rehome("session-a", "session-tip")
+        runCurrent()
+
+        assertEquals("pending local draft", subject.uiState.value.draft)
+        assertEquals("pending local draft", draftStore.drafts.first()["session-tip"])
+        assertTrue("obsolete key must not be resurrected", "session-a" !in draftStore.drafts.first())
+    }
+
+    @Test
+    fun `edit during canonical migration becomes the canonical winner`() = runTest(dispatcher) {
+        val draftStore = GatedMigrationDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("before rehome")
+        repository.rehome("session-a", "session-tip")
+        runCurrent()
+        assertTrue(draftStore.migrationStarted.isCompleted)
+        subject.setDraft("typed during rehome")
+        draftStore.releaseMigration.complete(Unit)
+        runCurrent()
+
+        assertEquals("session-tip", subject.uiState.value.activeSession?.id)
+        assertEquals("typed during rehome", subject.uiState.value.draft)
+        assertTrue(draftStore.writes.contains("session-tip" to "typed during rehome"))
+        assertTrue(draftStore.writes.contains("session-a" to ""))
     }
 
     @Test
@@ -569,17 +628,39 @@ class ChatViewModelTest {
     private class DelayedDraftStore : SessionDraftStore {
         private val restored = MutableSharedFlow<LinkedHashMap<String, String>>(extraBufferCapacity = 1)
         override val drafts: Flow<LinkedHashMap<String, String>> = restored
-        val writes = mutableListOf<Pair<String, String>>()
 
         suspend fun emit(value: LinkedHashMap<String, String>) {
             restored.emit(value)
         }
 
+        override suspend fun replace(durableSessionId: String, text: String) = Unit
+
+        override suspend fun migrateIfDestinationEmpty(
+            fromDurableId: String,
+            toDurableId: String,
+            sourceText: String?,
+        ): String? = null
+    }
+
+    private class GatedMigrationDraftStore : SessionDraftStore {
+        override val drafts = MutableStateFlow(linkedMapOf<String, String>())
+        val migrationStarted = CompletableDeferred<Unit>()
+        val releaseMigration = CompletableDeferred<Unit>()
+        val writes = mutableListOf<Pair<String, String>>()
+
         override suspend fun replace(durableSessionId: String, text: String) {
             writes += durableSessionId to text
         }
 
-        override suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String): String? = null
+        override suspend fun migrateIfDestinationEmpty(
+            fromDurableId: String,
+            toDurableId: String,
+            sourceText: String?,
+        ): String? {
+            migrationStarted.complete(Unit)
+            releaseMigration.await()
+            return sourceText
+        }
     }
 
     private class FakeSidebarViewStore(initial: SidebarGrouping = SidebarGrouping.Date) : SidebarViewStore {
