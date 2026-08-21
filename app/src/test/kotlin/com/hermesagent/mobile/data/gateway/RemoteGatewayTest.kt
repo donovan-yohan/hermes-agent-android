@@ -16,8 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -35,6 +36,34 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteGatewayTest {
+
+    @Test
+    fun `browser sign-in timeout becomes an actionable authentication failure`() = runTest {
+        val pending = async {
+            runCatching {
+                withGatewayLoginTimeout(1_000L) { awaitCancellation() }
+            }.exceptionOrNull()
+        }
+
+        runCurrent()
+        advanceTimeBy(1_000L)
+
+        val failure = pending.await()
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(408, (failure as GatewayAuthException).statusCode)
+        assertEquals("Sign-in timed out. Try again.", failure.message)
+    }
+
+    @Test
+    fun `remote retry classification stops only on local auth failures and refusals`() {
+        assertFalse(GatewayAuthException("Sign in.").isRetryableRemoteConnectionFailure())
+        assertFalse(GatewayAuthException("Unauthorized.", 401).isRetryableRemoteConnectionFailure())
+        assertFalse(GatewayAuthException("Refused.", 403).isRetryableRemoteConnectionFailure())
+        assertTrue(GatewayAuthException("Timed out.", 408).isRetryableRemoteConnectionFailure())
+        assertTrue(GatewayAuthException("Rate limited.", 429).isRetryableRemoteConnectionFailure())
+        assertTrue(GatewayAuthException("Unavailable.", 503).isRetryableRemoteConnectionFailure())
+        assertTrue(java.io.IOException("offline").isRetryableRemoteConnectionFailure())
+    }
 
     @Test
     fun `remote urls normalize prefixes but reject credentials query and fragments`() {

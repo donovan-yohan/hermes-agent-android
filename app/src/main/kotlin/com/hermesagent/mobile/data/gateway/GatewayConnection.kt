@@ -467,7 +467,7 @@ internal class GatewayConnectionManager(
                             } else {
                                 GatewayConnectionState(
                                     GatewayConnectionStatus.NeedsAttention,
-                                    "Waiting for a network connection.",
+                                    NETWORK_WAIT_MESSAGE,
                                 )
                             }
                         }
@@ -479,7 +479,7 @@ internal class GatewayConnectionManager(
                 mutex.withLock {
                     requireRemoteOpenCurrentLocked(intent, profile, failedAdmission)
                     closeActive()
-                    fail(null, safeConnectionMessage(failure), retryable = failure !is GatewayAuthException)
+                    fail(null, safeConnectionMessage(failure), retryable = failure.isRetryableRemoteConnectionFailure())
                 }
             }
         } finally {
@@ -555,6 +555,7 @@ internal class GatewayConnectionManager(
         scope.launch {
             mutex.withLock {
                 if (networkEventGeneration.get() != eventGeneration) return@withLock
+                val wasAvailable = networkAvailable
                 networkAvailable = available
                 val profile = desiredRemoteProfile
                 if (!available) {
@@ -564,12 +565,23 @@ internal class GatewayConnectionManager(
                     }
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,
-                        "Waiting for a network connection.",
+                        NETWORK_WAIT_MESSAGE,
                     )
                     closeActive()
                     return@withLock
                 }
-                if (profile == null) return@withLock
+                if (profile == null) {
+                    val sshWasActive = active is ActiveConnection.Ssh
+                    if (sshWasActive || (!wasAvailable && _state.value.message == NETWORK_WAIT_MESSAGE)) {
+                        cancelReconnectLocked()
+                        _state.value = GatewayConnectionState(
+                            GatewayConnectionStatus.NeedsAttention,
+                            "The network changed. Reconnect to the Gateway.",
+                        )
+                        closeActive()
+                    }
+                    return@withLock
+                }
                 closeActive()
                 remoteReconnectAttempts = 1
                 _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
@@ -635,7 +647,7 @@ internal class GatewayConnectionManager(
                     cancelReconnectLocked()
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,
-                        "Waiting for a network connection.",
+                        NETWORK_WAIT_MESSAGE,
                     )
                 } else {
                     remoteReconnectAttempts += 1
@@ -855,7 +867,11 @@ internal class GatewayConnectionManager(
     }
 
     private companion object {
+        const val NETWORK_WAIT_MESSAGE = "Waiting for a network connection."
         const val STABLE_REMOTE_CONNECTION_MILLIS = 30_000L
         val REMOTE_RECONNECT_DELAYS_MILLIS = longArrayOf(0L, 1_000L, 5_000L)
     }
 }
+
+internal fun Throwable.isRetryableRemoteConnectionFailure(): Boolean =
+    this !is GatewayAuthException || (statusCode != null && statusCode !in setOf(401, 403))
