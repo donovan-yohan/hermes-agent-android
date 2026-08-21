@@ -188,6 +188,23 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `canonical rehome does not resurrect a locally cleared draft before debounce`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        draftStore.replace("session-a", "persisted earlier")
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("")
+        repository.rehome("session-a", "session-tip")
+        runCurrent()
+
+        assertEquals("", subject.uiState.value.draft)
+        assertTrue("stale source must be removed", "session-a" !in draftStore.drafts.first())
+        assertTrue("blank destination must not be stored", "session-tip" !in draftStore.drafts.first())
+    }
+
+    @Test
     fun `draft storage failure keeps local editing and canonical rehome alive`() = runTest(dispatcher) {
         val subject = ChatViewModel(cache, repository, sidebarStore, FailingDraftStore(), clock = { CLOCK })
         backgroundScope.launch { subject.uiState.collect { } }

@@ -356,9 +356,9 @@ internal class ChatViewModel(
         if (canonicalId == requestedId) return
         draftStoreReady.await()
         val transitionRevision = invalidatePendingDraftWrite()
-        val source = draftSnapshot[requestedId]
-        val destination = draftSnapshot[canonicalId]
         val sourceWasTouched = requestedId in locallyTouchedDrafts
+        val source = if (sourceWasTouched) draftSnapshot[requestedId].orEmpty() else draftSnapshot[requestedId]
+        val destination = draftSnapshot[canonicalId]
         var winner = migrateDraft(requestedId, canonicalId, source)
             ?: destination
             ?: source

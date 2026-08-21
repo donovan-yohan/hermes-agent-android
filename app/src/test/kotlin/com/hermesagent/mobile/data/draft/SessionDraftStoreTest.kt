@@ -46,5 +46,9 @@ class SessionDraftStoreTest {
         pendingWriteStore.replace("stale-source", "persisted earlier")
         pendingWriteStore.migrateIfDestinationEmpty("stale-source", "fresh-tip", "newer local edit")
         assertEquals("newer local edit", pendingWriteStore.drafts.first()["fresh-tip"])
+        pendingWriteStore.replace("cleared-source", "persisted earlier")
+        pendingWriteStore.migrateIfDestinationEmpty("cleared-source", "cleared-tip", "")
+        assertTrue("an explicit local clear removes stale persisted text", "cleared-source" !in pendingWriteStore.drafts.first())
+        assertTrue("an explicit local clear does not create a destination draft", "cleared-tip" !in pendingWriteStore.drafts.first())
     }
 }

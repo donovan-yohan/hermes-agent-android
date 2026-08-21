@@ -176,6 +176,10 @@ private fun LinkedHashMap<String, String>.applyMigration(
     toDurableId: String,
     sourceText: String?,
 ) {
+    if (sourceText != null && sourceText.isBlank()) {
+        remove(fromDurableId)
+        return
+    }
     val source = sourceText ?: this[fromDurableId]
     if (this[toDurableId].isNullOrBlank() && !source.isNullOrBlank()) {
         remove(fromDurableId)
