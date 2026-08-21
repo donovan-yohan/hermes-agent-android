@@ -229,6 +229,9 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
         Transcript(
             entries = state.transcript,
             listState = listState,
+            isWorking = state.activeSession?.status == SessionStatus.Working,
+            activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
+            progress = state.activeSession?.progress,
             contentPadding = PaddingValues(
                 start = HermesTheme.spacing.pageInset,
                 end = HermesTheme.spacing.pageInset,

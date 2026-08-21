@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -16,6 +17,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -23,6 +25,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -49,6 +53,236 @@ class GatewaySessionRepositoryTest {
         assertEquals("hi", (history[1] as AssistantTurn).markdown)
         assertEquals("Read", (history[2] as ToolActivity).label)
         assertEquals("Read file.txt", (history[2] as ToolActivity).detail)
+    }
+
+    @Test
+    fun `history preserves reasoning terminal payload and inline diff structure`() {
+        val history = parseHistory(
+            json(
+                """{
+                    "messages": [
+                      {
+                        "id": "assistant-rich",
+                        "role": "assistant",
+                        "duration_s": 2.4,
+                        "content": [
+                          {"type": "reasoning", "text": "inspect the build first"},
+                          {"type": "text", "text": "done"}
+                        ]
+                      },
+                      {
+                        "id": "tool-rich",
+                        "role": "tool",
+                        "name": "terminal",
+                        "context": "./gradlew check",
+                        "args": {"command": "./gradlew check"},
+                        "result": {"output": "BUILD SUCCESSFUL", "exit_code": 0},
+                        "inline_diff": "--- a/demo.kt\n+++ b/demo.kt\n-old\n+new",
+                        "duration_s": 4.2
+                      }
+                    ]
+                }""".trimIndent(),
+            ),
+            runtimeId = "runtime-rich",
+            nowMillis = 99,
+        )
+
+        assertEquals(listOf("assistant-rich-reasoning", "assistant-rich", "tool-rich"), history.map { it.id })
+        val reasoning = history[0] as ReasoningActivity
+        assertEquals("inspect the build first", reasoning.text)
+        assertEquals(2.4, reasoning.elapsedSeconds, 0.0)
+        assertEquals("done", (history[1] as AssistantTurn).markdown)
+        val tool = history[2] as ToolActivity
+        assertEquals("terminal", tool.toolName)
+        assertTrue(tool.argsText.orEmpty().contains("./gradlew check"))
+        assertTrue(tool.resultText.orEmpty().contains("BUILD SUCCESSFUL"))
+        assertTrue(tool.inlineDiff.orEmpty().contains("+++ b/demo.kt"))
+        assertEquals(4.2, tool.elapsedSeconds, 0.0)
+    }
+
+    @Test
+    fun `live reasoning and tool lifecycle retain measured payloads`() = runTest {
+        var now = CLOCK
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { now }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit("reasoning.delta", "runtime-a", """{"delta":"checking "}""")
+        runCurrent()
+        now += 2_000
+        rpc.emit("reasoning.available", "runtime-a", """{"text":"checking the build"}""")
+        rpc.emit(
+            "tool.start",
+            "runtime-a",
+            """{"tool_id":"tool-1","name":"terminal","arguments":{"command":"./gradlew check"},"context":"./gradlew check"}""",
+        )
+        runCurrent()
+        now += 3_000
+        rpc.emit(
+            "tool.complete",
+            "runtime-a",
+            """{"tool_id":"tool-1","name":"terminal","summary":"Authorization: Bearer fake-live-token","result":{"output":"ok","exit_code":0},"inline_diff":"--- a/A.kt\n+++ b/A.kt\n-old\n+new"}""",
+        )
+        runCurrent()
+
+        val reasoning = cache.transcript("durable-a").filterIsInstance<ReasoningActivity>().single()
+        assertEquals(ToolState.Done, reasoning.state)
+        assertEquals("checking the build", reasoning.text)
+        assertEquals(2.0, reasoning.elapsedSeconds, 0.0)
+        val tool = cache.transcript("durable-a").filterIsInstance<ToolActivity>().single()
+        assertEquals(ToolState.Done, tool.state)
+        assertEquals(3.0, tool.elapsedSeconds, 0.0)
+        assertTrue(tool.argsText.orEmpty().contains("./gradlew check"))
+        assertTrue(tool.detail.contains("<redacted>"))
+        assertFalse(tool.detail.contains("fake-live-token"))
+        assertTrue(tool.resultText.orEmpty().contains("\"output\":\"ok\""))
+        assertTrue(tool.inlineDiff.orEmpty().contains("+++ b/A.kt"))
+    }
+
+    @Test
+    fun `live tool detail redacts a long private key before truncating it`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val privateKey = "-----BEGIN PRIVATE KEY-----\n" +
+            "A".repeat(5_000) +
+            "\n-----END PRIVATE KEY-----"
+
+        rpc.emit(
+            "tool.complete",
+            "runtime-a",
+            buildJsonObject {
+                put("tool_id", JsonPrimitive("tool-private-key"))
+                put("name", JsonPrimitive("terminal"))
+                put("summary", JsonPrimitive(privateKey))
+            }.toString(),
+        )
+        runCurrent()
+
+        val detail = cache.transcript("durable-a").filterIsInstance<ToolActivity>().single().detail
+        assertTrue("private-key redaction marker missing", detail.contains("<redacted>"))
+        assertTrue("redacted detail remained unexpectedly long", detail.length < 100)
+        assertFalse("private-key body survived", detail.contains("A".repeat(100)))
+    }
+
+    @Test
+    fun `historical tool detail is redacted before display`() {
+        val history = parseHistory(
+            json(
+                """{"messages":[{
+                    "id":"tool-sensitive",
+                    "role":"tool",
+                    "name":"terminal",
+                    "context":"Authorization: Bearer fake-history-token"
+                }]}""".trimIndent(),
+            ),
+            runtimeId = "runtime-sensitive",
+            nowMillis = CLOCK,
+        )
+
+        val detail = history.filterIsInstance<ToolActivity>().single().detail
+        assertTrue(detail.contains("<redacted>"))
+        assertFalse(detail.contains("fake-history-token"))
+    }
+
+    @Test
+    fun `late unscoped terminal event cannot settle another active runtime`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "local turn")
+        repository.openSession("durable-b")
+        rpc.emit("session.info", "runtime-b", """{"running":true}""")
+        rpc.emit("message.complete", "runtime-a", """{"text":"done","status":"complete"}""")
+        runCurrent()
+
+        rpc.emit("error", null, """{"message":"late failure from A"}""")
+        runCurrent()
+
+        assertEquals(SessionStatus.Working, cache.session("durable-b")?.status)
+        assertTrue(cache.transcript("durable-b").filterIsInstance<AssistantTurn>().none { it.error != null })
+    }
+
+    @Test
+    fun `session refresh preserves active timer origin`() = runTest {
+        var now = CLOCK
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { now }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit("session.info", "runtime-a", """{"running":true}""")
+        runCurrent()
+        val startedAt = cache.session("durable-a")?.activityStartedAtMillis
+
+        now += 9_000
+        repository.refreshSessions()
+
+        assertEquals(startedAt, cache.session("durable-a")?.activityStartedAtMillis)
+    }
+
+    @Test
+    fun `terminal turn completion measures a tool missing its complete event`() = runTest {
+        var now = CLOCK
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { now }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "run it")
+        rpc.emit("tool.start", "runtime-a", """{"tool_id":"tool-sealed","name":"terminal"}""")
+        runCurrent()
+        now += 2_500
+
+        rpc.emit("message.complete", "runtime-a", """{"text":"done","status":"complete"}""")
+        runCurrent()
+
+        val tool = cache.transcript("durable-a").filterIsInstance<ToolActivity>().single()
+        assertEquals(ToolState.Done, tool.state)
+        assertEquals(2.5, tool.elapsedSeconds, 0.0)
+    }
+
+    @Test
+    fun `nullable gateway strings stay absent instead of rendering null`() {
+        val session = parseSession(
+            json("""{"id":"durable-null","title":null,"preview":null,"source":null}""") as JsonObject,
+            nowMillis = 99,
+        )
+
+        assertEquals("New session", session.title)
+        assertEquals("", session.preview)
+        assertEquals(null, session.source)
     }
 
     @Test

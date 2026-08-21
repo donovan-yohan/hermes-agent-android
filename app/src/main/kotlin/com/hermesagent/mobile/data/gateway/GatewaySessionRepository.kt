@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -107,6 +108,7 @@ internal class LiveGatewaySessionRepository(
     private val navigationMutex = Mutex()
     private val refreshMutex = Mutex()
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
+    private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
     private val optimisticUserByRuntime = mutableMapOf<String, UserTurn>()
     private val progressRuntimeIds = mutableSetOf<String>()
@@ -145,6 +147,7 @@ internal class LiveGatewaySessionRepository(
                     }
                     identities.clear()
                     assistantByRuntime.clear()
+                    reasoningByRuntime.clear()
                     toolsByRuntime.clear()
                     optimisticUserByRuntime.clear()
                     progressRuntimeIds.clear()
@@ -206,7 +209,11 @@ internal class LiveGatewaySessionRepository(
             cache.upsertSessions(
                 rows.map { row ->
                     cache.session(row.id)?.let { existing ->
-                        row.copy(status = existing.status, progress = existing.progress)
+                        row.copy(
+                            status = existing.status,
+                            progress = existing.progress,
+                            activityStartedAtMillis = existing.activityStartedAtMillis,
+                        )
                     } ?: row
                 },
             )
@@ -336,6 +343,7 @@ internal class LiveGatewaySessionRepository(
                         preview = prompt,
                         lastActiveAtMillis = now,
                         status = SessionStatus.Working,
+                        activityStartedAtMillis = now,
                         messageCount = session.messageCount + 1,
                     ),
                 )
@@ -478,7 +486,16 @@ internal class LiveGatewaySessionRepository(
                 true
             }
 
+            "reasoning.delta", "reasoning.available", "thinking.delta" -> {
+                applyReasoning(event.type, durableId, runtimeId, payload)
+                markRuntimeLive(runtimeId)
+                ephemeralSessions.remove(durableId)
+                setStatus(durableId, SessionStatus.Working)
+                false
+            }
+
             "tool.start", "tool.progress", "tool.complete" -> {
+                sealReasoning(durableId, runtimeId, ToolState.Done)
                 applyTool(event.type, durableId, runtimeId, payload)
                 markRuntimeLive(runtimeId)
                 ephemeralSessions.remove(durableId)
@@ -500,6 +517,7 @@ internal class LiveGatewaySessionRepository(
                     atMillis = payload.timestamp(clock()),
                 )).copy(streaming = false, error = errorText)
                 cache.putEntry(durableId, failed)
+                sealReasoning(durableId, runtimeId, ToolState.Failed)
                 sealTools(durableId, runtimeId, ToolState.Failed)
                 optimisticUserByRuntime.remove(runtimeId)
                 clearProgress(durableId, runtimeId)
@@ -539,10 +557,6 @@ internal class LiveGatewaySessionRepository(
         activeRuntimeIds += runtimeId
         if (unscopedRuntimeId == runtimeId) {
             unscopedTurnIsLive = true
-        } else if (unscopedRuntimeId == null && activeRuntimeIds.size == 1) {
-            unscopedRuntimeId = runtimeId
-            localSubmitStartedAtMillis = null
-            unscopedTurnIsLive = true
         }
     }
 
@@ -554,13 +568,25 @@ internal class LiveGatewaySessionRepository(
             false -> if (unscopedRuntimeId == runtimeId) existing.status else SessionStatus.Idle
             null -> existing.status
         }
-        if (status != existing.status) cache.upsertSession(existing.copy(status = status))
+        if (status != existing.status) {
+            cache.upsertSession(
+                existing.copy(
+                    status = status,
+                    activityStartedAtMillis = if (status == SessionStatus.Working) {
+                        existing.activityStartedAtMillis ?: clock()
+                    } else {
+                        null
+                    },
+                ),
+            )
+        }
     }
 
     private fun settleStoppedRuntime(durableId: String, runtimeId: String) {
         assistantByRuntime.remove(runtimeId)?.let { partial ->
             cache.putEntry(durableId, partial.copy(streaming = false, stopped = true))
         }
+        sealReasoning(durableId, runtimeId, ToolState.Stopped)
         sealTools(durableId, runtimeId, ToolState.Stopped)
         optimisticUserByRuntime.remove(runtimeId)
         clearProgress(durableId, runtimeId)
@@ -577,11 +603,6 @@ internal class LiveGatewaySessionRepository(
     private fun releaseRuntimeGuard(runtimeId: String) {
         activeRuntimeIds.remove(runtimeId)
         if (unscopedRuntimeId == runtimeId) clearUnscopedRuntime()
-        if (unscopedRuntimeId == null && activeRuntimeIds.size == 1) {
-            unscopedRuntimeId = activeRuntimeIds.single()
-            localSubmitStartedAtMillis = null
-            unscopedTurnIsLive = true
-        }
     }
 
     private fun completeMessage(durableId: String, runtimeId: String, payload: JsonObject) {
@@ -612,6 +633,7 @@ internal class LiveGatewaySessionRepository(
             stopped = interrupted,
         )
         cache.putEntry(durableId, completed)
+        sealReasoning(durableId, runtimeId, if (errorText != null) ToolState.Failed else ToolState.Done)
         sealTools(
             durableId,
             runtimeId,
@@ -633,18 +655,28 @@ internal class LiveGatewaySessionRepository(
         val explicitId = payload.string("tool_id") ?: payload.string("tool_call_id") ?: payload.string("id")
         val id = explicitId ?: tools.keys.singleOrNull() ?: "gateway-tool-${sequence.incrementAndGet()}"
         val previous = tools[id]
+        val startedAt = previous?.startedAtMillis ?: clock()
+        val elapsed = payload.primitive("duration_s")?.toDoubleOrNull()
+            ?: payload.primitive("elapsed_seconds")?.toDoubleOrNull()
+            ?: if (type == "tool.complete") (clock() - startedAt).coerceAtLeast(0) / 1_000.0 else previous?.elapsedSeconds
+            ?: 0.0
+        val toolName = payload.string("name").safeToolLabel(previous?.toolName ?: "Tool")
+        val label = (payload.string("label") ?: payload.string("name"))
+            .safeToolLabel(previous?.label ?: "Tool")
         val activity = ToolActivity(
             id = id,
-            label = payload.string("label") ?: payload.string("name") ?: previous?.label ?: "Tool",
+            label = label,
             detail = payload.toolDetail(type).ifBlank { previous?.detail.orEmpty() },
             state = when (type) {
                 "tool.complete" -> if (payload.toolFailed()) ToolState.Failed else ToolState.Done
                 else -> ToolState.Running
             },
-            elapsedSeconds = payload.primitive("duration_s")?.toDoubleOrNull()
-                ?: payload.primitive("elapsed_seconds")?.toDoubleOrNull()
-                ?: previous?.elapsedSeconds
-                ?: 0.0,
+            elapsedSeconds = elapsed,
+            toolName = toolName,
+            argsText = payload.toolInputText() ?: previous?.argsText,
+            resultText = payload["result"].safePayloadText() ?: previous?.resultText,
+            inlineDiff = payload.jsonString("inline_diff")?.safePayloadText() ?: previous?.inlineDiff,
+            startedAtMillis = startedAt,
         )
         cache.putEntry(durableId, activity)
         // Running snapshots are text-only, so completed structure stays here
@@ -652,17 +684,72 @@ internal class LiveGatewaySessionRepository(
         tools[id] = activity
     }
 
+    private fun applyReasoning(type: String, durableId: String, runtimeId: String, payload: JsonObject) {
+        val previous = reasoningByRuntime[runtimeId]
+        val now = clock()
+        val startedAt = previous?.startedAtMillis ?: now
+        val complete = type == "reasoning.available"
+        val incoming = when (type) {
+            "reasoning.delta", "thinking.delta" -> payload.deltaText()
+            else -> payload.string("text") ?: payload.contentText()
+        }.safePayloadText().orEmpty()
+        if (incoming.isBlank() && previous == null) return
+        val activity = ReasoningActivity(
+            id = previous?.id ?: "gateway-reasoning-${sequence.incrementAndGet()}",
+            text = when {
+                complete && incoming.isNotBlank() -> incoming
+                else -> previous?.text.orEmpty() + incoming
+            },
+            state = if (complete) ToolState.Done else ToolState.Running,
+            startedAtMillis = startedAt,
+            elapsedSeconds = if (complete) (now - startedAt).coerceAtLeast(0) / 1_000.0 else 0.0,
+        )
+        cache.putEntry(durableId, activity)
+        if (complete) reasoningByRuntime.remove(runtimeId) else reasoningByRuntime[runtimeId] = activity
+    }
+
+    private fun sealReasoning(durableId: String, runtimeId: String, state: ToolState) {
+        reasoningByRuntime.remove(runtimeId)?.let { activity ->
+            cache.putEntry(
+                durableId,
+                activity.copy(
+                    state = state,
+                    elapsedSeconds = (clock() - (activity.startedAtMillis ?: clock())).coerceAtLeast(0) / 1_000.0,
+                ),
+            )
+        }
+    }
+
     private fun sealTools(durableId: String, runtimeId: String, state: ToolState) {
         toolsByRuntime.remove(runtimeId).orEmpty().values.forEach { activity ->
             cache.putEntry(
                 durableId,
-                if (activity.state == ToolState.Running) activity.copy(state = state) else activity,
+                if (activity.state == ToolState.Running) {
+                    activity.copy(
+                        state = state,
+                        elapsedSeconds = (clock() - (activity.startedAtMillis ?: clock())).coerceAtLeast(0) / 1_000.0,
+                    )
+                } else {
+                    activity
+                },
             )
         }
     }
 
     private fun setStatus(durableId: String, status: SessionStatus) {
-        cache.session(durableId)?.let { cache.upsertSession(it.copy(status = status, lastActiveAtMillis = clock())) }
+        cache.session(durableId)?.let { existing ->
+            val now = clock()
+            cache.upsertSession(
+                existing.copy(
+                    status = status,
+                    lastActiveAtMillis = now,
+                    activityStartedAtMillis = when (status) {
+                        SessionStatus.Working -> existing.activityStartedAtMillis ?: now
+                        else -> null
+                    },
+                ),
+            )
+        }
     }
 
     private fun applyStatusUpdate(durableId: String, runtimeId: String, payload: JsonObject) {
@@ -689,6 +776,7 @@ internal class LiveGatewaySessionRepository(
         unscopedRuntimeId?.let(::add)
         addAll(activeRuntimeIds)
         addAll(assistantByRuntime.keys)
+        addAll(reasoningByRuntime.keys)
         addAll(toolsByRuntime.keys)
         addAll(optimisticUserByRuntime.keys)
         addAll(progressRuntimeIds)
@@ -698,10 +786,17 @@ internal class LiveGatewaySessionRepository(
         assistantByRuntime[runtimeId]?.let { partial ->
             cache.putEntry(durableId, partial.copy(streaming = false))
         }
+        sealReasoning(durableId, runtimeId, ToolState.Stopped)
         sealTools(durableId, runtimeId, ToolState.Stopped)
         clearProgress(durableId, runtimeId)
         cache.session(durableId)?.let { existing ->
-            cache.upsertSession(existing.copy(status = SessionStatus.Stalled, lastActiveAtMillis = clock()))
+            cache.upsertSession(
+                existing.copy(
+                    status = SessionStatus.Stalled,
+                    lastActiveAtMillis = clock(),
+                    activityStartedAtMillis = null,
+                ),
+            )
         }
     }
 
@@ -723,6 +818,7 @@ internal class LiveGatewaySessionRepository(
     private fun connectionScopedInflight(runtimeId: String): List<TranscriptEntry> = buildList {
         optimisticUserByRuntime[runtimeId]?.let(::add)
         assistantByRuntime[runtimeId]?.let(::add)
+        reasoningByRuntime[runtimeId]?.let(::add)
         addAll(toolsByRuntime[runtimeId].orEmpty().values)
     }
 
@@ -749,7 +845,9 @@ internal class LiveGatewaySessionRepository(
         if (projection.running == false) return reconciled
 
         val localIsLive = runtimeId in activeRuntimeIds || localLive.any {
-            (it is AssistantTurn && it.streaming) || (it is ToolActivity && it.state == ToolState.Running)
+            (it is AssistantTurn && it.streaming) ||
+                (it is ReasoningActivity && it.state == ToolState.Running) ||
+                (it is ToolActivity && it.state == ToolState.Running)
         }
         if (!localIsLive) return reconciled
 
@@ -774,6 +872,9 @@ internal class LiveGatewaySessionRepository(
         localLive.filterIsInstance<ToolActivity>().forEach { tool ->
             reconciled = reconciled.replaceOrAppend(tool)
         }
+        localLive.filterIsInstance<ReasoningActivity>().forEach { reasoning ->
+            reconciled = reconciled.replaceOrAppend(reasoning)
+        }
         return reconciled
     }
 
@@ -786,12 +887,23 @@ internal class LiveGatewaySessionRepository(
     ): SessionStatus {
         val localBusy = projection.running != false && (
             runtimeId in activeRuntimeIds || hasLocalLiveEntries && reconciled.any {
-                (it is AssistantTurn && it.streaming) || (it is ToolActivity && it.state == ToolState.Running)
+                (it is AssistantTurn && it.streaming) ||
+                    (it is ReasoningActivity && it.state == ToolState.Running) ||
+                    (it is ToolActivity && it.state == ToolState.Running)
             }
         )
         val busy = !projection.retainedFailure && (projection.busy || localBusy)
 
         if (busy) {
+            if (unscopedRuntimeId == null && activeRuntimeIds.isEmpty()) {
+                // A locally requested resume/activate snapshot is the only
+                // non-submit path allowed to claim identifier-less events.
+                // Scoped events alone must never retarget that pin after a
+                // different turn has completed.
+                unscopedRuntimeId = runtimeId
+                localSubmitStartedAtMillis = null
+                unscopedTurnIsLive = true
+            }
             markRuntimeLive(runtimeId)
             projection.inflight?.user?.takeIf(String::isNotBlank)?.let { user ->
                 optimisticUserByRuntime[runtimeId] = UserTurn(
@@ -803,11 +915,14 @@ internal class LiveGatewaySessionRepository(
             reconciled.filterIsInstance<AssistantTurn>().lastOrNull { it.streaming }?.let { assistant ->
                 assistantByRuntime[runtimeId] = assistant
             }
+            reconciled.filterIsInstance<ReasoningActivity>().lastOrNull { it.state == ToolState.Running }
+                ?.let { reasoning -> reasoningByRuntime[runtimeId] = reasoning }
             return projection.status?.takeIf { it != SessionStatus.Idle } ?: SessionStatus.Working
         }
 
         if (projection.hasAuthoritativeState) {
             assistantByRuntime.remove(runtimeId)
+            reasoningByRuntime.remove(runtimeId)
             toolsByRuntime.remove(runtimeId)
             optimisticUserByRuntime.remove(runtimeId)
             releaseRuntimeGuard(runtimeId)
@@ -855,8 +970,15 @@ internal class LiveGatewaySessionRepository(
         preserveProgress: Boolean,
     ): SessionSummary {
         val existing = cache.session(canonicalId) ?: cache.session(requestedId)
+        val activityStartedAtMillis = if (status == SessionStatus.Working) {
+            snapshot.primitive("turn_started_at")?.epochMillisOrNull()
+                ?: existing?.activityStartedAtMillis
+                ?: clock()
+        } else {
+            null
+        }
         if (!snapshotIsCurrent && existing != null) {
-            return existing.copy(id = canonicalId, status = status)
+            return existing.copy(id = canonicalId, status = status, activityStartedAtMillis = activityStartedAtMillis)
         }
         val parsed = parseSession(snapshot, clock(), canonicalId)
         return existing?.copy(
@@ -869,7 +991,8 @@ internal class LiveGatewaySessionRepository(
             remoteProfile = snapshot.string("profile") ?: snapshot.string("profile_name") ?: existing.remoteProfile,
             status = status,
             progress = if (preserveProgress) existing.progress else null,
-        ) ?: parsed.copy(status = status)
+            activityStartedAtMillis = activityStartedAtMillis,
+        ) ?: parsed.copy(status = status, activityStartedAtMillis = activityStartedAtMillis)
     }
 
     private fun runtimeEventRevision(runtimeId: String): RuntimeEventRevision =
@@ -956,24 +1079,51 @@ internal fun parseHistory(result: JsonElement, runtimeId: String, nowMillis: Lon
     return parseMessages(messages, runtimeId, nowMillis)
 }
 
-private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Long): List<TranscriptEntry> =
-    messages.mapIndexedNotNull { index, element ->
-        val message = element as? JsonObject ?: return@mapIndexedNotNull null
+private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Long): List<TranscriptEntry> = buildList {
+    messages.forEachIndexed { index, element ->
+        val message = element as? JsonObject ?: return@forEachIndexed
         val id = message.messageId() ?: "$runtimeId-history-$index"
         val time = message.timestamp(nowMillis)
         when (message.string("role")) {
-            "user" -> UserTurn(id, message.contentText(), time)
-            "assistant" -> AssistantTurn(id, message.contentText(), time)
-            "tool" -> ToolActivity(
-                id = id,
-                label = message.string("name") ?: "Tool",
-                detail = (message.string("context") ?: message.contentText()).take(MAX_TOOL_DETAIL),
-                state = ToolState.Done,
-            )
+            "user" -> add(UserTurn(id, message.answerText(), time))
+            "assistant" -> {
+                message.reasoningText().takeIf(String::isNotBlank)?.let { reasoning ->
+                    add(
+                        ReasoningActivity(
+                            id = "$id-reasoning",
+                            text = reasoning.safePayloadText().orEmpty(),
+                            state = ToolState.Done,
+                            elapsedSeconds = message.durationSeconds(),
+                        ),
+                    )
+                }
+                val answer = message.answerText()
+                if (answer.isNotBlank() || message.reasoningText().isBlank()) {
+                    add(AssistantTurn(id, answer, time))
+                }
+            }
 
-            else -> null
+            "tool" -> {
+                val name = message.string("name").safeToolLabel("Tool")
+                add(
+                    ToolActivity(
+                        id = id,
+                        label = name,
+                        detail = (message.string("context") ?: message.contentText())
+                            .safeDisplayText(MAX_TOOL_DETAIL)
+                            .orEmpty(),
+                        state = if (message.toolFailed()) ToolState.Failed else ToolState.Done,
+                        elapsedSeconds = message.durationSeconds(),
+                        toolName = name,
+                        argsText = message.toolInputText(),
+                        resultText = message["result"].safePayloadText() ?: message["content"].safePayloadText(),
+                        inlineDiff = message.jsonString("inline_diff")?.safePayloadText(),
+                    ),
+                )
+            }
         }
     }
+}
 
 internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: String? = null): SessionSummary {
     val id = authoritativeId ?: root.string("id")
@@ -1019,6 +1169,57 @@ private fun JsonObject.contentText(): String = when (val content = this["content
     is JsonObject -> content.string("text") ?: content.string("content") ?: ""
 }
 
+private fun JsonObject.reasoningText(): String {
+    string("reasoning")?.let { return it }
+    string("thinking")?.let { return it }
+    val content = this["content"] as? JsonArray ?: return ""
+    return content.mapNotNull { item ->
+        val part = item as? JsonObject ?: return@mapNotNull null
+        val type = part.string("type")?.lowercase()
+        if (type !in REASONING_CONTENT_TYPES) return@mapNotNull null
+        part.string("text") ?: part.string("content")
+    }.joinToString("")
+}
+
+private fun JsonObject.answerText(): String {
+    val content = this["content"] as? JsonArray ?: return contentText()
+    return content.mapNotNull { item ->
+        when (item) {
+            is JsonPrimitive -> item.content
+            is JsonObject -> {
+                val type = item.string("type")?.lowercase()
+                if (type in REASONING_CONTENT_TYPES) null else item.string("text") ?: item.string("content")
+            }
+
+            else -> null
+        }
+    }.joinToString("")
+}
+
+private fun JsonObject.durationSeconds(): Double =
+    primitive("duration_s")?.toDoubleOrNull()
+        ?: primitive("elapsed_seconds")?.toDoubleOrNull()
+        ?: 0.0
+
+private fun JsonElement?.safePayloadText(): String? =
+    displayText().safeDisplayText(MAX_TOOL_PAYLOAD)
+
+private fun String?.safeDisplayText(limit: Int): String? = this
+    ?.let(::redact)
+    ?.take(limit)
+    ?.takeIf(String::isNotBlank)
+
+private fun String?.safePayloadText(): String? = safeDisplayText(MAX_TOOL_PAYLOAD)
+
+private fun String?.safeToolLabel(fallback: String): String =
+    safeDisplayText(MAX_TOOL_LABEL) ?: fallback
+
+private fun JsonObject.toolInputText(): String? =
+    this["args"].safePayloadText()
+        ?: this["arguments"].safePayloadText()
+        ?: this["input"].safePayloadText()
+        ?: string("args_text")?.safePayloadText()
+
 private fun JsonObject.toolDetail(type: String): String {
     val result = this["result"].displayText()
     val detail = if (type == "tool.complete") {
@@ -1026,7 +1227,7 @@ private fun JsonObject.toolDetail(type: String): String {
     } else {
         string("context") ?: string("summary") ?: string("preview") ?: string("message") ?: result.orEmpty()
     }
-    return detail.take(MAX_TOOL_DETAIL)
+    return detail.safeDisplayText(MAX_TOOL_DETAIL).orEmpty()
 }
 
 private fun JsonObject.toolFailed(): Boolean {
@@ -1207,6 +1408,7 @@ private fun List<TranscriptEntry>.openUserRunContains(text: String): Boolean {
         when (entry) {
             is UserTurn -> if (entry.text.normalizedTranscriptText() == normalized) return true
             is AssistantTurn -> if (!entry.streaming) return false
+            is ReasoningActivity -> Unit
             is ToolActivity -> Unit
         }
     }
@@ -1249,6 +1451,8 @@ private fun String.epochMillisOrNull(): Long? {
 }
 
 private const val MAX_TOOL_DETAIL = 4_096
+private const val MAX_TOOL_PAYLOAD = 32_768
+private const val MAX_TOOL_LABEL = 256
 private const val MAX_GATEWAY_ERROR_CLASSIFICATION_CHARS = 4_096
 private const val MAX_STATUS_KIND = 64
 private const val MAX_STATUS_TEXT = 240
@@ -1268,6 +1472,8 @@ private val LIVE_RUNTIME_EVENT_TYPES = setOf(
     "message.start",
     "message.delta",
     "message.complete",
+    "reasoning.delta",
+    "reasoning.available",
     "tool.start",
     "tool.progress",
     "tool.complete",
@@ -1275,5 +1481,6 @@ private val LIVE_RUNTIME_EVENT_TYPES = setOf(
 )
 private val EPOCH_SECONDS_CUTOFF = BigDecimal("10000000000")
 private val TOOL_FAILURE_STATUSES = setOf("timeout", "error", "failed", "failure")
+private val REASONING_CONTENT_TYPES = setOf("reasoning", "reasoning_text", "thinking")
 private val FALSEY_SIGNAL_STRINGS = setOf("", "0", "false", "none", "null")
 private val REMOTE_STORAGE_ERROR_MARKERS = setOf("disk full", "no space left on device", "errno 28")

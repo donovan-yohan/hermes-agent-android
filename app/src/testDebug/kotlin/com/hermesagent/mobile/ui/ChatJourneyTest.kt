@@ -12,12 +12,14 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ToolActivity
@@ -165,9 +167,50 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Tool Whole, done").assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Fraction, done").assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Stopped, stopped").assertIsDisplayed()
-        compose.onNodeWithText("2s").assertIsDisplayed()
-        compose.onNodeWithText("1.2s").assertIsDisplayed()
+        compose.onNodeWithText("2s").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("1s").performScrollTo().assertIsDisplayed()
         assertEquals(0, compose.countWithText("7.5s"))
+    }
+
+    @Test
+    fun `rich activity rows expose reasoning terminal payload and patched file diff`() {
+        launch()
+        cache.setTranscript(
+            "live-a",
+            listOf(
+                ReasoningActivity("reasoning", "check the build", ToolState.Done, elapsedSeconds = 2.0),
+                ToolActivity(
+                    id = "terminal",
+                    label = "terminal",
+                    detail = "./gradlew check",
+                    state = ToolState.Done,
+                    elapsedSeconds = 3.0,
+                    toolName = "terminal",
+                    argsText = """{"command":"./gradlew check"}""",
+                    resultText = """{"output":"BUILD SUCCESSFUL","exit_code":0}""",
+                ),
+                ToolActivity(
+                    id = "patch",
+                    label = "patch",
+                    detail = "A.kt",
+                    state = ToolState.Done,
+                    elapsedSeconds = 1.0,
+                    toolName = "patch",
+                    argsText = """{"path":"A.kt"}""",
+                    inlineDiff = "--- a/A.kt\n+++ b/A.kt\n-old\n+new",
+                ),
+            ),
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Thought for 2s").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performScrollTo().performClick()
+        compose.onNodeWithText("BUILD SUCCESSFUL").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performClick()
+        compose.onNodeWithContentDescription("Tool Patched file, done").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("A.kt").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("+1  −1").performScrollTo().assertIsDisplayed()
+        assertEquals(0, compose.countWithText("done"))
     }
 
     @Test

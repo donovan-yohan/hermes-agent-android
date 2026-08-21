@@ -54,6 +54,8 @@ data class SessionSummary(
     val status: SessionStatus = SessionStatus.Idle,
     /** Latest coalesced Gateway `status.update` (`{kind,text}`), if useful. */
     val progress: SessionProgress? = null,
+    /** Client-observed start of the current live turn, used only for its visible timer. */
+    val activityStartedAtMillis: Long? = null,
 )
 
 /** A transient backend progress notice; one value per session, never a transcript row. */
@@ -85,6 +87,15 @@ data class AssistantTurn(
     val stopped: Boolean = false,
 ) : TranscriptEntry
 
+/** Provider reasoning, kept separate from answer prose like Desktop's reasoning disclosure. */
+data class ReasoningActivity(
+    override val id: String,
+    val text: String,
+    val state: ToolState,
+    val startedAtMillis: Long? = null,
+    val elapsedSeconds: Double = 0.0,
+) : TranscriptEntry
+
 /** A tool run, rendered as scaffolding rather than as a message. */
 data class ToolActivity(
     override val id: String,
@@ -92,6 +103,11 @@ data class ToolActivity(
     val detail: String,
     val state: ToolState,
     val elapsedSeconds: Double = 0.0,
+    val toolName: String = label,
+    val argsText: String? = null,
+    val resultText: String? = null,
+    val inlineDiff: String? = null,
+    val startedAtMillis: Long? = null,
 ) : TranscriptEntry
 
 enum class ToolState { Running, Done, Failed, Stopped }

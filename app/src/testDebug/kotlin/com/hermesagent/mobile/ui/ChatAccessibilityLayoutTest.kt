@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
@@ -56,6 +57,14 @@ class ChatAccessibilityLayoutTest {
         // rather than clearing the whole bubble and losing those actions.
         assertEquals(0, compose.nodesWithText(USER_TEXT).size)
         assertEquals(0, compose.nodesWithText(USER_TEXT, useUnmergedTree = true).size)
+    }
+
+    @Test
+    fun `a streaming assistant turn announces once without reading deltas`() {
+        launch(transcript = listOf(AssistantTurn("a1", "partial reply", NOW, streaming = true)))
+
+        compose.onNodeWithContentDescription("Hermes started replying").assertIsDisplayed()
+        assertEquals(1, compose.nodesWithContentDescription("Hermes started replying").size)
     }
 
     @Test
