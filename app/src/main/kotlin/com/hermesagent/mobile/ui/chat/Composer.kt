@@ -35,6 +35,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -84,6 +85,21 @@ internal fun composerKeyAction(
     }
 }
 
+internal fun reconcileComposerEditorValue(
+    editorValue: TextFieldValue,
+    externalText: String,
+    pendingLocalTexts: ArrayDeque<String>,
+): TextFieldValue {
+    val acknowledgedIndex = pendingLocalTexts.indexOf(externalText)
+    if (acknowledgedIndex >= 0) {
+        repeat(acknowledgedIndex + 1) { pendingLocalTexts.removeFirst() }
+        return editorValue
+    }
+    if (editorValue.text == externalText) return editorValue
+    pendingLocalTexts.clear()
+    return TextFieldValue(externalText, TextRange(externalText.length))
+}
+
 /** Mobile adapts Desktop's dock grammar, while soft-IME Enter remains a newline. */
 @Composable
 fun Composer(
@@ -95,6 +111,7 @@ fun Composer(
     canSend: Boolean,
     modifier: Modifier = Modifier,
     statusLine: String,
+    editorIdentity: String? = null,
     runningOwnerTitle: String? = null,
     onViewRunningOwner: (() -> Unit)? = null,
 ) {
@@ -112,7 +129,16 @@ fun Composer(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (layoutMode == ComposerLayoutMode.Stacked) {
-                ComposerEditor(draft, onDraftChange, onSend, onStop, isStreaming, canSend, Modifier.fillMaxWidth())
+                ComposerEditor(
+                    draft,
+                    onDraftChange,
+                    onSend,
+                    onStop,
+                    isStreaming,
+                    canSend,
+                    editorIdentity,
+                    Modifier.fillMaxWidth(),
+                )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
@@ -122,7 +148,16 @@ fun Composer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    ComposerEditor(draft, onDraftChange, onSend, onStop, isStreaming, canSend, Modifier.weight(1f))
+                    ComposerEditor(
+                        draft,
+                        onDraftChange,
+                        onSend,
+                        onStop,
+                        isStreaming,
+                        canSend,
+                        editorIdentity,
+                        Modifier.weight(1f),
+                    )
                     ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
             }
@@ -160,18 +195,24 @@ private fun ComposerEditor(
     onStop: () -> Unit,
     isStreaming: Boolean,
     canSend: Boolean,
+    editorIdentity: String?,
     modifier: Modifier,
 ) {
     val tokens = HermesTheme.tokens
-    var editorValue by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
-    LaunchedEffect(draft) {
-        if (editorValue.text != draft) editorValue = TextFieldValue(draft, TextRange(draft.length))
+    val pendingLocalTexts = remember(editorIdentity) { ArrayDeque<String>() }
+    var editorValue by remember(editorIdentity) { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
+    LaunchedEffect(draft, editorIdentity) {
+        editorValue = reconcileComposerEditorValue(editorValue, draft, pendingLocalTexts)
     }
     BasicTextField(
         value = editorValue,
         onValueChange = { value ->
+            val textChanged = value.text != editorValue.text
             editorValue = value
-            onDraftChange(value.text)
+            if (textChanged) {
+                pendingLocalTexts.addLast(value.text)
+                onDraftChange(value.text)
+            }
         },
         textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
         cursorBrush = SolidColor(tokens.composerRing),
@@ -223,7 +264,7 @@ private fun ComposerPrimaryAction(onSend: () -> Unit, onStop: () -> Unit, stream
         Modifier
             .size(HermesTheme.spacing.touchTarget)
             .clip(CircleShape)
-            .clickable(enabled = enabled) { if (streaming) onStop() else onSend() }
+            .clickable(enabled = enabled, role = Role.Button) { if (streaming) onStop() else onSend() }
             .semantics(mergeDescendants = true) {
                 contentDescription = if (streaming) "Stop generating" else "Send message"
                 if (!enabled) disabled()

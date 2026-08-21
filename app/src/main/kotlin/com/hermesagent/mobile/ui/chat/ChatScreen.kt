@@ -293,6 +293,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
         isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
         canSend = state.canSend,
         statusLine = state.composerStatus(),
+        editorIdentity = state.activeSession?.id,
         runningOwnerTitle = state.runningOwner?.title,
         onViewRunningOwner = state.runningOwner?.id?.let { id -> { actions.onSelectSession(id) } },
         modifier = Modifier.imePadding().navigationBarsPadding(),

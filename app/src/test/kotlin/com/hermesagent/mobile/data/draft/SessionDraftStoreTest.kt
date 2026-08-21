@@ -43,5 +43,8 @@ class SessionDraftStoreTest {
         val pendingWriteStore = TransientSessionDraftStore()
         pendingWriteStore.migrateIfDestinationEmpty("pending-source", "pending-tip", "not debounced yet")
         assertEquals("not debounced yet", pendingWriteStore.drafts.first()["pending-tip"])
+        pendingWriteStore.replace("stale-source", "persisted earlier")
+        pendingWriteStore.migrateIfDestinationEmpty("stale-source", "fresh-tip", "newer local edit")
+        assertEquals("newer local edit", pendingWriteStore.drafts.first()["fresh-tip"])
     }
 }

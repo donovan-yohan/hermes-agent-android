@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.ui.chat
 
 import android.view.KeyEvent
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -41,6 +43,27 @@ class ComposerContractTest {
             ComposerKeyAction.None,
             action(KeyEvent.KEYCODE_ESCAPE, isStreaming = true, isShiftPressed = true),
         )
+    }
+
+    @Test
+    fun `intermediate draft acknowledgements do not reset newer editor text or composition`() {
+        val pending = ArrayDeque(listOf("a", "ab"))
+        val editor = TextFieldValue("ab", selection = TextRange(2), composition = TextRange(0, 2))
+
+        val afterIntermediate = reconcileComposerEditorValue(editor, "a", pending)
+        val afterLatest = reconcileComposerEditorValue(afterIntermediate, "ab", pending)
+
+        assertEquals(editor, afterLatest)
+        assertEquals(emptyList<String>(), pending.toList())
+    }
+
+    @Test
+    fun `external draft replacement resets editor and clears pending acknowledgements`() {
+        val pending = ArrayDeque(listOf("local"))
+        val replaced = reconcileComposerEditorValue(TextFieldValue("local"), "restored", pending)
+
+        assertEquals(TextFieldValue("restored", TextRange(8)), replaced)
+        assertEquals(emptyList<String>(), pending.toList())
     }
 
     private fun action(

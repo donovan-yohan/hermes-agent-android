@@ -220,7 +220,7 @@ internal class ChatViewModel(
         val revision = invalidatePendingDraftWrite()
         draftWrite = viewModelScope.launch {
             kotlinx.coroutines.delay(DRAFT_DEBOUNCE_MILLIS)
-            if (revision == draftRevision && id == activeSessionId.value) draftStore.replace(id, value)
+            if (revision == draftRevision && id == activeSessionId.value) persistDraft(id, value)
         }
     }
 
@@ -359,14 +359,14 @@ internal class ChatViewModel(
         val source = draftSnapshot[requestedId]
         val destination = draftSnapshot[canonicalId]
         val sourceWasTouched = requestedId in locallyTouchedDrafts
-        var winner = draftStore.migrateIfDestinationEmpty(requestedId, canonicalId, source)
+        var winner = migrateDraft(requestedId, canonicalId, source)
             ?: destination
             ?: source
         val editedDuringTransition = activeSessionId.value == requestedId && draftRevision != transitionRevision
         if (editedDuringTransition) {
             winner = draftSnapshot[requestedId]
-            draftStore.replace(canonicalId, winner.orEmpty())
-            draftStore.replace(requestedId, "")
+            persistDraft(canonicalId, winner.orEmpty())
+            persistDraft(requestedId, "")
         }
         if ((destination.isNullOrBlank() && !winner.isNullOrBlank()) || editedDuringTransition) {
             draftSnapshot.remove(requestedId)
@@ -391,7 +391,7 @@ internal class ChatViewModel(
         draft.value = ""
         invalidatePendingDraftWrite()
         rememberDraft(sessionId, "")
-        viewModelScope.launch { draftStore.replace(sessionId, "") }
+        viewModelScope.launch { persistDraft(sessionId, "") }
         notice.value = null
         viewModelScope.launch {
             try {
@@ -411,7 +411,7 @@ internal class ChatViewModel(
                 if (draftSnapshot[sessionId].isNullOrBlank()) {
                     rememberDraft(sessionId, prompt)
                     if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = prompt
-                    viewModelScope.launch { draftStore.replace(sessionId, prompt) }
+                    viewModelScope.launch { persistDraft(sessionId, prompt) }
                 }
             }
         }
@@ -430,13 +430,13 @@ internal class ChatViewModel(
         val text = draft.value
         invalidatePendingDraftWrite()
         rememberDraft(id, text)
-        viewModelScope.launch { draftStore.replace(id, text) }
+        viewModelScope.launch { persistDraft(id, text) }
     }
 
     override fun onCleared() {
         val id = activeSessionId.value
         val text = draft.value
-        if (id != null) applicationDraftScope?.launch { draftStore.replace(id, text) }
+        if (id != null) applicationDraftScope?.launch { persistDraft(id, text) }
         super.onCleared()
     }
 
@@ -462,6 +462,24 @@ internal class ChatViewModel(
                 notice.value = "This session could not be opened. Check the Gateway and try again."
             }
         }
+    }
+
+    private suspend fun persistDraft(id: String, text: String) {
+        try {
+            draftStore.replace(id, text)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Draft persistence is best-effort; draftSnapshot remains authoritative for this process.
+        }
+    }
+
+    private suspend fun migrateDraft(fromId: String, toId: String, sourceText: String?): String? = try {
+        draftStore.migrateIfDestinationEmpty(fromId, toId, sourceText)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
     }
 
     private fun markRead(id: String) {

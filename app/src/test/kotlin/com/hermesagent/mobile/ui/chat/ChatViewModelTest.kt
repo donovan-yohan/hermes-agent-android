@@ -173,6 +173,7 @@ class ChatViewModelTest {
     @Test
     fun `canonical rehome persists a local draft before its debounce fires`() = runTest(dispatcher) {
         val draftStore = TransientSessionDraftStore()
+        draftStore.replace("session-a", "persisted earlier")
         val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
         backgroundScope.launch { subject.uiState.collect { } }
         runCurrent()
@@ -184,6 +185,22 @@ class ChatViewModelTest {
         assertEquals("pending local draft", subject.uiState.value.draft)
         assertEquals("pending local draft", draftStore.drafts.first()["session-tip"])
         assertTrue("obsolete key must not be resurrected", "session-a" !in draftStore.drafts.first())
+    }
+
+    @Test
+    fun `draft storage failure keeps local editing and canonical rehome alive`() = runTest(dispatcher) {
+        val subject = ChatViewModel(cache, repository, sidebarStore, FailingDraftStore(), clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("local only")
+        testScheduler.advanceTimeBy(400)
+        runCurrent()
+        repository.rehome("session-a", "session-tip")
+        runCurrent()
+
+        assertEquals("session-tip", subject.uiState.value.activeSession?.id)
+        assertEquals("local only", subject.uiState.value.draft)
     }
 
     @Test
@@ -661,6 +678,18 @@ class ChatViewModelTest {
             releaseMigration.await()
             return sourceText
         }
+    }
+
+    private class FailingDraftStore : SessionDraftStore {
+        override val drafts = MutableStateFlow(linkedMapOf<String, String>())
+
+        override suspend fun replace(durableSessionId: String, text: String): Unit = error("fixture write failure")
+
+        override suspend fun migrateIfDestinationEmpty(
+            fromDurableId: String,
+            toDurableId: String,
+            sourceText: String?,
+        ): String? = error("fixture migration failure")
     }
 
     private class FakeSidebarViewStore(initial: SidebarGrouping = SidebarGrouping.Date) : SidebarViewStore {

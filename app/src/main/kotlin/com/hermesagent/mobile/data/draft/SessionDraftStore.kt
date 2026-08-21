@@ -1,11 +1,16 @@
 package com.hermesagent.mobile.data.draft
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
@@ -21,7 +26,10 @@ import kotlinx.serialization.json.jsonPrimitive
 private const val MAX_DRAFTS = 50
 private const val MAX_SERIALIZED_BYTES = 64 * 1024
 private val DRAFTS_KEY = stringPreferencesKey("composer.drafts.v1")
-private val Context.composerDraftDataStore: DataStore<Preferences> by preferencesDataStore(name = "composer_drafts")
+private val Context.composerDraftDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "composer_drafts",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /** Private, no-backup local text drafts keyed only by canonical durable session id. */
 interface SessionDraftStore {
@@ -51,13 +59,21 @@ class AndroidSessionDraftStore(context: Context) : SessionDraftStore {
 
     override suspend fun replace(durableSessionId: String, text: String) {
         if (!durableSessionId.isDurableId()) return
-        mutationMutex.withLock {
-            dataStore.edit { prefs ->
-                val next = SessionDraftCodec.decode(prefs[DRAFTS_KEY])
-                next.applyReplacement(durableSessionId, text)
-                val encoded = next.trimToStorageLimitAndEncode()
-                if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = encoded
+        try {
+            mutationMutex.withLock {
+                dataStore.edit { prefs ->
+                    val next = SessionDraftCodec.decode(prefs[DRAFTS_KEY])
+                    next.applyReplacement(durableSessionId, text)
+                    val encoded = next.trimToStorageLimitAndEncode()
+                    if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = encoded
+                }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: CorruptionException) {
+            // The corruption handler repairs reads; a racing failed mutation remains non-fatal.
+        } catch (_: IOException) {
+            // Draft persistence is best-effort; the ViewModel retains the in-memory source.
         }
     }
 
@@ -67,16 +83,24 @@ class AndroidSessionDraftStore(context: Context) : SessionDraftStore {
         sourceText: String?,
     ): String? {
         if (!fromDurableId.isDurableId() || !toDurableId.isDurableId() || fromDurableId == toDurableId) return null
-        return mutationMutex.withLock {
-            var destination: String? = null
-            dataStore.edit { prefs ->
-                val next = SessionDraftCodec.decode(prefs[DRAFTS_KEY])
-                next.applyMigration(fromDurableId, toDurableId, sourceText)
-                val encoded = next.trimToStorageLimitAndEncode()
-                destination = next[toDurableId]
-                if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = encoded
+        return try {
+            mutationMutex.withLock {
+                var destination: String? = null
+                dataStore.edit { prefs ->
+                    val next = SessionDraftCodec.decode(prefs[DRAFTS_KEY])
+                    next.applyMigration(fromDurableId, toDurableId, sourceText)
+                    val encoded = next.trimToStorageLimitAndEncode()
+                    destination = next[toDurableId]
+                    if (next.isEmpty()) prefs.remove(DRAFTS_KEY) else prefs[DRAFTS_KEY] = encoded
+                }
+                destination
             }
-            destination
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: CorruptionException) {
+            null
+        } catch (_: IOException) {
+            null
         }
     }
 }
@@ -152,7 +176,7 @@ private fun LinkedHashMap<String, String>.applyMigration(
     toDurableId: String,
     sourceText: String?,
 ) {
-    val source = this[fromDurableId] ?: sourceText
+    val source = sourceText ?: this[fromDurableId]
     if (this[toDurableId].isNullOrBlank() && !source.isNullOrBlank()) {
         remove(fromDurableId)
         put(toDurableId, source)

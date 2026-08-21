@@ -79,7 +79,8 @@ class BackupRulesTest {
         val preferences = source("src/main/kotlin/com/hermesagent/mobile/data/prefs/HermesPreferences.kt")
         val extraction = resource("data_extraction_rules.xml")
 
-        assertTrue(drafts.contains("preferencesDataStore(name = \"composer_drafts\")"))
+        assertTrue(drafts.contains("preferencesDataStore(") && drafts.contains("name = \"composer_drafts\""))
+        assertTrue("corrupt draft storage must fail closed", drafts.contains("ReplaceFileCorruptionHandler"))
         assertTrue("draft text must not enter connection preferences", !preferences.contains("composer.drafts"))
         assertTrue(extraction.substringAfter("<cloud-backup>").substringBefore("</cloud-backup>").contains(exclusion))
         assertTrue(extraction.substringAfter("<device-transfer>").substringBefore("</device-transfer>").contains(exclusion))
