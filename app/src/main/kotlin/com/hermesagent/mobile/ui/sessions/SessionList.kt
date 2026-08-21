@@ -189,12 +189,12 @@ fun SessionList(
         }
 
         when {
-            showingProjectOverview && projects.isEmpty() -> EmptyState(
+            showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
                 title = if (query.isBlank()) "No projects" else "Nothing matches",
                 description = when {
                     query.isNotBlank() -> "No project or recent session contains “$query”."
                     canCreate -> "Create a project with the + above."
-                    else -> "Connect to a Gateway to load projects."
+                    else -> "No projects were returned by this Gateway."
                 },
             )
 

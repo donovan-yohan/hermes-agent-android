@@ -216,11 +216,15 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.onNodeWithText("PROJECTS").assertIsDisplayed()
         compose.onNodeWithText("Loading projects…").assertIsDisplayed()
+        assertEquals(0, compose.countWithText("No projects"))
+        assertEquals(0, compose.countWithText("Create a project with the + above."))
 
         cache.markProjectsUnavailable()
         compose.waitForIdle()
         compose.onNodeWithText("PROJECTS").assertIsDisplayed()
         compose.onNodeWithText("Project views aren’t available on this Gateway.").assertIsDisplayed()
+        assertEquals(0, compose.countWithText("No projects"))
+        assertEquals(0, compose.countWithText("Create a project with the + above."))
     }
 
     @Test
