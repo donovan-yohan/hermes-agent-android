@@ -69,6 +69,8 @@ disagree, the component is the current contract and the doc is a bug.
 | Composer contract | `apps/desktop/src/app/chat/composer/index.tsx:880-1085`, `controls.tsx:42-390`, `attachments.tsx:18-233`, `model-pill.tsx:26-173` | Editor, send/stop/queue, attachment and model visual/functional boundaries |
 | Composer state seams | `apps/desktop/src/app/chat/composer/hooks/use-composer-{submit,draft,queue,esc-cancel,voice}.ts` and their tests | Submit acknowledgement, draft identity, parked turns, queue, safe cancel and voice lifecycle |
 | Composer completions/status | `apps/desktop/src/app/chat/composer/{completion-drawer,context-menu,contrib,status-stack}/` plus tests | Context actions, all completion providers, contribution gaps and status stack states |
+| Composer model authority | `apps/desktop/src/app/chat/composer/model-pill.tsx:26-173`; `apps/desktop/src/app/session/hooks/use-model-controls.ts:238-286`; `apps/desktop/src/store/session.ts:20-29,616-620` | Catalog/effective state is Gateway truth; a fresh-draft pin is scoped local state, while live deferred model changes remain next-turn intent until `session.info` confirms |
+| Composer completion authority | `apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts:24-153`; `apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts:61-250`; `apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts:16-214`; `apps/desktop/src/app/chat/composer/url-refs.ts:1-103`; `apps/desktop/src/app/chat/composer/path-refs.ts:1-103` | Fence async results by trigger, text, runtime/cwd and generation; serialize URL/path/session references as canonical text before considering rich chips |
 | Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
 
 Treat lifecycle files as contracts with every process that consumes them, not
@@ -230,3 +232,12 @@ git diff --check
 Before you call it done, edit **this file**: add the upstream paths that
 mattered, the pitfalls you hit, and delete steps that turned out to be noise.
 A workflow that only grows is a diary, and nobody reads a diary.
+
+For composer controls, two boundaries are easy to lose: `model.options` and
+`session.info` own effective model/provider/reasoning/fast state, while a new
+draft's manual pick is only a connection/profile-scoped local preference until
+the create request is linearized. Likewise, completion results are remote
+workspace suggestions, not Android file paths. Keep `content://` and clipboard
+data out of the wire text until a real Slice 6 byte-staging handoff exists;
+the safe Slice 3 surface is URL/snippet insertion plus canonical text
+completion with stale-result fencing.

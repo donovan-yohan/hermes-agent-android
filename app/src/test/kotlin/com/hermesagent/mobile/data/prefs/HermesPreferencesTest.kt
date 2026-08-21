@@ -3,6 +3,9 @@ package com.hermesagent.mobile.data.prefs
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
@@ -104,6 +107,62 @@ class HermesPreferencesTest {
         assertTrue(first.matches(Regex("[0-9a-f]{32}")))
         assertFalse(first.contains("test-host"))
         assertFalse(first.contains("test-user"))
+    }
+
+    @Test
+    fun `manual composer controls restore only for the matching connection profile scope`() = runBlocking {
+        val firstScope = ComposerControlsScope("remote:fixture-a", "profile-a")
+        val secondScope = ComposerControlsScope("remote:fixture-b", "profile-a")
+        val saved = NewDraftComposerPreference(
+            selection = ComposerModelSelection("reasoner-v3", "acme", ComposerModelSelection.Source.Manual),
+            reasoning = ReasoningEffort.High,
+            fast = FastMode.Fast,
+        )
+        try {
+            preferences.clearManual(firstScope)
+            preferences.clearManual(secondScope)
+            preferences.saveManual(firstScope, saved)
+
+            val restored = preferences.preference(firstScope).first()
+            assertEquals("reasoner-v3", restored?.selection?.model)
+            assertEquals(ComposerModelSelection.Source.Manual, restored?.selection?.source)
+            assertEquals(ReasoningEffort.High, restored?.reasoning)
+            assertEquals(FastMode.Fast, restored?.fast)
+            assertNull(preferences.preference(secondScope).first())
+        } finally {
+            preferences.clearManual(firstScope)
+            preferences.clearManual(secondScope)
+        }
+    }
+
+    @Test
+    fun `composer controls codec fails closed for a future version and preserves unknown safe values`() {
+        assertNull(ComposerControlsCodec.decode("""{"version":"2","model":"ignored"}"""))
+
+        val restored = ComposerControlsCodec.decode(
+            """{"version":"1","model":"future-model","provider":"future","reasoning":"ultra","fast":"turbo"}""",
+        )
+
+        assertEquals("future-model", restored?.selection?.model)
+        assertEquals(ReasoningEffort.Unknown("ultra"), restored?.reasoning)
+        assertEquals(FastMode.Unknown("turbo"), restored?.fast)
+    }
+
+    @Test
+    fun `active composer scope follows the selected remote route and provider`() = runBlocking {
+        try {
+            preferences.saveGatewayConnectionMode(GatewayConnectionMode.Remote)
+            preferences.saveRemoteGatewayProfile(RemoteGatewayProfile("https://gateway-a.example/hermes/", "alpha"))
+            val first = preferences.activeScope.first()
+            preferences.saveRemoteGatewayProfile(RemoteGatewayProfile("https://gateway-b.example/hermes", "beta"))
+            val second = preferences.activeScope.first()
+
+            assertFalse(first == second)
+            assertEquals(ComposerControlsScope("remote:https://gateway-a.example/hermes", "alpha"), first)
+            assertEquals(ComposerControlsScope("remote:https://gateway-b.example/hermes", "beta"), second)
+        } finally {
+            preferences.saveRemoteGatewayProfile(RemoteGatewayProfile())
+        }
     }
 
     private companion object {

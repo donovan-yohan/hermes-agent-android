@@ -85,8 +85,8 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose text input and Gateway session identity",
       "android_status": "partial",
-      "android_behavior": "Composer now provides a multiline editor, IME-safe hardware shortcuts, and private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store. Rich inline references remain missing.",
-      "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, and ChatJourneyTest cover draft retention/fencing, process recreation, multiline input, and keyboard guards; reference coverage remains deferred.",
+      "android_behavior": "Composer now provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Rich inline chips and native attachment acquisition remain missing.",
+      "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, ChatJourneyTest, and ComposerReferenceTextTest cover draft retention/fencing, process recreation, multiline input, keyboard guards, canonical reference text, and Android-local path exclusions.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/index.tsx:880-1085",
@@ -142,9 +142,9 @@
       "visible_contract": "Provider/model selector with reasoning effort, fast mode, loading/error state, and visible manual override.",
       "state_authority": "backend-authoritative",
       "platform_dependency": "Gateway model metadata and update events",
-      "android_status": "missing",
-      "android_behavior": "No native model, effort, or fast-mode control exists at the base.",
-      "android_tests": "No Android behavior test yet; future slice must cover Gateway-authoritative selection and errors.",
+      "android_status": "partial",
+      "android_behavior": "Android now loads Gateway model/provider metadata and effective controls through typed repository methods; fresh-draft choices are scoped manual preferences, live changes use optimistic/deferred/rejected rollback semantics, and create overrides are snapshotted at send. Compose exposes loading/error, provider/model, reasoning, fast, and deferred states with 48dp semantics. Visual capture evidence remains open.",
+      "android_tests": "ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover catalog/effective mapping, session-scoped config requests, deferred and rejected mutations, create snapshots, stale completion fencing, and 48dp/scope semantics.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/model-pill.tsx:26-173"
@@ -159,6 +159,11 @@
         "model-pinned-override",
         "model-menu"
       ],
+      "deviation": {
+        "reason": "Android adapts Desktop's hover-oriented model pill into a 48dp bottom-sheet control while retaining the same backend-authoritative and manual-override distinctions; matched visual capture remains open.",
+        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ModelControl.kt:55-149",
+        "approved_by": "Slice 3 mobile adaptation contract"
+      },
       "category": "model/effort/fast"
     },
     {
@@ -168,8 +173,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Android scoped URI grants, decode/resize, and Gateway upload/reference routes",
       "android_status": "missing",
-      "android_behavior": "No Android picker/share/paste attachment acquisition or upload exists at the base.",
-      "android_tests": "No Android behavior test yet; later slice must prove URI cleanup, error/retry, preview/removal, and remote byte upload.",
+      "android_behavior": "File, folder, image, and paste-image rows remain absent until Slice 6 provides real Android byte staging and the Gateway attachment handoff; Android never serializes content://, local filesystem, or clipboard paths as remote references.",
+      "android_tests": "No attachment behavior is claimed in Slice 3. Slice 6 must prove URI cleanup, error/retry, preview/removal, and remote byte upload before enabling these rows.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/attachments.tsx:18-233",
@@ -186,6 +191,11 @@
         "attachment-ready-preview",
         "attachment-error-removal"
       ],
+      "deviation": {
+        "reason": "Android keeps attachment acquisition unavailable until the Slice 6 byte-staging and Gateway handoff contract exists, preventing an enabled no-op or an unsafe local-path reference.",
+        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt:20-27",
+        "approved_by": "Slice 3 attachment boundary"
+      },
       "category": "attachments"
     },
     {
@@ -222,9 +232,9 @@
       "visible_contract": "Context menu/contributed actions and slash, @, path/session/URL, emoji, directive, suggestion, and no-result completion states.",
       "state_authority": "ui-only",
       "platform_dependency": "Gateway completion/context providers and Android accessible menus",
-      "android_status": "missing",
-      "android_behavior": "No native completion, context action, or contribution surface exists at the base.",
-      "android_tests": "No Android behavior test yet; later slice must test provider results, no-match, focus, and platform limits.",
+      "android_status": "partial",
+      "android_behavior": "Android provides a phone-safe Add bottom sheet for URL and prompt snippets, canonical plain-text URL/path/session/Git references, Gateway slash/path completions, local emoji search, explicit loading/error/no-result rows, and generation/session/cwd fencing. File/image/folder contributions remain excluded pending Slice 6 byte staging; rich chips and arbitrary Desktop JS contributions are not ported.",
+      "android_tests": "ComposerReferenceTextTest, ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover canonical wire text, URL/path boundaries, emoji ranking, mapped slash/path requests, stale generation fencing, accessible popup rows, and safe Add-sheet omissions.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/context-menu.tsx:1",
@@ -243,6 +253,11 @@
         "completion-emoji-directive",
         "completion-no-results"
       ],
+      "deviation": {
+        "reason": "Android replaces Desktop hover/nested menus and rich chips with accessible bottom sheets and canonical plain text; native-only attachment contributions remain gated by Slice 6 byte staging.",
+        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/CompletionPopup.kt:18-55",
+        "approved_by": "Slice 3 mobile adaptation contract"
+      },
       "category": "completions/context/contrib"
     },
     {

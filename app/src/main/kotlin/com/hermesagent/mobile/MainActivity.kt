@@ -46,7 +46,14 @@ class MainActivity : ComponentActivity() {
     private val preferences get() = app.preferences
 
     private val chatViewModel: ChatViewModel by viewModels {
-        ChatViewModel.factory(app.cache, app.sessionRepository, preferences, app.draftStore, app.appScope)
+        ChatViewModel.factory(
+            cache = app.cache,
+            repository = app.sessionRepository,
+            sidebarViewStore = preferences,
+            composerControlsStore = preferences,
+            draftStore = app.draftStore,
+            draftScope = app.appScope,
+        )
     }
     private val sshViewModel: SshViewModel by viewModels {
         SshViewModel.factory(preferences, app.gatewayConnection)
@@ -100,6 +107,12 @@ class MainActivity : ComponentActivity() {
                     onCreateSession = { chatViewModel.createSession() },
                     onSend = chatViewModel::submit,
                     onStop = chatViewModel::stop,
+                    onSelectModel = chatViewModel::selectModel,
+                    onSelectReasoning = chatViewModel::selectReasoning,
+                    onSelectFast = chatViewModel::selectFast,
+                    onEditorSelectionChange = chatViewModel::onEditorSelectionChange,
+                    onCompletionSelected = chatViewModel::onCompletionSelected,
+                    onInsertText = chatViewModel::onInsertText,
                 ),
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },

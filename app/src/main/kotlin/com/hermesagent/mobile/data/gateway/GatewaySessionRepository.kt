@@ -1,5 +1,18 @@
 package com.hermesagent.mobile.data.gateway
 
+import com.hermesagent.mobile.data.composer.CompletionItem
+import com.hermesagent.mobile.data.composer.CompletionResult
+import com.hermesagent.mobile.data.composer.ComposerControlState
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.ControlMutationResult
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ModelCatalog
+import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
+import com.hermesagent.mobile.data.composer.ModelOption
+import com.hermesagent.mobile.data.composer.ModelProvider
+import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
+import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.ReasoningActivity
@@ -19,6 +32,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +55,7 @@ import kotlinx.serialization.json.buildJsonObject
 interface GatewaySessionRepository {
     val connectionState: StateFlow<GatewayConnectionState>
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
+    val composerControls: Flow<SessionComposerControls> get() = emptyFlow()
     suspend fun refreshSessions()
     suspend fun refreshProjects() = Unit
     suspend fun openProject(projectId: String) = Unit
@@ -47,6 +63,36 @@ interface GatewaySessionRepository {
         error("Project creation is not implemented by this repository.")
     suspend fun openSession(durableId: String): String
     suspend fun createSession(workspacePath: String? = null): String
+    suspend fun createSession(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+    ): String = createSession(workspacePath)
+    suspend fun loadModelOptions(durableId: String?): ModelCatalog =
+        error("Model options are not implemented by this repository.")
+    suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot =
+        error("Composer controls are not implemented by this repository.")
+    suspend fun loadComposerState(durableId: String?): ComposerControlState {
+        val catalog = loadModelOptions(durableId)
+        val controls = loadComposerControls(durableId)
+        return ComposerControlState(
+            catalog = catalog,
+            controls = controls.copy(selection = controls.selection ?: catalog.effectiveSelection),
+        )
+    }
+    suspend fun setLiveModel(
+        durableId: String,
+        selection: ComposerModelSelection,
+    ): ControlMutationResult = error("Live model controls are not implemented by this repository.")
+    suspend fun setLiveReasoning(
+        durableId: String,
+        effort: ReasoningEffort,
+    ): ControlMutationResult = error("Live reasoning controls are not implemented by this repository.")
+    suspend fun setLiveFast(durableId: String, mode: FastMode): ControlMutationResult =
+        error("Live fast controls are not implemented by this repository.")
+    suspend fun completeSlash(query: String): CompletionResult =
+        error("Slash completion is not implemented by this repository.")
+    suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult =
+        error("Path completion is not implemented by this repository.")
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
     suspend fun interrupt(durableId: String)
 }
@@ -110,6 +156,8 @@ internal class LiveGatewaySessionRepository(
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
     private val rehomeEvents = MutableSharedFlow<SessionRehome>(extraBufferCapacity = 8)
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
+    private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
+    override val composerControls: Flow<SessionComposerControls> = composerControlEvents
 
     private val identities = SessionIdentityMap()
     private val sequence = AtomicLong()
@@ -403,13 +451,32 @@ internal class LiveGatewaySessionRepository(
         canonicalId
     }
 
-    override suspend fun createSession(workspacePath: String?): String = navigationMutex.withLock {
+    override suspend fun createSession(workspacePath: String?): String = createSession(workspacePath, null)
+
+    override suspend fun createSession(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+    ): String = navigationMutex.withLock {
         val connection = connectionSnapshot()
         val result = connection.client.request(
             "session.create",
             buildJsonObject {
                 put("source", JsonPrimitive("desktop"))
                 workspacePath?.trim()?.takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
+                overrides?.selection?.takeIf { it.isSpecified }?.let { selection ->
+                    put("model", JsonPrimitive(selection.model.trim()))
+                    selection.provider.trim().takeIf(String::isNotEmpty)?.let { provider ->
+                        put("provider", JsonPrimitive(provider))
+                    }
+                }
+                overrides?.reasoning?.takeUnless { it is ReasoningEffort.Unknown }?.let {
+                    put("reasoning_effort", JsonPrimitive(it.wireValue))
+                }
+                when (overrides?.fast) {
+                    FastMode.Fast -> put("fast", JsonPrimitive(true))
+                    FastMode.Normal -> put("fast", JsonPrimitive(false))
+                    null, is FastMode.Unknown -> Unit
+                }
             },
         ).asObject("session.create")
         val runtimeId = result.string("session_id")
@@ -426,6 +493,103 @@ internal class LiveGatewaySessionRepository(
             if (messages is JsonArray) cache.setTranscript(durableId, parseMessages(messages, runtimeId, clock()))
         }
         durableId
+    }
+
+    override suspend fun loadModelOptions(durableId: String?): ModelCatalog {
+        val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
+        val connection = connectionSnapshot()
+        val result = connection.client.request(
+            "model.options",
+            buildJsonObject {
+                binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
+            },
+        )
+        synchronized(stateLock) { ensureCurrent(connection) }
+        return parseModelCatalog(result)
+    }
+
+    override suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot {
+        return loadComposerState(durableId).controls
+    }
+
+    override suspend fun loadComposerState(durableId: String?): ComposerControlState {
+        val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
+        val connection = connectionSnapshot()
+        fun params(key: String): JsonObject = buildJsonObject {
+            put("key", JsonPrimitive(key))
+            binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
+        }
+        // config.get(provider) deliberately resolves the profile default, not
+        // a live session override. model.options is the Gateway's effective
+        // session-aware model/provider authority.
+        val (catalogPayload, reasoning, fast) = coroutineScope {
+            val catalogRequest = async {
+                connection.client.request(
+                    "model.options",
+                    buildJsonObject { binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) } },
+                )
+            }
+            val reasoningRequest = async {
+                connection.client.request("config.get", params("reasoning")).asObject("config.get")
+            }
+            val fastRequest = async {
+                connection.client.request("config.get", params("fast")).asObject("config.get")
+            }
+            Triple(catalogRequest.await(), reasoningRequest.await(), fastRequest.await())
+        }
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val catalog = parseModelCatalog(catalogPayload)
+        return ComposerControlState(
+            catalog = catalog,
+            controls = ModelControlsSnapshot(
+                selection = catalog.effectiveSelection,
+                reasoning = ReasoningEffort.fromWire(reasoning.string("value")),
+                fast = FastMode.fromWire(fast.string("value")),
+            ),
+        )
+    }
+
+    override suspend fun setLiveModel(
+        durableId: String,
+        selection: ComposerModelSelection,
+    ): ControlMutationResult {
+        if (!selection.isSpecified) return ControlMutationResult.Rejected("Choose a model, then try again.")
+        val value = buildString {
+            append(selection.model.trim())
+            selection.provider.trim().takeIf(String::isNotEmpty)?.let { append(" --provider ").append(it) }
+            append(" --session")
+        }
+        return mutateLiveControl(durableId, "model", value, modelSwitch = true)
+    }
+
+    override suspend fun setLiveReasoning(
+        durableId: String,
+        effort: ReasoningEffort,
+    ): ControlMutationResult = mutateLiveControl(durableId, "reasoning", effort.wireValue)
+
+    override suspend fun setLiveFast(durableId: String, mode: FastMode): ControlMutationResult =
+        mutateLiveControl(durableId, "fast", mode.wireValue)
+
+    override suspend fun completeSlash(query: String): CompletionResult {
+        val connection = connectionSnapshot()
+        val result = connection.client.request("complete.slash", objectParams("text", query))
+        synchronized(stateLock) { ensureCurrent(connection) }
+        return parseCompletionResult(result, "complete.slash")
+    }
+
+    override suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult {
+        val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
+        val connection = connectionSnapshot()
+        val result = connection.client.request(
+            "complete.path",
+            buildJsonObject {
+                binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
+                put("word", JsonPrimitive(query))
+                cwd.trim().takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
+            },
+        )
+        synchronized(stateLock) { ensureCurrent(connection) }
+        return parseCompletionResult(result, "complete.path")
     }
 
     override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
@@ -506,6 +670,39 @@ internal class LiveGatewaySessionRepository(
         connectionSnapshot().client.request("session.interrupt", objectParams("session_id", runtimeId))
     }
 
+    private suspend fun mutateLiveControl(
+        durableId: String,
+        key: String,
+        value: String,
+        modelSwitch: Boolean = false,
+    ): ControlMutationResult {
+        val binding = ensureRuntime(durableId)
+        val connection = connectionSnapshot()
+        return try {
+            val result = connection.client.request(
+                "config.set",
+                buildJsonObject {
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                    put("key", JsonPrimitive(key))
+                    put("value", JsonPrimitive(value))
+                },
+            ).asObject("config.set")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            if (modelSwitch && result.boolean("deferred") == true) {
+                ControlMutationResult.Deferred
+            } else {
+                ControlMutationResult.Applied
+            }
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            if (modelSwitch && failure.isLegacyBusyModelRefusal()) {
+                ControlMutationResult.Deferred
+            } else {
+                ControlMutationResult.Rejected(controlFailureMessage(key))
+            }
+        }
+    }
+
     private suspend fun ensureRuntime(durableId: String): SessionBinding {
         synchronized(stateLock) {
             identities.runtimeFor(durableId)?.let { return SessionBinding(durableId, it) }
@@ -556,6 +753,7 @@ internal class LiveGatewaySessionRepository(
                     ephemeralSessions.remove(durableId)
                 }
                 reconcileSessionInfo(durableId, runtimeId, running)
+                projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
                 val settled = running == false && settleStoppedSessionInfo(durableId, runtimeId)
                 if (running == false && !settled && unscopedRuntimeId != runtimeId) {
                     releaseRuntimeGuard(runtimeId)
@@ -660,6 +858,33 @@ internal class LiveGatewaySessionRepository(
 
             else -> false
         }
+    }
+
+    private fun projectComposerControls(
+        durableId: String,
+        payload: JsonObject,
+    ): SessionComposerControls? {
+        val hasModel = "model" in payload
+        val hasProvider = "provider" in payload
+        val hasReasoning = "reasoning_effort" in payload
+        val hasFast = "fast" in payload
+        if (!hasModel && !hasProvider && !hasReasoning && !hasFast) return null
+
+        val model = payload.string("model")?.trim().orEmpty()
+        val provider = payload.string("provider")?.trim().orEmpty()
+        return SessionComposerControls(
+            durableId = durableId,
+            selection = if ((hasModel || hasProvider) && model.isNotEmpty()) {
+                ComposerModelSelection(model = model, provider = provider)
+            } else {
+                null
+            },
+            hasSelection = hasModel || hasProvider,
+            reasoning = ReasoningEffort.fromWire(payload.string("reasoning_effort")),
+            hasReasoning = hasReasoning,
+            fast = payload.boolean("fast")?.let { if (it) FastMode.Fast else FastMode.Normal },
+            hasFast = hasFast,
+        )
     }
 
     /**
@@ -1203,6 +1428,74 @@ internal fun parseSessionList(result: JsonElement, nowMillis: Long): List<Sessio
             ?: throw GatewayRpcException("Hermes returned a malformed session row.")
         parseSession(session, nowMillis)
     }
+}
+
+/** Parses the documented model.options payload without inventing catalog rows. */
+internal fun parseModelCatalog(result: JsonElement): ModelCatalog {
+    val root = result.asObject("model.options")
+    val selectedModel = root.string("model")?.trim().orEmpty()
+    val selectedProvider = root.string("provider")?.trim().orEmpty()
+    val providers = (root["providers"] as? JsonArray).orEmpty().mapNotNull { providerElement ->
+        val provider = providerElement as? JsonObject ?: return@mapNotNull null
+        val id = provider.string("slug")?.trim()?.takeIf(String::isNotEmpty)
+            ?: provider.string("id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: return@mapNotNull null
+        val capabilities = provider["capabilities"] as? JsonObject
+        val models = (provider["models"] as? JsonArray).orEmpty().mapNotNull { modelElement ->
+            val model = when (modelElement) {
+                is JsonPrimitive -> if (modelElement is JsonNull) "" else modelElement.content.trim()
+                is JsonObject -> (modelElement.string("id") ?: modelElement.string("model")).orEmpty().trim()
+                else -> ""
+            }
+            if (model.isBlank()) return@mapNotNull null
+            val capability = capabilities?.get(model) as? JsonObject
+            ModelOption(
+                id = model,
+                label = (modelElement as? JsonObject)?.string("label")?.takeIf(String::isNotBlank) ?: model,
+                supportsReasoning = capability?.boolean("reasoning") ?: true,
+                supportsFast = capability?.boolean("fast") ?: false,
+            )
+        }
+        ModelProvider(
+            id = id,
+            label = provider.string("name")?.trim()?.takeIf(String::isNotEmpty) ?: id,
+            models = models,
+        )
+    }
+    return ModelCatalog(
+        providers = providers,
+        effectiveSelection = selectedModel.takeIf(String::isNotEmpty)?.let {
+            ComposerModelSelection(it, selectedProvider)
+        },
+    )
+}
+
+internal fun parseCompletionResult(result: JsonElement, method: String): CompletionResult {
+    val root = result.asObject(method)
+    val items = (root["items"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val item = element as? JsonObject ?: return@mapNotNull null
+        val text = item.string("text")?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+        CompletionItem(
+            text = text,
+            display = item.string("display")?.takeIf(String::isNotEmpty) ?: text,
+            detail = item.string("meta").orEmpty(),
+            kind = item.string("kind").orEmpty(),
+        )
+    }
+    return CompletionResult(
+        items = items,
+        replaceFrom = root.primitive("replace_from")?.toIntOrNull(),
+    )
+}
+
+private fun Throwable.isLegacyBusyModelRefusal(): Boolean =
+    this is GatewayRpcError && code == 4009
+
+private fun controlFailureMessage(key: String): String = when (key) {
+    "model" -> "Hermes could not switch the model. Try again."
+    "reasoning" -> "Hermes could not change reasoning. Try again."
+    "fast" -> "Fast mode is not available for this model. Choose another mode or model."
+    else -> "Hermes could not update this control. Try again."
 }
 
 internal data class ProjectOverviewPayload(

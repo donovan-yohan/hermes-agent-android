@@ -2,6 +2,16 @@ package com.hermesagent.mobile.ui.chat
 
 import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
+import com.hermesagent.mobile.data.composer.CompletionItem
+import com.hermesagent.mobile.data.composer.CompletionResult
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.ControlMutationResult
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ModelCatalog
+import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
+import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
+import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
@@ -10,6 +20,10 @@ import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
 import com.hermesagent.mobile.data.gateway.SessionRehome
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.data.prefs.SidebarViewStore
+import com.hermesagent.mobile.data.prefs.ComposerControlsScope
+import com.hermesagent.mobile.data.prefs.ComposerControlsStore
+import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
+import com.hermesagent.mobile.data.prefs.TransientComposerControlsStore
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
@@ -66,6 +80,404 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a", "session-b"), cache.state.value.sessions.keys.toList())
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
         assertTrue(cache.state.value.sessions.keys.none { it.contains("demo", ignoreCase = true) })
+    }
+
+    @Test
+    fun `fresh manual model remains local and becomes the create override`() = runTest(dispatcher) {
+        val emptyCache = SessionCache()
+        val scope = ComposerControlsScope("test-gateway", "default")
+        val composerStore = TransientComposerControlsStore(scope)
+        val freshRepository = FakeRepository(emptyCache)
+        val subject = ChatViewModel(
+            emptyCache,
+            freshRepository,
+            composerControlsStore = composerStore,
+            clock = { CLOCK },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.selectModel(ComposerModelSelection("model/manual", "provider"))
+        runCurrent()
+
+        assertEquals("model/manual", subject.uiState.value.composer.controls.selection?.model)
+        assertTrue(subject.uiState.value.composer.isManualNewDraft)
+        assertEquals(
+            "model/manual",
+            composerStore.preference(scope).first()?.selection?.model,
+        )
+        subject.createSession()
+        runCurrent()
+        assertEquals("model/manual", freshRepository.createdOverrides?.selection?.model)
+    }
+
+    @Test
+    fun `delayed preference snapshot cannot replace a newer fresh draft choice`() = runTest(dispatcher) {
+        val emptyCache = SessionCache()
+        val composerStore = DelayedComposerControlsStore()
+        val subject = ChatViewModel(
+            emptyCache,
+            FakeRepository(emptyCache),
+            composerControlsStore = composerStore,
+            clock = { CLOCK },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.selectModel(ComposerModelSelection("model/manual", "provider"))
+        runCurrent()
+        composerStore.snapshots.emit(
+            NewDraftComposerPreference(
+                selection = ComposerModelSelection("model/stale", "provider", ComposerModelSelection.Source.Manual),
+            ),
+        )
+        runCurrent()
+
+        assertEquals("model/manual", subject.uiState.value.composer.controls.selection?.model)
+        assertEquals("model/manual", composerStore.saved?.selection?.model)
+    }
+
+    @Test
+    fun `create snapshots gateway seeded fresh defaults before suspension`() = runTest(dispatcher) {
+        val emptyCache = SessionCache()
+        val freshRepository = FakeRepository(emptyCache)
+        val subject = ChatViewModel(
+            emptyCache,
+            freshRepository,
+            composerControlsStore = TransientComposerControlsStore(),
+            clock = { CLOCK },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        assertEquals("model/default", subject.uiState.value.composer.controls.selection?.model)
+        freshRepository.createSessionGate = CompletableDeferred()
+
+        subject.createSession()
+        runCurrent()
+        subject.selectModel(ComposerModelSelection("model/later", "other-provider"))
+        subject.selectReasoning(ReasoningEffort.High)
+        subject.selectFast(FastMode.Fast)
+        runCurrent()
+        freshRepository.createSessionGate?.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            NewSessionComposerOverrides(
+                selection = ComposerModelSelection("model/default", "provider"),
+                reasoning = ReasoningEffort.Medium,
+                fast = FastMode.Normal,
+            ),
+            freshRepository.createdOverrides,
+        )
+        assertEquals(
+            "a pre-build model.options read must not replace the accepted create snapshot",
+            "model/default",
+            subject.uiState.value.composer.controls.selection?.model,
+        )
+    }
+
+    @Test
+    fun `deferred live model keeps the requested next turn selection`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.modelMutation = ControlMutationResult.Deferred
+
+        viewModel.selectModel(ComposerModelSelection("model/next", "provider"))
+        runCurrent()
+
+        assertEquals("model/next", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals(ComposerMutationUiState.Deferred, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `applied live model stays optimistic until session info confirms effective state`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.selectModel(ComposerModelSelection("model/next", "provider"))
+        runCurrent()
+
+        assertEquals("model/next", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals(ComposerMutationUiState.Idle, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `turn settle does not clobber a deferred model before session info confirms it`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        repository.modelMutation = ControlMutationResult.Deferred
+        runCurrent()
+
+        viewModel.selectModel(ComposerModelSelection("model/next", "provider"))
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Idle))
+        runCurrent()
+
+        assertEquals("model/next", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals(ComposerMutationUiState.Deferred, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `legacy session info cannot clobber a deferred pick before the next accepted submit`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.modelMutation = ControlMutationResult.Deferred
+        viewModel.selectModel(ComposerModelSelection("model/next", "provider"))
+        runCurrent()
+
+        repository.emitComposerControls(
+            SessionComposerControls(
+                durableId = "session-a",
+                selection = ComposerModelSelection("model/still-running", "provider"),
+                hasSelection = true,
+                reasoning = ReasoningEffort.High,
+                hasReasoning = true,
+            ),
+        )
+        runCurrent()
+
+        assertEquals("model/next", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals(ReasoningEffort.High, viewModel.uiState.value.composer.controls.reasoning)
+        assertEquals(ComposerMutationUiState.Deferred, viewModel.uiState.value.composer.mutation)
+        viewModel.selectReasoning(ReasoningEffort.Low)
+        viewModel.selectFast(FastMode.Fast)
+        runCurrent()
+        assertTrue(repository.reasoningSelections.isEmpty())
+        assertTrue(repository.fastSelections.isEmpty())
+
+        viewModel.setDraft("next turn")
+        viewModel.submit()
+        runCurrent()
+        assertEquals(ComposerMutationUiState.Idle, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `terminal session info before deferred ack remains authoritative`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val ack = CompletableDeferred<ControlMutationResult>()
+        repository.modelMutationGate = ack
+        val requested = ComposerModelSelection("model/next", "next-provider")
+
+        viewModel.selectModel(requested)
+        runCurrent()
+        assertEquals(ComposerMutationUiState.Saving, viewModel.uiState.value.composer.mutation)
+        repository.emitComposerControls(
+            SessionComposerControls(
+                durableId = "session-a",
+                selection = requested,
+                hasSelection = true,
+                reasoning = ReasoningEffort.High,
+                hasReasoning = true,
+                fast = FastMode.Fast,
+                hasFast = true,
+            ),
+        )
+        runCurrent()
+        ack.complete(ControlMutationResult.Deferred)
+        runCurrent()
+
+        assertEquals(requested, viewModel.uiState.value.composer.controls.selection)
+        assertEquals(ReasoningEffort.High, viewModel.uiState.value.composer.controls.reasoning)
+        assertEquals(FastMode.Fast, viewModel.uiState.value.composer.controls.fast)
+        assertEquals(ComposerMutationUiState.Idle, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `external session info fences a stale rejected mutation reply`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val ack = CompletableDeferred<ControlMutationResult>()
+        repository.modelMutationGate = ack
+        viewModel.selectModel(ComposerModelSelection("model/requested", "provider"))
+        runCurrent()
+
+        val external = ComposerModelSelection("model/external", "external-provider")
+        repository.emitComposerControls(
+            SessionComposerControls("session-a", selection = external, hasSelection = true),
+        )
+        runCurrent()
+        ack.complete(ControlMutationResult.Rejected("stale rejection"))
+        runCurrent()
+
+        assertEquals(external, viewModel.uiState.value.composer.controls.selection)
+        assertEquals(ComposerMutationUiState.Idle, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `a saving live mutation serializes rapid control picks`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val ack = CompletableDeferred<ControlMutationResult>()
+        repository.modelMutationGate = ack
+
+        viewModel.selectModel(ComposerModelSelection("model/first", "provider"))
+        runCurrent()
+        viewModel.selectModel(ComposerModelSelection("model/second", "provider"))
+        runCurrent()
+
+        assertEquals(listOf("model/first"), repository.modelSelections.map { it.model })
+        assertEquals("model/first", viewModel.uiState.value.composer.controls.selection?.model)
+        ack.complete(ControlMutationResult.Deferred)
+        runCurrent()
+        assertEquals(ComposerMutationUiState.Deferred, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `live control rejection restores the complete previous controls snapshot`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.controls = ModelControlsSnapshot(
+            selection = ComposerModelSelection("model/current", "provider"),
+            reasoning = ReasoningEffort.Medium,
+            fast = FastMode.Normal,
+        )
+        viewModel.selectSession("session-b")
+        runCurrent()
+        repository.modelMutation = ControlMutationResult.Rejected("Choose another model.")
+
+        viewModel.selectModel(ComposerModelSelection("model/rejected", "provider"))
+        runCurrent()
+
+        assertEquals("model/current", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals(ReasoningEffort.Medium, viewModel.uiState.value.composer.controls.reasoning)
+        assertEquals(FastMode.Normal, viewModel.uiState.value.composer.controls.fast)
+        assertEquals(
+            ComposerMutationUiState.Error("Choose another model."),
+            viewModel.uiState.value.composer.mutation,
+        )
+    }
+
+    @Test
+    fun `stale completion cannot replace the newer editor generation`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val first = CompletableDeferred<Unit>()
+        repository.firstSlashGate = first
+
+        viewModel.onEditorSelectionChange("/old", 4, 4)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        viewModel.onEditorSelectionChange("/new", 4, 4)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        assertEquals("new", viewModel.uiState.value.composer.completion.query)
+        assertEquals("new", viewModel.uiState.value.composer.completion.items.single().text)
+        first.complete(Unit)
+        runCurrent()
+        assertEquals("new", viewModel.uiState.value.composer.completion.items.single().text)
+    }
+
+    @Test
+    fun `slash command replacement keeps one leading slash`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.slashReplaceFrom = 1
+
+        viewModel.onEditorSelectionChange("/he", 3, 3)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        val completion = viewModel.uiState.value.composer.completion
+        assertEquals(0, completion.replaceStart)
+        assertEquals(3, completion.replaceEnd)
+    }
+
+    @Test
+    fun `slash argument replacement honors the Gateway argument offset`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.slashReplaceFrom = 13
+
+        viewModel.onEditorSelectionChange("/personality al", 15, 15)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        val completion = viewModel.uiState.value.composer.completion
+        assertEquals(13, completion.replaceStart)
+        assertEquals(15, completion.replaceEnd)
+    }
+
+    @Test
+    fun `session references use the scoped Gateway profile rather than hard-coded default`() = runTest(dispatcher) {
+        cache.upsertSession(requireNotNull(cache.session("session-b")).copy(remoteProfile = "worker"))
+        collectState()
+        runCurrent()
+
+        viewModel.onEditorSelectionChange("@", 1, 1)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        val references = viewModel.uiState.value.composer.completion.items
+            .filter { it.kind == "session" && it.text.startsWith("@session:`") }
+        assertTrue(references.isNotEmpty())
+        assertTrue(references.all { it.text.startsWith("@session:`worker/") })
+    }
+
+    @Test
+    fun `project switch clears and fences an in-flight path completion`() = runTest(dispatcher) {
+        val first = ProjectSummary("project-a", "A", "/work/a", sessionCount = 0)
+        val second = ProjectSummary("project-b", "B", "/work/b", sessionCount = 0)
+        cache.replaceProjectOverview(listOf(first, second), activeProjectId = first.id)
+        repository.projectSessions[first.id] = emptyList()
+        repository.projectSessions[second.id] = emptyList()
+        repository.pathGate = CompletableDeferred()
+        collectState()
+        runCurrent()
+
+        viewModel.selectProject(first.id)
+        runCurrent()
+        viewModel.onEditorSelectionChange("@src", 4, 4)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.completion.loading)
+
+        viewModel.selectProject(second.id)
+        runCurrent()
+        assertEquals(null, viewModel.uiState.value.composer.completion.trigger)
+        repository.pathGate?.complete(Unit)
+        runCurrent()
+        assertEquals(null, viewModel.uiState.value.composer.completion.trigger)
+    }
+
+    @Test
+    fun `live path completion lets the Gateway resolve the runtime session cwd`() = runTest(dispatcher) {
+        val browsedProject = ProjectSummary("project-b", "B", "/work/b", sessionCount = 0)
+        cache.replaceProjectOverview(listOf(browsedProject), activeProjectId = browsedProject.id)
+        repository.projectSessions[browsedProject.id] = emptyList()
+        collectState()
+        runCurrent()
+
+        viewModel.selectProject(browsedProject.id)
+        runCurrent()
+        viewModel.onEditorSelectionChange("@src", 4, 4)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        assertEquals("session-a", repository.lastPathDurableId)
+        assertEquals("", repository.lastPathCwd)
+    }
+
+    @Test
+    fun `fresh project draft path completion uses the selected remote project cwd`() = runTest(dispatcher) {
+        val emptyCache = SessionCache()
+        val project = ProjectSummary("project-b", "B", "/work/b", sessionCount = 0)
+        emptyCache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
+        val freshRepository = FakeRepository(emptyCache).apply { projectSessions[project.id] = emptyList() }
+        val subject = ChatViewModel(emptyCache, freshRepository, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.selectProject(project.id)
+        runCurrent()
+        subject.onEditorSelectionChange("@src", 4, 4)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        assertEquals(null, freshRepository.lastPathDurableId)
+        assertEquals("/work/b", freshRepository.lastPathCwd)
     }
 
     @Test
@@ -588,6 +1000,8 @@ class ChatViewModelTest {
         override val connectionState = connection
         private val rehomeEvents = MutableSharedFlow<SessionRehome>(extraBufferCapacity = 1)
         override val sessionRehomes = rehomeEvents
+        private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 4)
+        override val composerControls: Flow<SessionComposerControls> = composerControlEvents
         val opened = mutableListOf<String>()
         val submitted = mutableListOf<Pair<String, String>>()
         val interrupted = mutableListOf<String>()
@@ -595,17 +1009,39 @@ class ChatViewModelTest {
         val createdProjects = mutableListOf<Pair<String, String>>()
         val projectSessions = mutableMapOf<String, List<SessionSummary>>()
         var createProjectGate: CompletableDeferred<Unit>? = null
+        var createSessionGate: CompletableDeferred<Unit>? = null
         var catalogRefreshedAfterCreate = true
         var created = 0
         var createdWorkspace: String? = null
         var failSubmit = false
         var submitGate: CompletableDeferred<Unit>? = null
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
+        var controls = ModelControlsSnapshot(
+            selection = ComposerModelSelection("model/default", "provider"),
+            reasoning = ReasoningEffort.Medium,
+            fast = FastMode.Normal,
+        )
+        var modelMutation: ControlMutationResult = ControlMutationResult.Applied
+        var modelMutationGate: CompletableDeferred<ControlMutationResult>? = null
+        val modelSelections = mutableListOf<ComposerModelSelection>()
+        val reasoningSelections = mutableListOf<ReasoningEffort>()
+        val fastSelections = mutableListOf<FastMode>()
+        var createdOverrides: NewSessionComposerOverrides? = null
+        var firstSlashGate: CompletableDeferred<Unit>? = null
+        var slashReplaceFrom: Int? = null
+        var pathGate: CompletableDeferred<Unit>? = null
+        var lastPathDurableId: String? = null
+        var lastPathCwd: String? = null
+        private var slashCalls = 0
 
         fun rehome(fromId: String, toId: String) {
             val row = requireNotNull(cache.session(fromId)).copy(id = toId)
             cache.rehomeSession(fromId, row, cache.transcript(fromId))
             check(rehomeEvents.tryEmit(SessionRehome(fromId, toId)))
+        }
+
+        fun emitComposerControls(event: SessionComposerControls) {
+            check(composerControlEvents.tryEmit(event))
         }
 
         override suspend fun refreshSessions() = Unit
@@ -644,6 +1080,58 @@ class ChatViewModelTest {
             val id = "created-$created"
             cache.upsertSession(summary(id, CLOCK).copy(title = "New session"))
             return id
+        }
+
+        override suspend fun createSession(
+            workspacePath: String?,
+            overrides: NewSessionComposerOverrides?,
+        ): String {
+            createSessionGate?.await()
+            createdOverrides = overrides
+            return createSession(workspacePath)
+        }
+
+        override suspend fun loadModelOptions(durableId: String?): ModelCatalog = ModelCatalog(
+            effectiveSelection = controls.selection,
+        )
+
+        override suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot = controls
+
+        override suspend fun setLiveModel(
+            durableId: String,
+            selection: ComposerModelSelection,
+        ): ControlMutationResult {
+            modelSelections += selection
+            return modelMutationGate?.await() ?: modelMutation
+        }
+
+        override suspend fun setLiveReasoning(
+            durableId: String,
+            effort: ReasoningEffort,
+        ): ControlMutationResult {
+            reasoningSelections += effort
+            return ControlMutationResult.Applied
+        }
+
+        override suspend fun setLiveFast(durableId: String, mode: FastMode): ControlMutationResult {
+            fastSelections += mode
+            return ControlMutationResult.Applied
+        }
+
+        override suspend fun completeSlash(query: String): CompletionResult {
+            slashCalls += 1
+            if (slashCalls == 1) firstSlashGate?.await()
+            return CompletionResult(
+                items = listOf(CompletionItem(query.removePrefix("/"))),
+                replaceFrom = slashReplaceFrom,
+            )
+        }
+
+        override suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult {
+            lastPathDurableId = durableId
+            lastPathCwd = cwd
+            pathGate?.await()
+            return CompletionResult(listOf(CompletionItem("@file:src/main.kt")))
         }
 
         override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
@@ -707,6 +1195,26 @@ class ChatViewModelTest {
             toDurableId: String,
             sourceText: String?,
         ): String? = error("fixture migration failure")
+    }
+
+    private class DelayedComposerControlsStore : ComposerControlsStore {
+        private val scope = ComposerControlsScope("test-gateway", "default")
+        override val activeScope = MutableStateFlow(scope)
+        val snapshots = MutableSharedFlow<NewDraftComposerPreference?>()
+        var saved: NewDraftComposerPreference? = null
+
+        override fun preference(scope: ComposerControlsScope): Flow<NewDraftComposerPreference?> = snapshots
+
+        override suspend fun saveManual(
+            scope: ComposerControlsScope,
+            preference: NewDraftComposerPreference,
+        ) {
+            saved = preference
+        }
+
+        override suspend fun clearManual(scope: ComposerControlsScope) {
+            saved = null
+        }
     }
 
     private class FakeSidebarViewStore(initial: SidebarGrouping = SidebarGrouping.Date) : SidebarViewStore {

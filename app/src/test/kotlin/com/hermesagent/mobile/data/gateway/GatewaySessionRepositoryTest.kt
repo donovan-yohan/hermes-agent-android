@@ -1,5 +1,10 @@
 package com.hermesagent.mobile.data.gateway
 
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.ControlMutationResult
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
+import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
@@ -26,7 +31,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -35,6 +42,234 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GatewaySessionRepositoryTest {
+
+    @Test
+    fun `model catalog keeps Gateway provider capabilities and effective selection`() {
+        val catalog = parseModelCatalog(
+            json(
+                """{"model":"reasoner-v3","provider":"acme","providers":[
+                  {"slug":"acme","name":"Acme","models":["reasoner-v3"],
+                   "capabilities":{"reasoner-v3":{"reasoning":true,"fast":true}}},
+                  {"slug":"empty","models":[]}
+                ]}""",
+            ),
+        )
+
+        assertEquals(2, catalog.providers.size)
+        assertEquals("reasoner-v3", catalog.effectiveSelection?.model)
+        assertEquals("acme", catalog.effectiveSelection?.provider)
+        assertTrue(catalog.providers.first().models.single().supportsFast)
+    }
+
+    @Test
+    fun `live controls resolve durable identity and remain session scoped`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        assertEquals(
+            ControlMutationResult.Applied,
+            repository.setLiveModel("durable-a", ComposerModelSelection("reasoner-v3", "acme")),
+        )
+        assertEquals("runtime-a", rpc.call("config.set").params.string("session_id"))
+        assertEquals("model", rpc.call("config.set").params.string("key"))
+        assertEquals("reasoner-v3 --provider acme --session", rpc.call("config.set").params.string("value"))
+
+        rpc.modelOptionsResult = """{"model":"session-only","provider":"session-provider","providers":[]}"""
+        rpc.providerResult = """{"model":"global-default","provider":"global-provider"}"""
+        val snapshot = repository.loadComposerControls("durable-a")
+        assertEquals("session-only", snapshot.selection?.model)
+        assertEquals("session-provider", snapshot.selection?.provider)
+        assertEquals(ReasoningEffort.High, snapshot.reasoning)
+        assertEquals(FastMode.Fast, snapshot.fast)
+        assertEquals(
+            listOf("reasoning", "fast"),
+            rpc.calls.filter { it.method == "config.get" }.takeLast(2).map { it.params.string("key") },
+        )
+        assertTrue(rpc.calls.filter { it.method == "config.get" }.takeLast(2).all {
+            it.params.string("session_id") == "runtime-a"
+        })
+        assertEquals("runtime-a", rpc.calls.last { it.method == "model.options" }.params.string("session_id"))
+    }
+
+    @Test
+    fun `deferred and legacy busy model responses keep requested next turn selection`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { configSetResult = """{"deferred":true}""" }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        assertEquals(
+            ControlMutationResult.Deferred,
+            repository.setLiveModel("durable-a", ComposerModelSelection("next", "acme")),
+        )
+
+        rpc.configSetResult = "{}"
+        rpc.configSetFailure = GatewayRpcError(4009, "session busy")
+        assertEquals(
+            ControlMutationResult.Deferred,
+            repository.setLiveModel("durable-a", ComposerModelSelection("later", "acme")),
+        )
+    }
+
+    @Test
+    fun `control rejection is concise and never raw Gateway payload`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { configSetFailure = GatewayRpcError(4002, "token secret-value leaked") }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        val rejected = repository.setLiveFast("durable-a", FastMode.Fast) as ControlMutationResult.Rejected
+        assertTrue(rejected.safeMessage.contains("Fast mode"))
+        assertFalse(rejected.safeMessage.contains("secret-value"))
+    }
+
+    @Test
+    fun `new session composer overrides are snapshotted into create payload`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.createSession(
+            "/work/hermes-mobile",
+            NewSessionComposerOverrides(
+                selection = ComposerModelSelection("reasoner-v3", "acme"),
+                reasoning = ReasoningEffort.High,
+                fast = FastMode.Fast,
+            ),
+        )
+
+        val params = rpc.call("session.create").params
+        assertEquals("reasoner-v3", params.string("model"))
+        assertEquals("acme", params.string("provider"))
+        assertEquals("high", params.string("reasoning_effort"))
+        assertTrue(requireNotNull(params["fast"]).jsonPrimitive.boolean)
+
+        repository.createSession(
+            null,
+            NewSessionComposerOverrides(fast = FastMode.Normal),
+        )
+        assertFalse(requireNotNull(rpc.call("session.create").params["fast"]).jsonPrimitive.boolean)
+
+        repository.createSession(
+            null,
+            NewSessionComposerOverrides(
+                reasoning = ReasoningEffort.Unknown("future-effort"),
+                fast = FastMode.Unknown("future-tier"),
+            ),
+        )
+        val unknownParams = rpc.call("session.create").params
+        assertFalse("reasoning_effort" in unknownParams)
+        assertFalse("fast" in unknownParams)
+    }
+
+    @Test
+    fun `completion methods use documented payloads and mapped items`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            slashResult = """{"items":[{"text":"/help","display":"/help","meta":"help","kind":"command"}],"replace_from":1}"""
+            pathResult = """{"items":[{"text":"@file:README.md","display":"README.md","meta":"file"}]}"""
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        assertEquals("/help", repository.completeSlash("/h").items.single().text)
+        assertEquals(1, repository.completeSlash("/h").replaceFrom)
+        assertEquals("@file:README.md", repository.completePath("durable-a", "@REA", "/workspace").items.single().text)
+        assertEquals("@REA", rpc.call("complete.path").params.string("word"))
+        assertEquals("/workspace", rpc.call("complete.path").params.string("cwd"))
+        assertEquals("runtime-a", rpc.call("complete.path").params.string("session_id"))
+
+        repository.completePath(null, "@REA", "/workspace")
+        assertFalse("session_id" in rpc.call("complete.path").params)
+    }
+
+    @Test
+    fun `session rehome during a catalog query preserves the canonical runtime binding`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { modelOptionsResponse = CompletableDeferred() }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        val catalog = async { repository.loadModelOptions("durable-a") }
+        runCurrent()
+        rpc.emit(
+            "session.info",
+            "runtime-a",
+            """{"stored_session_id":"durable-tip","running":false}""",
+        )
+        runCurrent()
+        rpc.modelOptionsResponse?.complete(json(MODEL_OPTIONS))
+        assertEquals("reasoner-v3", catalog.await().effectiveSelection?.model)
+
+        val resumeCount = rpc.calls.count { it.method == "session.resume" }
+        repository.completePath("durable-tip", "@REA", "/workspace")
+        assertEquals(resumeCount, rpc.calls.count { it.method == "session.resume" })
+        assertEquals("runtime-a", rpc.call("complete.path").params.string("session_id"))
+    }
+
+    @Test
+    fun `reconnect rejects an old catalog result and completions use the new runtime`() = runTest {
+        val cache = SessionCache()
+        val first = FakeRpc().apply { modelOptionsResponse = CompletableDeferred() }
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        val stale = async { runCatching { repository.loadModelOptions("durable-a") }.exceptionOrNull() }
+        runCurrent()
+        clients.value = null
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+
+        val second = FakeRpc().apply {
+            resumeA = RESUME_A.replace("runtime-a", "runtime-reconnected")
+        }
+        clients.value = second
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        first.modelOptionsResponse?.complete(json(MODEL_OPTIONS))
+        runCurrent()
+
+        assertTrue(stale.await() is GatewayRpcException)
+        repository.completePath("durable-a", "@REA", "/workspace")
+        assertEquals("runtime-reconnected", second.call("complete.path").params.string("session_id"))
+    }
 
     @Test
     fun `list and history map representative gateway payloads`() {
@@ -651,6 +886,38 @@ class GatewaySessionRepositoryTest {
         assertEquals("latest", cache.session("durable-a")?.preview)
         assertEquals(7, cache.session("durable-a")?.messageCount)
         assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `session info projects typed authoritative composer controls`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val projected = async { repository.composerControls.first() }
+        runCurrent()
+
+        rpc.emit(
+            "session.info",
+            "runtime-a",
+            """{"stored_session_id":"durable-a","running":false,"model":"reasoner-v3","provider":"acme","reasoning_effort":"high","fast":true}""",
+        )
+        runCurrent()
+
+        val event = projected.await()
+        assertEquals("durable-a", event.durableId)
+        assertEquals(ComposerModelSelection("reasoner-v3", "acme"), event.selection)
+        assertTrue(event.hasSelection)
+        assertEquals(ReasoningEffort.High, event.reasoning)
+        assertTrue(event.hasReasoning)
+        assertEquals(FastMode.Fast, event.fast)
+        assertTrue(event.hasFast)
     }
 
     @Test
@@ -1576,6 +1843,15 @@ class GatewaySessionRepositoryTest {
         var projectTreeResponse: CompletableDeferred<JsonElement>? = null
         var projectDetailsResponse: CompletableDeferred<JsonElement>? = null
         var promptResponse: CompletableDeferred<JsonElement>? = null
+        var modelOptionsResult = MODEL_OPTIONS
+        var modelOptionsResponse: CompletableDeferred<JsonElement>? = null
+        var providerResult = """{"model":"reasoner-v3","provider":"acme"}"""
+        var reasoningResult = """{"value":"high"}"""
+        var fastResult = """{"value":"fast"}"""
+        var configSetResult = "{}"
+        var configSetFailure: Throwable? = null
+        var slashResult = """{"items":[]}"""
+        var pathResult = """{"items":[]}"""
         var eventOverflowed = false
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
@@ -1600,6 +1876,22 @@ class GatewaySessionRepositoryTest {
                 }
                 "session.history" -> historyResponse?.await() ?: json(historyResult)
                 "session.create" -> json(createResult)
+                "model.options" -> modelOptionsResponse?.await() ?: json(modelOptionsResult)
+                "config.get" -> when (params.string("key")) {
+                    "provider" -> json(providerResult)
+                    "reasoning" -> json(reasoningResult)
+                    "fast" -> json(fastResult)
+                    else -> error("unexpected config key")
+                }
+                "config.set" -> {
+                    configSetFailure?.let { failure ->
+                        configSetFailure = null
+                        throw failure
+                    }
+                    json(configSetResult)
+                }
+                "complete.slash" -> json(slashResult)
+                "complete.path" -> json(pathResult)
                 "prompt.submit" -> {
                     if (promptFailures > 0) {
                         promptFailures--
@@ -1657,6 +1949,7 @@ class GatewaySessionRepositoryTest {
         const val RESUME_B = """{"session_id":"runtime-b","resumed":"durable-b","message_count":0,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},"inflight":null,"running":false,"session_key":"durable-b","started_at":1700001000.125,"status":"idle"}"""
         const val RESUME_COMPRESSION_TIP = """{"session_id":"runtime-a","resumed":"continuation-tip","message_count":5,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},"inflight":null,"running":false,"session_key":"continuation-tip","started_at":1700001000.125,"status":"idle"}"""
         const val CREATE = """{"session_id":"runtime-created","stored_session_id":"durable-created","message_count":0,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true}}"""
+        const val MODEL_OPTIONS = """{"model":"reasoner-v3","provider":"acme","providers":[{"slug":"acme","name":"Acme","models":["reasoner-v3"],"capabilities":{"reasoner-v3":{"reasoning":true,"fast":true}}}]}"""
         const val CREATE_WITH_CONFLICTING_INFO_ID = """{"session_id":"runtime-created","stored_session_id":"durable-created","message_count":0,"messages":[],"info":{"id":"conflicting-info-id","model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true}}"""
         const val SESSION_LIST_RENAMED = """{"sessions":[
             {"id":"durable-a","title":"Renamed A","preview":"new a","started_at":1700000124,"message_count":8,"source":"desktop"},

@@ -1,6 +1,10 @@
 package com.hermesagent.mobile.ui
 
 import com.hermesagent.mobile.data.ssh.AuthMethod
+import com.hermesagent.mobile.data.composer.CompletionItem
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -26,6 +30,12 @@ class ChatActions(
     val onCreateSession: () -> Unit = {},
     val onSend: () -> Unit = {},
     val onStop: () -> Unit = {},
+    val onSelectModel: (ComposerModelSelection) -> Unit = {},
+    val onSelectReasoning: (ReasoningEffort) -> Unit = {},
+    val onSelectFast: (FastMode) -> Unit = {},
+    val onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },
+    val onCompletionSelected: (CompletionItem) -> Unit = {},
+    val onInsertText: (String) -> Unit = {},
 )
 
 class AppearanceActions(

@@ -3,12 +3,27 @@ package com.hermesagent.mobile.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.hermesagent.mobile.data.composer.CompletionItem
+import com.hermesagent.mobile.data.composer.CompletionResult
+import com.hermesagent.mobile.data.composer.CompletionTrigger
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.ComposerReference
+import com.hermesagent.mobile.data.composer.ControlMutationResult
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ModelCatalog
+import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
+import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
+import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.prefs.ComposerControlsScope
+import com.hermesagent.mobile.data.prefs.ComposerControlsStore
+import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.data.prefs.SidebarViewStore
 import com.hermesagent.mobile.data.prefs.TransientSidebarViewStore
@@ -24,6 +39,8 @@ import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +49,49 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Gateway catalog state, kept distinct from an empty-but-resolved catalog. */
+sealed interface ComposerCatalogUiState {
+    data object Loading : ComposerCatalogUiState
+    data class Ready(val catalog: ModelCatalog) : ComposerCatalogUiState
+    data class Error(val safeMessage: String) : ComposerCatalogUiState
+}
+
+/** One live control mutation at a time. Deferred means the next turn owns it. */
+sealed interface ComposerMutationUiState {
+    data object Idle : ComposerMutationUiState
+    data object Saving : ComposerMutationUiState
+    data object Deferred : ComposerMutationUiState
+    data class Error(val safeMessage: String) : ComposerMutationUiState
+}
+
+/**
+ * A completion answer is valid only for this editor generation and active
+ * durable session. The editor owns the actual [replaceStart]/[replaceEnd]
+ * replacement so its IME composition and selection never cross the ViewModel.
+ */
+data class CompletionUiState(
+    val trigger: CompletionTrigger? = null,
+    val query: String = "",
+    val items: List<CompletionItem> = emptyList(),
+    val replaceStart: Int = 0,
+    val replaceEnd: Int = 0,
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
+/**
+ * Nested composer state: persisted fresh-draft choices, live Gateway truth,
+ * and transient completion/mutation work remain visibly separate.
+ */
+data class ComposerUiState(
+    val catalog: ComposerCatalogUiState = ComposerCatalogUiState.Loading,
+    val controls: ModelControlsSnapshot = ModelControlsSnapshot(),
+    val isLiveSession: Boolean = false,
+    val isManualNewDraft: Boolean = false,
+    val mutation: ComposerMutationUiState = ComposerMutationUiState.Idle,
+    val completion: CompletionUiState = CompletionUiState(),
+)
 
 data class ChatUiState(
     val sessionRows: List<SessionListRow> = emptyList(),
@@ -50,6 +110,7 @@ data class ChatUiState(
     val runningOwner: SessionSummary? = null,
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val notice: String? = null,
+    val composer: ComposerUiState = ComposerUiState(),
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
@@ -66,6 +127,8 @@ internal class ChatViewModel(
     private val repository: GatewaySessionRepository,
     private val sidebarViewStore: SidebarViewStore = TransientSidebarViewStore(),
     private val draftStore: SessionDraftStore = TransientSessionDraftStore(),
+    private val composerControlsStore: ComposerControlsStore =
+        com.hermesagent.mobile.data.prefs.TransientComposerControlsStore(),
     /** Process scope survives navigation long enough to flush the private draft. */
     private val applicationDraftScope: CoroutineScope? = null,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -77,6 +140,7 @@ internal class ChatViewModel(
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
+    private val composer = MutableStateFlow(ComposerUiState())
     private val createdProjectBySession = mutableMapOf<String, String>()
     private var navigationGeneration = 0L
     private var sidebarGroupingGeneration = 0L
@@ -87,7 +151,21 @@ internal class ChatViewModel(
     /** IDs changed locally in this ViewModel; stale DataStore emissions cannot replace them. */
     private val locallyTouchedDrafts = mutableSetOf<String>()
     private var draftRevision = 0L
-    private var draftWrite: kotlinx.coroutines.Job? = null
+    private var draftWrite: Job? = null
+    private var composerScope: ComposerControlsScope? = null
+    private var newDraftPreference: NewDraftComposerPreference? = null
+    /** A delayed store snapshot cannot replace a choice made in this scope. */
+    private var newDraftPreferenceTouched = false
+    /** Gateway defaults are transient and never inherit a just-viewed live session. */
+    private var newDraftDefaults = ModelControlsSnapshot()
+    private var composerGeneration = 0L
+    /** Fences live mutation replies independently of editor completion work. */
+    private var liveMutationGeneration = 0L
+    private var inputGeneration = 0L
+    private var composerLoad: Job? = null
+    private var completionLoad: Job? = null
+    private var preferenceLoad: Job? = null
+    private var observedConnectionStatus: GatewayConnectionStatus? = null
 
     val uiState: StateFlow<ChatUiState> = combine(
         cache.state,
@@ -95,13 +173,18 @@ internal class ChatViewModel(
         draft,
         activeSessionId,
         combine(
-            repository.connectionState,
-            notice,
-            selectedProjectId,
-            projectLoadingId,
-            sidebarGrouping,
-        ) { connection, message, projectId, loadingId, grouping ->
-            NavigationState(connection, message, projectId, loadingId, grouping)
+            composer,
+            combine(
+                repository.connectionState,
+                notice,
+                selectedProjectId,
+                projectLoadingId,
+                sidebarGrouping,
+            ) { connection, message, projectId, loadingId, grouping ->
+                NavigationState(connection, message, projectId, loadingId, grouping)
+            },
+        ) { composerState, navigation ->
+            navigation.copy(composer = composerState)
         },
     ) { cacheState, queryText, draftText, activeId, navigation ->
         val blocking = cacheState.sessions.values.filter { it.status in PROMPT_BLOCKING_STATUSES }
@@ -152,6 +235,7 @@ internal class ChatViewModel(
             runningOwner = runningOwner,
             connection = navigation.connection,
             notice = navigation.notice,
+            composer = navigation.composer,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -182,10 +266,27 @@ internal class ChatViewModel(
             }
         }
         viewModelScope.launch {
+            repository.composerControls.collect(::applyComposerControls)
+        }
+        viewModelScope.launch {
+            observeComposerScope()
+        }
+        viewModelScope.launch {
+            repository.connectionState.collect { connection ->
+                if (connection.status == observedConnectionStatus) return@collect
+                observedConnectionStatus = connection.status
+                invalidateComposerRuntimeState()
+                if (connection.status == GatewayConnectionStatus.Connected) {
+                    refreshComposer(activeSessionId.value)
+                }
+            }
+        }
+        viewModelScope.launch {
             cache.state.collect { state ->
                 val projectId = selectedProjectId.value
                 if (state.projects.available == true && projectId != null && projectId !in state.projects.projects) {
                     navigationGeneration += 1
+                    invalidateCompletionState()
                     selectedProjectId.value = null
                     query.value = ""
                     notice.value = "That project is no longer available."
@@ -209,8 +310,157 @@ internal class ChatViewModel(
         }
     }
 
+    /**
+     * A manual draft pick must never cross remote endpoint/profile or SSH host
+     * boundaries. ComposerControlsStore owns that normalized scope in
+     * production; test-only stores use an isolated in-memory scope.
+     */
+    private suspend fun observeComposerScope() {
+        composerControlsStore.activeScope.collect(::bindComposerScope)
+    }
+
+    private fun bindComposerScope(scope: ComposerControlsScope) {
+        if (composerScope == scope) return
+        composerScope = scope
+        newDraftPreference = null
+        newDraftPreferenceTouched = false
+        newDraftDefaults = ModelControlsSnapshot()
+        invalidateComposerRuntimeState()
+        preferenceLoad?.cancel()
+        preferenceLoad = viewModelScope.launch {
+            composerControlsStore.preference(scope).collect { preference ->
+                if (composerScope != scope) return@collect
+                if (!newDraftPreferenceTouched) {
+                    newDraftPreference = preference
+                    if (activeSessionId.value == null) publishFreshDraftControls()
+                }
+            }
+        }
+        refreshComposer(activeSessionId.value)
+    }
+
+    private fun invalidateComposerRuntimeState() {
+        composerGeneration += 1
+        liveMutationGeneration += 1
+        inputGeneration += 1
+        composerLoad?.cancel()
+        completionLoad?.cancel()
+        composer.value = ComposerUiState(
+            catalog = ComposerCatalogUiState.Loading,
+            controls = if (activeSessionId.value == null) freshDraftControls() else ModelControlsSnapshot(),
+            isLiveSession = activeSessionId.value != null,
+            isManualNewDraft = activeSessionId.value == null && hasManualNewDraftChoice(),
+        )
+    }
+
+    private fun invalidateCompletionState() {
+        inputGeneration += 1
+        completionLoad?.cancel()
+        composer.value = composer.value.copy(completion = CompletionUiState())
+    }
+
     fun setQuery(value: String) {
         query.value = value
+    }
+
+    /**
+     * The editor reports plain text plus offsets, never a Compose TextFieldValue.
+     * That keeps the ViewModel UI-neutral while allowing the editor to retain
+     * IME composition during an inline completion replacement.
+     */
+    fun onEditorSelectionChange(text: String, selectionStart: Int, selectionEnd: Int) {
+        val safeStart = selectionStart.coerceIn(0, text.length)
+        val safeEnd = selectionEnd.coerceIn(0, text.length)
+        val request = completionRequest(text, safeStart, safeEnd)
+        val generation = ++inputGeneration
+        completionLoad?.cancel()
+        if (request == null) {
+            composer.value = composer.value.copy(completion = CompletionUiState())
+            return
+        }
+        if (request.trigger == CompletionTrigger.Emoji) {
+            // EmojiIndex is bundled with the Compose surface. The VM still
+            // supplies the exact trigger/range and fences stale editor state.
+            composer.value = composer.value.copy(
+                completion = CompletionUiState(
+                    trigger = request.trigger,
+                    query = request.query,
+                    replaceStart = request.start,
+                    replaceEnd = request.end,
+                ),
+            )
+            return
+        }
+        val durableId = activeSessionId.value
+        val runtimeGeneration = composerGeneration
+        composer.value = composer.value.copy(
+            completion = CompletionUiState(
+                trigger = request.trigger,
+                query = request.query,
+                replaceStart = request.start,
+                replaceEnd = request.end,
+                loading = true,
+            ),
+        )
+        completionLoad = viewModelScope.launch {
+            delay(COMPLETION_DEBOUNCE_MILLIS)
+            val result: Result<CompletionResult> = try {
+                Result.success(loadCompletion(request, durableId))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                Result.failure(failure)
+            }
+            if (!isCurrentCompletion(generation, runtimeGeneration, durableId)) return@launch
+            composer.value = composer.value.copy(
+                completion = result.fold(
+                    onSuccess = { answer ->
+                        val slashOffset = (answer.replaceFrom ?: 0)
+                            .coerceIn(0, request.end - request.start)
+                        val replaceStart = if (
+                            request.trigger == CompletionTrigger.Slash && slashOffset > 1
+                        ) {
+                            request.start + slashOffset
+                        } else {
+                            request.start
+                        }
+                        CompletionUiState(
+                            trigger = request.trigger,
+                            query = request.query,
+                            items = answer.items,
+                            replaceStart = replaceStart,
+                            replaceEnd = request.end,
+                        )
+                    },
+                    onFailure = {
+                        CompletionUiState(
+                            trigger = request.trigger,
+                            query = request.query,
+                            replaceStart = request.start,
+                            replaceEnd = request.end,
+                            error = "Suggestions could not be loaded. Keep typing or try again.",
+                        )
+                    },
+                ),
+            )
+        }
+    }
+
+    /** The editor has already applied the canonical text replacement locally. */
+    fun onCompletionSelected(@Suppress("UNUSED_PARAMETER") item: CompletionItem) {
+        // Item is intentionally not re-serialized here: the editor's selected
+        // range is the only authority for its text and IME composition.
+        inputGeneration += 1
+        completionLoad?.cancel()
+        composer.value = composer.value.copy(completion = CompletionUiState())
+    }
+
+    /** URL/snippet insertion is performed at the editor caret, then echoed through setDraft. */
+    fun onInsertText(text: String) {
+        if (text.isBlank()) return
+        inputGeneration += 1
+        completionLoad?.cancel()
+        composer.value = composer.value.copy(completion = CompletionUiState())
     }
 
     fun setDraft(value: String) {
@@ -219,8 +469,116 @@ internal class ChatViewModel(
         rememberDraft(id, value)
         val revision = invalidatePendingDraftWrite()
         draftWrite = viewModelScope.launch {
-            kotlinx.coroutines.delay(DRAFT_DEBOUNCE_MILLIS)
+            delay(DRAFT_DEBOUNCE_MILLIS)
             if (revision == draftRevision && id == activeSessionId.value) persistDraft(id, value)
+        }
+    }
+
+    fun selectModel(selection: ComposerModelSelection) {
+        val liveId = activeSessionId.value
+        if (liveId == null) {
+            saveNewDraftPreference { current ->
+                current.copy(selection = selection.copy(source = ComposerModelSelection.Source.Manual))
+            }
+            return
+        }
+        if (composer.value.mutation is ComposerMutationUiState.Saving) return
+        mutateLiveControls(liveId, { snapshot -> snapshot.copy(selection = selection) }) {
+            repository.setLiveModel(liveId, selection)
+        }
+    }
+
+    fun selectReasoning(effort: ReasoningEffort) {
+        val liveId = activeSessionId.value
+        if (liveId == null) {
+            saveNewDraftPreference { current -> current.copy(reasoning = effort) }
+            return
+        }
+        if (composer.value.mutation is ComposerMutationUiState.Saving ||
+            composer.value.mutation is ComposerMutationUiState.Deferred
+        ) return
+        mutateLiveControls(liveId, { snapshot -> snapshot.copy(reasoning = effort) }) {
+            repository.setLiveReasoning(liveId, effort)
+        }
+    }
+
+    fun selectFast(mode: FastMode) {
+        val liveId = activeSessionId.value
+        if (liveId == null) {
+            saveNewDraftPreference { current -> current.copy(fast = mode) }
+            return
+        }
+        if (composer.value.mutation is ComposerMutationUiState.Saving ||
+            composer.value.mutation is ComposerMutationUiState.Deferred
+        ) return
+        mutateLiveControls(liveId, { snapshot -> snapshot.copy(fast = mode) }) {
+            repository.setLiveFast(liveId, mode)
+        }
+    }
+
+    private fun saveNewDraftPreference(
+        transform: (NewDraftComposerPreference) -> NewDraftComposerPreference,
+    ) {
+        val next = transform(newDraftPreference ?: NewDraftComposerPreference())
+        newDraftPreference = next
+        newDraftPreferenceTouched = true
+        publishFreshDraftControls()
+        val scope = composerScope ?: return
+        viewModelScope.launch {
+            runCatching { composerControlsStore.saveManual(scope, next) }
+                .onFailure { failure ->
+                    if (failure is CancellationException) throw failure
+                    if (composerScope == scope && activeSessionId.value == null) {
+                        notice.value = "This new-chat choice will not be remembered after you leave this Gateway."
+                    }
+                }
+        }
+    }
+
+    private fun mutateLiveControls(
+        durableId: String,
+        update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        request: suspend () -> ControlMutationResult,
+    ) {
+        if (composer.value.mutation is ComposerMutationUiState.Saving) return
+        val before = composer.value
+        val generation = composerGeneration
+        val mutationGeneration = ++liveMutationGeneration
+        composerLoad?.cancel()
+        composer.value = before.copy(
+            controls = update(before.controls),
+            isLiveSession = true,
+            isManualNewDraft = false,
+            mutation = ComposerMutationUiState.Saving,
+        )
+        viewModelScope.launch {
+            val result = try {
+                request()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                ControlMutationResult.Rejected("Hermes could not update this control. Check the Gateway and try again.")
+            }
+            if (
+                composerGeneration != generation ||
+                liveMutationGeneration != mutationGeneration ||
+                activeSessionId.value != durableId
+            ) return@launch
+            when (result) {
+                ControlMutationResult.Applied -> {
+                    composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
+                }
+                ControlMutationResult.Deferred -> {
+                    composer.value = composer.value.copy(mutation = ComposerMutationUiState.Deferred)
+                }
+                is ControlMutationResult.Rejected -> {
+                    composer.value = before.copy(
+                        mutation = ComposerMutationUiState.Error(result.safeMessage.ifBlank {
+                            "Hermes could not update this control. Try again."
+                        }),
+                    )
+                }
+            }
         }
     }
 
@@ -228,6 +586,7 @@ internal class ChatViewModel(
         sidebarGroupingGeneration += 1
         if (sidebarGrouping.value == grouping) return
         navigationGeneration += 1
+        invalidateCompletionState()
         sidebarGrouping.value = grouping
         selectedProjectId.value = null
         projectLoadingId.value = null
@@ -246,6 +605,7 @@ internal class ChatViewModel(
     fun selectProject(id: String) {
         if (cache.state.value.projects.projects[id] == null) return
         navigationGeneration += 1
+        invalidateCompletionState()
         selectedProjectId.value = id
         query.value = ""
         loadProject(id)
@@ -253,6 +613,7 @@ internal class ChatViewModel(
 
     fun exitProject() {
         navigationGeneration += 1
+        invalidateCompletionState()
         selectedProjectId.value = null
         projectLoadingId.value = null
         query.value = ""
@@ -272,6 +633,7 @@ internal class ChatViewModel(
                         notice.value = "The project was created, but Projects could not be refreshed. Reopen Sessions to refresh."
                         return@onSuccess
                     }
+                    invalidateCompletionState()
                     selectedProjectId.value = outcome.projectId
                     query.value = ""
                     loadProject(outcome.projectId)
@@ -327,25 +689,49 @@ internal class ChatViewModel(
             notice.value = "Connect to a Gateway before starting a session."
             return
         }
+        // Session creation can suspend while the Gateway establishes the
+        // runtime. Capture every visible fresh-draft control, including
+        // Gateway-seeded defaults, before that await so a later picker change
+        // cannot alter this request.
+        val overrides = newSessionOverrides()
+        val createdControls = composer.value.controls
+        val createdCatalog = composer.value.catalog
         viewModelScope.launch {
             val projectId = selectedProjectId.value
             val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
-            runCatching { repository.createSession(workspacePath) }
-                .onSuccess { id ->
-                    if (projectId != null) createdProjectBySession[id] = projectId
-                    flushDraft()
-                    rehome(id)
+            try {
+                val id = repository.createSession(workspacePath, overrides)
+                if (projectId != null) createdProjectBySession[id] = projectId
+                flushDraft()
+                rehome(id)
+                // session.create accepted this exact snapshot. A pre-build
+                // model.options response still reports the profile default,
+                // so keep the accepted create controls until session.info
+                // publishes the session's effective runtime state.
+                composer.value = ComposerUiState(
+                    catalog = createdCatalog,
+                    controls = createdControls,
+                    isLiveSession = true,
+                )
+                if (createdCatalog !is ComposerCatalogUiState.Ready) {
+                    refreshComposer(id, retainControlsUntilSessionInfo = true)
                 }
-                .onFailure { notice.value = "A new session could not be started. Check the Gateway and try again." }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                notice.value = "A new session could not be started. Check the Gateway and try again."
+            }
         }
     }
 
     private fun rehome(id: String?) {
         activeSessionId.value = id
+        invalidateComposerRuntimeState()
         invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
         notice.value = null
         id?.let(::markRead)
+        if (id == null) refreshComposer(null)
     }
 
     /** Adopt a compressed session tip without clearing a draft for the same logical session. */
@@ -379,6 +765,7 @@ internal class ChatViewModel(
         activeSessionId.value = canonicalId
         draft.value = winner.orEmpty()
         markRead(canonicalId)
+        refreshComposer(canonicalId)
     }
 
     fun submit() {
@@ -397,6 +784,9 @@ internal class ChatViewModel(
             try {
                 when (repository.submit(sessionId, prompt)) {
                     GatewaySubmitOutcome.Accepted -> {
+                        if (composer.value.mutation is ComposerMutationUiState.Deferred) {
+                            composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
+                        }
                         val projectId = createdProjectBySession.remove(sessionId) ?: selectedProjectId.value
                         if (projectId != null) runCatching { repository.refreshProjects() }
                     }
@@ -454,7 +844,9 @@ internal class ChatViewModel(
 
     private suspend fun openAndAdopt(id: String) {
         try {
-            adoptCanonicalSession(id, repository.openSession(id))
+            val canonicalId = repository.openSession(id)
+            adoptCanonicalSession(id, canonicalId)
+            refreshComposer(canonicalId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Throwable) {
@@ -463,6 +855,234 @@ internal class ChatViewModel(
             }
         }
     }
+
+    private fun refreshComposer(
+        durableId: String?,
+        retainControlsUntilSessionInfo: Boolean = false,
+    ) {
+        val live = durableId != null
+        if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
+            if (!live) publishFreshDraftControls()
+            return
+        }
+        val generation = ++composerGeneration
+        liveMutationGeneration += 1
+        composerLoad?.cancel()
+        composer.value = composer.value.copy(
+            catalog = ComposerCatalogUiState.Loading,
+            controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
+            else if (live) ModelControlsSnapshot()
+            else freshDraftControls(),
+            isLiveSession = live,
+            isManualNewDraft = !live && hasManualNewDraftChoice(),
+            mutation = ComposerMutationUiState.Idle,
+            completion = CompletionUiState(),
+        )
+        composerLoad = viewModelScope.launch {
+            val loaded = try {
+                repository.loadComposerState(durableId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                null
+            }
+            if (composerGeneration != generation || activeSessionId.value != durableId) return@launch
+            if (loaded == null) {
+                composer.value = composer.value.copy(
+                    catalog = ComposerCatalogUiState.Error("Model controls could not be loaded. Reopen them to try again."),
+                    controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
+                    else if (live) ModelControlsSnapshot()
+                    else freshDraftControls(),
+                )
+                return@launch
+            }
+            val catalog = loaded.catalog
+            val defaults = loaded.controls
+            if (!live) newDraftDefaults = defaults
+            composer.value = composer.value.copy(
+                catalog = ComposerCatalogUiState.Ready(catalog),
+                controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
+                else if (live) defaults
+                else freshDraftControls(defaults),
+                isLiveSession = live,
+                isManualNewDraft = !live && hasManualNewDraftChoice(),
+            )
+        }
+    }
+
+    private fun publishFreshDraftControls() {
+        if (activeSessionId.value != null) return
+        composer.value = composer.value.copy(
+            controls = freshDraftControls(),
+            isLiveSession = false,
+            isManualNewDraft = hasManualNewDraftChoice(),
+        )
+    }
+
+    private fun freshDraftControls(defaults: ModelControlsSnapshot = newDraftDefaults): ModelControlsSnapshot {
+        val manual = newDraftPreference
+        return ModelControlsSnapshot(
+            selection = manual?.selection ?: defaults.selection,
+            reasoning = manual?.reasoning ?: defaults.reasoning,
+            fast = manual?.fast ?: defaults.fast,
+        )
+    }
+
+    private fun hasManualNewDraftChoice(): Boolean = newDraftPreference?.let {
+        it.selection != null || it.reasoning != null || it.fast != null
+    } == true
+
+    private fun newSessionOverrides(): NewSessionComposerOverrides? {
+        val visible = if (activeSessionId.value == null) composer.value.controls else freshDraftControls()
+        if (visible.selection == null && visible.reasoning == null && visible.fast == null) return null
+        return NewSessionComposerOverrides(
+            selection = visible.selection,
+            reasoning = visible.reasoning,
+            fast = visible.fast,
+        )
+    }
+
+    private fun applyComposerControls(event: SessionComposerControls) {
+        if (activeSessionId.value != event.durableId) return
+        // `session.info` is authoritative even if it overtakes the matching
+        // mutation RPC response.
+        composerGeneration += 1
+        liveMutationGeneration += 1
+        composerLoad?.cancel()
+        val current = composer.value
+        val keepDeferred = current.mutation is ComposerMutationUiState.Deferred
+        val authoritative = event.applyTo(current.controls)
+        composer.value = composer.value.copy(
+            // Modern Gateways report the pending model in session.info; older
+            // busy-refusal Gateways report the still-running model. In both
+            // cases the local deferred pick remains the next-turn contract
+            // until an accepted submit crosses that boundary.
+            controls = if (keepDeferred) authoritative.copy(selection = current.controls.selection)
+            else authoritative,
+            isLiveSession = true,
+            isManualNewDraft = false,
+            mutation = if (keepDeferred) ComposerMutationUiState.Deferred else ComposerMutationUiState.Idle,
+        )
+    }
+
+    private fun completionRequest(text: String, start: Int, end: Int): CompletionRequest? {
+        if (start != end) return null
+        val before = text.substring(0, start)
+        val slash = SLASH_COMPLETION.find(before)
+        if (slash != null) {
+            val tokenGroup = requireNotNull(slash.groups[1])
+            val token = tokenGroup.value
+            return CompletionRequest(
+                trigger = CompletionTrigger.Slash,
+                query = token.drop(1),
+                requestText = token,
+                start = tokenGroup.range.first,
+                end = start,
+            )
+        }
+        val at = AT_COMPLETION.find(before)
+        if (at != null) {
+            val tokenGroup = requireNotNull(at.groups[1])
+            val token = tokenGroup.value
+            return CompletionRequest(
+                trigger = CompletionTrigger.At,
+                query = token.drop(1),
+                requestText = token,
+                start = tokenGroup.range.first,
+                end = start,
+            )
+        }
+        val emoji = EMOJI_COMPLETION.find(before)
+        if (emoji != null) {
+            val tokenGroup = requireNotNull(emoji.groups[1])
+            val token = tokenGroup.value
+            return CompletionRequest(
+                trigger = CompletionTrigger.Emoji,
+                query = token.drop(1),
+                requestText = token,
+                start = tokenGroup.range.first,
+                end = start,
+            )
+        }
+        return null
+    }
+
+    private suspend fun loadCompletion(request: CompletionRequest, durableId: String?): CompletionResult = when (request.trigger) {
+        CompletionTrigger.Slash -> repository.completeSlash(request.requestText)
+        CompletionTrigger.At -> {
+            val static = staticAtCompletions(request.query)
+            if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
+                CompletionResult(static)
+            }
+            else {
+                // A live runtime owns its cwd; an empty explicit cwd lets the
+                // Gateway resolve that session-scoped workspace. Only a fresh
+                // project draft supplies the selected project's path.
+                val cwd = if (durableId == null) {
+                    selectedProjectId.value
+                        ?.let { cache.state.value.projects.projects[it]?.path }
+                        .orEmpty()
+                } else {
+                    ""
+                }
+                val remote = repository.completePath(durableId, request.requestText, cwd)
+                CompletionResult(
+                    items = (static + remote.items).distinctBy(CompletionItem::text),
+                    replaceFrom = remote.replaceFrom,
+                )
+            }
+        }
+        CompletionTrigger.Emoji -> CompletionResult()
+    }
+
+    private fun staticAtCompletions(query: String): List<CompletionItem> {
+        val lower = query.lowercase()
+        val starters = listOf(
+            CompletionItem("@file:", "@file:", "Attach a remote file reference", "file"),
+            CompletionItem("@folder:", "@folder:", "Attach a remote folder reference", "folder"),
+            CompletionItem("@url:", "@url:", "Attach a URL reference", "url"),
+            CompletionItem("@git:", "@git:", "Attach git context", "git"),
+            CompletionItem("@session:", "@session:", "Reference a session", "session"),
+        ).filter { it.text.removePrefix("@").startsWith(lower) }
+        // session.list is scoped to one Gateway profile, but its compact rows
+        // omit profile_name. Reuse the profile reported by any opened sibling
+        // instead of silently rewriting every reference to `default`.
+        val scopedProfile = cache.state.value.sessions.values
+            .asSequence()
+            .mapNotNull { it.remoteProfile?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
+            ?: "default"
+        val sessions = cache.state.value.sessions.values
+            .sortedByDescending(SessionSummary::lastActiveAtMillis)
+            .asSequence()
+            .map { session ->
+                val profile = session.remoteProfile?.trim()?.takeIf(String::isNotEmpty) ?: scopedProfile
+                CompletionItem(
+                    text = ComposerReference.Session("$profile/${session.id}").wireText,
+                    display = session.title.ifBlank { "Session ${session.id.take(8)}" },
+                    detail = "Session reference",
+                    kind = "session",
+                )
+            }
+            .filter { item -> !query.isNotBlank() || item.text.contains(lower, ignoreCase = true) || item.display.contains(lower, ignoreCase = true) }
+            .take(7)
+            .toList()
+        return starters + sessions
+    }
+
+    private fun isCurrentCompletion(
+        input: Long,
+        runtime: Long,
+        durableId: String?,
+    ): Boolean = inputGeneration == input && composerGeneration == runtime && activeSessionId.value == durableId
+
+    private data class CompletionRequest(
+        val trigger: CompletionTrigger,
+        val query: String,
+        val requestText: String,
+        val start: Int,
+        val end: Int,
+    )
 
     private suspend fun persistDraft(id: String, text: String) {
         try {
@@ -493,10 +1113,16 @@ internal class ChatViewModel(
         val projectId: String?,
         val loadingProjectId: String?,
         val grouping: SidebarGrouping,
+        val composer: ComposerUiState = ComposerUiState(),
     )
 
     companion object {
         private const val DRAFT_DEBOUNCE_MILLIS = 400L
+        private const val COMPLETION_DEBOUNCE_MILLIS = 120L
+        /** A slash directive may include arguments; @ and : stay one token. */
+        private val SLASH_COMPLETION = Regex("(?:^|\\s)(/[^\\n]*)$")
+        private val AT_COMPLETION = Regex("(?:^|\\s)(@[^\\s]*)$")
+        private val EMOJI_COMPLETION = Regex("(?:^|\\s)(:[^\\s:]*)$")
         private val STREAMING_STATUSES = setOf(
             SessionStatus.Working,
             SessionStatus.Stalled,
@@ -510,13 +1136,21 @@ internal class ChatViewModel(
             cache: SessionCache,
             repository: GatewaySessionRepository,
             sidebarViewStore: SidebarViewStore,
+            composerControlsStore: ComposerControlsStore,
             draftStore: SessionDraftStore,
             draftScope: CoroutineScope,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ChatViewModel(cache, repository, sidebarViewStore, draftStore, draftScope) as T
+                    ChatViewModel(
+                        cache = cache,
+                        repository = repository,
+                        sidebarViewStore = sidebarViewStore,
+                        composerControlsStore = composerControlsStore,
+                        draftStore = draftStore,
+                        applicationDraftScope = draftScope,
+                    ) as T
             }
     }
 }

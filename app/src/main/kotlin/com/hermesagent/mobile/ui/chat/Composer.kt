@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -48,6 +50,16 @@ import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.chat.composer.CompletionPopup
+import com.hermesagent.mobile.ui.chat.composer.ComposerAddControl
+import com.hermesagent.mobile.ui.chat.composer.ModelControl
+import com.hermesagent.mobile.ui.chat.composer.canonicalizeComposerTextOnSpace
+import com.hermesagent.mobile.ui.chat.composer.replaceComposerRange
+import com.hermesagent.mobile.ui.chat.composer.visibleCompletionItems
+import com.hermesagent.mobile.data.composer.CompletionItem
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 private const val IME_PROCESS_KEY_CODE = 229
@@ -114,8 +126,21 @@ fun Composer(
     editorIdentity: String? = null,
     runningOwnerTitle: String? = null,
     onViewRunningOwner: (() -> Unit)? = null,
+    controls: ComposerUiState = ComposerUiState(),
+    onSelectModel: (ComposerModelSelection) -> Unit = {},
+    onSelectReasoning: (ReasoningEffort) -> Unit = {},
+    onSelectFast: (FastMode) -> Unit = {},
+    onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },
+    onCompletionSelected: (CompletionItem) -> Unit = {},
+    onInsertText: (String) -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
+    val editorFocusRequester = remember(editorIdentity) { FocusRequester() }
+    var focusRequestGeneration by remember(editorIdentity) { mutableStateOf(0) }
+    LaunchedEffect(focusRequestGeneration) {
+        if (focusRequestGeneration > 0) editorFocusRequester.requestFocus()
+    }
+    val restoreEditorFocus = { focusRequestGeneration += 1 }
     BoxWithConstraints(modifier.fillMaxWidth().background(tokens.chatSurface)) {
         val layoutMode = composerLayoutMode(maxWidth)
         Column(
@@ -133,13 +158,20 @@ fun Composer(
                     draft,
                     onDraftChange,
                     onSend,
-                    onStop,
-                    isStreaming,
-                    canSend,
-                    editorIdentity,
-                    Modifier.fillMaxWidth(),
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        onStop,
+                        isStreaming,
+                        canSend,
+                        editorIdentity,
+                        controls,
+                        onEditorSelectionChange,
+                        onCompletionSelected,
+                        onInsertText,
+                        editorFocusRequester,
+                        restoreEditorFocus,
+                        Modifier.fillMaxWidth(),
+                    )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
                     ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
             } else {
@@ -156,8 +188,15 @@ fun Composer(
                         isStreaming,
                         canSend,
                         editorIdentity,
+                        controls,
+                        onEditorSelectionChange,
+                        onCompletionSelected,
+                        onInsertText,
+                        editorFocusRequester,
+                        restoreEditorFocus,
                         Modifier.weight(1f),
                     )
+                    ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
                     ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
             }
@@ -188,6 +227,30 @@ fun Composer(
 }
 
 @Composable
+private fun ComposerModelControl(
+    controls: ComposerUiState,
+    onSelectModel: (ComposerModelSelection) -> Unit,
+    onSelectReasoning: (ReasoningEffort) -> Unit,
+    onSelectFast: (FastMode) -> Unit,
+    onReturnFocus: () -> Unit,
+) {
+    ModelControl(
+        catalog = (controls.catalog as? ComposerCatalogUiState.Ready)?.catalog,
+        controls = controls.controls,
+        isLiveSession = controls.isLiveSession,
+        isManualNewDraft = controls.isManualNewDraft,
+        isLoading = controls.catalog is ComposerCatalogUiState.Loading,
+        error = (controls.catalog as? ComposerCatalogUiState.Error)?.safeMessage ?: (controls.mutation as? ComposerMutationUiState.Error)?.safeMessage,
+        isSaving = controls.mutation is ComposerMutationUiState.Saving,
+        isDeferred = controls.mutation is ComposerMutationUiState.Deferred,
+        onSelectModel = onSelectModel,
+        onSelectReasoning = onSelectReasoning,
+        onSelectFast = onSelectFast,
+        onDismiss = onReturnFocus,
+    )
+}
+
+@Composable
 private fun ComposerEditor(
     draft: String,
     onDraftChange: (String) -> Unit,
@@ -196,35 +259,114 @@ private fun ComposerEditor(
     isStreaming: Boolean,
     canSend: Boolean,
     editorIdentity: String?,
+    controls: ComposerUiState,
+    onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit,
+    onCompletionSelected: (CompletionItem) -> Unit,
+    onInsertText: (String) -> Unit,
+    focusRequester: FocusRequester,
+    onReturnFocus: () -> Unit,
     modifier: Modifier,
 ) {
     val tokens = HermesTheme.tokens
     val pendingLocalTexts = remember(editorIdentity) { ArrayDeque<String>() }
     var editorValue by remember(editorIdentity) { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
+    var completionSelectionIndex by remember(editorIdentity) { mutableStateOf(0) }
+    val completionItems = visibleCompletionItems(
+        controls.completion.trigger,
+        controls.completion.query,
+        controls.completion.items,
+    )
     LaunchedEffect(draft, editorIdentity) {
         editorValue = reconcileComposerEditorValue(editorValue, draft, pendingLocalTexts)
     }
-    BasicTextField(
-        value = editorValue,
-        onValueChange = { value ->
-            val textChanged = value.text != editorValue.text
-            editorValue = value
-            if (textChanged) {
-                pendingLocalTexts.addLast(value.text)
-                onDraftChange(value.text)
-            }
-        },
-        textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
-        cursorBrush = SolidColor(tokens.composerRing),
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
-        keyboardActions = KeyboardActions(),
-        maxLines = 6,
-        modifier = modifier
-            .widthIn(min = HermesTheme.spacing.touchTarget)
-            .heightIn(min = HermesTheme.spacing.touchTarget)
-            .testTag("Composer field shell")
-            .onPreviewKeyEvent { event ->
+    LaunchedEffect(
+        controls.completion.trigger,
+        controls.completion.query,
+        controls.completion.items,
+        editorIdentity,
+    ) {
+        completionSelectionIndex = 0
+    }
+    fun publish(next: TextFieldValue, notifyInsert: String? = null, completion: CompletionItem? = null) {
+        editorValue = next
+        pendingLocalTexts.addLast(next.text)
+        onDraftChange(next.text)
+        onEditorSelectionChange(next.text, next.selection.start, next.selection.end)
+        notifyInsert?.let(onInsertText)
+        completion?.let(onCompletionSelected)
+    }
+    fun insertAtSelection(value: String) {
+        if (editorValue.composition != null) return
+        val updated = replaceComposerRange(editorValue.text, editorValue.selection.start, editorValue.selection.end, value)
+        val cursor = editorValue.selection.start.coerceIn(0, editorValue.text.length) + value.length
+        publish(TextFieldValue(updated, TextRange(cursor)), notifyInsert = value)
+    }
+    fun acceptCompletion(item: CompletionItem) {
+        if (editorValue.composition != null) return
+        val replacement = item.text
+        val updated = replaceComposerRange(
+            editorValue.text,
+            controls.completion.replaceStart,
+            controls.completion.replaceEnd,
+            replacement,
+        )
+        val cursor = controls.completion.replaceStart.coerceIn(0, editorValue.text.length) + replacement.length
+        publish(TextFieldValue(updated, TextRange(cursor)), completion = item)
+    }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            ComposerAddControl(
+                onInsertText = ::insertAtSelection,
+                enabled = true,
+                onDismiss = onReturnFocus,
+            )
+            BasicTextField(
+                value = editorValue,
+                onValueChange = { value ->
+                    val textChanged = value.text != editorValue.text
+                    val canonical = if (textChanged && value.composition == null) canonicalizeComposerTextOnSpace(value.text) else value.text
+                    val next = if (canonical == value.text) value else TextFieldValue(canonical, TextRange(canonical.length))
+                    editorValue = next
+                    onEditorSelectionChange(next.text, next.selection.start, next.selection.end)
+                    if (textChanged || canonical != value.text) {
+                        pendingLocalTexts.addLast(next.text)
+                        onDraftChange(next.text)
+                    }
+                },
+                textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+                cursorBrush = SolidColor(tokens.composerRing),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
+                keyboardActions = KeyboardActions(),
+                maxLines = 6,
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(min = HermesTheme.spacing.touchTarget)
+                    .heightIn(min = HermesTheme.spacing.touchTarget)
+                    .focusRequester(focusRequester)
+                    .testTag("Composer field shell")
+                    .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent
+                val completionKeyDown = event.type == KeyEventType.KeyDown &&
+                    native.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD == 0 &&
+                    !native.isShiftPressed && !native.isCtrlPressed && !native.isMetaPressed &&
+                    !native.isAltPressed && editorValue.composition == null && completionItems.isNotEmpty()
+                if (completionKeyDown) {
+                    when (native.keyCode) {
+                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            completionSelectionIndex = (completionSelectionIndex + 1) % completionItems.size
+                            return@onPreviewKeyEvent true
+                        }
+                        android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                            completionSelectionIndex =
+                                (completionSelectionIndex - 1 + completionItems.size) % completionItems.size
+                            return@onPreviewKeyEvent true
+                        }
+                        android.view.KeyEvent.KEYCODE_ENTER -> {
+                            acceptCompletion(completionItems[completionSelectionIndex.coerceIn(completionItems.indices)])
+                            return@onPreviewKeyEvent true
+                        }
+                    }
+                }
                 val action = composerKeyAction(
                     keyCode = native.keyCode,
                     isKeyDown = event.type == KeyEventType.KeyDown,
@@ -243,17 +385,29 @@ private fun ComposerEditor(
                     ComposerKeyAction.None -> false
                 }
             }
-            .semantics { contentDescription = "Message Hermes" },
-        decorationBox = { inner ->
-            CenteredTextFieldContent(
-                isEmpty = editorValue.text.isEmpty(),
-                contentTag = "Composer text content",
-                horizontalPadding = 6.dp,
-                placeholder = { Text("Message Hermes", style = HermesTheme.type.body, color = tokens.textTertiary) },
-                innerTextField = inner,
+                    .semantics { contentDescription = "Message Hermes" },
+                decorationBox = { inner ->
+                    CenteredTextFieldContent(
+                        isEmpty = editorValue.text.isEmpty(),
+                        contentTag = "Composer text content",
+                        horizontalPadding = 6.dp,
+                        placeholder = { Text("Message Hermes", style = HermesTheme.type.body, color = tokens.textTertiary) },
+                        innerTextField = inner,
+                    )
+                },
             )
-        },
-    )
+        }
+        CompletionPopup(
+            trigger = controls.completion.trigger,
+            query = controls.completion.query,
+            items = controls.completion.items,
+            isLoading = controls.completion.loading,
+            error = controls.completion.error,
+            selectedIndex = if (completionItems.isEmpty()) 0 else completionSelectionIndex.coerceIn(completionItems.indices),
+            onSelect = ::acceptCompletion,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
 }
 
 @Composable

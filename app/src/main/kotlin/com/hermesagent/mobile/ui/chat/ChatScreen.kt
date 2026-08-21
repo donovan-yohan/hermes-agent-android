@@ -397,6 +397,13 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
         editorIdentity = state.activeSession?.id,
         runningOwnerTitle = state.runningOwner?.title,
         onViewRunningOwner = state.runningOwner?.id?.let { id -> { actions.onSelectSession(id) } },
+        controls = state.composer,
+        onSelectModel = actions.onSelectModel,
+        onSelectReasoning = actions.onSelectReasoning,
+        onSelectFast = actions.onSelectFast,
+        onEditorSelectionChange = actions.onEditorSelectionChange,
+        onCompletionSelected = actions.onCompletionSelected,
+        onInsertText = actions.onInsertText,
         modifier = Modifier.imePadding().navigationBarsPadding(),
     )
 }
