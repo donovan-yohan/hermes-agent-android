@@ -59,7 +59,9 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  *
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
- * - host, port, username, remote Hermes profile, auth *method*, and the
+ * - the session sidebar's grouping mode;
+ * - the selected Gateway route and the shared Gateway's non-secret URL/provider;
+ * - SSH host, port, username, remote Hermes profile, auth *method*, and the
  *   accepted host-key fingerprint;
  * - one random per-install Gateway ownership id.
  *
@@ -80,13 +82,20 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
 class HermesPreferences(private val context: Context) :
     HostProfileStore,
     GatewayInstallStore,
-    RemoteGatewayProfileStore {
+    RemoteGatewayProfileStore,
+    SidebarViewStore {
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
         AppearanceSelection(
             themeName = prefs[THEME_NAME] ?: BuiltinThemes.DEFAULT_NAME,
             mode = prefs[THEME_MODE]?.toThemeMode() ?: HermesThemeMode.System,
         )
+    }
+
+    override val sidebarGrouping: Flow<SidebarGrouping> = context.hermesDataStore.data.map { prefs ->
+        prefs[SIDEBAR_GROUPING]
+            ?.let { stored -> SidebarGrouping.entries.firstOrNull { it.name == stored } }
+            ?: SidebarGrouping.Date
     }
 
     /**
@@ -124,6 +133,10 @@ class HermesPreferences(private val context: Context) :
 
     suspend fun setMode(mode: HermesThemeMode) =
         context.hermesDataStore.edit { it[THEME_MODE] = mode.name }
+
+    override suspend fun saveSidebarGrouping(grouping: SidebarGrouping) {
+        context.hermesDataStore.edit { prefs -> prefs[SIDEBAR_GROUPING] = grouping.name }
+    }
 
     /**
      * Persists the non-secret, *saved* fields only. Callers cannot pass a
@@ -174,6 +187,7 @@ class HermesPreferences(private val context: Context) :
 
         val THEME_NAME = stringPreferencesKey("appearance.theme")
         val THEME_MODE = stringPreferencesKey("appearance.mode")
+        val SIDEBAR_GROUPING = stringPreferencesKey("sidebar.grouping")
         val HOST = stringPreferencesKey("host.single.host")
         val PORT = intPreferencesKey("host.single.port")
         val USERNAME = stringPreferencesKey("host.single.username")

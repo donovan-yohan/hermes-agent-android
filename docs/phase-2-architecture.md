@@ -14,6 +14,7 @@ inspected read-only; the checkout was neither modified nor fetched.
 | Forward | The listener is bound and held on `127.0.0.1:0` before sshj receives it. It closes with the connection. |
 | Gateway readiness | Authenticated `/api/health` and `/api/ssh/ownership` use the spawn token to prove the spawned nonce and protocol version `1`; a bounded public-root fetch then adopts the token actually served by that still-owned child for the final lock and WebSocket, followed by an authenticated `session.list` round trip. HTTP 200 alone is not Connected. |
 | Sessions | Live list, create, resume/activate, history, send, stream, tools, status, error, and interrupt. Durable navigation ids and runtime ids are separate. |
+| Projects | Gateway-authored `projects.tree` overview plus `projects.project_sessions` drill-in. Android does not infer membership from cwd; older Gateways retain the flat session list. |
 | App graph | `HermesApplication` owns the process-scoped connection, remote authenticator/token store, repository, network monitor, and backend-authoritative `SessionCache`. Production startup seeds nothing. |
 | UI | Gateways defaults to Shared Gateway URL/provider and browser sign-in. Managed SSH is a separate route with destination, optional remote Hermes profile, one selected auth method, host-key review, concise status/connect controls, and a secondary SSH diagnostic. Chat reports the same short connection states. |
 
@@ -83,15 +84,18 @@ or exception text.
 | Authority | Home | Invariant |
 |---|---|---|
 | Backend sessions/transcripts | `SessionCache` | Partial refreshes merge. Only an explicit tombstone removes a row. No-op upserts preserve state identity. |
+| Project catalog/membership | `SessionCache` | Overview snapshots replace the catalog; selected-project snapshots replace that project's membership. Rehome and tombstone updates publish atomically with session identity. |
 | Remote or SSH/process/forward/RPC | `GatewayConnectionManager` | One process-scoped active connection. Remote close ends only RPC; Managed SSH close tears down every positively-owned leg. |
 | Durable to runtime ids | `LiveGatewaySessionRepository` | Mapping is connection-scoped and cleared on reconnect. Runtime-only RPC methods never receive durable ids. |
 | Stream ownership | `LiveGatewaySessionRepository.submittedRuntime` | An event without `session_id` remains pinned to the runtime that submitted the turn, not the session currently visible. One app-submitted turn may be outstanding at a time because two interleaved unscoped streams cannot be assigned safely. |
-| Draft/search/navigation notice | `ChatViewModel` | UI-only; never written into backend cache. |
+| Draft/search/project selection/navigation notice | `ChatViewModel` | UI-only; never written into backend cache. |
 | Connection configuration | `HermesPreferences` | Route, non-secret Remote URL/provider, or SSH host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. OAuth tokens are not DataStore values. |
 
 Rename and archive are absent from the product surface because this slice does
 not wire authoritative backend methods for them. Search is explicitly local
-filtering. Create, open, history, send, and stop are live Gateway operations.
+filtering. Project overview and drill-in use authoritative Gateway membership;
+the selected project's backend path is used as the cwd for a new session.
+Create, open, history, send, and stop are live Gateway operations.
 The user can switch sessions while a turn runs, but another submit stays
 disabled until that turn completes; this preserves ownership when the Gateway
 omits `session_id` from stream events.
@@ -165,8 +169,8 @@ malformed-frame parsing, command/path rejection, token placement, strict served
 token parsing/fallback/body wiping, adopted-token WebSocket and final-lock use,
 readiness, ownership decisions, no foreign-pid kill, transport cancellation,
 loopback binding, session mapping, durable/runtime identity, stream pinning,
-reconnect, submit/interrupt, empty production startup, concise Gateway copy,
-and truthful connection UI.
+project ordering/membership/drill-in/reconnect, submit/interrupt, empty
+production startup, concise Gateway copy, and truthful connection UI.
 
 Offline fakes prove contracts at network/process seams; they do not prove a
 particular remote installation or radio. Exact-head physical Pixel validation

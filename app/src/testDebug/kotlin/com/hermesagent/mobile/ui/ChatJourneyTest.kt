@@ -18,7 +18,10 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
+import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -31,6 +34,7 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -80,6 +84,11 @@ class ChatJourneyTest {
                     actions = ChatActions(
                         onQueryChange = viewModel::setQuery,
                         onDraftChange = viewModel::setDraft,
+                        onRefreshNavigation = viewModel::refreshSessionNavigation,
+                        onSidebarGroupingChange = viewModel::setSidebarGrouping,
+                        onSelectProject = viewModel::selectProject,
+                        onExitProject = viewModel::exitProject,
+                        onCreateProject = viewModel::createProject,
                         onSelectSession = viewModel::selectSession,
                         onCreateSession = viewModel::createSession,
                         onSend = viewModel::submit,
@@ -104,6 +113,8 @@ class ChatJourneyTest {
     fun `drawer searches and resumes selected durable session`() {
         launch()
         compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithContentDescription("Search sessions").performClick()
         compose.onNodeWithContentDescription("Search sessions").performTextInput("second")
         assertEquals(1, compose.countWithText("Second remote session"))
         assertEquals(0, compose.countWithText("Gateway preview"))
@@ -112,6 +123,104 @@ class ChatJourneyTest {
         compose.waitForIdle()
         compose.onNodeWithText("Second live transcript").assertIsDisplayed()
         assertTrue(repository.opened.contains("live-b"))
+    }
+
+    @Test
+    fun `drawer drills from authoritative projects into their session history`() {
+        launch()
+        val project = ProjectSummary(
+            id = "project-mobile",
+            label = "Hermes mobile",
+            path = "/work/hermes-mobile",
+            sessionCount = 1,
+            previewSessions = listOf(cache.session("live-b")!!),
+        )
+        cache.replaceProjectOverview(listOf(project), activeProjectId = "project-mobile")
+        repository.projectSessions[project.id] = listOf(cache.session("live-b")!!)
+        val projectOpened = CompletableDeferred<Unit>()
+        repository.projectOpenResponse = projectOpened
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithContentDescription("Project grouping").performClick()
+        compose.onNodeWithText("PROJECTS").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Open project Hermes mobile. 1 session").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Opening project…").assertIsDisplayed()
+
+        projectOpened.complete(Unit)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("All projects").assertIsDisplayed()
+        compose.onNodeWithText("Second remote session").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Second live transcript").assertIsDisplayed()
+        assertEquals(listOf("project-mobile"), repository.openedProjects)
+    }
+
+    @Test
+    fun `project header keeps Desktop action order and creates from a remote folder`() {
+        launch()
+        cache.replaceProjectOverview(emptyList(), activeProjectId = null)
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithContentDescription("Project grouping").performClick()
+        val create = compose.onNodeWithContentDescription("New project").fetchSemanticsNode()
+        val filters = compose.onNodeWithContentDescription("Filters").fetchSemanticsNode()
+        assertTrue("New Project stays before Filters", create.boundsInRoot.center.x < filters.boundsInRoot.center.x)
+
+        compose.onNodeWithContentDescription("New project").performClick()
+        compose.onNodeWithContentDescription("Name").performTextInput("Demo")
+        compose.onNodeWithContentDescription("Remote folder").performTextInput("/srv/demo")
+        compose.onNodeWithText("Create project").performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf("Demo" to "/srv/demo"), repository.createdProjects)
+        assertEquals("project-created", viewModel.uiState.value.selectedProject?.id)
+    }
+
+    @Test
+    fun `sidebar grouping menu switches between updated sessions and projects`() {
+        launch()
+        val project = ProjectSummary(
+            id = "project-mobile",
+            label = "Hermes mobile",
+            path = "/work/hermes-mobile",
+            sessionCount = 1,
+            previewSessions = listOf(cache.session("live-b")!!),
+        )
+        cache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithText("SESSIONS").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithContentDescription("Project grouping").performClick()
+        compose.onNodeWithText("PROJECTS").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithContentDescription("Updated grouping").performClick()
+        compose.onNodeWithText("SESSIONS").assertIsDisplayed()
+        assertEquals(SidebarGrouping.Date, viewModel.uiState.value.sidebarGrouping)
+    }
+
+    @Test
+    fun `restored project grouping keeps a project surface while capability resolves`() {
+        launch()
+        viewModel.setSidebarGrouping(SidebarGrouping.Project)
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithText("PROJECTS").assertIsDisplayed()
+        compose.onNodeWithText("Loading projects…").assertIsDisplayed()
+
+        cache.markProjectsUnavailable()
+        compose.waitForIdle()
+        compose.onNodeWithText("PROJECTS").assertIsDisplayed()
+        compose.onNodeWithText("Project views aren’t available on this Gateway.").assertIsDisplayed()
     }
 
     @Test
@@ -147,6 +256,7 @@ class ChatJourneyTest {
         launch(connected = false, withSessions = false)
 
         compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.waitForIdle()
         compose.onNodeWithContentDescription("New session").assertIsNotEnabled()
         compose.onNodeWithText("Connect to a Gateway to start a session.").assertIsDisplayed()
     }
@@ -230,7 +340,7 @@ class ChatJourneyTest {
     @Config(sdk = [34], qualifiers = "w1000dp-h800dp")
     fun `wide layout keeps persistent sessions rail`() {
         launch()
-        compose.onNodeWithText("Sessions").assertIsDisplayed()
+        compose.onNodeWithText("SESSIONS").assertIsDisplayed()
         compose.onNodeWithText("Second remote session").assertIsDisplayed()
         assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Open sessions")).fetchSemanticsNodes().size)
     }
@@ -252,15 +362,34 @@ class ChatJourneyTest {
             ),
         )
         val opened = mutableListOf<String>()
+        val openedProjects = mutableListOf<String>()
+        val createdProjects = mutableListOf<Pair<String, String>>()
+        val projectSessions = mutableMapOf<String, List<SessionSummary>>()
+        var projectOpenResponse: CompletableDeferred<Unit>? = null
         val submitted = mutableListOf<Pair<String, String>>()
 
         override suspend fun refreshSessions() = Unit
+        override suspend fun openProject(projectId: String) {
+            openedProjects += projectId
+            projectOpenResponse?.await()
+            cache.replaceProjectDetails(
+                requireNotNull(cache.state.value.projects.projects[projectId]),
+                projectSessions[projectId].orEmpty(),
+            )
+        }
+        override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
+            createdProjects += name to folderPath
+            val project = ProjectSummary("project-created", name, folderPath, sessionCount = 0)
+            cache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
+            projectSessions[project.id] = emptyList()
+            return ProjectCreateOutcome(project.id, catalogRefreshed = true)
+        }
         override suspend fun openSession(durableId: String): String {
             opened += durableId
             return durableId
         }
 
-        override suspend fun createSession(): String {
+        override suspend fun createSession(workspacePath: String?): String {
             cache.upsertSession(SessionSummary("created-live", "New session", "", NOW + 1))
             return "created-live"
         }

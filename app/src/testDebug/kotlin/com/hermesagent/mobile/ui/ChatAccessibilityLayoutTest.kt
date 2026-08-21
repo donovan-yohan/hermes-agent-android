@@ -74,7 +74,7 @@ class ChatAccessibilityLayoutTest {
             wideRailInsets = { WindowInsets(bottom = WIDE_RAIL_INSET_PX) },
         )
 
-        val sessions = compose.onNodeWithText("Sessions").fetchSemanticsNode()
+        val sessions = compose.onNodeWithText("SESSIONS").fetchSemanticsNode()
         val newSession = compose.onNodeWithContentDescription("New session").fetchSemanticsNode()
 
         // The controls are in the rail, left of the 300dp content

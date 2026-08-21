@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
     private val preferences get() = app.preferences
 
     private val chatViewModel: ChatViewModel by viewModels {
-        ChatViewModel.factory(app.cache, app.sessionRepository)
+        ChatViewModel.factory(app.cache, app.sessionRepository, preferences)
     }
     private val sshViewModel: SshViewModel by viewModels {
         SshViewModel.factory(preferences, app.gatewayConnection)
@@ -91,6 +91,11 @@ class MainActivity : ComponentActivity() {
                 chatActions = ChatActions(
                     onQueryChange = chatViewModel::setQuery,
                     onDraftChange = chatViewModel::setDraft,
+                    onRefreshNavigation = chatViewModel::refreshSessionNavigation,
+                    onSidebarGroupingChange = chatViewModel::setSidebarGrouping,
+                    onSelectProject = chatViewModel::selectProject,
+                    onExitProject = chatViewModel::exitProject,
+                    onCreateProject = chatViewModel::createProject,
                     onSelectSession = chatViewModel::selectSession,
                     onCreateSession = { chatViewModel.createSession() },
                     onSend = chatViewModel::submit,

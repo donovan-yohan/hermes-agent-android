@@ -49,7 +49,6 @@ class HermesPreferencesTest {
         assertEquals(FINGERPRINT, loaded.acceptedFingerprint)
     }
 
-
     @Test
     fun `shared Gateway route round-trips only non-secret connection metadata`() = runBlocking {
         val remote = RemoteGatewayProfile(
@@ -63,6 +62,18 @@ class HermesPreferencesTest {
         assertEquals(remote, preferences.remoteGatewayProfile.first())
         assertEquals(GatewayConnectionMode.Ssh, preferences.gatewayConnectionMode.first())
     }
+
+    @Test
+    fun `sidebar grouping round-trips as a non-secret view preference`() = runBlocking {
+        try {
+            preferences.saveSidebarGrouping(SidebarGrouping.Project)
+
+            assertEquals(SidebarGrouping.Project, preferences.sidebarGrouping.first())
+        } finally {
+            preferences.saveSidebarGrouping(SidebarGrouping.Date)
+        }
+    }
+
     @Test
     fun `a display name an earlier build stored is removed before the first read`() = runBlocking {
         val stored = preferencesOf(

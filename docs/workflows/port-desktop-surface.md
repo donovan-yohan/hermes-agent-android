@@ -54,6 +54,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Project Gateway RPCs | `tui_gateway/project_tree.py`; `tui_gateway/methods_config.py` | `projects.tree` overview and complete `projects.project_sessions` membership snapshots |
 | Sidebar section header | `apps/desktop/src/app/shell/sidebar-label.tsx`; `apps/desktop/src/app/chat/sidebar/sessions-section.tsx:55-93` | Uppercase accent label, tracking, dither mark, header rhythm and trailing action cluster |
 | Sidebar header actions | `apps/desktop/src/app/chat/sidebar/index.tsx:245-255,1696-1777`; `apps/desktop/src/app/chat/sidebar/filter-menu.tsx:205-223` | Add-before-filter order, Codicon glyphs, 12px visual size, hover vs always-visible navigation treatment |
+| Sidebar grouping selector | `apps/desktop/src/app/chat/sidebar/filter-menu.tsx:74-79,226-246`; `apps/desktop/src/store/layout.ts:217-294,359-362,577-608`; `layout-sidebar-view.test.ts:21-78` | "Updated" is the persisted default; "Project" switches the same catalog into the project tree and leaving it restores the time-grouped list |
 | Project creation | `apps/desktop/src/app/chat/sidebar/project-dialog.tsx`; `apps/desktop/src/store/projects.ts:898-960` | New Project owns name + folder input and calls `projects.create`; the header plus is not New Session in overview mode |
 | SSH mechanics | `apps/desktop/electron/ssh-connection.ts:130-157,324-374` | `redactSecrets`, error classification, host-key change detection |
 | Remote lifecycle | `apps/desktop/electron/remote-lifecycle.ts`, `remote-lifecycle.test.ts`; `hermes_cli/main.py:510-518,664-689,10947-11021`; `hermes_cli/profiles.py:2458-2492` | Login-shell discovery, explicit default/named profile home resolution, OS-home-only token allowlist, exact ownership lock, exclusive/no-follow token upload, spawn-failure cleanup, and bounded TERM proof |
@@ -146,6 +147,7 @@ Desktop's authority model, and where each kind lives here:
 | Backend-authoritative project catalog/membership | `data/session/SessionCache` | Replace the overview snapshot and one selected project's hydrated membership; never infer from cwd |
 | Machine/runtime facts | `GatewayConnectionManager`, `RemoteHermesLifecycle`, SSH adapter | One resolver per policy |
 | Connection-scoped (runtime ids, turn buffers, in-flight tools, generation) | `LiveGatewaySessionRepository` / connection owner | Dies with the connection; durable ids never enter runtime-only calls |
+| Saved view preferences | `SidebarViewStore` / `HermesPreferences` | Persist the user's grouping choice locally; never send it to the Gateway or use it as project authority |
 | UI-only (drafts, search, drawer, scroll) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
 
 If you cannot say which row a piece of state belongs to, stop and decide. That
@@ -163,6 +165,7 @@ Replace, and say so in the PR:
 |---|---|
 | Hover reveal / tooltips | Always-visible affordance, or long-press; `contentDescription` always |
 | Right-click menu | Long-press |
+| Nested grouping submenu | One flat grouping section in the filter menu; nested pointer menus are brittle on a phone |
 | Persistent sidebar | Modal drawer under 720dp, persistent rail at or above it |
 | Enter submits | Explicit send tap; Enter inserts a newline (no modifier key on a soft keyboard) |
 | Route overlays as cards | Full-screen destination with a back affordance; system back leaves it |

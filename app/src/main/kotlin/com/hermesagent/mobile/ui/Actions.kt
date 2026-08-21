@@ -2,6 +2,7 @@ package com.hermesagent.mobile.ui
 
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 
 /**
@@ -16,6 +17,11 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 class ChatActions(
     val onQueryChange: (String) -> Unit = {},
     val onDraftChange: (String) -> Unit = {},
+    val onRefreshNavigation: () -> Unit = {},
+    val onSidebarGroupingChange: (SidebarGrouping) -> Unit = {},
+    val onSelectProject: (String) -> Unit = {},
+    val onExitProject: () -> Unit = {},
+    val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
     val onSelectSession: (String) -> Unit = {},
     val onCreateSession: () -> Unit = {},
     val onSend: () -> Unit = {},

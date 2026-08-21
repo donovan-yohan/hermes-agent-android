@@ -129,7 +129,10 @@ private fun CompactLayout(state: ChatUiState, actions: ChatActions, onOpenSettin
             ChatTopBar(
                 title = state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
-                onOpenSessions = { scope.launch { drawerState.open() } },
+                onOpenSessions = {
+                    actions.onRefreshNavigation()
+                    scope.launch { drawerState.open() }
+                },
                 onOpenSettings = onOpenSettings,
                 modifier = Modifier.statusBarsPadding(),
             )
@@ -186,10 +189,19 @@ private fun SessionsPane(
 ) {
     SessionList(
         rows = state.sessionRows,
+        projects = state.projects,
+        projectsAvailable = state.projectsAvailable,
+        sidebarGrouping = state.sidebarGrouping,
+        selectedProject = state.selectedProject,
+        projectLoading = state.projectLoading,
         activeSessionId = state.activeSession?.id,
         query = state.query,
         canCreate = state.canCreateSession,
         onQueryChange = actions.onQueryChange,
+        onSidebarGroupingChange = actions.onSidebarGroupingChange,
+        onSelectProject = actions.onSelectProject,
+        onExitProject = actions.onExitProject,
+        onCreateProject = actions.onCreateProject,
         onSelect = onSelectSession,
         onCreate = onCreateSession,
         modifier = modifier,

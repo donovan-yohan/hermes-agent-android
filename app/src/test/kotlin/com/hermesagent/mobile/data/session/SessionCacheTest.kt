@@ -95,6 +95,52 @@ class SessionCacheTest {
         assertEquals("tip", cache.state.value.rehomes["parent"])
     }
 
+    @Test
+    fun `project snapshots own membership and follow tombstone and rehome identity`() {
+        val preview = row("parent", title = "Project chat")
+        cache.replaceProjectOverview(
+            rows = listOf(
+                ProjectSummary(
+                    id = "project-a",
+                    label = "Hermes mobile",
+                    path = "/work/mobile",
+                    sessionCount = 1,
+                    previewSessions = listOf(preview),
+                ),
+            ),
+            activeProjectId = "project-a",
+        )
+        cache.replaceProjectDetails(
+            project = cache.state.value.projects.projects.getValue("project-a"),
+            sessions = listOf(preview),
+        )
+
+        cache.rehomeSession("parent", row("tip", title = "Project chat"), emptyList())
+
+        assertEquals(listOf("tip"), cache.state.value.projects.memberships["project-a"])
+        assertEquals("tip", cache.state.value.projects.projects.getValue("project-a").previewSessions.single().id)
+
+        cache.removeSession("tip")
+
+        assertTrue(cache.state.value.projects.memberships.getValue("project-a").isEmpty())
+        assertTrue(cache.state.value.projects.projects.getValue("project-a").previewSessions.isEmpty())
+    }
+
+    @Test
+    fun `project detail refresh preserves active timer origin`() {
+        val active = row("active").copy(
+            status = SessionStatus.Working,
+            activityStartedAtMillis = 12_345,
+        )
+        val project = ProjectSummary("project-a", "Mobile", "/work/mobile", sessionCount = 1)
+        cache.upsertSession(active)
+
+        cache.replaceProjectDetails(project, listOf(row("active", title = "Refreshed")))
+
+        assertEquals(12_345L, cache.session("active")?.activityStartedAtMillis)
+        assertEquals(SessionStatus.Working, cache.session("active")?.status)
+    }
+
     private fun row(id: String, title: String = "Session $id") =
         SessionSummary(id = id, title = title, preview = "", lastActiveAtMillis = 0)
 }

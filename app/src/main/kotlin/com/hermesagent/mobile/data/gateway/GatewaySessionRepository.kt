@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
@@ -40,8 +41,12 @@ interface GatewaySessionRepository {
     val connectionState: StateFlow<GatewayConnectionState>
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
     suspend fun refreshSessions()
+    suspend fun refreshProjects() = Unit
+    suspend fun openProject(projectId: String) = Unit
+    suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
+        error("Project creation is not implemented by this repository.")
     suspend fun openSession(durableId: String): String
-    suspend fun createSession(): String
+    suspend fun createSession(workspacePath: String? = null): String
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
     suspend fun interrupt(durableId: String)
 }
@@ -50,6 +55,11 @@ sealed interface GatewaySubmitOutcome {
     data object Accepted : GatewaySubmitOutcome
     data object Ambiguous : GatewaySubmitOutcome
 }
+
+data class ProjectCreateOutcome(
+    val projectId: String,
+    val catalogRefreshed: Boolean,
+)
 
 data class SessionRehome(
     val oldDurableId: String,
@@ -107,6 +117,8 @@ internal class LiveGatewaySessionRepository(
     /** Serializes multi-RPC navigation sequences without blocking event routing. */
     private val navigationMutex = Mutex()
     private val refreshMutex = Mutex()
+    /** Serializes catalog and detail snapshots so stale details cannot resurrect a removed project. */
+    private val projectMutex = Mutex()
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
     private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
@@ -117,6 +129,8 @@ internal class LiveGatewaySessionRepository(
     private val activeRuntimeIds = linkedSetOf<String>()
     private val reconnectDurableIds = mutableSetOf<String>()
     private val ephemeralSessions = mutableSetOf<String>()
+    /** The active drill-in worth rehydrating after a catalog refresh or reconnect. */
+    private var lastHydratedProjectId: String? = null
     private var eventJob: Job? = null
     private var bootstrapRefreshJob: Job? = null
     private var connectionGeneration = 0L
@@ -156,12 +170,18 @@ internal class LiveGatewaySessionRepository(
                     clearUnscopedRuntime()
                     val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
                     if (next != null) ephemeralSessions.clear()
-                    ConnectionReset(connectionGeneration, ghosts, reconnectDurableIds.toList())
+                    ConnectionReset(
+                        generation = connectionGeneration,
+                        ephemeralDurableIds = ghosts,
+                        reconnectDurableIds = reconnectDurableIds.toList(),
+                        clearProjects = previous !== next,
+                    )
                 }
                 // A just-created session is persisted lazily on first submit.
                 // Keep it useful while disconnected, then let the next
                 // authoritative list decide whether it really exists.
                 reset.ephemeralDurableIds.forEach(cache::removeSession)
+                if (reset.clearProjects) cache.clearProjects()
                 if (next != null) {
                     eventJob = scope.launch {
                         next.events.collect { event ->
@@ -177,6 +197,7 @@ internal class LiveGatewaySessionRepository(
                     }
                     bootstrapRefreshJob = scope.launch {
                         runCatching { refreshSessions() }
+                        runCatching { refreshProjects() }
                         reset.reconnectDurableIds.forEach { durableId ->
                             runCatching { openSession(durableId) }
                                 .onFailure { failure ->
@@ -218,6 +239,98 @@ internal class LiveGatewaySessionRepository(
                 },
             )
         }
+    }
+
+    override suspend fun refreshProjects() {
+        val rehydrate = projectMutex.withLock {
+            val connection = connectionSnapshot()
+            val payload = try {
+                connection.client.request(
+                    "projects.tree",
+                    buildJsonObject { put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT)) },
+                )
+            } catch (failure: Throwable) {
+                if (failure.isMissingProjectsMethod()) {
+                    synchronized(stateLock) {
+                        ensureCurrent(connection)
+                        cache.markProjectsUnavailable()
+                    }
+                    return@withLock null
+                }
+                throw failure
+            }
+            val overview = parseProjectOverview(payload, clock())
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.replaceProjectOverview(overview.projects, overview.activeProjectId)
+                lastHydratedProjectId?.takeIf { projectId ->
+                    overview.projects.any { it.id == projectId }
+                }.also { lastHydratedProjectId = it }
+            }
+        }
+        rehydrate?.let { projectId ->
+            runCatching { openProject(projectId) }
+                .onFailure { failure -> if (failure is CancellationException) throw failure }
+        }
+    }
+
+    override suspend fun openProject(projectId: String) = projectMutex.withLock {
+        require(projectId.isNotBlank())
+        val connection = connectionSnapshot()
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            if (cache.state.value.projects.available == true &&
+                projectId !in cache.state.value.projects.projects
+            ) {
+                throw GatewayRpcException("This project is no longer available.")
+            }
+        }
+        val result = connection.client.request(
+            "projects.project_sessions",
+            buildJsonObject { put("project_id", JsonPrimitive(projectId)) },
+        )
+        val details = parseProjectDetails(result, clock())
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            lastHydratedProjectId = projectId
+            cache.replaceProjectDetails(details.project, details.sessions)
+        }
+    }
+
+    override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
+        val cleanName = name.trim()
+        val cleanPath = folderPath.trim()
+        require(cleanName.isNotEmpty())
+        require(cleanPath.isNotEmpty())
+        val projectId = projectMutex.withLock {
+            val connection = connectionSnapshot()
+            val result = connection.client.request(
+                "projects.create",
+                buildJsonObject {
+                    put("name", JsonPrimitive(cleanName))
+                    put("folders", JsonArray(listOf(JsonPrimitive(cleanPath))))
+                    put("primary_path", JsonPrimitive(cleanPath))
+                    put("use", JsonPrimitive(true))
+                },
+            ).asObject("projects.create")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val project = result["project"] as? JsonObject
+                ?: throw GatewayRpcException("Hermes did not return the created project.")
+            project.string("id")?.takeIf(String::isNotBlank)
+                ?: throw GatewayRpcException("Hermes did not return a project id.")
+        }
+        // Re-read backend truth instead of teaching this write path a second
+        // project-tree parser. Creation has already succeeded at this point, so
+        // a refresh failure must not tell callers to retry the write.
+        val catalogRefreshed = try {
+            refreshProjects()
+            true
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Throwable) {
+            false
+        }
+        return ProjectCreateOutcome(projectId, catalogRefreshed)
     }
 
     override suspend fun openSession(durableId: String): String = navigationMutex.withLock {
@@ -290,11 +403,14 @@ internal class LiveGatewaySessionRepository(
         canonicalId
     }
 
-    override suspend fun createSession(): String = navigationMutex.withLock {
+    override suspend fun createSession(workspacePath: String?): String = navigationMutex.withLock {
         val connection = connectionSnapshot()
         val result = connection.client.request(
             "session.create",
-            buildJsonObject { put("source", JsonPrimitive("desktop")) },
+            buildJsonObject {
+                put("source", JsonPrimitive("desktop"))
+                workspacePath?.trim()?.takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
+            },
         ).asObject("session.create")
         val runtimeId = result.string("session_id")
             ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
@@ -1031,6 +1147,7 @@ internal class LiveGatewaySessionRepository(
                 }
                 if (!shouldRun) return@launch
                 runCatching { refreshSessions() }
+                if (cache.state.value.projects.available != false) runCatching { refreshProjects() }
             }
         }
     }
@@ -1041,6 +1158,7 @@ internal class LiveGatewaySessionRepository(
         val generation: Long,
         val ephemeralDurableIds: List<String>,
         val reconnectDurableIds: List<String>,
+        val clearProjects: Boolean,
     )
     private data class SessionBinding(val durableId: String, val runtimeId: String)
     private data class OptimisticSubmit(
@@ -1070,6 +1188,76 @@ internal fun parseSessionList(result: JsonElement, nowMillis: Long): List<Sessio
             ?: throw GatewayRpcException("Hermes returned a malformed session row.")
         parseSession(session, nowMillis)
     }
+}
+
+internal data class ProjectOverviewPayload(
+    val projects: List<ProjectSummary>,
+    val activeProjectId: String?,
+)
+
+internal data class ProjectDetailsPayload(
+    val project: ProjectSummary,
+    val sessions: List<SessionSummary>,
+)
+
+/** Parse only the backend-authored project tree; Android never infers membership from paths. */
+internal fun parseProjectOverview(result: JsonElement, nowMillis: Long): ProjectOverviewPayload {
+    val root = result.asObject("projects.tree")
+    val projects = root["projects"] as? JsonArray
+        ?: throw GatewayRpcException("Hermes returned a malformed project list.")
+    return ProjectOverviewPayload(
+        projects = projects.map { element ->
+            parseProject(element as? JsonObject
+                ?: throw GatewayRpcException("Hermes returned a malformed project row."), nowMillis)
+        },
+        activeProjectId = root.string("active_id"),
+    )
+}
+
+internal fun parseProjectDetails(result: JsonElement, nowMillis: Long): ProjectDetailsPayload {
+    val root = result.asObject("projects.project_sessions")
+    val projectRoot = root["project"] as? JsonObject
+        ?: throw GatewayRpcException("This project is no longer available.")
+    val sessions = linkedMapOf<String, SessionSummary>()
+    (projectRoot["repos"] as? JsonArray).orEmpty().forEach { repoElement ->
+        val repo = repoElement as? JsonObject
+            ?: throw GatewayRpcException("Hermes returned a malformed project repository.")
+        (repo["groups"] as? JsonArray).orEmpty().forEach { groupElement ->
+            val group = groupElement as? JsonObject
+                ?: throw GatewayRpcException("Hermes returned a malformed project lane.")
+            (group["sessions"] as? JsonArray).orEmpty().forEach { sessionElement ->
+                val session = parseSession(
+                    sessionElement as? JsonObject
+                        ?: throw GatewayRpcException("Hermes returned a malformed project session."),
+                    nowMillis,
+                )
+                sessions.putIfAbsent(session.id, session)
+            }
+        }
+    }
+    return ProjectDetailsPayload(parseProject(projectRoot, nowMillis), sessions.values.toList())
+}
+
+private fun parseProject(root: JsonObject, nowMillis: Long): ProjectSummary {
+    val id = root.string("id")?.takeIf(String::isNotBlank)
+        ?: throw GatewayRpcException("Hermes returned a project without an id.")
+    val previews = (root["previewSessions"] as? JsonArray).orEmpty().map { element ->
+        parseSession(
+            element as? JsonObject
+                ?: throw GatewayRpcException("Hermes returned a malformed project preview."),
+            nowMillis,
+        )
+    }
+    return ProjectSummary(
+        id = id,
+        label = root.string("label")?.ifBlank { id } ?: id,
+        path = root.string("path")?.takeIf(String::isNotBlank),
+        isAuto = root.boolean("isAuto") == true,
+        isHome = root.boolean("isNoProject") == true,
+        sessionCount = root.primitive("sessionCount")?.toIntOrNull() ?: previews.size,
+        lastActiveAtMillis = root.primitive("lastActive")?.epochMillisOrNull() ?: 0,
+        previewSessions = previews,
+    )
 }
 
 internal fun parseHistory(result: JsonElement, runtimeId: String, nowMillis: Long): List<TranscriptEntry> {
@@ -1141,6 +1329,13 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
 
 private fun JsonElement.asObject(method: String): JsonObject = this as? JsonObject
     ?: throw GatewayRpcException("Hermes returned malformed data for $method.")
+
+private fun Throwable.isMissingProjectsMethod(): Boolean =
+    this is GatewayRpcError && (
+        code == MISSING_RPC_METHOD_CODE ||
+            message.contains("unknown method", ignoreCase = true) ||
+            message.contains("method not found", ignoreCase = true)
+        )
 
 private fun objectParams(name: String, value: String): JsonObject =
     buildJsonObject { put(name, JsonPrimitive(value)) }
@@ -1453,6 +1648,8 @@ private fun String.epochMillisOrNull(): Long? {
 private const val MAX_TOOL_DETAIL = 4_096
 private const val MAX_TOOL_PAYLOAD = 32_768
 private const val MAX_TOOL_LABEL = 256
+private const val PROJECT_PREVIEW_LIMIT = 3
+private const val MISSING_RPC_METHOD_CODE = -32601
 private const val MAX_GATEWAY_ERROR_CLASSIFICATION_CHARS = 4_096
 private const val MAX_STATUS_KIND = 64
 private const val MAX_STATUS_TEXT = 240

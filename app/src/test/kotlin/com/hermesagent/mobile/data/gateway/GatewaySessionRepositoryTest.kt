@@ -286,6 +286,146 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `project overview and drill in keep backend identity and membership`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.refreshProjects()
+        val catalog = cache.state.value.projects
+        assertTrue(catalog.available == true)
+        assertEquals("project-mobile", catalog.activeProjectId)
+        assertEquals(listOf("__no_project__", "project-mobile"), catalog.projects.keys.toList())
+        assertEquals("Project preview", catalog.projects.getValue("project-mobile").previewSessions.single().title)
+        assertEquals(3, rpc.call("projects.tree").params["preview_limit"]?.toString()?.toInt())
+
+        repository.openProject("project-mobile")
+
+        assertEquals(listOf("durable-a", "durable-b"), cache.state.value.projects.memberships["project-mobile"])
+        assertEquals("Project detail A", cache.session("durable-a")?.title)
+        assertEquals("project-mobile", rpc.call("projects.project_sessions").params.string("project_id"))
+    }
+
+    @Test
+    fun `project creation sends the Desktop contract then refreshes backend truth`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        rpc.calls.clear()
+
+        val outcome = repository.createProject("  Demo  ", "  /srv/demo  ")
+
+        assertEquals("project-created", outcome.projectId)
+        assertTrue(outcome.catalogRefreshed)
+        val create = rpc.call("projects.create")
+        assertEquals("Demo", create.params.string("name"))
+        assertEquals("/srv/demo", create.params.string("primary_path"))
+        assertEquals("[\"/srv/demo\"]", create.params["folders"].toString())
+        assertEquals("true", create.params["use"].toString())
+        assertTrue(rpc.calls.any { it.method == "projects.tree" })
+    }
+
+    @Test
+    fun `project creation stays successful when catalog reconciliation fails`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        rpc.projectTreeFailure = GatewayRpcException("refresh failed")
+
+        val outcome = repository.createProject("Demo", "/srv/demo")
+
+        assertEquals("project-created", outcome.projectId)
+        assertFalse(outcome.catalogRefreshed)
+        assertEquals(1, rpc.calls.count { it.method == "projects.create" })
+    }
+
+    @Test
+    fun `missing project RPC keeps legacy session navigation available`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            projectTreeFailure = GatewayRpcError(-32601, "Method not found")
+        }
+        LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+
+        runCurrent()
+
+        assertTrue(cache.state.value.projects.available == false)
+        assertEquals(listOf("durable-a", "durable-b"), cache.state.value.sessions.keys.toList())
+    }
+
+    @Test
+    fun `stale project snapshot cannot cross a reconnect generation`() = runTest {
+        val cache = SessionCache()
+        val staleProjectTree = CompletableDeferred<JsonElement>()
+        val oldRpc = FakeRpc().apply { projectTreeResponse = staleProjectTree }
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        val currentRpc = FakeRpc().apply { projectTreeResult = PROJECT_TREE_RECONNECTED }
+        clients.value = currentRpc
+        runCurrent()
+        staleProjectTree.complete(json(PROJECT_TREE))
+        runCurrent()
+
+        assertEquals(listOf("project-reconnected"), cache.state.value.projects.projects.keys.toList())
+        assertTrue(currentRpc.calls.any { it.method == "projects.tree" })
+    }
+
+    @Test
+    fun `newer catalog refresh wins over an in flight project detail snapshot`() = runTest {
+        val cache = SessionCache()
+        val projectDetails = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { projectDetailsResponse = projectDetails }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        backgroundScope.launch { repository.openProject("project-mobile") }
+        runCurrent()
+        rpc.projectTreeResult = PROJECT_TREE_RECONNECTED
+        backgroundScope.launch { repository.refreshProjects() }
+        runCurrent()
+        projectDetails.complete(json(PROJECT_DETAILS))
+        runCurrent()
+
+        assertEquals(listOf("project-reconnected"), cache.state.value.projects.projects.keys.toList())
+        assertTrue("project-mobile" !in cache.state.value.projects.memberships)
+    }
+
+    @Test
     fun `durable ids resume once and runtime ids drive activate history submit and interrupt`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -680,11 +820,12 @@ class GatewaySessionRepositoryTest {
         ) { CLOCK }
         runCurrent()
 
-        val id = repository.createSession()
+        val id = repository.createSession("/work/hermes-mobile")
         repository.submit(id, "first prompt")
 
         assertEquals("durable-created", id)
         assertEquals("runtime-created", rpc.call("prompt.submit").params.string("session_id"))
+        assertEquals("/work/hermes-mobile", rpc.call("session.create").params.string("cwd"))
         assertEquals("New session", cache.session(id)?.title)
     }
 
@@ -1389,6 +1530,12 @@ class GatewaySessionRepositoryTest {
         var historyResult = """{"messages":[],"count":0}"""
         var historyResponse: CompletableDeferred<JsonElement>? = null
         var sessionListResult = SESSION_LIST
+        var projectTreeResult = PROJECT_TREE
+        var projectDetailsResult = PROJECT_DETAILS
+        var projectCreateResult = PROJECT_CREATE
+        var projectTreeFailure: Throwable? = null
+        var projectTreeResponse: CompletableDeferred<JsonElement>? = null
+        var projectDetailsResponse: CompletableDeferred<JsonElement>? = null
         var promptResponse: CompletableDeferred<JsonElement>? = null
         var eventOverflowed = false
 
@@ -1396,6 +1543,12 @@ class GatewaySessionRepositoryTest {
             calls += RpcCall(method, params)
             return when (method) {
                 "session.list" -> json(sessionListResult)
+                "projects.tree" -> {
+                    projectTreeFailure?.let { throw it }
+                    projectTreeResponse?.await() ?: json(projectTreeResult)
+                }
+                "projects.project_sessions" -> projectDetailsResponse?.await() ?: json(projectDetailsResult)
+                "projects.create" -> json(projectCreateResult)
                 "session.resume" -> {
                     if (resumeFailures > 0) {
                         resumeFailures--
@@ -1445,6 +1598,18 @@ class GatewaySessionRepositoryTest {
             {"id":"durable-a","title":"Remote work","preview":"latest","started_at":1700000123.456,"message_count":7,"source":"desktop"},
             {"id":"durable-b","title":"Other","preview":"","started_at":1700000456.789,"message_count":0,"source":""}
         ]}"""
+        const val PROJECT_TREE = """{"projects":[
+            {"id":"__no_project__","label":"Home","path":null,"isAuto":false,"isNoProject":true,"sessionCount":1,"lastActive":1700000200,"repos":[],"previewSessions":[{"id":"home-a","title":"Home preview","preview":"","last_active":1700000200}]},
+            {"id":"project-mobile","label":"Hermes mobile","path":"/work/hermes-mobile","isAuto":false,"isNoProject":false,"sessionCount":2,"lastActive":1700000300,"repos":[],"previewSessions":[{"id":"durable-a","title":"Project preview","preview":"latest","last_active":1700000300}]}
+        ],"active_id":"project-mobile","scoped_session_ids":["home-a","durable-a","durable-b"]}"""
+        const val PROJECT_DETAILS = """{"project":{"id":"project-mobile","label":"Hermes mobile","path":"/work/hermes-mobile","isAuto":false,"isNoProject":false,"sessionCount":2,"lastActive":1700000400,"previewSessions":[],"repos":[{"id":"/work/hermes-mobile","label":"hermes-mobile","path":"/work/hermes-mobile","sessionCount":2,"groups":[{"id":"main","label":"main","path":"/work/hermes-mobile","sessions":[
+            {"id":"durable-a","title":"Project detail A","preview":"a","last_active":1700000400,"message_count":4},
+            {"id":"durable-b","title":"Project detail B","preview":"b","last_active":1700000300,"message_count":3}
+        ]}]}]}}"""
+        const val PROJECT_CREATE = """{"project":{"id":"project-created","name":"Demo","primary_path":"/srv/demo"}}"""
+        const val PROJECT_TREE_RECONNECTED = """{"projects":[
+            {"id":"project-reconnected","label":"Reconnected","path":"/work/current","isAuto":false,"isNoProject":false,"sessionCount":0,"lastActive":1700000500,"repos":[],"previewSessions":[]}
+        ],"active_id":"project-reconnected","scoped_session_ids":[]}"""
         const val RESUME_A = """{"session_id":"runtime-a","resumed":"durable-a","message_count":7,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},"inflight":null,"running":false,"session_key":"durable-a","started_at":1700001000.125,"status":"idle"}"""
         const val RESUME_EMPTY_INFLIGHT = """{"session_id":"runtime-a","resumed":"durable-a","message_count":7,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},"inflight":{},"running":false,"session_key":"durable-a","started_at":1700001000.125,"status":"idle"}"""
         const val RESUME_RUNNING = """{"session_id":"runtime-a","resumed":"durable-a","message_count":8,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},"inflight":{"user":"current prompt","assistant":"partial answer","streaming":true},"running":true,"turn_started_at":1700001001.5,"session_key":"durable-a","started_at":1700001000.125,"status":"streaming"}"""

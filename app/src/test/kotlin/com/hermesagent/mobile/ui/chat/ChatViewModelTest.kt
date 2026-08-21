@@ -4,7 +4,11 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
 import com.hermesagent.mobile.data.gateway.SessionRehome
+import com.hermesagent.mobile.data.prefs.SidebarGrouping
+import com.hermesagent.mobile.data.prefs.SidebarViewStore
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -12,6 +16,7 @@ import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.UserTurn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -32,6 +37,7 @@ class ChatViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var cache: SessionCache
     private lateinit var repository: FakeRepository
+    private lateinit var sidebarStore: FakeSidebarViewStore
     private lateinit var viewModel: ChatViewModel
 
     @Before
@@ -41,7 +47,8 @@ class ChatViewModelTest {
             upsertSessions(listOf(summary("session-a", 2_000), summary("session-b", 1_000)))
         }
         repository = FakeRepository(cache)
-        viewModel = ChatViewModel(cache, repository, clock = { CLOCK })
+        sidebarStore = FakeSidebarViewStore()
+        viewModel = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK })
     }
 
     @After
@@ -178,6 +185,167 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `project drill in filters authoritative membership without rerouting the active session`() = runTest(dispatcher) {
+        cache.replaceProjectOverview(
+            rows = listOf(
+                ProjectSummary(
+                    id = "project-a",
+                    label = "Project A",
+                    path = "/work/a",
+                    sessionCount = 1,
+                    previewSessions = listOf(summary("session-a", 2_000)),
+                ),
+                ProjectSummary(
+                    id = "project-b",
+                    label = "Project B",
+                    path = "/work/b",
+                    sessionCount = 1,
+                    previewSessions = listOf(summary("session-b", 1_000)),
+                ),
+            ),
+            activeProjectId = "project-a",
+        )
+        repository.projectSessions["project-b"] = listOf(summary("session-b", 1_000))
+        collectState()
+        runCurrent()
+
+        viewModel.selectProject("project-b")
+        runCurrent()
+
+        assertEquals(listOf("project-b"), repository.openedProjects)
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+        assertEquals(
+            listOf("session-b"),
+            viewModel.uiState.value.sessionRows.filterIsInstance<com.hermesagent.mobile.data.session.SessionListRow.Row>()
+                .map { it.session.id },
+        )
+
+        viewModel.createSession()
+        runCurrent()
+        assertEquals("/work/b", repository.createdWorkspace)
+    }
+
+    @Test
+    fun `grouping choice persists and updated view exits project scope`() = runTest(dispatcher) {
+        val project = ProjectSummary("project-a", "Project A", "/work/a", sessionCount = 0)
+        cache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
+        repository.projectSessions[project.id] = emptyList()
+        collectState()
+        runCurrent()
+
+        viewModel.setSidebarGrouping(SidebarGrouping.Project)
+        viewModel.selectProject(project.id)
+        runCurrent()
+        assertEquals(project.id, viewModel.uiState.value.selectedProject?.id)
+
+        viewModel.setSidebarGrouping(SidebarGrouping.Date)
+        runCurrent()
+
+        assertEquals(SidebarGrouping.Date, viewModel.uiState.value.sidebarGrouping)
+        assertEquals(null, viewModel.uiState.value.selectedProject)
+        assertEquals(listOf(SidebarGrouping.Project, SidebarGrouping.Date), sidebarStore.saved)
+    }
+
+    @Test
+    fun `saved project grouping is restored into navigation state`() = runTest(dispatcher) {
+        val restoredStore = FakeSidebarViewStore(SidebarGrouping.Project)
+        val subject = ChatViewModel(cache, repository, restoredStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        assertEquals(SidebarGrouping.Project, subject.uiState.value.sidebarGrouping)
+    }
+
+    @Test
+    fun `delayed restore cannot overwrite a newer grouping choice`() = runTest(dispatcher) {
+        val delayedStore = DelayedSidebarViewStore()
+        val subject = ChatViewModel(cache, repository, delayedStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setSidebarGrouping(SidebarGrouping.Project)
+        runCurrent()
+        delayedStore.emitRestored(SidebarGrouping.Date)
+        runCurrent()
+
+        assertEquals(SidebarGrouping.Project, subject.uiState.value.sidebarGrouping)
+    }
+
+    @Test
+    fun `authoritative refresh exits a project that no longer exists`() = runTest(dispatcher) {
+        val project = ProjectSummary(
+            id = "project-a",
+            label = "Project A",
+            path = "/work/a",
+            sessionCount = 1,
+            previewSessions = listOf(summary("session-a", 2_000)),
+        )
+        cache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
+        repository.projectSessions[project.id] = listOf(summary("session-a", 2_000))
+        collectState()
+        runCurrent()
+        viewModel.selectProject(project.id)
+        runCurrent()
+
+        cache.replaceProjectOverview(emptyList(), activeProjectId = null)
+        runCurrent()
+
+        assertEquals(null, viewModel.uiState.value.selectedProject)
+        assertEquals("That project is no longer available.", viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `creating a project selects the refreshed backend project`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.createProject("Demo", "/srv/demo")
+        runCurrent()
+
+        assertEquals(listOf("Demo" to "/srv/demo"), repository.createdProjects)
+        assertEquals("project-created", viewModel.uiState.value.selectedProject?.id)
+        assertEquals(listOf("project-created"), repository.openedProjects)
+    }
+
+    @Test
+    fun `created project with a failed catalog refresh does not invite a duplicate retry`() = runTest(dispatcher) {
+        repository.catalogRefreshedAfterCreate = false
+        collectState()
+        runCurrent()
+
+        viewModel.createProject("Demo", "/srv/demo")
+        runCurrent()
+
+        assertEquals(null, viewModel.uiState.value.selectedProject)
+        assertEquals(
+            "The project was created, but Projects could not be refreshed. Reopen Sessions to refresh.",
+            viewModel.uiState.value.notice,
+        )
+    }
+
+    @Test
+    fun `project create completion does not override newer navigation`() = runTest(dispatcher) {
+        val first = ProjectSummary("project-a", "A", "/work/a", sessionCount = 0)
+        val second = ProjectSummary("project-b", "B", "/work/b", sessionCount = 0)
+        cache.replaceProjectOverview(listOf(first, second), activeProjectId = first.id)
+        repository.projectSessions[first.id] = emptyList()
+        repository.projectSessions[second.id] = emptyList()
+        repository.createProjectGate = CompletableDeferred()
+        collectState()
+        runCurrent()
+
+        viewModel.createProject("Demo", "/srv/demo")
+        runCurrent()
+        viewModel.selectProject(second.id)
+        runCurrent()
+        repository.createProjectGate?.complete(Unit)
+        runCurrent()
+
+        assertEquals(second.id, viewModel.uiState.value.selectedProject?.id)
+        assertEquals(listOf(second.id), repository.openedProjects)
+    }
+
+    @Test
     fun `disconnected chat disables send and explains create next action`() = runTest(dispatcher) {
         collectState()
         repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
@@ -234,7 +402,13 @@ class ChatViewModelTest {
         val opened = mutableListOf<String>()
         val submitted = mutableListOf<Pair<String, String>>()
         val interrupted = mutableListOf<String>()
+        val openedProjects = mutableListOf<String>()
+        val createdProjects = mutableListOf<Pair<String, String>>()
+        val projectSessions = mutableMapOf<String, List<SessionSummary>>()
+        var createProjectGate: CompletableDeferred<Unit>? = null
+        var catalogRefreshedAfterCreate = true
         var created = 0
+        var createdWorkspace: String? = null
         var failSubmit = false
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
 
@@ -246,13 +420,37 @@ class ChatViewModelTest {
 
         override suspend fun refreshSessions() = Unit
 
+        override suspend fun openProject(projectId: String) {
+            openedProjects += projectId
+            val project = requireNotNull(cache.state.value.projects.projects[projectId])
+            cache.replaceProjectDetails(project, projectSessions[projectId].orEmpty())
+        }
+
+        override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
+            createdProjects += name to folderPath
+            createProjectGate?.await()
+            val project = ProjectSummary(
+                id = "project-created",
+                label = name,
+                path = folderPath,
+                sessionCount = 0,
+            )
+            if (catalogRefreshedAfterCreate) {
+                val projects = cache.state.value.projects.projects.values.filterNot(ProjectSummary::isHome) + project
+                cache.replaceProjectOverview(projects, activeProjectId = project.id)
+            }
+            projectSessions[project.id] = emptyList()
+            return ProjectCreateOutcome(project.id, catalogRefreshedAfterCreate)
+        }
+
         override suspend fun openSession(durableId: String): String {
             opened += durableId
             return durableId
         }
 
-        override suspend fun createSession(): String {
+        override suspend fun createSession(workspacePath: String?): String {
             created++
+            createdWorkspace = workspacePath
             val id = "created-$created"
             cache.upsertSession(summary(id, CLOCK).copy(title = "New session"))
             return id
@@ -268,6 +466,28 @@ class ChatViewModelTest {
         override suspend fun interrupt(durableId: String) {
             interrupted += durableId
         }
+    }
+
+    private class FakeSidebarViewStore(initial: SidebarGrouping = SidebarGrouping.Date) : SidebarViewStore {
+        private val state = MutableStateFlow(initial)
+        override val sidebarGrouping = state
+        val saved = mutableListOf<SidebarGrouping>()
+
+        override suspend fun saveSidebarGrouping(grouping: SidebarGrouping) {
+            saved += grouping
+            state.value = grouping
+        }
+    }
+
+    private class DelayedSidebarViewStore : SidebarViewStore {
+        private val restored = MutableSharedFlow<SidebarGrouping>()
+        override val sidebarGrouping = restored
+
+        suspend fun emitRestored(grouping: SidebarGrouping) {
+            restored.emit(grouping)
+        }
+
+        override suspend fun saveSidebarGrouping(grouping: SidebarGrouping) = Unit
     }
 
     private companion object {
