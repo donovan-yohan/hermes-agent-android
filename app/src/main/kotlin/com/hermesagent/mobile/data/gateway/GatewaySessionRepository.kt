@@ -486,8 +486,23 @@ internal class LiveGatewaySessionRepository(
                 true
             }
 
-            "reasoning.delta", "reasoning.available", "thinking.delta" -> {
+            "reasoning.delta", "reasoning.available" -> {
                 applyReasoning(event.type, durableId, runtimeId, payload)
+                markRuntimeLive(runtimeId)
+                ephemeralSessions.remove(durableId)
+                setStatus(durableId, SessionStatus.Working)
+                false
+            }
+
+            "thinking.delta" -> {
+                applyStatusUpdate(
+                    durableId,
+                    runtimeId,
+                    buildJsonObject {
+                        put("kind", JsonPrimitive("thinking"))
+                        put("text", JsonPrimitive(payload.deltaText()))
+                    },
+                )
                 markRuntimeLive(runtimeId)
                 ephemeralSessions.remove(durableId)
                 setStatus(durableId, SessionStatus.Working)
@@ -1087,18 +1102,19 @@ private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Lon
         when (message.string("role")) {
             "user" -> add(UserTurn(id, message.answerText(), time))
             "assistant" -> {
-                message.reasoningText().takeIf(String::isNotBlank)?.let { reasoning ->
+                val reasoning = message.reasoningText()
+                reasoning.takeIf(String::isNotBlank)?.let {
                     add(
                         ReasoningActivity(
                             id = "$id-reasoning",
-                            text = reasoning.safePayloadText().orEmpty(),
+                            text = it.safePayloadText().orEmpty(),
                             state = ToolState.Done,
                             elapsedSeconds = message.durationSeconds(),
                         ),
                     )
                 }
                 val answer = message.answerText()
-                if (answer.isNotBlank() || message.reasoningText().isBlank()) {
+                if (answer.isNotBlank()) {
                     add(AssistantTurn(id, answer, time))
                 }
             }
@@ -1171,7 +1187,8 @@ private fun JsonObject.contentText(): String = when (val content = this["content
 
 private fun JsonObject.reasoningText(): String {
     string("reasoning")?.let { return it }
-    string("thinking")?.let { return it }
+    string("reasoning_content")?.let { return it }
+    string("reasoning_details")?.let { return it }
     val content = this["content"] as? JsonArray ?: return ""
     return content.mapNotNull { item ->
         val part = item as? JsonObject ?: return@mapNotNull null
@@ -1474,6 +1491,7 @@ private val LIVE_RUNTIME_EVENT_TYPES = setOf(
     "message.complete",
     "reasoning.delta",
     "reasoning.available",
+    "thinking.delta",
     "tool.start",
     "tool.progress",
     "tool.complete",

@@ -101,6 +101,45 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `history reads Desktop reasoning keys without adding blank prose`() {
+        val history = parseHistory(
+            json(
+                """{"messages":[
+                  {"id":"content","role":"assistant","reasoning_content":"content reasoning","text":""},
+                  {"id":"details","role":"assistant","reasoning_details":"details reasoning","text":""}
+                ]}""",
+            ),
+            runtimeId = "runtime-reasoning-keys",
+            nowMillis = CLOCK,
+        )
+
+        assertEquals(listOf("content-reasoning", "details-reasoning"), history.map { it.id })
+        assertEquals(listOf("content reasoning", "details reasoning"), history.filterIsInstance<ReasoningActivity>().map { it.text })
+        assertTrue(history.none { it is AssistantTurn })
+    }
+
+    @Test
+    fun `thinking delta updates provider wait progress without entering reasoning`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit("thinking.delta", "runtime-a", """{"text":"(ᵔᴥᵔ) Consulting…"}""")
+        runCurrent()
+
+        assertEquals("(ᵔᴥᵔ) Consulting…", cache.session("durable-a")?.progress?.text)
+        assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+        assertTrue(cache.transcript("durable-a").none { it is ReasoningActivity })
+    }
+
+    @Test
     fun `live reasoning and tool lifecycle retain measured payloads`() = runTest {
         var now = CLOCK
         val cache = SessionCache()

@@ -190,6 +190,14 @@ class ChatJourneyTest {
                     resultText = """{"output":"BUILD SUCCESSFUL","exit_code":0}""",
                 ),
                 ToolActivity(
+                    id = "terminal-multi",
+                    label = "terminal",
+                    detail = "./gradlew test",
+                    state = ToolState.Done,
+                    toolName = "terminal",
+                    argsText = """{"command":"./gradlew test\n./gradlew lint"}""",
+                ),
+                ToolActivity(
                     id = "patch",
                     label = "patch",
                     detail = "A.kt",
@@ -207,10 +215,36 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performScrollTo().performClick()
         compose.onNodeWithText("BUILD SUCCESSFUL").assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performClick()
+        compose.onNodeWithContentDescription("Tool Ran ./gradlew test + 1 command, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Patched file, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("A.kt").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("+1  −1").performScrollTo().assertIsDisplayed()
         assertEquals(0, compose.countWithText("done"))
+    }
+
+    @Test
+    fun `inline diff arriving on completion opens its patch body`() {
+        launch()
+        val running = ToolActivity(
+            id = "live-patch",
+            label = "patch",
+            detail = "",
+            state = ToolState.Running,
+            toolName = "patch",
+        )
+        cache.setTranscript("live-a", listOf(running))
+        compose.waitForIdle()
+
+        cache.putEntry(
+            "live-a",
+            running.copy(
+                state = ToolState.Done,
+                inlineDiff = "--- a/A.kt\n+++ b/A.kt\n-old\n+new",
+            ),
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("+new").performScrollTo().assertIsDisplayed()
     }
 
     @Test

@@ -253,7 +253,9 @@ private fun ToolRow(activity: ToolActivity) {
 
     val payloadAvailable = activity.inlineDiff != null || activity.argsText != null ||
         activity.resultText != null || activity.detail.isNotBlank()
-    var expanded by rememberSaveable(activity.id) { mutableStateOf(activity.inlineDiff != null) }
+    var expanded by rememberSaveable(activity.id, activity.inlineDiff != null) {
+        mutableStateOf(activity.inlineDiff != null)
+    }
     val seconds = liveElapsedSeconds(activity.startedAtMillis, activity.elapsedSeconds, activity.state == ToolState.Running)
     val title = activity.displayTitle()
 
@@ -279,7 +281,7 @@ private fun ToolRow(activity: ToolActivity) {
             icon = activity.icon(),
             expanded = expanded,
             state = activity.state,
-            onToggle = { if (payloadAvailable) expanded = !expanded },
+            onToggle = { expanded = !expanded },
             contentDescription = "Tool $title, $stateLabel",
             enabled = payloadAvailable,
         )
@@ -527,7 +529,12 @@ private fun ToolActivity.displayTitle(): String {
     if (command != null && normalized.contains("terminal")) {
         val commands = command.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
         val first = commands.firstOrNull()?.removePrefix("$ ")?.take(72).orEmpty()
-        val suffix = if (commands.size > 1) " + ${commands.size - 1} commands" else ""
+        val additional = commands.size - 1
+        val suffix = when {
+            additional == 1 -> " + 1 command"
+            additional > 1 -> " + $additional commands"
+            else -> ""
+        }
         return "${if (state == ToolState.Running) "Running" else "Ran"} $first$suffix".trim()
     }
     val path = argsText.jsonStringField("path")
