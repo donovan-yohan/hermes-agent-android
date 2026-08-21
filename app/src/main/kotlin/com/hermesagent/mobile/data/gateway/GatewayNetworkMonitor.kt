@@ -4,10 +4,10 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 
-/** Tears down connection-scoped state when Android moves to another network. */
+/** Reports default-network loss and recovery to the process-scoped connection owner. */
 internal class GatewayNetworkMonitor(
     context: Context,
-    private val onChanged: () -> Unit,
+    private val onAvailabilityChanged: (Boolean) -> Unit,
 ) {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private var current: Network? = null
@@ -16,13 +16,13 @@ internal class GatewayNetworkMonitor(
         override fun onAvailable(network: Network) {
             val previous = current
             current = network
-            if (previous != null && previous != network) onChanged()
+            if (previous == null || previous != network) onAvailabilityChanged(true)
         }
 
         override fun onLost(network: Network) {
             if (current == network) {
                 current = null
-                onChanged()
+                onAvailabilityChanged(false)
             }
         }
     }

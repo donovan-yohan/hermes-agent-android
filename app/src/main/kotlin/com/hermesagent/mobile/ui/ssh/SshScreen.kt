@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,16 +27,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.ssh.AuthMethod
@@ -50,6 +43,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.Hairline
+import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.LogView
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.ScaffoldRow
@@ -420,73 +414,6 @@ private fun HostKeyReview(
             PrimaryButton("Accept this key", onAccept)
             TextButton("Not now", onDismiss, color = tokens.textTertiary)
         }
-    }
-}
-
-/**
- * A labelled text entry whose *editor* is the touch target.
- *
- * The shape this replaces drew a 48 dp bordered [Box] and put a bare
- * [BasicTextField] inside it. That looks right and measures wrong: the box is
- * decoration with no semantics, so the focusable, TalkBack-reachable,
- * tap-to-focus node was the text line itself — about 22 dp, less than half the
- * Android floor, on a screen where two of the four fields are credentials.
- *
- * Handing the border and the padding to `decorationBox` inverts it. The chrome
- * becomes the field's own decoration, so the node that owns the minimum height
- * is the node a finger and an accessibility service both address, and the
- * height is stated once — `HermesTheme.spacing.touchTarget` — rather than on a
- * wrapper that only looks like the target. `CenterStart` is what keeps typed
- * and placeholder text on the same optical line once the box is taller than a
- * line of body text.
- */
-@Composable
-private fun LabelledField(
-    label: String,
-    value: String,
-    placeholder: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    secret: Boolean = false,
-) {
-    val tokens = HermesTheme.tokens
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SectionLabel(label)
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
-            cursorBrush = SolidColor(tokens.accent),
-            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = if (secret) KeyboardType.Password else keyboardType,
-                // A host name is not a sentence: an IME that capitalises or
-                // autocorrects it produces a destination that cannot resolve.
-                capitalization = KeyboardCapitalization.None,
-                autoCorrectEnabled = false,
-                imeAction = ImeAction.Next,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HermesTheme.spacing.touchTarget)
-                .semantics { contentDescription = label },
-            decorationBox = { editor ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (value.isEmpty() && placeholder.isNotEmpty()) {
-                        Text(placeholder, style = HermesTheme.type.body, color = tokens.textQuaternary)
-                    }
-                    editor()
-                }
-            },
-        )
     }
 }
 

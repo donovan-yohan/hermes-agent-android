@@ -1,5 +1,6 @@
 package com.hermesagent.mobile
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -11,19 +12,23 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.ssh.KeyDocument
 import com.hermesagent.mobile.data.ssh.KeyImportGate
 import com.hermesagent.mobile.data.ssh.KeyImportProblem
 import com.hermesagent.mobile.data.ssh.readKeyDocument
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
+import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
@@ -46,6 +51,14 @@ class MainActivity : ComponentActivity() {
     private val sshViewModel: SshViewModel by viewModels {
         SshViewModel.factory(preferences, app.gatewayConnection)
     }
+    private val gatewaySettingsViewModel: GatewaySettingsViewModel by viewModels {
+        GatewaySettingsViewModel.factory(preferences, app.gatewayConnection)
+    }
+    private val gatewayBrowser = GatewayBrowserLauncher { url ->
+        withContext(Dispatchers.Main.immediate) {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+    }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
 
@@ -66,11 +79,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+            val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
 
             HermesApp(
                 chatState = chatState,
+                gatewayState = gatewayState,
                 sshState = sshState,
                 appearance = appearance,
                 chatActions = ChatActions(
@@ -84,6 +99,14 @@ class MainActivity : ComponentActivity() {
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },
                     onSelectMode = { mode -> lifecycleScope.launch { preferences.setMode(mode) } },
+                ),
+                gatewayActions = GatewayActions(
+                    onModeChange = gatewaySettingsViewModel::setMode,
+                    onRemoteUrlChange = gatewaySettingsViewModel::setRemoteUrl,
+                    onProviderChange = gatewaySettingsViewModel::setProvider,
+                    onConnectRemote = { gatewaySettingsViewModel.connectRemote(gatewayBrowser) },
+                    onDisconnect = gatewaySettingsViewModel::disconnect,
+                    onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
                 ),
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,

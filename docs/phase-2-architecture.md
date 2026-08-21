@@ -8,15 +8,35 @@ inspected read-only; the checkout was neither modified nor fetched.
 
 | Area | Current behavior |
 |---|---|
+| Shared Gateway | Default route. Connects to one host-owned authenticated Gateway without SSH process ownership. Gated native PKCE, Keystore-encrypted tokens, bearer REST, a fresh single-use WebSocket ticket, and a JSON-RPC readiness request are required. |
 | SSH | sshj opens one verified connection using exactly the selected auth method. First use stops before auth; a changed key has no accept path. |
 | Remote lifecycle | Linux/architecture gate, login-shell Hermes discovery, executable and capability checks, descriptor-validated stdin-only token upload, detached loopback `hermes serve`, exact readiness marker, served-dashboard token adoption, the shared ownership-lock schema, and positive argv/death proof before cleanup. |
 | Forward | The listener is bound and held on `127.0.0.1:0` before sshj receives it. It closes with the connection. |
 | Gateway readiness | Authenticated `/api/health` and `/api/ssh/ownership` use the spawn token to prove the spawned nonce and protocol version `1`; a bounded public-root fetch then adopts the token actually served by that still-owned child for the final lock and WebSocket, followed by an authenticated `session.list` round trip. HTTP 200 alone is not Connected. |
 | Sessions | Live list, create, resume/activate, history, send, stream, tools, status, error, and interrupt. Durable navigation ids and runtime ids are separate. |
-| App graph | `HermesApplication` owns the process-scoped connection, repository, network monitor, and backend-authoritative `SessionCache`. Production startup seeds nothing. |
-| UI | Gateway configuration includes destination, optional remote Hermes profile, one selected auth method, host-key review, concise status/connect controls, and a secondary SSH diagnostic. Chat reports the same short connection states. |
+| App graph | `HermesApplication` owns the process-scoped connection, remote authenticator/token store, repository, network monitor, and backend-authoritative `SessionCache`. Production startup seeds nothing. |
+| UI | Gateways defaults to Shared Gateway URL/provider and browser sign-in. Managed SSH is a separate route with destination, optional remote Hermes profile, one selected auth method, host-key review, concise status/connect controls, and a secondary SSH diagnostic. Chat reports the same short connection states. |
 
 ## Connection sequence
+
+### Shared Gateway (default)
+
+1. Normalize the HTTPS base URL; reject cleartext HTTP, credentials, query, and fragment.
+2. Require a gated `/api/status` advertising `native_pkce`.
+3. Load the endpoint-scoped token envelope from Android Keystore-encrypted,
+   no-backup storage. Refresh 60 seconds before expiry.
+4. When sign-in is needed, bind `127.0.0.1:0`, generate PKCE and CSRF state,
+   then open the system browser. Accept one bounded callback, validate state,
+   exchange the code, and close the listener.
+5. Request a fresh single-use ticket from `/api/auth/ws-ticket` with the bearer
+   access token. One rejected token gets one refresh/sign-in retry.
+6. Open `[/prefix]/api/ws?ticket=<ticket>` and require a correlated
+   `session.list` before publishing Connected.
+
+This route never starts, owns, or reaps `hermes serve`. See
+`docs/adr/0002-shared-remote-gateway.md` for the multi-client boundary.
+
+### Managed SSH
 
 1. Parse `user@host[:port]` into the canonical non-secret `HostProfile`.
 2. Open SSH and complete mandatory host-key verification before authentication.
@@ -63,11 +83,11 @@ or exception text.
 | Authority | Home | Invariant |
 |---|---|---|
 | Backend sessions/transcripts | `SessionCache` | Partial refreshes merge. Only an explicit tombstone removes a row. No-op upserts preserve state identity. |
-| SSH/process/forward/RPC | `GatewayConnectionManager` | One process-scoped active connection; close tears down every owned leg. |
+| Remote or SSH/process/forward/RPC | `GatewayConnectionManager` | One process-scoped active connection. Remote close ends only RPC; Managed SSH close tears down every positively-owned leg. |
 | Durable to runtime ids | `LiveGatewaySessionRepository` | Mapping is connection-scoped and cleared on reconnect. Runtime-only RPC methods never receive durable ids. |
 | Stream ownership | `LiveGatewaySessionRepository.submittedRuntime` | An event without `session_id` remains pinned to the runtime that submitted the turn, not the session currently visible. One app-submitted turn may be outstanding at a time because two interleaved unscoped streams cannot be assigned safely. |
 | Draft/search/navigation notice | `ChatViewModel` | UI-only; never written into backend cache. |
-| Host configuration | `HermesPreferences` | Host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. |
+| Connection configuration | `HermesPreferences` | Route, non-secret Remote URL/provider, or SSH host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. OAuth tokens are not DataStore values. |
 
 Rename and archive are absent from the product surface because this slice does
 not wire authoritative backend methods for them. Search is explicitly local

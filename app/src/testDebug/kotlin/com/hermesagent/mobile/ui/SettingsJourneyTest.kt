@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hermesagent.mobile.ui.chat.ChatUiState
+import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
@@ -93,10 +94,12 @@ class SettingsJourneyTest {
             SideEffect { backDispatcher = dispatcher }
             HermesApp(
                 chatState = ChatUiState(),
+                gatewayState = GatewaySettingsUiState(),
                 sshState = SshUiState(),
                 appearance = AppearanceSelection(),
                 chatActions = ChatActions(),
                 appearanceActions = AppearanceActions(),
+                gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
             )
         }

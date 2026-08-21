@@ -44,6 +44,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -71,6 +75,55 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         color = HermesTheme.tokens.textTertiary,
         modifier = modifier,
     )
+}
+
+/** One labelled, single-line settings field with the shared touch target and input policy. */
+@Composable
+fun LabelledField(
+    label: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    secret: Boolean = false,
+) {
+    val tokens = HermesTheme.tokens
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        SectionLabel(label)
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+            cursorBrush = SolidColor(tokens.accent),
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (secret) KeyboardType.Password else keyboardType,
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                imeAction = ImeAction.Next,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .semantics { contentDescription = label },
+            decorationBox = { editor ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (value.isEmpty() && placeholder.isNotEmpty()) {
+                        Text(placeholder, style = HermesTheme.type.body, color = tokens.textQuaternary)
+                    }
+                    editor()
+                }
+            },
+        )
+    }
 }
 
 /**

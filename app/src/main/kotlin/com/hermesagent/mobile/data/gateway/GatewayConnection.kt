@@ -14,12 +14,15 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +58,11 @@ internal sealed interface GatewayConnectResult {
     data object Connected : GatewayConnectResult
     data class HostKeyPending(val fingerprint: String, val keyType: String, val anchor: HostAnchor) : GatewayConnectResult
     data class HostKeyMismatch(val expected: String, val actual: String) : GatewayConnectResult
-    data class Failed(val kind: ProbeFailure?, val message: String) : GatewayConnectResult
+    data class Failed(
+        val kind: ProbeFailure?,
+        val message: String,
+        val retryable: Boolean = true,
+    ) : GatewayConnectResult
 }
 
 /** The process-scoped Gateway controls consumed by the SSH configuration UI. */
@@ -66,6 +73,17 @@ internal interface GatewayConnectionController {
         profile: HostProfile,
         credential: SshCredential,
     ): GatewayConnectResult
+
+    suspend fun connectRemote(
+        profile: RemoteGatewayProfile,
+        browser: GatewayBrowserLauncher,
+    ): GatewayConnectResult
+
+    /** Restores a saved shared Gateway without opening an interactive browser. */
+    suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult =
+        GatewayConnectResult.Failed(null, "Reconnect to this Gateway from settings.")
+
+    suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile)
 
     suspend fun disconnect()
 }
@@ -310,6 +328,9 @@ internal class GatewayConnectionManager(
     private val rpcOpen: suspend (Int, ByteArray) -> GatewayRpcClient = { port, token ->
         OkHttpGatewayRpcClient.connect(http, port, token)
     },
+    private val remoteConnector: RemoteGatewayConnector? = null,
+    private val reconnectWait: suspend (Long) -> Unit = { millis -> delay(millis) },
+    private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : Closeable, GatewayConnectionController {
     private val mutex = Mutex()
     private val _state = MutableStateFlow(GatewayConnectionState())
@@ -317,6 +338,14 @@ internal class GatewayConnectionManager(
     private var active: ActiveConnection? = null
     private val connectIntent = AtomicReference(ConnectIntent(generation = 0, job = null))
     private var rpcMonitor: Job? = null
+    private var reconnectJob: Job? = null
+    private var desiredRemoteProfile: RemoteGatewayProfile? = null
+    private var remoteConnectedAtMillis: Long? = null
+    private var remoteReconnectAttempts = 0
+    private var networkAvailable = true
+    private val networkAvailableSignal = AtomicBoolean(true)
+    private var reconnectGeneration = 0L
+    private val networkEventGeneration = AtomicLong()
 
     override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
     val client: StateFlow<GatewayRpcClient?> = _client.asStateFlow()
@@ -331,6 +360,7 @@ internal class GatewayConnectionManager(
             try {
                 mutex.withLock {
                     if (!isCurrentConnectIntent(intent)) throw CancellationException()
+                    clearRemoteRouteLocked()
                     closeActive()
                     _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
                     when (val opened = sshOpen(profile, credential)) {
@@ -369,6 +399,98 @@ internal class GatewayConnectionManager(
         }
     }
 
+    override suspend fun connectRemote(
+        profile: RemoteGatewayProfile,
+        browser: GatewayBrowserLauncher,
+    ): GatewayConnectResult {
+        val intent = beginConnectIntent(currentCoroutineContext()[Job])
+        return openRemote(profile, browser, intent) {
+            desiredRemoteProfile = profile
+            remoteReconnectAttempts = 0
+            cancelReconnectLocked()
+            RemoteOpenAdmission(reconnectGeneration, networkEventGeneration.get())
+        }
+    }
+
+    override suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult {
+        val intent = beginConnectIntent(currentCoroutineContext()[Job])
+        return openRemote(profile, browser = null, intent) {
+            desiredRemoteProfile = profile
+            cancelReconnectLocked()
+            RemoteOpenAdmission(reconnectGeneration, networkEventGeneration.get())
+        }
+    }
+
+    private suspend fun openRemote(
+        profile: RemoteGatewayProfile,
+        browser: GatewayBrowserLauncher?,
+        intent: ConnectIntent,
+        prepareAdmissionLocked: () -> RemoteOpenAdmission,
+    ): GatewayConnectResult {
+        var admission: RemoteOpenAdmission? = null
+        return try {
+            try {
+                admission = mutex.withLock {
+                    if (!isCurrentConnectIntent(intent)) throw CancellationException()
+                    prepareAdmissionLocked()
+                }
+                mutex.withLock {
+                    requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission))
+                    val connector = remoteConnector
+                        ?: return@withLock fail(null, "Remote Gateway connections are unavailable in this build.")
+                    closeActive()
+                    _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                    val rpc = connector.open(profile, browser)
+                    try {
+                        // The authenticated RPC round trip, not merely a WS
+                        // upgrade, is the readiness boundary.
+                        rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
+                        requireRemoteOpenCurrentLocked(intent, profile, admission)
+                        active = ActiveConnection.Remote(rpc, profile)
+                        remoteConnectedAtMillis = nowMillis()
+                        _client.value = rpc
+                        _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+                        watchRpc(rpc)
+                        GatewayConnectResult.Connected
+                    } catch (failure: Throwable) {
+                        runCatching { rpc.close() }
+                        throw failure
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable) {
+                    mutex.withLock {
+                        if (releaseConnectIntent(intent)) {
+                            closeActive()
+                            _state.value = if (networkAvailableSignal.get()) {
+                                GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+                            } else {
+                                GatewayConnectionState(
+                                    GatewayConnectionStatus.NeedsAttention,
+                                    "Waiting for a network connection.",
+                                )
+                            }
+                        }
+                    }
+                }
+                throw cancelled
+            } catch (failure: Throwable) {
+                val failedAdmission = admission ?: throw failure
+                mutex.withLock {
+                    requireRemoteOpenCurrentLocked(intent, profile, failedAdmission)
+                    closeActive()
+                    fail(null, safeConnectionMessage(failure), retryable = failure !is GatewayAuthException)
+                }
+            }
+        } finally {
+            releaseConnectIntent(intent)
+        }
+    }
+
+    override suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile) {
+        remoteConnector?.signOut(profile)
+    }
+
     private suspend fun finishConnect(
         transport: SshTransport,
         config: RemoteHermesConfig,
@@ -396,7 +518,7 @@ internal class GatewayConnectionManager(
             // JSON-RPC round trip proves the leg the app will actually use.
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
 
-            active = ActiveConnection(transport, backend, forward, rpc)
+            active = ActiveConnection.Ssh(transport, backend, forward, rpc)
             _client.value = rpc
             _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
             watchRpc(rpc)
@@ -420,17 +542,50 @@ internal class GatewayConnectionManager(
     override suspend fun disconnect() {
         invalidateConnectIntent()
         mutex.withLock {
+            clearRemoteRouteLocked()
             closeActive()
             _state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
         }
     }
 
+    fun networkAvailabilityChanged(available: Boolean) {
+        networkAvailableSignal.set(available)
+        val eventGeneration = networkEventGeneration.incrementAndGet()
+        invalidateConnectIntent()
+        scope.launch {
+            mutex.withLock {
+                if (networkEventGeneration.get() != eventGeneration) return@withLock
+                networkAvailable = available
+                val profile = desiredRemoteProfile
+                if (!available) {
+                    cancelReconnectLocked()
+                    if (active == null && _state.value.status != GatewayConnectionStatus.Connecting && profile == null) {
+                        return@withLock
+                    }
+                    _state.value = GatewayConnectionState(
+                        GatewayConnectionStatus.NeedsAttention,
+                        "Waiting for a network connection.",
+                    )
+                    closeActive()
+                    return@withLock
+                }
+                if (profile == null) return@withLock
+                closeActive()
+                remoteReconnectAttempts = 1
+                _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                scheduleRemoteReconnectLocked(profile)
+            }
+        }
+    }
+
+    /** Compatibility seam for callers that cannot distinguish loss from recovery. */
     fun networkChanged() {
         val invalidatedIntent = invalidateConnectIntent()
         scope.launch {
             mutex.withLock {
                 if (connectIntent.get().generation != invalidatedIntent.generation) return@withLock
                 if (active == null && _state.value.status != GatewayConnectionStatus.Connecting) return@withLock
+                cancelReconnectLocked()
                 _state.value = GatewayConnectionState(
                     GatewayConnectionStatus.NeedsAttention,
                     "The network changed. Reconnect to the Gateway.",
@@ -448,9 +603,14 @@ internal class GatewayConnectionManager(
         _client.value = null
         if (closing != null) {
             runCatching { closing.rpc.close() }
-            runCatching { closing.forward.close() }
-            runCatching { closing.backend.shutdown() }
-            runCatching { closing.transport.close() }
+            when (closing) {
+                is ActiveConnection.Remote -> Unit
+                is ActiveConnection.Ssh -> {
+                    runCatching { closing.forward.close() }
+                    runCatching { closing.backend.shutdown() }
+                    runCatching { closing.transport.close() }
+                }
+            }
         }
     }
 
@@ -460,23 +620,166 @@ internal class GatewayConnectionManager(
             rpc.closed.first()
             mutex.withLock {
                 if (active?.rpc !== rpc) return@withLock
-                _state.value = GatewayConnectionState(
-                    GatewayConnectionStatus.NeedsAttention,
-                    "The Gateway connection closed. Reconnect to continue.",
-                )
+                val reconnect = (active as? ActiveConnection.Remote)?.profile
+                    ?.takeIf { desiredRemoteProfile == it }
+                val stableConnection = remoteConnectedAtMillis
+                    ?.let { connectedAt -> nowMillis() - connectedAt >= STABLE_REMOTE_CONNECTION_MILLIS }
+                    ?: false
+                if (stableConnection) remoteReconnectAttempts = 0
+                if (reconnect == null) {
+                    _state.value = GatewayConnectionState(
+                        GatewayConnectionStatus.NeedsAttention,
+                        "The Gateway connection closed. Reconnect to continue.",
+                    )
+                } else if (!networkAvailable) {
+                    cancelReconnectLocked()
+                    _state.value = GatewayConnectionState(
+                        GatewayConnectionStatus.NeedsAttention,
+                        "Waiting for a network connection.",
+                    )
+                } else {
+                    remoteReconnectAttempts += 1
+                    if (remoteReconnectAttempts > REMOTE_RECONNECT_DELAYS_MILLIS.size) {
+                        _state.value = GatewayConnectionState(
+                            GatewayConnectionStatus.NeedsAttention,
+                            "The Gateway keeps disconnecting. Reconnect when the network is stable.",
+                        )
+                    } else {
+                        _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                    }
+                }
+                // Publish the user-facing edge before SSH cleanup, which may
+                // need a bounded remote command and must not leave stale Connected UI.
                 closeActive()
+                if (
+                    reconnect != null &&
+                    networkAvailable &&
+                    remoteReconnectAttempts in 1..REMOTE_RECONNECT_DELAYS_MILLIS.size
+                ) {
+                    scheduleRemoteReconnectLocked(reconnect)
+                }
             }
         }
     }
 
-    private fun fail(kind: ProbeFailure?, message: String): GatewayConnectResult.Failed {
+    /** Called only while [mutex] is held. */
+    private fun scheduleRemoteReconnectLocked(profile: RemoteGatewayProfile) {
+        cancelReconnectLocked()
+        val generation = reconnectGeneration
+        val expectedIntentGeneration = connectIntent.get().generation
+        reconnectJob = scope.launch { runRemoteReconnect(profile, generation, expectedIntentGeneration) }
+    }
+
+    private suspend fun runRemoteReconnect(
+        profile: RemoteGatewayProfile,
+        generation: Long,
+        expectedIntentGeneration: Long,
+    ) {
+        var reconnectIntentGeneration = expectedIntentGeneration
+        while (true) {
+            val delayMillis = mutex.withLock {
+                if (!canReconnectLocked(profile, generation)) return
+                REMOTE_RECONNECT_DELAYS_MILLIS[remoteReconnectAttempts - 1]
+            }
+            reconnectWait(delayMillis)
+            val intent = beginReconnectIntent(
+                expectedGeneration = reconnectIntentGeneration,
+                job = currentCoroutineContext()[Job],
+            ) ?: return
+
+            val result = openRemote(profile, browser = null, intent) {
+                if (!canReconnectLocked(profile, generation)) throw CancellationException()
+                RemoteOpenAdmission(generation, networkEventGeneration.get())
+            }
+            reconnectIntentGeneration = intent.generation
+            when (result) {
+                GatewayConnectResult.Connected -> {
+                    mutex.withLock {
+                        if (reconnectGeneration == generation) reconnectJob = null
+                    }
+                    return
+                }
+
+                is GatewayConnectResult.Failed -> {
+                    val retry = mutex.withLock {
+                        if (!canReconnectLocked(profile, generation)) return
+                        if (!result.retryable) {
+                            reconnectJob = null
+                            return
+                        }
+                        remoteReconnectAttempts += 1
+                        if (remoteReconnectAttempts <= REMOTE_RECONNECT_DELAYS_MILLIS.size) {
+                            _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                            true
+                        } else {
+                            reconnectJob = null
+                            _state.value = GatewayConnectionState(
+                                GatewayConnectionStatus.NeedsAttention,
+                                "The Gateway keeps disconnecting. Reconnect when the network is stable.",
+                            )
+                            false
+                        }
+                    }
+                    if (!retry) return
+                }
+
+                else -> return
+            }
+        }
+    }
+
+    private fun canReconnectLocked(profile: RemoteGatewayProfile, generation: Long): Boolean =
+        networkAvailableSignal.get() &&
+            networkAvailable &&
+            desiredRemoteProfile == profile &&
+            reconnectGeneration == generation &&
+            remoteReconnectAttempts in 1..REMOTE_RECONNECT_DELAYS_MILLIS.size
+
+    private fun requireRemoteOpenCurrentLocked(
+        intent: ConnectIntent,
+        profile: RemoteGatewayProfile,
+        admission: RemoteOpenAdmission,
+    ) {
+        if (
+            !isCurrentConnectIntent(intent) ||
+            !networkAvailableSignal.get() ||
+            !networkAvailable ||
+            desiredRemoteProfile != profile ||
+            reconnectGeneration != admission.routeGeneration ||
+            networkEventGeneration.get() != admission.networkGeneration
+        ) {
+            throw CancellationException()
+        }
+    }
+
+    /** Called only while [mutex] is held. */
+    private fun cancelReconnectLocked() {
+        reconnectGeneration += 1
+        reconnectJob?.cancel()
+        reconnectJob = null
+    }
+
+    /** Called only while [mutex] is held. */
+    private fun clearRemoteRouteLocked() {
+        desiredRemoteProfile = null
+        remoteConnectedAtMillis = null
+        remoteReconnectAttempts = 0
+        cancelReconnectLocked()
+    }
+
+    private fun fail(
+        kind: ProbeFailure?,
+        message: String,
+        retryable: Boolean = true,
+    ): GatewayConnectResult.Failed {
         _state.value = GatewayConnectionState(GatewayConnectionStatus.NeedsAttention, message)
-        return GatewayConnectResult.Failed(kind, message)
+        return GatewayConnectResult.Failed(kind, message, retryable)
     }
 
     private fun safeConnectionMessage(failure: Throwable): String = when (failure) {
         is RemoteLifecycleException,
         is GatewayConnectionException,
+        is GatewayAuthException,
         is GatewayRpcException,
         -> failure.message ?: "The Gateway connection failed. Check the host and reconnect."
 
@@ -487,15 +790,29 @@ internal class GatewayConnectionManager(
         scope.launch { disconnect() }
     }
 
-    private data class ActiveConnection(
-        val transport: SshTransport,
-        val backend: RemoteBackend,
-        val forward: com.hermesagent.mobile.data.ssh.SshForward,
-        val rpc: GatewayRpcClient,
-    )
+    private sealed interface ActiveConnection {
+        val rpc: GatewayRpcClient
+
+        data class Ssh(
+            val transport: SshTransport,
+            val backend: RemoteBackend,
+            val forward: com.hermesagent.mobile.data.ssh.SshForward,
+            override val rpc: GatewayRpcClient,
+        ) : ActiveConnection
+
+        data class Remote(
+            override val rpc: GatewayRpcClient,
+            val profile: RemoteGatewayProfile,
+        ) : ActiveConnection
+    }
 
     /** Generation and job are published together, so invalidation cannot miss a new job. */
     private data class ConnectIntent(val generation: Long, val job: Job?)
+
+    private data class RemoteOpenAdmission(
+        val routeGeneration: Long,
+        val networkGeneration: Long,
+    )
 
     private fun beginConnectIntent(job: Job?): ConnectIntent {
         val previous = connectIntent.getAndUpdate { current ->
@@ -503,6 +820,16 @@ internal class GatewayConnectionManager(
         }
         previous.job?.takeIf { it !== job }?.cancel()
         return ConnectIntent(previous.generation + 1, job)
+    }
+
+    /** Claims an idle intent only if no user, profile, or network action superseded the retry. */
+    private fun beginReconnectIntent(expectedGeneration: Long, job: Job?): ConnectIntent? {
+        while (true) {
+            val current = connectIntent.get()
+            if (current.generation != expectedGeneration || current.job != null) return null
+            val replacement = ConnectIntent(current.generation + 1, job)
+            if (connectIntent.compareAndSet(current, replacement)) return replacement
+        }
     }
 
     private fun invalidateConnectIntent(): ConnectIntent {
@@ -525,5 +852,10 @@ internal class GatewayConnectionManager(
             if (current.generation != intent.generation || current.job !== intent.job) return false
             if (connectIntent.compareAndSet(current, current.copy(job = null))) return true
         }
+    }
+
+    private companion object {
+        const val STABLE_REMOTE_CONNECTION_MILLIS = 30_000L
+        val REMOTE_RECONNECT_DELAYS_MILLIS = longArrayOf(0L, 1_000L, 5_000L)
     }
 }

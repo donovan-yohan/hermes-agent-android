@@ -3,6 +3,8 @@ package com.hermesagent.mobile.data.prefs
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
+import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import kotlinx.coroutines.flow.first
@@ -47,6 +49,20 @@ class HermesPreferencesTest {
         assertEquals(FINGERPRINT, loaded.acceptedFingerprint)
     }
 
+
+    @Test
+    fun `shared Gateway route round-trips only non-secret connection metadata`() = runBlocking {
+        val remote = RemoteGatewayProfile(
+            baseUrl = "https://gateway.example/hermes",
+            provider = "fixture-provider",
+        )
+
+        preferences.saveRemoteGatewayProfile(remote)
+        preferences.saveGatewayConnectionMode(GatewayConnectionMode.Ssh)
+
+        assertEquals(remote, preferences.remoteGatewayProfile.first())
+        assertEquals(GatewayConnectionMode.Ssh, preferences.gatewayConnectionMode.first())
+    }
     @Test
     fun `a display name an earlier build stored is removed before the first read`() = runBlocking {
         val stored = preferencesOf(

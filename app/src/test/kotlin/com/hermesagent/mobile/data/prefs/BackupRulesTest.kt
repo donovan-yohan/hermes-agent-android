@@ -63,6 +63,16 @@ class BackupRulesTest {
         )
     }
 
+    @Test
+    fun `remote OAuth tokens use Keystore ciphertext below the platform no-backup directory`() {
+        val store = source("src/main/kotlin/com/hermesagent/mobile/data/gateway/AndroidGatewayTokenStore.kt")
+
+        assertTrue(store.contains("context.noBackupFilesDir"))
+        assertTrue(store.contains("AndroidKeyStore"))
+        assertTrue(store.contains("AES/GCM/NoPadding"))
+        assertTrue("token storage must not move into DataStore", !store.contains("preferencesDataStore"))
+    }
+
     /** Gradle runs unit tests from the module directory; fall back to the repo root. */
     private fun resource(name: String): String = source("src/main/res/xml/$name")
 

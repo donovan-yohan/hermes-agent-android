@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui
 
 import com.hermesagent.mobile.data.ssh.AuthMethod
+import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 
 /**
@@ -24,6 +25,15 @@ class ChatActions(
 class AppearanceActions(
     val onSelectTheme: (String) -> Unit = {},
     val onSelectMode: (HermesThemeMode) -> Unit = {},
+)
+
+class GatewayActions(
+    val onModeChange: (GatewayConnectionMode) -> Unit = {},
+    val onRemoteUrlChange: (String) -> Unit = {},
+    val onProviderChange: (String) -> Unit = {},
+    val onConnectRemote: () -> Unit = {},
+    val onDisconnect: () -> Unit = {},
+    val onForgetSignIn: () -> Unit = {},
 )
 
 class SshActions(

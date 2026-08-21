@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.gateway
 
+import android.util.Log
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -208,6 +210,25 @@ internal class OkHttpGatewayRpcClient private constructor(
             // upgrade itself. Keeping HttpUrl's supported scheme also ensures
             // the query parameter remains correctly encoded.
             val request = Request.Builder().url(url).build()
+            return connectRequest(http, request, requestTimeoutMillis)
+        }
+
+        /** Opens a shared remote Gateway with a fresh, single-use WS ticket. */
+        suspend fun connectRemote(
+            http: OkHttpClient,
+            baseUrl: String,
+            ticket: String,
+            requestTimeoutMillis: Long = 15_000,
+        ): OkHttpGatewayRpcClient {
+            val url = remoteGatewayWebSocketUrl(baseUrl, ticket)
+            return connectRequest(http, Request.Builder().url(url).build(), requestTimeoutMillis)
+        }
+
+        private suspend fun connectRequest(
+            http: OkHttpClient,
+            request: Request,
+            requestTimeoutMillis: Long,
+        ): OkHttpGatewayRpcClient {
             val wire = SocketWire()
             val rpc = CorrelatedGatewayRpc(wire) { method ->
                 gatewayRpcTimeoutMillis(method, defaultTimeoutMillis = requestTimeoutMillis)
@@ -226,15 +247,18 @@ internal class OkHttpGatewayRpcClient private constructor(
                     override fun onMessage(webSocket: WebSocket, text: String) = rpc.receive(text)
 
                     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        Log.w(LOG_TAG, "Gateway WebSocket closing (code=$code)")
                         rpc.connectionClosed()
                         webSocket.close(code, "")
                     }
 
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        Log.w(LOG_TAG, "Gateway WebSocket closed (code=$code)")
                         rpc.connectionClosed()
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        Log.w(LOG_TAG, "Gateway WebSocket failed (http=${response?.code ?: "none"})", t)
                         rpc.connectionClosed("The gateway WebSocket failed.")
                         if (continuation.isActive) {
                             continuation.resumeWithException(GatewayRpcException("The gateway WebSocket was refused."))
@@ -246,6 +270,8 @@ internal class OkHttpGatewayRpcClient private constructor(
                 }
             }
         }
+
+        private const val LOG_TAG = "HermesGateway"
     }
 
     internal class SocketWire : GatewayRpcWire {
@@ -265,8 +291,19 @@ internal class OkHttpGatewayRpcClient private constructor(
     }
 }
 
+internal fun remoteGatewayWebSocketUrl(baseUrl: String, ticket: String): okhttp3.HttpUrl {
+    require(ticket.isNotBlank())
+    return requireNotNull(normalizeRemoteGatewayUrl(baseUrl)?.toHttpUrlOrNull())
+        .newBuilder()
+        .addPathSegments("api/ws")
+        .addQueryParameter("ticket", ticket)
+        .build()
+}
+
 internal fun JsonObject.string(name: String): String? =
-    (this[name] as? JsonPrimitive)?.content
+    (this[name] as? JsonPrimitive)
+        ?.takeUnless { it is JsonNull }
+        ?.content
 
 /**
  * Keep long-running acknowledgement policy at the method boundary. A prompt

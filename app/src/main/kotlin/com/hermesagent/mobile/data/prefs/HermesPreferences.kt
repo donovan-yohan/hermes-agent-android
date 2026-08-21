@@ -11,7 +11,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
+import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayInstallStore
+import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
+import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -74,7 +77,10 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  * the scope is `host.single.*`; when profiles become a list the key becomes
  * `host.<id>.*` and the single-profile keys are migrated, not overloaded.
  */
-class HermesPreferences(private val context: Context) : HostProfileStore, GatewayInstallStore {
+class HermesPreferences(private val context: Context) :
+    HostProfileStore,
+    GatewayInstallStore,
+    RemoteGatewayProfileStore {
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
         AppearanceSelection(
@@ -101,6 +107,19 @@ class HermesPreferences(private val context: Context) : HostProfileStore, Gatewa
         )
     }
 
+    override val remoteGatewayProfile: Flow<RemoteGatewayProfile> = context.hermesDataStore.data.map { prefs ->
+        RemoteGatewayProfile(
+            baseUrl = prefs[REMOTE_GATEWAY_URL].orEmpty(),
+            provider = prefs[REMOTE_GATEWAY_PROVIDER].orEmpty(),
+        )
+    }
+
+    override val gatewayConnectionMode: Flow<GatewayConnectionMode> = context.hermesDataStore.data.map { prefs ->
+        prefs[GATEWAY_CONNECTION_MODE]
+            ?.let { stored -> GatewayConnectionMode.entries.firstOrNull { it.name == stored } }
+            ?: GatewayConnectionMode.Remote
+    }
+
     suspend fun setTheme(name: String) = context.hermesDataStore.edit { it[THEME_NAME] = name }
 
     suspend fun setMode(mode: HermesThemeMode) =
@@ -122,6 +141,19 @@ class HermesPreferences(private val context: Context) : HostProfileStore, Gatewa
             profile.acceptedFingerprint?.let { prefs[ACCEPTED_FINGERPRINT] = it }
                 ?: prefs.remove(ACCEPTED_FINGERPRINT)
         }
+    }
+
+    override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
+        context.hermesDataStore.edit { prefs ->
+            if (profile.baseUrl.isBlank()) prefs.remove(REMOTE_GATEWAY_URL)
+            else prefs[REMOTE_GATEWAY_URL] = profile.baseUrl
+            if (profile.provider.isBlank()) prefs.remove(REMOTE_GATEWAY_PROVIDER)
+            else prefs[REMOTE_GATEWAY_PROVIDER] = profile.provider
+        }
+    }
+
+    override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) {
+        context.hermesDataStore.edit { prefs -> prefs[GATEWAY_CONNECTION_MODE] = mode.name }
     }
 
     /** Per-install ownership namespace; excluded from backup with the DataStore. */
@@ -149,6 +181,9 @@ class HermesPreferences(private val context: Context) : HostProfileStore, Gatewa
         val AUTH_METHOD = stringPreferencesKey("host.single.authMethod")
         val ACCEPTED_FINGERPRINT = stringPreferencesKey("host.single.acceptedFingerprint")
         val GATEWAY_OWNERSHIP_ID = stringPreferencesKey("gateway.install.ownershipId")
+        val GATEWAY_CONNECTION_MODE = stringPreferencesKey("gateway.single.connectionMode")
+        val REMOTE_GATEWAY_URL = stringPreferencesKey("gateway.single.remote.url")
+        val REMOTE_GATEWAY_PROVIDER = stringPreferencesKey("gateway.single.remote.provider")
 
         fun String.toThemeMode(): HermesThemeMode =
             HermesThemeMode.entries.firstOrNull { it.name == this } ?: HermesThemeMode.System

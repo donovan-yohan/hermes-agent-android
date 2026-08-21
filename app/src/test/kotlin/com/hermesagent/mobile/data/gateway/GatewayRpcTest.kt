@@ -118,6 +118,19 @@ class GatewayRpcTest {
     }
 
     @Test
+    fun `remote websocket preserves reverse proxy prefix and carries only an encoded one-time ticket`() {
+        val url = remoteGatewayWebSocketUrl(
+            "https://gateway.example/hermes/",
+            "ticket with + reserved? chars",
+        )
+
+        assertEquals("/hermes/api/ws", url.encodedPath)
+        assertEquals("ticket with + reserved? chars", url.queryParameter("ticket"))
+        assertEquals(null, url.queryParameter("token"))
+        assertEquals(1, url.querySize)
+    }
+
+    @Test
     fun `event overflow closes instead of dropping transcript bytes`() = runTest {
         val rpc = CorrelatedGatewayRpc(RecordingWire())
         val closed = async { rpc.closed.first() }

@@ -25,8 +25,9 @@ import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.QuietIconButton
+import com.hermesagent.mobile.ui.gateway.GatewayScreen
+import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.settings.SettingsScreen
-import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -40,10 +41,12 @@ enum class HermesDestination { Chat, Settings, Appearance, Gateways }
 @Composable
 fun HermesApp(
     chatState: ChatUiState,
+    gatewayState: GatewaySettingsUiState,
     sshState: SshUiState,
     appearance: AppearanceSelection,
     chatActions: ChatActions,
     appearanceActions: AppearanceActions,
+    gatewayActions: GatewayActions,
     sshActions: SshActions,
 ) {
     var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
@@ -82,7 +85,7 @@ fun HermesApp(
                 title = "Gateways",
                 onBack = onBack,
             ) {
-                SshScreen(state = sshState, actions = sshActions)
+                GatewayScreen(gatewayState, gatewayActions, sshState, sshActions)
             }
         }
     }
