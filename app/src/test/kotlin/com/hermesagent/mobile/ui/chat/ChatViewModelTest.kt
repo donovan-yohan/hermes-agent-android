@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.ui.chat
 
+import com.hermesagent.mobile.data.draft.SessionDraftStore
+import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
@@ -17,8 +19,10 @@ import com.hermesagent.mobile.data.session.UserTurn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -62,6 +66,98 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a", "session-b"), cache.state.value.sessions.keys.toList())
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
         assertTrue(cache.state.value.sessions.keys.none { it.contains("demo", ignoreCase = true) })
+    }
+
+    @Test
+    fun `per-session drafts flush before navigation and restore independently`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("draft A")
+        testScheduler.advanceTimeBy(400)
+        runCurrent()
+        subject.selectSession("session-b")
+        runCurrent()
+        subject.setDraft("draft B")
+        testScheduler.advanceTimeBy(400)
+        runCurrent()
+        subject.selectSession("session-a")
+        runCurrent()
+
+        assertEquals("draft A", subject.uiState.value.draft)
+        assertEquals("draft B", draftStore.drafts.first()["session-b"])
+    }
+
+    @Test
+    fun `late persistent snapshot cannot replace newer local drafts`() = runTest(dispatcher) {
+        val draftStore = DelayedDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("draft A")
+        subject.selectSession("session-b")
+        subject.setDraft("draft B")
+        draftStore.emit(linkedMapOf("session-a" to "stale A", "session-b" to "stale B"))
+        runCurrent()
+
+        assertEquals("draft B", subject.uiState.value.draft)
+        subject.selectSession("session-a")
+        runCurrent()
+        assertEquals("draft A", subject.uiState.value.draft)
+    }
+
+    @Test
+    fun `definite rejection never replaces a newer edit in the source session`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        repository.submitGate = CompletableDeferred()
+        repository.failSubmit = true
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.setDraft("submitted")
+        subject.submit()
+        runCurrent()
+        subject.setDraft("newer edit")
+        testScheduler.advanceTimeBy(400)
+        runCurrent()
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+
+        assertEquals("newer edit", subject.uiState.value.draft)
+        assertEquals("newer edit", draftStore.drafts.first()["session-a"])
+    }
+
+    @Test
+    fun `canonical destination draft wins without deleting the obsolete source`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        draftStore.replace("session-a", "source draft")
+        draftStore.replace("session-tip", "newer destination")
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        repository.rehome("session-a", "session-tip")
+        runCurrent()
+
+        assertEquals("session-tip", subject.uiState.value.activeSession?.id)
+        assertEquals("newer destination", subject.uiState.value.draft)
+        assertEquals("source draft", draftStore.drafts.first()["session-a"])
+    }
+
+    @Test
+    fun `a recreated view model restores the active durable draft`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        draftStore.replace("session-a", "restored")
+        val recreated = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK })
+        backgroundScope.launch { recreated.uiState.collect { } }
+        runCurrent()
+
+        assertEquals("session-a", recreated.uiState.value.activeSession?.id)
+        assertEquals("restored", recreated.uiState.value.draft)
     }
 
     @Test
@@ -410,6 +506,7 @@ class ChatViewModelTest {
         var created = 0
         var createdWorkspace: String? = null
         var failSubmit = false
+        var submitGate: CompletableDeferred<Unit>? = null
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
 
         fun rehome(fromId: String, toId: String) {
@@ -457,6 +554,7 @@ class ChatViewModelTest {
         }
 
         override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
+            submitGate?.await()
             if (failSubmit) error("fixture failure")
             submitted += durableId to text
             cache.session(durableId)?.let { cache.upsertSession(it.copy(status = SessionStatus.Working)) }
@@ -466,6 +564,22 @@ class ChatViewModelTest {
         override suspend fun interrupt(durableId: String) {
             interrupted += durableId
         }
+    }
+
+    private class DelayedDraftStore : SessionDraftStore {
+        private val restored = MutableSharedFlow<LinkedHashMap<String, String>>(extraBufferCapacity = 1)
+        override val drafts: Flow<LinkedHashMap<String, String>> = restored
+        val writes = mutableListOf<Pair<String, String>>()
+
+        suspend fun emit(value: LinkedHashMap<String, String>) {
+            restored.emit(value)
+        }
+
+        override suspend fun replace(durableSessionId: String, text: String) {
+            writes += durableSessionId to text
+        }
+
+        override suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String): String? = null
     }
 
     private class FakeSidebarViewStore(initial: SidebarGrouping = SidebarGrouping.Date) : SidebarViewStore {

@@ -73,6 +73,19 @@ class BackupRulesTest {
         assertTrue("token storage must not move into DataStore", !store.contains("preferencesDataStore"))
     }
 
+    @Test
+    fun `private composer drafts use a dedicated store covered by every backup exclusion`() {
+        val drafts = source("src/main/kotlin/com/hermesagent/mobile/data/draft/SessionDraftStore.kt")
+        val preferences = source("src/main/kotlin/com/hermesagent/mobile/data/prefs/HermesPreferences.kt")
+        val extraction = resource("data_extraction_rules.xml")
+
+        assertTrue(drafts.contains("preferencesDataStore(name = \"composer_drafts\")"))
+        assertTrue("draft text must not enter connection preferences", !preferences.contains("composer.drafts"))
+        assertTrue(extraction.substringAfter("<cloud-backup>").substringBefore("</cloud-backup>").contains(exclusion))
+        assertTrue(extraction.substringAfter("<device-transfer>").substringBefore("</device-transfer>").contains(exclusion))
+        assertTrue(resource("backup_rules.xml").contains(exclusion))
+    }
+
     /** Gradle runs unit tests from the module directory; fall back to the repo root. */
     private fun resource(name: String): String = source("src/main/res/xml/$name")
 

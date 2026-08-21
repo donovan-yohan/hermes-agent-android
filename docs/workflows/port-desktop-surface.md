@@ -160,7 +160,8 @@ Desktop's authority model, and where each kind lives here:
 | Machine/runtime facts | `GatewayConnectionManager`, `RemoteHermesLifecycle`, SSH adapter | One resolver per policy |
 | Connection-scoped (runtime ids, turn buffers, in-flight tools, generation) | `LiveGatewaySessionRepository` / connection owner | Dies with the connection; durable ids never enter runtime-only calls |
 | Saved view preferences | `SidebarViewStore` / `HermesPreferences` | Persist the user's grouping choice locally; never send it to the Gateway or use it as project authority |
-| UI-only (drafts, search, drawer, scroll) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
+| Durable local draft text | `SessionDraftStore` + ViewModel | Canonical durable session id only; text only; no backup/transfer; bounded 50-entry MRU; never Gateway/cache authority |
+| UI-only (search, drawer, scroll, draft selection/model/attachment state) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
 
 If you cannot say which row a piece of state belongs to, stop and decide. That
 choice is the port.

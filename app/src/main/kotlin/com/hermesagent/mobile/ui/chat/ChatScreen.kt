@@ -293,6 +293,8 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
         isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
         canSend = state.canSend,
         statusLine = state.composerStatus(),
+        runningOwnerTitle = state.runningOwner?.title,
+        onViewRunningOwner = state.runningOwner?.id?.let { id -> { actions.onSelectSession(id) } },
         modifier = Modifier.imePadding().navigationBarsPadding(),
     )
 }
@@ -364,7 +366,8 @@ private fun ChatUiState.composerStatus(): String = notice ?: when {
     connection.status == GatewayConnectionStatus.Disconnected -> "Open Gateways to connect"
     liveStatusText != null -> liveStatusText.orEmpty()
     isStreaming -> "Hermes is responding — tap ■ to stop"
-    runningCount > 0 -> "Wait for the running turn to finish"
+    runningOwner != null -> "Hermes is working in “${runningOwner.title}”."
+    runningCount > 0 -> "Hermes is working in another session."
     else -> "Connected to Gateway"
 }
 

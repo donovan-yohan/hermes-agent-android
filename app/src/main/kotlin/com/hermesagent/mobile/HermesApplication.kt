@@ -1,6 +1,7 @@
 package com.hermesagent.mobile
 
 import android.app.Application
+import com.hermesagent.mobile.data.draft.AndroidSessionDraftStore
 import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -30,7 +31,7 @@ import java.util.concurrent.TimeUnit
 
 /** Process-scoped live Gateway graph and backend-authoritative session cache. */
 class HermesApplication : Application() {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http by lazy {
         OkHttpClient.Builder()
             .pingInterval(30, TimeUnit.SECONDS)
@@ -39,6 +40,7 @@ class HermesApplication : Application() {
 
     val cache: SessionCache by lazy(::SessionCache)
     val preferences: HermesPreferences by lazy { HermesPreferences(this) }
+    val draftStore: AndroidSessionDraftStore by lazy { AndroidSessionDraftStore(this) }
     internal val gatewayConnection: GatewayConnectionManager by lazy {
         val authApi = OkHttpGatewayNativeAuthApi(http)
         val authenticator = NativeGatewayAuthenticator(

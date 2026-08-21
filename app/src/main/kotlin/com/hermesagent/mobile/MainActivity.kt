@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
     private val preferences get() = app.preferences
 
     private val chatViewModel: ChatViewModel by viewModels {
-        ChatViewModel.factory(app.cache, app.sessionRepository, preferences)
+        ChatViewModel.factory(app.cache, app.sessionRepository, preferences, app.draftStore, app.appScope)
     }
     private val sshViewModel: SshViewModel by viewModels {
         SshViewModel.factory(preferences, app.gatewayConnection)
@@ -139,6 +139,11 @@ class MainActivity : ComponentActivity() {
                 ),
             )
         }
+    }
+
+    override fun onStop() {
+        chatViewModel.flushDraft()
+        super.onStop()
     }
 
     /**

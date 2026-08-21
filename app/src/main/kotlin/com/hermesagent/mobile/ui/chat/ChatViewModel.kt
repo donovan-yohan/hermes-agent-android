@@ -3,6 +3,8 @@ package com.hermesagent.mobile.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.hermesagent.mobile.data.draft.SessionDraftStore
+import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
@@ -20,6 +22,8 @@ import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.data.session.matchesProjectQuery
 import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +46,9 @@ data class ChatUiState(
     val draft: String = "",
     val isStreaming: Boolean = false,
     val runningCount: Int = 0,
+    /** Another durable session owns the app-wide single submitted turn. */
+    val runningOwner: SessionSummary? = null,
+    val runningOwnerCount: Int = 0,
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val notice: String? = null,
 ) {
@@ -59,6 +66,9 @@ internal class ChatViewModel(
     private val cache: SessionCache,
     private val repository: GatewaySessionRepository,
     private val sidebarViewStore: SidebarViewStore = TransientSidebarViewStore(),
+    private val draftStore: SessionDraftStore = TransientSessionDraftStore(),
+    /** Process scope survives navigation long enough to flush the private draft. */
+    private val applicationDraftScope: CoroutineScope? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
@@ -73,6 +83,12 @@ internal class ChatViewModel(
     private var sidebarGroupingGeneration = 0L
     private var choseInitialSession = false
     private var previousStatuses = emptyMap<String, SessionStatus>()
+    private var draftSnapshot = linkedMapOf<String, String>()
+    private val draftStoreReady = CompletableDeferred<Unit>()
+    /** IDs changed locally in this ViewModel; stale DataStore emissions cannot replace them. */
+    private val locallyTouchedDrafts = mutableSetOf<String>()
+    private var draftRevision = 0L
+    private var draftWrite: kotlinx.coroutines.Job? = null
 
     val uiState: StateFlow<ChatUiState> = combine(
         cache.state,
@@ -89,12 +105,15 @@ internal class ChatViewModel(
             NavigationState(connection, message, projectId, loadingId, grouping)
         },
     ) { cacheState, queryText, draftText, activeId, navigation ->
-        val running = cacheState.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
+        val blocking = cacheState.sessions.values.filter { it.status in PROMPT_BLOCKING_STATUSES }
+        val running = blocking.size
         // SessionCache publishes this alias in the same atomic update that
         // moves a compressed parent to its canonical tip. Resolve it here so
         // the later navigation event cannot create a blank intermediate frame.
         val displayedActiveId = activeId?.let { cacheState.rehomes[it] ?: it }
         val active = displayedActiveId?.let(cacheState.sessions::get)
+        val otherOwners = blocking.filter { it.id != active?.id }
+        val runningOwner = otherOwners.maxWithOrNull(compareBy<SessionSummary> { it.activityStartedAtMillis }.thenBy { it.id })
         val selectedProject = navigation.projectId?.let(cacheState.projects.projects::get)
         val scopedSessions = selectedProject?.id
             ?.let { cacheState.projects.memberships[it].orEmpty() }
@@ -131,6 +150,8 @@ internal class ChatViewModel(
             draft = draftText,
             isStreaming = active?.status in STREAMING_STATUSES,
             runningCount = running,
+            runningOwner = runningOwner,
+            runningOwnerCount = otherOwners.size,
             connection = navigation.connection,
             notice = navigation.notice,
         )
@@ -138,12 +159,27 @@ internal class ChatViewModel(
 
     init {
         viewModelScope.launch {
+            draftStore.drafts.collect { restored ->
+                val merged = LinkedHashMap(restored)
+                locallyTouchedDrafts.forEach { id ->
+                    merged.remove(id)
+                    draftSnapshot[id]?.takeIf(String::isNotBlank)?.let { merged[id] = it }
+                }
+                draftSnapshot = merged
+                if (!draftStoreReady.isCompleted) draftStoreReady.complete(Unit)
+                activeSessionId.value?.let { id ->
+                    if (id !in locallyTouchedDrafts) draft.value = merged[id].orEmpty()
+                }
+            }
+        }
+        viewModelScope.launch {
             val restoreGeneration = sidebarGroupingGeneration
             val restored = sidebarViewStore.sidebarGrouping.first()
             if (sidebarGroupingGeneration == restoreGeneration) sidebarGrouping.value = restored
         }
         viewModelScope.launch {
             repository.sessionRehomes.collect { rehome ->
+                draftStoreReady.await()
                 adoptCanonicalSession(rehome.oldDurableId, rehome.newDurableId)
             }
         }
@@ -187,6 +223,14 @@ internal class ChatViewModel(
 
     fun setDraft(value: String) {
         draft.value = value
+        val id = activeSessionId.value ?: return
+        rememberDraft(id, value)
+        val revision = ++draftRevision
+        draftWrite?.cancel()
+        draftWrite = viewModelScope.launch {
+            kotlinx.coroutines.delay(DRAFT_DEBOUNCE_MILLIS)
+            if (revision == draftRevision && id == activeSessionId.value) draftStore.replace(id, value)
+        }
     }
 
     fun setSidebarGrouping(grouping: SidebarGrouping) {
@@ -280,6 +324,7 @@ internal class ChatViewModel(
     fun selectSession(id: String) {
         if (activeSessionId.value == id) return
         navigationGeneration += 1
+        flushDraft()
         rehome(id)
         viewModelScope.launch {
             runCatching { repository.openSession(id) }
@@ -303,6 +348,7 @@ internal class ChatViewModel(
             runCatching { repository.createSession(workspacePath) }
                 .onSuccess { id ->
                     if (projectId != null) createdProjectBySession[id] = projectId
+                    flushDraft()
                     rehome(id)
                 }
                 .onFailure { notice.value = "A new session could not be started. Check the Gateway and try again." }
@@ -311,7 +357,9 @@ internal class ChatViewModel(
 
     private fun rehome(id: String?) {
         activeSessionId.value = id
-        draft.value = ""
+        draftRevision += 1
+        draftWrite?.cancel()
+        draft.value = id?.let(draftSnapshot::get).orEmpty()
         notice.value = null
         id?.let(::markRead)
     }
@@ -321,8 +369,22 @@ internal class ChatViewModel(
         createdProjectBySession.remove(requestedId)?.let { projectId ->
             createdProjectBySession[canonicalId] = projectId
         }
+        draftRevision += 1
+        draftWrite?.cancel()
+        val source = draftSnapshot[requestedId]
+        val destination = draftSnapshot[canonicalId]
+        if (destination.isNullOrBlank() && !source.isNullOrBlank()) {
+            val sourceWasTouched = requestedId in locallyTouchedDrafts
+            draftSnapshot.remove(requestedId)
+            draftSnapshot.remove(canonicalId)
+            draftSnapshot[canonicalId] = source
+            locallyTouchedDrafts += requestedId
+            if (sourceWasTouched) locallyTouchedDrafts += canonicalId
+        }
+        viewModelScope.launch { draftStore.migrateIfDestinationEmpty(requestedId, canonicalId) }
         if (activeSessionId.value != requestedId || canonicalId == requestedId) return
         activeSessionId.value = canonicalId
+        draft.value = draftSnapshot[canonicalId].orEmpty()
         markRead(canonicalId)
     }
 
@@ -334,6 +396,10 @@ internal class ChatViewModel(
         ) return
 
         draft.value = ""
+        draftRevision += 1
+        draftWrite?.cancel()
+        rememberDraft(sessionId, "")
+        viewModelScope.launch { draftStore.replace(sessionId, "") }
         notice.value = null
         viewModelScope.launch {
             try {
@@ -350,7 +416,11 @@ internal class ChatViewModel(
                 throw cancelled
             } catch (_: Throwable) {
                 notice.value = "The message was not sent. Reconnect to the Gateway and try again."
-                if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = prompt
+                if (draftSnapshot[sessionId].isNullOrBlank()) {
+                    rememberDraft(sessionId, prompt)
+                    if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = prompt
+                    viewModelScope.launch { draftStore.replace(sessionId, prompt) }
+                }
             }
         }
     }
@@ -361,6 +431,28 @@ internal class ChatViewModel(
             runCatching { repository.interrupt(sessionId) }
                 .onFailure { notice.value = "Hermes could not be stopped. Check the Gateway connection." }
         }
+    }
+
+    internal fun flushDraft() {
+        val id = activeSessionId.value ?: return
+        val text = draft.value
+        draftRevision += 1
+        draftWrite?.cancel()
+        rememberDraft(id, text)
+        viewModelScope.launch { draftStore.replace(id, text) }
+    }
+
+    override fun onCleared() {
+        val id = activeSessionId.value
+        val text = draft.value
+        if (id != null) applicationDraftScope?.launch { draftStore.replace(id, text) }
+        super.onCleared()
+    }
+
+    private fun rememberDraft(id: String, text: String) {
+        draftSnapshot.remove(id)
+        if (text.isNotBlank()) draftSnapshot[id] = text
+        locallyTouchedDrafts += id
     }
 
     private fun markRead(id: String) {
@@ -377,6 +469,7 @@ internal class ChatViewModel(
     )
 
     companion object {
+        private const val DRAFT_DEBOUNCE_MILLIS = 400L
         private val STREAMING_STATUSES = setOf(
             SessionStatus.Working,
             SessionStatus.Stalled,
@@ -390,11 +483,13 @@ internal class ChatViewModel(
             cache: SessionCache,
             repository: GatewaySessionRepository,
             sidebarViewStore: SidebarViewStore,
+            draftStore: SessionDraftStore,
+            draftScope: CoroutineScope,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ChatViewModel(cache, repository, sidebarViewStore) as T
+                    ChatViewModel(cache, repository, sidebarViewStore, draftStore, draftScope) as T
             }
     }
 }

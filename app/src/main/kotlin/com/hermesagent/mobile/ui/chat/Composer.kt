@@ -5,46 +5,81 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.R
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
-import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
-/**
- * The composer.
- *
- * Multiline by default with `ImeAction.Default`, so Enter inserts a newline
- * and sending is an explicit tap. That is the opposite of Desktop, where Enter
- * submits — and it is deliberate: on a soft keyboard there is no modifier to
- * hold, so an Enter-to-send composer eats half-written messages.
- *
- * The send control becomes a stop control while a turn is running, in the same
- * position. One affordance, one place, so cancelling never means hunting.
- */
+private const val IME_PROCESS_KEY_CODE = 229
+
+internal enum class ComposerLayoutMode { Full, Compact, Stacked }
+internal enum class ComposerKeyAction { None, Send, Stop }
+
+/** Desktop's measured container thresholds, intentionally expressed in dp. */
+internal fun composerLayoutMode(width: Dp): ComposerLayoutMode = when {
+    width > 560.dp -> ComposerLayoutMode.Full
+    width > 320.dp -> ComposerLayoutMode.Compact
+    else -> ComposerLayoutMode.Stacked
+}
+
+internal fun composerKeyAction(
+    keyCode: Int,
+    isKeyDown: Boolean,
+    hasModifier: Boolean,
+    isSoftKeyboard: Boolean,
+    isComposing: Boolean,
+    isStreaming: Boolean,
+    canSend: Boolean,
+): ComposerKeyAction {
+    if (!isKeyDown || hasModifier || isSoftKeyboard || isComposing ||
+        keyCode == android.view.KeyEvent.KEYCODE_UNKNOWN || keyCode == IME_PROCESS_KEY_CODE
+    ) return ComposerKeyAction.None
+    return when (keyCode) {
+        android.view.KeyEvent.KEYCODE_ENTER -> if (!isStreaming && canSend) ComposerKeyAction.Send else ComposerKeyAction.None
+        android.view.KeyEvent.KEYCODE_ESCAPE -> if (isStreaming) ComposerKeyAction.Stop else ComposerKeyAction.None
+        else -> ComposerKeyAction.None
+    }
+}
+
+/** Mobile adapts Desktop's dock grammar, while soft-IME Enter remains a newline. */
 @Composable
 fun Composer(
     draft: String,
@@ -55,137 +90,160 @@ fun Composer(
     canSend: Boolean,
     modifier: Modifier = Modifier,
     statusLine: String,
+    runningOwnerTitle: String? = null,
+    onViewRunningOwner: (() -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
-
-    Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
-        Hairline()
+    BoxWithConstraints(modifier.fillMaxWidth().background(tokens.chatSurface)) {
+        val layoutMode = composerLayoutMode(maxWidth)
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 10.dp),
+                .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 5.dp)
+                .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(16.dp))
+                .background(tokens.cardSurface, RoundedCornerShape(16.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp)
+                .testTag("Composer shell ${layoutMode.name}"),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = HermesTheme.spacing.touchTarget)
-                        .border(
-                            width = 1.dp,
-                            color = if (isStreaming) tokens.composerRing else tokens.strokeSecondary,
-                            shape = RoundedCornerShape(16.dp),
-                        )
-                        .testTag("Composer field shell"),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = onDraftChange,
-                        textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
-                        cursorBrush = SolidColor(tokens.composerRing),
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Default,
-                        ),
-                        keyboardActions = KeyboardActions(),
-                        maxLines = 6,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // The editable node owns the complete touch target.
-                            .heightIn(min = HermesTheme.spacing.touchTarget)
-                            .semantics { contentDescription = "Message Hermes" },
-                        decorationBox = { innerTextField ->
-                            CenteredTextFieldContent(
-                                isEmpty = draft.isEmpty(),
-                                contentTag = "Composer text content",
-                                horizontalPadding = 14.dp,
-                                placeholder = {
-                                    Text(
-                                        text = "Message Hermes",
-                                        style = HermesTheme.type.body,
-                                        color = tokens.textTertiary,
-                                    )
-                                },
-                                innerTextField = innerTextField,
-                            )
-                        },
-                    )
+            if (layoutMode == ComposerLayoutMode.Stacked) {
+                ComposerEditor(draft, onDraftChange, onSend, onStop, isStreaming, canSend, Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
-
-                if (isStreaming) {
-                    StopButton(onStop)
-                } else {
-                    SendButton(onSend, enabled = canSend)
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    ComposerEditor(draft, onDraftChange, onSend, onStop, isStreaming, canSend, Modifier.weight(1f))
+                    ComposerTrailingSlot(layoutMode)
+                    ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
                 }
             }
-
-            Text(
-                text = statusLine,
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.scaffoldMeta,
-                modifier = Modifier.padding(
-                    top = 4.dp,
-                    start = 14.dp,
-                ),
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = statusLine,
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.scaffoldMeta,
+                    modifier = Modifier.padding(start = 6.dp).weight(1f),
+                )
+                if (runningOwnerTitle != null && onViewRunningOwner != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(HermesTheme.spacing.touchTarget)
+                            .clickable(onClick = onViewRunningOwner)
+                            .semantics { contentDescription = "View running session $runningOwnerTitle" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("View", style = HermesTheme.type.scaffoldMeta, color = tokens.textPrimary)
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SendButton(onClick: () -> Unit, enabled: Boolean) {
+private fun ComposerEditor(
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    isStreaming: Boolean,
+    canSend: Boolean,
+    modifier: Modifier,
+) {
     val tokens = HermesTheme.tokens
+    var editorValue by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
+    LaunchedEffect(draft) {
+        if (editorValue.text != draft) editorValue = TextFieldValue(draft, TextRange(draft.length))
+    }
+    BasicTextField(
+        value = editorValue,
+        onValueChange = { value ->
+            editorValue = value
+            onDraftChange(value.text)
+        },
+        textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+        cursorBrush = SolidColor(tokens.composerRing),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
+        keyboardActions = KeyboardActions(),
+        maxLines = 6,
+        modifier = modifier
+            .widthIn(min = HermesTheme.spacing.touchTarget)
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .testTag("Composer field shell")
+            .onPreviewKeyEvent { event ->
+                val native = event.nativeKeyEvent
+                val action = composerKeyAction(
+                    keyCode = native.keyCode,
+                    isKeyDown = event.type == KeyEventType.KeyDown,
+                    hasModifier = native.isShiftPressed || native.isCtrlPressed || native.isMetaPressed || native.isAltPressed,
+                    isSoftKeyboard = native.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD != 0,
+                    isComposing = editorValue.composition != null,
+                    isStreaming = isStreaming,
+                    canSend = canSend,
+                )
+                when (action) {
+                    ComposerKeyAction.Send -> { onSend(); true }
+                    ComposerKeyAction.Stop -> { onStop(); true }
+                    ComposerKeyAction.None -> false
+                }
+            }
+            .semantics { contentDescription = "Message Hermes" },
+        decorationBox = { inner ->
+            CenteredTextFieldContent(
+                isEmpty = draft.isEmpty(),
+                contentTag = "Composer text content",
+                horizontalPadding = 6.dp,
+                placeholder = { Text("Message Hermes", style = HermesTheme.type.body, color = tokens.textTertiary) },
+                innerTextField = inner,
+            )
+        },
+    )
+}
+
+/** Slice 3 fills this measured control seam; slice 2 deliberately ships no fake model control. */
+@Composable
+private fun ComposerTrailingSlot(@Suppress("UNUSED_PARAMETER") layoutMode: ComposerLayoutMode) = Unit
+
+@Composable
+private fun ComposerPrimaryAction(onSend: () -> Unit, onStop: () -> Unit, streaming: Boolean, canSend: Boolean) {
+    val tokens = HermesTheme.tokens
+    val enabled = streaming || canSend
     Box(
-        modifier = Modifier
+        Modifier
             .size(HermesTheme.spacing.touchTarget)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clip(CircleShape)
+            .clickable(enabled = enabled) { if (streaming) onStop() else onSend() }
             .semantics(mergeDescendants = true) {
-                contentDescription = "Send message"
+                contentDescription = if (streaming) "Stop generating" else "Send message"
                 if (!enabled) disabled()
             },
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
-                .size(36.dp)
-                .background(
-                    if (enabled) tokens.accent else tokens.accent.copy(alpha = 0.25f),
-                    RoundedCornerShape(10.dp),
-                ),
+                .size(26.dp)
+                .background(if (enabled) tokens.textPrimary else tokens.textPrimary.copy(alpha = .25f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Send,
-                contentDescription = null,
-                tint = tokens.accentForeground,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
-/** A square, the universal stop glyph. Cancels in the current frame. */
-@Composable
-private fun StopButton(onClick: () -> Unit) {
-    val tokens = HermesTheme.tokens
-    Box(
-        modifier = Modifier
-            .size(HermesTheme.spacing.touchTarget)
-            .semantics { contentDescription = "Stop generating" }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier
-                .size(36.dp)
-                .border(1.dp, tokens.composerRing, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(Modifier.size(12.dp).background(tokens.composerRing, RoundedCornerShape(2.dp)))
+            if (streaming) {
+                Box(Modifier.size(10.dp).background(tokens.cardSurface, RoundedCornerShape(3.dp)))
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.ic_codicon_arrow_up),
+                    contentDescription = null,
+                    tint = tokens.cardSurface,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
     }
 }

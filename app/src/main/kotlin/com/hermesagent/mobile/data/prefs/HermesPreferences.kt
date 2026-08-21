@@ -55,7 +55,7 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
 }
 
 /**
- * Everything this app puts on disk.
+ * Everything this connection/appearance preference store puts on disk.
  *
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
@@ -65,7 +65,9 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  *   accepted host-key fingerprint;
  * - one random per-install Gateway ownership id.
  *
- * That is the whole list. Product UI does not carry the storage lecture; the
+ * That is the whole list for this store. Private text-only composer drafts live
+ * in a separate, no-backup `SessionDraftStore`; they never become connection
+ * preferences. Product UI does not carry the storage lecture; the
  * review workflow and this typed store are the detailed authority. The
  * imported key's display name is deliberately **not** on it: see
  * [DropImportedKeyName].

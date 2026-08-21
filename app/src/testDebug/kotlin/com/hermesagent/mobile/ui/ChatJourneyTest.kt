@@ -228,6 +228,17 @@ class ChatJourneyTest {
     }
 
     @Test
+    fun `multiline editor input stays a draft until explicit send`() {
+        launch()
+
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("line one\nline two")
+        compose.waitForIdle()
+
+        assertEquals("line one\nline two", viewModel.uiState.value.draft)
+        assertTrue(repository.submitted.isEmpty())
+    }
+
+    @Test
     fun `send uses live repository and create opens its returned durable session`() {
         launch()
         compose.onNodeWithContentDescription("Message Hermes").performTextInput("send through Gateway")
@@ -287,6 +298,18 @@ class ChatJourneyTest {
     }
 
     @Test
+    fun `completed reasoning keeps its elapsed disclosure`() {
+        launch()
+        cache.setTranscript(
+            "live-a",
+            listOf(ReasoningActivity("reasoning", "check the build", ToolState.Done, elapsedSeconds = 2.0)),
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Thought for 2s").assertIsDisplayed()
+    }
+
+    @Test
     fun `rich activity rows expose reasoning terminal payload and patched file diff`() {
         launch()
         cache.setTranscript(
@@ -325,7 +348,6 @@ class ChatJourneyTest {
         )
         compose.waitForIdle()
 
-        compose.onNodeWithText("Thought for 2s").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performScrollTo().performClick()
         compose.onNodeWithText("BUILD SUCCESSFUL").assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performClick()
@@ -368,10 +390,14 @@ class ChatJourneyTest {
         viewModel.selectSession("live-b")
         compose.waitForIdle()
 
-        compose.onNodeWithText("Wait for the running turn to finish").assertIsDisplayed()
+        compose.onNodeWithText("Hermes is working in “Remote planning”.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Message Hermes").performTextInput("not ambiguous")
         compose.onNodeWithContentDescription("Send message").assertIsNotEnabled()
         assertTrue(repository.submitted.isEmpty())
+        compose.onNodeWithText("View").performClick()
+        compose.waitForIdle()
+        assertEquals("live-a", viewModel.uiState.value.activeSession?.id)
+        compose.onNodeWithContentDescription("Stop generating").assertIsDisplayed()
     }
 
     @Test

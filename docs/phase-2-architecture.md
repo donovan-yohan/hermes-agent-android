@@ -88,7 +88,8 @@ or exception text.
 | Remote or SSH/process/forward/RPC | `GatewayConnectionManager` | One process-scoped active connection. Remote close ends only RPC; Managed SSH close tears down every positively-owned leg. |
 | Durable to runtime ids | `LiveGatewaySessionRepository` | Mapping is connection-scoped and cleared on reconnect. Runtime-only RPC methods never receive durable ids. |
 | Stream ownership | `LiveGatewaySessionRepository.submittedRuntime` | An event without `session_id` remains pinned to the runtime that submitted the turn, not the session currently visible. One app-submitted turn may be outstanding at a time because two interleaved unscoped streams cannot be assigned safely. |
-| Draft/search/project selection/navigation notice | `ChatViewModel` | UI-only; never written into backend cache. |
+| Draft text | `SessionDraftStore` + `ChatViewModel` | Private local UI data keyed only by canonical durable session id. Dedicated no-backup DataStore; text only, 50-entry MRU cap; never backend/cache truth. |
+| Search/project selection/navigation notice | `ChatViewModel` | Screen-lifetime UI state; never written into backend cache or the draft store. |
 | Connection configuration | `HermesPreferences` | Route, non-secret Remote URL/provider, or SSH host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. OAuth tokens are not DataStore values. |
 
 Rename and archive are absent from the product surface because this slice does
