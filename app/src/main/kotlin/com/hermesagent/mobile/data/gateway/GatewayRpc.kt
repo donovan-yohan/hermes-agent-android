@@ -261,7 +261,7 @@ internal class OkHttpGatewayRpcClient private constructor(
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        Log.w(LOG_TAG, "Gateway WebSocket failed (http=${response?.code ?: "none"})", t)
+                        Log.w(LOG_TAG, "Gateway WebSocket failed (http=${response?.code ?: "none"})")
                         rpc.connectionClosed("The gateway WebSocket failed.")
                         if (continuation.isActive) {
                             continuation.resumeWithException(GatewayRpcException("The gateway WebSocket was refused."))
