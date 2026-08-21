@@ -9,6 +9,7 @@ import java.security.SecureRandom
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -316,7 +317,7 @@ internal class LoopbackGatewayNativeLogin(
         return try {
             val redirectUri = "http://127.0.0.1:${listener.localPort}/callback"
             browser.open(authorizeUrl(baseUrl, challenge, redirectUri, state, profile.provider))
-            val code = withTimeout(LOGIN_TIMEOUT_MILLIS) {
+            val code = withGatewayLoginTimeout(LOGIN_TIMEOUT_MILLIS) {
                 awaitAuthorizationCode(listener, state)
             }
             api.exchange(baseUrl, code, verifier)
@@ -399,6 +400,15 @@ internal class LoopbackGatewayNativeLogin(
                 "<p>Signed in to Hermes. You can return to the app.</p>"
             ).toByteArray(Charsets.UTF_8)
     }
+}
+
+internal suspend fun <T> withGatewayLoginTimeout(
+    timeoutMillis: Long,
+    block: suspend () -> T,
+): T = try {
+    withTimeout(timeoutMillis) { block() }
+} catch (_: TimeoutCancellationException) {
+    throw GatewayAuthException("Sign-in timed out. Try again.", 408)
 }
 
 /** Authenticates and opens a socket to the host-owned Gateway. */
