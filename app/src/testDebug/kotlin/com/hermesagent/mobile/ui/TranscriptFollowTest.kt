@@ -5,7 +5,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -108,14 +110,31 @@ class TranscriptFollowTest {
         // Read something further up, then let the turn keep streaming.
         compose.onNodeWithText("Paragraph 1 of the reply.").performScrollTo()
         compose.waitForIdle()
+        compose.onNodeWithContentDescription("Scroll to bottom").assertIsDisplayed()
 
         grow(paragraphs = 80)
         compose.onNodeWithText("Paragraph 1 of the reply.").assertIsDisplayed()
+        compose.onNodeWithText("New activity").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New activity. Scroll to bottom")
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Paragraph 80 of the reply.").assertIsDisplayed()
     }
 
     @Test
     fun `landing on a session opens at the tail`() {
         launch(streamed(paragraphs = 60), streaming = false)
+        compose.onNodeWithText("Paragraph 60 of the reply.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `history arriving after the empty first layout opens at the tail`() {
+        launch(emptyList(), streaming = false)
+
+        state = chatState(streamed(paragraphs = 60), streaming = false)
+        compose.waitForIdle()
+
         compose.onNodeWithText("Paragraph 60 of the reply.").assertIsDisplayed()
     }
 

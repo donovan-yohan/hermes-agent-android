@@ -38,6 +38,7 @@ enum class HermesIcon(val glyph: String) {
     Error("\uEA87"),
     SymbolMethod("\uEA8C"),
     Check("\uEAB2"),
+    ArrowDown("\uEA9A"),
     ArrowUp("\uEAA1"),
     ChevronDown("\uEAB4"),
     ChevronRight("\uEAB6"),

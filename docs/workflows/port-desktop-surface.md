@@ -47,6 +47,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Tool scaffolding | `apps/desktop/src/components/chat/scaffold-row.tsx` | One colour and one size for every "what the agent did" line |
 | Inline widget | `apps/desktop/src/components/chat/widget-shell.ts:12` | Shared radius, mode-derived fill, **no border** |
 | Session status | `apps/desktop/src/app/chat/session-status-dot.tsx:22-77` | Six states; colour + fill/hollow, never motion |
+| Transcript tail and jump control | `apps/desktop/src/components/assistant-ui/thread/list.tsx:389-398,651-680`; `apps/desktop/src/app/chat/scroll-to-bottom-button.tsx` | Open at the newest content, follow only while parked there, and expose one floating return action after the reader scrolls away |
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
 | Project catalog and selection | `apps/desktop/src/store/projects.ts`; `apps/desktop/src/app/chat/sidebar/index.tsx` | Backend-authored project identity, active project, overview vs drill-in navigation |
