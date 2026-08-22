@@ -87,6 +87,18 @@ class MainActivity : ComponentActivity() {
      * Storage Access Framework: attachment sources are read once through the
      * lifetime-scoped grant and only their bytes ever leave this process.
      */
+    private var pendingDictationGrant: (() -> Unit)? = null
+    private val requestMicPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val resume = pendingDictationGrant
+            pendingDictationGrant = null
+            if (granted) {
+                resume?.invoke()
+            } else {
+                chatViewModel.reportDictationPermissionDenied()
+            }
+        }
+
     private val pickAttachments =
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             for (uri in uris) {
@@ -113,7 +125,19 @@ class MainActivity : ComponentActivity() {
             runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
         }
         // Voice engine hooks: bounded capture and typed Gateway routes only.
+        // Dictation requires an explicit runtime mic grant; denial surfaces a
+        // recovery message instead of silently failing to capture.
         val mic = com.hermesagent.mobile.data.voice.AndroidMicCapture(Dispatchers.IO)
+        chatViewModel.onToggleDictationRequested = {
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                chatViewModel.toggleDictation()
+            } else {
+                pendingDictationGrant = { chatViewModel.toggleDictation() }
+                requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        }
         var dictationRecordingJob: kotlinx.coroutines.Job = lifecycleScope.launch { }
         chatViewModel.onDictationCapture = { durableSessionId, onDone ->
             val started = lifecycleScope.launch { mic.start() }
@@ -198,7 +222,7 @@ class MainActivity : ComponentActivity() {
                     onInsertText = chatViewModel::onInsertText,
                     onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
                     onRemoveAttachment = chatViewModel::removeAttachment,
-                    onToggleDictation = chatViewModel::toggleDictation,
+                    onToggleDictation = { chatViewModel.requestToggleDictation() },
                     onToggleConversation = chatViewModel::toggleVoiceConversation,
                     onToggleVoiceMute = chatViewModel::toggleVoiceMute,
                 ),

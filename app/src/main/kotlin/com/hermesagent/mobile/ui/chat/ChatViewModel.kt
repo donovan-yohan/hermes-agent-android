@@ -1163,6 +1163,22 @@ internal class ChatViewModel(
      * durable session; the transcript inserts into the draft only when the
      * same session is still on screen, and it never auto-submits.
      */
+    /** Activity sets this to run its permission gate before capture starts. */
+    var onToggleDictationRequested: (() -> Unit)? = null
+
+    /** Permission-denied projection; safe copy only, no raw system detail. */
+    fun reportDictationPermissionDenied() {
+        voice.value = com.hermesagent.mobile.data.voice.VoiceUiState.Error(
+            VoiceUiState.VoiceErrorKind.PermissionDenied,
+            "Allow microphone access to dictate. Tap the mic to try again.",
+        )
+    }
+
+    /** UI entry point: the activity's permission gate runs before capture. */
+    fun requestToggleDictation() {
+        onToggleDictationRequested?.invoke() ?: toggleDictation()
+    }
+
     fun toggleDictation() {
         val sessionId = activeSessionId.value ?: return
         val current = voice.value
