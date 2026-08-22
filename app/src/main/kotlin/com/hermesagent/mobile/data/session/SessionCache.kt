@@ -105,6 +105,7 @@ class SessionCache {
                     row.copy(
                         status = existing.status,
                         progress = existing.progress,
+                        composerStatus = existing.composerStatus,
                         activityStartedAtMillis = existing.activityStartedAtMillis,
                     )
                 }

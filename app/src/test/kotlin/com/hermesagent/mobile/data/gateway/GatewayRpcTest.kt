@@ -93,6 +93,22 @@ class GatewayRpcTest {
     }
 
     @Test
+    fun `status update remains on the correlated event stream with its runtime identity`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire())
+        val event = async { rpc.events.first() }
+        runCurrent()
+
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"status.update","session_id":"runtime-status","payload":{"kind":"process","text":"Refreshing work"}}}""",
+        )
+
+        val received = event.await()
+        assertEquals("status.update", received.type)
+        assertEquals("runtime-status", received.runtimeSessionId)
+        assertEquals("process", received.payload.jsonObject["kind"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `composer catalog and completion methods retain typed errors and short deadlines`() = runTest {
         listOf("model.options", "complete.path", "complete.slash").forEach { method ->
             val rejectedRpc = CorrelatedGatewayRpc(RecordingWire())

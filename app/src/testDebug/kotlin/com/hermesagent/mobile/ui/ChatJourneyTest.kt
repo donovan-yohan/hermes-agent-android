@@ -93,6 +93,8 @@ class ChatJourneyTest {
                         onCreateSession = viewModel::createSession,
                         onSend = viewModel::submit,
                         onStop = viewModel::stop,
+                        onRedirect = viewModel::redirectDraftFromUi,
+                        onQueue = viewModel::queueDraft,
                     ),
                     onOpenSettings = {},
                 )
@@ -391,9 +393,16 @@ class ChatJourneyTest {
         compose.waitForIdle()
 
         compose.onNodeWithText("Hermes is working in “Remote planning”.").assertIsDisplayed()
+        // Slice 4 parity: a busy composer keeps truthful actions instead of a
+        // blanket disable. Typed text queues onto the active session and an
+        // empty draft with a queue offers Send next; nothing submits directly.
         compose.onNodeWithContentDescription("Message Hermes").performTextInput("not ambiguous")
-        compose.onNodeWithContentDescription("Send message").assertIsNotEnabled()
-        assertTrue(repository.submitted.isEmpty())
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Queue message").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Queue message").performClick()
+        compose.waitForIdle()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.queueEntries.size)
+        assertEquals(0, repository.submitted.size)
         compose.onNodeWithText("View").performClick()
         compose.waitForIdle()
         assertEquals("live-a", viewModel.uiState.value.activeSession?.id)

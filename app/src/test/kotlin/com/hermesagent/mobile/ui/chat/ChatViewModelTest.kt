@@ -16,6 +16,8 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
+import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
 import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
 import com.hermesagent.mobile.data.gateway.SessionRehome
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
@@ -30,6 +32,11 @@ import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
+import com.hermesagent.mobile.data.composer.ComposerQueueController
+import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
+import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
+import com.hermesagent.mobile.data.composer.TransientComposerQueueStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
@@ -1048,6 +1055,136 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a"), repository.interrupted)
     }
 
+    @Test
+    fun `settle and reconnect schedule only one automatic queue submit`() = runTest(dispatcher) {
+        val submitted = mutableListOf<Pair<String, String>>()
+        val releaseFirstSubmit = CompletableDeferred<QueueSubmissionOutcome>()
+        val controller = ComposerQueueController(
+            store = TransientComposerQueueStore(),
+            submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome {
+                    submitted += durableSessionId to text
+                    return releaseFirstSubmit.await()
+                }
+            },
+        )
+        val subject = ChatViewModel(
+            cache,
+            repository,
+            sidebarStore,
+            clock = { CLOCK },
+            composerQueueController = controller,
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        controller.enqueue("session-a", "first")
+        controller.enqueue("session-a", "second")
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Idle))
+        runCurrent()
+        assertEquals(listOf("session-a" to "first"), submitted)
+
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+
+        assertEquals(listOf("session-a" to "first"), submitted)
+        releaseFirstSubmit.complete(QueueSubmissionOutcome.Accepted)
+        runCurrent()
+        assertEquals(listOf("session-a" to "first"), submitted)
+    }
+
+    @Test
+    fun `rejected redirect keeps one durable local queue entry and clears the delivered draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        repository.redirectOutcome = GatewayRedirectOutcome.Rejected
+        viewModel.setDraft("Use the smaller scope")
+        runCurrent()
+
+        viewModel.redirectDraftFromUi()
+        runCurrent()
+
+        assertEquals(listOf("session-a" to "Use the smaller scope"), repository.redirects)
+        assertEquals("", viewModel.uiState.value.draft)
+        assertEquals(1, viewModel.uiState.value.composer.runtime.queueEntries.size)
+        assertEquals(QueuedPromptDelivery.Ready, viewModel.uiState.value.composer.runtime.queueEntries.single().delivery)
+    }
+
+    @Test
+    fun `ambiguous redirect is visible but cannot auto retry`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        repository.redirectOutcome = GatewayRedirectOutcome.Ambiguous
+        viewModel.setDraft("Keep this correction")
+        runCurrent()
+
+        viewModel.redirectDraftFromUi()
+        runCurrent()
+
+        assertEquals(QueuedPromptDelivery.Ambiguous, viewModel.uiState.value.composer.runtime.queueEntries.single().delivery)
+        assertTrue(viewModel.uiState.value.notice!!.contains("may have reached Hermes"))
+    }
+
+    @Test
+    fun `stop parks queue before guarded interrupt while needs input never interrupts`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.setDraft("after this turn")
+        viewModel.queueDraft()
+        runCurrent()
+
+        viewModel.stop()
+        runCurrent()
+
+        assertEquals(listOf("session-a"), repository.interrupted)
+        assertTrue(viewModel.uiState.value.composer.runtime.queueParked)
+
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.NeedsInput))
+        viewModel.stop()
+        runCurrent()
+
+        assertEquals("NeedsInput must not send a second interrupt", listOf("session-a"), repository.interrupted)
+    }
+
+    @Test
+    fun `history is session-local newest-first and undo is local only`() = runTest(dispatcher) {
+        cache.setTranscript(
+            "session-a",
+            listOf(
+                UserTurn("old", "older user turn", 1),
+                UserTurn("new", "newest user turn", 2),
+            ),
+        )
+        collectState()
+        runCurrent()
+
+        assertTrue(viewModel.historyOlder())
+        runCurrent()
+        assertEquals("newest user turn", viewModel.uiState.value.draft)
+        assertTrue(viewModel.historyOlder())
+        runCurrent()
+        assertEquals("older user turn", viewModel.uiState.value.draft)
+        assertTrue(viewModel.historyNewer())
+        runCurrent()
+        assertEquals("newest user turn", viewModel.uiState.value.draft)
+        assertTrue(viewModel.historyNewer())
+        runCurrent()
+        assertEquals("", viewModel.uiState.value.draft)
+
+        viewModel.setDraft("local one")
+        viewModel.setDraft("local two")
+        assertTrue(viewModel.undoDraft())
+        runCurrent()
+        assertEquals("local one", viewModel.uiState.value.draft)
+        assertEquals(listOf("older user turn", "newest user turn"), cache.transcript("session-a").filterIsInstance<UserTurn>().map(UserTurn::text))
+    }
+
     private fun kotlinx.coroutines.test.TestScope.collectState() {
         backgroundScope.launch { viewModel.uiState.collect { } }
     }
@@ -1073,6 +1210,8 @@ class ChatViewModelTest {
         var failSubmit = false
         var submitGate: CompletableDeferred<Unit>? = null
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
+        var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
+        val redirects = mutableListOf<Pair<String, String>>()
         var controls = ModelControlsSnapshot(
             selection = ComposerModelSelection("model/default", "provider"),
             reasoning = ReasoningEffort.Medium,
@@ -1201,8 +1340,21 @@ class ChatViewModelTest {
             return submitOutcome
         }
 
+        override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome {
+            redirects += durableId to text
+            return redirectOutcome
+        }
+
         override suspend fun interrupt(durableId: String) {
             interrupted += durableId
+        }
+
+        override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
+            interrupted += durableId
+            return when (cache.session(durableId)?.status) {
+                SessionStatus.NeedsInput -> GatewayInterruptOutcome.NeedsInput
+                else -> GatewayInterruptOutcome.Interrupted
+            }
         }
     }
 

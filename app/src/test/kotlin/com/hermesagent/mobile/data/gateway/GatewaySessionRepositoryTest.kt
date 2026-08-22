@@ -6,6 +6,8 @@ import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
+import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -1574,6 +1576,7 @@ class GatewaySessionRepositoryTest {
         runCurrent()
         assertEquals("compacting", cache.session("durable-a")?.progress?.kind)
         assertEquals("Summarizing context…", cache.session("durable-a")?.progress?.text)
+        assertTrue(cache.session("durable-a")?.composerStatus?.isCompacting == true)
 
         val afterFirst = cache.state.value
         rpc.emit("status.update", "runtime-a", """{"kind":"compacting","text":"Summarizing context…"}""")
@@ -1583,6 +1586,7 @@ class GatewaySessionRepositoryTest {
         rpc.emit("status.update", "runtime-a", """{"kind":"process","text":"Resuming interrupted turn…"}""")
         rpc.emit("status.update", "runtime-a", """{"kind":"progress","text":"Checking the result"}""")
         runCurrent()
+        assertEquals("runtime-a", rpc.call("process.list").params.string("session_id"))
         assertEquals("progress", cache.session("durable-a")?.progress?.kind)
         assertEquals("Checking the result", cache.session("durable-a")?.progress?.text)
 
@@ -1594,6 +1598,7 @@ class GatewaySessionRepositoryTest {
             """{"kind":"","text":"blank kind"}""",
             """{"kind":7,"text":"wrong kind type"}""",
             """{"kind":"progress","text":{"nested":true}}""",
+            """{"kind":"new_server_status","text":"must not replace progress"}""",
         ).forEach { malformed -> rpc.emit("status.update", "runtime-a", malformed) }
         runCurrent()
         assertSame("malformed status payloads must not erase useful progress", beforeMalformed, cache.state.value)
@@ -1601,6 +1606,198 @@ class GatewaySessionRepositoryTest {
         rpc.emit("message.complete", "runtime-a", """{"text":"done","status":"complete"}""")
         runCurrent()
         assertEquals(null, cache.session("durable-a")?.progress)
+        assertEquals(null, cache.session("durable-a")?.composerStatus)
+    }
+
+    @Test
+    fun `queued submit uses runtime id and sends queued only for a drain`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        repository.submit("durable-a", "ordinary")
+        val ordinary = rpc.call("prompt.submit").params
+        assertEquals("runtime-a", ordinary.string("session_id"))
+        assertFalse("queued is reserved for queue drains", "queued" in ordinary)
+
+        rpc.emit("message.complete", "runtime-a", """{"text":"done","status":"complete"}""")
+        runCurrent()
+        assertEquals(GatewaySubmitOutcome.Accepted, repository.submit("durable-a", "drained", queued = true))
+        val drained = rpc.call("prompt.submit").params
+        assertEquals("runtime-a", drained.string("session_id"))
+        assertTrue(requireNotNull(drained["queued"]).jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `status event collector redacts and bounds rendered Gateway text`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit(
+            "status.update",
+            "runtime-a",
+            """{"kind":"progress","text":"Authorization: Bearer sentinel-status-token ${"x".repeat(1_000)}"}""",
+        )
+        runCurrent()
+
+        val rendered = requireNotNull(cache.session("durable-a")?.composerStatus?.genericProgress?.text)
+        assertFalse(rendered.contains("sentinel-status-token"))
+        assertTrue(rendered.contains("<redacted>"))
+        assertTrue(rendered.length <= 240)
+    }
+
+    @Test
+    fun `redirect and steer are separate fenced operations with optimistic user rows`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "start")
+        rpc.emit("message.start", "runtime-a", """{"id":"partial","role":"assistant"}""")
+        rpc.emit("message.delta", "runtime-a", """{"delta":"in progress"}""")
+        runCurrent()
+
+        assertEquals(GatewayRedirectOutcome.Redirected, repository.redirect("durable-a", "correct course"))
+        val redirect = rpc.call("session.redirect").params
+        assertEquals("runtime-a", redirect.string("session_id"))
+        assertEquals("correct course", redirect.string("text"))
+        assertEquals("correct course", (cache.transcript("durable-a").last() as UserTurn).text)
+
+        assertEquals(GatewaySteerOutcome.QueuedByGateway, repository.steer("durable-a", "at tool boundary"))
+        val steer = rpc.call("session.steer").params
+        assertEquals("runtime-a", steer.string("session_id"))
+        assertEquals("at tool boundary", steer.string("text"))
+        assertEquals("at tool boundary", (cache.transcript("durable-a").last() as UserTurn).text)
+
+        val beforeRejected = cache.transcript("durable-a")
+        rpc.redirectResult = """{"status":"rejected"}"""
+        assertEquals(GatewayRedirectOutcome.Rejected, repository.redirect("durable-a", "do not append"))
+        assertEquals(beforeRejected, cache.transcript("durable-a"))
+    }
+
+    @Test
+    fun `redirect ambiguity and unsupported capability do not append truth or retry`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "start")
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant"}""")
+        runCurrent()
+
+        val beforeAmbiguous = cache.transcript("durable-a")
+        rpc.redirectFailure = GatewayRpcException("acknowledgement lost", requestMayHaveBeenAccepted = true)
+        assertEquals(GatewayRedirectOutcome.Ambiguous, repository.redirect("durable-a", "maybe delivered"))
+        assertEquals(beforeAmbiguous, cache.transcript("durable-a"))
+
+        rpc.redirectFailure = CancellationException("redirect deadline")
+        assertEquals(GatewayRedirectOutcome.Ambiguous, repository.redirect("durable-a", "timed out"))
+        assertEquals(beforeAmbiguous, cache.transcript("durable-a"))
+
+        rpc.redirectFailure = GatewayRpcError(-32601, "Method not found")
+        assertEquals(GatewayRedirectOutcome.Unsupported, repository.redirect("durable-a", "unsupported"))
+        val callsAfterProbe = rpc.calls.count { it.method == "session.redirect" }
+        assertEquals(GatewayRedirectOutcome.Unsupported, repository.redirect("durable-a", "not retried"))
+        assertEquals(callsAfterProbe, rpc.calls.count { it.method == "session.redirect" })
+    }
+
+    @Test
+    fun `needs input is protected from ordinary interrupt calls`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_WAITING }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        assertEquals(SessionStatus.NeedsInput, cache.session("durable-a")?.status)
+        assertEquals(GatewayInterruptOutcome.NeedsInput, repository.requestInterrupt("durable-a"))
+        repository.interrupt("durable-a")
+        assertFalse(rpc.calls.any { it.method == "session.interrupt" })
+    }
+
+    @Test
+    fun `process and goal capabilities use safe runtime scoped results and cache unsupported`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            processListResult = """{"processes":[
+                {"session_id":"process-a","command":"watch build\\nignored","status":"running","output_tail":"Authorization: Bearer sentinel-process-token"},
+                {"session_id":"process-b","command":"test","status":"exited","exit_code":1}
+            ]}"""
+            goalStatusResult = """{"output":"⊙ Goal set: Ship the mobile composer"}"""
+        }
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        val processes = repository.listProcesses("durable-a") as GatewayProcessListOutcome.Available
+        assertEquals("runtime-a", rpc.call("process.list").params.string("session_id"))
+        assertEquals(ComposerBackgroundProcessState.Running, processes.processes.first().state)
+        assertEquals(ComposerBackgroundProcessState.Failed, processes.processes.last().state)
+        assertFalse(processes.processes.first().output.orEmpty().contains("sentinel-process-token"))
+        repository.refreshSessions()
+        assertEquals(2, cache.session("durable-a")?.composerStatus?.backgroundProcesses?.size)
+        rpc.processListResult = """{"processes":[{}]}"""
+        assertEquals(GatewayProcessListOutcome.Failed, repository.listProcesses("durable-a"))
+        assertEquals(2, cache.session("durable-a")?.composerStatus?.backgroundProcesses?.size)
+        assertEquals(GatewayProcessKillOutcome.Killed, repository.killProcess("durable-a", "process-a"))
+        assertEquals("process-a", rpc.call("process.kill").params.string("process_id"))
+        assertEquals("runtime-a", rpc.call("process.kill").params.string("session_id"))
+
+        val goal = repository.goalStatus("durable-a") as GatewayGoalStatusOutcome.Available
+        assertEquals(ComposerGoalState.Active, goal.goal.state)
+        assertEquals("Ship the mobile composer", goal.goal.title)
+        assertEquals("goal status", rpc.call("slash.exec").params.string("command"))
+        assertEquals("runtime-a", rpc.call("slash.exec").params.string("session_id"))
+
+        rpc.processListFailure = GatewayRpcError(-32601, "Method not found")
+        assertEquals(GatewayProcessListOutcome.Unsupported, repository.listProcesses("durable-a"))
+        val processProbeCount = rpc.calls.count { it.method == "process.list" }
+        assertEquals(GatewayProcessListOutcome.Unsupported, repository.listProcesses("durable-a"))
+        assertEquals(processProbeCount, rpc.calls.count { it.method == "process.list" })
+
+        val reconnected = FakeRpc()
+        clients.value = reconnected
+        runCurrent()
+        assertTrue(repository.listProcesses("durable-a") is GatewayProcessListOutcome.Available)
+        assertEquals(1, reconnected.calls.count { it.method == "process.list" })
     }
 
     @Test
@@ -1843,6 +2040,18 @@ class GatewaySessionRepositoryTest {
         var projectTreeResponse: CompletableDeferred<JsonElement>? = null
         var projectDetailsResponse: CompletableDeferred<JsonElement>? = null
         var promptResponse: CompletableDeferred<JsonElement>? = null
+        var redirectResult = """{"status":"redirected"}"""
+        var redirectFailure: Throwable? = null
+        var steerResult = """{"status":"queued"}"""
+        var steerFailure: Throwable? = null
+        var interruptResult = """{"status":"interrupted"}"""
+        var interruptFailure: Throwable? = null
+        var processListResult = """{"processes":[]}"""
+        var processListFailure: Throwable? = null
+        var processKillResult = "{}"
+        var processKillFailure: Throwable? = null
+        var goalStatusResult = """{"output":"No active goal"}"""
+        var goalStatusFailure: Throwable? = null
         var modelOptionsResult = MODEL_OPTIONS
         var modelOptionsResponse: CompletableDeferred<JsonElement>? = null
         var providerResult = """{"model":"reasoner-v3","provider":"acme"}"""
@@ -1904,8 +2113,43 @@ class GatewaySessionRepositoryTest {
                     }
                     promptResponse?.await() ?: json("{}")
                 }
+                "session.redirect" -> {
+                    redirectFailure?.let { failure ->
+                        redirectFailure = null
+                        throw failure
+                    }
+                    json(redirectResult)
+                }
+                "session.steer" -> {
+                    steerFailure?.let { failure ->
+                        steerFailure = null
+                        throw failure
+                    }
+                    json(steerResult)
+                }
                 "session.activate" -> json(activateResult)
-                "session.interrupt" -> json("{}")
+                "session.interrupt" -> {
+                    interruptFailure?.let { failure ->
+                        interruptFailure = null
+                        throw failure
+                    }
+                    json(interruptResult)
+                }
+                "process.list" -> {
+                    processListFailure?.let { throw it }
+                    json(processListResult)
+                }
+                "process.kill" -> {
+                    processKillFailure?.let { failure ->
+                        processKillFailure = null
+                        throw failure
+                    }
+                    json(processKillResult)
+                }
+                "slash.exec" -> {
+                    goalStatusFailure?.let { throw it }
+                    json(goalStatusResult)
+                }
                 else -> error("unexpected method $method")
             }
         }

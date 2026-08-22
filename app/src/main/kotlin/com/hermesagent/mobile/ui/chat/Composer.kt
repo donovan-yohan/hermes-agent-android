@@ -65,7 +65,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 private const val IME_PROCESS_KEY_CODE = 229
 
 internal enum class ComposerLayoutMode { Full, Compact, Stacked }
-internal enum class ComposerKeyAction { None, Consume, Send, Stop }
+internal enum class ComposerKeyAction { None, Consume, Send, Redirect, SendNext, Queue, Stop }
 
 /** Desktop's measured container thresholds, intentionally expressed in dp. */
 internal fun composerLayoutMode(width: Dp): ComposerLayoutMode = when {
@@ -84,15 +84,31 @@ internal fun composerKeyAction(
     isComposing: Boolean,
     isStreaming: Boolean,
     canSend: Boolean,
+    primaryAction: ComposerPrimaryAction = if (isStreaming) ComposerPrimaryAction.Stop else if (canSend) ComposerPrimaryAction.Send else ComposerPrimaryAction.None,
+    canQueue: Boolean = false,
+    isOverlayFocused: Boolean = false,
+    isNeedsInput: Boolean = false,
 ): ComposerKeyAction {
     if (!isKeyDown || isSoftKeyboard || isComposing ||
         keyCode == android.view.KeyEvent.KEYCODE_UNKNOWN || keyCode == IME_PROCESS_KEY_CODE
     ) return ComposerKeyAction.None
-    if (keyCode == android.view.KeyEvent.KEYCODE_ENTER && isCtrlOrMetaPressed) return ComposerKeyAction.Consume
+    if (keyCode == android.view.KeyEvent.KEYCODE_ENTER && isCtrlOrMetaPressed) {
+        return if (canQueue && !isOverlayFocused) ComposerKeyAction.Queue else ComposerKeyAction.Consume
+    }
     if (isShiftPressed || isCtrlOrMetaPressed || isAltPressed) return ComposerKeyAction.None
     return when (keyCode) {
-        android.view.KeyEvent.KEYCODE_ENTER -> if (!isStreaming && canSend) ComposerKeyAction.Send else ComposerKeyAction.None
-        android.view.KeyEvent.KEYCODE_ESCAPE -> if (isStreaming) ComposerKeyAction.Stop else ComposerKeyAction.None
+        android.view.KeyEvent.KEYCODE_ENTER -> when (primaryAction) {
+            ComposerPrimaryAction.Send -> ComposerKeyAction.Send
+            ComposerPrimaryAction.Redirect -> ComposerKeyAction.Redirect
+            ComposerPrimaryAction.SendNext -> ComposerKeyAction.SendNext
+            ComposerPrimaryAction.Queue -> ComposerKeyAction.Queue
+            ComposerPrimaryAction.None,
+            ComposerPrimaryAction.Stop,
+            -> ComposerKeyAction.None
+        }
+        android.view.KeyEvent.KEYCODE_ESCAPE -> if (
+            isStreaming && !isOverlayFocused && !isNeedsInput
+        ) ComposerKeyAction.Stop else ComposerKeyAction.None
         else -> ComposerKeyAction.None
     }
 }
@@ -133,6 +149,19 @@ fun Composer(
     onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },
     onCompletionSelected: (CompletionItem) -> Unit = {},
     onInsertText: (String) -> Unit = {},
+    busyKind: ComposerBusyKind = if (isStreaming) ComposerBusyKind.Streaming else ComposerBusyKind.Idle,
+    queueCount: Int = 0,
+    canRedirect: Boolean = isStreaming,
+    canQueue: Boolean = false,
+    onRedirect: () -> Unit = {},
+    onQueue: () -> Unit = {},
+    onSendNext: () -> Unit = {},
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
+    onUndo: () -> Boolean = { false },
+    onRedo: () -> Boolean = { false },
+    onHistoryOlder: () -> Boolean = { false },
+    onHistoryNewer: () -> Boolean = { false },
 ) {
     val tokens = HermesTheme.tokens
     val editorFocusRequester = remember(editorIdentity) { FocusRequester() }
@@ -141,6 +170,23 @@ fun Composer(
         if (focusRequestGeneration > 0) editorFocusRequester.requestFocus()
     }
     val restoreEditorFocus = { focusRequestGeneration += 1 }
+    val action = composerActionState(
+        connected = canSend || canQueue || isStreaming,
+        busyKind = busyKind,
+        hasText = draft.isNotBlank(),
+        redirectEligible = canRedirect,
+        queueCount = queueCount,
+    )
+    val performPrimary = {
+        when (action.primary) {
+            ComposerPrimaryAction.Send -> onSend()
+            ComposerPrimaryAction.Redirect -> onRedirect()
+            ComposerPrimaryAction.Stop -> onStop()
+            ComposerPrimaryAction.SendNext -> onSendNext()
+            ComposerPrimaryAction.Queue -> onQueue()
+            ComposerPrimaryAction.None -> Unit
+        }
+    }
     BoxWithConstraints(modifier.fillMaxWidth().background(tokens.chatSurface)) {
         val layoutMode = composerLayoutMode(maxWidth)
         Column(
@@ -157,10 +203,17 @@ fun Composer(
                 ComposerEditor(
                     draft,
                     onDraftChange,
-                    onSend,
-                        onStop,
-                        isStreaming,
-                        canSend,
+                    action.primary,
+                    canQueue,
+                    performPrimary,
+                    onQueue,
+                    onStop,
+                    busyKind == ComposerBusyKind.Streaming,
+                    busyKind == ComposerBusyKind.NeedsInput,
+                    onHistoryOlder,
+                    onHistoryNewer,
+                    onUndo,
+                    onRedo,
                         editorIdentity,
                         controls,
                         onEditorSelectionChange,
@@ -172,7 +225,8 @@ fun Composer(
                     )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
-                    ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
+                    if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
+                    ComposerPrimaryControl(action.primary, performPrimary)
                 }
             } else {
                 Row(
@@ -183,10 +237,17 @@ fun Composer(
                     ComposerEditor(
                         draft,
                         onDraftChange,
-                        onSend,
+                        action.primary,
+                        canQueue,
+                        performPrimary,
+                        onQueue,
                         onStop,
-                        isStreaming,
-                        canSend,
+                        busyKind == ComposerBusyKind.Streaming,
+                        busyKind == ComposerBusyKind.NeedsInput,
+                        onHistoryOlder,
+                        onHistoryNewer,
+                        onUndo,
+                        onRedo,
                         editorIdentity,
                         controls,
                         onEditorSelectionChange,
@@ -197,7 +258,8 @@ fun Composer(
                         Modifier.weight(1f),
                     )
                     ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
-                    ComposerPrimaryAction(onSend, onStop, isStreaming, canSend)
+                    if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
+                    ComposerPrimaryControl(action.primary, performPrimary)
                 }
             }
             Row(
@@ -211,6 +273,20 @@ fun Composer(
                     color = tokens.scaffoldMeta,
                     modifier = Modifier.padding(start = 6.dp).weight(1f),
                 )
+                if (canUndo) {
+                    TextButton(
+                        label = "Undo",
+                        onClick = { onUndo() },
+                        modifier = Modifier.semantics { contentDescription = "Undo draft edit" },
+                    )
+                }
+                if (canRedo) {
+                    TextButton(
+                        label = "Redo",
+                        onClick = { onRedo() },
+                        modifier = Modifier.semantics { contentDescription = "Redo draft edit" },
+                    )
+                }
                 if (runningOwnerTitle != null && onViewRunningOwner != null) {
                     TextButton(
                         label = "View",
@@ -254,10 +330,17 @@ private fun ComposerModelControl(
 private fun ComposerEditor(
     draft: String,
     onDraftChange: (String) -> Unit,
-    onSend: () -> Unit,
+    primaryAction: ComposerPrimaryAction,
+    canQueue: Boolean,
+    onPrimary: () -> Unit,
+    onQueue: () -> Unit,
     onStop: () -> Unit,
     isStreaming: Boolean,
-    canSend: Boolean,
+    isNeedsInput: Boolean,
+    onHistoryOlder: () -> Boolean,
+    onHistoryNewer: () -> Boolean,
+    onUndo: () -> Boolean,
+    onRedo: () -> Boolean,
     editorIdentity: String?,
     controls: ComposerUiState,
     onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit,
@@ -367,6 +450,23 @@ private fun ComposerEditor(
                         }
                     }
                 }
+                val rawHistoryKey = event.type == KeyEventType.KeyDown &&
+                    native.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD == 0 &&
+                    editorValue.composition == null && completionItems.isEmpty()
+                if (rawHistoryKey && !native.isCtrlPressed && !native.isMetaPressed && !native.isAltPressed) {
+                    when (native.keyCode) {
+                        android.view.KeyEvent.KEYCODE_DPAD_UP -> if (onHistoryOlder()) return@onPreviewKeyEvent true
+                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> if (onHistoryNewer()) return@onPreviewKeyEvent true
+                    }
+                }
+                if (rawHistoryKey && (native.isCtrlPressed || native.isMetaPressed) && !native.isAltPressed) {
+                    val handled = when (native.keyCode) {
+                        android.view.KeyEvent.KEYCODE_Z -> if (native.isShiftPressed) onRedo() else onUndo()
+                        android.view.KeyEvent.KEYCODE_Y -> onRedo()
+                        else -> false
+                    }
+                    if (handled) return@onPreviewKeyEvent true
+                }
                 val action = composerKeyAction(
                     keyCode = native.keyCode,
                     isKeyDown = event.type == KeyEventType.KeyDown,
@@ -376,11 +476,22 @@ private fun ComposerEditor(
                     isSoftKeyboard = native.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD != 0,
                     isComposing = editorValue.composition != null,
                     isStreaming = isStreaming,
-                    canSend = canSend,
+                    canSend = primaryAction == ComposerPrimaryAction.Send,
+                    primaryAction = primaryAction,
+                    canQueue = canQueue,
+                    isOverlayFocused = completionItems.isNotEmpty(),
+                    isNeedsInput = isNeedsInput,
                 )
                 when (action) {
                     ComposerKeyAction.Consume -> true
-                    ComposerKeyAction.Send -> { onSend(); true }
+                    ComposerKeyAction.Send,
+                    ComposerKeyAction.Redirect,
+                    ComposerKeyAction.SendNext,
+                    -> { onPrimary(); true }
+                    ComposerKeyAction.Queue -> {
+                        if (primaryAction == ComposerPrimaryAction.Queue) onPrimary() else onQueue()
+                        true
+                    }
                     ComposerKeyAction.Stop -> { onStop(); true }
                     ComposerKeyAction.None -> false
                 }
@@ -411,16 +522,33 @@ private fun ComposerEditor(
 }
 
 @Composable
-private fun ComposerPrimaryAction(onSend: () -> Unit, onStop: () -> Unit, streaming: Boolean, canSend: Boolean) {
+private fun ComposerSecondaryQueueAction(onQueue: () -> Unit) {
+    TextButton(
+        label = "Queue",
+        onClick = onQueue,
+        modifier = Modifier.semantics { contentDescription = "Queue message" },
+    )
+}
+
+@Composable
+private fun ComposerPrimaryControl(action: ComposerPrimaryAction, onClick: () -> Unit) {
     val tokens = HermesTheme.tokens
-    val enabled = streaming || canSend
+    val enabled = action != ComposerPrimaryAction.None
+    val description = when (action) {
+        ComposerPrimaryAction.Send -> "Send message"
+        ComposerPrimaryAction.Redirect -> "Redirect message"
+        ComposerPrimaryAction.Stop -> "Stop generating"
+        ComposerPrimaryAction.SendNext -> "Send next queued message"
+        ComposerPrimaryAction.Queue -> "Queue message"
+        ComposerPrimaryAction.None -> "Send message"
+    }
     Box(
         Modifier
             .size(HermesTheme.spacing.touchTarget)
             .clip(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button) { if (streaming) onStop() else onSend() }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) {
-                contentDescription = if (streaming) "Stop generating" else "Send message"
+                contentDescription = description
                 if (!enabled) disabled()
             },
         contentAlignment = Alignment.Center,
@@ -431,7 +559,7 @@ private fun ComposerPrimaryAction(onSend: () -> Unit, onStop: () -> Unit, stream
                 .background(if (enabled) tokens.textPrimary else tokens.textPrimary.copy(alpha = .25f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (streaming) {
+            if (action == ComposerPrimaryAction.Stop) {
                 Box(Modifier.size(10.dp).background(tokens.cardSurface, RoundedCornerShape(3.dp)))
             } else {
                 HermesIconGlyph(HermesIcon.ArrowUp, color = tokens.cardSurface, size = 14.sp)

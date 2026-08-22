@@ -422,6 +422,36 @@
         "desktop",
         "android"
       ]
+    },
+    {
+      "id": "queue-parked",
+      "fixture": "composer-parked-queue-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "queue-ambiguous-review",
+      "fixture": "composer-ambiguous-queue-review-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "status-unavailable-coding-context",
+      "fixture": "composer-unavailable-coding-context-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
     }
   ],
   "harness_contract": {

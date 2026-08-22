@@ -116,8 +116,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Gateway prompt.submit and interrupt RPCs",
       "android_status": "partial",
-      "android_behavior": "Composer exposes explicit circular send/stop actions, safe physical Enter/Escape handling, and truthful navigation to another session that owns the running turn. Steer and queue remain missing.",
-      "android_tests": "ComposerContractTest, ChatViewModelTest, and ChatJourneyTest cover send/stop, rejected and ambiguous submit, IME/modifier guards, and running-owner navigation; later slice owns queue/steer journeys.",
+      "android_behavior": "Slice 4 adds a profile-scoped, durable text-only FIFO queue keyed by canonical session id, explicit queue edit/save/cancel/delete/send-next/resume controls, parked queues before guarded interrupt, and deterministic idle/send, running/redirect, empty/stop, NeedsInput/queue, and idle-empty/send-next actions. Redirect uses session.redirect only: rejected, unsupported, and failed results retain one local queued copy; ambiguous results remain review-required with no automatic retry. Queue entries never contain Android URIs or attachments. Visual capture and native attachment evidence remain open for later slices.",
+      "android_tests": "ComposerQueueStoreTest, ComposerQueueControllerTest, ComposerQueueHistoryTest, ComposerContractTest, ChatViewModelTest, and ChatJourneyTest cover profile isolation, FIFO, parking, ambiguity, no duplicate drain, redirect fallback, history/undo, IME/modifier guards, and running-owner isolation. Full visual/device evidence remains open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
@@ -132,7 +132,9 @@
         "send-idle",
         "stop-running",
         "steer-running",
-        "queue-edit"
+        "queue-edit",
+        "queue-parked",
+        "queue-ambiguous-review"
       ],
       "category": "submit/stop/steer/queue"
     },
@@ -266,9 +268,9 @@
       "visible_contract": "Composer-adjacent coding/branch/worktree, goal, preview, async, collapse, dismiss, and stop status stack.",
       "state_authority": "connection-scoped",
       "platform_dependency": "Gateway runtime status events",
-      "android_status": "missing",
-      "android_behavior": "Current app renders one concise progress line, not Desktop status-stack rows/actions.",
-      "android_tests": "Current repository tests only the generic progress projection; stack-specific journeys remain future work.",
+      "android_status": "partial",
+      "android_behavior": "Slice 4 projects goal, todo, subagent, background/process, preview, generic progress, and durable queue rows into a bounded, separately scrolling stack ordered goal, todo, subagent, background plus preview, queue. Background actions are capability-gated. CodingContextProvider is Unavailable on Android, so branch/worktree controls are absent: the current Android Gateway has no authorized remote repository-status transport. Desktop remote coding can use its authenticated apps/desktop/src/lib/desktop-git.ts and /api/git facade; that authority does not exist in Android's Gateway contract. Visual capture and any future remote git capability remain open.",
+      "android_tests": "GatewaySessionRepositoryTest covers status projection, optional process/goal capability absence, and terminal clearing; ComposerStatusStack and ChatJourney coverage cover accessibility/order as the synthetic visual matrix is completed. Full visual/device evidence remains open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/status-stack/index.tsx:1",
@@ -282,7 +284,8 @@
       "capture_states": [
         "status-coding-branch-worktree",
         "status-goal-preview-async",
-        "status-collapsed-dismiss-stop"
+        "status-collapsed-dismiss-stop",
+        "status-unavailable-coding-context"
       ],
       "category": "coding/status stack"
     },
@@ -293,8 +296,8 @@
       "state_authority": "backend-authoritative",
       "platform_dependency": "Gateway request/response RPCs and safe in-memory secret handling",
       "android_status": "partial",
-      "android_behavior": "SessionStatus.NeedsInput is projected as blocking/unread status, but there is no native request-specific response or safe-refusal surface.",
-      "android_tests": "GatewaySessionRepositoryTest covers NeedsInput status projection; later slice must test response kinds, routing, reconnect and non-leakage.",
+      "android_behavior": "SessionStatus.NeedsInput remains a blocking Gateway state with no native request-specific response or safe-refusal surface. Slice 4 makes the composer truthful: typed ordinary text enters the durable queue and Stop/Escape cannot interrupt a required-input turn. The request-specific response surface remains a later slice.",
+      "android_tests": "GatewaySessionRepositoryTest covers NeedsInput projection; ChatViewModelTest and ComposerContractTest cover queued typed text and non-interrupting Stop/Escape guards. Later work must test response kinds, routing, reconnect and non-leakage.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390",

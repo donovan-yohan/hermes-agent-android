@@ -5,9 +5,60 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ComposerContractTest {
+    @Test
+    fun `primary action preserves send redirect stop needs-input queue and idle drain contract`() {
+        assertEquals(
+            ComposerPrimaryAction.Send,
+            actionState(ComposerBusyKind.Idle, hasText = true).primary,
+        )
+        assertEquals(
+            ComposerPrimaryAction.Redirect,
+            actionState(ComposerBusyKind.Streaming, hasText = true).primary,
+        )
+        assertTrue(actionState(ComposerBusyKind.Streaming, hasText = true).showQueueSecondary)
+        assertEquals(
+            ComposerPrimaryAction.Stop,
+            actionState(ComposerBusyKind.Streaming, hasText = false).primary,
+        )
+        assertEquals(
+            ComposerPrimaryAction.Queue,
+            actionState(ComposerBusyKind.NeedsInput, hasText = true).primary,
+        )
+        assertEquals(
+            ComposerPrimaryAction.None,
+            actionState(ComposerBusyKind.NeedsInput, hasText = false).primary,
+        )
+        assertEquals(
+            ComposerPrimaryAction.SendNext,
+            actionState(ComposerBusyKind.Idle, hasText = false, queueCount = 1).primary,
+        )
+    }
+
+    @Test
+    fun `nonredirectable and other-session text queues instead of using a different rpc`() {
+        assertEquals(
+            ComposerPrimaryAction.Queue,
+            actionState(ComposerBusyKind.Streaming, hasText = true, redirectEligible = false).primary,
+        )
+        assertEquals(
+            ComposerPrimaryAction.Queue,
+            actionState(ComposerBusyKind.OtherSessionRunning, hasText = true).primary,
+        )
+        assertEquals(
+            ComposerPrimaryAction.None,
+            composerActionState(
+                connected = false,
+                busyKind = ComposerBusyKind.Idle,
+                hasText = true,
+                redirectEligible = true,
+                queueCount = 0,
+            ).primary,
+        )
+    }
     @Test
     fun `layout thresholds use measured composer width exactly`() {
         assertEquals(ComposerLayoutMode.Full, composerLayoutMode(561.dp))
@@ -42,6 +93,109 @@ class ComposerContractTest {
         assertEquals(
             ComposerKeyAction.None,
             action(KeyEvent.KEYCODE_ESCAPE, isStreaming = true, isShiftPressed = true),
+        )
+    }
+
+    @Test
+    fun `hardware primary and queue shortcuts preserve composition overlay and needs-input guards`() {
+        assertEquals(
+            ComposerKeyAction.Redirect,
+            composerKeyAction(
+                keyCode = KeyEvent.KEYCODE_ENTER,
+                isKeyDown = true,
+                isShiftPressed = false,
+                isCtrlOrMetaPressed = false,
+                isAltPressed = false,
+                isSoftKeyboard = false,
+                isComposing = false,
+                isStreaming = true,
+                canSend = false,
+                primaryAction = ComposerPrimaryAction.Redirect,
+                canQueue = true,
+            ),
+        )
+        assertEquals(
+            ComposerKeyAction.Queue,
+            composerKeyAction(
+                keyCode = KeyEvent.KEYCODE_ENTER,
+                isKeyDown = true,
+                isShiftPressed = false,
+                isCtrlOrMetaPressed = true,
+                isAltPressed = false,
+                isSoftKeyboard = false,
+                isComposing = false,
+                isStreaming = true,
+                canSend = false,
+                primaryAction = ComposerPrimaryAction.Redirect,
+                canQueue = true,
+            ),
+        )
+        assertEquals(
+            ComposerKeyAction.Consume,
+            composerKeyAction(
+                keyCode = KeyEvent.KEYCODE_ENTER,
+                isKeyDown = true,
+                isShiftPressed = false,
+                isCtrlOrMetaPressed = true,
+                isAltPressed = false,
+                isSoftKeyboard = false,
+                isComposing = false,
+                isStreaming = true,
+                canSend = false,
+                primaryAction = ComposerPrimaryAction.Redirect,
+                canQueue = true,
+                isOverlayFocused = true,
+            ),
+        )
+        assertEquals(
+            ComposerKeyAction.Stop,
+            composerKeyAction(
+                keyCode = KeyEvent.KEYCODE_ESCAPE,
+                isKeyDown = true,
+                isShiftPressed = false,
+                isCtrlOrMetaPressed = false,
+                isAltPressed = false,
+                isSoftKeyboard = false,
+                isComposing = false,
+                isStreaming = true,
+                canSend = false,
+                primaryAction = ComposerPrimaryAction.Redirect,
+                canQueue = true,
+            ),
+        )
+        assertEquals(
+            ComposerKeyAction.None,
+            composerKeyAction(
+                keyCode = KeyEvent.KEYCODE_ESCAPE,
+                isKeyDown = true,
+                isShiftPressed = false,
+                isCtrlOrMetaPressed = false,
+                isAltPressed = false,
+                isSoftKeyboard = false,
+                isComposing = false,
+                isStreaming = true,
+                canSend = false,
+                primaryAction = ComposerPrimaryAction.Stop,
+                canQueue = true,
+                isOverlayFocused = true,
+            ),
+        )
+        assertEquals(
+            ComposerKeyAction.None,
+            composerKeyAction(
+                keyCode = KeyEvent.KEYCODE_ESCAPE,
+                isKeyDown = true,
+                isShiftPressed = false,
+                isCtrlOrMetaPressed = false,
+                isAltPressed = false,
+                isSoftKeyboard = false,
+                isComposing = false,
+                isStreaming = false,
+                canSend = false,
+                primaryAction = ComposerPrimaryAction.Stop,
+                canQueue = true,
+                isNeedsInput = true,
+            ),
         )
     }
 
@@ -86,5 +240,18 @@ class ComposerContractTest {
         isComposing = isComposing,
         isStreaming = isStreaming,
         canSend = canSend,
+    )
+
+    private fun actionState(
+        busyKind: ComposerBusyKind,
+        hasText: Boolean,
+        redirectEligible: Boolean = true,
+        queueCount: Int = 0,
+    ) = composerActionState(
+        connected = true,
+        busyKind = busyKind,
+        hasText = hasText,
+        redirectEligible = redirectEligible,
+        queueCount = queueCount,
     )
 }

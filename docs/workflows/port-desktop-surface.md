@@ -68,6 +68,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Sessions and prompts | `tui_gateway/server.py` plus its tests | Durable/runtime identity, session methods, `prompt.submit`, event payloads |
 | Composer contract | `apps/desktop/src/app/chat/composer/index.tsx:880-1085`, `controls.tsx:42-390`, `attachments.tsx:18-233`, `model-pill.tsx:26-173` | Editor, send/stop/queue, attachment and model visual/functional boundaries |
 | Composer state seams | `apps/desktop/src/app/chat/composer/hooks/use-composer-{submit,draft,queue,esc-cancel,voice}.ts` and their tests | Submit acknowledgement, draft identity, parked turns, queue, safe cancel and voice lifecycle |
+| Composer correction/status authority | `apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts`, `apps/desktop/src/app/chat/composer/status-stack/`, `apps/desktop/src/lib/desktop-git.ts` | Redirect is distinct from steer; queue ownership is durable-session local; Desktop remote coding uses its authenticated `/api/git` facade, which is not an Android Gateway authority |
 | Composer completions/status | `apps/desktop/src/app/chat/composer/{completion-drawer,context-menu,contrib,status-stack}/` plus tests | Context actions, all completion providers, contribution gaps and status stack states |
 | Composer model authority | `apps/desktop/src/app/chat/composer/model-pill.tsx:26-173`; `apps/desktop/src/app/session/hooks/use-model-controls.ts:238-286`; `apps/desktop/src/store/session.ts:20-29,616-620` | Catalog/effective state is Gateway truth; a fresh-draft pin is scoped local state, while live deferred model changes remain next-turn intent until `session.info` confirms |
 | Composer completion authority | `apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts:24-153`; `apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts:61-250`; `apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts:16-214`; `apps/desktop/src/app/chat/composer/url-refs.ts:1-103`; `apps/desktop/src/app/chat/composer/path-refs.ts:1-103` | Fence async results by trigger, text, runtime/cwd and generation; serialize URL/path/session references as canonical text before considering rich chips |
@@ -241,3 +242,12 @@ workspace suggestions, not Android file paths. Keep `content://` and clipboard
 data out of the wire text until a real Slice 6 byte-staging handoff exists;
 the safe Slice 3 surface is URL/snippet insertion plus canonical text
 completion with stale-result fencing.
+
+Slice 4 found a similarly important authority boundary: Desktop remote coding
+can inspect repository state through its authenticated
+`apps/desktop/src/lib/desktop-git.ts` and `/api/git` facade. Android currently
+has no authorized Gateway repository-status transport, so it must render
+`CodingContextProvider.Unavailable` with no branch or worktree controls. This
+is not an Electron-only limitation; it is the absence of a verified Android
+remote-git capability contract. Keep the queue profile-scoped and session-keyed
+locally, and keep runtime IDs and Android URIs out of its durable records.

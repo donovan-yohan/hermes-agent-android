@@ -2,6 +2,12 @@ package com.hermesagent.mobile
 
 import android.app.Application
 import com.hermesagent.mobile.data.draft.AndroidSessionDraftStore
+import com.hermesagent.mobile.data.composer.AndroidComposerQueueStoreFactory
+import com.hermesagent.mobile.data.composer.ComposerQueueController
+import com.hermesagent.mobile.data.composer.ComposerQueueScope
+import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
+import com.hermesagent.mobile.data.composer.ProfileSwitchingComposerQueueStore
+import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -41,6 +47,17 @@ class HermesApplication : Application() {
     val cache: SessionCache by lazy(::SessionCache)
     val preferences: HermesPreferences by lazy { HermesPreferences(this) }
     val draftStore: AndroidSessionDraftStore by lazy { AndroidSessionDraftStore(this) }
+    /**
+     * Queue text is private per saved endpoint/profile scope. The selected
+     * store changes atomically before the ViewModel presents it; neither
+     * runtime session ids nor remote paths participate in that identity.
+     */
+    private val composerQueueStore by lazy {
+        ProfileSwitchingComposerQueueStore(
+            factory = AndroidComposerQueueStoreFactory(this),
+            initialScope = ComposerQueueScope.forConnectionProfile("bootstrap", "default"),
+        )
+    }
     internal val gatewayConnection: GatewayConnectionManager by lazy {
         val authApi = OkHttpGatewayNativeAuthApi(http)
         val authenticator = NativeGatewayAuthenticator(
@@ -59,6 +76,27 @@ class HermesApplication : Application() {
     }
     internal val sessionRepository: LiveGatewaySessionRepository by lazy {
         LiveGatewaySessionRepository(cache, gatewayConnection, appScope)
+    }
+    internal val composerQueueController: ComposerQueueController by lazy {
+        ComposerQueueController(
+            store = composerQueueStore,
+            submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome = try {
+                    when (sessionRepository.submit(durableSessionId, text, queued = true)) {
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted -> QueueSubmissionOutcome.Accepted
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Ambiguous -> QueueSubmissionOutcome.Ambiguous
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    QueueSubmissionOutcome.Rejected
+                }
+            },
+        )
+    }
+
+    internal suspend fun switchComposerQueueScope(scope: ComposerQueueScope) {
+        composerQueueStore.switchScope(scope)
     }
     private var networkMonitor: GatewayNetworkMonitor? = null
 

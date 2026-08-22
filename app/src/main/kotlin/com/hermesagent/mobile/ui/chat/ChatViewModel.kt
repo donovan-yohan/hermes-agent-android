@@ -2,11 +2,29 @@ package com.hermesagent.mobile.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.CompletionResult
 import com.hermesagent.mobile.data.composer.CompletionTrigger
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.ComposerDraftChange
+import com.hermesagent.mobile.data.composer.ComposerHistoryBrowseState
+import com.hermesagent.mobile.data.composer.ComposerHistoryController
+import com.hermesagent.mobile.data.composer.ComposerQueueController
+import com.hermesagent.mobile.data.composer.ComposerQueueDrainResult
+import com.hermesagent.mobile.data.composer.ComposerQueueMutation
+import com.hermesagent.mobile.data.composer.ComposerQueueScope
+import com.hermesagent.mobile.data.composer.ComposerQueueState
+import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
+import com.hermesagent.mobile.data.composer.ComposerUndoRedoState
+import com.hermesagent.mobile.data.composer.QueueEditSnapshot
+import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
+import com.hermesagent.mobile.data.composer.QueuedPrompt
+import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
+import com.hermesagent.mobile.data.composer.SavedStateComposerHistoryBrowseStore
+import com.hermesagent.mobile.data.composer.TransientComposerHistoryBrowseStore
+import com.hermesagent.mobile.data.composer.TransientComposerQueueStore
 import com.hermesagent.mobile.data.composer.ComposerReference
 import com.hermesagent.mobile.data.composer.ControlMutationResult
 import com.hermesagent.mobile.data.composer.FastMode
@@ -19,8 +37,12 @@ import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
+import com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome
+import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
 import com.hermesagent.mobile.data.prefs.ComposerControlsScope
 import com.hermesagent.mobile.data.prefs.ComposerControlsStore
 import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
@@ -91,6 +113,21 @@ data class ComposerUiState(
     val isManualNewDraft: Boolean = false,
     val mutation: ComposerMutationUiState = ComposerMutationUiState.Idle,
     val completion: CompletionUiState = CompletionUiState(),
+    val runtime: ComposerRuntimeUiState = ComposerRuntimeUiState(),
+)
+
+/** Local, durable-queue-aware composer behavior projected alongside Gateway truth. */
+data class ComposerRuntimeUiState(
+    val activeDurableId: String? = null,
+    val busyKind: ComposerBusyKind = ComposerBusyKind.Idle,
+    val queueEntries: List<QueuedPrompt> = emptyList(),
+    val queueParked: Boolean = false,
+    val queueEditingEntryId: String? = null,
+    val queueEditingText: String = "",
+    val canRedirect: Boolean = false,
+    val canQueue: Boolean = false,
+    val historyBrowse: ComposerHistoryBrowseState? = null,
+    val undoRedo: ComposerUndoRedoState = ComposerUndoRedoState(),
 )
 
 data class ChatUiState(
@@ -132,6 +169,11 @@ internal class ChatViewModel(
     /** Process scope survives navigation long enough to flush the private draft. */
     private val applicationDraftScope: CoroutineScope? = null,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val composerQueueController: ComposerQueueController = transientQueueController(),
+    /** Switches the backing store before a new endpoint/profile can see or mutate its queue. */
+    private val switchComposerQueueScope: suspend (ComposerQueueScope) -> Unit = {},
+    private val composerHistoryController: ComposerHistoryController =
+        ComposerHistoryController(cache, TransientComposerHistoryBrowseStore()),
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val draft = MutableStateFlow("")
@@ -141,6 +183,13 @@ internal class ChatViewModel(
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
     private val composer = MutableStateFlow(ComposerUiState())
+    private val queueState = MutableStateFlow(ComposerQueueState())
+    private val parkedQueueIds = MutableStateFlow<Set<String>>(emptySet())
+    private val queueEdit = MutableStateFlow<QueueEditSnapshot?>(null)
+    private val queueEditText = MutableStateFlow("")
+    /** Browser/undo buffers are deliberately local, so this just invalidates the projection. */
+    private val historyRevision = MutableStateFlow(0L)
+    private val queueScopeReady = MutableStateFlow(false)
     private val createdProjectBySession = mutableMapOf<String, String>()
     private var navigationGeneration = 0L
     private var sidebarGroupingGeneration = 0L
@@ -168,6 +217,18 @@ internal class ChatViewModel(
     private var completionLoad: Job? = null
     private var preferenceLoad: Job? = null
     private var observedConnectionStatus: GatewayConnectionStatus? = null
+    private var queueScopeSwitch: Job? = null
+    private var redirectInFlight = false
+    /** One automatic drain may be in flight per durable session. */
+    private val scheduledQueueDrains = mutableSetOf<String>()
+
+    private val localComposerState = combine(
+        combine(queueState, parkedQueueIds, queueEdit, queueEditText) { state, parked, edit, editText ->
+            LocalQueueState(state, parked, edit, editText)
+        },
+        historyRevision,
+        queueScopeReady,
+    ) { queue, revision, scopeReady -> LocalComposerState(queue, revision, scopeReady) }
 
     val uiState: StateFlow<ChatUiState> = combine(
         cache.state,
@@ -177,17 +238,18 @@ internal class ChatViewModel(
         combine(
             composer,
             combine(
-                repository.connectionState,
-                notice,
-                selectedProjectId,
-                projectLoadingId,
-                sidebarGrouping,
-            ) { connection, message, projectId, loadingId, grouping ->
-                NavigationState(connection, message, projectId, loadingId, grouping)
-            },
-        ) { composerState, navigation ->
-            navigation.copy(composer = composerState)
-        },
+                combine(
+                    repository.connectionState,
+                    notice,
+                    selectedProjectId,
+                    projectLoadingId,
+                    sidebarGrouping,
+                ) { connection, message, projectId, loadingId, grouping ->
+                    NavigationState(connection, message, projectId, loadingId, grouping)
+                },
+                localComposerState,
+            ) { navigation, local -> navigation.copy(localComposer = local) },
+        ) { composerState, navigation -> navigation.copy(composer = composerState) },
     ) { cacheState, queryText, draftText, activeId, navigation ->
         val blocking = cacheState.sessions.values.filter { it.status in PROMPT_BLOCKING_STATUSES }
         val running = blocking.size
@@ -217,6 +279,33 @@ internal class ChatViewModel(
         } else {
             emptyList()
         }
+        val busyKind = when {
+            active?.status == SessionStatus.NeedsInput -> ComposerBusyKind.NeedsInput
+            active?.status in STREAMING_STATUSES -> ComposerBusyKind.Streaming
+            active?.status == SessionStatus.Background -> ComposerBusyKind.Background
+            runningOwner != null -> ComposerBusyKind.OtherSessionRunning
+            else -> ComposerBusyKind.Idle
+        }
+        val queueEntries = displayedActiveId
+            ?.takeIf { navigation.localComposer.scopeReady }
+            ?.let(navigation.localComposer.queue.state::entriesFor)
+            .orEmpty()
+        val runtime = ComposerRuntimeUiState(
+            activeDurableId = displayedActiveId,
+            busyKind = busyKind,
+            queueEntries = queueEntries,
+            queueParked = displayedActiveId != null && displayedActiveId in navigation.localComposer.queue.parkedIds,
+            queueEditingEntryId = navigation.localComposer.queue.edit?.takeIf {
+                it.durableSessionId == displayedActiveId
+            }?.entryId,
+            queueEditingText = navigation.localComposer.queue.editText,
+            canRedirect = navigation.connection.status == GatewayConnectionStatus.Connected &&
+                busyKind == ComposerBusyKind.Streaming && draftText.isRedirectEligible(),
+            canQueue = navigation.connection.status == GatewayConnectionStatus.Connected &&
+                displayedActiveId != null && navigation.localComposer.scopeReady,
+            historyBrowse = displayedActiveId?.let(composerHistoryController::browseState),
+            undoRedo = displayedActiveId?.let(composerHistoryController::undoRedoState) ?: ComposerUndoRedoState(),
+        )
         ChatUiState(
             sessionRows = buildSessionRows(
                 sessions = scopedSessions,
@@ -237,11 +326,17 @@ internal class ChatViewModel(
             runningOwner = runningOwner,
             connection = navigation.connection,
             notice = navigation.notice,
-            composer = navigation.composer,
+            composer = navigation.composer.copy(runtime = runtime),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
+        viewModelScope.launch {
+            composerQueueController.state.collect { queueState.value = it }
+        }
+        viewModelScope.launch {
+            composerQueueController.parkedDurableIds.collect { parkedQueueIds.value = it }
+        }
         viewModelScope.launch {
             draftStore.drafts.collect { restored ->
                 val merged = LinkedHashMap(restored)
@@ -280,6 +375,7 @@ internal class ChatViewModel(
                 invalidateComposerRuntimeState()
                 if (connection.status == GatewayConnectionStatus.Connected) {
                     refreshComposer(activeSessionId.value)
+                    activeSessionId.value?.let(::drainQueueIfIdle)
                 }
             }
         }
@@ -301,10 +397,14 @@ internal class ChatViewModel(
                     }
                 }
                 for ((id, session) in state.sessions) {
-                    if (previousStatuses[id] in PROMPT_BLOCKING_STATUSES &&
-                        session.status == SessionStatus.Idle && activeSessionId.value != id
-                    ) {
-                        cache.upsertSession(session.copy(status = SessionStatus.Unread))
+                    if (previousStatuses[id] in PROMPT_BLOCKING_STATUSES && session.status == SessionStatus.Idle) {
+                        // The exact settled durable session drains (or remains
+                        // parked) before an off-screen unread marker replaces
+                        // the visible idle status.
+                        drainQueueIfIdle(id)
+                        if (activeSessionId.value != id) {
+                            cache.upsertSession(session.copy(status = SessionStatus.Unread))
+                        }
                     }
                 }
                 previousStatuses = state.sessions.mapValues { it.value.status }
@@ -324,6 +424,23 @@ internal class ChatViewModel(
     private fun bindComposerScope(scope: ComposerControlsScope) {
         if (composerScope == scope) return
         composerScope = scope
+        queueScopeReady.value = false
+        queueEdit.value = null
+        queueEditText.value = ""
+        queueScopeSwitch?.cancel()
+        queueScopeSwitch = viewModelScope.launch {
+            // Park/edit/review state is intentionally local to the active
+            // connection/profile. Clear it before the backing store switches
+            // so equal durable IDs cannot inherit transient UI state.
+            composerQueueController.resetTransientScopeState()
+            switchComposerQueueScope(
+                ComposerQueueScope.forConnectionProfile(scope.connectionIdentity, scope.profileIdentity),
+            )
+            if (composerScope == scope) {
+                queueScopeReady.value = true
+                activeSessionId.value?.let(::drainQueueIfIdle)
+            }
+        }
         newDraftPreference = null
         newDraftPreferenceTouched = false
         newDraftDefaults = ModelControlsSnapshot()
@@ -467,6 +584,15 @@ internal class ChatViewModel(
     }
 
     fun setDraft(value: String) {
+        val activeId = activeSessionId.value
+        if (activeId != null) {
+            composerHistoryController.recordOrdinaryEdit(activeId, draft.value, value)
+            invalidateHistory()
+        }
+        setDraftWithoutHistory(value)
+    }
+
+    private fun setDraftWithoutHistory(value: String) {
         draft.value = value
         val id = activeSessionId.value ?: return
         rememberDraft(id, value)
@@ -728,12 +854,16 @@ internal class ChatViewModel(
     }
 
     private fun rehome(id: String?) {
+        activeSessionId.value?.let(composerHistoryController::reset)
+        id?.let(composerHistoryController::reset)
+        invalidateHistory()
         activeSessionId.value = id
         invalidateComposerRuntimeState()
         invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
         notice.value = null
         id?.let(::markRead)
+        id?.let(::drainQueueIfIdle)
         if (id == null) refreshComposer(null)
     }
 
@@ -743,6 +873,9 @@ internal class ChatViewModel(
             createdProjectBySession[canonicalId] = projectId
         }
         if (canonicalId == requestedId) return
+        composerHistoryController.rehome(requestedId, canonicalId)
+        composerQueueController.migrate(requestedId, canonicalId)
+        invalidateHistory()
         draftStoreReady.await()
         val transitionRevision = invalidatePendingDraftWrite()
         val sourceWasTouched = requestedId in locallyTouchedDrafts
@@ -773,8 +906,10 @@ internal class ChatViewModel(
         draft.value = winner.orEmpty()
         markRead(canonicalId)
         refreshComposer(canonicalId)
+        drainQueueIfIdle(canonicalId)
     }
 
+    /** The explicit idle action; a busy action is resolved by [performComposerPrimaryAction]. */
     fun submit() {
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
@@ -782,15 +917,14 @@ internal class ChatViewModel(
             repository.connectionState.value.status != GatewayConnectionStatus.Connected
         ) return
 
-        draft.value = ""
-        invalidatePendingDraftWrite()
-        rememberDraft(sessionId, "")
-        viewModelScope.launch { persistDraft(sessionId, "") }
+        clearDraftAfterDelivery(sessionId)
         notice.value = null
         viewModelScope.launch {
             try {
                 when (repository.submit(sessionId, prompt)) {
                     GatewaySubmitOutcome.Accepted -> {
+                        composerHistoryController.reset(sessionId)
+                        invalidateHistory()
                         if (composer.value.mutation is ComposerMutationUiState.Deferred) {
                             composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
                         }
@@ -814,11 +948,383 @@ internal class ChatViewModel(
         }
     }
 
+    /** Dispatches the reducer's primary action without ever substituting steer for redirect. */
+    fun performComposerPrimaryAction() {
+        val state = uiState.value
+        val action = composerActionState(
+            connected = state.connection.status == GatewayConnectionStatus.Connected,
+            busyKind = state.composer.runtime.busyKind,
+            hasText = state.draft.isNotBlank(),
+            redirectEligible = state.composer.runtime.canRedirect,
+            queueCount = state.composer.runtime.queueEntries.size,
+        ).primary
+        when (action) {
+            ComposerPrimaryAction.Send -> submit()
+            ComposerPrimaryAction.Redirect -> redirectDraftFromUi()
+            ComposerPrimaryAction.Stop -> stop()
+            ComposerPrimaryAction.SendNext -> state.composer.runtime.queueEntries.firstOrNull()?.id?.let(::sendNext)
+            ComposerPrimaryAction.Queue -> queueDraft()
+            ComposerPrimaryAction.None -> Unit
+        }
+    }
+
+    fun queueDraft() {
+        val sessionId = activeSessionId.value ?: return
+        val prompt = draft.value.trim()
+        if (prompt.isEmpty() || !queueScopeReady.value) return
+        viewModelScope.launch {
+            when (composerQueueController.enqueue(sessionId, prompt)) {
+                ComposerQueueMutation.Applied -> {
+                    clearDraftAfterDelivery(sessionId)
+                    composerHistoryController.reset(sessionId)
+                    invalidateHistory()
+                    drainQueueIfIdle(sessionId)
+                }
+                ComposerQueueMutation.CapacityReached -> notice.value = "The queue is full. Send, edit, or remove a queued message."
+                ComposerQueueMutation.StorageUnavailable -> notice.value = "This message could not be queued. Keep it in the editor and try again."
+                else -> notice.value = "This message could not be queued. Keep it in the editor and try again."
+            }
+        }
+    }
+
+    fun redirectDraftFromUi() {
+        val sessionId = activeSessionId.value ?: return
+        val prompt = draft.value.trim()
+        if (prompt.isEmpty() || redirectInFlight) return
+        redirectInFlight = true
+        viewModelScope.launch {
+            try {
+                when (repository.redirect(sessionId, prompt)) {
+                    GatewayRedirectOutcome.Redirected,
+                    GatewayRedirectOutcome.QueuedByGateway,
+                    -> {
+                        clearDraftAfterDelivery(sessionId)
+                        composerHistoryController.reset(sessionId)
+                        invalidateHistory()
+                    }
+                    GatewayRedirectOutcome.Ambiguous -> queueRedirectFallback(sessionId, prompt, ambiguous = true)
+                    GatewayRedirectOutcome.Rejected,
+                    GatewayRedirectOutcome.Unsupported,
+                    GatewayRedirectOutcome.Failed,
+                    -> queueRedirectFallback(sessionId, prompt, ambiguous = false)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                queueRedirectFallback(sessionId, prompt, ambiguous = false)
+            } finally {
+                redirectInFlight = false
+            }
+        }
+    }
+
+    /** A redirect can fail safely, but it must leave one local durable copy—not retry a different RPC. */
+    private suspend fun queueRedirectFallback(sessionId: String, prompt: String, ambiguous: Boolean) {
+        when (
+            composerQueueController.enqueue(
+                sessionId,
+                prompt,
+                delivery = if (ambiguous) QueuedPromptDelivery.Ambiguous else QueuedPromptDelivery.Ready,
+            )
+        ) {
+            ComposerQueueMutation.Applied -> {
+                clearDraftAfterDelivery(sessionId)
+                composerHistoryController.reset(sessionId)
+                invalidateHistory()
+                notice.value = if (ambiguous) {
+                    "This correction may have reached Hermes. Review the queued copy before sending it."
+                } else {
+                    "Hermes did not accept that correction, so it was added to this session's queue."
+                }
+            }
+            else -> notice.value = "Hermes did not accept that correction. It remains in the editor."
+        }
+    }
+
     fun stop() {
         val sessionId = activeSessionId.value ?: return
+        // Authoritative cache truth, not the possibly stale projected kind:
+        // an explicit Stop must never cancel a required-input turn.
+        if (cache.session(sessionId)?.status == SessionStatus.NeedsInput) {
+            notice.value = "Hermes needs a response. Answer the request above."
+            return
+        }
         viewModelScope.launch {
-            runCatching { repository.interrupt(sessionId) }
-                .onFailure { notice.value = "Hermes could not be stopped. Check the Gateway connection." }
+            composerQueueController.park(sessionId)
+            try {
+                when (repository.requestInterrupt(sessionId)) {
+                    com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> Unit
+                    com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.NeedsInput ->
+                        notice.value = "Hermes needs a response. Your queue remains parked."
+                    else -> notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                notice.value = "Hermes could not be stopped. Check the Gateway connection."
+            }
+        }
+    }
+
+    fun resumeQueue() {
+        val sessionId = activeSessionId.value ?: return
+        viewModelScope.launch {
+            composerQueueController.resume(sessionId)
+            drainQueueIfIdle(sessionId)
+        }
+    }
+
+    fun sendNext(entryId: String) {
+        val sessionId = activeSessionId.value ?: return
+        viewModelScope.launch {
+            val state = uiState.value
+            when (state.composer.runtime.busyKind) {
+                ComposerBusyKind.NeedsInput -> {
+                    notice.value = "Hermes needs a response before queued messages can continue."
+                }
+                else -> {
+                    composerQueueController.resume(sessionId)
+                    sendNextAfterResume(sessionId, entryId, state.composer.runtime.busyKind)
+                }
+            }
+        }
+    }
+
+    private suspend fun sendNextAfterResume(
+        sessionId: String,
+        entryId: String,
+        busyKind: ComposerBusyKind,
+    ) {
+        when (busyKind) {
+            ComposerBusyKind.Streaming -> {
+                    when (composerQueueController.moveToHead(sessionId, entryId)) {
+                        ComposerQueueMutation.Applied -> when (repository.requestInterrupt(sessionId)) {
+                            com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> Unit
+                            else -> notice.value = "Hermes could not switch to that queued message. Try again."
+                        }
+                        else -> notice.value = "That queued message is no longer available."
+                    }
+                }
+            ComposerBusyKind.Background,
+            ComposerBusyKind.OtherSessionRunning,
+            -> notice.value = "Hermes is still working. This queued message will be ready when it is idle."
+            else -> when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isSessionIdle(sessionId))) {
+                ComposerQueueDrainResult.Ambiguous,
+                ComposerQueueDrainResult.ReviewRequired,
+                -> notice.value = "Review that queued message before sending it again."
+                ComposerQueueDrainResult.StoreUnavailable -> notice.value = "The queue could not be updated. Try again."
+                else -> Unit
+            }
+        }
+    }
+
+    fun redirectQueuedEntry(entryId: String) {
+        val sessionId = activeSessionId.value ?: return
+        val entry = uiState.value.composer.runtime.queueEntries.firstOrNull { it.id == entryId } ?: return
+        if (!uiState.value.composer.runtime.canRedirect || entry.delivery == QueuedPromptDelivery.Ambiguous) return
+        viewModelScope.launch {
+            try {
+                when (repository.redirect(sessionId, entry.text)) {
+                    GatewayRedirectOutcome.Redirected,
+                    GatewayRedirectOutcome.QueuedByGateway,
+                    -> composerQueueController.remove(sessionId, entryId)
+                    GatewayRedirectOutcome.Ambiguous -> {
+                        composerQueueController.markAmbiguous(sessionId, entryId)
+                        notice.value = "This correction may have reached Hermes. Review it before sending again."
+                    }
+                    GatewayRedirectOutcome.Rejected,
+                    GatewayRedirectOutcome.Unsupported,
+                    GatewayRedirectOutcome.Failed,
+                    -> notice.value = "Hermes did not accept that correction. It remains in this queue."
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                notice.value = "Hermes did not accept that correction. It remains in this queue."
+            }
+        }
+    }
+
+    fun deleteQueuedEntry(entryId: String) {
+        val sessionId = activeSessionId.value ?: return
+        viewModelScope.launch {
+            composerQueueController.remove(sessionId, entryId)
+            if (queueEdit.value?.entryId == entryId) finishQueueEdit(resetDraft = null)
+        }
+    }
+
+    fun beginQueueEdit(entryId: String) {
+        val sessionId = activeSessionId.value ?: return
+        val text = uiState.value.composer.runtime.queueEntries.firstOrNull { it.id == entryId }?.text ?: return
+        viewModelScope.launch {
+            val snapshot = composerQueueController.beginEdit(sessionId, entryId, draft.value) ?: return@launch
+            queueEdit.value = snapshot
+            queueEditText.value = text
+            composerHistoryController.reset(sessionId)
+            invalidateHistory()
+        }
+    }
+
+    fun setQueueEditText(text: String) {
+        if (queueEdit.value != null) queueEditText.value = text
+    }
+
+    fun saveQueueEdit() {
+        val snapshot = queueEdit.value ?: return
+        val text = queueEditText.value.trim()
+        if (text.isEmpty()) return
+        viewModelScope.launch {
+            when (composerQueueController.saveEdit(snapshot, text)) {
+                ComposerQueueMutation.Applied -> finishQueueEdit(resetDraft = null)
+                else -> notice.value = "That queued message could not be saved. Try again."
+            }
+        }
+    }
+
+    fun cancelQueueEdit() {
+        val snapshot = queueEdit.value ?: return
+        viewModelScope.launch {
+            finishQueueEdit(resetDraft = composerQueueController.cancelEdit(snapshot))
+        }
+    }
+
+    fun markQueuedEntryReadyAfterReview(entryId: String) {
+        val sessionId = activeSessionId.value ?: return
+        viewModelScope.launch {
+            if (composerQueueController.markReadyAfterReview(sessionId, entryId) == ComposerQueueMutation.Applied) {
+                notice.value = "That queued message is ready when you choose Send next."
+            }
+        }
+    }
+
+    /** Keyboard history only starts at an empty ordinary draft; queue edit owns its own field. */
+    fun historyOlder(): Boolean {
+        val sessionId = activeSessionId.value ?: return false
+        if (queueEdit.value != null) return false
+        return applyHistoryChange(composerHistoryController.browseOlder(sessionId, draft.value))
+    }
+
+    fun historyNewer(): Boolean {
+        val sessionId = activeSessionId.value ?: return false
+        if (queueEdit.value != null) return false
+        return applyHistoryChange(composerHistoryController.browseNewer(sessionId))
+    }
+
+    fun undoDraft(): Boolean {
+        val sessionId = activeSessionId.value ?: return false
+        if (queueEdit.value != null) return false
+        return applyHistoryChange(composerHistoryController.undo(sessionId, draft.value))
+    }
+
+    fun redoDraft(): Boolean {
+        val sessionId = activeSessionId.value ?: return false
+        if (queueEdit.value != null) return false
+        return applyHistoryChange(composerHistoryController.redo(sessionId, draft.value))
+    }
+
+    private fun applyHistoryChange(change: ComposerDraftChange): Boolean = when (change) {
+        ComposerDraftChange.Unchanged -> false
+        is ComposerDraftChange.Changed -> {
+            setDraftWithoutHistory(change.draft)
+            invalidateHistory()
+            true
+        }
+    }
+
+    private fun finishQueueEdit(resetDraft: String?) {
+        val sessionId = queueEdit.value?.durableSessionId
+        queueEdit.value = null
+        queueEditText.value = ""
+        sessionId?.let(composerHistoryController::reset)
+        resetDraft?.let(::setDraftWithoutHistory)
+        invalidateHistory()
+    }
+
+    private fun clearDraftAfterDelivery(sessionId: String) {
+        if (activeSessionId.value != sessionId) return
+        draft.value = ""
+        invalidatePendingDraftWrite()
+        rememberDraft(sessionId, "")
+        viewModelScope.launch { persistDraft(sessionId, "") }
+    }
+
+    private fun drainQueueIfIdle(sessionId: String) {
+        if (!queueScopeReady.value || !isSessionIdle(sessionId) || runningCountNow() > 0) return
+        if (!scheduledQueueDrains.add(sessionId)) return
+        viewModelScope.launch {
+            try {
+                // Recheck inside the scheduled owner. A settle/reconnect pair
+                // can both observe idle before either coroutine runs.
+                if (!queueScopeReady.value || !isSessionIdle(sessionId) || runningCountNow() > 0) return@launch
+                when (composerQueueController.drainIfIdle(sessionId, isIdle = true)) {
+                    ComposerQueueDrainResult.StoreUnavailable -> if (activeSessionId.value == sessionId) {
+                        notice.value = "The queue could not be updated. Try again."
+                    }
+                    else -> Unit
+                }
+            } finally {
+                scheduledQueueDrains.remove(sessionId)
+            }
+        }
+    }
+
+    /**
+     * The projected UI count can lag a settle edge under virtual time, so the
+     * drain gate reads the authoritative cache instead of `uiState`.
+     */
+    private fun runningCountNow(): Int =
+        cache.state.value.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
+
+    private fun isSessionIdle(sessionId: String): Boolean = cache.session(sessionId)?.status == SessionStatus.Idle
+
+    private fun invalidateHistory() {
+        historyRevision.value += 1
+    }
+
+    /** Optional status capabilities remain explicitly unavailable on older Gateways. */
+    fun composerStatusOpened() {
+        val sessionId = activeSessionId.value ?: return
+        refreshProcesses(sessionId, showFailure = false)
+        viewModelScope.launch {
+            when (repository.goalStatus(sessionId)) {
+                GatewayGoalStatusOutcome.Failed -> if (activeSessionId.value == sessionId) {
+                    notice.value = "Goal status could not be refreshed. Try again."
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun refreshProcesses() {
+        activeSessionId.value?.let { refreshProcesses(it, showFailure = true) }
+    }
+
+    private fun refreshProcesses(sessionId: String, showFailure: Boolean) {
+        viewModelScope.launch {
+            when (repository.listProcesses(sessionId)) {
+                GatewayProcessListOutcome.Failed -> if (showFailure && activeSessionId.value == sessionId) {
+                    notice.value = "Background work could not be refreshed. Try again."
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun killProcess(processId: String) {
+        val sessionId = activeSessionId.value ?: return
+        viewModelScope.launch {
+            when (repository.killProcess(sessionId, processId)) {
+                GatewayProcessKillOutcome.Killed -> refreshProcesses(sessionId, showFailure = false)
+                GatewayProcessKillOutcome.Rejected,
+                GatewayProcessKillOutcome.Failed,
+                GatewayProcessKillOutcome.Ambiguous,
+                -> if (activeSessionId.value == sessionId) {
+                    notice.value = "Background work could not be stopped. Try again."
+                }
+                GatewayProcessKillOutcome.Unsupported -> if (activeSessionId.value == sessionId) {
+                    notice.value = "This Gateway cannot stop background work."
+                }
+            }
         }
     }
 
@@ -1120,6 +1626,20 @@ internal class ChatViewModel(
         val loadingProjectId: String?,
         val grouping: SidebarGrouping,
         val composer: ComposerUiState = ComposerUiState(),
+        val localComposer: LocalComposerState = LocalComposerState(),
+    )
+
+    private data class LocalQueueState(
+        val state: ComposerQueueState = ComposerQueueState(),
+        val parkedIds: Set<String> = emptySet(),
+        val edit: QueueEditSnapshot? = null,
+        val editText: String = "",
+    )
+
+    private data class LocalComposerState(
+        val queue: LocalQueueState = LocalQueueState(),
+        @Suppress("unused") val historyRevision: Long = 0L,
+        val scopeReady: Boolean = false,
     )
 
     companion object {
@@ -1145,10 +1665,15 @@ internal class ChatViewModel(
             composerControlsStore: ComposerControlsStore,
             draftStore: SessionDraftStore,
             draftScope: CoroutineScope,
+            composerQueueController: ComposerQueueController = transientQueueController(),
+            switchComposerQueueScope: suspend (ComposerQueueScope) -> Unit = {},
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                override fun <T : ViewModel> create(
+                    modelClass: Class<T>,
+                    extras: androidx.lifecycle.viewmodel.CreationExtras,
+                ): T =
                     ChatViewModel(
                         cache = cache,
                         repository = repository,
@@ -1156,7 +1681,24 @@ internal class ChatViewModel(
                         composerControlsStore = composerControlsStore,
                         draftStore = draftStore,
                         applicationDraftScope = draftScope,
+                        composerQueueController = composerQueueController,
+                        switchComposerQueueScope = switchComposerQueueScope,
+                        composerHistoryController = ComposerHistoryController(
+                            cache,
+                            SavedStateComposerHistoryBrowseStore(extras.createSavedStateHandle()),
+                        ),
                     ) as T
             }
     }
 }
+
+private fun transientQueueController(): ComposerQueueController = ComposerQueueController(
+    store = TransientComposerQueueStore(),
+    submitter = object : ComposerQueueSubmitter {
+        override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome =
+            QueueSubmissionOutcome.Rejected
+    },
+)
+
+/** Slash commands follow their own capability path; only ordinary text can redirect a live turn. */
+private fun String.isRedirectEligible(): Boolean = trim().isNotEmpty() && !trimStart().startsWith('/')

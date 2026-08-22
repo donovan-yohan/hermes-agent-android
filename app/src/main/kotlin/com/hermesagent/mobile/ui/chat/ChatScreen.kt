@@ -386,26 +386,71 @@ private fun LazyListState.anchor(): Pair<Int, Int> =
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
-    Composer(
-        draft = state.draft,
-        onDraftChange = actions.onDraftChange,
-        onSend = actions.onSend,
-        onStop = actions.onStop,
-        isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
-        canSend = state.canSend,
-        statusLine = state.composerStatus(),
-        editorIdentity = state.activeSession?.id,
-        runningOwnerTitle = state.runningOwner?.title,
-        onViewRunningOwner = state.runningOwner?.id?.let { id -> { actions.onSelectSession(id) } },
-        controls = state.composer,
-        onSelectModel = actions.onSelectModel,
-        onSelectReasoning = actions.onSelectReasoning,
-        onSelectFast = actions.onSelectFast,
-        onEditorSelectionChange = actions.onEditorSelectionChange,
-        onCompletionSelected = actions.onCompletionSelected,
-        onInsertText = actions.onInsertText,
-        modifier = Modifier.imePadding().navigationBarsPadding(),
-    )
+    Column(Modifier.imePadding().navigationBarsPadding()) {
+        LaunchedEffect(state.activeSession?.id) { actions.onComposerStatusOpened() }
+        ComposerStatusStack(
+            activeSessionId = state.activeSession?.id,
+            status = state.activeSession?.composerStatus,
+            onRefreshProcesses = actions.onRefreshProcesses,
+            onKillProcess = actions.onKillProcess,
+            hasQueue = state.composer.runtime.queueEntries.isNotEmpty(),
+            queueContent = {
+                ComposerQueueSection(
+                    durableSessionId = state.composer.runtime.activeDurableId,
+                    entries = state.composer.runtime.queueEntries,
+                    parked = state.composer.runtime.queueParked,
+                    editingEntryId = state.composer.runtime.queueEditingEntryId,
+                    editingText = state.composer.runtime.queueEditingText,
+                    redirectableEntryId = state.composer.runtime.queueEntries.firstOrNull()
+                        ?.takeIf { state.composer.runtime.canRedirect }?.id,
+                    onEdit = actions.onEditQueuedEntry,
+                    onEditTextChange = actions.onQueueEditTextChange,
+                    onSaveEdit = actions.onSaveQueueEdit,
+                    onCancelEdit = actions.onCancelQueueEdit,
+                    onDelete = actions.onDeleteQueuedEntry,
+                    onSendNext = actions.onSendNext,
+                    onRedirectNow = actions.onRedirectQueuedEntry,
+                    onResume = actions.onResumeQueue,
+                    onMarkReadyAfterReview = actions.onMarkQueuedEntryReady,
+                )
+            },
+            modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+        )
+        Composer(
+            draft = state.draft,
+            onDraftChange = actions.onDraftChange,
+            onSend = actions.onSend,
+            onStop = actions.onStop,
+            isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
+            canSend = state.canSend,
+            statusLine = state.composerStatus(),
+            editorIdentity = state.activeSession?.id,
+            runningOwnerTitle = state.runningOwner?.title,
+            onViewRunningOwner = state.runningOwner?.id?.let { id -> { actions.onSelectSession(id) } },
+            controls = state.composer,
+            onSelectModel = actions.onSelectModel,
+            onSelectReasoning = actions.onSelectReasoning,
+            onSelectFast = actions.onSelectFast,
+            onEditorSelectionChange = actions.onEditorSelectionChange,
+            onCompletionSelected = actions.onCompletionSelected,
+            onInsertText = actions.onInsertText,
+            busyKind = state.composer.runtime.busyKind,
+            queueCount = state.composer.runtime.queueEntries.size,
+            canRedirect = state.composer.runtime.canRedirect,
+            canQueue = state.composer.runtime.canQueue,
+            onRedirect = actions.onRedirect,
+            onQueue = actions.onQueue,
+            onSendNext = {
+                state.composer.runtime.queueEntries.firstOrNull()?.id?.let(actions.onSendNext)
+            },
+            canUndo = state.composer.runtime.undoRedo.canUndo,
+            canRedo = state.composer.runtime.undoRedo.canRedo,
+            onUndo = actions.onUndoDraft,
+            onRedo = actions.onRedoDraft,
+            onHistoryOlder = actions.onHistoryOlder,
+            onHistoryNewer = actions.onHistoryNewer,
+        )
+    }
 }
 
 @Composable
