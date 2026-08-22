@@ -41,7 +41,7 @@ class PendingInputTest {
         advanceUntilIdle()
                 env.rpc.emit("clarify.request", "runtime-a", CLARIFY_SINGLE)
         advanceUntilIdle()
-        
+
         val pending = singlePending(env)
         assertTrue(pending is ClarifyPending)
         assertEquals(listOf("Yes", "No"), (pending as ClarifyPending).choices)
