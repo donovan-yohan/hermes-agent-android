@@ -206,9 +206,9 @@
       "visible_contract": "Dictation recording/transcription/error plus auto-speak, wake-word, and active voice-conversation controls.",
       "state_authority": "connection-scoped",
       "platform_dependency": "Android microphone permission, recorder, speech APIs, and audio focus",
-      "android_status": "missing",
-      "android_behavior": "No native voice acquisition or playback/conversation control exists at the base.",
-      "android_tests": "No Android behavior test yet; later slice must cover permission refusal, interruption, cleanup, and accessible state.",
+      "android_status": "partial",
+      "android_behavior": "Slice 7 adds the audio authority seam: connection-owned authenticated HTTP transport (SSH loopback session token or remote native bearer, cleared on close), typed transcribe/speak routes with Desktop contracts and empty-transcript-as-silence, bounded 16 kHz PCM capture with zero-on-close buffers and a 20 MB raw cap, sequence-fenced Media3 playback with finally-deleted temp files, the pure conversation state machine (listening/transcribing/thinking/speaking) with operation fencing, whole-utterance stop matching, mic mutex, and a truthful dictation control wired into the composer that never auto-submits. Conversation UI, auto-speak config truth, barge-in capture, wake foreground service/lease protocol, permission recovery flows, and device evidence remain open.",
+      "android_tests": "VoicePolicyTest covers wire budgets, timeout scaling, and whole-utterance stop matching; VoiceEngineTest proves exclusive mic ownership, sequencer invalidation, and byte wiping for CapturedAudio/SpeechAudio. Repository route tests, conversation controller journeys, wake lease tests, and physical-device acceptance remain open per plan section 5.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
