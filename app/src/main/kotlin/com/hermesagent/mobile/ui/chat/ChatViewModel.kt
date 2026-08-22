@@ -35,7 +35,16 @@ import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
+import com.hermesagent.mobile.data.attachments.AttachmentEncoding
+import com.hermesagent.mobile.data.attachments.AttachmentKind
+import com.hermesagent.mobile.data.attachments.AttachmentPolicy
+import com.hermesagent.mobile.data.attachments.AttachmentReader
+import com.hermesagent.mobile.data.attachments.AttachmentReadResult
+import com.hermesagent.mobile.data.attachments.AttachmentStage
+import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
+import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome
@@ -63,7 +72,9 @@ import com.hermesagent.mobile.data.session.matchesProjectQuery
 import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,6 +144,8 @@ data class ComposerRuntimeUiState(
     val undoRedo: ComposerUndoRedoState = ComposerUndoRedoState(),
     /** The required action parked in this session, if any. Repository memory only. */
     val pendingInput: PendingInputRequest? = null,
+    /** Locally acquired attachment drafts for this session; memory-only. */
+    val attachments: List<ComposerAttachmentDraft> = emptyList(),
 )
 
 /** A pending action owned by a session other than the one on screen. */
@@ -188,9 +201,13 @@ internal class ChatViewModel(
     private val switchComposerQueueScope: suspend (ComposerQueueScope) -> Unit = {},
     private val composerHistoryController: ComposerHistoryController =
         ComposerHistoryController(cache, TransientComposerHistoryBrowseStore()),
+    /** Reads happen off Main; tests inject the virtual scheduler. */
+    var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val draft = MutableStateFlow("")
+    /** Locally acquired attachment drafts, occurrence-scoped and memory-only. */
+    private val attachments = MutableStateFlow<List<ComposerAttachmentDraft>>(emptyList())
     private val activeSessionId = MutableStateFlow<String?>(null)
     private val notice = MutableStateFlow<String?>(null)
     private val selectedProjectId = MutableStateFlow<String?>(null)
@@ -232,6 +249,8 @@ internal class ChatViewModel(
     private var preferenceLoad: Job? = null
     private var observedConnectionStatus: GatewayConnectionStatus? = null
     private var queueScopeSwitch: Job? = null
+    /** Activity-provided opener for content grants; set by MainActivity. */
+    var openAttachmentStream: ((String) -> java.io.InputStream?)? = null
     private var redirectInFlight = false
     /** One automatic drain may be in flight per durable session. */
     private val scheduledQueueDrains = mutableSetOf<String>()
@@ -243,8 +262,9 @@ internal class ChatViewModel(
         historyRevision,
         queueScopeReady,
         repository.pendingInputs,
-    ) { queue, revision, scopeReady, pending ->
-        LocalComposerState(queue, revision, scopeReady, pending)
+        attachments,
+    ) { queue, revision, scopeReady, pending, drafts ->
+        LocalComposerState(queue, revision, scopeReady, pending, drafts)
     }
 
     val uiState: StateFlow<ChatUiState> = combine(
@@ -319,11 +339,13 @@ internal class ChatViewModel(
             canRedirect = navigation.connection.status == GatewayConnectionStatus.Connected &&
                 busyKind == ComposerBusyKind.Streaming && draftText.isRedirectEligible(),
             canQueue = navigation.connection.status == GatewayConnectionStatus.Connected &&
-                displayedActiveId != null && navigation.localComposer.scopeReady,
+                displayedActiveId != null && navigation.localComposer.scopeReady &&
+                busyKind == ComposerBusyKind.Idle,
             historyBrowse = displayedActiveId?.let(composerHistoryController::browseState),
             undoRedo = displayedActiveId?.let(composerHistoryController::undoRedoState) ?: ComposerUndoRedoState(),
             pendingInput = navigation.localComposer.pendingInputs.entries
                 .firstOrNull { it.value.durableSessionId == displayedActiveId }?.value,
+            attachments = navigation.localComposer.attachments.filter { it.durableSessionId == displayedActiveId },
         )
         val backgroundPending = navigation.localComposer.pendingInputs.values
             .firstOrNull { it.durableSessionId != displayedActiveId }
@@ -928,6 +950,11 @@ internal class ChatViewModel(
             if (sourceWasTouched || editedDuringTransition) locallyTouchedDrafts += canonicalId
         }
         if (activeSessionId.value != requestedId) return
+        // Compression changes only the durable key. Attachment drafts are
+        // occurrence-scoped, so rekey them instead of orphaning their bytes.
+        attachments.value = attachments.value.map { draft ->
+            if (draft.durableSessionId == requestedId) draft.copy(durableSessionId = canonicalId) else draft
+        }
         // Compression changes only the durable key. Keep the accumulated
         // session.info authority attached to the same logical session so a
         // canonical-id event cannot collide with the old presence patch.
@@ -943,15 +970,53 @@ internal class ChatViewModel(
     fun submit() {
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
-        if (prompt.isEmpty() || uiState.value.isStreaming || uiState.value.runningCount > 0 ||
+        val pending = attachments.value.filter { it.durableSessionId == sessionId }
+        val ready = pending.filter { it.stage is AttachmentStage.Ready }
+        if ((prompt.isEmpty() && ready.isEmpty()) || uiState.value.isStreaming || uiState.value.runningCount > 0 ||
             repository.connectionState.value.status != GatewayConnectionStatus.Connected
         ) return
+        if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) return
 
         clearDraftAfterDelivery(sessionId)
+        // Payload bytes are claimed for the wire but chips stay visible until
+        // the Gateway answers, so a failed or timed-out stage keeps its
+        // retryable draft instead of evaporating.
+        data class Claimed(val draft: ComposerAttachmentDraft, val outgoing: OutgoingAttachment)
+        val outgoing = ready.mapNotNull { draft ->
+            val payload = attachmentPayloads[draft.occurrenceId] ?: return@mapNotNull null
+            val mime = attachmentMimes[draft.occurrenceId]
+            val encoded = when (draft.kind) {
+                AttachmentKind.Image -> AttachmentEncoding.base64(payload)
+                AttachmentKind.File -> AttachmentEncoding.dataUrl(mime, payload)
+            }
+            Claimed(
+                draft,
+                when (draft.kind) {
+                    AttachmentKind.Image -> OutgoingAttachment.Image(draft.displayName, encoded)
+                    AttachmentKind.File -> OutgoingAttachment.GenericFile(draft.displayName, encoded)
+                },
+            )
+        }
+        val submittedPrompt = prompt
         notice.value = null
         viewModelScope.launch {
             try {
-                when (repository.submit(sessionId, prompt)) {
+                val result = repository.submit(
+                    sessionId,
+                    submittedPrompt,
+                    queued = false,
+                    attachments = outgoing.map { it.outgoing },
+                )
+                if (result == GatewaySubmitOutcome.Accepted) {
+                    outgoing.forEach { claimed ->
+                        attachmentPayloads.remove(claimed.draft.occurrenceId)?.fill(0)
+                        attachmentMimes.remove(claimed.draft.occurrenceId)
+                    }
+                    attachments.value = attachments.value.filterNot { it.durableSessionId == sessionId }
+                } else {
+                    markAttachmentsUnsent(sessionId)
+                }
+                when (result) {
                     GatewaySubmitOutcome.Accepted -> {
                         composerHistoryController.reset(sessionId)
                         invalidateHistory()
@@ -966,16 +1031,113 @@ internal class ChatViewModel(
                     }
                 }
             } catch (cancelled: CancellationException) {
+                markAttachmentsUnsent(sessionId)
                 throw cancelled
-            } catch (_: Throwable) {
-                notice.value = "The message was not sent. Reconnect to the Gateway and try again."
+            } catch (failure: Throwable) {
+                markAttachmentsUnsent(sessionId)
+                // Stage refusals arrive as GatewayRpcException whose message is
+                // already sanitized for people; anything else stays generic.
+                val safe = (failure as? GatewayRpcException)?.message
+                    ?.takeIf(String::isNotBlank)
+                notice.value = safe ?: "The message was not sent. Reconnect to the Gateway and try again."
                 if (draftSnapshot[sessionId].isNullOrBlank()) {
-                    rememberDraft(sessionId, prompt)
-                    if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = prompt
-                    viewModelScope.launch { persistDraft(sessionId, prompt) }
+                    rememberDraft(sessionId, submittedPrompt)
+                    if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = submittedPrompt
+                    viewModelScope.launch { persistDraft(sessionId, submittedPrompt) }
                 }
             }
         }
+    }
+
+    /** A failed or timed-out submit returns its drafts to Ready for retry. */
+    private fun markAttachmentsUnsent(sessionId: String) {
+        attachments.value = attachments.value.map { draft ->
+            if (draft.durableSessionId != sessionId) return@map draft
+            when (draft.stage) {
+                is AttachmentStage.Staging, is AttachmentStage.Staged ->
+                    draft.copy(stage = AttachmentStage.Ready(0))
+                else -> draft
+            }
+        }
+    }
+
+    /**
+     * Payload bytes for in-flight drafts, keyed by occurrence. Memory-only and
+     * wiped on send, refusal, or session switch; never persisted anywhere.
+     */
+    private val attachmentPayloads = mutableMapOf<String, ByteArray>()
+    private val attachmentMimes = mutableMapOf<String, String?>()
+
+    /** Read one locally granted source into an in-memory draft. */
+    fun addAttachmentFromGrant(uriString: String, displayName: String, claimedMime: String?) {
+        val sessionId = activeSessionId.value ?: return
+        if (attachments.value.count { it.durableSessionId == sessionId } >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) {
+            notice.value = "That is more attachments than one message can carry."
+            return
+        }
+        // Reserve the per-item cap for every in-flight read so N simultaneous
+        // picks cannot slip past the aggregate bound before their payloads land.
+        val reservedBytes = attachments.value
+            .filter { it.durableSessionId == sessionId }
+            .sumOf { draft ->
+                val stage = draft.stage
+                when (stage) {
+                    is AttachmentStage.Ready -> stage.byteCount.toLong()
+                    is AttachmentStage.Reading, is AttachmentStage.Staging ->
+                        AttachmentPolicy.MAX_BYTES_PER_ATTACHMENT.toLong()
+                    else -> 0L
+                }
+            }
+        val occurrenceId = "attach-${java.util.UUID.randomUUID()}"
+        attachments.value = attachments.value + ComposerAttachmentDraft(
+            occurrenceId = occurrenceId,
+            durableSessionId = sessionId,
+            displayName = AttachmentPolicy.sanitizeDisplayName(displayName),
+            kind = AttachmentKind.File,
+            stage = AttachmentStage.Reading,
+        )
+        viewModelScope.launch(attachmentReadDispatcher) {
+            val result = AttachmentReader.read(
+                openStream = openAttachmentStream?.let { opener -> { opener(uriString) } },
+                rawDisplayName = displayName,
+                claimedMime = claimedMime,
+            )
+            when (result) {
+                is AttachmentReadResult.Read -> {
+                    // The optimistic reservation bounds concurrent picks; the
+                    // exact check keeps a single honest pick from refusing.
+                    if (reservedBytes + result.bytes.size > AttachmentPolicy.MAX_TOTAL_BYTES) {
+                        notice.value = "Attachments for one message can total at most 16 MB."
+                        updateAttachment(occurrenceId) {
+                            it.copy(stage = AttachmentStage.Refused(
+                                "Adding this file would pass 16 MB. Remove one first.",
+                            ))
+                        }
+                    } else {
+                        attachmentPayloads[occurrenceId] = result.bytes
+                        attachmentMimes[occurrenceId] = result.claimedMime
+                        updateAttachment(occurrenceId) {
+                            it.copy(kind = result.kind, stage = AttachmentStage.Ready(result.bytes.size))
+                        }
+                    }
+                }
+                is AttachmentReadResult.Refused -> {
+                    updateAttachment(occurrenceId) {
+                        it.copy(stage = AttachmentStage.Refused(result.safeMessage))
+                    }
+                }
+            }
+        }
+    }
+
+    fun removeAttachment(occurrenceId: String) {
+        attachmentPayloads.remove(occurrenceId)?.fill(0)
+        attachmentMimes.remove(occurrenceId)
+        attachments.value = attachments.value.filterNot { it.occurrenceId == occurrenceId }
+    }
+
+    private fun updateAttachment(occurrenceId: String, transform: (ComposerAttachmentDraft) -> ComposerAttachmentDraft) {
+        attachments.value = attachments.value.map { if (it.occurrenceId == occurrenceId) transform(it) else it }
     }
 
     /** Dispatches the reducer's primary action without ever substituting steer for redirect. */
@@ -1127,9 +1289,42 @@ internal class ChatViewModel(
     ) {
         when (busyKind) {
             ComposerBusyKind.Streaming -> {
+                    // A busy turn can be a stale post-reconnect row whose
+                    // runtime is not yet known locally. Rehydrate before
+                    // declaring the switch impossible: openSession resumes the
+                    // live runtime and rebinds identity so the guarded
+                    // interrupt can succeed against real Gateway truth.
+                    val refreshed = runCatching { repository.openSession(sessionId) }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .isSuccess
+                    if (!refreshed) {
+                        notice.value = "Hermes could not switch to that queued message. Try again."
+                        return
+                    }
+                    if (isSessionIdle(sessionId)) {
+                        when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isIdle = true)) {
+                            ComposerQueueDrainResult.Ambiguous,
+                            ComposerQueueDrainResult.ReviewRequired,
+                            -> notice.value = "Review that queued message before sending it again."
+                            ComposerQueueDrainResult.StoreUnavailable -> notice.value = "The queue could not be updated. Try again."
+                            else -> Unit
+                        }
+                        return
+                    }
                     when (composerQueueController.moveToHead(sessionId, entryId)) {
                         ComposerQueueMutation.Applied -> when (repository.requestInterrupt(sessionId)) {
                             com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> Unit
+                            com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.NotActive -> {
+                                // The runtime ended between rehydrate and the
+                                // interrupt RPC; drain the head entry now.
+                                when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isSessionIdle(sessionId))) {
+                                    ComposerQueueDrainResult.Ambiguous,
+                                    ComposerQueueDrainResult.ReviewRequired,
+                                    -> notice.value = "Review that queued message before sending it again."
+                                    ComposerQueueDrainResult.StoreUnavailable -> notice.value = "The queue could not be updated. Try again."
+                                    else -> Unit
+                                }
+                            }
                             else -> notice.value = "Hermes could not switch to that queued message. Try again."
                         }
                         else -> notice.value = "That queued message is no longer available."
@@ -1384,6 +1579,13 @@ internal class ChatViewModel(
     }
 
     override fun onCleared() {
+        // Attachment bytes are memory-only by contract: nothing survives the
+        // ViewModel, and process recreation shows "unavailable" rather than a
+        // stale grant.
+        for (payload in attachmentPayloads.values) java.util.Arrays.fill(payload, 0)
+        attachmentPayloads.clear()
+        attachmentMimes.clear()
+        attachments.value = emptyList()
         val id = activeSessionId.value
         val text = draft.value
         if (id != null) applicationDraftScope?.launch { persistDraft(id, text) }
@@ -1688,6 +1890,8 @@ internal class ChatViewModel(
         @Suppress("unused") val historyRevision: Long = 0L,
         val scopeReady: Boolean = false,
         val pendingInputs: Map<PendingInputKey, PendingInputRequest> = emptyMap(),
+        /** In-memory attachment drafts; UI projects them per active session. */
+        val attachments: List<ComposerAttachmentDraft> = emptyList(),
     )
 
     companion object {

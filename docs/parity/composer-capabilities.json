@@ -174,9 +174,9 @@
       "visible_contract": "Pick, paste or drop supported kinds; show preview/progress/error/removal before reliable upload/reference submission.",
       "state_authority": "connection-scoped",
       "platform_dependency": "Android scoped URI grants, decode/resize, and Gateway upload/reference routes",
-      "android_status": "missing",
-      "android_behavior": "File, folder, image, and paste-image rows remain absent until Slice 6 provides real Android byte staging and the Gateway attachment handoff; Android never serializes content://, local filesystem, or clipboard paths as remote references.",
-      "android_tests": "No attachment behavior is claimed in Slice 3. Slice 6 must prove URI cleanup, error/retry, preview/removal, and remote byte upload before enabling these rows.",
+      "android_status": "partial",
+      "android_behavior": "Slice 6 adds SAF file acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, and occurrence-keyed chips whose remove wipes payload bytes. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
+      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes and refusal surfacing; GatewaySessionRepositoryTest proves attach-before-submit ordering, session_id on attach RPCs, and that a refused stage blocks prompt.submit; ComposerControlsAccessibilityTest proves chip name/state/remove semantics and the Files add-sheet row. Visual capture, preview thumbnails, retry-after-refusal-in-place, detach cleanup, and reconnect/reacquire behavior remain open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/attachments.tsx:18-233",
@@ -194,8 +194,8 @@
         "attachment-error-removal"
       ],
       "deviation": {
-        "reason": "Android keeps attachment acquisition unavailable until the Slice 6 byte-staging and Gateway handoff contract exists, preventing an enabled no-op or an unsafe local-path reference.",
-        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt:20-27",
+        "reason": "Desktop drag-drop/paste acquisition is adapted to an Android SAF picker; bytes are staged before submit and only Gateway-returned reference text enters prompts. Remaining deviations (folders, clipboard images, previews) stay unavailable rather than enabled no-ops until implemented.",
+        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt:44-52",
         "approved_by": "Slice 3 attachment boundary"
       },
       "category": "attachments"

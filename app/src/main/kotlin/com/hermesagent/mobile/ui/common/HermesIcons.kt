@@ -47,6 +47,7 @@ enum class HermesIcon(val glyph: String) {
     ListUnordered("\uEB17"),
     ListFilter("\uEB83"),
     Thinking("\uEC59"),
+    Link("\uEB15"),
 }
 
 private val CodiconFont = FontFamily(Font(R.font.codicon))

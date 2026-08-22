@@ -46,6 +46,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
+import com.hermesagent.mobile.ui.chat.composer.AttachmentChipRow
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
@@ -137,6 +139,7 @@ fun Composer(
     onStop: () -> Unit,
     isStreaming: Boolean,
     canSend: Boolean,
+    connected: Boolean,
     modifier: Modifier = Modifier,
     statusLine: String,
     editorIdentity: String? = null,
@@ -149,6 +152,9 @@ fun Composer(
     onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },
     onCompletionSelected: (CompletionItem) -> Unit = {},
     onInsertText: (String) -> Unit = {},
+    onPickFiles: () -> Unit = {},
+    attachments: List<ComposerAttachmentDraft> = emptyList(),
+    onRemoveAttachment: (String) -> Unit = {},
     busyKind: ComposerBusyKind = if (isStreaming) ComposerBusyKind.Streaming else ComposerBusyKind.Idle,
     queueCount: Int = 0,
     canRedirect: Boolean = isStreaming,
@@ -171,7 +177,7 @@ fun Composer(
     }
     val restoreEditorFocus = { focusRequestGeneration += 1 }
     val action = composerActionState(
-        connected = canSend || canQueue || isStreaming,
+        connected = connected,
         busyKind = busyKind,
         hasText = draft.isNotBlank(),
         redirectEligible = canRedirect,
@@ -219,12 +225,14 @@ fun Composer(
                         onEditorSelectionChange,
                         onCompletionSelected,
                         onInsertText,
+                        onPickFiles,
+                        attachments,
+                        onRemoveAttachment,
                         editorFocusRequester,
                         restoreEditorFocus,
                         Modifier.fillMaxWidth(),
                     )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
                     if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
                     ComposerPrimaryControl(action.primary, performPrimary)
                 }
@@ -253,11 +261,13 @@ fun Composer(
                         onEditorSelectionChange,
                         onCompletionSelected,
                         onInsertText,
+                        onPickFiles,
+                        attachments,
+                        onRemoveAttachment,
                         editorFocusRequester,
                         restoreEditorFocus,
                         Modifier.weight(1f),
                     )
-                    ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
                     if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
                     ComposerPrimaryControl(action.primary, performPrimary)
                 }
@@ -267,12 +277,16 @@ fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    text = statusLine,
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.scaffoldMeta,
-                    modifier = Modifier.padding(start = 6.dp).weight(1f),
-                )
+                if (layoutMode == ComposerLayoutMode.Full) {
+                    Text(
+                        text = statusLine,
+                        style = HermesTheme.type.scaffoldMeta,
+                        color = tokens.scaffoldMeta,
+                        modifier = Modifier.padding(start = 6.dp).weight(1f),
+                    )
+                } else {
+                    ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
+                }
                 if (canUndo) {
                     TextButton(
                         label = "Undo",
@@ -346,6 +360,9 @@ private fun ComposerEditor(
     onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit,
     onCompletionSelected: (CompletionItem) -> Unit,
     onInsertText: (String) -> Unit,
+    onPickFiles: () -> Unit,
+    attachments: List<ComposerAttachmentDraft> = emptyList(),
+    onRemoveAttachment: (String) -> Unit = {},
     focusRequester: FocusRequester,
     onReturnFocus: () -> Unit,
     modifier: Modifier,
@@ -397,10 +414,14 @@ private fun ComposerEditor(
         publish(TextFieldValue(updated, TextRange(cursor)), completion = item)
     }
     Column(modifier) {
+        if (attachments.isNotEmpty()) {
+            AttachmentChipRow(attachments = attachments, onRemove = onRemoveAttachment)
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ComposerAddControl(
                 onInsertText = ::insertAtSelection,
                 enabled = true,
+                onPickFiles = onPickFiles,
                 onDismiss = onReturnFocus,
             )
             BasicTextField(

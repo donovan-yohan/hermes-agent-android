@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
@@ -42,14 +43,16 @@ import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
- * Android's safe subset of Desktop's context menu.  File, folder, image and
- * clipboard-image rows deliberately do not render: without a bytes-to-Gateway
- * handoff, an Android URI would be a misleading and unusable remote reference.
+ * Android's context menu. Files and images stage locally acquired bytes
+ * through the Gateway before submit; URL and prompt snippets stay text
+ * controls; folder acquisition remains deferred until a bounded archive
+ * protocol exists.
  */
 @Composable
 internal fun ComposerAddControl(
     onInsertText: (String) -> Unit,
     enabled: Boolean,
+    onPickFiles: () -> Unit = {},
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -77,7 +80,14 @@ internal fun ComposerAddControl(
                 sheet = null
                 onDismiss()
             },
-            onChoose = { sheet = it },
+            onChoose = { chosen ->
+                if (chosen == AddSheet.Files) {
+                    sheet = AddSheet.Done
+                    onPickFiles()
+                } else {
+                    sheet = chosen
+                }
+            },
         )
         AddSheet.Url -> UrlReferenceSheet(
             onDismiss = { sheet = AddSheet.Menu },
@@ -95,11 +105,11 @@ internal fun ComposerAddControl(
                 onDismiss()
             },
         )
-        null -> Unit
+        AddSheet.Done, AddSheet.Files, null -> Unit
     }
 }
 
-private enum class AddSheet { Menu, Url, Snippets }
+private enum class AddSheet { Menu, Url, Snippets, Files, Done }
 
 @Composable
 private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit) {
@@ -120,9 +130,15 @@ private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit
         ) {
             Text("Add to message", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
             AddRow(
+                label = "Files",
+                description = "Attach a file from this device",
+                icon = HermesIcon.File,
+                onClick = { onChoose(AddSheet.Files) },
+            )
+            AddRow(
                 label = "URL",
                 description = "Add a remote URL reference",
-                icon = HermesIcon.Add,
+                icon = HermesIcon.Link,
                 onClick = { onChoose(AddSheet.Url) },
             )
             AddRow(
@@ -132,10 +148,12 @@ private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit
                 onClick = { onChoose(AddSheet.Snippets) },
             )
             Text(
-                "Use a URL for now. Files, folders, and images aren't available yet.",
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.scaffoldMeta,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                "Files upload through the Gateway when you send. Folders aren't available yet.",
+                style = HermesTheme.type.scaffoldMeta.copy(textAlign = TextAlign.Start),
+                color = tokens.scaffoldMeta.copy(alpha = 1f),
+                modifier = Modifier
+                    .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
+                    .padding(horizontal = HermesTheme.spacing.pageInset / 2),
             )
         }
     }
@@ -157,7 +175,11 @@ private fun AddRow(label: String, description: String, icon: HermesIcon, onClick
         HermesIconGlyph(icon, color = tokens.textTertiary)
         Column {
             Text(label, style = HermesTheme.type.body, color = tokens.textPrimary)
-            Text(description, style = HermesTheme.type.scaffoldMeta, color = tokens.scaffoldMeta)
+            Text(
+                description,
+                style = HermesTheme.type.scaffoldMeta.copy(textAlign = TextAlign.Start),
+                color = tokens.scaffoldMeta,
+            )
         }
     }
 }

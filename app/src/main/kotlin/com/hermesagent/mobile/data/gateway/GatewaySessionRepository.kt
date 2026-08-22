@@ -13,6 +13,8 @@ import com.hermesagent.mobile.data.composer.ModelProvider
 import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.SessionComposerControls
+import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
@@ -110,6 +112,19 @@ interface GatewaySessionRepository {
     /** A queue drain opts into the Gateway's non-interrupting busy behavior. */
     suspend fun submit(durableId: String, text: String, queued: Boolean): GatewaySubmitOutcome =
         submit(durableId, text)
+    /**
+     * Stage-then-submit transaction: every attachment must stage successfully
+     * before prompt.submit; one failed or ambiguous stage refuses the whole
+     * submit and returns which items need retry. The live repository overrides
+     * this; the default keeps existing fakes compiling by dropping attachments
+     * (fakes that care override it to capture).
+     */
+    suspend fun submit(
+        durableId: String,
+        text: String,
+        queued: Boolean = false,
+        attachments: List<OutgoingAttachment> = emptyList(),
+    ): GatewaySubmitOutcome = submit(durableId, text, queued)
     suspend fun interrupt(durableId: String)
     /** New callers can distinguish an interruption from a protected input request. */
     suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
@@ -188,7 +203,15 @@ data class SessionRehome(
     val newDurableId: String,
 )
 
-private enum class GatewayOptionalCapability { Redirect, Steer, Processes, Goals }
+private enum class GatewayOptionalCapability { Redirect, Steer, Processes, Goals, Attachments }
+
+/** Result of staging one attachment payload to the Gateway. */
+sealed interface GatewayStageOutcome {
+    data class Staged(val reference: StagedAttachmentReference) : GatewayStageOutcome
+    data class Rejected(val safeMessage: String) : GatewayStageOutcome
+    data object Ambiguous : GatewayStageOutcome
+    data object Unsupported : GatewayStageOutcome
+}
 
 /** Explicit, connection-scoped durable ↔ runtime identity. */
 internal class SessionIdentityMap {
@@ -689,6 +712,93 @@ internal class LiveGatewaySessionRepository(
 
     override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome =
         submit(durableId, text, queued = false)
+
+    override suspend fun submit(
+        durableId: String,
+        text: String,
+        queued: Boolean,
+        attachments: List<OutgoingAttachment>,
+    ): GatewaySubmitOutcome {
+        if (attachments.isEmpty()) return submit(durableId, text, queued)
+        // Stage everything first. A prompt must never cross after a failed or
+        // ambiguous stage; the caller keeps its drafts for in-place retry.
+        val stagedRefs = StringBuilder()
+        for (attachment in attachments) {
+            val result = stageOne(durableId, attachment)
+            when (result) {
+                is GatewayStageOutcome.Staged -> {
+                    if (result.reference.refText.isNotBlank()) {
+                        if (stagedRefs.isNotEmpty()) stagedRefs.append(' ')
+                        stagedRefs.append(result.reference.refText)
+                    }
+                }
+                is GatewayStageOutcome.Rejected -> throw GatewayRpcException(result.safeMessage)
+                is GatewayStageOutcome.Ambiguous ->
+                    throw GatewayRpcException("The attachment may not have finished uploading. Check the session before retrying.")
+                GatewayStageOutcome.Unsupported ->
+                    throw GatewayRpcException("This Gateway does not accept that attachment. Update Hermes and try again.")
+            }
+        }
+        val composed = if (stagedRefs.isEmpty()) text else "${stagedRefs}\n${text.trim()}"
+        return submit(durableId, composed, queued)
+    }
+
+    private suspend fun stageOne(
+        durableId: String,
+        attachment: OutgoingAttachment,
+    ): GatewayStageOutcome {
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            return GatewayStageOutcome.Rejected("Reopen this session before attaching files.")
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return GatewayStageOutcome.Rejected("Reconnect to the Gateway and try again.")
+        }
+        return try {
+            val result = when (attachment) {
+                is OutgoingAttachment.Image -> connection.client.request(
+                    "image.attach_bytes",
+                    buildJsonObject {
+                        // Attach RPCs resolve the session by id before staging;
+                        // the desktop always sends its session's runtime id.
+                        put("session_id", JsonPrimitive(binding.runtimeId))
+                        put("content_base64", JsonPrimitive(attachment.contentBase64))
+                        put("filename", JsonPrimitive(attachment.displayName))
+                    },
+                ).asObject("image.attach_bytes")
+
+                is OutgoingAttachment.GenericFile -> connection.client.request(
+                    "file.attach",
+                    buildJsonObject {
+                        put("session_id", JsonPrimitive(binding.runtimeId))
+                        put("data_url", JsonPrimitive(attachment.dataUrl))
+                        put("name", JsonPrimitive(attachment.displayName))
+                    },
+                ).asObject("file.attach")
+            }
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val refText = result.string("ref_text")
+                ?: result.string("text")?.takeIf(String::isNotBlank)
+                ?: "@file:${attachment.displayName}"
+            GatewayStageOutcome.Staged(
+                StagedAttachmentReference(refText = refText, gatewayPath = result.string("path")),
+            )
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Attachments, connection)
+                GatewayStageOutcome.Unsupported
+            } else if (failure is GatewayRpcException && failure.requestMayHaveBeenAccepted) {
+                GatewayStageOutcome.Ambiguous
+            } else {
+                GatewayStageOutcome.Rejected(safeGatewayTerminalError(failure.message ?: "The attachment was refused."))
+            }
+        }
+    }
 
     override suspend fun submit(
         durableId: String,

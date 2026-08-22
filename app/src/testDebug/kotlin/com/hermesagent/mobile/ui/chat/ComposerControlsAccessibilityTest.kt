@@ -15,6 +15,9 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
+import com.hermesagent.mobile.data.attachments.AttachmentStage
+import com.hermesagent.mobile.data.attachments.AttachmentKind
 import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.CompletionTrigger
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
@@ -49,6 +52,7 @@ class ComposerControlsAccessibilityTest {
                     onStop = {},
                     isStreaming = false,
                     canSend = false,
+                    connected = true,
                     statusLine = "",
                     controls = ComposerUiState(
                         catalog = ComposerCatalogUiState.Ready(
@@ -67,8 +71,9 @@ class ComposerControlsAccessibilityTest {
         compose.onNodeWithContentDescription("GPT. from OpenAI", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Add to message").assertHeightIsAtLeast(floor).performClick()
         compose.onNodeWithText("URL").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Files. Attach a file from this device").assertIsDisplayed()
         compose.onNodeWithText(
-            "Use a URL for now. Files, folders, and images aren't available yet.",
+            "Files upload through the Gateway when you send. Folders aren't available yet.",
         ).assertExists()
     }
 
@@ -83,6 +88,7 @@ class ComposerControlsAccessibilityTest {
                     onStop = {},
                     isStreaming = false,
                     canSend = false,
+                    connected = true,
                     statusLine = "",
                 )
             }
@@ -105,6 +111,7 @@ class ComposerControlsAccessibilityTest {
                     onStop = {},
                     isStreaming = false,
                     canSend = false,
+                    connected = true,
                     statusLine = "",
                     controls = ComposerUiState(
                         catalog = ComposerCatalogUiState.Ready(
@@ -149,6 +156,7 @@ class ComposerControlsAccessibilityTest {
                     onStop = {},
                     isStreaming = false,
                     canSend = false,
+                    connected = true,
                     statusLine = "",
                     controls = ComposerUiState(catalog = ComposerCatalogUiState.Loading),
                 )
@@ -174,6 +182,7 @@ class ComposerControlsAccessibilityTest {
                     onStop = {},
                     isStreaming = false,
                     canSend = false,
+                    connected = true,
                     statusLine = "",
                     controls = ComposerUiState(
                         catalog = ComposerCatalogUiState.Ready(
@@ -204,6 +213,7 @@ class ComposerControlsAccessibilityTest {
                     onStop = {},
                     isStreaming = false,
                     canSend = true,
+                    connected = true,
                     statusLine = "",
                     controls = ComposerUiState(
                         catalog = ComposerCatalogUiState.Ready(ModelCatalog()),
@@ -240,5 +250,46 @@ class ComposerControlsAccessibilityTest {
             pressKey(Key.Enter)
         }
         editor.assertTextEquals("/second")
+    }
+
+    @Test
+    fun `attachment chips expose name state and remove semantics`() {
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Composer(
+                    draft = "",
+                    onDraftChange = {},
+                    onSend = {},
+                    onStop = {},
+                    isStreaming = false,
+                    canSend = false,
+                    connected = true,
+                    statusLine = "",
+                    attachments = listOf(
+                        ComposerAttachmentDraft(
+                            occurrenceId = "occ-1",
+                            durableSessionId = "s",
+                            displayName = "notes.txt",
+                            kind = AttachmentKind.File,
+                            stage = AttachmentStage.Ready(2048),
+                        ),
+                        ComposerAttachmentDraft(
+                            occurrenceId = "occ-2",
+                            durableSessionId = "s",
+                            displayName = "pic.png",
+                            kind = AttachmentKind.Image,
+                            stage = AttachmentStage.Refused("That file is larger than 8 MB."),
+                        ),
+                    ),
+                )
+            }
+        }
+
+        // Chip children live in a lazy row; existence + semantics are the
+        // contract here, exactly like the slice-3 completion popup.
+        compose.onNodeWithText("notes.txt").assertExists()
+        compose.onNodeWithText("2 KB").assertExists()
+        compose.onNodeWithContentDescription("Remove notes.txt").assertExists().performClick()
+        compose.onNodeWithText("That file is larger than 8 MB.").assertExists()
     }
 }
