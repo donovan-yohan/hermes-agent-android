@@ -164,6 +164,8 @@ class MainActivity : ComponentActivity() {
                     onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
                     onRemoveAttachment = chatViewModel::removeAttachment,
                     onToggleDictation = chatViewModel::toggleDictation,
+                    onToggleConversation = chatViewModel::toggleVoiceConversation,
+                    onToggleVoiceMute = chatViewModel::toggleVoiceMute,
                 ),
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },

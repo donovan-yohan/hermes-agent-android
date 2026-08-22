@@ -59,6 +59,8 @@ class ChatActions(
     val onPickFiles: () -> Unit = {},
     val onRemoveAttachment: (String) -> Unit = {},
     val onToggleDictation: () -> Unit = {},
+    val onToggleConversation: () -> Unit = {},
+    val onToggleVoiceMute: () -> Unit = {},
 )
 
 class AppearanceActions(

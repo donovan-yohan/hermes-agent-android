@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +56,70 @@ internal fun VoiceDictationControl(
             contentAlignment = Alignment.Center,
         ) {
             HermesIconGlyph(icon, color = if (enabled) tokens.textSecondary else tokens.textQuaternary)
+        }
+    }
+}
+
+/**
+ * Voice conversation controls. When a conversation is active the regular
+ * composer action cluster is replaced by a phase pill plus mute and end
+ * controls (Desktop's voice-activity adaptation); typed composition stays
+ * recoverable after End.
+ */
+@Composable
+internal fun VoiceConversationControl(
+    state: VoiceUiState.Conversation,
+    onToggleConversation: () -> Unit,
+    onToggleMute: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    val active = state.phase != VoiceUiState.ConversationPhase.Ended
+    Box(
+        modifier
+            .size(HermesTheme.spacing.touchTarget)
+            .clickable(role = Role.Button, onClick = onToggleConversation)
+            .semantics {
+                contentDescription = if (active) "End voice conversation" else "Start voice conversation"
+            }
+            .testTag("Voice conversation control"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(28.dp).background(tokens.widgetSurface, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            HermesIconGlyph(
+                if (active) HermesIcon.Error else HermesIcon.Mic,
+                color = tokens.textSecondary,
+            )
+        }
+    }
+    if (active) {
+        Text(
+            text = state.phase.name.lowercase().replaceFirstChar { it.uppercase() },
+            style = HermesTheme.type.caption,
+            color = tokens.textSecondary,
+            modifier = Modifier
+                .padding(start = 6.dp)
+                .semantics { contentDescription = "Voice conversation ${state.phase.name.lowercase()}" }
+                .testTag("Voice conversation phase"),
+        )
+        Box(
+            Modifier
+                .size(HermesTheme.spacing.touchTarget)
+                .clickable(role = Role.Button, onClick = onToggleMute)
+                .semantics {
+                    contentDescription =
+                        if (state.muted) "Unmute microphone" else "Mute microphone"
+                }
+                .testTag("Voice mute control"),
+            contentAlignment = Alignment.Center,
+        ) {
+            HermesIconGlyph(
+                HermesIcon.Edit,
+                color = if (state.muted) tokens.destructive else tokens.textSecondary,
+            )
         }
     }
 }

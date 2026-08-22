@@ -1188,6 +1188,40 @@ internal class ChatViewModel(
         }
     }
 
+    /**
+     * Starts or ends a voice conversation for the active session. The engine
+     * hook (injected by MainActivity) owns capture and playback; state
+     * transitions project through [voice]. No-op while disconnected.
+     */
+    fun toggleVoiceConversation() {
+        val sessionId = activeSessionId.value ?: return
+        val current = voice.value
+        if (current is VoiceUiState.Conversation && current.phase != VoiceUiState.ConversationPhase.Ended) {
+            voiceConversationEnd?.invoke()
+            voice.value = VoiceUiState.Conversation(VoiceUiState.ConversationPhase.Ended, muted = false)
+            return
+        }
+        if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
+            notice.value = "Connect to a Gateway before starting a voice conversation."
+            return
+        }
+        voice.value = VoiceUiState.Conversation(VoiceUiState.ConversationPhase.Listening, muted = false)
+        voiceConversationStart?.invoke(sessionId)
+    }
+
+    fun toggleVoiceMute() {
+        val current = voice.value
+        if (current is VoiceUiState.Conversation) {
+            voice.value = current.copy(muted = !current.muted)
+            voiceConversationMute?.invoke(!current.muted)
+        }
+    }
+
+    /** Engine hooks: start/end a conversation session and mute its mic. */
+    var voiceConversationStart: ((durableSessionId: String) -> Unit)? = null
+    var voiceConversationEnd: (() -> Unit)? = null
+    var voiceConversationMute: ((muted: Boolean) -> Unit)? = null
+
     /** Engine-provided capture stop for the live dictation; null when idle. */
     var dictationStop: (() -> Unit)? = null
 
