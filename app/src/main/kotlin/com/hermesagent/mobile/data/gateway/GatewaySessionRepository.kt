@@ -332,6 +332,8 @@ internal class LiveGatewaySessionRepository(
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
                     activeRuntimeIds.clear()
+                    localSubmitStartedAtByRuntime.clear()
+                    liveTurnRuntimeIds.clear()
                     // Pending prompts are connection-scoped memory; a new
                     // client rehydrates only through fresh resume responses.
                     mutablePendingInputs.value = emptyMap()
@@ -871,7 +873,7 @@ internal class LiveGatewaySessionRepository(
                 // A definite, non-live rejection rolls its own submit back —
                 // not just the runtime that happens to own the event pin.
                 // Ambiguous acknowledgements still keep the optimistic row.
-                val canRollback = !ambiguous && (!unscopedTurnIsLive || unscopedRuntimeId != binding.runtimeId)
+                val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds
                 if (canRollback) {
                     releaseRuntimeGuard(binding.runtimeId)
                     localSubmitStartedAtByRuntime.remove(binding.runtimeId)
@@ -1315,8 +1317,7 @@ internal class LiveGatewaySessionRepository(
     private fun canMutateBoundSession(binding: SessionBinding, connection: ConnectionSnapshot): Boolean =
         synchronized(stateLock) {
             ensureCurrent(connection)
-            identities.runtimeFor(binding.durableId) == binding.runtimeId &&
-                (binding.runtimeId in activeRuntimeIds || binding.runtimeId !in liveTurnRuntimeIds)
+            identities.runtimeFor(binding.durableId) == binding.runtimeId
         }
 
     private fun recordOptimisticCorrection(
@@ -1858,17 +1859,18 @@ internal class LiveGatewaySessionRepository(
         activeRuntimeIds.remove(runtimeId)
         localSubmitStartedAtByRuntime.remove(runtimeId)
         liveTurnRuntimeIds.remove(runtimeId)
-        if (unscopedRuntimeId == runtimeId) {
+        if (unscopedRuntimeId == runtimeId || unscopedRuntimeId == null) {
             // Exactly one remaining locally submitted runtime inherits the
             // identifier-less event pin, so its stream keeps flowing after the
-            // previous owner settles. With zero or multiple candidates there
-            // is no safe owner and identifier-less events stay unattributed.
+            // previous owner settles (or after ambiguity left the pin
+            // unowned). With zero or multiple candidates there is no safe
+            // owner and identifier-less events stay unattributed.
             val inheriting = activeRuntimeIds.filter { it in localSubmitStartedAtByRuntime }.singleOrNull()
-            if (inheriting != null) {
+            if (inheriting != null && inheriting != runtimeId) {
                 unscopedRuntimeId = inheriting
                 localSubmitStartedAtMillis = localSubmitStartedAtByRuntime[inheriting]
                 unscopedTurnIsLive = inheriting in liveTurnRuntimeIds
-            } else {
+            } else if (unscopedRuntimeId == runtimeId) {
                 clearUnscopedRuntime()
             }
         }

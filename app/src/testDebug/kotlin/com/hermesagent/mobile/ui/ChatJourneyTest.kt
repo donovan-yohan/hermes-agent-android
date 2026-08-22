@@ -462,7 +462,8 @@ class ChatJourneyTest {
         cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Idle))
         compose.waitForIdle()
 
-        assertEquals(1, repository.submitted.size)
+        // The drained entry must be the settled session's, not just any queue.
+        assertEquals(listOf("live-a" to "drain me"), repository.submitted)
         assertEquals(0, viewModel.uiState.value.composer.runtime.queueEntries.size)
     }
 
