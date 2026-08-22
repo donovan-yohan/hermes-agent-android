@@ -20,9 +20,8 @@ class GatewayVoiceRepository(private val http: () -> GatewayVoiceHttp?) {
 
     suspend fun transcribe(key: VoiceSessionKey, audio: CapturedAudio): TranscriptionResult =
         withContext(Dispatchers.IO) {
-            val transport = http() ?: return@withContext TranscriptionResult.Silence.let {
-                throw VoiceTransportException("Reconnect to the Gateway before using voice.")
-            }
+            val transport = http()
+                ?: throw VoiceTransportException("Reconnect to the Gateway before using voice.")
             val encoded = Base64.getEncoder().encodeToString(audio.bytes)
             val payload = buildJsonObject {
                 put("data_url", "data:${audio.mime};base64,$encoded")
