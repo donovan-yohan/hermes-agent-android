@@ -55,7 +55,7 @@ internal fun AttachmentChipRow(
                 is AttachmentStage.Staged ->
                     "Added" to tokens.textSecondary
                 is AttachmentStage.Refused ->
-                    stage.safeMessage to tokens.textPrimary.copy(alpha = 0.75f)
+                    stage.safeMessage to tokens.destructive
             }
             Row(
                 Modifier
