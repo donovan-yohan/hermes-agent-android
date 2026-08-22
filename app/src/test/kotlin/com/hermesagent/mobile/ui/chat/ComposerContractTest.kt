@@ -24,6 +24,12 @@ class ComposerContractTest {
             ComposerPrimaryAction.Stop,
             actionState(ComposerBusyKind.Streaming, hasText = false).primary,
         )
+        // Stop is a safety control: queued entries alone never replace it
+        // with send-next while a turn is live.
+        assertEquals(
+            ComposerPrimaryAction.Stop,
+            actionState(ComposerBusyKind.Streaming, hasText = false, queueCount = 2).primary,
+        )
         assertEquals(
             ComposerPrimaryAction.Queue,
             actionState(ComposerBusyKind.NeedsInput, hasText = true).primary,
