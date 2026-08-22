@@ -37,6 +37,13 @@ class VoiceConversationController(
 
     val currentState: VoiceUiState.Conversation get() = state
 
+    /** Current fence for host-side reply feeding; stale fences are ignored. */
+    fun operationFence(): Long = operation
+
+    /** Number of completed listen cycles; proves re-arm happened. */
+    var visitCount: Int = 0
+        private set
+
     /** Starts one listening cycle. Returns false if a cycle is already live. */
     fun beginCycle(): Boolean {
         if (!mutex.tryLock()) return false
@@ -81,10 +88,8 @@ class VoiceConversationController(
     private fun runListenCycle(myOperation: Long) {
         scope.launch {
             delay(VoicePolicy.CONVERSATION_LISTEN_CAP_MILLIS)
-            withLockOrNull {
-                if (myOperation == operation && state.phase == VoiceUiState.ConversationPhase.Listening) {
-                    finishListening(myOperation)
-                }
+            if (myOperation == operation && state.phase == VoiceUiState.ConversationPhase.Listening) {
+                finishListening(myOperation)
             }
         }
     }
@@ -183,6 +188,7 @@ class VoiceConversationController(
     }
 
     private suspend fun rearmLocked(myOperation: Long) {
+        visitCount += 1
         setState(VoiceUiState.ConversationPhase.Listening)
         scope.launch { runListenCycle(myOperation) }
     }
