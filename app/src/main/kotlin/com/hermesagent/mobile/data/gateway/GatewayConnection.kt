@@ -335,6 +335,8 @@ internal class GatewayConnectionManager(
     private val mutex = Mutex()
     private val _state = MutableStateFlow(GatewayConnectionState())
     private val _client = MutableStateFlow<GatewayRpcClient?>(null)
+    private val _voiceHttp =
+        MutableStateFlow<com.hermesagent.mobile.data.voice.GatewayVoiceHttp?>(null)
     private var active: ActiveConnection? = null
     private val connectIntent = AtomicReference(ConnectIntent(generation = 0, job = null))
     private var rpcMonitor: Job? = null
@@ -349,6 +351,14 @@ internal class GatewayConnectionManager(
 
     override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
     val client: StateFlow<GatewayRpcClient?> = _client.asStateFlow()
+
+    /**
+     * Connection-owned authenticated HTTP transport for the audio routes.
+     * Null while disconnected; resolved per active leg so callers never hold
+     * credentials, origins, or tickets.
+     */
+    val voiceHttp: StateFlow<com.hermesagent.mobile.data.voice.GatewayVoiceHttp?> =
+        _voiceHttp.asStateFlow()
 
     override suspend fun connect(
         profile: HostProfile,
@@ -447,6 +457,15 @@ internal class GatewayConnectionManager(
                         rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
                         requireRemoteOpenCurrentLocked(intent, profile, admission)
                         active = ActiveConnection.Remote(rpc, profile)
+                        _voiceHttp.value = com.hermesagent.mobile.data.voice.OkHttpGatewayVoiceHttp(
+                            http = http,
+                            resolveEndpoint = { profile.normalizedBaseUrl },
+                            resolveAuthorization = {
+                                runCatching { connector.accessToken(profile) }.getOrNull()
+                                    ?.takeIf(String::isNotBlank)
+                                    ?.let { "Authorization" to "Bearer $it" }
+                            },
+                        )
                         remoteConnectedAtMillis = nowMillis()
                         _client.value = rpc
                         _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
@@ -519,6 +538,17 @@ internal class GatewayConnectionManager(
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
 
             active = ActiveConnection.Ssh(transport, backend, forward, rpc)
+            _voiceHttp.value = com.hermesagent.mobile.data.voice.OkHttpGatewayVoiceHttp(
+                http = http,
+                resolveEndpoint = { "http://127.0.0.1:${'$'}{forward.localPort}" },
+                resolveAuthorization = {
+                    // The loopback session token is ASCII text, matching the
+                    // readiness verifier's exact header contract.
+                    val token = runCatching { backend.token }.getOrNull()
+                        ?.toString(Charsets.US_ASCII)
+                    token?.takeIf(String::isNotBlank)?.let { "X-Hermes-Session-Token" to it }
+                },
+            )
             _client.value = rpc
             _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
             watchRpc(rpc)
@@ -613,6 +643,7 @@ internal class GatewayConnectionManager(
         val closing = active
         active = null
         _client.value = null
+        _voiceHttp.value = null
         if (closing != null) {
             runCatching { closing.rpc.close() }
             when (closing) {

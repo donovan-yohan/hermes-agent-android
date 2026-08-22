@@ -119,6 +119,9 @@ internal class NativeGatewayAuthenticator(
     private val login: GatewayNativeLogin,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
 ) {
+    /** Stored tokens without triggering a sign-in flow; null when absent. */
+    suspend fun tokens(baseUrl: String): GatewayNativeTokens? = store.load(baseUrl)
+
     suspend fun ticket(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): String {
         val baseUrl = profile.normalizedBaseUrl
             ?: throw GatewayAuthException("Enter a valid HTTPS Gateway URL.")
@@ -416,6 +419,10 @@ internal class RemoteGatewayConnector(
     private val authenticator: NativeGatewayAuthenticator,
     private val rpcOpen: suspend (String, String) -> GatewayRpcClient,
 ) {
+    /** Bearer token for the connection-owned audio HTTP leg; null when absent. */
+    suspend fun accessToken(profile: RemoteGatewayProfile): String? =
+        profile.normalizedBaseUrl?.let { authenticator.tokens(it)?.accessToken }
+
     suspend fun open(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): GatewayRpcClient {
         val baseUrl = profile.normalizedBaseUrl
             ?: throw GatewayAuthException("Enter a valid HTTPS Gateway URL.")
