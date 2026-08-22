@@ -47,15 +47,15 @@ class WakeWordForegroundService : Service() {
 
     private fun startListening() {
         if (feedJob?.isActive == true) return
-        startForeground(
-            NOTIFICATION_ID,
-            buildNotification(phrase = null),
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            } else {
-                0
-            },
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(phrase = null),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification(phrase = null))
+        }
         val repository = (application as? com.hermesagent.mobile.HermesApplication)?.wakeWordRepository
             ?: run { stopSelf(); return }
         val mic = AndroidMicCapture(Dispatchers.IO)
@@ -92,7 +92,6 @@ class WakeWordForegroundService : Service() {
     }
 
     private fun notificationBuilder(): androidx.core.app.NotificationCompat.Builder {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         return androidx.core.app.NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
