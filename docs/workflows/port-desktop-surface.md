@@ -65,6 +65,10 @@ disagree, the component is the current contract and the doc is a bug.
 | Web client | `web/src/lib/gatewayClient.ts` | WebSocket auth, correlation, close and event handling |
 | Gateway HTTP/WS | `hermes_cli/web_server.py` | `/api/health`, `/api/ssh/ownership`, public index token injection, and `/api/ws` authentication |
 | Sessions and prompts | `tui_gateway/server.py` plus its tests | Durable/runtime identity, session methods, `prompt.submit`, event payloads |
+| Composer contract | `apps/desktop/src/app/chat/composer/index.tsx:880-1085`, `controls.tsx:42-390`, `attachments.tsx:18-233`, `model-pill.tsx:26-173` | Editor, send/stop/queue, attachment and model visual/functional boundaries |
+| Composer state seams | `apps/desktop/src/app/chat/composer/hooks/use-composer-{submit,draft,queue,esc-cancel,voice}.ts` and their tests | Submit acknowledgement, draft identity, parked turns, queue, safe cancel and voice lifecycle |
+| Composer completions/status | `apps/desktop/src/app/chat/composer/{completion-drawer,context-menu,contrib,status-stack}/` plus tests | Context actions, all completion providers, contribution gaps and status stack states |
+| Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
 
 Treat lifecycle files as contracts with every process that consumes them, not
 as Android-private metadata. A structurally plausible lock with renamed keys or
@@ -87,10 +91,13 @@ styling Android. Do not use a screenshot as a substitute for reading source,
 and do not use source as an excuse to skip looking at the actual pixels.
 
 The Desktop app must be a dev renderer with CDP enabled. Never relaunch or kill
-the user's app to obtain a port. Use the running dev app, or launch an isolated
-instance from the Desktop checkout as described by its perf harness. Put the
-target surface into a synthetic state containing no private session text, host,
-fingerprint, path, token, or credential.
+the user's app to obtain a port. Use a **disposable pinned clone/export** plus
+the existing e2e mock sandbox or Playwright fixture; never run bare
+`npm run perf:serve`, because it copies real config, `.env`, and auth by
+default. Allocate explicit dev-server and CDP ports for the capture run. Put the
+target surface into a temporary local-only seeded state containing no private
+session text, host, fingerprint, path, token, or credential. Do not add a
+production demo session to obtain evidence.
 
 ```bash
 node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
@@ -110,8 +117,13 @@ The Desktop capture writes `reference.png` plus `contract.json`. The JSON is
 not a DOM dump: it records the selected subtree's rendered rectangles,
 typography, spacing, colour, borders, opacity, labels, roles, and pseudo-element
 font glyphs. The Android capture records the screenshot and device geometry.
-Both land under `build/visual-parity/`, which stays untracked. The report script
-writes `report.html` there; open that file and judge both surfaces together.
+Both land under `build/visual-parity/`, which stays untracked. Before accepting
+an Android screenshot, record the expected package/activity identity (for this
+app, debug `com.hermesagent.mobile.debug` / `com.hermesagent.mobile.MainActivity`)
+from `cmd package resolve-activity` and the focused window in the ignored
+capture evidence. The report script writes `report.html` there; open that file
+and judge both surfaces together. If a future state is unsupported, record it
+as `missing` or `partial` in the manifest; never fabricate a screenshot.
 
 For every surface, compare this inventory explicitly:
 
@@ -203,8 +215,11 @@ and no state that depends on an animation running.
 Commands:
 
 ```bash
-./gradlew check              # unit tests (debug + release), lint, repo invariants
+./gradlew check              # offline unit tests (debug + release), lint, repo invariants
 ./gradlew assembleDebug
+python3 scripts/check-composer-parity.py \
+  --upstream "$HOME/.hermes/hermes-agent" # optional read-only pin/path/citation drift check
+python3 scripts/check-ci-workflow.py       # static exact-head workflow contract
 git diff --check
 ```
 

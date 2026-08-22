@@ -86,7 +86,23 @@ if ! python3 scripts/check-product-copy.py; then
   fail=1
 fi
 
-# ── 6. Production must never fall back to Phase 1 demo data ──────────────────
+# ── 6. Composer parity checker keeps rejecting broken contracts ──────────────
+if ! python3 -m unittest discover -s scripts/tests -p 'test_*.py'; then
+  problem "composer parity checker tests failed."
+fi
+
+# ── 7. Composer parity contract remains pinned and classified ────────────────
+# This writes only a compact ignored build report; it never writes to Desktop.
+if ! python3 scripts/check-composer-parity.py --report build/composer-parity/report.md; then
+  problem "composer parity manifest, citations, inventory, or capture matrix is invalid."
+fi
+
+# ── 8. Exact-head Android CI keeps the build and APK evidence together ───────
+if ! python3 scripts/check-ci-workflow.py; then
+  problem "Android exact-head GitHub Actions contract is invalid."
+fi
+
+# ── 9. Production must never fall back to Phase 1 demo data ──────────────────
 if grep -R -nE 'data\.demo|DemoSessions|DemoTurnEngine' app/src/main/kotlin >/dev/null 2>&1; then
   problem "production source still references the Phase 1 demo session/turn path."
   note "fix: route production startup, sessions and turns through the live Gateway repository."

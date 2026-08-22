@@ -1,0 +1,1567 @@
+{
+  "schema_version": 1,
+  "desktop_repository": "NousResearch/hermes-agent",
+  "desktop_sha": "f82f2dbabd9e66b714f2b4f8a40447fe0c13e732",
+  "scope_note": "The audited surface is every file below the Desktop composer root plus these load-bearing integration and end-to-end paths. A future source file in a scoped root fails until it is explicitly classified.",
+  "desktop_scope": {
+    "roots": [
+      "apps/desktop/src/app/chat/composer"
+    ],
+    "integration_paths": [
+      "apps/desktop/e2e/batch-clarify.spec.ts",
+      "apps/desktop/e2e/image-attachment-resume.spec.ts",
+      "apps/desktop/e2e/queue-turn-boundary.spec.ts",
+      "apps/desktop/e2e/session-compression-and-queue-stop.spec.ts",
+      "apps/desktop/src/app/chat/hooks/use-composer-actions.test.ts",
+      "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+      "apps/desktop/src/app/session/hooks/use-background-queue-drain.test.tsx",
+      "apps/desktop/src/app/session/hooks/use-background-queue-drain.ts",
+      "apps/desktop/src/app/session/hooks/use-message-stream/approval-mode-event.test.tsx",
+      "apps/desktop/src/app/session/hooks/use-message-stream/composer-model-event.test.tsx",
+      "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts",
+      "apps/desktop/src/app/session/hooks/use-model-controls.test.tsx",
+      "apps/desktop/src/app/session/hooks/use-model-controls.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/index.test.tsx",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/resolve-target-session.test.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/resolve-target-session.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.test.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/slash.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/submit.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/utils.test.ts",
+      "apps/desktop/src/app/session/hooks/use-prompt-actions/utils.ts",
+      "apps/desktop/src/components/assistant-ui/clarify-tool.test.tsx",
+      "apps/desktop/src/components/assistant-ui/clarify-tool.tsx",
+      "apps/desktop/src/components/assistant-ui/tool/approval.test.tsx",
+      "apps/desktop/src/components/assistant-ui/tool/approval.tsx",
+      "apps/desktop/src/components/chat/composer-dock.ts",
+      "apps/desktop/src/components/prompt-overlays.test.tsx",
+      "apps/desktop/src/components/prompt-overlays.tsx",
+      "apps/desktop/src/lib/composer-input-sanitize.test.ts",
+      "apps/desktop/src/lib/composer-input-sanitize.ts",
+      "apps/desktop/src/lib/embedded-images.test.ts",
+      "apps/desktop/src/lib/embedded-images.ts",
+      "apps/desktop/src/lib/image-resize.test.ts",
+      "apps/desktop/src/lib/image-resize.ts",
+      "apps/desktop/src/lib/keybinds/composer-focus-keys.test.ts",
+      "apps/desktop/src/lib/keybinds/composer-focus-keys.ts",
+      "apps/desktop/src/lib/reasoning-effort.test.ts",
+      "apps/desktop/src/lib/reasoning-effort.ts",
+      "apps/desktop/src/lib/voice-barge-in.ts",
+      "apps/desktop/src/lib/voice-playback.ts",
+      "apps/desktop/src/lib/voice-stop-word.test.ts",
+      "apps/desktop/src/lib/voice-stop-word.ts",
+      "apps/desktop/src/store/approval-mode.test.ts",
+      "apps/desktop/src/store/approval-mode.ts",
+      "apps/desktop/src/store/clarify.test.ts",
+      "apps/desktop/src/store/clarify.ts",
+      "apps/desktop/src/store/composer-actions.ts",
+      "apps/desktop/src/store/composer-input-history.test.ts",
+      "apps/desktop/src/store/composer-input-history.ts",
+      "apps/desktop/src/store/composer-popout-preference.test.ts",
+      "apps/desktop/src/store/composer-popout.test.ts",
+      "apps/desktop/src/store/composer-popout.ts",
+      "apps/desktop/src/store/composer-queue.test.ts",
+      "apps/desktop/src/store/composer-queue.ts",
+      "apps/desktop/src/store/composer-status.test.ts",
+      "apps/desktop/src/store/composer-status.ts",
+      "apps/desktop/src/store/composer-suggestions.test.ts",
+      "apps/desktop/src/store/composer-suggestions.ts",
+      "apps/desktop/src/store/composer.test.ts",
+      "apps/desktop/src/store/composer.ts",
+      "apps/desktop/src/store/voice-playback.ts",
+      "apps/desktop/src/store/voice-prefs.test.ts",
+      "apps/desktop/src/store/voice-prefs.ts",
+      "apps/desktop/src/store/wake-word.test.ts",
+      "apps/desktop/src/store/wake-word.ts"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "editor-draft-references",
+      "family": "editor/draft/references",
+      "visible_contract": "Rich multiline editor, focus, IME composition, draft restoration, paste, and inline references.",
+      "state_authority": "ui-only",
+      "platform_dependency": "Compose text input and Gateway session identity",
+      "android_status": "partial",
+      "android_behavior": "Current Composer is a six-line multiline field with an in-memory active-session draft; it has no per-session durable draft or reference model.",
+      "android_tests": "AccessibilityTest and ChatViewModelTest cover multiline input and rejected-submit restoration; later slice adds identity/reference regression coverage.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/index.tsx:880-1085",
+          "apps/desktop/src/app/chat/composer/rich-editor.ts:1"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/rich-editor.test.ts:1",
+          "apps/desktop/src/app/chat/composer/enter-stale-ime-flag.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "editor-empty",
+        "editor-focused-multiline",
+        "editor-validation-error",
+        "editor-ime-open",
+        "editor-disabled",
+        "editor-disconnected"
+      ],
+      "category": "editor/draft/references"
+    },
+    {
+      "id": "submit-stop-steer-queue",
+      "family": "submit/stop/steer/queue",
+      "visible_contract": "Idle send, running stop, mid-turn steer, queued-item edit/delete/send-next, and parked turn behavior.",
+      "state_authority": "connection-scoped",
+      "platform_dependency": "Gateway prompt.submit and interrupt RPCs",
+      "android_status": "partial",
+      "android_behavior": "Current app submits a prompt and exposes interrupt; it deliberately has no steer or queue UI/transport contract yet.",
+      "android_tests": "ChatViewModelTest proves accepted, rejected, ambiguous submit and stop seam; later slice owns queue/steer journeys.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts:151-211"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/controls.test.tsx:1",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "send-idle",
+        "stop-running",
+        "steer-running",
+        "queue-edit"
+      ],
+      "category": "submit/stop/steer/queue"
+    },
+    {
+      "id": "model-effort-fast",
+      "family": "model/effort/fast",
+      "visible_contract": "Provider/model selector with reasoning effort, fast mode, loading/error state, and visible manual override.",
+      "state_authority": "backend-authoritative",
+      "platform_dependency": "Gateway model metadata and update events",
+      "android_status": "missing",
+      "android_behavior": "No native model, effort, or fast-mode control exists at the base.",
+      "android_tests": "No Android behavior test yet; future slice must cover Gateway-authoritative selection and errors.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/model-pill.tsx:26-173"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/model-pill.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "model-loading",
+        "model-selected",
+        "model-pinned-override",
+        "model-menu"
+      ],
+      "category": "model/effort/fast"
+    },
+    {
+      "id": "attachments",
+      "family": "attachments",
+      "visible_contract": "Pick, paste or drop supported kinds; show preview/progress/error/removal before reliable upload/reference submission.",
+      "state_authority": "connection-scoped",
+      "platform_dependency": "Android scoped URI grants, decode/resize, and Gateway upload/reference routes",
+      "android_status": "missing",
+      "android_behavior": "No Android picker/share/paste attachment acquisition or upload exists at the base.",
+      "android_tests": "No Android behavior test yet; later slice must prove URI cleanup, error/retry, preview/removal, and remote byte upload.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/attachments.tsx:18-233",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-drop.ts:1"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/attachments.test.tsx:1",
+          "apps/desktop/e2e/image-attachment-resume.spec.ts:1"
+        ]
+      },
+      "capture_states": [
+        "attachment-picker",
+        "attachment-uploading",
+        "attachment-ready-preview",
+        "attachment-error-removal"
+      ],
+      "category": "attachments"
+    },
+    {
+      "id": "voice",
+      "family": "voice",
+      "visible_contract": "Dictation recording/transcription/error plus auto-speak, wake-word, and active voice-conversation controls.",
+      "state_authority": "connection-scoped",
+      "platform_dependency": "Android microphone permission, recorder, speech APIs, and audio focus",
+      "android_status": "missing",
+      "android_behavior": "No native voice acquisition or playback/conversation control exists at the base.",
+      "android_tests": "No Android behavior test yet; later slice must cover permission refusal, interruption, cleanup, and accessible state.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
+          "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts:1"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.test.tsx:1",
+          "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation-rearm.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "voice-recording",
+        "voice-transcribing-error",
+        "voice-auto-speak",
+        "voice-conversation-active",
+        "voice-wake-word"
+      ],
+      "category": "voice"
+    },
+    {
+      "id": "completions-context-contrib",
+      "family": "completions/context/contrib",
+      "visible_contract": "Context menu/contributed actions and slash, @, path/session/URL, emoji, directive, suggestion, and no-result completion states.",
+      "state_authority": "ui-only",
+      "platform_dependency": "Gateway completion/context providers and Android accessible menus",
+      "android_status": "missing",
+      "android_behavior": "No native completion, context action, or contribution surface exists at the base.",
+      "android_tests": "No Android behavior test yet; later slice must test provider results, no-match, focus, and platform limits.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/context-menu.tsx:1",
+          "apps/desktop/src/app/chat/composer/completion-drawer.tsx:1",
+          "apps/desktop/src/app/chat/composer/contrib.ts:1"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/contrib.test.ts:1",
+          "apps/desktop/src/app/chat/composer/hooks/use-slash-completions.test.tsx:1",
+          "apps/desktop/src/app/chat/composer/path-refs.test.ts:1"
+        ]
+      },
+      "capture_states": [
+        "completion-slash",
+        "completion-at-path-url",
+        "completion-emoji-directive",
+        "completion-no-results"
+      ],
+      "category": "completions/context/contrib"
+    },
+    {
+      "id": "coding-status-stack",
+      "family": "coding/status stack",
+      "visible_contract": "Composer-adjacent coding/branch/worktree, goal, preview, async, collapse, dismiss, and stop status stack.",
+      "state_authority": "connection-scoped",
+      "platform_dependency": "Gateway runtime status events",
+      "android_status": "missing",
+      "android_behavior": "Current app renders one concise progress line, not Desktop status-stack rows/actions.",
+      "android_tests": "Current repository tests only the generic progress projection; stack-specific journeys remain future work.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/status-stack/index.tsx:1",
+          "apps/desktop/src/app/chat/composer/status-stack/coding-row.tsx:1"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/status-stack/coding-row.test.tsx:1",
+          "apps/desktop/src/app/chat/composer/status-stack/preview-row.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "status-coding-branch-worktree",
+        "status-goal-preview-async",
+        "status-collapsed-dismiss-stop"
+      ],
+      "category": "coding/status stack"
+    },
+    {
+      "id": "clarify-approval-sudo-secret-needsinput",
+      "family": "clarify/approval/sudo/secret/NeedsInput",
+      "visible_contract": "Parked turn response surfaces for clarify, dangerous command approval, sudo, secret, pending-input routing, refusal and reconnect.",
+      "state_authority": "backend-authoritative",
+      "platform_dependency": "Gateway request/response RPCs and safe in-memory secret handling",
+      "android_status": "partial",
+      "android_behavior": "SessionStatus.NeedsInput is projected as blocking/unread status, but there is no native request-specific response or safe-refusal surface.",
+      "android_tests": "GatewaySessionRepositoryTest covers NeedsInput status projection; later slice must test response kinds, routing, reconnect and non-leakage.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390",
+          "apps/desktop/src/components/assistant-ui/clarify-tool.tsx:283-307",
+          "apps/desktop/src/components/assistant-ui/tool/approval.tsx:34-93",
+          "apps/desktop/src/components/prompt-overlays.tsx:25-250"
+        ],
+        "tests": [
+          "apps/desktop/src/components/assistant-ui/clarify-tool.test.tsx:1",
+          "apps/desktop/src/components/assistant-ui/tool/approval.test.tsx:1",
+          "apps/desktop/src/app/session/hooks/use-message-stream/approval-mode-event.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "needsinput-clarify-single-batch",
+        "needsinput-approval",
+        "needsinput-sudo-secret",
+        "needsinput-reconnect-jump"
+      ],
+      "category": "clarify/approval/sudo/secret/NeedsInput"
+    },
+    {
+      "id": "responsiveness",
+      "family": "responsiveness",
+      "visible_contract": "Measured composer-width ladder at 561/560/321/320 and below, plus narrow/wide portrait and landscape arrangements.",
+      "state_authority": "ui-only",
+      "platform_dependency": "Compose constraints and IME insets",
+      "android_status": "partial",
+      "android_behavior": "Chat uses a 720dp rail breakpoint and IME padding, but does not implement the Desktop composer-container width ladder.",
+      "android_tests": "Existing ChatScreen journeys cover chat rail layouts; later slice must add exact composer-width threshold evidence.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/index.tsx:880-1085"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/controls.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "responsive-561",
+        "responsive-560",
+        "responsive-321",
+        "responsive-320-below"
+      ],
+      "deviation": {
+        "reason": "Android keeps the existing 48dp touch targets and explicit-send soft-keyboard interaction while reproducing the measured hierarchy in a later responsive slice.",
+        "evidence": "docs/workflows/port-desktop-surface.md:168-186",
+        "approved_by": "issue-3 mobile adaptation contract"
+      },
+      "category": "responsiveness"
+    },
+    {
+      "id": "accessibility-lifecycle",
+      "family": "accessibility/lifecycle",
+      "visible_contract": "Accessible focus/order/live status, large font/reduced motion/IME variants, and safe reconnect/process recreation cleanup.",
+      "state_authority": "connection-scoped",
+      "platform_dependency": "Android lifecycle, TalkBack semantics, permissions, and process-death policies",
+      "android_status": "partial",
+      "android_behavior": "Composer exposes content descriptions, 48dp controls, multiline IME behavior and IME padding; lifecycle/large-font/reduced-motion capture coverage is not complete.",
+      "android_tests": "AccessibilityTest checks composer semantics and geometry; lifecycle/capture matrix is contract-only in this foundation slice.",
+      "desktop_citations": {
+        "source": [
+          "apps/desktop/src/app/chat/composer/controls.tsx:42-390",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-esc-cancel.ts:24-38"
+        ],
+        "tests": [
+          "apps/desktop/src/app/chat/composer/controls.test.tsx:1",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-esc-cancel.test.tsx:1"
+        ]
+      },
+      "capture_states": [
+        "accessibility-large-font",
+        "accessibility-reduced-motion",
+        "accessibility-ime-open",
+        "lifecycle-disconnect-recreate"
+      ],
+      "deviation": {
+        "reason": "Android replaces Desktop hover and Escape affordances with touch targets and system Back only where the same safe action remains available.",
+        "evidence": "docs/workflows/port-desktop-surface.md:186-188",
+        "approved_by": "issue-3 mobile adaptation contract"
+      },
+      "category": "accessibility/lifecycle"
+    }
+  ],
+  "desktop_inventory": [
+    {
+      "path": "apps/desktop/e2e/batch-clarify.spec.ts",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/e2e/image-attachment-resume.spec.ts",
+      "kind": "test",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/e2e/queue-turn-boundary.spec.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/e2e/session-compression-and-queue-stop.spec.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/at-folder-navigation.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/attachments.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/attachments.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/completion-drawer.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/composer-text-guard.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/composer-utils.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/composer-utils.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/contrib.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/contrib.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/controls.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references",
+        "submit-stop-steer-queue",
+        "responsiveness",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references",
+        "submit-stop-steer-queue",
+        "voice",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/directive-actions.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/directive-actions.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/directive-label.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/directive-scope.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/drop-affordance.ts",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/empty-composer.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/enter-stale-ime-flag.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/enter-submit-dom-race.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/focus.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/focus.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/help-hint.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-at-completions-contrib.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-at-completions.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-auto-speak-replies.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-branch.ts",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-draft.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-draft.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-drop.ts",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-esc-cancel.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-esc-cancel.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-metrics.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-placeholder.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-popout.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-popout.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-undo.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-undo.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-url-dialog.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-url-dialog.ts",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-emoji-completions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-mic-recorder.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-micro-actions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-popout-drag.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-popout-drag.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-slash-completions.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-status-presence.ts",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation-rearm.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-recorder.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/ime-composition-dom-repro.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/index.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references",
+        "responsiveness"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/inline-references.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/inline-refs.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/micro-actions.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/model-pill.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/model-pill.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/paste-to-focus.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/paste-to-focus.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/path-refs.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/path-refs.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/rich-editor.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/rich-editor.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/scope.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/slash-nav-dom-repro.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/slash-refs.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/slash-refs.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/coding-row.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/coding-row.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/collapsed-indicator.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/goal-indicator.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/index.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/preview-row.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/preview-row.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/status-stack/status-row.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/suggestion-pills.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/suggestion-pills.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/text-utils.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/text-utils.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/trigger-popover-parity.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/trigger-popover.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/trigger-popover.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/types.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/undo-history.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/undo-history.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/url-dialog.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/url-refs.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/url-refs.ts",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/composer/voice-activity.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-background-queue-drain.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-background-queue-drain.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-message-stream/approval-mode-event.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-message-stream/composer-model-event.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts",
+      "kind": "source",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-model-controls.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-model-controls.ts",
+      "kind": "source",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/resolve-target-session.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/resolve-target-session.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/slash.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/submit.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/utils.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/utils.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue",
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/clarify-tool.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/clarify-tool.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/tool/approval.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/tool/approval.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/chat/composer-dock.ts",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack",
+        "responsiveness"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/prompt-overlays.test.tsx",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/prompt-overlays.tsx",
+      "kind": "source",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/composer-input-sanitize.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/composer-input-sanitize.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/embedded-images.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/embedded-images.ts",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/image-resize.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/image-resize.ts",
+      "kind": "source",
+      "capability_ids": [
+        "attachments"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/keybinds/composer-focus-keys.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/keybinds/composer-focus-keys.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/reasoning-effort.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/reasoning-effort.ts",
+      "kind": "source",
+      "capability_ids": [
+        "model-effort-fast"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/voice-barge-in.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/voice-playback.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/voice-stop-word.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/lib/voice-stop-word.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/approval-mode.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/approval-mode.ts",
+      "kind": "source",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/clarify.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/clarify.ts",
+      "kind": "source",
+      "capability_ids": [
+        "clarify-approval-sudo-secret-needsinput"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-actions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-input-history.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-input-history.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-popout-preference.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "responsiveness",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-popout.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "responsiveness",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-popout.ts",
+      "kind": "source",
+      "capability_ids": [
+        "responsiveness",
+        "accessibility-lifecycle"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-queue.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-queue.ts",
+      "kind": "source",
+      "capability_ids": [
+        "submit-stop-steer-queue"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-status.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-status.ts",
+      "kind": "source",
+      "capability_ids": [
+        "coding-status-stack"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-suggestions.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer-suggestions.ts",
+      "kind": "source",
+      "capability_ids": [
+        "completions-context-contrib"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "editor-draft-references",
+        "attachments",
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/composer.ts",
+      "kind": "source",
+      "capability_ids": [
+        "editor-draft-references",
+        "attachments",
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/voice-playback.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/voice-prefs.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/voice-prefs.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/wake-word.test.ts",
+      "kind": "test",
+      "capability_ids": [
+        "voice"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/store/wake-word.ts",
+      "kind": "source",
+      "capability_ids": [
+        "voice"
+      ]
+    }
+  ]
+}
