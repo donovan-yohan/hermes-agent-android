@@ -171,8 +171,6 @@ data class ChatUiState(
     val draft: String = "",
     val isStreaming: Boolean = false,
     val runningCount: Int = 0,
-    /** Another durable session owns the app-wide single submitted turn. */
-    val runningOwner: SessionSummary? = null,
     /** A required action parked in a non-visible session. */
     val backgroundPendingInput: BackgroundPendingInput? = null,
     val connection: GatewayConnectionState = GatewayConnectionState(),
@@ -183,7 +181,7 @@ data class ChatUiState(
         get() = connection.status == GatewayConnectionStatus.Connected
     val canSend: Boolean
         get() = canCreateSession &&
-            activeSession != null && draft.isNotBlank() && !isStreaming && runningCount == 0
+            activeSession?.status == SessionStatus.Idle && draft.isNotBlank()
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
     val liveStatusText: String? get() = activeSession?.progress?.text
 }
@@ -305,8 +303,6 @@ internal class ChatViewModel(
         // the later navigation event cannot create a blank intermediate frame.
         val displayedActiveId = activeId?.let { cacheState.rehomes[it] ?: it }
         val active = displayedActiveId?.let(cacheState.sessions::get)
-        val otherOwners = blocking.filter { it.id != active?.id }
-        val runningOwner = otherOwners.maxWithOrNull(compareBy<SessionSummary> { it.activityStartedAtMillis }.thenBy { it.id })
         val selectedProject = navigation.projectId?.let(cacheState.projects.projects::get)
         val scopedSessions = selectedProject?.id
             ?.let { cacheState.projects.memberships[it].orEmpty() }
@@ -330,7 +326,6 @@ internal class ChatViewModel(
             active?.status == SessionStatus.NeedsInput -> ComposerBusyKind.NeedsInput
             active?.status in STREAMING_STATUSES -> ComposerBusyKind.Streaming
             active?.status == SessionStatus.Background -> ComposerBusyKind.Background
-            runningOwner != null -> ComposerBusyKind.OtherSessionRunning
             else -> ComposerBusyKind.Idle
         }
         val queueEntries = displayedActiveId
@@ -385,7 +380,6 @@ internal class ChatViewModel(
             draft = draftText,
             isStreaming = active?.status in STREAMING_STATUSES,
             runningCount = running,
-            runningOwner = runningOwner,
             backgroundPendingInput = backgroundPending,
             connection = navigation.connection,
             notice = navigation.notice,
@@ -983,7 +977,10 @@ internal class ChatViewModel(
         val prompt = draft.value.trim()
         val pending = attachments.value.filter { it.durableSessionId == sessionId }
         val ready = pending.filter { it.stage is AttachmentStage.Ready }
-        if ((prompt.isEmpty() && ready.isEmpty()) || uiState.value.isStreaming || uiState.value.runningCount > 0 ||
+        // Desktop parity (isTargetSessionBusy): the selected session's own
+        // authoritative status gates its send — other sessions' turns never do.
+        val activeIsIdle = cache.session(sessionId)?.status == SessionStatus.Idle
+        if ((prompt.isEmpty() && ready.isEmpty()) || !activeIsIdle ||
             repository.connectionState.value.status != GatewayConnectionStatus.Connected
         ) return
         if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) {
@@ -1440,9 +1437,8 @@ internal class ChatViewModel(
                         else -> notice.value = "That queued message is no longer available."
                     }
                 }
-            ComposerBusyKind.Background,
-            ComposerBusyKind.OtherSessionRunning,
-            -> notice.value = "Hermes is still working. This queued message will be ready when it is idle."
+            ComposerBusyKind.Background ->
+                notice.value = "Hermes is still working. This queued message will be ready when it is idle."
             else -> when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isSessionIdle(sessionId))) {
                 ComposerQueueDrainResult.Ambiguous,
                 ComposerQueueDrainResult.ReviewRequired,
@@ -1601,13 +1597,13 @@ internal class ChatViewModel(
     }
 
     private fun drainQueueIfIdle(sessionId: String) {
-        if (!queueScopeReady.value || !isSessionIdle(sessionId) || runningCountNow() > 0) return
+        if (!queueScopeReady.value || !isSessionIdle(sessionId)) return
         if (!scheduledQueueDrains.add(sessionId)) return
         viewModelScope.launch {
             try {
                 // Recheck inside the scheduled owner. A settle/reconnect pair
                 // can both observe idle before either coroutine runs.
-                if (!queueScopeReady.value || !isSessionIdle(sessionId) || runningCountNow() > 0) return@launch
+                if (!queueScopeReady.value || !isSessionIdle(sessionId)) return@launch
                 when (composerQueueController.drainIfIdle(sessionId, isIdle = true)) {
                     ComposerQueueDrainResult.StoreUnavailable -> if (activeSessionId.value == sessionId) {
                         notice.value = "The queue could not be updated. Try again."
@@ -1619,13 +1615,6 @@ internal class ChatViewModel(
             }
         }
     }
-
-    /**
-     * The projected UI count can lag a settle edge under virtual time, so the
-     * drain gate reads the authoritative cache instead of `uiState`.
-     */
-    private fun runningCountNow(): Int =
-        cache.state.value.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
 
     private fun isSessionIdle(sessionId: String): Boolean = cache.session(sessionId)?.status == SessionStatus.Idle
 

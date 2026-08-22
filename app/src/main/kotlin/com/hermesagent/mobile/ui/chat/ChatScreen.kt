@@ -444,8 +444,6 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             statusLine = state.composerStatus(),
             editorIdentity = state.activeSession?.id,
-            runningOwnerTitle = state.runningOwner?.title,
-            onViewRunningOwner = state.runningOwner?.id?.let { id -> { actions.onSelectSession(id) } },
             controls = state.composer,
             onSelectModel = actions.onSelectModel,
             onSelectReasoning = actions.onSelectReasoning,
@@ -546,8 +544,6 @@ private fun ChatUiState.composerStatus(): String = notice ?: when {
     connection.status == GatewayConnectionStatus.Disconnected -> "Open Gateways to connect"
     liveStatusText != null -> liveStatusText.orEmpty()
     isStreaming -> "Hermes is responding — tap ■ to stop"
-    runningOwner != null -> "Hermes is working in “${runningOwner.title}”."
-    runningCount > 0 -> "Hermes is working in another session."
     else -> "Connected to Gateway"
 }
 

@@ -17,6 +17,10 @@ import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import com.hermesagent.mobile.data.composer.ComposerQueueController
+import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
+import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
+import com.hermesagent.mobile.data.composer.TransientComposerQueueStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
@@ -59,7 +63,7 @@ class ChatJourneyTest {
     private lateinit var viewModel: ChatViewModel
     private var themeName by mutableStateOf(BuiltinThemes.DEFAULT_NAME)
 
-    private fun launch(connected: Boolean = true, withSessions: Boolean = true) {
+    private fun launch(connected: Boolean = true, withSessions: Boolean = true, withRealQueueDrain: Boolean = false) {
         if (withSessions) {
             cache.upsertSessions(
                 listOf(
@@ -77,7 +81,28 @@ class ChatJourneyTest {
             cache.setTranscript("live-b", listOf(AssistantTurn("row-b", "Second live transcript", NOW - 1)))
         }
         repository = JourneyRepository(cache, connected)
-        viewModel = ChatViewModel(cache, repository, clock = { NOW })
+        viewModel = if (withRealQueueDrain) {
+            val submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(
+                    durableSessionId: String,
+                    text: String,
+                ): QueueSubmissionOutcome = when (repository.submit(durableSessionId, text)) {
+                    GatewaySubmitOutcome.Accepted -> QueueSubmissionOutcome.Accepted
+                    else -> QueueSubmissionOutcome.Rejected
+                }
+            }
+            ChatViewModel(
+                cache,
+                repository,
+                clock = { NOW },
+                composerQueueController = ComposerQueueController(
+                    store = TransientComposerQueueStore(),
+                    submitter = submitter,
+                ),
+            )
+        } else {
+            ChatViewModel(cache, repository, clock = { NOW })
+        }
 
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
@@ -389,33 +414,56 @@ class ChatJourneyTest {
     }
 
     @Test
-    fun `another running turn keeps stream ownership and disables a second submit`() {
+    fun `another running turn keeps stream ownership while an idle thread sends`() {
         launch()
         cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
         viewModel.selectSession("live-b")
         compose.waitUntil(5_000) {
-            viewModel.uiState.value.composer.runtime.busyKind == ComposerBusyKind.OtherSessionRunning
+            viewModel.uiState.value.composer.runtime.busyKind == ComposerBusyKind.Idle
         }
         compose.waitForIdle()
 
-        // Slice 4 parity: the busy-session status lives in the composer's
-        // status line (wide layouts) while the model pill owns the bottom row
-        // on phones; either way the busy composer keeps truthful actions.
-        // Typed text queues onto the active session and an empty draft with a
-        // queue offers Send next; nothing submits directly.
-        compose.onNodeWithContentDescription("Message Hermes").performTextInput("not ambiguous")
+        // Desktop parity: live-a owns its running turn and keeps its stop
+        // control; the idle selected session (live-b) sends its own text
+        // directly instead of silently filing it into the local queue.
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("independent send")
         compose.waitForIdle()
-        // Another session owns the running turn here, so steer belongs to that
-        // session: typed text queues locally instead of using a different RPC.
-        compose.onNodeWithContentDescription("Queue message").assertExists()
+        compose.onNodeWithContentDescription("Send message").assertExists()
         viewModel.performComposerPrimaryAction()
+        compose.waitForIdle()
+        assertEquals(0, viewModel.uiState.value.composer.runtime.queueEntries.size)
+        assertEquals(listOf("live-b" to "independent send"), repository.submitted)
+
+        // Back on the running session its own stop control stays truthful.
+        viewModel.selectSession("live-a")
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Stop generating").assertIsDisplayed()
+    }
+
+    @Test
+    fun `queued entry drains on settle even while another session keeps running`() {
+        launch(withRealQueueDrain = true)
+        cache.upsertSession(cache.session("live-b")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        viewModel.selectSession("live-a")
+        compose.waitForIdle()
+
+        // NeedsInput parks typed text in the local queue without a submit.
+        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.NeedsInput))
+        compose.waitForIdle()
+        viewModel.setDraft("drain me")
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Queue message").performClick()
         compose.waitForIdle()
         assertEquals(1, viewModel.uiState.value.composer.runtime.queueEntries.size)
         assertEquals(0, repository.submitted.size)
-        compose.onNodeWithText("View").performClick()
+
+        // live-a settles; live-b is still working. The drain must not wait
+        // for the unrelated session.
+        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Idle))
         compose.waitForIdle()
-        assertEquals("live-a", viewModel.uiState.value.activeSession?.id)
-        compose.onNodeWithContentDescription("Stop generating").assertIsDisplayed()
+
+        assertEquals(1, repository.submitted.size)
+        assertEquals(0, viewModel.uiState.value.composer.runtime.queueEntries.size)
     }
 
     @Test
