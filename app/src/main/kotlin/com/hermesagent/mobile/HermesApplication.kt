@@ -74,6 +74,10 @@ class HermesApplication : Application() {
             },
         )
     }
+    internal val wakeWordRepository: com.hermesagent.mobile.data.voice.WakeWordRepository by lazy {
+        com.hermesagent.mobile.data.voice.WakeWordRepository(rpc = { gatewayConnection.client.value })
+    }
+
     internal val sessionRepository: LiveGatewaySessionRepository by lazy {
         LiveGatewaySessionRepository(cache, gatewayConnection, appScope)
     }
