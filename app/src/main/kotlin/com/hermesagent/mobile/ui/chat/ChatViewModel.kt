@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.hermesagent.mobile.data.voice.VoiceUiState
+import com.hermesagent.mobile.data.voice.TranscriptionResult
 import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.CompletionResult
 import com.hermesagent.mobile.data.composer.CompletionTrigger
@@ -156,6 +158,7 @@ data class BackgroundPendingInput(
 )
 
 data class ChatUiState(
+    val voice: VoiceUiState = VoiceUiState.Idle,
     val sessionRows: List<SessionListRow> = emptyList(),
     val projects: List<ProjectSummary> = emptyList(),
     val projectsAvailable: Boolean? = null,
@@ -214,6 +217,8 @@ internal class ChatViewModel(
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
     private val composer = MutableStateFlow(ComposerUiState())
+    /** Engine-owned voice state; contains no media bytes. */
+    private val voice = MutableStateFlow<VoiceUiState>(VoiceUiState.Idle)
     private val queueState = MutableStateFlow(ComposerQueueState())
     private val parkedQueueIds = MutableStateFlow<Set<String>>(emptySet())
     private val queueEdit = MutableStateFlow<QueueEditSnapshot?>(null)
@@ -274,6 +279,7 @@ internal class ChatViewModel(
         activeSessionId,
         combine(
             composer,
+            voice,
             combine(
                 combine(
                     repository.connectionState,
@@ -286,8 +292,12 @@ internal class ChatViewModel(
                 },
                 localComposerState,
             ) { navigation, local -> navigation.copy(localComposer = local) },
-        ) { composerState, navigation -> navigation.copy(composer = composerState) },
-    ) { cacheState, queryText, draftText, activeId, navigation ->
+        ) { composerState, voiceState, navigation ->
+            Triple(composerState, voiceState, navigation)
+        },
+    ) { cacheState, queryText, draftText, activeId, composerBundle ->
+        val navigation = composerBundle.third
+        val voiceState = composerBundle.second
         val blocking = cacheState.sessions.values.filter { it.status in PROMPT_BLOCKING_STATUSES }
         val running = blocking.size
         // SessionCache publishes this alias in the same atomic update that
@@ -358,6 +368,7 @@ internal class ChatViewModel(
                 )
             }
         ChatUiState(
+            voice = voiceState,
             sessionRows = buildSessionRows(
                 sessions = scopedSessions,
                 nowMillis = clock(),
@@ -378,7 +389,7 @@ internal class ChatViewModel(
             backgroundPendingInput = backgroundPending,
             connection = navigation.connection,
             notice = navigation.notice,
-            composer = navigation.composer.copy(runtime = runtime),
+            composer = composerBundle.first.copy(runtime = runtime),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -1146,6 +1157,47 @@ internal class ChatViewModel(
 
     private fun updateAttachment(occurrenceId: String, transform: (ComposerAttachmentDraft) -> ComposerAttachmentDraft) {
         attachments.value = attachments.value.map { if (it.occurrenceId == occurrenceId) transform(it) else it }
+    }
+    /**
+     * Dictation toggle. Capture is engine-owned and fenced to the active
+     * durable session; the transcript inserts into the draft only when the
+     * same session is still on screen, and it never auto-submits.
+     */
+    fun toggleDictation() {
+        val sessionId = activeSessionId.value ?: return
+        val current = voice.value
+        when (current) {
+            is VoiceUiState.DictationRecording -> {
+                voice.value = VoiceUiState.DictationTranscribing
+                dictationStop?.invoke()
+            }
+            is VoiceUiState.DictationTranscribing -> Unit
+            else -> {
+                voice.value = VoiceUiState.DictationRecording(elapsedMillis = 0L, level = 0f)
+                dictationStop = onDictationCapture?.invoke(sessionId) { result ->
+                    viewModelScope.launch {
+                        voice.value = VoiceUiState.Idle
+                        if (result is TranscriptionResult.Transcript && activeSessionId.value == sessionId) {
+                            insertTextAtCursor(result.text)
+                        } else if (result is TranscriptionResult.Silence && activeSessionId.value == sessionId) {
+                            notice.value = "No speech detected. Try again."
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Engine-provided capture stop for the live dictation; null when idle. */
+    var dictationStop: (() -> Unit)? = null
+
+    /** Activity/engine hook that starts bounded capture for one session. */
+    var onDictationCapture: ((durableSessionId: String, onDone: (TranscriptionResult) -> Unit) -> (() -> Unit)?)? = null
+
+    private fun insertTextAtCursor(value: String) {
+        val existing = draft.value
+        val updated = if (existing.isBlank()) value else "$existing $value"
+        setDraft(updated)
     }
 
     /** Dispatches the reducer's primary action without ever substituting steer for redirect. */

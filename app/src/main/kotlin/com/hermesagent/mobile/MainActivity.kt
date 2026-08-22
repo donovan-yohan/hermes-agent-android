@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
                     onInsertText = chatViewModel::onInsertText,
                     onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
                     onRemoveAttachment = chatViewModel::removeAttachment,
+                    onToggleDictation = chatViewModel::toggleDictation,
                 ),
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },

@@ -47,7 +47,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
+import com.hermesagent.mobile.data.voice.VoiceUiState
 import com.hermesagent.mobile.ui.chat.composer.AttachmentChipRow
+import com.hermesagent.mobile.ui.chat.composer.VoiceDictationControl
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
@@ -155,6 +157,8 @@ fun Composer(
     onPickFiles: () -> Unit = {},
     attachments: List<ComposerAttachmentDraft> = emptyList(),
     onRemoveAttachment: (String) -> Unit = {},
+    voiceState: VoiceUiState = VoiceUiState.Idle,
+    onToggleDictation: () -> Unit = {},
     busyKind: ComposerBusyKind = if (isStreaming) ComposerBusyKind.Streaming else ComposerBusyKind.Idle,
     queueCount: Int = 0,
     canRedirect: Boolean = isStreaming,
@@ -228,6 +232,8 @@ fun Composer(
                         onPickFiles,
                         attachments,
                         onRemoveAttachment,
+                        voiceState,
+                        onToggleDictation,
                         editorFocusRequester,
                         restoreEditorFocus,
                         Modifier.fillMaxWidth(),
@@ -264,6 +270,8 @@ fun Composer(
                         onPickFiles,
                         attachments,
                         onRemoveAttachment,
+                        voiceState,
+                        onToggleDictation,
                         editorFocusRequester,
                         restoreEditorFocus,
                         Modifier.weight(1f),
@@ -363,6 +371,8 @@ private fun ComposerEditor(
     onPickFiles: () -> Unit,
     attachments: List<ComposerAttachmentDraft> = emptyList(),
     onRemoveAttachment: (String) -> Unit = {},
+    voiceState: VoiceUiState = VoiceUiState.Idle,
+    onToggleDictation: () -> Unit = {},
     focusRequester: FocusRequester,
     onReturnFocus: () -> Unit,
     modifier: Modifier,
@@ -418,6 +428,13 @@ private fun ComposerEditor(
             AttachmentChipRow(attachments = attachments, onRemove = onRemoveAttachment)
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            VoiceDictationControl(
+                state = voiceState,
+                onToggle = {
+                    onToggleDictation()
+                    onReturnFocus()
+                },
+            )
             ComposerAddControl(
                 onInsertText = ::insertAtSelection,
                 enabled = true,

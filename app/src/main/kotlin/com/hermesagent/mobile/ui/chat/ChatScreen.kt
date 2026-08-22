@@ -456,6 +456,8 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
             onPickFiles = actions.onPickFiles,
             attachments = state.composer.runtime.attachments,
             onRemoveAttachment = actions.onRemoveAttachment,
+            voiceState = state.voice,
+            onToggleDictation = actions.onToggleDictation,
             busyKind = state.composer.runtime.busyKind,
             queueCount = state.composer.runtime.queueEntries.size,
             canRedirect = state.composer.runtime.canRedirect,
