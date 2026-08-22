@@ -39,27 +39,37 @@ class SpeechPlayer(
         val slot = sequencer.next()
         phase = Phase.Preparing
         val temp = File.createTempFile("speech", ".bin", voiceDir)
+        var errored = false
         try {
             temp.writeBytes(audio.bytes)
             val finished = Mutex(true)
-            player.addListener(object : Player.Listener {
+            val listener = object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_ENDED || state == Player.STATE_IDLE) {
                         finished.unlock()
                     }
                 }
-            })
-            withContext(ioDispatcher) {
-                player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(temp)))
-                player.prepare()
-                player.play()
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    errored = true
+                    finished.unlock()
+                }
             }
-            phase = Phase.Speaking
-            // A superseded slot must not wait on its own listener.
-            if (sequencer.isCurrent(slot)) {
-                finished.lock()
+            player.addListener(listener)
+            try {
+                withContext(ioDispatcher) {
+                    player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(temp)))
+                    player.prepare()
+                    player.play()
+                }
+                phase = Phase.Speaking
+                if (sequencer.isCurrent(slot)) {
+                    finished.lock()
+                }
+            } finally {
+                runCatching { player.removeListener(listener) }
             }
-            sequencer.isCurrent(slot)
+            !errored && sequencer.isCurrent(slot)
         } finally {
             runCatching { player.clearMediaItems() }
             runCatching { temp.delete() }

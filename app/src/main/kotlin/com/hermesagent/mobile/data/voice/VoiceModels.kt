@@ -27,7 +27,7 @@ sealed interface VoiceUiState {
 
     data object DictationTranscribing : VoiceUiState
 
-    enum class ConversationPhase { Listening, Transcribing, Thinking, Speaking }
+    enum class ConversationPhase { Listening, Transcribing, Thinking, Speaking, Ended }
 
     data class Conversation(
         val phase: ConversationPhase,

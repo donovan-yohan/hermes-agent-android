@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -37,10 +38,14 @@ class GatewayVoiceRepository(private val http: () -> GatewayVoiceHttp?) {
         }
 
     private fun parseTranscription(body: ByteArray): TranscriptionResult {
-        val text = runCatching {
-            (Json.parseToJsonElement(String(body, Charsets.UTF_8)) as JsonObject)["transcript"]
-        }.getOrNull()
-            ?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.contentOrNull else null }
+        val obj = runCatching { Json.parseToJsonElement(String(body, Charsets.UTF_8)) as JsonObject }.getOrNull()
+            ?: throw VoiceTransportException("The voice reply was incomplete. Try again.")
+        val ok = obj["ok"]?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.booleanOrNull else null }
+        if (ok == false) {
+            // The server reports a real transcription failure, not silence.
+            throw VoiceTransportException("Hermes could not transcribe that audio. Try again.")
+        }
+        val text = obj["transcript"]?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.contentOrNull else null }
             ?: return TranscriptionResult.Silence
         return if (text.isBlank()) TranscriptionResult.Silence else TranscriptionResult.Transcript(text)
     }

@@ -68,6 +68,8 @@ class AndroidMicCapture(
         val read = runCatching { audioRecord.read(chunk, 0, chunk.size) }.getOrDefault(0)
         if (read <= 0) return@withContext 0f
         if (buffer.size + read > VoicePolicy.MAX_RAW_AUDIO_BYTES) {
+            // Cap hit: wipe the dropped tail rather than abandoning it.
+            chunk.fill(0)
             stop()
             return@withContext 0f
         }

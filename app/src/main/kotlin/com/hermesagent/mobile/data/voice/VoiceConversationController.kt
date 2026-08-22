@@ -71,7 +71,7 @@ class VoiceConversationController(
             stopCapture()
             stopPlayback()
         }
-        setState(VoiceUiState.ConversationPhase.Listening, ended = true)
+        setState(VoiceUiState.ConversationPhase.Ended)
     }
 
     private fun runListenCycle(myOperation: Long) {
@@ -150,15 +150,24 @@ class VoiceConversationController(
             }
         } ?: return
         val text = capturedTranscript?.trim().orEmpty()
-        if (text.isEmpty()) {
-            rearmIfCurrent(myOperation)
-            return
+        var shouldSubmit = false
+        withLockOrNull {
+            if (myOperation != operation) return@withLockOrNull
+            when {
+                text.isEmpty() -> rearmLocked(myOperation)
+                VoicePolicy.isStopUtterance(text, stopPhrases()) -> end()
+                else -> {
+                    setState(VoiceUiState.ConversationPhase.Thinking)
+                    shouldSubmit = true
+                }
+            }
+        } ?: return
+        // Recheck inside the fence above; only a still-current conversation
+        // submits, so an ended conversation can never fire a late turn.
+        if (shouldSubmit) {
+            val accepted = submitTurn(text)
+            if (!accepted) rearmIfCurrent(myOperation)
         }
-        if (VoicePolicy.isStopUtterance(text, stopPhrases())) {
-            end()
-            return
-        }
-        submitTurn(text)
     }
 
     private fun rearmIfCurrent(myOperation: Long) {
