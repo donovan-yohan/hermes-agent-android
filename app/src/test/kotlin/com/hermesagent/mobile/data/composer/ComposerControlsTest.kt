@@ -21,4 +21,25 @@ class ComposerControlsTest {
         assertEquals(FastMode.Unknown("turbo"), FastMode.fromWire("turbo"))
         assertTrue(ComposerModelSelection("model").isSpecified)
     }
+
+    @Test
+    fun `partial session control events overlay without erasing earlier authority`() {
+        val selection = ComposerModelSelection("model/session", "provider/session")
+        val combined = SessionComposerControls(
+            durableId = "session-a",
+            selection = selection,
+            hasSelection = true,
+        ).overlay(
+            SessionComposerControls(
+                durableId = "session-a",
+                reasoning = ReasoningEffort.High,
+                hasReasoning = true,
+            ),
+        )
+
+        assertEquals(
+            ModelControlsSnapshot(selection, ReasoningEffort.High, FastMode.Fast),
+            combined.applyTo(ModelControlsSnapshot(fast = FastMode.Fast)),
+        )
+    }
 }

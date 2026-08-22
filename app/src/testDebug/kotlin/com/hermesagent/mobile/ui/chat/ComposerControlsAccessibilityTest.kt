@@ -132,8 +132,34 @@ class ComposerControlsAccessibilityTest {
         compose.onNodeWithText("XHigh").assertExists()
         compose.onNodeWithContentDescription(
             "Reasoning xhigh. Reasoning is not available for this model",
-        ).assertHeightIsAtLeast(HermesSpacing().touchTarget).assertIsNotEnabled()
+        ).assertHeightIsAtLeast(HermesSpacing().touchTarget)
+            .assertIsNotEnabled()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
         compose.onNodeWithText("Reasoning is not available for this model.").assertExists()
+    }
+
+    @Test
+    fun `unresolved catalog does not fabricate an unsupported capability`() {
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Composer(
+                    draft = "",
+                    onDraftChange = {},
+                    onSend = {},
+                    onStop = {},
+                    isStreaming = false,
+                    canSend = false,
+                    statusLine = "",
+                    controls = ComposerUiState(catalog = ComposerCatalogUiState.Loading),
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Open model controls", substring = true).performClick()
+        compose.onNodeWithContentDescription(
+            "Reasoning none. Reasoning availability could not be checked",
+        ).assertIsNotEnabled()
+        compose.onNodeWithText("Loading model choices…").assertExists()
     }
 
     @Test

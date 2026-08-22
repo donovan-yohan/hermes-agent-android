@@ -271,6 +271,7 @@ private fun ModelControlSheet(
             Text("Reasoning", style = HermesTheme.type.sectionLabel, color = tokens.textTertiary)
             val reasoningSupported = selectedOption?.supportsReasoning == true
             val reasoningDisabledReason = when {
+                selectedOption == null -> "Reasoning availability could not be checked"
                 !reasoningSupported -> "Reasoning is not available for this model"
                 isSaving -> "Saving this selection"
                 isDeferred -> "Available after this turn"
@@ -281,7 +282,7 @@ private fun ModelControlSheet(
                 disabledReason = reasoningDisabledReason,
                 onSelect = onSelectReasoning,
             )
-            if (!reasoningSupported) {
+            if (selectedOption != null && !reasoningSupported) {
                 Text(
                     "Reasoning is not available for this model.",
                     style = HermesTheme.type.scaffoldMeta,
@@ -295,6 +296,7 @@ private fun ModelControlSheet(
                 supported = fastSupported,
                 enabled = fastSupported && !isSaving && !isDeferred,
                 disabledReason = when {
+                    selectedOption == null -> "Fast mode availability could not be checked"
                     !fastSupported -> "Fast mode is not available for this model"
                     isSaving -> "Saving this selection"
                     isDeferred -> "Available after this turn"
@@ -373,6 +375,7 @@ private fun ReasoningChoices(
                             append("Reasoning ${option.wireValue}")
                             disabledReason?.let { append(". $it") }
                         }
+                        stateDescription = if (chosen) "Selected" else "Not selected"
                         if (!enabled) disabled()
                     }
                     .padding(horizontal = 6.dp, vertical = 12.dp),

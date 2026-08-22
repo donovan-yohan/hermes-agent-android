@@ -105,6 +105,18 @@ data class SessionComposerControls(
         reasoning = if (hasReasoning) reasoning else previous.reasoning,
         fast = if (hasFast) fast else previous.fast,
     )
+
+    fun overlay(newer: SessionComposerControls): SessionComposerControls {
+        require(durableId == newer.durableId)
+        return copy(
+            selection = if (newer.hasSelection) newer.selection else selection,
+            hasSelection = hasSelection || newer.hasSelection,
+            reasoning = if (newer.hasReasoning) newer.reasoning else reasoning,
+            hasReasoning = hasReasoning || newer.hasReasoning,
+            fast = if (newer.hasFast) newer.fast else fast,
+            hasFast = hasFast || newer.hasFast,
+        )
+    }
 }
 
 /** A snapshotted new-session payload; null means do not override that Gateway default. */

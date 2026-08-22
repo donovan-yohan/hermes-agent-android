@@ -202,6 +202,37 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `session info during catalog hydration is retained without cancelling the catalog`() = runTest(dispatcher) {
+        val gatedRepository = FakeRepository(cache).apply {
+            modelOptionsGate = CompletableDeferred()
+        }
+        val subject = ChatViewModel(cache, gatedRepository, sidebarStore, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        val authoritative = ComposerModelSelection("model/session-info", "authoritative-provider")
+        gatedRepository.emitComposerControls(
+            SessionComposerControls(
+                durableId = "session-a",
+                selection = authoritative,
+                hasSelection = true,
+                reasoning = ReasoningEffort.High,
+                hasReasoning = true,
+            ),
+        )
+        runCurrent()
+        assertEquals(authoritative, subject.uiState.value.composer.controls.selection)
+        assertTrue(subject.uiState.value.composer.catalog is ComposerCatalogUiState.Loading)
+
+        gatedRepository.modelOptionsGate?.complete(Unit)
+        runCurrent()
+        assertTrue(subject.uiState.value.composer.catalog is ComposerCatalogUiState.Ready)
+        assertEquals(authoritative, subject.uiState.value.composer.controls.selection)
+        assertEquals(ReasoningEffort.High, subject.uiState.value.composer.controls.reasoning)
+        assertEquals(FastMode.Normal, subject.uiState.value.composer.controls.fast)
+    }
+
+    @Test
     fun `turn settle does not clobber a deferred model before session info confirms it`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -580,6 +611,32 @@ class ChatViewModelTest {
         assertEquals("session-tip", subject.uiState.value.activeSession?.id)
         assertEquals("newer destination", subject.uiState.value.draft)
         assertEquals("source draft", draftStore.drafts.first()["session-a"])
+    }
+
+    @Test
+    fun `canonical rehome retargets accumulated session control authority`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val selection = ComposerModelSelection("model/before-rehome", "provider")
+        repository.emitComposerControls(
+            SessionComposerControls("session-a", selection = selection, hasSelection = true),
+        )
+        runCurrent()
+
+        repository.rehome("session-a", "session-tip")
+        runCurrent()
+        repository.emitComposerControls(
+            SessionComposerControls(
+                "session-tip",
+                reasoning = ReasoningEffort.High,
+                hasReasoning = true,
+            ),
+        )
+        runCurrent()
+
+        assertEquals("session-tip", viewModel.uiState.value.activeSession?.id)
+        assertEquals(selection, viewModel.uiState.value.composer.controls.selection)
+        assertEquals(ReasoningEffort.High, viewModel.uiState.value.composer.controls.reasoning)
     }
 
     @Test
@@ -1023,6 +1080,7 @@ class ChatViewModelTest {
         )
         var modelMutation: ControlMutationResult = ControlMutationResult.Applied
         var modelMutationGate: CompletableDeferred<ControlMutationResult>? = null
+        var modelOptionsGate: CompletableDeferred<Unit>? = null
         val modelSelections = mutableListOf<ComposerModelSelection>()
         val reasoningSelections = mutableListOf<ReasoningEffort>()
         val fastSelections = mutableListOf<FastMode>()
@@ -1091,9 +1149,10 @@ class ChatViewModelTest {
             return createSession(workspacePath)
         }
 
-        override suspend fun loadModelOptions(durableId: String?): ModelCatalog = ModelCatalog(
-            effectiveSelection = controls.selection,
-        )
+        override suspend fun loadModelOptions(durableId: String?): ModelCatalog {
+            modelOptionsGate?.await()
+            return ModelCatalog(effectiveSelection = controls.selection)
+        }
 
         override suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot = controls
 

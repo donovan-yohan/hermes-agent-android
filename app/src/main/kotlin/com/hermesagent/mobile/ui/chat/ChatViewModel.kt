@@ -161,6 +161,8 @@ internal class ChatViewModel(
     private var composerGeneration = 0L
     /** Fences live mutation replies independently of editor completion work. */
     private var liveMutationGeneration = 0L
+    /** Latest authoritative partial session.info controls for the active durable session. */
+    private var liveComposerControls: SessionComposerControls? = null
     private var inputGeneration = 0L
     private var composerLoad: Job? = null
     private var completionLoad: Job? = null
@@ -343,6 +345,7 @@ internal class ChatViewModel(
         composerGeneration += 1
         liveMutationGeneration += 1
         inputGeneration += 1
+        liveComposerControls = null
         composerLoad?.cancel()
         completionLoad?.cancel()
         composer.value = ComposerUiState(
@@ -762,6 +765,10 @@ internal class ChatViewModel(
             if (sourceWasTouched || editedDuringTransition) locallyTouchedDrafts += canonicalId
         }
         if (activeSessionId.value != requestedId) return
+        // Compression changes only the durable key. Keep the accumulated
+        // session.info authority attached to the same logical session so a
+        // canonical-id event cannot collide with the old presence patch.
+        liveComposerControls = liveComposerControls?.copy(durableId = canonicalId)
         activeSessionId.value = canonicalId
         draft.value = winner.orEmpty()
         markRead(canonicalId)
@@ -871,7 +878,7 @@ internal class ChatViewModel(
         composer.value = composer.value.copy(
             catalog = ComposerCatalogUiState.Loading,
             controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
-            else if (live) ModelControlsSnapshot()
+            else if (live) liveComposerControls?.applyTo(ModelControlsSnapshot()) ?: ModelControlsSnapshot()
             else freshDraftControls(),
             isLiveSession = live,
             isManualNewDraft = !live && hasManualNewDraftChoice(),
@@ -890,19 +897,17 @@ internal class ChatViewModel(
             if (loaded == null) {
                 composer.value = composer.value.copy(
                     catalog = ComposerCatalogUiState.Error("Model controls could not be loaded. Reopen them to try again."),
-                    controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
-                    else if (live) ModelControlsSnapshot()
-                    else freshDraftControls(),
+                    controls = if (live) composer.value.controls else freshDraftControls(),
                 )
                 return@launch
             }
             val catalog = loaded.catalog
             val defaults = loaded.controls
             if (!live) newDraftDefaults = defaults
+            val liveBaseline = if (retainControlsUntilSessionInfo) composer.value.controls else defaults
             composer.value = composer.value.copy(
                 catalog = ComposerCatalogUiState.Ready(catalog),
-                controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
-                else if (live) defaults
+                controls = if (live) liveComposerControls?.applyTo(liveBaseline) ?: liveBaseline
                 else freshDraftControls(defaults),
                 isLiveSession = live,
                 isManualNewDraft = !live && hasManualNewDraftChoice(),
@@ -945,10 +950,11 @@ internal class ChatViewModel(
     private fun applyComposerControls(event: SessionComposerControls) {
         if (activeSessionId.value != event.durableId) return
         // `session.info` is authoritative even if it overtakes the matching
-        // mutation RPC response.
-        composerGeneration += 1
+        // mutation RPC response. Keep an in-flight catalog hydration alive:
+        // it still owns provider/capability metadata, and its controls are
+        // overlaid with this authoritative partial event before publication.
         liveMutationGeneration += 1
-        composerLoad?.cancel()
+        liveComposerControls = liveComposerControls?.overlay(event) ?: event
         val current = composer.value
         val keepDeferred = current.mutation is ComposerMutationUiState.Deferred
         val authoritative = event.applyTo(current.controls)
