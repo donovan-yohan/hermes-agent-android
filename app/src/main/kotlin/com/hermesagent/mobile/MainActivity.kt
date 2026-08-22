@@ -134,7 +134,15 @@ class MainActivity : ComponentActivity() {
                         connectionGeneration = app.gatewayConnection.currentGeneration,
                         durableSessionId = durableSessionId,
                     )
-                    onDone(app.voiceRepository.transcribe(key, com.hermesagent.mobile.data.voice.CapturedAudio("audio/wav", pcm)))
+                    val captured = com.hermesagent.mobile.data.voice.CapturedAudio("audio/wav", pcm)
+                    // Transport failures must surface as state, never crash:
+                    // the transcription route is remote and can fail for many
+                    // ordinary reasons (offline, provider down, timeout).
+                    val result = runCatching {
+                        app.voiceRepository.transcribe(key, captured)
+                    }.getOrElse { com.hermesagent.mobile.data.voice.TranscriptionResult.Silence }
+                    captured.close()
+                    onDone(result)
                 }
             })
         }
