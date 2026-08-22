@@ -160,6 +160,7 @@ class ComposerControlsAccessibilityTest {
             "Reasoning none. Reasoning availability could not be checked",
         ).assertIsNotEnabled()
         compose.onNodeWithText("Loading model choices…").assertExists()
+        compose.onNodeWithText("Fast mode availability could not be checked").assertExists()
     }
 
     @Test

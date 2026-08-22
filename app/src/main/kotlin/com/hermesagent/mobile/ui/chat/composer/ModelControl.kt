@@ -414,7 +414,11 @@ private fun FastModeRow(
     ) {
         Column {
             Text("Fast mode", style = HermesTheme.type.body, color = if (supported) tokens.textPrimary else tokens.textQuaternary)
-            if (!supported) Text("Not available for this model", style = HermesTheme.type.scaffoldMeta, color = tokens.scaffoldMeta)
+            if (!supported) Text(
+                disabledReason ?: "Fast mode is not available for this model",
+                style = HermesTheme.type.scaffoldMeta,
+                color = tokens.scaffoldMeta,
+            )
         }
         Text(if (fast) "On" else "Off", style = HermesTheme.type.caption, color = if (fast) tokens.accent else tokens.textTertiary)
     }
