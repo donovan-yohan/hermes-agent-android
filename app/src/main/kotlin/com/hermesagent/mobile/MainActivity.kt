@@ -27,6 +27,7 @@ import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
@@ -110,6 +111,32 @@ class MainActivity : ComponentActivity() {
         // Attachment grants are read on IO; only bytes enter the ViewModel.
         chatViewModel.openAttachmentStream = { uriString ->
             runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
+        }
+        // Voice engine hooks: bounded capture and typed Gateway routes only.
+        val mic = com.hermesagent.mobile.data.voice.AndroidMicCapture(Dispatchers.IO)
+        var dictationRecordingJob: kotlinx.coroutines.Job? = null
+        chatViewModel.onDictationCapture = { durableSessionId, onDone ->
+            val started = lifecycleScope.launch { mic.start() }
+            dictationRecordingJob = lifecycleScope.launch {
+                started.join()
+                while (chatViewModel.uiState.value.voice
+                    is com.hermesagent.mobile.data.voice.VoiceUiState.DictationRecording
+                ) {
+                    mic.pump()
+                    delay(100)
+                }
+            }
+            ({
+                dictationRecordingJob?.cancel()
+                lifecycleScope.launch {
+                    val pcm = mic.stop()
+                    val key = com.hermesagent.mobile.data.voice.VoiceSessionKey(
+                        connectionGeneration = app.gatewayConnection.currentGeneration,
+                        durableSessionId = durableSessionId,
+                    )
+                    onDone(app.voiceRepository.transcribe(key, com.hermesagent.mobile.data.voice.CapturedAudio("audio/wav", pcm)))
+                }
+            })
         }
 
         setContent {

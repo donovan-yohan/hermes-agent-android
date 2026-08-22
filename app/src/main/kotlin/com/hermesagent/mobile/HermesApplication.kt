@@ -74,6 +74,12 @@ class HermesApplication : Application() {
             },
         )
     }
+    internal val voiceHttp: com.hermesagent.mobile.data.voice.GatewayVoiceHttp? get() = gatewayConnection.voiceHttp.value
+
+    internal val voiceRepository: com.hermesagent.mobile.data.voice.GatewayVoiceRepository by lazy {
+        com.hermesagent.mobile.data.voice.GatewayVoiceRepository { voiceHttp }
+    }
+
     internal val wakeWordRepository: com.hermesagent.mobile.data.voice.WakeWordRepository by lazy {
         com.hermesagent.mobile.data.voice.WakeWordRepository(rpc = { gatewayConnection.client.value })
     }

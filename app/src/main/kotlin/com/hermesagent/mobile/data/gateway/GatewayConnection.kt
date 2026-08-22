@@ -352,6 +352,9 @@ internal class GatewayConnectionManager(
     override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
     val client: StateFlow<GatewayRpcClient?> = _client.asStateFlow()
 
+    /** Monotonic connection identity for fencing voice/audio operations. */
+    internal val currentGeneration: Long get() = connectIntent.get().generation
+
     /**
      * Connection-owned authenticated HTTP transport for the audio routes.
      * Null while disconnected; resolved per active leg so callers never hold
