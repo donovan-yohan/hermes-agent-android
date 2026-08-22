@@ -125,6 +125,7 @@ class MainActivity : ComponentActivity() {
                     onUndoDraft = chatViewModel::undoDraft,
                     onRedoDraft = chatViewModel::redoDraft,
                     onRespondToPendingInput = chatViewModel::respondToPendingInput,
+                    onDismissSecurePending = chatViewModel::dismissSecurePending,
                     onComposerStatusOpened = chatViewModel::composerStatusOpened,
                     onRefreshProcesses = chatViewModel::refreshProcesses,
                     onKillProcess = chatViewModel::killProcess,

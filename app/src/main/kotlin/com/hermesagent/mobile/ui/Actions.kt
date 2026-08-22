@@ -46,6 +46,7 @@ class ChatActions(
     val onUndoDraft: () -> Boolean = { false },
     val onRedoDraft: () -> Boolean = { false },
     val onRespondToPendingInput: (com.hermesagent.mobile.data.gateway.PendingInputAction) -> Unit = {},
+    val onDismissSecurePending: () -> Unit = {},
     val onComposerStatusOpened: () -> Unit = {},
     val onRefreshProcesses: () -> Unit = {},
     val onKillProcess: (String) -> Unit = {},

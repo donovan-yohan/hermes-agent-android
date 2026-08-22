@@ -1263,6 +1263,12 @@ internal class ChatViewModel(
         }
     }
 
+    /**
+     * System back / scrim dismissed a secure prompt without an explicit choice.
+     * The dialog already sent the safe empty refusal; this only clears local UI.
+     */
+    fun dismissSecurePending() = Unit
+
     private fun applyHistoryChange(change: ComposerDraftChange): Boolean = when (change) {
         ComposerDraftChange.Unchanged -> false
         is ComposerDraftChange.Changed -> {

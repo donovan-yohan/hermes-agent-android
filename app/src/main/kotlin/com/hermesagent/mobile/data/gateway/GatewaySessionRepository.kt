@@ -798,6 +798,7 @@ internal class LiveGatewaySessionRepository(
                 when (action) {
                     is PendingInputAction.ClarifyAnswer -> {
                         if (action.cancelBatch) {
+                            // Batch-wide cancel is exactly the empty no-qid answer.
                             connection.client.request(
                                 "clarify.respond",
                                 buildJsonObject {
@@ -812,7 +813,12 @@ internal class LiveGatewaySessionRepository(
                                     "clarify.respond",
                                     buildJsonObject {
                                         put("request_id", JsonPrimitive(key.requestId))
-                                        put("question_id", JsonPrimitive(questionId))
+                                        // Singles carry no question_id at all; an
+                                        // empty-key entry would read as a batch
+                                        // answer for an unknown qid.
+                                        if (questionId.isNotEmpty()) {
+                                            put("question_id", JsonPrimitive(questionId))
+                                        }
                                         put("answer", JsonPrimitive(answer))
                                     },
                                 )
@@ -828,7 +834,10 @@ internal class LiveGatewaySessionRepository(
                         runCatching {
                             connection.client.request(
                                 "approval.received",
-                                buildJsonObject { put("session_id", JsonPrimitive(binding.runtimeId)) },
+                                buildJsonObject {
+                                    put("session_id", JsonPrimitive(binding.runtimeId))
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                },
                             )
                         }
                         connection.client.request(
@@ -1654,6 +1663,12 @@ internal class LiveGatewaySessionRepository(
         reportedStatus: SessionStatus?,
     ) {
         val existing = cache.session(durableId) ?: return
+        // A parked answer outranks a stale heartbeat: never repaint NeedsInput
+        // as Working while its request is still pending.
+        if (hasPendingInput(runtimeId)) {
+            setStatus(durableId, SessionStatus.NeedsInput)
+            return
+        }
         val status = when (running) {
             true -> reportedStatus?.takeIf { it != SessionStatus.Idle } ?: SessionStatus.Working
             false -> if (unscopedRuntimeId == runtimeId) existing.status else SessionStatus.Idle

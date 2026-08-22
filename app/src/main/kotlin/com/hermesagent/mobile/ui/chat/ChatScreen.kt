@@ -431,7 +431,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
                 isSubmitting = false,
                 errorText = null,
                 onRespond = actions.onRespondToPendingInput,
-                onDismiss = {},
+                onDismiss = { actions.onDismissSecurePending() },
             )
         }
         Composer(

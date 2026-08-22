@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.role
@@ -153,15 +154,23 @@ private fun ClarifyCard(
                     inner()
                 },
             )
+            val canSendAnswer = !isSubmitting && answer.isNotBlank()
             TextButton(
                 label = "Send",
                 onClick = {
+                    // A blank send must never read as the batch-wide cancel.
+                    if (!canSendAnswer) return@TextButton
                     val qid = questions.singleOrNull()?.questionId.orEmpty()
                     onRespond(PendingInputAction.ClarifyAnswer(mapOf(qid to answer)))
                     answer = ""
                 },
                 color = tokens.accentForeground,
-                modifier = Modifier.heightIn(min = HermesTheme.spacing.touchTarget),
+                modifier = Modifier
+                    .heightIn(min = HermesTheme.spacing.touchTarget)
+                    .semantics {
+                        contentDescription = "Send typed answer"
+                        if (!canSendAnswer) disabled()
+                    },
             )
         }
     }
@@ -256,16 +265,10 @@ internal fun SecurePendingDialog(
     onRespond: (PendingInputAction) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val view = LocalView.current
     var entered by remember(pending.key) { mutableStateOf("") }
-    DisposableEffect(view, pending.key) {
-        val window = (view.parent as? DialogWindowProvider)?.window ?: view.findWindow()
-        window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose {
-            entered = ""
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        }
-    }
+    // The secure flag must live on the dialog's own window, so the effect has
+    // to run inside the Dialog composition where LocalView is the dialog
+    // decor view. Wipe state before the flag clears on any disposal path.
     val kindLabel = when (pending) {
         is SudoPending -> "Sudo password"
         is SecretPending -> "Secret for ${pending.envVarLabel.ifBlank { "the skill" }}"
@@ -275,7 +278,25 @@ internal fun SecurePendingDialog(
         is SecretPending -> pending.prompt.ifBlank { "Enter the value Hermes asked for." }
         else -> "Hermes needs your password to continue."
     }
-    Dialog(onDismissRequest = onDismiss) {
+    fun safeRefusal() = when (pending) {
+        is SudoPending -> PendingInputAction.SudoPassword(CharArray(0))
+        else -> PendingInputAction.SecretValue(CharArray(0))
+    }
+    Dialog(onDismissRequest = {
+        // System back / scrim tap: exactly one safe empty refusal.
+        entered = ""
+        onRespond(safeRefusal())
+        onDismiss()
+    }) {
+        val view = LocalView.current
+        DisposableEffect(view, pending.key) {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: view.findWindow()
+            window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            onDispose {
+                entered = ""
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
         val tokens = HermesTheme.tokens
         Column(
             Modifier
