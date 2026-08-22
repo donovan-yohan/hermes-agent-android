@@ -538,15 +538,16 @@ internal class GatewayConnectionManager(
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
 
             active = ActiveConnection.Ssh(transport, backend, forward, rpc)
+            // Capture the loopback session token eagerly — the same pattern
+            // the RPC client uses — because the backend clears its buffer once
+            // connect finishes. The header contract matches the readiness
+            // verifier exactly (ASCII token).
+            val voiceToken = backend.token.toString(Charsets.US_ASCII)
             _voiceHttp.value = com.hermesagent.mobile.data.voice.OkHttpGatewayVoiceHttp(
                 http = http,
                 resolveEndpoint = { "http://127.0.0.1:${'$'}{forward.localPort}" },
                 resolveAuthorization = {
-                    // The loopback session token is ASCII text, matching the
-                    // readiness verifier's exact header contract.
-                    val token = runCatching { backend.token }.getOrNull()
-                        ?.toString(Charsets.US_ASCII)
-                    token?.takeIf(String::isNotBlank)?.let { "X-Hermes-Session-Token" to it }
+                    if (voiceToken.isBlank()) null else "X-Hermes-Session-Token" to voiceToken
                 },
             )
             _client.value = rpc
