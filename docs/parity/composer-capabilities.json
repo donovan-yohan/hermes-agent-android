@@ -296,8 +296,8 @@
       "state_authority": "backend-authoritative",
       "platform_dependency": "Gateway request/response RPCs and safe in-memory secret handling",
       "android_status": "partial",
-      "android_behavior": "SessionStatus.NeedsInput remains a blocking Gateway state with no native request-specific response or safe-refusal surface. Slice 4 makes the composer truthful: typed ordinary text enters the durable queue and Stop/Escape cannot interrupt a required-input turn. The request-specific response surface remains a later slice.",
-      "android_tests": "GatewaySessionRepositoryTest covers NeedsInput projection; ChatViewModelTest and ComposerContractTest cover queued typed text and non-interrupting Stop/Escape guards. Later work must test response kinds, routing, reconnect and non-leakage.",
+      "android_behavior": "Typed pending-input surfaces now exist: clarify (single/batch/open text), dangerous-command approval with only Gateway-offered choices, and sudo/secret entry in a FLAG_SECURE dialog whose state is wiped before the flag clears. Requests are generation/runtime/request/kind-fenced repository memory; cancel/back sends exactly one safe refusal; message completion, error, reclaim, or connection replacement clears matching pending state. NeedsInput survives tool progress and cannot be interrupted via Stop/Escape; queued typed text still routes through the slice-4 queue. Reconnect replay for clarify/approval via session.resume and approval.pending fallback remains open, as do visual captures.",
+      "android_tests": "PendingInputTest covers ingress parsing/fencing, NeedsInput precedence over tool events, wire shapes for all four responses, choice validation, sudo array wiping, transport-failure retention, and connection-reset clearing. ChatViewModelTest/ComposerContractTest cover queued text and Stop guards. Reconnect replay journeys and secure-dialog Robolectric journeys remain open work in this slice.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390",

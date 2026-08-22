@@ -429,6 +429,17 @@ class ChatJourneyTest {
     }
 
     private class JourneyRepository(private val cache: SessionCache, connected: Boolean) : GatewaySessionRepository {
+        override val pendingInputs =
+            MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
+                emptyMap(),
+            )
+
+        override suspend fun respondToPendingInput(
+            key: com.hermesagent.mobile.data.gateway.PendingInputKey,
+            action: com.hermesagent.mobile.data.gateway.PendingInputAction,
+        ): com.hermesagent.mobile.data.gateway.PendingInputResponse =
+            com.hermesagent.mobile.data.gateway.PendingInputResponse.Resolved
+
         override val connectionState = MutableStateFlow(
             GatewayConnectionState(
                 if (connected) GatewayConnectionStatus.Connected else GatewayConnectionStatus.Disconnected,

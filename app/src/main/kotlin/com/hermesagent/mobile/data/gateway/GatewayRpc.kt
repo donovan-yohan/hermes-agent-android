@@ -183,6 +183,10 @@ internal class CorrelatedGatewayRpc(
             "tool.complete",
             "status.update",
             "error",
+            "clarify.request",
+            "approval.request",
+            "sudo.request",
+            "secret.request",
         )
     }
 }

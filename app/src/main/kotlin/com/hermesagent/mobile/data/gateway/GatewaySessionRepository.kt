@@ -42,6 +42,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
@@ -54,13 +55,20 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 
 interface GatewaySessionRepository {
     val connectionState: StateFlow<GatewayConnectionState>
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
     val composerControls: Flow<SessionComposerControls> get() = emptyFlow()
+    /** Live required-action requests, keyed by generation/runtime/request/kind. */
+    val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>
+        get() = error("Pending inputs are not implemented by this repository.")
+    suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
+        error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
     suspend fun refreshProjects() = Unit
     suspend fun openProject(projectId: String) = Unit
@@ -228,6 +236,9 @@ internal class LiveGatewaySessionRepository(
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
     private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
     override val composerControls: Flow<SessionComposerControls> = composerControlEvents
+    private val mutablePendingInputs =
+        MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
+    override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
 
     private val identities = SessionIdentityMap()
     private val sequence = AtomicLong()
@@ -295,6 +306,9 @@ internal class LiveGatewaySessionRepository(
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
                     activeRuntimeIds.clear()
+                    // Pending prompts are connection-scoped memory; a new
+                    // client rehydrates only through fresh resume responses.
+                    mutablePendingInputs.value = emptyMap()
                     clearUnscopedRuntime()
                     val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
                     if (next != null) ephemeralSessions.clear()
@@ -759,6 +773,131 @@ internal class LiveGatewaySessionRepository(
                 throw GatewayRpcException("Reopen this session before stopping Hermes.")
             else -> Unit
         }
+    }
+
+    /** One response in flight per pending request; a second tap is a no-op. */
+    private val respondingKeys = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<PendingInputKey, Boolean>())
+
+    override suspend fun respondToPendingInput(
+        key: PendingInputKey,
+        action: PendingInputAction,
+    ): PendingInputResponse {
+        val request = mutablePendingInputs.value[key] ?: return PendingInputResponse.Resolved
+        // Generation fence: a stale key cannot answer on the new connection.
+        if (key.connectionGeneration != connectionGeneration) return PendingInputResponse.Retryable
+        if (!respondingKeys.add(key)) return PendingInputResponse.Retryable
+        try {
+            val binding = try {
+                ensureRuntime(request.durableSessionId)
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                return PendingInputResponse.Retryable
+            }
+            val connection = connectionSnapshot()
+            val result = try {
+                when (action) {
+                    is PendingInputAction.ClarifyAnswer -> {
+                        if (action.cancelBatch) {
+                            connection.client.request(
+                                "clarify.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("answer", JsonPrimitive(""))
+                                },
+                            )
+                        } else {
+                            var last: JsonElement = JsonNull
+                            for ((questionId, answer) in action.answers) {
+                                last = connection.client.request(
+                                    "clarify.respond",
+                                    buildJsonObject {
+                                        put("request_id", JsonPrimitive(key.requestId))
+                                        put("question_id", JsonPrimitive(questionId))
+                                        put("answer", JsonPrimitive(answer))
+                                    },
+                                )
+                            }
+                            last
+                        }
+                    }
+
+                    is PendingInputAction.ApprovalChoice -> {
+                        if (action.choice !in (request as? ApprovalPending)?.choices.orEmpty()) {
+                            return PendingInputResponse.Retryable
+                        }
+                        runCatching {
+                            connection.client.request(
+                                "approval.received",
+                                buildJsonObject { put("session_id", JsonPrimitive(binding.runtimeId)) },
+                            )
+                        }
+                        connection.client.request(
+                            "approval.respond",
+                            buildJsonObject {
+                                put("session_id", JsonPrimitive(binding.runtimeId))
+                                put("request_id", JsonPrimitive(key.requestId))
+                                put("choice", JsonPrimitive(action.choice))
+                            },
+                        )
+                    }
+
+                    is PendingInputAction.SudoPassword -> {
+                        val password = action.password.concatToString()
+                        try {
+                            connection.client.request(
+                                "sudo.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("password", JsonPrimitive(password))
+                                },
+                            )
+                        } finally {
+                            action.password.fill(0.toChar())
+                        }
+                    }
+
+                    is PendingInputAction.SecretValue -> {
+                        val value = action.value.concatToString()
+                        try {
+                            connection.client.request(
+                                "secret.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("value", JsonPrimitive(value))
+                                },
+                            )
+                        } finally {
+                            action.value.fill(0.toChar())
+                        }
+                    }
+                }
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                // Ambiguous transport: keep the request pending for explicit retry.
+                return PendingInputResponse.Retryable
+            }
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val status = (result as? JsonObject)?.string("status")
+            return when (status) {
+                "expired" -> {
+                    removePendingInput(key)
+                    PendingInputResponse.Expired
+                }
+                null, "ok", "resolved" -> {
+                    removePendingInput(key)
+                    setStatus(request.durableSessionId, SessionStatus.Idle)
+                    PendingInputResponse.Resolved
+                }
+                else -> PendingInputResponse.Retryable
+            }
+        } finally {
+            respondingKeys.remove(key)
+        }
+    }
+
+    private fun removePendingInput(key: PendingInputKey) {
+        val next = mutablePendingInputs.value.minus(key)
+        if (next.size != mutablePendingInputs.value.size) mutablePendingInputs.value = next
     }
 
     override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
@@ -1243,6 +1382,7 @@ internal class LiveGatewaySessionRepository(
             }
 
             "message.complete" -> {
+                clearPendingInputsForRuntime(runtimeId)
                 completeMessage(durableId, runtimeId, payload)
                 true
             }
@@ -1271,6 +1411,9 @@ internal class LiveGatewaySessionRepository(
             }
 
             "tool.start", "tool.progress", "tool.complete" -> {
+                // A live tool must not repaint a session that is parked on a
+                // required answer; NeedsInput survives tool progress.
+                if (hasPendingInput(runtimeId)) return false
                 sealReasoning(durableId, runtimeId, ToolState.Done)
                 applyTool(event.type, durableId, runtimeId, payload)
                 markRuntimeLive(runtimeId)
@@ -1288,6 +1431,7 @@ internal class LiveGatewaySessionRepository(
             }
 
             "error" -> {
+                clearPendingInputsForRuntime(runtimeId)
                 val current = assistantByRuntime.remove(runtimeId)
                 val errorText = safeGatewayTerminalError(payload.string("error") ?: payload.string("message"))
                 val failed = (current ?: AssistantTurn(
@@ -1307,8 +1451,143 @@ internal class LiveGatewaySessionRepository(
                 true
             }
 
+            "clarify.request", "approval.request", "sudo.request", "secret.request" -> {
+                applyPendingInputEvent(event.type, durableId, runtimeId, payload)
+                false
+            }
+
             else -> false
         }
+    }
+
+    /** A parked answer must survive tool noise but dies with the turn. */
+    private fun hasPendingInput(runtimeId: String): Boolean =
+        mutablePendingInputs.value.keys.any { it.runtimeSessionId == runtimeId }
+
+    private fun clearPendingInputsForRuntime(runtimeId: String) {
+        val current = mutablePendingInputs.value
+        val remaining = current.filterKeys { it.runtimeSessionId != runtimeId }
+        if (remaining.size != current.size) mutablePendingInputs.value = remaining
+    }
+
+    private fun clearPendingInputsForGeneration(generation: Long) {
+        val current = mutablePendingInputs.value
+        val remaining = current.filterKeys { it.connectionGeneration == generation }
+        if (remaining.size != current.size) mutablePendingInputs.value = remaining
+    }
+
+    private fun applyPendingInputEvent(
+        type: String,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+) {
+        val kind = when (type) {
+            "clarify.request" -> PendingInputKind.Clarify
+            "approval.request" -> PendingInputKind.Approval
+            "sudo.request" -> PendingInputKind.Sudo
+            else -> PendingInputKind.Secret
+        }
+        val requestId = payload.string("request_id")?.takeIf(String::isNotBlank) ?: return
+        val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
+        val request: PendingInputRequest = when (kind) {
+            PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, payload) ?: return
+            PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, payload) ?: return
+            PendingInputKind.Sudo -> SudoPending(key, durableId, runtimeId)
+            PendingInputKind.Secret -> SecretPending(
+                key = key,
+                durableSessionId = durableId,
+                runtimeSessionId = runtimeId,
+                envVarLabel = payload.string("env_var").orEmpty().redactSafeBounded(),
+                prompt = payload.string("prompt").orEmpty().redactSafeBounded(),
+            )
+        }
+        // A newer same-kind request for this runtime supersedes the older one.
+        val next = mutablePendingInputs.value
+            .filterValues { existing ->
+                !(existing.key.kind == kind && existing.key.runtimeSessionId == runtimeId)
+            }
+            .plus(key to request)
+        mutablePendingInputs.value = next
+        setStatus(durableId, SessionStatus.NeedsInput)
+    }
+
+    private fun parseClarify(
+        key: PendingInputKey,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+    ): ClarifyPending? {
+        fun parseQuestion(obj: JsonObject): ClarifyQuestion? {
+            val qid = obj.string("question_id")?.takeIf(String::isNotBlank) ?: return null
+            val question = obj.string("question").orEmpty().redactSafeBounded()
+            if (question.isBlank()) return null
+            val choices = (obj["choices"] as? JsonArray)
+                ?.mapNotNull { it as? JsonPrimitive }
+                ?.mapNotNull { it.content }
+                ?.map { it.normalizeChoice() }
+                ?.filter(String::isNotEmpty)
+                .orEmpty()
+                .distinct()
+                .take(MAX_PENDING_CHOICES)
+            return ClarifyQuestion(qid, question, choices, obj.boolean("multi_select") == true)
+        }
+        val batch = (payload["questions"] as? JsonArray)
+            ?.mapNotNull { it as? JsonObject }
+            ?.mapNotNull(::parseQuestion)
+        if (!batch.isNullOrEmpty()) {
+            // De-duplicate qids; a collision fails closed for the whole batch.
+            val ids = batch.map { it.questionId }
+            if (ids.size != ids.distinct().size || ids.size > MAX_PENDING_QUESTIONS) return null
+            return ClarifyPending(key, durableId, runtimeId, questions = batch)
+        }
+        val question = payload.string("question").orEmpty().redactSafeBounded()
+        if (question.isBlank()) return null
+        val choices = (payload["choices"] as? JsonArray)
+            ?.mapNotNull { it as? JsonPrimitive }
+            ?.mapNotNull { it.content }
+            ?.map { it.normalizeChoice() }
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
+            .distinct()
+            .take(MAX_PENDING_CHOICES)
+        return ClarifyPending(
+            key = key,
+            durableSessionId = durableId,
+            runtimeSessionId = runtimeId,
+            question = question,
+            choices = choices,
+            multiSelect = payload.boolean("multi_select") == true,
+        )
+    }
+
+    private fun parseApproval(
+        key: PendingInputKey,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+    ): ApprovalPending? {
+        val command = listOfNotNull(
+            payload.string("command"),
+            payload.jsonString("description"),
+        ).firstOrNull { it.isNotBlank() }?.redactSafeBounded() ?: return null
+        val choices = (payload["choices"] as? JsonArray)
+            ?.mapNotNull { it as? JsonPrimitive }
+            ?.mapNotNull { it.content }
+            ?.map { it.normalizeChoice() }
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
+            .distinct()
+        // Without an offered choice list we cannot respond safely; fail closed.
+        if (choices.isEmpty()) return null
+        return ApprovalPending(
+            key = key,
+            durableSessionId = durableId,
+            runtimeSessionId = runtimeId,
+            command = command,
+            description = payload.string("description").orEmpty().redactSafeBounded(),
+            choices = choices.take(MAX_PENDING_CHOICES),
+        )
     }
 
     private fun projectComposerControls(
@@ -1395,6 +1674,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun settleStoppedRuntime(durableId: String, runtimeId: String) {
+        clearPendingInputsForRuntime(runtimeId)
         assistantByRuntime.remove(runtimeId)?.let { partial ->
             cache.putEntry(durableId, partial.copy(streaming = false, stopped = true))
         }
@@ -2340,6 +2620,12 @@ private fun String?.safePayloadText(): String? = safeDisplayText(MAX_TOOL_PAYLOA
 private fun String?.safeToolLabel(fallback: String): String =
     safeDisplayText(MAX_TOOL_LABEL) ?: fallback
 
+/** Redacted, bounded, single-line text for pending-input display fields. */
+private fun String.redactSafeBounded(limit: Int = MAX_PENDING_TEXT): String =
+    redact(this).replace(STATUS_WHITESPACE, " ").trim().take(limit)
+
+private fun String.normalizeChoice(): String = redactSafeBounded(MAX_PENDING_CHOICE)
+
 private fun JsonObject.toolInputText(): String? =
     this["args"].safePayloadText()
         ?: this["arguments"].safePayloadText()
@@ -2579,6 +2865,10 @@ private fun String.epochMillisOrNull(): Long? {
 private const val MAX_TOOL_DETAIL = 4_096
 private const val MAX_TOOL_PAYLOAD = 32_768
 private const val MAX_TOOL_LABEL = 256
+private const val MAX_PENDING_TEXT = 1_024
+private const val MAX_PENDING_CHOICE = 240
+private const val MAX_PENDING_CHOICES = 12
+private const val MAX_PENDING_QUESTIONS = 20
 private const val PROJECT_PREVIEW_LIMIT = 3
 private const val MISSING_RPC_METHOD_CODE = -32601
 private const val UNSUPPORTED_CAPABILITY_CODE = 4010

@@ -1191,6 +1191,17 @@ class ChatViewModelTest {
 
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
         val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        override val pendingInputs =
+            MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
+                emptyMap(),
+            )
+
+        override suspend fun respondToPendingInput(
+            key: com.hermesagent.mobile.data.gateway.PendingInputKey,
+            action: com.hermesagent.mobile.data.gateway.PendingInputAction,
+        ): com.hermesagent.mobile.data.gateway.PendingInputResponse =
+            com.hermesagent.mobile.data.gateway.PendingInputResponse.Resolved
+
         override val connectionState = connection
         private val rehomeEvents = MutableSharedFlow<SessionRehome>(extraBufferCapacity = 1)
         override val sessionRehomes = rehomeEvents

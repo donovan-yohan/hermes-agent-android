@@ -124,6 +124,7 @@ class MainActivity : ComponentActivity() {
                     onHistoryNewer = chatViewModel::historyNewer,
                     onUndoDraft = chatViewModel::undoDraft,
                     onRedoDraft = chatViewModel::redoDraft,
+                    onRespondToPendingInput = chatViewModel::respondToPendingInput,
                     onComposerStatusOpened = chatViewModel::composerStatusOpened,
                     onRefreshProcesses = chatViewModel::refreshProcesses,
                     onKillProcess = chatViewModel::killProcess,

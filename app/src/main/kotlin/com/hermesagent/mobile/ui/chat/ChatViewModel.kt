@@ -43,6 +43,9 @@ import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
+import com.hermesagent.mobile.data.gateway.PendingInputKey
+import com.hermesagent.mobile.data.gateway.PendingInputKind
+import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.prefs.ComposerControlsScope
 import com.hermesagent.mobile.data.prefs.ComposerControlsStore
 import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
@@ -128,6 +131,15 @@ data class ComposerRuntimeUiState(
     val canQueue: Boolean = false,
     val historyBrowse: ComposerHistoryBrowseState? = null,
     val undoRedo: ComposerUndoRedoState = ComposerUndoRedoState(),
+    /** The required action parked in this session, if any. Repository memory only. */
+    val pendingInput: PendingInputRequest? = null,
+)
+
+/** A pending action owned by a session other than the one on screen. */
+data class BackgroundPendingInput(
+    val durableSessionId: String,
+    val sessionTitle: String,
+    val kind: PendingInputKind,
 )
 
 data class ChatUiState(
@@ -145,6 +157,8 @@ data class ChatUiState(
     val runningCount: Int = 0,
     /** Another durable session owns the app-wide single submitted turn. */
     val runningOwner: SessionSummary? = null,
+    /** A required action parked in a non-visible session. */
+    val backgroundPendingInput: BackgroundPendingInput? = null,
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val notice: String? = null,
     val composer: ComposerUiState = ComposerUiState(),
@@ -228,7 +242,10 @@ internal class ChatViewModel(
         },
         historyRevision,
         queueScopeReady,
-    ) { queue, revision, scopeReady -> LocalComposerState(queue, revision, scopeReady) }
+        repository.pendingInputs,
+    ) { queue, revision, scopeReady, pending ->
+        LocalComposerState(queue, revision, scopeReady, pending)
+    }
 
     val uiState: StateFlow<ChatUiState> = combine(
         cache.state,
@@ -305,7 +322,19 @@ internal class ChatViewModel(
                 displayedActiveId != null && navigation.localComposer.scopeReady,
             historyBrowse = displayedActiveId?.let(composerHistoryController::browseState),
             undoRedo = displayedActiveId?.let(composerHistoryController::undoRedoState) ?: ComposerUndoRedoState(),
+            pendingInput = navigation.localComposer.pendingInputs.entries
+                .firstOrNull { it.value.durableSessionId == displayedActiveId }?.value,
         )
+        val backgroundPending = navigation.localComposer.pendingInputs.values
+            .firstOrNull { it.durableSessionId != displayedActiveId }
+            ?.let { pending ->
+                val row = cacheState.sessions[pending.durableSessionId]
+                BackgroundPendingInput(
+                    durableSessionId = pending.durableSessionId,
+                    sessionTitle = row?.title.orEmpty().ifBlank { "Another session" },
+                    kind = pending.key.kind,
+                )
+            }
         ChatUiState(
             sessionRows = buildSessionRows(
                 sessions = scopedSessions,
@@ -324,6 +353,7 @@ internal class ChatViewModel(
             isStreaming = active?.status in STREAMING_STATUSES,
             runningCount = running,
             runningOwner = runningOwner,
+            backgroundPendingInput = backgroundPending,
             connection = navigation.connection,
             notice = navigation.notice,
             composer = navigation.composer.copy(runtime = runtime),
@@ -1222,6 +1252,17 @@ internal class ChatViewModel(
         return applyHistoryChange(composerHistoryController.redo(sessionId, draft.value))
     }
 
+    /** One deliberate answer for a parked request; the repository owns fencing. */
+    fun respondToPendingInput(action: com.hermesagent.mobile.data.gateway.PendingInputAction) {
+        val key = composer.value.runtime.pendingInput?.key ?: return
+        viewModelScope.launch {
+            runCatching { repository.respondToPendingInput(key, action) }
+                .onFailure { failure ->
+                    if (failure is CancellationException) throw failure
+                }
+        }
+    }
+
     private fun applyHistoryChange(change: ComposerDraftChange): Boolean = when (change) {
         ComposerDraftChange.Unchanged -> false
         is ComposerDraftChange.Changed -> {
@@ -1640,6 +1681,7 @@ internal class ChatViewModel(
         val queue: LocalQueueState = LocalQueueState(),
         @Suppress("unused") val historyRevision: Long = 0L,
         val scopeReady: Boolean = false,
+        val pendingInputs: Map<PendingInputKey, PendingInputRequest> = emptyMap(),
     )
 
     companion object {

@@ -416,6 +416,24 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
             },
             modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
         )
+        PendingInputSurface(
+            pending = state.composer.runtime.pendingInput,
+            background = state.backgroundPendingInput,
+            isSubmitting = false,
+            onRespond = actions.onRespondToPendingInput,
+            onOpenSession = actions.onSelectSession,
+            modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+        )
+        val securePrompt = state.composer.runtime.pendingInput?.takeIf { it.isSecurePrompt() }
+        if (securePrompt != null) {
+            SecurePendingDialog(
+                pending = securePrompt,
+                isSubmitting = false,
+                errorText = null,
+                onRespond = actions.onRespondToPendingInput,
+                onDismiss = {},
+            )
+        }
         Composer(
             draft = state.draft,
             onDraftChange = actions.onDraftChange,
