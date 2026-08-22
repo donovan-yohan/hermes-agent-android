@@ -43,6 +43,8 @@ data class HermesTypeScale(
     val sessionPreview: TextStyle,
     /** Quiet uppercase field label above a list group or a payload block. */
     val sectionLabel: TextStyle,
+    /** Accent sidebar panel heading: uppercase, wide tracking, semibold. */
+    val panelLabel: TextStyle,
     val screenTitle: TextStyle,
 )
 
@@ -88,6 +90,15 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
             lineHeight = 16.sp,
             fontWeight = FontWeight.Medium,
             letterSpacing = 0.08.em,
+        ),
+        // SidebarPanelLabel at f82f2dba: 0.64rem, semibold, uppercase,
+        // tracking 0.16em. The one-sp bump is the phone readability adaptation.
+        panelLabel = TextStyle(
+            fontFamily = sans,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.16.em,
         ),
         screenTitle = TextStyle(fontFamily = sans, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
     )

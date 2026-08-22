@@ -1,0 +1,497 @@
+{
+  "schema_version": 1,
+  "purpose": "Capture planning only. These are deterministic test fixtures, not production sessions, and may never contain user text, hosts, paths, credentials, tokens, or fingerprints.",
+  "desktop_sha": "f82f2dbabd9e66b714f2b4f8a40447fe0c13e732",
+  "states": [
+    {
+      "id": "editor-empty",
+      "fixture": "composer-empty-editor-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "editor-focused-multiline",
+      "fixture": "composer-focused-multiline-editor-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "editor-validation-error",
+      "fixture": "composer-validation-error-editor-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "editor-ime-open",
+      "fixture": "composer-editor-with-IME-open-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "send-idle",
+      "fixture": "composer-idle-send-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "stop-running",
+      "fixture": "composer-running-stop-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "steer-running",
+      "fixture": "composer-mid-turn-steer-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "queue-edit",
+      "fixture": "composer-queued-item-edit-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "model-loading",
+      "fixture": "composer-model-loading-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "model-selected",
+      "fixture": "composer-selected-model-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "model-pinned-override",
+      "fixture": "composer-pinned-model-override-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "model-menu",
+      "fixture": "composer-model-and-effort-menu-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "attachment-picker",
+      "fixture": "composer-attachment-picker-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "attachment-uploading",
+      "fixture": "composer-attachment-upload-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "attachment-ready-preview",
+      "fixture": "composer-attachment-preview-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "attachment-error-removal",
+      "fixture": "composer-attachment-error-and-removal-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "voice-recording",
+      "fixture": "composer-voice-recording-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "voice-transcribing-error",
+      "fixture": "composer-voice-transcription-error-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "voice-auto-speak",
+      "fixture": "composer-auto-speak-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "voice-conversation-active",
+      "fixture": "composer-active-voice-conversation-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "completion-slash",
+      "fixture": "composer-slash-completion-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "completion-at-path-url",
+      "fixture": "composer-at-path-and-URL-completion-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "completion-emoji-directive",
+      "fixture": "composer-emoji-and-directive-completion-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "completion-no-results",
+      "fixture": "composer-completion-no-results-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "status-coding-branch-worktree",
+      "fixture": "composer-coding-branch-worktree-status-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "status-goal-preview-async",
+      "fixture": "composer-goal-preview-async-status-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "status-collapsed-dismiss-stop",
+      "fixture": "composer-collapsed-status-actions-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "needsinput-clarify-single-batch",
+      "fixture": "composer-clarify-response-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "needsinput-approval",
+      "fixture": "composer-command-approval-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "needsinput-sudo-secret",
+      "fixture": "composer-sudo-and-secret-response-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "needsinput-reconnect-jump",
+      "fixture": "composer-reconnect-required-action-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "responsive-561",
+      "fixture": "composer-561-px-composer-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "responsive-560",
+      "fixture": "composer-560-px-composer-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "responsive-321",
+      "fixture": "composer-321-px-composer-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "responsive-320-below",
+      "fixture": "composer-320-px-and-below-composer-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "accessibility-large-font",
+      "fixture": "composer-large-font-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "accessibility-reduced-motion",
+      "fixture": "composer-reduced-motion-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "accessibility-ime-open",
+      "fixture": "composer-IME-accessibility-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "lifecycle-disconnect-recreate",
+      "fixture": "composer-disconnect-and-recreation-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "editor-disabled",
+      "fixture": "composer-disabled-editor-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "editor-disconnected",
+      "fixture": "composer-disconnected-editor-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "voice-wake-word",
+      "fixture": "composer-wake-word-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "queue-parked",
+      "fixture": "composer-parked-queue-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "queue-ambiguous-review",
+      "fixture": "composer-ambiguous-queue-review-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
+      "id": "status-unavailable-coding-context",
+      "fixture": "composer-unavailable-coding-context-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    }
+  ],
+  "harness_contract": {
+    "desktop": "Use a disposable pinned clone/export plus the existing e2e mock sandbox or Playwright fixture; never bare npm run perf:serve because it copies real config/.env/auth by default.",
+    "ports": "Allocate explicit dev-server and CDP ports per capture run and record them only in ignored build evidence.",
+    "seeder": "Use a temporary local-only state seeder with synthetic-only labels; do not add production demo sessions.",
+    "android_identity": {
+      "package": "com.hermesagent.mobile.debug",
+      "activity": "com.hermesagent.mobile.MainActivity",
+      "verification": "Record adb shell cmd package resolve-activity and dumpsys window focus in ignored capture evidence before accepting a screenshot."
+    },
+    "unsupported_state_policy": "Record unsupported future states as missing/partial manifest rows and do not fabricate screenshots."
+  },
+  "variants": {
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "container_widths": [
+      561,
+      560,
+      321,
+      320,
+      319
+    ],
+    "orientations": [
+      "portrait",
+      "landscape"
+    ],
+    "ime": [
+      "closed",
+      "open"
+    ],
+    "font_scale": [
+      "default",
+      "large"
+    ],
+    "motion": [
+      "normal",
+      "reduced"
+    ]
+  }
+}

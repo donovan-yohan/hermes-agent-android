@@ -1,6 +1,28 @@
 package com.hermesagent.mobile.data.gateway
 
+import com.hermesagent.mobile.data.composer.CompletionItem
+import com.hermesagent.mobile.data.composer.CompletionResult
+import com.hermesagent.mobile.data.composer.ComposerControlState
+import com.hermesagent.mobile.data.composer.ComposerModelSelection
+import com.hermesagent.mobile.data.composer.ControlMutationResult
+import com.hermesagent.mobile.data.composer.FastMode
+import com.hermesagent.mobile.data.composer.ModelCatalog
+import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
+import com.hermesagent.mobile.data.composer.ModelOption
+import com.hermesagent.mobile.data.composer.ModelProvider
+import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
+import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.composer.SessionComposerControls
+import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
+import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
+import com.hermesagent.mobile.data.session.ComposerGoalState
+import com.hermesagent.mobile.data.session.ComposerGoalStatus
+import com.hermesagent.mobile.data.session.ComposerStatusState
+import com.hermesagent.mobile.data.session.ProjectSummary
+import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -17,9 +39,12 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
@@ -32,17 +57,87 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 
 interface GatewaySessionRepository {
     val connectionState: StateFlow<GatewayConnectionState>
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
+    val composerControls: Flow<SessionComposerControls> get() = emptyFlow()
+    /** Live required-action requests, keyed by generation/runtime/request/kind. */
+    val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>
+        get() = error("Pending inputs are not implemented by this repository.")
+    suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
+        error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
+    suspend fun refreshProjects() = Unit
+    suspend fun openProject(projectId: String) = Unit
+    suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
+        error("Project creation is not implemented by this repository.")
     suspend fun openSession(durableId: String): String
-    suspend fun createSession(): String
+    suspend fun createSession(workspacePath: String? = null): String
+    suspend fun createSession(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+    ): String = createSession(workspacePath)
+    suspend fun loadModelOptions(durableId: String?): ModelCatalog =
+        error("Model options are not implemented by this repository.")
+    suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot =
+        error("Composer controls are not implemented by this repository.")
+    suspend fun loadComposerState(durableId: String?): ComposerControlState {
+        val catalog = loadModelOptions(durableId)
+        val controls = loadComposerControls(durableId)
+        return ComposerControlState(
+            catalog = catalog,
+            controls = controls.copy(selection = controls.selection ?: catalog.effectiveSelection),
+        )
+    }
+    suspend fun setLiveModel(
+        durableId: String,
+        selection: ComposerModelSelection,
+    ): ControlMutationResult = error("Live model controls are not implemented by this repository.")
+    suspend fun setLiveReasoning(
+        durableId: String,
+        effort: ReasoningEffort,
+    ): ControlMutationResult = error("Live reasoning controls are not implemented by this repository.")
+    suspend fun setLiveFast(durableId: String, mode: FastMode): ControlMutationResult =
+        error("Live fast controls are not implemented by this repository.")
+    suspend fun completeSlash(query: String): CompletionResult =
+        error("Slash completion is not implemented by this repository.")
+    suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult =
+        error("Path completion is not implemented by this repository.")
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
+    /** A queue drain opts into the Gateway's non-interrupting busy behavior. */
+    suspend fun submit(durableId: String, text: String, queued: Boolean): GatewaySubmitOutcome =
+        submit(durableId, text)
+    /**
+     * Stage-then-submit transaction: every attachment must stage successfully
+     * before prompt.submit; one failed or ambiguous stage refuses the whole
+     * submit and returns which items need retry. The live repository overrides
+     * this; the default keeps existing fakes compiling by dropping attachments
+     * (fakes that care override it to capture).
+     */
+    suspend fun submit(
+        durableId: String,
+        text: String,
+        queued: Boolean = false,
+        attachments: List<OutgoingAttachment> = emptyList(),
+    ): GatewaySubmitOutcome = submit(durableId, text, queued)
     suspend fun interrupt(durableId: String)
+    /** New callers can distinguish an interruption from a protected input request. */
+    suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
+        interrupt(durableId)
+        return GatewayInterruptOutcome.Interrupted
+    }
+    suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome =
+        GatewayRedirectOutcome.Unsupported
+    suspend fun steer(durableId: String, text: String): GatewaySteerOutcome = GatewaySteerOutcome.Unsupported
+    suspend fun listProcesses(durableId: String): GatewayProcessListOutcome = GatewayProcessListOutcome.Unsupported
+    suspend fun killProcess(durableId: String, processId: String): GatewayProcessKillOutcome =
+        GatewayProcessKillOutcome.Unsupported
+    suspend fun goalStatus(durableId: String): GatewayGoalStatusOutcome = GatewayGoalStatusOutcome.Unsupported
 }
 
 sealed interface GatewaySubmitOutcome {
@@ -50,10 +145,73 @@ sealed interface GatewaySubmitOutcome {
     data object Ambiguous : GatewaySubmitOutcome
 }
 
+sealed interface GatewayRedirectOutcome {
+    data object Redirected : GatewayRedirectOutcome
+    data object QueuedByGateway : GatewayRedirectOutcome
+    data object Rejected : GatewayRedirectOutcome
+    data object Unsupported : GatewayRedirectOutcome
+    /** The frame may have reached Hermes, so it must not be retried automatically. */
+    data object Ambiguous : GatewayRedirectOutcome
+    data object Failed : GatewayRedirectOutcome
+}
+
+sealed interface GatewaySteerOutcome {
+    data object QueuedByGateway : GatewaySteerOutcome
+    data object Rejected : GatewaySteerOutcome
+    data object Unsupported : GatewaySteerOutcome
+    data object Ambiguous : GatewaySteerOutcome
+    data object Failed : GatewaySteerOutcome
+}
+
+sealed interface GatewayInterruptOutcome {
+    data object Interrupted : GatewayInterruptOutcome
+    /** A pending approval/sudo/secret response must remain answerable. */
+    data object NeedsInput : GatewayInterruptOutcome
+    data object NotActive : GatewayInterruptOutcome
+    data object Rejected : GatewayInterruptOutcome
+    data object Ambiguous : GatewayInterruptOutcome
+    data object Failed : GatewayInterruptOutcome
+}
+
+sealed interface GatewayProcessListOutcome {
+    data class Available(val processes: List<ComposerBackgroundProcess>) : GatewayProcessListOutcome
+    data object Unsupported : GatewayProcessListOutcome
+    data object Failed : GatewayProcessListOutcome
+}
+
+sealed interface GatewayProcessKillOutcome {
+    data object Killed : GatewayProcessKillOutcome
+    data object Rejected : GatewayProcessKillOutcome
+    data object Unsupported : GatewayProcessKillOutcome
+    data object Ambiguous : GatewayProcessKillOutcome
+    data object Failed : GatewayProcessKillOutcome
+}
+
+sealed interface GatewayGoalStatusOutcome {
+    data class Available(val goal: ComposerGoalStatus) : GatewayGoalStatusOutcome
+    data object Unsupported : GatewayGoalStatusOutcome
+    data object Failed : GatewayGoalStatusOutcome
+}
+
+data class ProjectCreateOutcome(
+    val projectId: String,
+    val catalogRefreshed: Boolean,
+)
+
 data class SessionRehome(
     val oldDurableId: String,
     val newDurableId: String,
 )
+
+private enum class GatewayOptionalCapability { Redirect, Steer, Processes, Goals, Attachments }
+
+/** Result of staging one attachment payload to the Gateway. */
+sealed interface GatewayStageOutcome {
+    data class Staged(val reference: StagedAttachmentReference) : GatewayStageOutcome
+    data class Rejected(val safeMessage: String) : GatewayStageOutcome
+    data object Ambiguous : GatewayStageOutcome
+    data object Unsupported : GatewayStageOutcome
+}
 
 /** Explicit, connection-scoped durable ↔ runtime identity. */
 internal class SessionIdentityMap {
@@ -99,6 +257,11 @@ internal class LiveGatewaySessionRepository(
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
     private val rehomeEvents = MutableSharedFlow<SessionRehome>(extraBufferCapacity = 8)
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
+    private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
+    override val composerControls: Flow<SessionComposerControls> = composerControlEvents
+    private val mutablePendingInputs =
+        MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
+    override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
 
     private val identities = SessionIdentityMap()
     private val sequence = AtomicLong()
@@ -106,15 +269,26 @@ internal class LiveGatewaySessionRepository(
     /** Serializes multi-RPC navigation sequences without blocking event routing. */
     private val navigationMutex = Mutex()
     private val refreshMutex = Mutex()
+    /** Serializes catalog and detail snapshots so stale details cannot resurrect a removed project. */
+    private val projectMutex = Mutex()
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
+    private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
     private val optimisticUserByRuntime = mutableMapOf<String, UserTurn>()
+    /** Accepted corrections remain visible until authoritative transcript reconciliation. */
+    private val optimisticCorrectionsByRuntime = mutableMapOf<String, MutableList<UserTurn>>()
     private val progressRuntimeIds = mutableSetOf<String>()
+    private val composerStatusRuntimeIds = mutableSetOf<String>()
+    /** Optional methods are feature-detected once per connection generation. */
+    private val unsupportedCapabilities = mutableSetOf<GatewayOptionalCapability>()
+    private val processRefreshesInFlight = mutableSetOf<String>()
     /** Per-connection ordering fences for live state and progress hydration. */
     private val runtimeEventRevisions = mutableMapOf<String, RuntimeEventRevision>()
     private val activeRuntimeIds = linkedSetOf<String>()
     private val reconnectDurableIds = mutableSetOf<String>()
     private val ephemeralSessions = mutableSetOf<String>()
+    /** The active drill-in worth rehydrating after a catalog refresh or reconnect. */
+    private var lastHydratedProjectId: String? = null
     private var eventJob: Job? = null
     private var bootstrapRefreshJob: Job? = null
     private var connectionGeneration = 0L
@@ -145,20 +319,34 @@ internal class LiveGatewaySessionRepository(
                     }
                     identities.clear()
                     assistantByRuntime.clear()
+                    reasoningByRuntime.clear()
                     toolsByRuntime.clear()
                     optimisticUserByRuntime.clear()
+                    optimisticCorrectionsByRuntime.clear()
                     progressRuntimeIds.clear()
+                    composerStatusRuntimeIds.clear()
+                    unsupportedCapabilities.clear()
+                    processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
                     activeRuntimeIds.clear()
+                    // Pending prompts are connection-scoped memory; a new
+                    // client rehydrates only through fresh resume responses.
+                    mutablePendingInputs.value = emptyMap()
                     clearUnscopedRuntime()
                     val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
                     if (next != null) ephemeralSessions.clear()
-                    ConnectionReset(connectionGeneration, ghosts, reconnectDurableIds.toList())
+                    ConnectionReset(
+                        generation = connectionGeneration,
+                        ephemeralDurableIds = ghosts,
+                        reconnectDurableIds = reconnectDurableIds.toList(),
+                        clearProjects = previous !== next,
+                    )
                 }
                 // A just-created session is persisted lazily on first submit.
                 // Keep it useful while disconnected, then let the next
                 // authoritative list decide whether it really exists.
                 reset.ephemeralDurableIds.forEach(cache::removeSession)
+                if (reset.clearProjects) cache.clearProjects()
                 if (next != null) {
                     eventJob = scope.launch {
                         next.events.collect { event ->
@@ -174,6 +362,7 @@ internal class LiveGatewaySessionRepository(
                     }
                     bootstrapRefreshJob = scope.launch {
                         runCatching { refreshSessions() }
+                        runCatching { refreshProjects() }
                         reset.reconnectDurableIds.forEach { durableId ->
                             runCatching { openSession(durableId) }
                                 .onFailure { failure ->
@@ -206,11 +395,108 @@ internal class LiveGatewaySessionRepository(
             cache.upsertSessions(
                 rows.map { row ->
                     cache.session(row.id)?.let { existing ->
-                        row.copy(status = existing.status, progress = existing.progress)
+                        row.copy(
+                            status = existing.status,
+                            progress = existing.progress,
+                            composerStatus = existing.composerStatus,
+                            activityStartedAtMillis = existing.activityStartedAtMillis,
+                        )
                     } ?: row
                 },
             )
         }
+    }
+
+    override suspend fun refreshProjects() {
+        val rehydrate = projectMutex.withLock {
+            val connection = connectionSnapshot()
+            val payload = try {
+                connection.client.request(
+                    "projects.tree",
+                    buildJsonObject { put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT)) },
+                )
+            } catch (failure: Throwable) {
+                if (failure.isMissingProjectsMethod()) {
+                    synchronized(stateLock) {
+                        ensureCurrent(connection)
+                        cache.markProjectsUnavailable()
+                    }
+                    return@withLock null
+                }
+                throw failure
+            }
+            val overview = parseProjectOverview(payload, clock())
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.replaceProjectOverview(overview.projects, overview.activeProjectId)
+                lastHydratedProjectId?.takeIf { projectId ->
+                    overview.projects.any { it.id == projectId }
+                }.also { lastHydratedProjectId = it }
+            }
+        }
+        rehydrate?.let { projectId ->
+            runCatching { openProject(projectId) }
+                .onFailure { failure -> if (failure is CancellationException) throw failure }
+        }
+    }
+
+    override suspend fun openProject(projectId: String) = projectMutex.withLock {
+        require(projectId.isNotBlank())
+        val connection = connectionSnapshot()
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            if (cache.state.value.projects.available == true &&
+                projectId !in cache.state.value.projects.projects
+            ) {
+                throw GatewayRpcException("This project is no longer available.")
+            }
+        }
+        val result = connection.client.request(
+            "projects.project_sessions",
+            buildJsonObject { put("project_id", JsonPrimitive(projectId)) },
+        )
+        val details = parseProjectDetails(result, clock())
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            lastHydratedProjectId = projectId
+            cache.replaceProjectDetails(details.project, details.sessions)
+        }
+    }
+
+    override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
+        val cleanName = name.trim()
+        val cleanPath = folderPath.trim()
+        require(cleanName.isNotEmpty())
+        require(cleanPath.isNotEmpty())
+        val projectId = projectMutex.withLock {
+            val connection = connectionSnapshot()
+            val result = connection.client.request(
+                "projects.create",
+                buildJsonObject {
+                    put("name", JsonPrimitive(cleanName))
+                    put("folders", JsonArray(listOf(JsonPrimitive(cleanPath))))
+                    put("primary_path", JsonPrimitive(cleanPath))
+                    put("use", JsonPrimitive(true))
+                },
+            ).asObject("projects.create")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val project = result["project"] as? JsonObject
+                ?: throw GatewayRpcException("Hermes did not return the created project.")
+            project.string("id")?.takeIf(String::isNotBlank)
+                ?: throw GatewayRpcException("Hermes did not return a project id.")
+        }
+        // Re-read backend truth instead of teaching this write path a second
+        // project-tree parser. Creation has already succeeded at this point, so
+        // a refresh failure must not tell callers to retry the write.
+        val catalogRefreshed = try {
+            refreshProjects()
+            true
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Throwable) {
+            false
+        }
+        return ProjectCreateOutcome(projectId, catalogRefreshed)
     }
 
     override suspend fun openSession(durableId: String): String = navigationMutex.withLock {
@@ -283,11 +569,33 @@ internal class LiveGatewaySessionRepository(
         canonicalId
     }
 
-    override suspend fun createSession(): String = navigationMutex.withLock {
+    override suspend fun createSession(workspacePath: String?): String = createSession(workspacePath, null)
+
+    override suspend fun createSession(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+    ): String = navigationMutex.withLock {
         val connection = connectionSnapshot()
         val result = connection.client.request(
             "session.create",
-            buildJsonObject { put("source", JsonPrimitive("desktop")) },
+            buildJsonObject {
+                put("source", JsonPrimitive("desktop"))
+                workspacePath?.trim()?.takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
+                overrides?.selection?.takeIf { it.isSpecified }?.let { selection ->
+                    put("model", JsonPrimitive(selection.model.trim()))
+                    selection.provider.trim().takeIf(String::isNotEmpty)?.let { provider ->
+                        put("provider", JsonPrimitive(provider))
+                    }
+                }
+                overrides?.reasoning?.takeUnless { it is ReasoningEffort.Unknown }?.let {
+                    put("reasoning_effort", JsonPrimitive(it.wireValue))
+                }
+                when (overrides?.fast) {
+                    FastMode.Fast -> put("fast", JsonPrimitive(true))
+                    FastMode.Normal -> put("fast", JsonPrimitive(false))
+                    null, is FastMode.Unknown -> Unit
+                }
+            },
         ).asObject("session.create")
         val runtimeId = result.string("session_id")
             ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
@@ -305,25 +613,221 @@ internal class LiveGatewaySessionRepository(
         durableId
     }
 
-    override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
+    override suspend fun loadModelOptions(durableId: String?): ModelCatalog {
+        val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
+        val connection = connectionSnapshot()
+        val result = connection.client.request(
+            "model.options",
+            buildJsonObject {
+                binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
+            },
+        )
+        synchronized(stateLock) { ensureCurrent(connection) }
+        return parseModelCatalog(result)
+    }
+
+    override suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot {
+        return loadComposerState(durableId).controls
+    }
+
+    override suspend fun loadComposerState(durableId: String?): ComposerControlState {
+        val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
+        val connection = connectionSnapshot()
+        fun params(key: String): JsonObject = buildJsonObject {
+            put("key", JsonPrimitive(key))
+            binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
+        }
+        // config.get(provider) deliberately resolves the profile default, not
+        // a live session override. model.options is the Gateway's effective
+        // session-aware model/provider authority.
+        val (catalogPayload, reasoning, fast) = coroutineScope {
+            val catalogRequest = async {
+                connection.client.request(
+                    "model.options",
+                    buildJsonObject { binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) } },
+                )
+            }
+            val reasoningRequest = async {
+                connection.client.request("config.get", params("reasoning")).asObject("config.get")
+            }
+            val fastRequest = async {
+                connection.client.request("config.get", params("fast")).asObject("config.get")
+            }
+            Triple(catalogRequest.await(), reasoningRequest.await(), fastRequest.await())
+        }
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val catalog = parseModelCatalog(catalogPayload)
+        return ComposerControlState(
+            catalog = catalog,
+            controls = ModelControlsSnapshot(
+                selection = catalog.effectiveSelection,
+                reasoning = ReasoningEffort.fromWire(reasoning.string("value")),
+                fast = FastMode.fromWire(fast.string("value")),
+            ),
+        )
+    }
+
+    override suspend fun setLiveModel(
+        durableId: String,
+        selection: ComposerModelSelection,
+    ): ControlMutationResult {
+        if (!selection.isSpecified) return ControlMutationResult.Rejected("Choose a model, then try again.")
+        val value = buildString {
+            append(selection.model.trim())
+            selection.provider.trim().takeIf(String::isNotEmpty)?.let { append(" --provider ").append(it) }
+            append(" --session")
+        }
+        return mutateLiveControl(durableId, "model", value, modelSwitch = true)
+    }
+
+    override suspend fun setLiveReasoning(
+        durableId: String,
+        effort: ReasoningEffort,
+    ): ControlMutationResult = mutateLiveControl(durableId, "reasoning", effort.wireValue)
+
+    override suspend fun setLiveFast(durableId: String, mode: FastMode): ControlMutationResult =
+        mutateLiveControl(durableId, "fast", mode.wireValue)
+
+    override suspend fun completeSlash(query: String): CompletionResult {
+        val connection = connectionSnapshot()
+        val result = connection.client.request("complete.slash", objectParams("text", query))
+        synchronized(stateLock) { ensureCurrent(connection) }
+        return parseCompletionResult(result, "complete.slash")
+    }
+
+    override suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult {
+        val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
+        val connection = connectionSnapshot()
+        val result = connection.client.request(
+            "complete.path",
+            buildJsonObject {
+                binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
+                put("word", JsonPrimitive(query))
+                cwd.trim().takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
+            },
+        )
+        synchronized(stateLock) { ensureCurrent(connection) }
+        return parseCompletionResult(result, "complete.path")
+    }
+
+    override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome =
+        submit(durableId, text, queued = false)
+
+    override suspend fun submit(
+        durableId: String,
+        text: String,
+        queued: Boolean,
+        attachments: List<OutgoingAttachment>,
+    ): GatewaySubmitOutcome {
+        if (attachments.isEmpty()) return submit(durableId, text, queued)
+        // Stage everything first. A prompt must never cross after a failed or
+        // ambiguous stage; the caller keeps its drafts for in-place retry.
+        val stagedRefs = StringBuilder()
+        for (attachment in attachments) {
+            val result = stageOne(durableId, attachment)
+            when (result) {
+                is GatewayStageOutcome.Staged -> {
+                    if (result.reference.refText.isNotBlank()) {
+                        if (stagedRefs.isNotEmpty()) stagedRefs.append(' ')
+                        stagedRefs.append(result.reference.refText)
+                    }
+                }
+                is GatewayStageOutcome.Rejected -> throw GatewayRpcException(result.safeMessage)
+                is GatewayStageOutcome.Ambiguous ->
+                    throw GatewayRpcException("The attachment may not have finished uploading. Check the session before retrying.")
+                GatewayStageOutcome.Unsupported ->
+                    throw GatewayRpcException("This Gateway does not accept that attachment. Update Hermes and try again.")
+            }
+        }
+        val composed = if (stagedRefs.isEmpty()) text else "${stagedRefs}\n${text.trim()}"
+        return submit(durableId, composed, queued)
+    }
+
+    private suspend fun stageOne(
+        durableId: String,
+        attachment: OutgoingAttachment,
+    ): GatewayStageOutcome {
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            return GatewayStageOutcome.Rejected("Reopen this session before attaching files.")
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return GatewayStageOutcome.Rejected("Reconnect to the Gateway and try again.")
+        }
+        return try {
+            val result = when (attachment) {
+                is OutgoingAttachment.Image -> connection.client.request(
+                    "image.attach_bytes",
+                    buildJsonObject {
+                        // Attach RPCs resolve the session by id before staging;
+                        // the desktop always sends its session's runtime id.
+                        put("session_id", JsonPrimitive(binding.runtimeId))
+                        put("content_base64", JsonPrimitive(attachment.contentBase64))
+                        put("filename", JsonPrimitive(attachment.displayName))
+                    },
+                ).asObject("image.attach_bytes")
+
+                is OutgoingAttachment.GenericFile -> connection.client.request(
+                    "file.attach",
+                    buildJsonObject {
+                        put("session_id", JsonPrimitive(binding.runtimeId))
+                        put("data_url", JsonPrimitive(attachment.dataUrl))
+                        put("name", JsonPrimitive(attachment.displayName))
+                    },
+                ).asObject("file.attach")
+            }
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val refText = result.string("ref_text")
+                ?: result.string("text")?.takeIf(String::isNotBlank)
+                ?: "@file:${attachment.displayName}"
+            GatewayStageOutcome.Staged(
+                StagedAttachmentReference(refText = refText, gatewayPath = result.string("path")),
+            )
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Attachments, connection)
+                GatewayStageOutcome.Unsupported
+            } else if (failure is GatewayRpcException && failure.requestMayHaveBeenAccepted) {
+                GatewayStageOutcome.Ambiguous
+            } else {
+                GatewayStageOutcome.Rejected(safeGatewayTerminalError(failure.message ?: "The attachment was refused."))
+            }
+        }
+    }
+
+    override suspend fun submit(
+        durableId: String,
+        text: String,
+        queued: Boolean,
+    ): GatewaySubmitOutcome {
         val prompt = text.trim()
         require(prompt.isNotEmpty())
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot()
         val optimistic = synchronized(stateLock) {
             ensureCurrent(connection)
-            if (unscopedRuntimeId != null || activeRuntimeIds.isNotEmpty()) {
-                throw GatewayRpcException("Wait for the current turn to finish before sending another message.")
+            if (binding.runtimeId in activeRuntimeIds) {
+                throw GatewayRpcException("Hermes is already working in this session.")
             }
             val currentRuntime = identities.runtimeFor(binding.durableId)
             if (currentRuntime != binding.runtimeId) {
                 throw GatewayRpcException("Hermes did not activate this session.")
             }
-            unscopedRuntimeId = binding.runtimeId
-            activeRuntimeIds += binding.runtimeId
             val now = clock()
-            localSubmitStartedAtMillis = now
-            unscopedTurnIsLive = false
+            if (unscopedRuntimeId == null) {
+                // Identifier-less events stay attributed to the most recent
+                // submit only while no other live turn already owns the pin;
+                // a second concurrent submit must not steal the attribution.
+                unscopedRuntimeId = binding.runtimeId
+                localSubmitStartedAtMillis = now
+                unscopedTurnIsLive = false
+            }
+            activeRuntimeIds += binding.runtimeId
             val previousSession = cache.session(binding.durableId)
             val previousTranscript = cache.transcript(binding.durableId)
             val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", prompt, now)
@@ -336,6 +840,7 @@ internal class LiveGatewaySessionRepository(
                         preview = prompt,
                         lastActiveAtMillis = now,
                         status = SessionStatus.Working,
+                        activityStartedAtMillis = now,
                         messageCount = session.messageCount + 1,
                     ),
                 )
@@ -349,6 +854,7 @@ internal class LiveGatewaySessionRepository(
                 buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("text", JsonPrimitive(prompt))
+                    if (queued) put("queued", JsonPrimitive(true))
                 },
             )
             synchronized(stateLock) { ephemeralSessions.remove(binding.durableId) }
@@ -377,9 +883,534 @@ internal class LiveGatewaySessionRepository(
     }
 
     override suspend fun interrupt(durableId: String) {
-        val runtimeId = synchronized(stateLock) { identities.runtimeFor(durableId) }
-            ?: throw GatewayRpcException("Reopen this session before stopping Hermes.")
-        connectionSnapshot().client.request("session.interrupt", objectParams("session_id", runtimeId))
+        when (requestInterrupt(durableId)) {
+            GatewayInterruptOutcome.NotActive ->
+                throw GatewayRpcException("Reopen this session before stopping Hermes.")
+            else -> Unit
+        }
+    }
+
+    /** One response in flight per pending request; a second tap is a no-op. */
+    private val respondingKeys = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<PendingInputKey, Boolean>())
+
+    override suspend fun respondToPendingInput(
+        key: PendingInputKey,
+        action: PendingInputAction,
+    ): PendingInputResponse {
+        val request = mutablePendingInputs.value[key] ?: return PendingInputResponse.Resolved
+        // Generation fence: a stale key cannot answer on the new connection.
+        if (key.connectionGeneration != connectionGeneration) return PendingInputResponse.Retryable
+        if (!respondingKeys.add(key)) return PendingInputResponse.Retryable
+        try {
+            val binding = try {
+                ensureRuntime(request.durableSessionId)
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                return PendingInputResponse.Retryable
+            }
+            val connection = connectionSnapshot()
+            val result = try {
+                when (action) {
+                    is PendingInputAction.ClarifyAnswer -> {
+                        if (action.cancelBatch) {
+                            // Batch-wide cancel is exactly the empty no-qid answer.
+                            connection.client.request(
+                                "clarify.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("answer", JsonPrimitive(""))
+                                },
+                            )
+                        } else {
+                            var last: JsonElement = JsonNull
+                            for ((questionId, answer) in action.answers) {
+                                last = connection.client.request(
+                                    "clarify.respond",
+                                    buildJsonObject {
+                                        put("request_id", JsonPrimitive(key.requestId))
+                                        // Singles carry no question_id at all; an
+                                        // empty-key entry would read as a batch
+                                        // answer for an unknown qid.
+                                        if (questionId.isNotEmpty()) {
+                                            put("question_id", JsonPrimitive(questionId))
+                                        }
+                                        put("answer", JsonPrimitive(answer))
+                                    },
+                                )
+                            }
+                            last
+                        }
+                    }
+
+                    is PendingInputAction.ApprovalChoice -> {
+                        if (action.choice !in (request as? ApprovalPending)?.choices.orEmpty()) {
+                            return PendingInputResponse.Retryable
+                        }
+                        runCatching {
+                            connection.client.request(
+                                "approval.received",
+                                buildJsonObject {
+                                    put("session_id", JsonPrimitive(binding.runtimeId))
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                },
+                            )
+                        }
+                        connection.client.request(
+                            "approval.respond",
+                            buildJsonObject {
+                                put("session_id", JsonPrimitive(binding.runtimeId))
+                                put("request_id", JsonPrimitive(key.requestId))
+                                put("choice", JsonPrimitive(action.choice))
+                            },
+                        )
+                    }
+
+                    is PendingInputAction.SudoPassword -> {
+                        val password = action.password.concatToString()
+                        try {
+                            connection.client.request(
+                                "sudo.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("password", JsonPrimitive(password))
+                                },
+                            )
+                        } finally {
+                            action.password.fill(0.toChar())
+                        }
+                    }
+
+                    is PendingInputAction.SecretValue -> {
+                        val value = action.value.concatToString()
+                        try {
+                            connection.client.request(
+                                "secret.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("value", JsonPrimitive(value))
+                                },
+                            )
+                        } finally {
+                            action.value.fill(0.toChar())
+                        }
+                    }
+                }
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                // Ambiguous transport: keep the request pending for explicit retry.
+                return PendingInputResponse.Retryable
+            }
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val status = (result as? JsonObject)?.string("status")
+            return when (status) {
+                "expired" -> {
+                    removePendingInput(key)
+                    PendingInputResponse.Expired
+                }
+                null, "ok", "resolved" -> {
+                    removePendingInput(key)
+                    setStatus(request.durableSessionId, SessionStatus.Idle)
+                    PendingInputResponse.Resolved
+                }
+                else -> PendingInputResponse.Retryable
+            }
+        } finally {
+            respondingKeys.remove(key)
+        }
+    }
+
+    private fun removePendingInput(key: PendingInputKey) {
+        val next = mutablePendingInputs.value.minus(key)
+        if (next.size != mutablePendingInputs.value.size) mutablePendingInputs.value = next
+    }
+
+    override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
+        val binding = synchronized(stateLock) {
+            val runtimeId = identities.runtimeFor(durableId) ?: return GatewayInterruptOutcome.NotActive
+            val session = cache.session(durableId)
+            if (session?.status == SessionStatus.NeedsInput) return GatewayInterruptOutcome.NeedsInput
+            if (unscopedRuntimeId != runtimeId || runtimeId !in activeRuntimeIds) {
+                return GatewayInterruptOutcome.NotActive
+            }
+            SessionBinding(durableId, runtimeId)
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return interruptPreflightFailureOutcome(failure)
+        }
+        return try {
+            val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
+                .asObject("session.interrupt")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            if (result.string("status") == "interrupted") {
+                GatewayInterruptOutcome.Interrupted
+            } else {
+                GatewayInterruptOutcome.Rejected
+            }
+        } catch (failure: Throwable) {
+            interruptFailureOutcome(failure)
+        }
+    }
+
+    override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome {
+        val correction = text.trim()
+        require(correction.isNotEmpty())
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            return redirectPreflightFailureOutcome(failure)
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return redirectPreflightFailureOutcome(failure)
+        }
+        if (isCapabilityUnsupported(GatewayOptionalCapability.Redirect, connection)) {
+            return GatewayRedirectOutcome.Unsupported
+        }
+        if (!ownsActiveUnscopedTurn(binding, connection)) return GatewayRedirectOutcome.Rejected
+
+        return try {
+            val result = connection.client.request(
+                "session.redirect",
+                buildJsonObject {
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                    put("text", JsonPrimitive(correction))
+                },
+            ).asObject("session.redirect")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            when (result.string("status")) {
+                "redirected" -> {
+                    recordOptimisticCorrection(binding, connection, correction)
+                    GatewayRedirectOutcome.Redirected
+                }
+
+                "queued" -> {
+                    recordOptimisticCorrection(binding, connection, correction)
+                    GatewayRedirectOutcome.QueuedByGateway
+                }
+
+                "rejected" -> GatewayRedirectOutcome.Rejected
+                else -> GatewayRedirectOutcome.Failed
+            }
+        } catch (failure: Throwable) {
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Redirect, connection)
+                GatewayRedirectOutcome.Unsupported
+            } else {
+                redirectFailureOutcome(failure)
+            }
+        }
+    }
+
+    override suspend fun steer(durableId: String, text: String): GatewaySteerOutcome {
+        val correction = text.trim()
+        require(correction.isNotEmpty())
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            return steerPreflightFailureOutcome(failure)
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return steerPreflightFailureOutcome(failure)
+        }
+        if (isCapabilityUnsupported(GatewayOptionalCapability.Steer, connection)) {
+            return GatewaySteerOutcome.Unsupported
+        }
+        if (!ownsActiveUnscopedTurn(binding, connection)) return GatewaySteerOutcome.Rejected
+
+        return try {
+            val result = connection.client.request(
+                "session.steer",
+                buildJsonObject {
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                    put("text", JsonPrimitive(correction))
+                },
+            ).asObject("session.steer")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            when (result.string("status")) {
+                "queued" -> {
+                    recordOptimisticCorrection(binding, connection, correction)
+                    GatewaySteerOutcome.QueuedByGateway
+                }
+
+                "rejected" -> GatewaySteerOutcome.Rejected
+                else -> GatewaySteerOutcome.Failed
+            }
+        } catch (failure: Throwable) {
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Steer, connection)
+                GatewaySteerOutcome.Unsupported
+            } else {
+                steerFailureOutcome(failure)
+            }
+        }
+    }
+
+    override suspend fun listProcesses(durableId: String): GatewayProcessListOutcome {
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            return processListPreflightFailureOutcome(failure)
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return processListPreflightFailureOutcome(failure)
+        }
+        if (isCapabilityUnsupported(GatewayOptionalCapability.Processes, connection)) {
+            return GatewayProcessListOutcome.Unsupported
+        }
+        return try {
+            val result = connection.client.request("process.list", objectParams("session_id", binding.runtimeId))
+                .asObject("process.list")
+            val processes = parseGatewayProcesses(result) ?: return GatewayProcessListOutcome.Failed
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (identities.runtimeFor(binding.durableId) != binding.runtimeId) {
+                    return GatewayProcessListOutcome.Failed
+                }
+                updateComposerStatus(binding.durableId, binding.runtimeId) { status ->
+                    status.copy(backgroundProcesses = processes)
+                }
+            }
+            GatewayProcessListOutcome.Available(processes)
+        } catch (failure: Throwable) {
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Processes, connection)
+                GatewayProcessListOutcome.Unsupported
+            } else {
+                GatewayProcessListOutcome.Failed
+            }
+        }
+    }
+
+    override suspend fun killProcess(durableId: String, processId: String): GatewayProcessKillOutcome {
+        val cleanProcessId = processId.trim()
+        require(cleanProcessId.isNotEmpty())
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            return processKillPreflightFailureOutcome(failure)
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return processKillPreflightFailureOutcome(failure)
+        }
+        if (isCapabilityUnsupported(GatewayOptionalCapability.Processes, connection)) {
+            return GatewayProcessKillOutcome.Unsupported
+        }
+        // A process action is scoped, but it must not mutate a session while an
+        // identifier-less turn is owned by another runtime.
+        if (!canMutateBoundSession(binding, connection)) return GatewayProcessKillOutcome.Rejected
+        return try {
+            connection.client.request(
+                "process.kill",
+                buildJsonObject {
+                    put("process_id", JsonPrimitive(cleanProcessId))
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                },
+            )
+            synchronized(stateLock) { ensureCurrent(connection) }
+            GatewayProcessKillOutcome.Killed
+        } catch (failure: Throwable) {
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Processes, connection)
+                GatewayProcessKillOutcome.Unsupported
+            } else if (failure.isAmbiguousGatewayMutation()) {
+                GatewayProcessKillOutcome.Ambiguous
+            } else {
+                GatewayProcessKillOutcome.Failed
+            }
+        }
+    }
+
+    override suspend fun goalStatus(durableId: String): GatewayGoalStatusOutcome {
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            return goalStatusPreflightFailureOutcome(failure)
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            return goalStatusPreflightFailureOutcome(failure)
+        }
+        if (isCapabilityUnsupported(GatewayOptionalCapability.Goals, connection)) {
+            return GatewayGoalStatusOutcome.Unsupported
+        }
+        return try {
+            val result = connection.client.request(
+                "slash.exec",
+                buildJsonObject {
+                    put("command", JsonPrimitive("goal status"))
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                },
+            ).asObject("slash.exec")
+            val rawText = result.jsonString("output") ?: return GatewayGoalStatusOutcome.Failed
+            val safeText = safeGatewayStatusText(rawText).takeIf(String::isNotEmpty)
+                ?: return GatewayGoalStatusOutcome.Failed
+            val goal = synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (identities.runtimeFor(binding.durableId) != binding.runtimeId) {
+                    return GatewayGoalStatusOutcome.Failed
+                }
+                val parsed = parseGatewayGoalStatus(safeText, cache.session(binding.durableId)?.composerStatus?.goal)
+                updateComposerStatus(binding.durableId, binding.runtimeId) { status -> status.copy(goal = parsed) }
+                parsed
+            }
+            GatewayGoalStatusOutcome.Available(goal)
+        } catch (failure: Throwable) {
+            if (failure.isUnsupportedGatewayCapability()) {
+                markCapabilityUnsupported(GatewayOptionalCapability.Goals, connection)
+                GatewayGoalStatusOutcome.Unsupported
+            } else {
+                GatewayGoalStatusOutcome.Failed
+            }
+        }
+    }
+
+    private fun isCapabilityUnsupported(
+        capability: GatewayOptionalCapability,
+        connection: ConnectionSnapshot,
+    ): Boolean = synchronized(stateLock) {
+        ensureCurrent(connection)
+        capability in unsupportedCapabilities
+    }
+
+    private fun markCapabilityUnsupported(
+        capability: GatewayOptionalCapability,
+        connection: ConnectionSnapshot,
+    ) {
+        synchronized(stateLock) {
+            if (connection.generation == connectionGeneration && clientFlow.value === connection.client) {
+                unsupportedCapabilities += capability
+            }
+        }
+    }
+
+    private fun ownsActiveUnscopedTurn(binding: SessionBinding, connection: ConnectionSnapshot): Boolean =
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            identities.runtimeFor(binding.durableId) == binding.runtimeId &&
+                unscopedRuntimeId == binding.runtimeId &&
+                binding.runtimeId in activeRuntimeIds
+        }
+
+    private fun canMutateBoundSession(binding: SessionBinding, connection: ConnectionSnapshot): Boolean =
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            identities.runtimeFor(binding.durableId) == binding.runtimeId &&
+                (unscopedRuntimeId == null || unscopedRuntimeId == binding.runtimeId)
+        }
+
+    private fun recordOptimisticCorrection(
+        binding: SessionBinding,
+        connection: ConnectionSnapshot,
+        text: String,
+    ) {
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            if (identities.runtimeFor(binding.durableId) != binding.runtimeId) return
+            val correction = UserTurn(
+                id = "local-correction-${sequence.incrementAndGet()}",
+                text = text,
+                atMillis = clock(),
+            )
+            optimisticCorrectionsByRuntime.getOrPut(binding.runtimeId, ::mutableListOf) += correction
+            cache.appendEntry(binding.durableId, correction)
+        }
+    }
+
+    private suspend fun redirectFailureOutcome(failure: Throwable): GatewayRedirectOutcome {
+        if (failure is CancellationException) {
+            currentCoroutineContext().ensureActive()
+            return GatewayRedirectOutcome.Ambiguous
+        }
+        return if (failure.isAmbiguousGatewayMutation()) GatewayRedirectOutcome.Ambiguous else GatewayRedirectOutcome.Failed
+    }
+
+    private suspend fun steerFailureOutcome(failure: Throwable): GatewaySteerOutcome {
+        if (failure is CancellationException) {
+            currentCoroutineContext().ensureActive()
+            return GatewaySteerOutcome.Ambiguous
+        }
+        return if (failure.isAmbiguousGatewayMutation()) GatewaySteerOutcome.Ambiguous else GatewaySteerOutcome.Failed
+    }
+
+    private suspend fun interruptFailureOutcome(failure: Throwable): GatewayInterruptOutcome {
+        if (failure is CancellationException) {
+            currentCoroutineContext().ensureActive()
+            return GatewayInterruptOutcome.Ambiguous
+        }
+        return if (failure.isAmbiguousGatewayMutation()) GatewayInterruptOutcome.Ambiguous else GatewayInterruptOutcome.Failed
+    }
+
+    private fun redirectPreflightFailureOutcome(failure: Throwable): GatewayRedirectOutcome {
+        if (failure is CancellationException) throw failure
+        return GatewayRedirectOutcome.Failed
+    }
+
+    private fun steerPreflightFailureOutcome(failure: Throwable): GatewaySteerOutcome {
+        if (failure is CancellationException) throw failure
+        return GatewaySteerOutcome.Failed
+    }
+
+    private fun interruptPreflightFailureOutcome(failure: Throwable): GatewayInterruptOutcome {
+        if (failure is CancellationException) throw failure
+        return GatewayInterruptOutcome.Failed
+    }
+
+    private fun processListPreflightFailureOutcome(failure: Throwable): GatewayProcessListOutcome {
+        if (failure is CancellationException) throw failure
+        return GatewayProcessListOutcome.Failed
+    }
+
+    private fun processKillPreflightFailureOutcome(failure: Throwable): GatewayProcessKillOutcome {
+        if (failure is CancellationException) throw failure
+        return GatewayProcessKillOutcome.Failed
+    }
+
+    private fun goalStatusPreflightFailureOutcome(failure: Throwable): GatewayGoalStatusOutcome {
+        if (failure is CancellationException) throw failure
+        return GatewayGoalStatusOutcome.Failed
+    }
+
+    private suspend fun mutateLiveControl(
+        durableId: String,
+        key: String,
+        value: String,
+        modelSwitch: Boolean = false,
+    ): ControlMutationResult {
+        val binding = ensureRuntime(durableId)
+        val connection = connectionSnapshot()
+        return try {
+            val result = connection.client.request(
+                "config.set",
+                buildJsonObject {
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                    put("key", JsonPrimitive(key))
+                    put("value", JsonPrimitive(value))
+                },
+            ).asObject("config.set")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            if (modelSwitch && result.boolean("deferred") == true) {
+                ControlMutationResult.Deferred
+            } else {
+                ControlMutationResult.Applied
+            }
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            if (modelSwitch && failure.isLegacyBusyModelRefusal()) {
+                ControlMutationResult.Deferred
+            } else {
+                ControlMutationResult.Rejected(controlFailureMessage(key))
+            }
+        }
     }
 
     private suspend fun ensureRuntime(durableId: String): SessionBinding {
@@ -431,7 +1462,8 @@ internal class LiveGatewaySessionRepository(
                     markRuntimeLive(runtimeId)
                     ephemeralSessions.remove(durableId)
                 }
-                reconcileSessionInfo(durableId, runtimeId, running)
+                reconcileSessionInfo(durableId, runtimeId, running, payload.status())
+                projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
                 val settled = running == false && settleStoppedSessionInfo(durableId, runtimeId)
                 if (running == false && !settled && unscopedRuntimeId != runtimeId) {
                     releaseRuntimeGuard(runtimeId)
@@ -474,11 +1506,39 @@ internal class LiveGatewaySessionRepository(
             }
 
             "message.complete" -> {
+                clearPendingInputsForRuntime(runtimeId)
                 completeMessage(durableId, runtimeId, payload)
                 true
             }
 
+            "reasoning.delta", "reasoning.available" -> {
+                applyReasoning(event.type, durableId, runtimeId, payload)
+                markRuntimeLive(runtimeId)
+                ephemeralSessions.remove(durableId)
+                setStatus(durableId, SessionStatus.Working)
+                false
+            }
+
+            "thinking.delta" -> {
+                applyStatusUpdate(
+                    durableId,
+                    runtimeId,
+                    buildJsonObject {
+                        put("kind", JsonPrimitive("thinking"))
+                        put("text", JsonPrimitive(payload.deltaText()))
+                    },
+                )
+                markRuntimeLive(runtimeId)
+                ephemeralSessions.remove(durableId)
+                setStatus(durableId, SessionStatus.Working)
+                false
+            }
+
             "tool.start", "tool.progress", "tool.complete" -> {
+                // A live tool must not repaint a session that is parked on a
+                // required answer; NeedsInput survives tool progress.
+                if (hasPendingInput(runtimeId)) return false
+                sealReasoning(durableId, runtimeId, ToolState.Done)
                 applyTool(event.type, durableId, runtimeId, payload)
                 markRuntimeLive(runtimeId)
                 ephemeralSessions.remove(durableId)
@@ -488,10 +1548,14 @@ internal class LiveGatewaySessionRepository(
 
             "status.update" -> {
                 applyStatusUpdate(durableId, runtimeId, payload)
+                if (payload.jsonString("kind")?.trim() == "process") {
+                    scheduleProcessRefresh(durableId)
+                }
                 false
             }
 
             "error" -> {
+                clearPendingInputsForRuntime(runtimeId)
                 val current = assistantByRuntime.remove(runtimeId)
                 val errorText = safeGatewayTerminalError(payload.string("error") ?: payload.string("message"))
                 val failed = (current ?: AssistantTurn(
@@ -500,17 +1564,181 @@ internal class LiveGatewaySessionRepository(
                     atMillis = payload.timestamp(clock()),
                 )).copy(streaming = false, error = errorText)
                 cache.putEntry(durableId, failed)
+                sealReasoning(durableId, runtimeId, ToolState.Failed)
                 sealTools(durableId, runtimeId, ToolState.Failed)
                 optimisticUserByRuntime.remove(runtimeId)
-                clearProgress(durableId, runtimeId)
+                optimisticCorrectionsByRuntime.remove(runtimeId)
+                clearConnectionScopedStatus(durableId, runtimeId)
                 setStatus(durableId, SessionStatus.Idle)
                 ephemeralSessions.remove(durableId)
                 releaseRuntimeGuard(runtimeId)
                 true
             }
 
+            "clarify.request", "approval.request", "sudo.request", "secret.request" -> {
+                applyPendingInputEvent(event.type, durableId, runtimeId, payload)
+                false
+            }
+
             else -> false
         }
+    }
+
+    /** A parked answer must survive tool noise but dies with the turn. */
+    private fun hasPendingInput(runtimeId: String): Boolean =
+        mutablePendingInputs.value.keys.any { it.runtimeSessionId == runtimeId }
+
+    private fun clearPendingInputsForRuntime(runtimeId: String) {
+        val current = mutablePendingInputs.value
+        val remaining = current.filterKeys { it.runtimeSessionId != runtimeId }
+        if (remaining.size != current.size) mutablePendingInputs.value = remaining
+    }
+
+    private fun clearPendingInputsForGeneration(generation: Long) {
+        val current = mutablePendingInputs.value
+        val remaining = current.filterKeys { it.connectionGeneration == generation }
+        if (remaining.size != current.size) mutablePendingInputs.value = remaining
+    }
+
+    private fun applyPendingInputEvent(
+        type: String,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+) {
+        val kind = when (type) {
+            "clarify.request" -> PendingInputKind.Clarify
+            "approval.request" -> PendingInputKind.Approval
+            "sudo.request" -> PendingInputKind.Sudo
+            else -> PendingInputKind.Secret
+        }
+        val requestId = payload.string("request_id")?.takeIf(String::isNotBlank) ?: return
+        val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
+        val request: PendingInputRequest = when (kind) {
+            PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, payload) ?: return
+            PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, payload) ?: return
+            PendingInputKind.Sudo -> SudoPending(key, durableId, runtimeId)
+            PendingInputKind.Secret -> SecretPending(
+                key = key,
+                durableSessionId = durableId,
+                runtimeSessionId = runtimeId,
+                envVarLabel = payload.string("env_var").orEmpty().redactSafeBounded(),
+                prompt = payload.string("prompt").orEmpty().redactSafeBounded(),
+            )
+        }
+        // A newer same-kind request for this runtime supersedes the older one.
+        val next = mutablePendingInputs.value
+            .filterValues { existing ->
+                !(existing.key.kind == kind && existing.key.runtimeSessionId == runtimeId)
+            }
+            .plus(key to request)
+        mutablePendingInputs.value = next
+        setStatus(durableId, SessionStatus.NeedsInput)
+    }
+
+    private fun parseClarify(
+        key: PendingInputKey,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+    ): ClarifyPending? {
+        fun parseQuestion(obj: JsonObject): ClarifyQuestion? {
+            val qid = obj.string("question_id")?.takeIf(String::isNotBlank) ?: return null
+            val question = obj.string("question").orEmpty().redactSafeBounded()
+            if (question.isBlank()) return null
+            val choices = (obj["choices"] as? JsonArray)
+                ?.mapNotNull { it as? JsonPrimitive }
+                ?.mapNotNull { it.content }
+                ?.map { it.normalizeChoice() }
+                ?.filter(String::isNotEmpty)
+                .orEmpty()
+                .distinct()
+                .take(MAX_PENDING_CHOICES)
+            return ClarifyQuestion(qid, question, choices, obj.boolean("multi_select") == true)
+        }
+        val batch = (payload["questions"] as? JsonArray)
+            ?.mapNotNull { it as? JsonObject }
+            ?.mapNotNull(::parseQuestion)
+        if (!batch.isNullOrEmpty()) {
+            // De-duplicate qids; a collision fails closed for the whole batch.
+            val ids = batch.map { it.questionId }
+            if (ids.size != ids.distinct().size || ids.size > MAX_PENDING_QUESTIONS) return null
+            return ClarifyPending(key, durableId, runtimeId, questions = batch)
+        }
+        val question = payload.string("question").orEmpty().redactSafeBounded()
+        if (question.isBlank()) return null
+        val choices = (payload["choices"] as? JsonArray)
+            ?.mapNotNull { it as? JsonPrimitive }
+            ?.mapNotNull { it.content }
+            ?.map { it.normalizeChoice() }
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
+            .distinct()
+            .take(MAX_PENDING_CHOICES)
+        return ClarifyPending(
+            key = key,
+            durableSessionId = durableId,
+            runtimeSessionId = runtimeId,
+            question = question,
+            choices = choices,
+            multiSelect = payload.boolean("multi_select") == true,
+        )
+    }
+
+    private fun parseApproval(
+        key: PendingInputKey,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+    ): ApprovalPending? {
+        val command = listOfNotNull(
+            payload.string("command"),
+            payload.jsonString("description"),
+        ).firstOrNull { it.isNotBlank() }?.redactSafeBounded() ?: return null
+        val choices = (payload["choices"] as? JsonArray)
+            ?.mapNotNull { it as? JsonPrimitive }
+            ?.mapNotNull { it.content }
+            ?.map { it.normalizeChoice() }
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
+            .distinct()
+        // Without an offered choice list we cannot respond safely; fail closed.
+        if (choices.isEmpty()) return null
+        return ApprovalPending(
+            key = key,
+            durableSessionId = durableId,
+            runtimeSessionId = runtimeId,
+            command = command,
+            description = payload.string("description").orEmpty().redactSafeBounded(),
+            choices = choices.take(MAX_PENDING_CHOICES),
+        )
+    }
+
+    private fun projectComposerControls(
+        durableId: String,
+        payload: JsonObject,
+    ): SessionComposerControls? {
+        val hasModel = "model" in payload
+        val hasProvider = "provider" in payload
+        val hasReasoning = "reasoning_effort" in payload
+        val hasFast = "fast" in payload
+        if (!hasModel && !hasProvider && !hasReasoning && !hasFast) return null
+
+        val model = payload.string("model")?.trim().orEmpty()
+        val provider = payload.string("provider")?.trim().orEmpty()
+        return SessionComposerControls(
+            durableId = durableId,
+            selection = if ((hasModel || hasProvider) && model.isNotEmpty()) {
+                ComposerModelSelection(model = model, provider = provider)
+            } else {
+                null
+            },
+            hasSelection = hasModel || hasProvider,
+            reasoning = ReasoningEffort.fromWire(payload.string("reasoning_effort")),
+            hasReasoning = hasReasoning,
+            fast = payload.boolean("fast")?.let { if (it) FastMode.Fast else FastMode.Normal },
+            hasFast = hasFast,
+        )
     }
 
     /**
@@ -539,31 +1767,52 @@ internal class LiveGatewaySessionRepository(
         activeRuntimeIds += runtimeId
         if (unscopedRuntimeId == runtimeId) {
             unscopedTurnIsLive = true
-        } else if (unscopedRuntimeId == null && activeRuntimeIds.size == 1) {
-            unscopedRuntimeId = runtimeId
-            localSubmitStartedAtMillis = null
-            unscopedTurnIsLive = true
         }
     }
 
     /** Session-info heartbeats contain state, not a complete session row. */
-    private fun reconcileSessionInfo(durableId: String, runtimeId: String, running: Boolean?) {
+    private fun reconcileSessionInfo(
+        durableId: String,
+        runtimeId: String,
+        running: Boolean?,
+        reportedStatus: SessionStatus?,
+    ) {
         val existing = cache.session(durableId) ?: return
-        val status = when (running) {
-            true -> SessionStatus.Working
-            false -> if (unscopedRuntimeId == runtimeId) existing.status else SessionStatus.Idle
-            null -> existing.status
+        // A parked answer outranks a stale heartbeat: never repaint NeedsInput
+        // as Working while its request is still pending.
+        if (hasPendingInput(runtimeId)) {
+            setStatus(durableId, SessionStatus.NeedsInput)
+            return
         }
-        if (status != existing.status) cache.upsertSession(existing.copy(status = status))
+        val status = when (running) {
+            true -> reportedStatus?.takeIf { it != SessionStatus.Idle } ?: SessionStatus.Working
+            false -> if (unscopedRuntimeId == runtimeId) existing.status else SessionStatus.Idle
+            null -> reportedStatus ?: existing.status
+        }
+        if (status != existing.status) {
+            cache.upsertSession(
+                existing.copy(
+                    status = status,
+                    activityStartedAtMillis = if (status == SessionStatus.Working) {
+                        existing.activityStartedAtMillis ?: clock()
+                    } else {
+                        null
+                    },
+                ),
+            )
+        }
     }
 
     private fun settleStoppedRuntime(durableId: String, runtimeId: String) {
+        clearPendingInputsForRuntime(runtimeId)
         assistantByRuntime.remove(runtimeId)?.let { partial ->
             cache.putEntry(durableId, partial.copy(streaming = false, stopped = true))
         }
+        sealReasoning(durableId, runtimeId, ToolState.Stopped)
         sealTools(durableId, runtimeId, ToolState.Stopped)
         optimisticUserByRuntime.remove(runtimeId)
-        clearProgress(durableId, runtimeId)
+        optimisticCorrectionsByRuntime.remove(runtimeId)
+        clearConnectionScopedStatus(durableId, runtimeId)
         setStatus(durableId, SessionStatus.Idle)
         releaseRuntimeGuard(runtimeId)
     }
@@ -577,11 +1826,6 @@ internal class LiveGatewaySessionRepository(
     private fun releaseRuntimeGuard(runtimeId: String) {
         activeRuntimeIds.remove(runtimeId)
         if (unscopedRuntimeId == runtimeId) clearUnscopedRuntime()
-        if (unscopedRuntimeId == null && activeRuntimeIds.size == 1) {
-            unscopedRuntimeId = activeRuntimeIds.single()
-            localSubmitStartedAtMillis = null
-            unscopedTurnIsLive = true
-        }
     }
 
     private fun completeMessage(durableId: String, runtimeId: String, payload: JsonObject) {
@@ -612,6 +1856,7 @@ internal class LiveGatewaySessionRepository(
             stopped = interrupted,
         )
         cache.putEntry(durableId, completed)
+        sealReasoning(durableId, runtimeId, if (errorText != null) ToolState.Failed else ToolState.Done)
         sealTools(
             durableId,
             runtimeId,
@@ -622,7 +1867,8 @@ internal class LiveGatewaySessionRepository(
             },
         )
         optimisticUserByRuntime.remove(runtimeId)
-        clearProgress(durableId, runtimeId)
+        optimisticCorrectionsByRuntime.remove(runtimeId)
+        clearConnectionScopedStatus(durableId, runtimeId)
         setStatus(durableId, SessionStatus.Idle)
         ephemeralSessions.remove(durableId)
         releaseRuntimeGuard(runtimeId)
@@ -633,18 +1879,28 @@ internal class LiveGatewaySessionRepository(
         val explicitId = payload.string("tool_id") ?: payload.string("tool_call_id") ?: payload.string("id")
         val id = explicitId ?: tools.keys.singleOrNull() ?: "gateway-tool-${sequence.incrementAndGet()}"
         val previous = tools[id]
+        val startedAt = previous?.startedAtMillis ?: clock()
+        val elapsed = payload.primitive("duration_s")?.toDoubleOrNull()
+            ?: payload.primitive("elapsed_seconds")?.toDoubleOrNull()
+            ?: if (type == "tool.complete") (clock() - startedAt).coerceAtLeast(0) / 1_000.0 else previous?.elapsedSeconds
+            ?: 0.0
+        val toolName = payload.string("name").safeToolLabel(previous?.toolName ?: "Tool")
+        val label = (payload.string("label") ?: payload.string("name"))
+            .safeToolLabel(previous?.label ?: "Tool")
         val activity = ToolActivity(
             id = id,
-            label = payload.string("label") ?: payload.string("name") ?: previous?.label ?: "Tool",
+            label = label,
             detail = payload.toolDetail(type).ifBlank { previous?.detail.orEmpty() },
             state = when (type) {
                 "tool.complete" -> if (payload.toolFailed()) ToolState.Failed else ToolState.Done
                 else -> ToolState.Running
             },
-            elapsedSeconds = payload.primitive("duration_s")?.toDoubleOrNull()
-                ?: payload.primitive("elapsed_seconds")?.toDoubleOrNull()
-                ?: previous?.elapsedSeconds
-                ?: 0.0,
+            elapsedSeconds = elapsed,
+            toolName = toolName,
+            argsText = payload.toolInputText() ?: previous?.argsText,
+            resultText = payload["result"].safePayloadText() ?: previous?.resultText,
+            inlineDiff = payload.jsonString("inline_diff")?.safePayloadText() ?: previous?.inlineDiff,
+            startedAtMillis = startedAt,
         )
         cache.putEntry(durableId, activity)
         // Running snapshots are text-only, so completed structure stays here
@@ -652,36 +1908,133 @@ internal class LiveGatewaySessionRepository(
         tools[id] = activity
     }
 
+    private fun applyReasoning(type: String, durableId: String, runtimeId: String, payload: JsonObject) {
+        val previous = reasoningByRuntime[runtimeId]
+        val now = clock()
+        val startedAt = previous?.startedAtMillis ?: now
+        val complete = type == "reasoning.available"
+        val incoming = when (type) {
+            "reasoning.delta", "thinking.delta" -> payload.deltaText()
+            else -> payload.string("text") ?: payload.contentText()
+        }.safePayloadText().orEmpty()
+        if (incoming.isBlank() && previous == null) return
+        val activity = ReasoningActivity(
+            id = previous?.id ?: "gateway-reasoning-${sequence.incrementAndGet()}",
+            text = when {
+                complete && incoming.isNotBlank() -> incoming
+                else -> previous?.text.orEmpty() + incoming
+            },
+            state = if (complete) ToolState.Done else ToolState.Running,
+            startedAtMillis = startedAt,
+            elapsedSeconds = if (complete) (now - startedAt).coerceAtLeast(0) / 1_000.0 else 0.0,
+        )
+        cache.putEntry(durableId, activity)
+        if (complete) reasoningByRuntime.remove(runtimeId) else reasoningByRuntime[runtimeId] = activity
+    }
+
+    private fun sealReasoning(durableId: String, runtimeId: String, state: ToolState) {
+        reasoningByRuntime.remove(runtimeId)?.let { activity ->
+            cache.putEntry(
+                durableId,
+                activity.copy(
+                    state = state,
+                    elapsedSeconds = (clock() - (activity.startedAtMillis ?: clock())).coerceAtLeast(0) / 1_000.0,
+                ),
+            )
+        }
+    }
+
     private fun sealTools(durableId: String, runtimeId: String, state: ToolState) {
         toolsByRuntime.remove(runtimeId).orEmpty().values.forEach { activity ->
             cache.putEntry(
                 durableId,
-                if (activity.state == ToolState.Running) activity.copy(state = state) else activity,
+                if (activity.state == ToolState.Running) {
+                    activity.copy(
+                        state = state,
+                        elapsedSeconds = (clock() - (activity.startedAtMillis ?: clock())).coerceAtLeast(0) / 1_000.0,
+                    )
+                } else {
+                    activity
+                },
             )
         }
     }
 
     private fun setStatus(durableId: String, status: SessionStatus) {
-        cache.session(durableId)?.let { cache.upsertSession(it.copy(status = status, lastActiveAtMillis = clock())) }
+        cache.session(durableId)?.let { existing ->
+            val now = clock()
+            cache.upsertSession(
+                existing.copy(
+                    status = status,
+                    lastActiveAtMillis = now,
+                    activityStartedAtMillis = when (status) {
+                        SessionStatus.Working -> existing.activityStartedAtMillis ?: now
+                        else -> null
+                    },
+                ),
+            )
+        }
     }
 
     private fun applyStatusUpdate(durableId: String, runtimeId: String, payload: JsonObject) {
-        val kind = payload.jsonString("kind")?.trim()?.takeIf(String::isNotEmpty) ?: return
+        val kind = payload.jsonString("kind")?.trim()?.takeIf(KNOWN_STATUS_UPDATE_KINDS::contains) ?: return
         val text = payload.jsonString("text")
             ?.let(::safeGatewayStatusText)
             ?.takeIf(String::isNotEmpty)
             ?: return
         cache.session(durableId)?.let { existing ->
-            cache.upsertSession(existing.copy(progress = SessionProgress(kind.take(MAX_STATUS_KIND), text)))
+            val progress = SessionProgress(kind, text)
+            val previous = existing.composerStatus
+            val status = (previous ?: ComposerStatusState()).let { current ->
+                current.copy(
+                    genericProgress = progress,
+                    isCompacting = when (kind) {
+                        "compacting" -> true
+                        "compacted" -> false
+                        else -> current.isCompacting
+                    },
+                    goal = if (kind == "goal") parseGatewayGoalStatus(text, current.goal) else current.goal,
+                )
+            }
+            cache.upsertSession(existing.copy(progress = progress, composerStatus = status))
             progressRuntimeIds += runtimeId
+            composerStatusRuntimeIds += runtimeId
             advanceProgressEventRevision(runtimeId)
         }
     }
 
     private fun clearProgress(durableId: String, runtimeId: String) {
         progressRuntimeIds.remove(runtimeId)
-        cache.session(durableId)?.takeIf { it.progress != null }?.let {
-            cache.upsertSession(it.copy(progress = null))
+        cache.session(durableId)?.let { existing ->
+            val status = existing.composerStatus?.copy(genericProgress = null, isCompacting = false)
+            if (existing.progress != null || status != existing.composerStatus) {
+                cache.upsertSession(existing.copy(progress = null, composerStatus = status))
+            }
+        }
+    }
+
+    /** A terminal turn and a connection reset invalidate all live stack material. */
+    private fun clearConnectionScopedStatus(durableId: String, runtimeId: String) {
+        progressRuntimeIds.remove(runtimeId)
+        composerStatusRuntimeIds.remove(runtimeId)
+        cache.session(durableId)?.let { existing ->
+            if (existing.progress != null || existing.composerStatus != null) {
+                cache.upsertSession(existing.copy(progress = null, composerStatus = null))
+            }
+        }
+    }
+
+    private fun updateComposerStatus(
+        durableId: String,
+        runtimeId: String,
+        update: (ComposerStatusState) -> ComposerStatusState,
+    ) {
+        cache.session(durableId)?.let { existing ->
+            val next = update(existing.composerStatus ?: ComposerStatusState())
+            if (next != existing.composerStatus) {
+                cache.upsertSession(existing.copy(composerStatus = next))
+            }
+            composerStatusRuntimeIds += runtimeId
         }
     }
 
@@ -689,19 +2042,30 @@ internal class LiveGatewaySessionRepository(
         unscopedRuntimeId?.let(::add)
         addAll(activeRuntimeIds)
         addAll(assistantByRuntime.keys)
+        addAll(reasoningByRuntime.keys)
         addAll(toolsByRuntime.keys)
         addAll(optimisticUserByRuntime.keys)
+        addAll(optimisticCorrectionsByRuntime.keys)
         addAll(progressRuntimeIds)
+        addAll(composerStatusRuntimeIds)
     }
 
     private fun settleConnectionLoss(durableId: String, runtimeId: String) {
         assistantByRuntime[runtimeId]?.let { partial ->
             cache.putEntry(durableId, partial.copy(streaming = false))
         }
+        sealReasoning(durableId, runtimeId, ToolState.Stopped)
         sealTools(durableId, runtimeId, ToolState.Stopped)
-        clearProgress(durableId, runtimeId)
+        optimisticCorrectionsByRuntime.remove(runtimeId)
+        clearConnectionScopedStatus(durableId, runtimeId)
         cache.session(durableId)?.let { existing ->
-            cache.upsertSession(existing.copy(status = SessionStatus.Stalled, lastActiveAtMillis = clock()))
+            cache.upsertSession(
+                existing.copy(
+                    status = SessionStatus.Stalled,
+                    lastActiveAtMillis = clock(),
+                    activityStartedAtMillis = null,
+                ),
+            )
         }
     }
 
@@ -722,7 +2086,9 @@ internal class LiveGatewaySessionRepository(
 
     private fun connectionScopedInflight(runtimeId: String): List<TranscriptEntry> = buildList {
         optimisticUserByRuntime[runtimeId]?.let(::add)
+        addAll(optimisticCorrectionsByRuntime[runtimeId].orEmpty())
         assistantByRuntime[runtimeId]?.let(::add)
+        reasoningByRuntime[runtimeId]?.let(::add)
         addAll(toolsByRuntime[runtimeId].orEmpty().values)
     }
 
@@ -749,7 +2115,9 @@ internal class LiveGatewaySessionRepository(
         if (projection.running == false) return reconciled
 
         val localIsLive = runtimeId in activeRuntimeIds || localLive.any {
-            (it is AssistantTurn && it.streaming) || (it is ToolActivity && it.state == ToolState.Running)
+            (it is AssistantTurn && it.streaming) ||
+                (it is ReasoningActivity && it.state == ToolState.Running) ||
+                (it is ToolActivity && it.state == ToolState.Running)
         }
         if (!localIsLive) return reconciled
 
@@ -774,6 +2142,9 @@ internal class LiveGatewaySessionRepository(
         localLive.filterIsInstance<ToolActivity>().forEach { tool ->
             reconciled = reconciled.replaceOrAppend(tool)
         }
+        localLive.filterIsInstance<ReasoningActivity>().forEach { reasoning ->
+            reconciled = reconciled.replaceOrAppend(reasoning)
+        }
         return reconciled
     }
 
@@ -786,12 +2157,23 @@ internal class LiveGatewaySessionRepository(
     ): SessionStatus {
         val localBusy = projection.running != false && (
             runtimeId in activeRuntimeIds || hasLocalLiveEntries && reconciled.any {
-                (it is AssistantTurn && it.streaming) || (it is ToolActivity && it.state == ToolState.Running)
+                (it is AssistantTurn && it.streaming) ||
+                    (it is ReasoningActivity && it.state == ToolState.Running) ||
+                    (it is ToolActivity && it.state == ToolState.Running)
             }
         )
         val busy = !projection.retainedFailure && (projection.busy || localBusy)
 
         if (busy) {
+            if (unscopedRuntimeId == null && activeRuntimeIds.isEmpty()) {
+                // A locally requested resume/activate snapshot is the only
+                // non-submit path allowed to claim identifier-less events.
+                // Scoped events alone must never retarget that pin after a
+                // different turn has completed.
+                unscopedRuntimeId = runtimeId
+                localSubmitStartedAtMillis = null
+                unscopedTurnIsLive = true
+            }
             markRuntimeLive(runtimeId)
             projection.inflight?.user?.takeIf(String::isNotBlank)?.let { user ->
                 optimisticUserByRuntime[runtimeId] = UserTurn(
@@ -803,13 +2185,17 @@ internal class LiveGatewaySessionRepository(
             reconciled.filterIsInstance<AssistantTurn>().lastOrNull { it.streaming }?.let { assistant ->
                 assistantByRuntime[runtimeId] = assistant
             }
+            reconciled.filterIsInstance<ReasoningActivity>().lastOrNull { it.state == ToolState.Running }
+                ?.let { reasoning -> reasoningByRuntime[runtimeId] = reasoning }
             return projection.status?.takeIf { it != SessionStatus.Idle } ?: SessionStatus.Working
         }
 
         if (projection.hasAuthoritativeState) {
             assistantByRuntime.remove(runtimeId)
+            reasoningByRuntime.remove(runtimeId)
             toolsByRuntime.remove(runtimeId)
             optimisticUserByRuntime.remove(runtimeId)
+            optimisticCorrectionsByRuntime.remove(runtimeId)
             releaseRuntimeGuard(runtimeId)
             return projection.status ?: SessionStatus.Idle
         }
@@ -855,8 +2241,15 @@ internal class LiveGatewaySessionRepository(
         preserveProgress: Boolean,
     ): SessionSummary {
         val existing = cache.session(canonicalId) ?: cache.session(requestedId)
+        val activityStartedAtMillis = if (status == SessionStatus.Working) {
+            snapshot.primitive("turn_started_at")?.epochMillisOrNull()
+                ?: existing?.activityStartedAtMillis
+                ?: clock()
+        } else {
+            null
+        }
         if (!snapshotIsCurrent && existing != null) {
-            return existing.copy(id = canonicalId, status = status)
+            return existing.copy(id = canonicalId, status = status, activityStartedAtMillis = activityStartedAtMillis)
         }
         val parsed = parseSession(snapshot, clock(), canonicalId)
         return existing?.copy(
@@ -869,7 +2262,9 @@ internal class LiveGatewaySessionRepository(
             remoteProfile = snapshot.string("profile") ?: snapshot.string("profile_name") ?: existing.remoteProfile,
             status = status,
             progress = if (preserveProgress) existing.progress else null,
-        ) ?: parsed.copy(status = status)
+            composerStatus = if (preserveProgress) existing.composerStatus else null,
+            activityStartedAtMillis = activityStartedAtMillis,
+        ) ?: parsed.copy(status = status, activityStartedAtMillis = activityStartedAtMillis)
     }
 
     private fun runtimeEventRevision(runtimeId: String): RuntimeEventRevision =
@@ -883,6 +2278,24 @@ internal class LiveGatewaySessionRepository(
     private fun advanceProgressEventRevision(runtimeId: String) {
         val current = runtimeEventRevision(runtimeId)
         runtimeEventRevisions[runtimeId] = current.copy(progress = current.progress + 1)
+    }
+
+    /** `status.update/process` coalesces onto the repository event path, never a UI collector. */
+    private fun scheduleProcessRefresh(durableId: String) {
+        val launch = synchronized(stateLock) {
+            if (durableId in processRefreshesInFlight) false else {
+                processRefreshesInFlight += durableId
+                true
+            }
+        }
+        if (!launch) return
+        scope.launch {
+            try {
+                listProcesses(durableId)
+            } finally {
+                synchronized(stateLock) { processRefreshesInFlight.remove(durableId) }
+            }
+        }
     }
 
     /** Coalesce terminal pushes, but rerun once if another terminal edge lands mid-refresh. */
@@ -908,6 +2321,7 @@ internal class LiveGatewaySessionRepository(
                 }
                 if (!shouldRun) return@launch
                 runCatching { refreshSessions() }
+                if (cache.state.value.projects.available != false) runCatching { refreshProjects() }
             }
         }
     }
@@ -918,6 +2332,7 @@ internal class LiveGatewaySessionRepository(
         val generation: Long,
         val ephemeralDurableIds: List<String>,
         val reconnectDurableIds: List<String>,
+        val clearProjects: Boolean,
     )
     private data class SessionBinding(val durableId: String, val runtimeId: String)
     private data class OptimisticSubmit(
@@ -938,6 +2353,90 @@ internal fun safeGatewayTerminalError(raw: String?): String {
 internal fun safeGatewayStatusText(raw: String): String =
     redact(raw).replace(STATUS_WHITESPACE, " ").trim().take(MAX_STATUS_TEXT)
 
+/** Parse only documented `process.list` rows and keep every display field safe and bounded. */
+internal fun parseGatewayProcesses(root: JsonObject): List<ComposerBackgroundProcess>? {
+    val rawProcesses = root["processes"] as? JsonArray ?: return null
+    return rawProcesses.map { element ->
+        val process = element as? JsonObject ?: return null
+        val id = process.jsonString("session_id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: process.jsonString("process_id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: return null
+        val exitCode = process.primitive("exit_code")?.toIntOrNull()
+        val rawStatus = process.jsonString("status")?.lowercase()
+        val state = when {
+            rawStatus in PROCESS_FAILURE_STATUSES -> ComposerBackgroundProcessState.Failed
+            rawStatus == "exited" && exitCode != null && exitCode != 0 -> ComposerBackgroundProcessState.Failed
+            rawStatus == "exited" || rawStatus in PROCESS_DONE_STATUSES -> ComposerBackgroundProcessState.Done
+            else -> ComposerBackgroundProcessState.Running
+        }
+        ComposerBackgroundProcess(
+            id = id,
+            title = safeGatewayStatusText(process.jsonString("command").orEmpty().lineSequence().firstOrNull().orEmpty())
+                .ifBlank { "background process" },
+            state = state,
+            exitCode = exitCode,
+            output = process.jsonString("output_tail")?.let(::safeGatewayStatusText),
+        )
+    }
+}
+
+/**
+ * The Gateway returns goal status as text. Preserve the redacted text even
+ * when a newer server format cannot be recognized; `Unknown` is intentionally
+ * neutral rather than a fabricated active goal.
+ */
+internal fun parseGatewayGoalStatus(
+    rawText: String,
+    previous: ComposerGoalStatus?,
+): ComposerGoalStatus {
+    val text = safeGatewayStatusText(rawText)
+    val line = text.substringBefore('\n').trim()
+    fun match(pattern: Regex): String? = pattern.matchEntire(line)?.groupValues?.getOrNull(1)?.trim()
+        ?.takeIf(String::isNotEmpty)
+    if (line.matches(NO_GOAL_STATUS)) {
+        return ComposerGoalStatus(text, ComposerGoalState.None)
+    }
+    match(GOAL_SET_STATUS)?.let { return ComposerGoalStatus(text, ComposerGoalState.Active, title = it) }
+    match(GOAL_ACTIVE_STATUS)?.let { return ComposerGoalStatus(text, ComposerGoalState.Active, title = it) }
+    match(GOAL_RESUMED_STATUS)?.let { return ComposerGoalStatus(text, ComposerGoalState.Active, title = it) }
+    match(GOAL_WAITING_STATUS)?.let { return ComposerGoalStatus(text, ComposerGoalState.Waiting, title = it) }
+    match(GOAL_PAUSED_STATUS)?.let { return ComposerGoalStatus(text, ComposerGoalState.Paused, title = it) }
+    match(GOAL_DONE_STATUS)?.let { return ComposerGoalStatus(text, ComposerGoalState.Done, title = it) }
+
+    val priorTitle = previous?.title ?: "Standing goal"
+    return when {
+        CONTINUING_GOAL_STATUS.containsMatchIn(line) -> ComposerGoalStatus(
+            text,
+            ComposerGoalState.Active,
+            title = priorTitle,
+            detail = line.removePrefix("↻").trim(),
+        )
+
+        PARKED_GOAL_STATUS.containsMatchIn(line) -> ComposerGoalStatus(
+            text,
+            ComposerGoalState.Waiting,
+            title = priorTitle,
+            detail = line.removePrefix("⏳").trim(),
+        )
+
+        PAUSED_GOAL_NOTICE.containsMatchIn(line) -> ComposerGoalStatus(
+            text,
+            ComposerGoalState.Paused,
+            title = priorTitle,
+            detail = line.removePrefix("⏸").trim(),
+        )
+
+        ACHIEVED_GOAL_STATUS.containsMatchIn(line) -> ComposerGoalStatus(
+            text,
+            ComposerGoalState.Done,
+            title = priorTitle,
+            detail = line.removePrefix("✓").trim(),
+        )
+
+        else -> ComposerGoalStatus(text, ComposerGoalState.Unknown)
+    }
+}
+
 internal fun parseSessionList(result: JsonElement, nowMillis: Long): List<SessionSummary> {
     val root = result.asObject("session.list")
     val sessions = root["sessions"] as? JsonArray
@@ -949,6 +2448,144 @@ internal fun parseSessionList(result: JsonElement, nowMillis: Long): List<Sessio
     }
 }
 
+/** Parses the documented model.options payload without inventing catalog rows. */
+internal fun parseModelCatalog(result: JsonElement): ModelCatalog {
+    val root = result.asObject("model.options")
+    val selectedModel = root.string("model")?.trim().orEmpty()
+    val selectedProvider = root.string("provider")?.trim().orEmpty()
+    val providers = (root["providers"] as? JsonArray).orEmpty().mapNotNull { providerElement ->
+        val provider = providerElement as? JsonObject ?: return@mapNotNull null
+        val id = provider.string("slug")?.trim()?.takeIf(String::isNotEmpty)
+            ?: provider.string("id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: return@mapNotNull null
+        val capabilities = provider["capabilities"] as? JsonObject
+        val models = (provider["models"] as? JsonArray).orEmpty().mapNotNull { modelElement ->
+            val model = when (modelElement) {
+                is JsonPrimitive -> if (modelElement is JsonNull) "" else modelElement.content.trim()
+                is JsonObject -> (modelElement.string("id") ?: modelElement.string("model")).orEmpty().trim()
+                else -> ""
+            }
+            if (model.isBlank()) return@mapNotNull null
+            val capability = capabilities?.get(model) as? JsonObject
+            ModelOption(
+                id = model,
+                label = (modelElement as? JsonObject)?.string("label")?.takeIf(String::isNotBlank) ?: model,
+                supportsReasoning = capability?.boolean("reasoning") ?: true,
+                supportsFast = capability?.boolean("fast") ?: false,
+            )
+        }
+        ModelProvider(
+            id = id,
+            label = provider.string("name")?.trim()?.takeIf(String::isNotEmpty) ?: id,
+            models = models,
+        )
+    }
+    return ModelCatalog(
+        providers = providers,
+        effectiveSelection = selectedModel.takeIf(String::isNotEmpty)?.let {
+            ComposerModelSelection(it, selectedProvider)
+        },
+    )
+}
+
+internal fun parseCompletionResult(result: JsonElement, method: String): CompletionResult {
+    val root = result.asObject(method)
+    val items = (root["items"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val item = element as? JsonObject ?: return@mapNotNull null
+        val text = item.string("text")?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+        CompletionItem(
+            text = text,
+            display = item.string("display")?.takeIf(String::isNotEmpty) ?: text,
+            detail = item.string("meta").orEmpty(),
+            kind = item.string("kind").orEmpty(),
+        )
+    }
+    return CompletionResult(
+        items = items,
+        replaceFrom = root.primitive("replace_from")?.toIntOrNull(),
+    )
+}
+
+private fun Throwable.isLegacyBusyModelRefusal(): Boolean =
+    this is GatewayRpcError && code == 4009
+
+private fun controlFailureMessage(key: String): String = when (key) {
+    "model" -> "Hermes could not switch the model. Try again."
+    "reasoning" -> "Hermes could not change reasoning. Try again."
+    "fast" -> "Fast mode is not available for this model. Choose another mode or model."
+    else -> "Hermes could not update this control. Try again."
+}
+
+internal data class ProjectOverviewPayload(
+    val projects: List<ProjectSummary>,
+    val activeProjectId: String?,
+)
+
+internal data class ProjectDetailsPayload(
+    val project: ProjectSummary,
+    val sessions: List<SessionSummary>,
+)
+
+/** Parse only the backend-authored project tree; Android never infers membership from paths. */
+internal fun parseProjectOverview(result: JsonElement, nowMillis: Long): ProjectOverviewPayload {
+    val root = result.asObject("projects.tree")
+    val projects = root["projects"] as? JsonArray
+        ?: throw GatewayRpcException("Hermes returned a malformed project list.")
+    return ProjectOverviewPayload(
+        projects = projects.map { element ->
+            parseProject(element as? JsonObject
+                ?: throw GatewayRpcException("Hermes returned a malformed project row."), nowMillis)
+        },
+        activeProjectId = root.string("active_id"),
+    )
+}
+
+internal fun parseProjectDetails(result: JsonElement, nowMillis: Long): ProjectDetailsPayload {
+    val root = result.asObject("projects.project_sessions")
+    val projectRoot = root["project"] as? JsonObject
+        ?: throw GatewayRpcException("This project is no longer available.")
+    val sessions = linkedMapOf<String, SessionSummary>()
+    (projectRoot["repos"] as? JsonArray).orEmpty().forEach { repoElement ->
+        val repo = repoElement as? JsonObject
+            ?: throw GatewayRpcException("Hermes returned a malformed project repository.")
+        (repo["groups"] as? JsonArray).orEmpty().forEach { groupElement ->
+            val group = groupElement as? JsonObject
+                ?: throw GatewayRpcException("Hermes returned a malformed project lane.")
+            (group["sessions"] as? JsonArray).orEmpty().forEach { sessionElement ->
+                val session = parseSession(
+                    sessionElement as? JsonObject
+                        ?: throw GatewayRpcException("Hermes returned a malformed project session."),
+                    nowMillis,
+                )
+                sessions.putIfAbsent(session.id, session)
+            }
+        }
+    }
+    return ProjectDetailsPayload(parseProject(projectRoot, nowMillis), sessions.values.toList())
+}
+
+private fun parseProject(root: JsonObject, nowMillis: Long): ProjectSummary {
+    val id = root.string("id")?.takeIf(String::isNotBlank)
+        ?: throw GatewayRpcException("Hermes returned a project without an id.")
+    val previews = (root["previewSessions"] as? JsonArray).orEmpty().map { element ->
+        parseSession(
+            element as? JsonObject
+                ?: throw GatewayRpcException("Hermes returned a malformed project preview."),
+            nowMillis,
+        )
+    }
+    return ProjectSummary(
+        id = id,
+        label = root.string("label")?.ifBlank { id } ?: id,
+        path = root.string("path")?.takeIf(String::isNotBlank),
+        isAuto = root.boolean("isAuto") == true,
+        isHome = root.boolean("isNoProject") == true,
+        sessionCount = root.primitive("sessionCount")?.toIntOrNull() ?: previews.size,
+        lastActiveAtMillis = root.primitive("lastActive")?.epochMillisOrNull() ?: 0,
+        previewSessions = previews,
+    )
+}
+
 internal fun parseHistory(result: JsonElement, runtimeId: String, nowMillis: Long): List<TranscriptEntry> {
     val root = result.asObject("session.history")
     val messages = root["messages"] as? JsonArray
@@ -956,24 +2593,52 @@ internal fun parseHistory(result: JsonElement, runtimeId: String, nowMillis: Lon
     return parseMessages(messages, runtimeId, nowMillis)
 }
 
-private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Long): List<TranscriptEntry> =
-    messages.mapIndexedNotNull { index, element ->
-        val message = element as? JsonObject ?: return@mapIndexedNotNull null
+private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Long): List<TranscriptEntry> = buildList {
+    messages.forEachIndexed { index, element ->
+        val message = element as? JsonObject ?: return@forEachIndexed
         val id = message.messageId() ?: "$runtimeId-history-$index"
         val time = message.timestamp(nowMillis)
         when (message.string("role")) {
-            "user" -> UserTurn(id, message.contentText(), time)
-            "assistant" -> AssistantTurn(id, message.contentText(), time)
-            "tool" -> ToolActivity(
-                id = id,
-                label = message.string("name") ?: "Tool",
-                detail = (message.string("context") ?: message.contentText()).take(MAX_TOOL_DETAIL),
-                state = ToolState.Done,
-            )
+            "user" -> add(UserTurn(id, message.answerText(), time))
+            "assistant" -> {
+                val reasoning = message.reasoningText()
+                reasoning.takeIf(String::isNotBlank)?.let {
+                    add(
+                        ReasoningActivity(
+                            id = "$id-reasoning",
+                            text = it.safePayloadText().orEmpty(),
+                            state = ToolState.Done,
+                            elapsedSeconds = message.durationSeconds(),
+                        ),
+                    )
+                }
+                val answer = message.answerText()
+                if (answer.isNotBlank()) {
+                    add(AssistantTurn(id, answer, time))
+                }
+            }
 
-            else -> null
+            "tool" -> {
+                val name = message.string("name").safeToolLabel("Tool")
+                add(
+                    ToolActivity(
+                        id = id,
+                        label = name,
+                        detail = (message.string("context") ?: message.contentText())
+                            .safeDisplayText(MAX_TOOL_DETAIL)
+                            .orEmpty(),
+                        state = if (message.toolFailed()) ToolState.Failed else ToolState.Done,
+                        elapsedSeconds = message.durationSeconds(),
+                        toolName = name,
+                        argsText = message.toolInputText(),
+                        resultText = message["result"].safePayloadText() ?: message["content"].safePayloadText(),
+                        inlineDiff = message.jsonString("inline_diff")?.safePayloadText(),
+                    ),
+                )
+            }
         }
     }
+}
 
 internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: String? = null): SessionSummary {
     val id = authoritativeId ?: root.string("id")
@@ -991,6 +2656,26 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
 
 private fun JsonElement.asObject(method: String): JsonObject = this as? JsonObject
     ?: throw GatewayRpcException("Hermes returned malformed data for $method.")
+
+private fun Throwable.isMissingProjectsMethod(): Boolean =
+    this is GatewayRpcError && (
+        code == MISSING_RPC_METHOD_CODE ||
+            message.contains("unknown method", ignoreCase = true) ||
+            message.contains("method not found", ignoreCase = true)
+        )
+
+private fun Throwable.isUnsupportedGatewayCapability(): Boolean =
+    this is GatewayRpcError && (
+        code == MISSING_RPC_METHOD_CODE ||
+            code == UNSUPPORTED_CAPABILITY_CODE ||
+            message.contains("unknown method", ignoreCase = true) ||
+            message.contains("method not found", ignoreCase = true) ||
+            message.contains("does not support", ignoreCase = true) ||
+            message.contains("unsupported", ignoreCase = true)
+        )
+
+private fun Throwable.isAmbiguousGatewayMutation(): Boolean =
+    this is GatewayRpcException && requestMayHaveBeenAccepted
 
 private fun objectParams(name: String, value: String): JsonObject =
     buildJsonObject { put(name, JsonPrimitive(value)) }
@@ -1019,6 +2704,64 @@ private fun JsonObject.contentText(): String = when (val content = this["content
     is JsonObject -> content.string("text") ?: content.string("content") ?: ""
 }
 
+private fun JsonObject.reasoningText(): String {
+    string("reasoning")?.let { return it }
+    string("reasoning_content")?.let { return it }
+    string("reasoning_details")?.let { return it }
+    val content = this["content"] as? JsonArray ?: return ""
+    return content.mapNotNull { item ->
+        val part = item as? JsonObject ?: return@mapNotNull null
+        val type = part.string("type")?.lowercase()
+        if (type !in REASONING_CONTENT_TYPES) return@mapNotNull null
+        part.string("text") ?: part.string("content")
+    }.joinToString("")
+}
+
+private fun JsonObject.answerText(): String {
+    val content = this["content"] as? JsonArray ?: return contentText()
+    return content.mapNotNull { item ->
+        when (item) {
+            is JsonPrimitive -> item.content
+            is JsonObject -> {
+                val type = item.string("type")?.lowercase()
+                if (type in REASONING_CONTENT_TYPES) null else item.string("text") ?: item.string("content")
+            }
+
+            else -> null
+        }
+    }.joinToString("")
+}
+
+private fun JsonObject.durationSeconds(): Double =
+    primitive("duration_s")?.toDoubleOrNull()
+        ?: primitive("elapsed_seconds")?.toDoubleOrNull()
+        ?: 0.0
+
+private fun JsonElement?.safePayloadText(): String? =
+    displayText().safeDisplayText(MAX_TOOL_PAYLOAD)
+
+private fun String?.safeDisplayText(limit: Int): String? = this
+    ?.let(::redact)
+    ?.take(limit)
+    ?.takeIf(String::isNotBlank)
+
+private fun String?.safePayloadText(): String? = safeDisplayText(MAX_TOOL_PAYLOAD)
+
+private fun String?.safeToolLabel(fallback: String): String =
+    safeDisplayText(MAX_TOOL_LABEL) ?: fallback
+
+/** Redacted, bounded, single-line text for pending-input display fields. */
+private fun String.redactSafeBounded(limit: Int = MAX_PENDING_TEXT): String =
+    redact(this).replace(STATUS_WHITESPACE, " ").trim().take(limit)
+
+private fun String.normalizeChoice(): String = redactSafeBounded(MAX_PENDING_CHOICE)
+
+private fun JsonObject.toolInputText(): String? =
+    this["args"].safePayloadText()
+        ?: this["arguments"].safePayloadText()
+        ?: this["input"].safePayloadText()
+        ?: string("args_text")?.safePayloadText()
+
 private fun JsonObject.toolDetail(type: String): String {
     val result = this["result"].displayText()
     val detail = if (type == "tool.complete") {
@@ -1026,7 +2769,7 @@ private fun JsonObject.toolDetail(type: String): String {
     } else {
         string("context") ?: string("summary") ?: string("preview") ?: string("message") ?: result.orEmpty()
     }
-    return detail.take(MAX_TOOL_DETAIL)
+    return detail.safeDisplayText(MAX_TOOL_DETAIL).orEmpty()
 }
 
 private fun JsonObject.toolFailed(): Boolean {
@@ -1207,6 +2950,7 @@ private fun List<TranscriptEntry>.openUserRunContains(text: String): Boolean {
         when (entry) {
             is UserTurn -> if (entry.text.normalizedTranscriptText() == normalized) return true
             is AssistantTurn -> if (!entry.streaming) return false
+            is ReasoningActivity -> Unit
             is ToolActivity -> Unit
         }
     }
@@ -1249,14 +2993,34 @@ private fun String.epochMillisOrNull(): Long? {
 }
 
 private const val MAX_TOOL_DETAIL = 4_096
+private const val MAX_TOOL_PAYLOAD = 32_768
+private const val MAX_TOOL_LABEL = 256
+private const val MAX_PENDING_TEXT = 1_024
+private const val MAX_PENDING_CHOICE = 240
+private const val MAX_PENDING_CHOICES = 12
+private const val MAX_PENDING_QUESTIONS = 20
+private const val PROJECT_PREVIEW_LIMIT = 3
+private const val MISSING_RPC_METHOD_CODE = -32601
+private const val UNSUPPORTED_CAPABILITY_CODE = 4010
 private const val MAX_GATEWAY_ERROR_CLASSIFICATION_CHARS = 4_096
-private const val MAX_STATUS_KIND = 64
 private const val MAX_STATUS_TEXT = 240
 private const val RECONCILIATION_FAILED_KIND = "reconcile_failed"
 private const val RECONCILIATION_FAILED_TEXT =
     "This turn could not be checked. Reconnect to the Gateway, then reopen the session."
 private const val PRE_START_FALSE_SETTLE_GRACE_MILLIS = 15_000L
 private val STATUS_WHITESPACE = Regex("\\s+")
+private val KNOWN_STATUS_UPDATE_KINDS = setOf("compacting", "compacted", "process", "goal", "progress", "thinking")
+private val NO_GOAL_STATUS = Regex("^(?:No active goal|No goal (?:set|to resume)|✓ Goal cleared)\\b.*", RegexOption.IGNORE_CASE)
+private val GOAL_SET_STATUS = Regex("^⊙ Goal set(?:\\s*\\([^)]*\\))?:\\s*(.+)$")
+private val GOAL_ACTIVE_STATUS = Regex("^⊙ Goal\\s*\\([^)]*active[^)]*\\):\\s*(.+)$", RegexOption.IGNORE_CASE)
+private val GOAL_RESUMED_STATUS = Regex("^▶ Goal resumed:\\s*(.+)$")
+private val GOAL_WAITING_STATUS = Regex("^⏳ Goal\\s*\\([^)]*(?:parked|active)[^)]*\\):\\s*(.+)$", RegexOption.IGNORE_CASE)
+private val GOAL_PAUSED_STATUS = Regex("^⏸ Goal(?:\\s*\\([^)]*\\)| paused)?:\\s*(.+)$", RegexOption.IGNORE_CASE)
+private val GOAL_DONE_STATUS = Regex("^✓ Goal done\\s*\\([^)]*\\):\\s*(.+)$", RegexOption.IGNORE_CASE)
+private val CONTINUING_GOAL_STATUS = Regex("^↻ Continuing toward goal\\b", RegexOption.IGNORE_CASE)
+private val PARKED_GOAL_STATUS = Regex("^⏳ Goal parked\\b", RegexOption.IGNORE_CASE)
+private val PAUSED_GOAL_NOTICE = Regex("^⏸ Goal paused\\b", RegexOption.IGNORE_CASE)
+private val ACHIEVED_GOAL_STATUS = Regex("^✓ Goal achieved\\b", RegexOption.IGNORE_CASE)
 private val RESUMED_BUSY_STATUSES = setOf(
     SessionStatus.Working,
     SessionStatus.Stalled,
@@ -1268,6 +3032,9 @@ private val LIVE_RUNTIME_EVENT_TYPES = setOf(
     "message.start",
     "message.delta",
     "message.complete",
+    "reasoning.delta",
+    "reasoning.available",
+    "thinking.delta",
     "tool.start",
     "tool.progress",
     "tool.complete",
@@ -1275,5 +3042,8 @@ private val LIVE_RUNTIME_EVENT_TYPES = setOf(
 )
 private val EPOCH_SECONDS_CUTOFF = BigDecimal("10000000000")
 private val TOOL_FAILURE_STATUSES = setOf("timeout", "error", "failed", "failure")
+private val PROCESS_FAILURE_STATUSES = setOf("failed", "failure", "error")
+private val PROCESS_DONE_STATUSES = setOf("done", "complete", "completed", "killed", "stopped")
+private val REASONING_CONTENT_TYPES = setOf("reasoning", "reasoning_text", "thinking")
 private val FALSEY_SIGNAL_STRINGS = setOf("", "0", "false", "none", "null")
 private val REMOTE_STORAGE_ERROR_MARKERS = setOf("disk full", "no space left on device", "errno 28")

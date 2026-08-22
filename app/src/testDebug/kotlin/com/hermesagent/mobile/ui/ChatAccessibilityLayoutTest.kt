@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
@@ -59,13 +60,21 @@ class ChatAccessibilityLayoutTest {
     }
 
     @Test
+    fun `a streaming assistant turn announces once without reading deltas`() {
+        launch(transcript = listOf(AssistantTurn("a1", "partial reply", NOW, streaming = true)))
+
+        compose.onNodeWithContentDescription("Hermes started replying").assertIsDisplayed()
+        assertEquals(1, compose.nodesWithContentDescription("Hermes started replying").size)
+    }
+
+    @Test
     fun `wide chat uses the persistent rail and respects navigation insets`() {
         launch(
             sessionRows = listOf(SessionListRow.Row(activeSession())),
             wideRailInsets = { WindowInsets(bottom = WIDE_RAIL_INSET_PX) },
         )
 
-        val sessions = compose.onNodeWithText("Sessions").fetchSemanticsNode()
+        val sessions = compose.onNodeWithText("SESSIONS").fetchSemanticsNode()
         val newSession = compose.onNodeWithContentDescription("New session").fetchSemanticsNode()
 
         // The controls are in the rail, left of the 300dp content

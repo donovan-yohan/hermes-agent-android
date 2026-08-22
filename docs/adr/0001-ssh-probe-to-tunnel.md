@@ -20,6 +20,10 @@ Phase 2 needs the authenticated connection to outlive one command.
 
 ## Decision
 
+This is now the explicit **Managed SSH** route. It is not the default topology
+for Desktop plus Mobile; ADR 0002 defines the host-owned shared Gateway route.
+No two app-owned servers may target the same effective `HERMES_HOME`.
+
 Extend the existing internal `SshTransport` with only the capabilities consumed
 by the vertical slice:
 

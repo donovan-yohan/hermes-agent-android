@@ -18,9 +18,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.gateway.GatewayConnectResult
+import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.FakeSshProbe
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.ProbeResult
@@ -28,9 +31,11 @@ import com.hermesagent.mobile.data.ssh.SshCredential
 import com.hermesagent.mobile.data.ssh.SshProbe
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatUiState
+import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -255,10 +260,12 @@ class SshLifecycleJourneyTest {
 
             HermesApp(
                 chatState = ChatUiState(),
+                gatewayState = GatewaySettingsUiState(mode = GatewayConnectionMode.Ssh),
                 sshState = state,
                 appearance = AppearanceSelection(),
                 chatActions = ChatActions(),
                 appearanceActions = AppearanceActions(),
+                gatewayActions = GatewayActions(),
                 sshActions = SshActions(
                     onDestinationChange = viewModel::setDestination,
                     onRemoteProfileChange = viewModel::setRemoteHermesProfile,
@@ -378,6 +385,13 @@ class SshLifecycleJourneyTest {
             mutableState.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
             return GatewayConnectResult.Connected
         }
+
+        override suspend fun connectRemote(
+            profile: RemoteGatewayProfile,
+            browser: GatewayBrowserLauncher,
+        ): GatewayConnectResult = GatewayConnectResult.Failed(null, "not used")
+
+        override suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile) = Unit
 
         override suspend fun disconnect() {
             disconnectCalls++

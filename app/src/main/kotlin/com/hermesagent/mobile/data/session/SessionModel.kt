@@ -54,12 +54,75 @@ data class SessionSummary(
     val status: SessionStatus = SessionStatus.Idle,
     /** Latest coalesced Gateway `status.update` (`{kind,text}`), if useful. */
     val progress: SessionProgress? = null,
+    /**
+     * Connection-scoped composer material projected from the live Gateway.
+     * It is deliberately separate from transcript truth and is cleared when
+     * the live turn or Gateway connection settles.
+     */
+    val composerStatus: ComposerStatusState? = null,
+    /** Client-observed start of the current live turn, used only for its visible timer. */
+    val activityStartedAtMillis: Long? = null,
 )
 
 /** A transient backend progress notice; one value per session, never a transcript row. */
 data class SessionProgress(
     val kind: String,
     val text: String,
+)
+
+/**
+ * Live, session-scoped status material for the composer stack. Gateway status
+ * is not transcript content and none of these rows are persisted as local
+ * user state.
+ */
+data class ComposerStatusState(
+    val goal: ComposerGoalStatus? = null,
+    val todos: List<ComposerTodoStatus> = emptyList(),
+    val subagents: List<ComposerSubagentStatus> = emptyList(),
+    val backgroundProcesses: List<ComposerBackgroundProcess> = emptyList(),
+    val previewArtifacts: List<ComposerPreviewArtifact> = emptyList(),
+    val genericProgress: SessionProgress? = null,
+    val isCompacting: Boolean = false,
+)
+
+enum class ComposerGoalState { Active, Waiting, Paused, Done, None, Unknown }
+
+/** Safe, bounded raw Gateway text plus the deliberately conservative parser result. */
+data class ComposerGoalStatus(
+    val rawText: String,
+    val state: ComposerGoalState,
+    val title: String? = null,
+    val detail: String? = null,
+)
+
+enum class ComposerTodoState { Pending, InProgress, Completed, Cancelled, Unknown }
+
+data class ComposerTodoStatus(
+    val id: String,
+    val title: String,
+    val state: ComposerTodoState,
+)
+
+data class ComposerSubagentStatus(
+    val id: String,
+    val title: String,
+    val currentTool: String? = null,
+)
+
+enum class ComposerBackgroundProcessState { Running, Done, Failed }
+
+data class ComposerBackgroundProcess(
+    val id: String,
+    val title: String,
+    val state: ComposerBackgroundProcessState,
+    val exitCode: Int? = null,
+    val output: String? = null,
+)
+
+data class ComposerPreviewArtifact(
+    val id: String,
+    val title: String,
+    val detail: String? = null,
 )
 
 /** One block in a transcript. */
@@ -85,6 +148,15 @@ data class AssistantTurn(
     val stopped: Boolean = false,
 ) : TranscriptEntry
 
+/** Provider reasoning, kept separate from answer prose like Desktop's reasoning disclosure. */
+data class ReasoningActivity(
+    override val id: String,
+    val text: String,
+    val state: ToolState,
+    val startedAtMillis: Long? = null,
+    val elapsedSeconds: Double = 0.0,
+) : TranscriptEntry
+
 /** A tool run, rendered as scaffolding rather than as a message. */
 data class ToolActivity(
     override val id: String,
@@ -92,6 +164,11 @@ data class ToolActivity(
     val detail: String,
     val state: ToolState,
     val elapsedSeconds: Double = 0.0,
+    val toolName: String = label,
+    val argsText: String? = null,
+    val resultText: String? = null,
+    val inlineDiff: String? = null,
+    val startedAtMillis: Long? = null,
 ) : TranscriptEntry
 
 enum class ToolState { Running, Done, Failed, Stopped }

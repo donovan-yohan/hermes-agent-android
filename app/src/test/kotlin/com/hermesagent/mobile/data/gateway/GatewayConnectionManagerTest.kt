@@ -298,6 +298,24 @@ class GatewayConnectionManagerTest {
         assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
     }
 
+    @Test
+    fun `managed ssh asks for reconnect after network recovery`() = runTest {
+        val transport = LifecycleTransport()
+        val manager = manager(transport, RecordingVerifier(), ReadinessRpc(), managerScope = this)
+        assertTrue(manager.connect(profile(), SshCredential.none()) is GatewayConnectResult.Connected)
+
+        manager.networkAvailabilityChanged(false)
+        runCurrent()
+        assertEquals("Waiting for a network connection.", manager.state.value.message)
+        transport.closedSignal.await()
+
+        manager.networkAvailabilityChanged(true)
+        runCurrent()
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals("The network changed. Reconnect to the Gateway.", manager.state.value.message)
+        manager.disconnect()
+    }
+
     private fun kotlinx.coroutines.test.TestScope.manager(
         transport: LifecycleTransport,
         verifier: RecordingVerifier,
@@ -375,6 +393,7 @@ class GatewayConnectionManagerTest {
         val forward = RecordingForward(bindAddress)
         val commands = mutableListOf<String>()
         var closed = false
+        val closedSignal = CompletableDeferred<Unit>()
         private var lock: JsonObject? = null
         private var termSent = false
 
@@ -432,6 +451,7 @@ class GatewayConnectionManagerTest {
         override fun close() {
             forward.close()
             closed = true
+            closedSignal.complete(Unit)
         }
 
         fun lastLock(): JsonObject = checkNotNull(lock)

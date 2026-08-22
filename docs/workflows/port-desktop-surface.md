@@ -47,6 +47,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Tool scaffolding | `apps/desktop/src/components/chat/scaffold-row.tsx` | One colour and one size for every "what the agent did" line |
 | Inline widget | `apps/desktop/src/components/chat/widget-shell.ts:12` | Shared radius, mode-derived fill, **no border** |
 | Session status | `apps/desktop/src/app/chat/session-status-dot.tsx:22-77` | Six states; colour + fill/hollow, never motion |
+| Transcript tail and jump control | `apps/desktop/src/components/assistant-ui/thread/list.tsx:389-398,651-680`; `apps/desktop/src/app/chat/scroll-to-bottom-button.tsx` | Open at the newest content, follow only while parked there, and expose one floating return action after the reader scrolls away |
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
 | Project catalog and selection | `apps/desktop/src/store/projects.ts`; `apps/desktop/src/app/chat/sidebar/index.tsx` | Backend-authored project identity, active project, overview vs drill-in navigation |
@@ -54,6 +55,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Project Gateway RPCs | `tui_gateway/project_tree.py`; `tui_gateway/methods_config.py` | `projects.tree` overview and complete `projects.project_sessions` membership snapshots |
 | Sidebar section header | `apps/desktop/src/app/shell/sidebar-label.tsx`; `apps/desktop/src/app/chat/sidebar/sessions-section.tsx:55-93` | Uppercase accent label, tracking, dither mark, header rhythm and trailing action cluster |
 | Sidebar header actions | `apps/desktop/src/app/chat/sidebar/index.tsx:245-255,1696-1777`; `apps/desktop/src/app/chat/sidebar/filter-menu.tsx:205-223` | Add-before-filter order, Codicon glyphs, 12px visual size, hover vs always-visible navigation treatment |
+| Sidebar grouping selector | `apps/desktop/src/app/chat/sidebar/filter-menu.tsx:74-79,226-246`; `apps/desktop/src/store/layout.ts:217-294,359-362,577-608`; `layout-sidebar-view.test.ts:21-78` | "Updated" is the persisted default; "Project" switches the same catalog into the project tree and leaving it restores the time-grouped list |
 | Project creation | `apps/desktop/src/app/chat/sidebar/project-dialog.tsx`; `apps/desktop/src/store/projects.ts:898-960` | New Project owns name + folder input and calls `projects.create`; the header plus is not New Session in overview mode |
 | SSH mechanics | `apps/desktop/electron/ssh-connection.ts:130-157,324-374` | `redactSecrets`, error classification, host-key change detection |
 | Remote lifecycle | `apps/desktop/electron/remote-lifecycle.ts`, `remote-lifecycle.test.ts`; `hermes_cli/main.py:510-518,664-689,10947-11021`; `hermes_cli/profiles.py:2458-2492` | Login-shell discovery, explicit default/named profile home resolution, OS-home-only token allowlist, exact ownership lock, exclusive/no-follow token upload, spawn-failure cleanup, and bounded TERM proof |
@@ -64,6 +66,13 @@ disagree, the component is the current contract and the doc is a bug.
 | Web client | `web/src/lib/gatewayClient.ts` | WebSocket auth, correlation, close and event handling |
 | Gateway HTTP/WS | `hermes_cli/web_server.py` | `/api/health`, `/api/ssh/ownership`, public index token injection, and `/api/ws` authentication |
 | Sessions and prompts | `tui_gateway/server.py` plus its tests | Durable/runtime identity, session methods, `prompt.submit`, event payloads |
+| Composer contract | `apps/desktop/src/app/chat/composer/index.tsx:880-1085`, `controls.tsx:42-390`, `attachments.tsx:18-233`, `model-pill.tsx:26-173` | Editor, send/stop/queue, attachment and model visual/functional boundaries |
+| Composer state seams | `apps/desktop/src/app/chat/composer/hooks/use-composer-{submit,draft,queue,esc-cancel,voice}.ts` and their tests | Submit acknowledgement, draft identity, parked turns, queue, safe cancel and voice lifecycle |
+| Composer correction/status authority | `apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts`, `apps/desktop/src/app/chat/composer/status-stack/`, `apps/desktop/src/lib/desktop-git.ts` | Redirect is distinct from steer; queue ownership is durable-session local; Desktop remote coding uses its authenticated `/api/git` facade, which is not an Android Gateway authority |
+| Composer completions/status | `apps/desktop/src/app/chat/composer/{completion-drawer,context-menu,contrib,status-stack}/` plus tests | Context actions, all completion providers, contribution gaps and status stack states |
+| Composer model authority | `apps/desktop/src/app/chat/composer/model-pill.tsx:26-173`; `apps/desktop/src/app/session/hooks/use-model-controls.ts:238-286`; `apps/desktop/src/store/session.ts:20-29,616-620` | Catalog/effective state is Gateway truth; a fresh-draft pin is scoped local state, while live deferred model changes remain next-turn intent until `session.info` confirms |
+| Composer completion authority | `apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts:24-153`; `apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts:61-250`; `apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts:16-214`; `apps/desktop/src/app/chat/composer/url-refs.ts:1-103`; `apps/desktop/src/app/chat/composer/path-refs.ts:1-103` | Fence async results by trigger, text, runtime/cwd and generation; serialize URL/path/session references as canonical text before considering rich chips |
+| Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
 
 Treat lifecycle files as contracts with every process that consumes them, not
 as Android-private metadata. A structurally plausible lock with renamed keys or
@@ -86,10 +95,13 @@ styling Android. Do not use a screenshot as a substitute for reading source,
 and do not use source as an excuse to skip looking at the actual pixels.
 
 The Desktop app must be a dev renderer with CDP enabled. Never relaunch or kill
-the user's app to obtain a port. Use the running dev app, or launch an isolated
-instance from the Desktop checkout as described by its perf harness. Put the
-target surface into a synthetic state containing no private session text, host,
-fingerprint, path, token, or credential.
+the user's app to obtain a port. Use a **disposable pinned clone/export** plus
+the existing e2e mock sandbox or Playwright fixture; never run bare
+`npm run perf:serve`, because it copies real config, `.env`, and auth by
+default. Allocate explicit dev-server and CDP ports for the capture run. Put the
+target surface into a temporary local-only seeded state containing no private
+session text, host, fingerprint, path, token, or credential. Do not add a
+production demo session to obtain evidence.
 
 ```bash
 node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
@@ -109,8 +121,13 @@ The Desktop capture writes `reference.png` plus `contract.json`. The JSON is
 not a DOM dump: it records the selected subtree's rendered rectangles,
 typography, spacing, colour, borders, opacity, labels, roles, and pseudo-element
 font glyphs. The Android capture records the screenshot and device geometry.
-Both land under `build/visual-parity/`, which stays untracked. The report script
-writes `report.html` there; open that file and judge both surfaces together.
+Both land under `build/visual-parity/`, which stays untracked. Before accepting
+an Android screenshot, record the expected package/activity identity (for this
+app, debug `com.hermesagent.mobile.debug` / `com.hermesagent.mobile.MainActivity`)
+from `cmd package resolve-activity` and the focused window in the ignored
+capture evidence. The report script writes `report.html` there; open that file
+and judge both surfaces together. If a future state is unsupported, record it
+as `missing` or `partial` in the manifest; never fabricate a screenshot.
 
 For every surface, compare this inventory explicitly:
 
@@ -146,7 +163,9 @@ Desktop's authority model, and where each kind lives here:
 | Backend-authoritative project catalog/membership | `data/session/SessionCache` | Replace the overview snapshot and one selected project's hydrated membership; never infer from cwd |
 | Machine/runtime facts | `GatewayConnectionManager`, `RemoteHermesLifecycle`, SSH adapter | One resolver per policy |
 | Connection-scoped (runtime ids, turn buffers, in-flight tools, generation) | `LiveGatewaySessionRepository` / connection owner | Dies with the connection; durable ids never enter runtime-only calls |
-| UI-only (drafts, search, drawer, scroll) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
+| Saved view preferences | `SidebarViewStore` / `HermesPreferences` | Persist the user's grouping choice locally; never send it to the Gateway or use it as project authority |
+| Durable local draft text | `SessionDraftStore` + ViewModel | Canonical durable session id only; text only; no backup/transfer; bounded 50-entry MRU; never Gateway/cache authority |
+| UI-only (search, drawer, scroll, draft selection/model/attachment state) | ViewModel / `rememberSaveable` | Never persisted beyond what the user would expect |
 
 If you cannot say which row a piece of state belongs to, stop and decide. That
 choice is the port.
@@ -163,6 +182,7 @@ Replace, and say so in the PR:
 |---|---|
 | Hover reveal / tooltips | Always-visible affordance, or long-press; `contentDescription` always |
 | Right-click menu | Long-press |
+| Nested grouping submenu | One flat grouping section in the filter menu; nested pointer menus are brittle on a phone |
 | Persistent sidebar | Modal drawer under 720dp, persistent rail at or above it |
 | Enter submits | Explicit send tap; Enter inserts a newline (no modifier key on a soft keyboard) |
 | Route overlays as cards | Full-screen destination with a back affordance; system back leaves it |
@@ -200,8 +220,11 @@ and no state that depends on an animation running.
 Commands:
 
 ```bash
-./gradlew check              # unit tests (debug + release), lint, repo invariants
+./gradlew check              # offline unit tests (debug + release), lint, repo invariants
 ./gradlew assembleDebug
+python3 scripts/check-composer-parity.py \
+  --upstream "$HOME/.hermes/hermes-agent" # optional read-only pin/path/citation drift check
+python3 scripts/check-ci-workflow.py       # static exact-head workflow contract
 git diff --check
 ```
 
@@ -210,3 +233,21 @@ git diff --check
 Before you call it done, edit **this file**: add the upstream paths that
 mattered, the pitfalls you hit, and delete steps that turned out to be noise.
 A workflow that only grows is a diary, and nobody reads a diary.
+
+For composer controls, two boundaries are easy to lose: `model.options` and
+`session.info` own effective model/provider/reasoning/fast state, while a new
+draft's manual pick is only a connection/profile-scoped local preference until
+the create request is linearized. Likewise, completion results are remote
+workspace suggestions, not Android file paths. Keep `content://` and clipboard
+data out of the wire text until a real Slice 6 byte-staging handoff exists;
+the safe Slice 3 surface is URL/snippet insertion plus canonical text
+completion with stale-result fencing.
+
+Slice 4 found a similarly important authority boundary: Desktop remote coding
+can inspect repository state through its authenticated
+`apps/desktop/src/lib/desktop-git.ts` and `/api/git` facade. Android currently
+has no authorized Gateway repository-status transport, so it must render
+`CodingContextProvider.Unavailable` with no branch or worktree controls. This
+is not an Electron-only limitation; it is the absence of a verified Android
+remote-git capability contract. Keep the queue profile-scoped and session-keyed
+locally, and keep runtime IDs and Android URIs out of its durable records.

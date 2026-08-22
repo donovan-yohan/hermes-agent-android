@@ -9,10 +9,9 @@
   first use again — one extra fingerprint review, which is the safe direction.
 
   The whole `datastore` directory is excluded rather than one key, because
-  DataStore stores every preference in one `hermes.preferences_pb` file plus its
-  temporary siblings, and a rule that names a key inside a protobuf blob is a
-  rule that does not exist. The appearance choice lives in the same file and so
-  does not travel either; that is a theme, and re-picking it costs one tap.
+  DataStore writes `hermes.preferences_pb`, private `composer_drafts.preferences_pb`,
+  and their temporary siblings below this directory. A rule naming one key in a
+  protobuf blob does not exist. Appearance and draft text therefore do not travel.
 
   Nothing secret is stored on disk at all — passwords, passphrases and private
   keys live in memory only — but the `secrets` rules stay so that a later secret

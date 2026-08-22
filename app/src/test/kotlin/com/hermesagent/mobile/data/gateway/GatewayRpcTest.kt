@@ -93,6 +93,49 @@ class GatewayRpcTest {
     }
 
     @Test
+    fun `status update remains on the correlated event stream with its runtime identity`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire())
+        val event = async { rpc.events.first() }
+        runCurrent()
+
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"status.update","session_id":"runtime-status","payload":{"kind":"process","text":"Refreshing work"}}}""",
+        )
+
+        val received = event.await()
+        assertEquals("status.update", received.type)
+        assertEquals("runtime-status", received.runtimeSessionId)
+        assertEquals("process", received.payload.jsonObject["kind"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `composer catalog and completion methods retain typed errors and short deadlines`() = runTest {
+        listOf("model.options", "complete.path", "complete.slash").forEach { method ->
+            val rejectedRpc = CorrelatedGatewayRpc(RecordingWire())
+            val rejected = async { runCatching { rejectedRpc.request(method) }.exceptionOrNull() }
+            runCurrent()
+            rejectedRpc.receive(
+                """{"jsonrpc":"2.0","id":"m1","error":{"code":4201,"message":"not available"}}""",
+            )
+
+            val error = rejected.await() as GatewayRpcError
+            assertEquals("$method preserves the Gateway error code", 4201, error.code)
+            assertEquals("$method preserves the Gateway error message", "not available", error.message)
+
+            val timedRpc = CorrelatedGatewayRpc(RecordingWire())
+            val timedOut = async { runCatching { timedRpc.request(method) }.exceptionOrNull() }
+            runCurrent()
+            assertEquals("$method uses the ordinary RPC deadline", 15_000L, gatewayRpcTimeoutMillis(method))
+            advanceTimeBy(15_001)
+            runCurrent()
+            assertTrue(
+                "$method must not remain pending after its short deadline",
+                timedOut.await() is kotlinx.coroutines.TimeoutCancellationException,
+            )
+        }
+    }
+
+    @Test
     fun `a malformed matching response fails only that request`() = runTest {
         val rpc = CorrelatedGatewayRpc(RecordingWire())
         val answer = async { runCatching { rpc.request("session.list") }.exceptionOrNull() }
@@ -115,6 +158,19 @@ class GatewayRpcTest {
         assertEquals(128, received.size)
         assertEquals("0", received.first().payload.jsonObject["delta"]?.jsonPrimitive?.content)
         assertEquals("127", received.last().payload.jsonObject["delta"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `remote websocket preserves reverse proxy prefix and carries only an encoded one-time ticket`() {
+        val url = remoteGatewayWebSocketUrl(
+            "https://gateway.example/hermes/",
+            "ticket with + reserved? chars",
+        )
+
+        assertEquals("/hermes/api/ws", url.encodedPath)
+        assertEquals("ticket with + reserved? chars", url.queryParameter("ticket"))
+        assertEquals(null, url.queryParameter("token"))
+        assertEquals(1, url.querySize)
     }
 
     @Test

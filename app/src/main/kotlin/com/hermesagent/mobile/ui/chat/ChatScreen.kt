@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,15 +14,18 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
@@ -31,16 +36,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
@@ -50,12 +63,15 @@ import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.common.Hairline
+import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.common.VerticalHairline
 import com.hermesagent.mobile.ui.sessions.SessionList
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -129,7 +145,10 @@ private fun CompactLayout(state: ChatUiState, actions: ChatActions, onOpenSettin
             ChatTopBar(
                 title = state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
-                onOpenSessions = { scope.launch { drawerState.open() } },
+                onOpenSessions = {
+                    actions.onRefreshNavigation()
+                    scope.launch { drawerState.open() }
+                },
                 onOpenSettings = onOpenSettings,
                 modifier = Modifier.statusBarsPadding(),
             )
@@ -186,10 +205,19 @@ private fun SessionsPane(
 ) {
     SessionList(
         rows = state.sessionRows,
+        projects = state.projects,
+        projectsAvailable = state.projectsAvailable,
+        sidebarGrouping = state.sidebarGrouping,
+        selectedProject = state.selectedProject,
+        projectLoading = state.projectLoading,
         activeSessionId = state.activeSession?.id,
         query = state.query,
         canCreate = state.canCreateSession,
         onQueryChange = actions.onQueryChange,
+        onSidebarGroupingChange = actions.onSidebarGroupingChange,
+        onSelectProject = actions.onSelectProject,
+        onExitProject = actions.onExitProject,
+        onCreateProject = actions.onCreateProject,
         onSelect = onSelectSession,
         onCreate = onCreateSession,
         modifier = modifier,
@@ -200,35 +228,71 @@ private fun SessionsPane(
 private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
     val transcript = rememberUpdatedState(state.transcript)
+    val scope = rememberCoroutineScope()
+    var showJump by remember(state.activeSession?.id) { mutableStateOf(false) }
+    var hasUnseenActivity by remember(state.activeSession?.id) { mutableStateOf(false) }
 
     // Landing on a session jumps to the tail; growth after that only follows a
     // reader who is still there. Scrolling up is deliberate, and yanking
     // someone back mid-sentence is the worse failure.
     //
-    // Two details carry the behaviour. The trigger is the last entry's *value*,
-    // because a streamed delta rewrites the same entry under the same id — an
-    // id/count key stops firing after the first delta and the reply grows
-    // off-screen. And "still there" compares the scroll anchor against where
-    // the last follow parked it, not `canScrollForward`: growing the tail block
-    // makes the list scrollable again at once, which would read as "the reader
-    // left" on every delta. `canScrollForward` earns its place in the trigger
-    // instead, so a re-measure that lands after the state change still follows.
+    // Wait for a real viewport before establishing the parked anchor. On a
+    // physical device the history can arrive before the first LazyColumn
+    // measure; the old eager scroll then returned with zero items and treated
+    // the top as the user's chosen position.
+    //
+    // The full transcript value is observed because a streamed delta rewrites
+    // an existing entry under the same id. A backward scroll disarms following;
+    // layout reflow does not. Reaching the bottom manually or through the jump
+    // control re-arms it.
     LaunchedEffect(listState, state.activeSession?.id) {
-        listState.scrollToTail()
-        var parked = listState.anchor()
+        snapshotFlow {
+            listState.layoutInfo.totalItemsCount > 0 &&
+                listState.layoutInfo.viewportEndOffset > listState.layoutInfo.viewportStartOffset
+        }.first { ready -> ready }
 
-        snapshotFlow { Triple(transcript.value.lastOrNull(), transcript.value.size, listState.canScrollForward) }
-            .collect {
-                if (listState.anchor() != parked) return@collect
-                listState.scrollToTail()
-                parked = listState.anchor()
+        listState.scrollToTail()
+        var following = true
+        var observedTranscript = transcript.value
+
+        snapshotFlow {
+            Triple(
+                transcript.value,
+                listState.canScrollForward,
+                listState.isScrollInProgress && listState.lastScrolledBackward,
+            )
+        }.collect { (currentTranscript, canScrollForward, scrolledBackward) ->
+            val contentChanged = currentTranscript != observedTranscript
+            observedTranscript = currentTranscript
+
+            if (!canScrollForward) {
+                following = true
+                showJump = false
+                hasUnseenActivity = false
+                return@collect
             }
+
+            if (scrolledBackward) following = false
+
+            if (!following) {
+                showJump = true
+                if (contentChanged) hasUnseenActivity = true
+                return@collect
+            }
+
+            listState.scrollToTail()
+            showJump = false
+            hasUnseenActivity = false
+        }
     }
 
     Box(modifier.fillMaxWidth()) {
         Transcript(
             entries = state.transcript,
             listState = listState,
+            isWorking = state.activeSession?.status == SessionStatus.Working,
+            activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
+            progress = state.activeSession?.progress,
             contentPadding = PaddingValues(
                 start = HermesTheme.spacing.pageInset,
                 end = HermesTheme.spacing.pageInset,
@@ -236,6 +300,58 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
                 bottom = HermesTheme.spacing.blockGap,
             ),
         )
+        if (showJump) {
+            JumpToLatestButton(
+                hasUnseenActivity = hasUnseenActivity,
+                onClick = { scope.launch { listState.scrollToTail() } },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Mobile form of Desktop's pinned `ScrollToBottomButton`: the same arrow-down
+ * action, with a short label only when transcript activity arrived while the
+ * reader was away from the tail. The 48dp target is Android's touch adaptation.
+ */
+@Composable
+private fun JumpToLatestButton(
+    hasUnseenActivity: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    val shape = RoundedCornerShape(24.dp)
+    val description = if (hasUnseenActivity) {
+        "New activity. Scroll to bottom"
+    } else {
+        "Scroll to bottom"
+    }
+    Row(
+        modifier = modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .widthIn(min = HermesTheme.spacing.touchTarget)
+            .background(tokens.cardSurface, shape)
+            .border(1.dp, tokens.strokeSecondary, shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description }
+            .padding(horizontal = if (hasUnseenActivity) 12.dp else 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HermesIconGlyph(
+            icon = HermesIcon.ArrowDown,
+            color = if (hasUnseenActivity) tokens.accent else tokens.textSecondary,
+            size = 16.sp,
+        )
+        if (hasUnseenActivity) {
+            Text(
+                text = "New activity",
+                style = HermesTheme.type.caption,
+                color = tokens.accent,
+            )
+        }
     }
 }
 
@@ -270,16 +386,95 @@ private fun LazyListState.anchor(): Pair<Int, Int> =
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
-    Composer(
-        draft = state.draft,
-        onDraftChange = actions.onDraftChange,
-        onSend = actions.onSend,
-        onStop = actions.onStop,
-        isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
-        canSend = state.canSend,
-        statusLine = state.composerStatus(),
-        modifier = Modifier.imePadding().navigationBarsPadding(),
-    )
+    Column(Modifier.imePadding().navigationBarsPadding()) {
+        LaunchedEffect(state.activeSession?.id) { actions.onComposerStatusOpened() }
+        ComposerStatusStack(
+            activeSessionId = state.activeSession?.id,
+            status = state.activeSession?.composerStatus,
+            onRefreshProcesses = actions.onRefreshProcesses,
+            onKillProcess = actions.onKillProcess,
+            hasQueue = state.composer.runtime.queueEntries.isNotEmpty(),
+            queueContent = {
+                ComposerQueueSection(
+                    durableSessionId = state.composer.runtime.activeDurableId,
+                    entries = state.composer.runtime.queueEntries,
+                    parked = state.composer.runtime.queueParked,
+                    editingEntryId = state.composer.runtime.queueEditingEntryId,
+                    editingText = state.composer.runtime.queueEditingText,
+                    redirectableEntryId = state.composer.runtime.queueEntries.firstOrNull()
+                        ?.takeIf { state.composer.runtime.canRedirect }?.id,
+                    onEdit = actions.onEditQueuedEntry,
+                    onEditTextChange = actions.onQueueEditTextChange,
+                    onSaveEdit = actions.onSaveQueueEdit,
+                    onCancelEdit = actions.onCancelQueueEdit,
+                    onDelete = actions.onDeleteQueuedEntry,
+                    onSendNext = actions.onSendNext,
+                    onRedirectNow = actions.onRedirectQueuedEntry,
+                    onResume = actions.onResumeQueue,
+                    onMarkReadyAfterReview = actions.onMarkQueuedEntryReady,
+                )
+            },
+            modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+        )
+        PendingInputSurface(
+            pending = state.composer.runtime.pendingInput,
+            background = state.backgroundPendingInput,
+            isSubmitting = false,
+            onRespond = actions.onRespondToPendingInput,
+            onOpenSession = actions.onSelectSession,
+            modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+        )
+        val securePrompt = state.composer.runtime.pendingInput?.takeIf { it.isSecurePrompt() }
+        if (securePrompt != null) {
+            SecurePendingDialog(
+                pending = securePrompt,
+                isSubmitting = false,
+                errorText = null,
+                onRespond = actions.onRespondToPendingInput,
+                onDismiss = { actions.onDismissSecurePending() },
+            )
+        }
+        Composer(
+            draft = state.draft,
+            onDraftChange = actions.onDraftChange,
+            onSend = actions.onSend,
+            onStop = actions.onStop,
+            isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
+            canSend = state.canSend,
+            connected = state.connection.status == GatewayConnectionStatus.Connected,
+            statusLine = state.composerStatus(),
+            editorIdentity = state.activeSession?.id,
+            controls = state.composer,
+            onSelectModel = actions.onSelectModel,
+            onSelectReasoning = actions.onSelectReasoning,
+            onSelectFast = actions.onSelectFast,
+            onEditorSelectionChange = actions.onEditorSelectionChange,
+            onCompletionSelected = actions.onCompletionSelected,
+            onInsertText = actions.onInsertText,
+            onPickFiles = actions.onPickFiles,
+            attachments = state.composer.runtime.attachments,
+            onRemoveAttachment = actions.onRemoveAttachment,
+            voiceState = state.voice,
+            onToggleDictation = actions.onToggleDictation,
+            onToggleConversation = actions.onToggleConversation,
+            onToggleMute = actions.onToggleVoiceMute,
+            busyKind = state.composer.runtime.busyKind,
+            queueCount = state.composer.runtime.queueEntries.size,
+            canRedirect = state.composer.runtime.canRedirect,
+            canQueue = state.composer.runtime.canQueue,
+            onRedirect = actions.onRedirect,
+            onQueue = actions.onQueue,
+            onSendNext = {
+                state.composer.runtime.queueEntries.firstOrNull()?.id?.let(actions.onSendNext)
+            },
+            canUndo = state.composer.runtime.undoRedo.canUndo,
+            canRedo = state.composer.runtime.undoRedo.canRedo,
+            onUndo = actions.onUndoDraft,
+            onRedo = actions.onRedoDraft,
+            onHistoryOlder = actions.onHistoryOlder,
+            onHistoryNewer = actions.onHistoryNewer,
+        )
+    }
 }
 
 @Composable
@@ -349,7 +544,6 @@ private fun ChatUiState.composerStatus(): String = notice ?: when {
     connection.status == GatewayConnectionStatus.Disconnected -> "Open Gateways to connect"
     liveStatusText != null -> liveStatusText.orEmpty()
     isStreaming -> "Hermes is responding — tap ■ to stop"
-    runningCount > 0 -> "Wait for the running turn to finish"
     else -> "Connected to Gateway"
 }
 

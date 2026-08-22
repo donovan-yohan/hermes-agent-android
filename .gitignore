@@ -24,6 +24,10 @@ local.properties
 captures/
 .cxx/
 
+# Python verification scripts
+__pycache__/
+*.pyc
+
 # Editors
 .idea/
 *.iml

@@ -1,5 +1,6 @@
 package com.hermesagent.mobile
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -11,19 +12,24 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.ssh.KeyDocument
 import com.hermesagent.mobile.data.ssh.KeyImportGate
 import com.hermesagent.mobile.data.ssh.KeyImportProblem
 import com.hermesagent.mobile.data.ssh.readKeyDocument
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
+import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
@@ -41,10 +47,27 @@ class MainActivity : ComponentActivity() {
     private val preferences get() = app.preferences
 
     private val chatViewModel: ChatViewModel by viewModels {
-        ChatViewModel.factory(app.cache, app.sessionRepository)
+        ChatViewModel.factory(
+            cache = app.cache,
+            repository = app.sessionRepository,
+            sidebarViewStore = preferences,
+            composerControlsStore = preferences,
+            draftStore = app.draftStore,
+            draftScope = app.appScope,
+            composerQueueController = app.composerQueueController,
+            switchComposerQueueScope = app::switchComposerQueueScope,
+        )
     }
     private val sshViewModel: SshViewModel by viewModels {
         SshViewModel.factory(preferences, app.gatewayConnection)
+    }
+    private val gatewaySettingsViewModel: GatewaySettingsViewModel by viewModels {
+        GatewaySettingsViewModel.factory(preferences, app.gatewayConnection)
+    }
+    private val gatewayBrowser = GatewayBrowserLauncher { url ->
+        withContext(Dispatchers.Main.immediate) {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
     }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
@@ -60,30 +83,160 @@ class MainActivity : ComponentActivity() {
         if (uri != null && token != null) importPickedKey(uri, token)
     }
 
+    /**
+     * Storage Access Framework: attachment sources are read once through the
+     * lifetime-scoped grant and only their bytes ever leave this process.
+     */
+    private var pendingDictationGrant: (() -> Unit)? = null
+    private val requestMicPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val resume = pendingDictationGrant
+            pendingDictationGrant = null
+            if (granted) {
+                resume?.invoke()
+            } else {
+                chatViewModel.reportDictationPermissionDenied()
+            }
+        }
+
+    private val pickAttachments =
+        registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            for (uri in uris) {
+                chatViewModel.addAttachmentFromGrant(
+                    uriString = uri.toString(),
+                    displayName = queryDisplayName(uri) ?: "attachment",
+                    claimedMime = contentResolver.getType(uri),
+                )
+            }
+        }
+
+    private fun queryDisplayName(uri: Uri): String? =
+        runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Attachment grants are read on IO; only bytes enter the ViewModel.
+        chatViewModel.openAttachmentStream = { uriString ->
+            runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
+        }
+        // Voice engine hooks: bounded capture and typed Gateway routes only.
+        // Dictation requires an explicit runtime mic grant; denial surfaces a
+        // recovery message instead of silently failing to capture.
+        val mic = com.hermesagent.mobile.data.voice.AndroidMicCapture(Dispatchers.IO)
+        chatViewModel.onToggleDictationRequested = {
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                chatViewModel.toggleDictation()
+            } else {
+                pendingDictationGrant = { chatViewModel.toggleDictation() }
+                requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        }
+        var dictationRecordingJob: kotlinx.coroutines.Job = lifecycleScope.launch { }
+        chatViewModel.onDictationCapture = { durableSessionId, onDone ->
+            val started = lifecycleScope.launch { mic.start() }
+            dictationRecordingJob = lifecycleScope.launch {
+                started.join()
+                while (chatViewModel.uiState.value.voice
+                    is com.hermesagent.mobile.data.voice.VoiceUiState.DictationRecording
+                ) {
+                    mic.pump()
+                    delay(100)
+                }
+            }
+            ({
+                dictationRecordingJob.cancel()
+                lifecycleScope.launch {
+                    val pcm = mic.stop()
+                    val key = com.hermesagent.mobile.data.voice.VoiceSessionKey(
+                        connectionGeneration = app.gatewayConnection.currentGeneration,
+                        durableSessionId = durableSessionId,
+                    )
+                    val captured = com.hermesagent.mobile.data.voice.CapturedAudio("audio/wav", pcm)
+                    // Transport failures must surface as state, never crash:
+                    // the transcription route is remote and can fail for many
+                    // ordinary reasons (offline, provider down, timeout).
+                    val result = runCatching {
+                        app.voiceRepository.transcribe(key, captured)
+                    }.getOrElse { com.hermesagent.mobile.data.voice.TranscriptionResult.Silence }
+                    captured.close()
+                    onDone(result)
+                }
+            })
+        }
 
         setContent {
             val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+            val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
 
             HermesApp(
                 chatState = chatState,
+                gatewayState = gatewayState,
                 sshState = sshState,
                 appearance = appearance,
                 chatActions = ChatActions(
                     onQueryChange = chatViewModel::setQuery,
                     onDraftChange = chatViewModel::setDraft,
+                    onRefreshNavigation = chatViewModel::refreshSessionNavigation,
+                    onSidebarGroupingChange = chatViewModel::setSidebarGrouping,
+                    onSelectProject = chatViewModel::selectProject,
+                    onExitProject = chatViewModel::exitProject,
+                    onCreateProject = chatViewModel::createProject,
                     onSelectSession = chatViewModel::selectSession,
                     onCreateSession = { chatViewModel.createSession() },
                     onSend = chatViewModel::submit,
                     onStop = chatViewModel::stop,
+                    onRedirect = chatViewModel::redirectDraftFromUi,
+                    onQueue = chatViewModel::queueDraft,
+                    onSendNext = chatViewModel::sendNext,
+                    onResumeQueue = chatViewModel::resumeQueue,
+                    onEditQueuedEntry = chatViewModel::beginQueueEdit,
+                    onQueueEditTextChange = chatViewModel::setQueueEditText,
+                    onSaveQueueEdit = chatViewModel::saveQueueEdit,
+                    onCancelQueueEdit = chatViewModel::cancelQueueEdit,
+                    onDeleteQueuedEntry = chatViewModel::deleteQueuedEntry,
+                    onRedirectQueuedEntry = chatViewModel::redirectQueuedEntry,
+                    onMarkQueuedEntryReady = chatViewModel::markQueuedEntryReadyAfterReview,
+                    onHistoryOlder = chatViewModel::historyOlder,
+                    onHistoryNewer = chatViewModel::historyNewer,
+                    onUndoDraft = chatViewModel::undoDraft,
+                    onRedoDraft = chatViewModel::redoDraft,
+                    onRespondToPendingInput = chatViewModel::respondToPendingInput,
+                    onDismissSecurePending = chatViewModel::dismissSecurePending,
+                    onComposerStatusOpened = chatViewModel::composerStatusOpened,
+                    onRefreshProcesses = chatViewModel::refreshProcesses,
+                    onKillProcess = chatViewModel::killProcess,
+                    onSelectModel = chatViewModel::selectModel,
+                    onSelectReasoning = chatViewModel::selectReasoning,
+                    onSelectFast = chatViewModel::selectFast,
+                    onEditorSelectionChange = chatViewModel::onEditorSelectionChange,
+                    onCompletionSelected = chatViewModel::onCompletionSelected,
+                    onInsertText = chatViewModel::onInsertText,
+                    onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
+                    onRemoveAttachment = chatViewModel::removeAttachment,
+                    onToggleDictation = { chatViewModel.requestToggleDictation() },
+                    onToggleConversation = chatViewModel::toggleVoiceConversation,
+                    onToggleVoiceMute = chatViewModel::toggleVoiceMute,
                 ),
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },
                     onSelectMode = { mode -> lifecycleScope.launch { preferences.setMode(mode) } },
+                ),
+                gatewayActions = GatewayActions(
+                    onModeChange = gatewaySettingsViewModel::setMode,
+                    onRemoteUrlChange = gatewaySettingsViewModel::setRemoteUrl,
+                    onProviderChange = gatewaySettingsViewModel::setProvider,
+                    onConnectRemote = { gatewaySettingsViewModel.connectRemote(gatewayBrowser) },
+                    onDisconnect = gatewaySettingsViewModel::disconnect,
+                    onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
                 ),
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,
@@ -111,6 +264,11 @@ class MainActivity : ComponentActivity() {
                 ),
             )
         }
+    }
+
+    override fun onStop() {
+        chatViewModel.flushDraft()
+        super.onStop()
     }
 
     /**
