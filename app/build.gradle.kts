@@ -126,6 +126,7 @@ dependencies {
     // writes host names, banners, or auth detail into logcat.
     implementation(libs.slf4j.nop)
     implementation(libs.okhttp)
+    implementation(libs.media3.exoplayer)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
