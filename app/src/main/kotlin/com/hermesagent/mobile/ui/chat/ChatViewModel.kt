@@ -975,7 +975,10 @@ internal class ChatViewModel(
         if ((prompt.isEmpty() && ready.isEmpty()) || uiState.value.isStreaming || uiState.value.runningCount > 0 ||
             repository.connectionState.value.status != GatewayConnectionStatus.Connected
         ) return
-        if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) return
+        if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) {
+            notice.value = "Still reading an attachment — try again in a moment."
+            return
+        }
 
         clearDraftAfterDelivery(sessionId)
         // Payload bytes are claimed for the wire but chips stay visible until
@@ -1054,8 +1057,13 @@ internal class ChatViewModel(
         attachments.value = attachments.value.map { draft ->
             if (draft.durableSessionId != sessionId) return@map draft
             when (draft.stage) {
-                is AttachmentStage.Staging, is AttachmentStage.Staged ->
-                    draft.copy(stage = AttachmentStage.Ready(0))
+                // Restore the true size from the retained payload: future
+                // reservations read it, and a zeroed count would let the
+                // aggregate bound be exceeded on the retry path.
+                is AttachmentStage.Staging, is AttachmentStage.Staged -> {
+                    val bytes = attachmentPayloads[draft.occurrenceId]?.size ?: 0
+                    draft.copy(stage = AttachmentStage.Ready(bytes))
+                }
                 else -> draft
             }
         }
