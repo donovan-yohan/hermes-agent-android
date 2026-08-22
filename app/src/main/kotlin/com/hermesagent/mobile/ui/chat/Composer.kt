@@ -146,8 +146,6 @@ fun Composer(
     modifier: Modifier = Modifier,
     statusLine: String,
     editorIdentity: String? = null,
-    runningOwnerTitle: String? = null,
-    onViewRunningOwner: (() -> Unit)? = null,
     controls: ComposerUiState = ComposerUiState(),
     onSelectModel: (ComposerModelSelection) -> Unit = {},
     onSelectReasoning: (ReasoningEffort) -> Unit = {},
@@ -316,16 +314,7 @@ fun Composer(
                         modifier = Modifier.semantics { contentDescription = "Redo draft edit" },
                     )
                 }
-                if (runningOwnerTitle != null && onViewRunningOwner != null) {
-                    TextButton(
-                        label = "View",
-                        onClick = onViewRunningOwner,
-                        color = tokens.textPrimary,
-                        modifier = Modifier
-                            .widthIn(min = HermesTheme.spacing.touchTarget)
-                            .semantics { contentDescription = "View running session $runningOwnerTitle" },
-                    )
-                }
+
             }
         }
     }

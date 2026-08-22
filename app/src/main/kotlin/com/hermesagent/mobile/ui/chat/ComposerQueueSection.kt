@@ -58,7 +58,8 @@ fun ComposerQueueSection(
         modifier
             .fillMaxWidth()
             .border(1.dp, tokens.strokeTertiary, RoundedCornerShape(10.dp))
-            .background(tokens.widgetSurface, RoundedCornerShape(10.dp)),
+            .background(tokens.widgetSurface, RoundedCornerShape(10.dp))
+            .padding(top = 2.dp),
     ) {
         Row(
             Modifier
@@ -91,7 +92,7 @@ fun ComposerQueueSection(
         }
         if (expanded) {
             Column(
-                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 entries.forEach { entry ->
@@ -198,26 +199,21 @@ private fun QueueActions(
     onRedirectNow: () -> Unit,
     onMarkReadyAfterReview: () -> Unit,
 ) {
-    // Keep every target at least 48dp without assuming a wide handset. The
-    // potentially three-action ready state uses two lines instead of a row
-    // that can clip at 320dp.
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(
-                label = "Edit",
-                onClick = onEdit,
-                modifier = Modifier.semantics { contentDescription = "Edit queued message" },
-            )
-            if (entry.delivery == QueuedPromptDelivery.Ambiguous) {
+    // Rows group by meaning — delivery (Send next/Redirect) then maintenance
+    // (Edit/Delete) — so a ready entry reads as one compact card instead of
+    // three scattered touch rows. Every target keeps the 48dp minimum; the
+    // widest ready row (Send next + Redirect now + Delete) still fits 320dp.
+    Column(Modifier.fillMaxWidth()) {
+        if (entry.delivery == QueuedPromptDelivery.Ambiguous) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(
                     label = "Mark ready",
                     onClick = onMarkReadyAfterReview,
                     modifier = Modifier.semantics { contentDescription = "Mark queued message ready after review" },
                 )
             }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            if (entry.delivery != QueuedPromptDelivery.Ambiguous) {
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(
                     label = "Send next",
                     onClick = onSendNext,
@@ -231,6 +227,13 @@ private fun QueueActions(
                     )
                 }
             }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(
+                label = "Edit",
+                onClick = onEdit,
+                modifier = Modifier.semantics { contentDescription = "Edit queued message" },
+            )
             TextButton(
                 label = "Delete",
                 onClick = onDelete,

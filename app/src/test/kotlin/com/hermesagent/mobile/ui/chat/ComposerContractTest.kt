@@ -45,7 +45,7 @@ class ComposerContractTest {
     }
 
     @Test
-    fun `nonredirectable and other-session text never uses a different rpc`() {
+    fun `nonredirectable text never uses a different rpc`() {
         // Desktop steer semantics: while streaming, text keeps the steer
         // primary; ineligibility is handled by the steer fallback into the
         // local queue, not by a silent primary swap to the queue RPC.
@@ -53,10 +53,7 @@ class ComposerContractTest {
             ComposerPrimaryAction.Redirect,
             actionState(ComposerBusyKind.Streaming, hasText = true, redirectEligible = false).primary,
         )
-        assertEquals(
-            ComposerPrimaryAction.Queue,
-            actionState(ComposerBusyKind.OtherSessionRunning, hasText = true).primary,
-        )
+
         assertEquals(
             ComposerPrimaryAction.None,
             composerActionState(

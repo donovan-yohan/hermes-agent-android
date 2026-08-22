@@ -816,7 +816,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `resumed needs-input and background sessions block global send without streaming active chat`() =
+    fun `needs-input and background turns elsewhere keep an idle selected session sendable`() =
         runTest(dispatcher) {
             collectState()
             runCurrent()
@@ -825,19 +825,42 @@ class ChatViewModelTest {
             assertTrue(viewModel.uiState.value.canSend)
 
             for (busyStatus in listOf(SessionStatus.NeedsInput, SessionStatus.Background)) {
+                cache.upsertSession(cache.session("session-a")!!.copy(status = SessionStatus.Idle))
                 cache.upsertSession(cache.session("session-b")!!.copy(status = busyStatus))
+                viewModel.setDraft("wait for the resumed turn")
                 runCurrent()
 
+                // Desktop parity: per-target-session busy gates. Another
+                // session's parked turn shows in runningCount but must not
+                // convert this idle thread's send into a local queue entry.
                 assertEquals(1, viewModel.uiState.value.runningCount)
-                assertFalse(viewModel.uiState.value.canSend)
+                assertTrue(viewModel.uiState.value.canSend)
                 assertFalse(viewModel.uiState.value.isStreaming)
+                val before = repository.submitted.size
                 viewModel.submit()
                 runCurrent()
-                assertTrue(repository.submitted.isEmpty())
-
-                cache.upsertSession(cache.session("session-b")!!.copy(status = SessionStatus.Idle))
-                runCurrent()
+                assertEquals(before + 1, repository.submitted.size)
             }
+            cache.upsertSession(cache.session("session-a")!!.copy(status = SessionStatus.Idle))
+            runCurrent()
+        }
+
+    @Test
+    fun `a working other session does not block sending into an idle selected session`() =
+        runTest(dispatcher) {
+            collectState()
+            runCurrent()
+            cache.upsertSession(cache.session("session-b")!!.copy(status = SessionStatus.Working))
+            viewModel.setDraft("independent thread")
+            runCurrent()
+
+            assertEquals(1, viewModel.uiState.value.runningCount)
+            assertEquals(ComposerBusyKind.Idle, viewModel.uiState.value.composer.runtime.busyKind)
+            assertTrue(viewModel.uiState.value.canSend)
+            val before = repository.submitted.size
+            viewModel.submit()
+            runCurrent()
+            assertEquals(before + 1, repository.submitted.size)
         }
 
     @Test

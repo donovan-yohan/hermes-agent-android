@@ -1,7 +1,11 @@
 package com.hermesagent.mobile.ui.chat
 
-/** The session state that changes the meaning of the composer’s primary tap. */
-enum class ComposerBusyKind { Idle, Streaming, NeedsInput, Background, OtherSessionRunning }
+/**
+ * The selected session's own state that changes the meaning of the composer's
+ * primary tap. Other sessions' turns never appear here: Desktop parity keeps a
+ * foreground composer sendable while any background session runs.
+ */
+enum class ComposerBusyKind { Idle, Streaming, NeedsInput, Background }
 
 enum class ComposerPrimaryAction { None, Send, Redirect, Stop, SendNext, Queue }
 
@@ -49,9 +53,11 @@ internal fun composerActionState(
             else -> ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
         }
 
-        ComposerBusyKind.Background,
-        ComposerBusyKind.OtherSessionRunning,
-        -> if (hasText) ComposerActionState(ComposerPrimaryAction.Queue, showQueueSecondary = false)
-        else ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
+        ComposerBusyKind.Background ->
+            if (hasText) {
+                ComposerActionState(ComposerPrimaryAction.Queue, showQueueSecondary = false)
+            } else {
+                ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
+            }
     }
 }

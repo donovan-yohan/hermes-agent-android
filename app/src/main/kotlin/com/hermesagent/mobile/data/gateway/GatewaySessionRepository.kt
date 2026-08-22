@@ -811,18 +811,23 @@ internal class LiveGatewaySessionRepository(
         val connection = connectionSnapshot()
         val optimistic = synchronized(stateLock) {
             ensureCurrent(connection)
-            if (unscopedRuntimeId != null || activeRuntimeIds.isNotEmpty()) {
-                throw GatewayRpcException("Wait for the current turn to finish before sending another message.")
+            if (binding.runtimeId in activeRuntimeIds) {
+                throw GatewayRpcException("Hermes is already working in this session.")
             }
             val currentRuntime = identities.runtimeFor(binding.durableId)
             if (currentRuntime != binding.runtimeId) {
                 throw GatewayRpcException("Hermes did not activate this session.")
             }
-            unscopedRuntimeId = binding.runtimeId
-            activeRuntimeIds += binding.runtimeId
             val now = clock()
-            localSubmitStartedAtMillis = now
-            unscopedTurnIsLive = false
+            if (unscopedRuntimeId == null) {
+                // Identifier-less events stay attributed to the most recent
+                // submit only while no other live turn already owns the pin;
+                // a second concurrent submit must not steal the attribution.
+                unscopedRuntimeId = binding.runtimeId
+                localSubmitStartedAtMillis = now
+                unscopedTurnIsLive = false
+            }
+            activeRuntimeIds += binding.runtimeId
             val previousSession = cache.session(binding.durableId)
             val previousTranscript = cache.transcript(binding.durableId)
             val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", prompt, now)

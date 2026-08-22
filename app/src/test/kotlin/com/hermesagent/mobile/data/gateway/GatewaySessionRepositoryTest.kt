@@ -797,7 +797,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `a second submit is refused while unscoped events belong to the first turn`() = runTest {
+    fun `a second submit to the same session is refused while its turn is active`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
@@ -810,11 +810,37 @@ class GatewaySessionRepositoryTest {
 
         repository.openSession("durable-a")
         repository.submit("durable-a", "first")
-        repository.openSession("durable-b")
-        val failure = runCatching { repository.submit("durable-b", "second") }.exceptionOrNull()
+        val failure = runCatching { repository.submit("durable-a", "second") }.exceptionOrNull()
 
         assertTrue(failure is GatewayRpcException)
+        assertEquals("Hermes is already working in this session.", failure?.message)
         assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `a second concurrent submit cannot steal attribution of identifier-less events`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        // Two live turns: only the first owns the unstamped pin, so a late
+        // unstamped delta still lands on the first session's transcript.
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first")
+        repository.openSession("durable-b")
+        repository.submit("durable-b", "second")
+        rpc.emit("message.delta", null, """{"text":"unstamped"}""")
+        runCurrent()
+
+        val firstTranscript = cache.transcript("durable-a").filterIsInstance<AssistantTurn>()
+        assertTrue(firstTranscript.any { it.markdown.contains("unstamped") })
+        assertTrue(cache.transcript("durable-b").filterIsInstance<AssistantTurn>().isEmpty())
     }
 
     @Test
@@ -1152,8 +1178,10 @@ class GatewaySessionRepositoryTest {
         runCurrent()
 
         assertEquals(SessionStatus.Working, cache.session("durable-b")?.status)
-        assertTrue(runCatching { repository.submit("durable-a", "must remain blocked") }.isFailure)
-        assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
+        // The remote live runtime-b does not block durable-a's own submit:
+        // only same-session turns gate a send (Desktop per-target parity).
+        repository.submit("durable-a", "must go through")
+        assertEquals(2, rpc.calls.count { it.method == "prompt.submit" })
     }
 
     @Test
