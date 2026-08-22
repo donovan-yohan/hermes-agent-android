@@ -26,6 +26,10 @@ class VoiceConversationController(
     private val speak: suspend (String) -> Unit,
     private val stopPlayback: suspend () -> Unit,
     private val onStateChange: (VoiceUiState.Conversation) -> Unit,
+    /** Host arms its barge detector when the conversation enters Thinking/Speaking. */
+    private val armBargeMonitor: () -> Unit = {},
+    /** Host disarms the barge detector on Listening/Ended. */
+    private val disarmBargeMonitor: () -> Unit = {},
 ) {
     private val mutex = Mutex()
     private var state = VoiceUiState.Conversation(VoiceUiState.ConversationPhase.Listening, muted = false)
@@ -185,6 +189,12 @@ class VoiceConversationController(
 
     private fun setState(phase: VoiceUiState.ConversationPhase, ended: Boolean = false) {
         state = VoiceUiState.Conversation(phase, muted = if (ended) false else state.muted)
+        when (phase) {
+            VoiceUiState.ConversationPhase.Thinking,
+            VoiceUiState.ConversationPhase.Speaking,
+            -> if (!state.muted) armBargeMonitor()
+            else -> disarmBargeMonitor()
+        }
         onStateChange(state)
     }
 
