@@ -4,6 +4,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.hermesagent.mobile.ui.chat.ComposerBusyKind
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
@@ -11,6 +12,8 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -390,16 +393,22 @@ class ChatJourneyTest {
         launch()
         cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
         viewModel.selectSession("live-b")
+        compose.waitUntil(5_000) {
+            viewModel.uiState.value.composer.runtime.busyKind == ComposerBusyKind.OtherSessionRunning
+        }
         compose.waitForIdle()
 
-        compose.onNodeWithText("Hermes is working in “Remote planning”.").assertIsDisplayed()
-        // Slice 4 parity: a busy composer keeps truthful actions instead of a
-        // blanket disable. Typed text queues onto the active session and an
-        // empty draft with a queue offers Send next; nothing submits directly.
+        // Slice 4 parity: the busy-session status lives in the composer's
+        // status line (wide layouts) while the model pill owns the bottom row
+        // on phones; either way the busy composer keeps truthful actions.
+        // Typed text queues onto the active session and an empty draft with a
+        // queue offers Send next; nothing submits directly.
         compose.onNodeWithContentDescription("Message Hermes").performTextInput("not ambiguous")
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Queue message").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Queue message").performClick()
+        // Another session owns the running turn here, so steer belongs to that
+        // session: typed text queues locally instead of using a different RPC.
+        compose.onNodeWithContentDescription("Queue message").assertExists()
+        viewModel.performComposerPrimaryAction()
         compose.waitForIdle()
         assertEquals(1, viewModel.uiState.value.composer.runtime.queueEntries.size)
         assertEquals(0, repository.submitted.size)

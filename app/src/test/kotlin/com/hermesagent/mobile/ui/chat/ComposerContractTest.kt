@@ -24,6 +24,12 @@ class ComposerContractTest {
             ComposerPrimaryAction.Stop,
             actionState(ComposerBusyKind.Streaming, hasText = false).primary,
         )
+        // Stop is a safety control: queued entries alone never replace it
+        // with send-next while a turn is live.
+        assertEquals(
+            ComposerPrimaryAction.Stop,
+            actionState(ComposerBusyKind.Streaming, hasText = false, queueCount = 2).primary,
+        )
         assertEquals(
             ComposerPrimaryAction.Queue,
             actionState(ComposerBusyKind.NeedsInput, hasText = true).primary,
@@ -39,9 +45,12 @@ class ComposerContractTest {
     }
 
     @Test
-    fun `nonredirectable and other-session text queues instead of using a different rpc`() {
+    fun `nonredirectable and other-session text never uses a different rpc`() {
+        // Desktop steer semantics: while streaming, text keeps the steer
+        // primary; ineligibility is handled by the steer fallback into the
+        // local queue, not by a silent primary swap to the queue RPC.
         assertEquals(
-            ComposerPrimaryAction.Queue,
+            ComposerPrimaryAction.Redirect,
             actionState(ComposerBusyKind.Streaming, hasText = true, redirectEligible = false).primary,
         )
         assertEquals(

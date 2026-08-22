@@ -1,5 +1,8 @@
 package com.hermesagent.mobile.ui.chat
 
+import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.data.attachments.AttachmentStage
+import com.hermesagent.mobile.data.attachments.AttachmentPolicy
 import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.composer.CompletionItem
@@ -53,6 +56,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -1239,6 +1243,7 @@ class ChatViewModelTest {
         var slashReplaceFrom: Int? = null
         var pathGate: CompletableDeferred<Unit>? = null
         var lastPathDurableId: String? = null
+        val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
         var lastPathCwd: String? = null
         private var slashCalls = 0
 
@@ -1277,8 +1282,14 @@ class ChatViewModelTest {
             return ProjectCreateOutcome(project.id, catalogRefreshedAfterCreate)
         }
 
+        @JvmField
+        var statusOnOpen: SessionStatus? = null
+
         override suspend fun openSession(durableId: String): String {
             opened += durableId
+            statusOnOpen?.let { status ->
+                cache.session(durableId)?.let { cache.upsertSession(it.copy(status = status)) }
+            }
             return durableId
         }
 
@@ -1343,9 +1354,18 @@ class ChatViewModelTest {
             return CompletionResult(listOf(CompletionItem("@file:src/main.kt")))
         }
 
-        override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
+        override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome =
+            submit(durableId, text, queued = false)
+
+        override suspend fun submit(
+            durableId: String,
+            text: String,
+            queued: Boolean,
+            attachments: List<OutgoingAttachment>,
+        ): GatewaySubmitOutcome {
             submitGate?.await()
             if (failSubmit) error("fixture failure")
+            if (attachments.isNotEmpty()) submittedAttachments += durableId to attachments
             submitted += durableId to text
             cache.session(durableId)?.let { cache.upsertSession(it.copy(status = SessionStatus.Working)) }
             return submitOutcome
@@ -1360,9 +1380,11 @@ class ChatViewModelTest {
             interrupted += durableId
         }
 
+        var interruptOutcome: GatewayInterruptOutcome? = null
+
         override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
             interrupted += durableId
-            return when (cache.session(durableId)?.status) {
+            return interruptOutcome ?: when (cache.session(durableId)?.status) {
                 SessionStatus.NeedsInput -> GatewayInterruptOutcome.NeedsInput
                 else -> GatewayInterruptOutcome.Interrupted
             }
@@ -1464,5 +1486,97 @@ class ChatViewModelTest {
     private companion object {
         const val CLOCK = 1_800_000_000_000L
         fun summary(id: String, at: Long) = SessionSummary(id, "Session $id", "", at)
+    }
+
+@Test
+    fun `attachment grant is read bounded and submitted as bytes with the prompt`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.openAttachmentStream = { "hello gateway".toByteArray().inputStream() }
+        viewModel.attachmentReadDispatcher = dispatcher
+
+        viewModel.addAttachmentFromGrant("content://fixture/grant", "notes.txt", "text/plain")
+        runCurrent()
+
+        val chip = viewModel.uiState.value.composer.runtime.attachments.single()
+        assertEquals("notes.txt", chip.displayName)
+        assertTrue(chip.stage is AttachmentStage.Ready)
+        assertEquals(13, (chip.stage as AttachmentStage.Ready).byteCount)
+
+        viewModel.submit()
+        runCurrent()
+
+        val sent = repository.submittedAttachments.single()
+        assertEquals("session-a", sent.first)
+        val attachment = sent.second.single()
+        assertTrue(attachment is OutgoingAttachment.GenericFile)
+        assertEquals("notes.txt", attachment.displayName)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `concurrent picks reserve the aggregate bound before payloads land`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val big = ByteArray(AttachmentPolicy.MAX_BYTES_PER_ATTACHMENT) { 0x61 }
+        val streams = ArrayDeque(
+            listOf(big.inputStream(), big.inputStream(), "tiny".toByteArray().inputStream()),
+        )
+        viewModel.openAttachmentStream = { streams.removeFirstOrNull() }
+        viewModel.attachmentReadDispatcher = dispatcher
+
+        viewModel.addAttachmentFromGrant("content://fixture/big1", "big1.bin", null)
+        viewModel.addAttachmentFromGrant("content://fixture/big2", "big2.bin", null)
+        // Issued while both 8 MB reads are still in flight: the optimistic
+        // reservation already accounts 16 MB, so even 4 bytes must refuse.
+        viewModel.addAttachmentFromGrant("content://fixture/tiny", "tiny.txt", null)
+        runCurrent()
+
+        val stages = viewModel.uiState.value.composer.runtime.attachments.associate { it.displayName to it.stage }
+        assertTrue(stages["big1.bin"] is AttachmentStage.Ready)
+        assertTrue(stages["big2.bin"] is AttachmentStage.Ready)
+        assertTrue(stages.getValue("tiny.txt") is AttachmentStage.Refused)
+    }
+
+    @Test
+    fun `send next rehydrates a stale streaming row before interrupting`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.setDraft("queued follow-up")
+        runCurrent()
+        viewModel.queueDraft()
+        runCurrent()
+        val entryId = viewModel.uiState.value.composer.runtime.queueEntries.single().id
+
+        repository.statusOnOpen = SessionStatus.Idle
+        viewModel.setDraft("")
+        runCurrent()
+        viewModel.sendNext(entryId)
+        runCurrent()
+
+        assertTrue("session-a" in repository.opened)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `failed attachment submit keeps drafts retryable and surfaces the refusal`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.openAttachmentStream = { "hello gateway".toByteArray().inputStream() }
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.addAttachmentFromGrant("content://fixture/g", "notes.txt", "text/plain")
+        runCurrent()
+        repository.submitOutcome = GatewaySubmitOutcome.Ambiguous
+
+        viewModel.setDraft("with a file")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+
+        val chips = viewModel.uiState.value.composer.runtime.attachments
+        assertEquals(1, chips.size)
+        assertTrue(chips.single().stage is AttachmentStage.Ready)
+        assertTrue(viewModel.uiState.value.notice!!.contains("may have been sent"))
     }
 }

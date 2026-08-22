@@ -156,6 +156,7 @@ class AccessibilityTest {
                         onStop = {},
                         isStreaming = false,
                         canSend = true,
+                        connected = true,
                         statusLine = "",
                     )
                     SearchField(

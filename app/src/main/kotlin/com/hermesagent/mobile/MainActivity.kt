@@ -82,9 +82,35 @@ class MainActivity : ComponentActivity() {
         if (uri != null && token != null) importPickedKey(uri, token)
     }
 
+    /**
+     * Storage Access Framework: attachment sources are read once through the
+     * lifetime-scoped grant and only their bytes ever leave this process.
+     */
+    private val pickAttachments =
+        registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            for (uri in uris) {
+                chatViewModel.addAttachmentFromGrant(
+                    uriString = uri.toString(),
+                    displayName = queryDisplayName(uri) ?: "attachment",
+                    claimedMime = contentResolver.getType(uri),
+                )
+            }
+        }
+
+    private fun queryDisplayName(uri: Uri): String? =
+        runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Attachment grants are read on IO; only bytes enter the ViewModel.
+        chatViewModel.openAttachmentStream = { uriString ->
+            runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
+        }
 
         setContent {
             val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
@@ -135,6 +161,8 @@ class MainActivity : ComponentActivity() {
                     onEditorSelectionChange = chatViewModel::onEditorSelectionChange,
                     onCompletionSelected = chatViewModel::onCompletionSelected,
                     onInsertText = chatViewModel::onInsertText,
+                    onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
+                    onRemoveAttachment = chatViewModel::removeAttachment,
                 ),
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },

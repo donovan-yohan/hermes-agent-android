@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.gateway
 
+import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.ControlMutationResult
 import com.hermesagent.mobile.data.composer.FastMode
@@ -728,6 +729,45 @@ class GatewaySessionRepositoryTest {
         assertEquals("runtime-a", rpc.call("session.interrupt").params.string("session_id"))
         assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
         assertEquals("ship it", (cache.transcript("durable-a").last() as UserTurn).text)
+    }
+
+    @Test
+    fun `attachments stage before submit and a refused stage never sends the prompt`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        repository.submit(
+            "durable-a",
+            "summarize this",
+            attachments = listOf(
+                OutgoingAttachment.GenericFile("notes.txt", "data:text/plain;base64,aGVsbG8="),
+            ),
+        )
+
+        val attach = rpc.calls.indexOfFirst { it.method == "file.attach" }
+        val submit = rpc.calls.indexOfFirst { it.method == "prompt.submit" }
+        assertTrue(attach in 0 until submit)
+        assertEquals("runtime-a", rpc.call("file.attach").params.string("session_id"))
+        assertEquals("data:text/plain;base64,aGVsbG8=", rpc.call("file.attach").params.string("data_url"))
+        assertEquals("@file:`notes.txt`\nsummarize this", rpc.call("prompt.submit").params.string("text"))
+
+        rpc.attachFailure = GatewayRpcException("too large")
+        try {
+            repository.submit(
+                "durable-a",
+                "second message",
+                attachments = listOf(OutgoingAttachment.Image("pic.png", "AAAA")),
+            )
+            error("expected refusal")
+        } catch (_: GatewayRpcException) {
+        }
+        assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
     }
 
     @Test
@@ -2061,6 +2101,7 @@ class GatewaySessionRepositoryTest {
         var configSetFailure: Throwable? = null
         var slashResult = """{"items":[]}"""
         var pathResult = """{"items":[]}"""
+        var attachFailure: Throwable? = null
         var eventOverflowed = false
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
@@ -2149,6 +2190,20 @@ class GatewaySessionRepositoryTest {
                 "slash.exec" -> {
                     goalStatusFailure?.let { throw it }
                     json(goalStatusResult)
+                }
+                "image.attach_bytes" -> {
+                    attachFailure?.let { failure ->
+                        attachFailure = null
+                        throw failure
+                    }
+                    json("""{"attached":true,"path":"/gw/img.png","text":"[User attached image: img.png]"}""")
+                }
+                "file.attach" -> {
+                    attachFailure?.let { failure ->
+                        attachFailure = null
+                        throw failure
+                    }
+                    json("""{"attached":true,"name":"notes.txt","path":"/gw/notes.txt","ref_text":"@file:`notes.txt`","uploaded":true}""")
                 }
                 else -> error("unexpected method $method")
             }

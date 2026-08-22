@@ -56,6 +56,8 @@ class ChatActions(
     val onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },
     val onCompletionSelected: (CompletionItem) -> Unit = {},
     val onInsertText: (String) -> Unit = {},
+    val onPickFiles: () -> Unit = {},
+    val onRemoveAttachment: (String) -> Unit = {},
 )
 
 class AppearanceActions(

@@ -29,10 +29,17 @@ internal fun composerActionState(
             else -> ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
         }
 
-        ComposerBusyKind.Streaming -> when {
-            !hasText -> ComposerActionState(ComposerPrimaryAction.Stop, showQueueSecondary = false)
-            redirectEligible -> ComposerActionState(ComposerPrimaryAction.Redirect, showQueueSecondary = true)
-            else -> ComposerActionState(ComposerPrimaryAction.Queue, showQueueSecondary = false)
+        ComposerBusyKind.Streaming -> {
+            // Desktop parity: while a turn is live, the primary control is
+            // steer for any composer text; when the text is not yet steer
+            // eligible, steer falls back to queueing locally so a message
+            // is never lost. With no text the primary stays stop — sending
+            // the next queued entry is never a substitute for the safety
+            // control, and queue entries drain on turn settle.
+            ComposerActionState(
+                primary = if (hasText) ComposerPrimaryAction.Redirect else ComposerPrimaryAction.Stop,
+                showQueueSecondary = hasText,
+            )
         }
 
         // A required response has its own Gateway route. Ordinary composer
