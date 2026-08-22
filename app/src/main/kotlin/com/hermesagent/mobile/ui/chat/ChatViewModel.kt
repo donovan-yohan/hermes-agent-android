@@ -296,8 +296,7 @@ internal class ChatViewModel(
     ) { cacheState, queryText, draftText, activeId, composerBundle ->
         val navigation = composerBundle.third
         val voiceState = composerBundle.second
-        val blocking = cacheState.sessions.values.filter { it.status in PROMPT_BLOCKING_STATUSES }
-        val running = blocking.size
+        val running = cacheState.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
         // SessionCache publishes this alias in the same atomic update that
         // moves a compressed parent to its canonical tip. Resolve it here so
         // the later navigation event cannot create a blank intermediate frame.
