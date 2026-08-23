@@ -35,6 +35,23 @@ jobs:
             platform-tools
             platforms;android-36
             build-tools;36.0.0
+      - name: Restore rolling debug keystore
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.HERMES_ROLLING_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || {
+            echo '::error::HERMES_ROLLING_DEBUG_KEYSTORE_BASE64 is required for main builds.'
+            exit 1
+          }
+          install -d -m 700 "$HOME/.android"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          keytool -list \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey >/dev/null
       - name: Check and assemble exact head
         run: ./gradlew check assembleDebug --no-daemon
       - name: Upload debug APK
@@ -45,6 +62,10 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 90
+      - name: Remove rolling debug keystore
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.android/debug.keystore"
 
   # Separate job so only this one holds `actions: write`, and it runs after the
   # upload so the replacement artifact exists before any older one is deleted.

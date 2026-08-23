@@ -39,6 +39,9 @@ Every successful `main` build publishes a GitHub Actions artifact named
 [Android exact-head workflow](https://github.com/donovan-yohan/hermes-agent-android/actions/workflows/android-exact-head.yml?query=branch%3Amain).
 The workflow uploads the replacement first, then deletes older artifacts with
 that name, so this is a rolling debug APK rather than a version archive.
+Main builds are signed with a stable debug key, so a new `hermes-mobile-latest`
+APK installs over the previous one without uninstalling; pull-request APKs use
+the runner's throwaway key and will not.
 GitHub requires sign-in to download Actions artifacts and retains this one for
 up to 90 days. Versioned release builds remain a separate manual process.
 
