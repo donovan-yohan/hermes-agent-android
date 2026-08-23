@@ -87,8 +87,12 @@ goes in there.
 
 **Foreground isolation.** A running turn writes to the session that started it.
 Switching sessions never cancels it and never paints into the session now on
-screen; it lands as an unread dot. Permit one app-submitted turn at a time
-because an unscoped event cannot be routed safely between concurrent turns.
+screen; it lands as an unread dot. Sends are gated per target session: another
+session's live turn is informational only and never blocks this composer. The
+gateway repository supports concurrent per-session app-submitted turns;
+identifier-less (unstamped) events are pinned to the single safe local runtime,
+with rollback, stop/redirect/steer, pre-start grace, and pin inheritance all
+keyed on per-runtime liveness rather than a global lock.
 
 **Product copy is product-facing.** State the task, outcome, and next action;
 reuse truthful Desktop terminology. Keep implementation/security detail out of
