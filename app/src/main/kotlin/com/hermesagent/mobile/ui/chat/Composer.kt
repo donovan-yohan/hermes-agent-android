@@ -314,7 +314,6 @@ fun Composer(
                         modifier = Modifier.semantics { contentDescription = "Redo draft edit" },
                     )
                 }
-
             }
         }
     }
