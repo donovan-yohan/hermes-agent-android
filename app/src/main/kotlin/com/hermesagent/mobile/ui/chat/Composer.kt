@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -181,6 +182,11 @@ fun Composer(
         if (focusRequestGeneration > 0) editorFocusRequester.requestFocus()
     }
     val restoreEditorFocus = { focusRequestGeneration += 1 }
+    // The + control sits in the bottom bar while cursor-aware insertion lives
+    // inside the editor; the editor publishes its inserter here on identity.
+    var editorInserter by remember(editorIdentity) {
+        mutableStateOf<((String) -> Boolean)?>(null)
+    }
     val action = composerActionState(
         connected = connected,
         busyKind = busyKind,
@@ -206,113 +212,75 @@ fun Composer(
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 5.dp)
                 .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(16.dp))
                 .background(tokens.cardSurface, RoundedCornerShape(16.dp))
-                .padding(horizontal = 8.dp, vertical = 5.dp)
+                .padding(horizontal = 4.dp, vertical = 5.dp)
                 .testTag("Composer shell ${layoutMode.name}"),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            if (layoutMode == ComposerLayoutMode.Stacked) {
-                ComposerEditor(
-                    draft,
-                    onDraftChange,
-                    action.primary,
-                    canQueue,
-                    performPrimary,
-                    onQueue,
-                    onStop,
-                    busyKind == ComposerBusyKind.Streaming,
-                    busyKind == ComposerBusyKind.NeedsInput,
-                    onHistoryOlder,
-                    onHistoryNewer,
-                    onUndo,
-                    onRedo,
-                        editorIdentity,
-                        controls,
-                        onEditorSelectionChange,
-                        onCompletionSelected,
-                        onInsertText,
-                        onPickFiles,
-                        attachments,
-                        onRemoveAttachment,
-                        voiceState,
-                        onToggleDictation,
-                        onToggleConversation,
-                        onToggleMute,
-                        editorFocusRequester,
-                        restoreEditorFocus,
-                        Modifier.fillMaxWidth(),
-                    )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
-                    ComposerPrimaryControl(action.primary, performPrimary)
-                }
-            } else {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    ComposerEditor(
-                        draft,
-                        onDraftChange,
-                        action.primary,
-                        canQueue,
-                        performPrimary,
-                        onQueue,
-                        onStop,
-                        busyKind == ComposerBusyKind.Streaming,
-                        busyKind == ComposerBusyKind.NeedsInput,
-                        onHistoryOlder,
-                        onHistoryNewer,
-                        onUndo,
-                        onRedo,
-                        editorIdentity,
-                        controls,
-                        onEditorSelectionChange,
-                        onCompletionSelected,
-                        onInsertText,
-                        onPickFiles,
-                        attachments,
-                        onRemoveAttachment,
-                        voiceState,
-                        onToggleDictation,
-                        onToggleConversation,
-                        onToggleMute,
-                        editorFocusRequester,
-                        restoreEditorFocus,
-                        Modifier.weight(1f),
-                    )
-                    if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
-                    ComposerPrimaryControl(action.primary, performPrimary)
-                }
-            }
+            ComposerEditor(
+                draft,
+                onDraftChange,
+                action.primary,
+                canQueue,
+                performPrimary,
+                onQueue,
+                onStop,
+                busyKind == ComposerBusyKind.Streaming,
+                busyKind == ComposerBusyKind.NeedsInput,
+                onHistoryOlder,
+                onHistoryNewer,
+                onUndo,
+                onRedo,
+                editorIdentity,
+                controls,
+                onEditorSelectionChange,
+                onCompletionSelected,
+                onInsertText,
+                attachments,
+                onRemoveAttachment,
+                voiceState,
+                editorFocusRequester,
+                Modifier.fillMaxWidth(),
+                onRegisterInserter = { inserter -> editorInserter = inserter },
+            )
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                if (layoutMode == ComposerLayoutMode.Full) {
-                    Text(
-                        text = statusLine,
-                        style = HermesTheme.type.scaffoldMeta,
-                        color = tokens.scaffoldMeta,
-                        modifier = Modifier.padding(start = 6.dp).weight(1f),
+                ComposerAddControl(
+                    onInsertText = { text ->
+                        val inserted = editorInserter?.invoke(text) ?: false
+                        if (inserted) restoreEditorFocus()
+                    },
+                    enabled = true,
+                    onPickFiles = onPickFiles,
+                    onDismiss = restoreEditorFocus,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
+                    if (layoutMode == ComposerLayoutMode.Full) {
+                        Text(
+                            text = statusLine,
+                            style = HermesTheme.type.scaffoldMeta,
+                            color = tokens.scaffoldMeta,
+                            modifier = Modifier.padding(end = 6.dp),
+                        )
+                    } else {
+                        ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast)
+                    }
+                    VoiceActionCluster(
+                        voiceState = voiceState,
+                        onToggleDictation = {
+                            onToggleDictation()
+                            restoreEditorFocus()
+                        },
+                        onToggleConversation = onToggleConversation,
+                        onToggleMute = onToggleMute,
                     )
-                } else {
-                    ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast, restoreEditorFocus)
-                }
-                if (canUndo) {
-                    TextButton(
-                        label = "Undo",
-                        onClick = { onUndo() },
-                        modifier = Modifier.semantics { contentDescription = "Undo draft edit" },
-                    )
-                }
-                if (canRedo) {
-                    TextButton(
-                        label = "Redo",
-                        onClick = { onRedo() },
-                        modifier = Modifier.semantics { contentDescription = "Redo draft edit" },
-                    )
+                    ComposerPrimaryControl(action.primary, performPrimary)
                 }
             }
         }
@@ -325,7 +293,6 @@ private fun ComposerModelControl(
     onSelectModel: (ComposerModelSelection) -> Unit,
     onSelectReasoning: (ReasoningEffort) -> Unit,
     onSelectFast: (FastMode) -> Unit,
-    onReturnFocus: () -> Unit,
 ) {
     ModelControl(
         catalog = (controls.catalog as? ComposerCatalogUiState.Ready)?.catalog,
@@ -339,8 +306,32 @@ private fun ComposerModelControl(
         onSelectModel = onSelectModel,
         onSelectReasoning = onSelectReasoning,
         onSelectFast = onSelectFast,
-        onDismiss = onReturnFocus,
+        singleLine = true,
     )
+}
+
+/** Voice controls for the bottom action bar, in the user's requested order. */
+@Composable
+private fun VoiceActionCluster(
+    voiceState: VoiceUiState,
+    onToggleDictation: () -> Unit,
+    onToggleConversation: () -> Unit,
+    onToggleMute: () -> Unit,
+) {
+    if (voiceState is VoiceUiState.Conversation) {
+        // Desktop parity: an active conversation replaces the regular action
+        // cluster with phase/mute/end; typed composition stays recoverable.
+        VoiceConversationControl(
+            state = voiceState,
+            onToggleConversation = onToggleConversation,
+            onToggleMute = onToggleMute,
+        )
+    } else {
+        VoiceDictationControl(
+            state = voiceState,
+            onToggle = onToggleDictation,
+        )
+    }
 }
 
 @Composable
@@ -363,21 +354,20 @@ private fun ComposerEditor(
     onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit,
     onCompletionSelected: (CompletionItem) -> Unit,
     onInsertText: (String) -> Unit,
-    onPickFiles: () -> Unit,
     attachments: List<ComposerAttachmentDraft> = emptyList(),
     onRemoveAttachment: (String) -> Unit = {},
     voiceState: VoiceUiState = VoiceUiState.Idle,
-    onToggleDictation: () -> Unit = {},
-    onToggleConversation: () -> Unit = {},
-    onToggleMute: () -> Unit = {},
     focusRequester: FocusRequester,
-    onReturnFocus: () -> Unit,
     modifier: Modifier,
+    onRegisterInserter: (((String) -> Boolean)?) -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     val pendingLocalTexts = remember(editorIdentity) { ArrayDeque<String>() }
     var editorValue by remember(editorIdentity) { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
     var completionSelectionIndex by remember(editorIdentity) { mutableStateOf(0) }
+    DisposableEffect(editorIdentity) {
+        onDispose { onRegisterInserter(null) }
+    }
     val completionItems = visibleCompletionItems(
         controls.completion.trigger,
         controls.completion.query,
@@ -402,11 +392,16 @@ private fun ComposerEditor(
         notifyInsert?.let(onInsertText)
         completion?.let(onCompletionSelected)
     }
-    fun insertAtSelection(value: String) {
-        if (editorValue.composition != null) return
+    fun insertAtSelection(value: String): Boolean {
+        if (editorValue.composition != null) return false
         val updated = replaceComposerRange(editorValue.text, editorValue.selection.start, editorValue.selection.end, value)
         val cursor = editorValue.selection.start.coerceIn(0, editorValue.text.length) + value.length
         publish(TextFieldValue(updated, TextRange(cursor)), notifyInsert = value)
+        return true
+    }
+    DisposableEffect(editorIdentity) {
+        onRegisterInserter(::insertAtSelection)
+        onDispose { }
     }
     fun acceptCompletion(item: CompletionItem) {
         if (editorValue.composition != null) return
@@ -424,56 +419,31 @@ private fun ComposerEditor(
         if (attachments.isNotEmpty()) {
             AttachmentChipRow(attachments = attachments, onRemove = onRemoveAttachment)
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (voiceState is VoiceUiState.Conversation) {
-                // Desktop parity: an active conversation replaces the regular
-                // action cluster with phase/mute/end; typed composition stays
-                // recoverable after End.
-                VoiceConversationControl(
-                    state = voiceState,
-                    onToggleConversation = onToggleConversation,
-                    onToggleMute = onToggleMute,
-                )
-            } else {
-                VoiceDictationControl(
-                    state = voiceState,
-                    onToggle = {
-                        onToggleDictation()
-                        onReturnFocus()
-                    },
-                )
-            }
-            ComposerAddControl(
-                onInsertText = ::insertAtSelection,
-                enabled = true,
-                onPickFiles = onPickFiles,
-                onDismiss = onReturnFocus,
-            )
-            BasicTextField(
-                value = editorValue,
-                onValueChange = { value ->
-                    val textChanged = value.text != editorValue.text
-                    val canonical = if (textChanged && value.composition == null) canonicalizeComposerTextOnSpace(value.text) else value.text
-                    val next = if (canonical == value.text) value else TextFieldValue(canonical, TextRange(canonical.length))
-                    editorValue = next
-                    onEditorSelectionChange(next.text, next.selection.start, next.selection.end)
-                    if (textChanged || canonical != value.text) {
-                        pendingLocalTexts.addLast(next.text)
-                        onDraftChange(next.text)
-                    }
-                },
-                textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
-                cursorBrush = SolidColor(tokens.composerRing),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
-                keyboardActions = KeyboardActions(),
-                maxLines = 6,
-                modifier = Modifier
-                    .weight(1f)
-                    .widthIn(min = HermesTheme.spacing.touchTarget)
-                    .heightIn(min = HermesTheme.spacing.touchTarget)
-                    .focusRequester(focusRequester)
-                    .testTag("Composer field shell")
-                    .onPreviewKeyEvent { event ->
+        BasicTextField(
+            value = editorValue,
+            onValueChange = { value ->
+                val textChanged = value.text != editorValue.text
+                val canonical = if (textChanged && value.composition == null) canonicalizeComposerTextOnSpace(value.text) else value.text
+                val next = if (canonical == value.text) value else TextFieldValue(canonical, TextRange(canonical.length))
+                editorValue = next
+                onEditorSelectionChange(next.text, next.selection.start, next.selection.end)
+                if (textChanged || canonical != value.text) {
+                    pendingLocalTexts.addLast(next.text)
+                    onDraftChange(next.text)
+                }
+            },
+            textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+            cursorBrush = SolidColor(tokens.composerRing),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
+            keyboardActions = KeyboardActions(),
+            maxLines = 6,
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(min = HermesTheme.spacing.touchTarget)
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .focusRequester(focusRequester)
+                .testTag("Composer field shell")
+                .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent
                 val completionKeyDown = event.type == KeyEventType.KeyDown &&
                     native.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD == 0 &&
@@ -542,18 +512,17 @@ private fun ComposerEditor(
                     ComposerKeyAction.None -> false
                 }
             }
-                    .semantics { contentDescription = "Message Hermes" },
-                decorationBox = { inner ->
-                    CenteredTextFieldContent(
-                        isEmpty = editorValue.text.isEmpty(),
-                        contentTag = "Composer text content",
-                        horizontalPadding = 6.dp,
-                        placeholder = { Text("Message Hermes", style = HermesTheme.type.body, color = tokens.textTertiary) },
-                        innerTextField = inner,
-                    )
-                },
-            )
-        }
+            .semantics { contentDescription = "Message Hermes" },
+            decorationBox = { inner ->
+                CenteredTextFieldContent(
+                    isEmpty = editorValue.text.isEmpty(),
+                    contentTag = "Composer text content",
+                    horizontalPadding = 6.dp,
+                    placeholder = { Text("Message Hermes", style = HermesTheme.type.body, color = tokens.textTertiary) },
+                    innerTextField = inner,
+                )
+            },
+        )
         CompletionPopup(
             trigger = controls.completion.trigger,
             query = controls.completion.query,
@@ -601,14 +570,14 @@ private fun ComposerPrimaryControl(action: ComposerPrimaryAction, onClick: () ->
     ) {
         Box(
             Modifier
-                .size(26.dp)
+                .size(24.dp)
                 .background(if (enabled) tokens.textPrimary else tokens.textPrimary.copy(alpha = .25f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (action == ComposerPrimaryAction.Stop) {
-                Box(Modifier.size(10.dp).background(tokens.cardSurface, RoundedCornerShape(3.dp)))
+                Box(Modifier.size(9.dp).background(tokens.cardSurface, RoundedCornerShape(3.dp)))
             } else {
-                HermesIconGlyph(HermesIcon.ArrowUp, color = tokens.cardSurface, size = 14.sp)
+                HermesIconGlyph(HermesIcon.ArrowUp, color = tokens.cardSurface, size = 13.sp)
             }
         }
     }

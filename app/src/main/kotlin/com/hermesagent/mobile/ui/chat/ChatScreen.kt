@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -337,7 +338,7 @@ private fun JumpToLatestButton(
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description }
             .padding(horizontal = if (hasUnseenActivity) 12.dp else 0.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HermesIconGlyph(
@@ -346,12 +347,47 @@ private fun JumpToLatestButton(
             size = 16.sp,
         )
         if (hasUnseenActivity) {
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = "New activity",
                 style = HermesTheme.type.caption,
                 color = tokens.accent,
             )
         }
+    }
+}
+
+/**
+ * Mobile form of Desktop's composer coding-status strip: the server-reported
+ * git branch for this session's working directory, rendered as a quiet bar
+ * above the composer. Android has no authorized local git transport, so the
+ * label is exactly what the Gateway reported — no path or worktree claims.
+ */
+@Composable
+internal fun SessionBranchStrip(branch: String, modifier: Modifier = Modifier) {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 28.dp)
+            .semantics { contentDescription = "Working branch $branch" }
+            .testTag("Session branch strip")
+            .padding(horizontal = HermesTheme.spacing.pageInset + 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        HermesIconGlyph(
+            icon = HermesIcon.GitBranch,
+            color = tokens.textTertiary,
+            size = 12.sp,
+        )
+        Text(
+            text = branch,
+            style = HermesTheme.type.scaffoldMeta,
+            color = tokens.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -388,6 +424,9 @@ private fun LazyListState.anchor(): Pair<Int, Int> =
 private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
     Column(Modifier.imePadding().navigationBarsPadding()) {
         LaunchedEffect(state.activeSession?.id) { actions.onComposerStatusOpened() }
+        state.activeSession?.gitBranch?.takeIf(String::isNotBlank)?.let { branch ->
+            SessionBranchStrip(branch = branch)
+        }
         ComposerStatusStack(
             activeSessionId = state.activeSession?.id,
             status = state.activeSession?.composerStatus,

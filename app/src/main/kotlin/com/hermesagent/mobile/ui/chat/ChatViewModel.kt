@@ -1196,7 +1196,24 @@ internal class ChatViewModel(
                         }
                     }
                 }
+                if (dictationStop == null) voice.value = VoiceUiState.Idle
             }
+        }
+    }
+
+    /** Engine hook: surface a failed transcription as state, never as silence. */
+    fun reportDictationFailure(message: String) {
+        if (voice.value is VoiceUiState.DictationTranscribing || voice.value is VoiceUiState.DictationRecording) {
+            voice.value = VoiceUiState.Idle
+        }
+        notice.value = message
+    }
+
+    /** Engine hook: publish the live capture meter for the recording state. */
+    fun reportDictationLevel(level: Float) {
+        val current = voice.value
+        if (current is VoiceUiState.DictationRecording) {
+            voice.value = current.copy(level = level.coerceIn(0f, 1f))
         }
     }
 

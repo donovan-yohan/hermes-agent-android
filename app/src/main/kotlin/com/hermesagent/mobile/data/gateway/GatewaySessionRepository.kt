@@ -279,6 +279,9 @@ internal class LiveGatewaySessionRepository(
     private val optimisticCorrectionsByRuntime = mutableMapOf<String, MutableList<UserTurn>>()
     private val progressRuntimeIds = mutableSetOf<String>()
     private val composerStatusRuntimeIds = mutableSetOf<String>()
+
+    /** Latest server-reported git branch per durable session, connection-scoped. */
+    private val branchByDurableId = mutableMapOf<String, String>()
     /** Optional methods are feature-detected once per connection generation. */
     private val unsupportedCapabilities = mutableSetOf<GatewayOptionalCapability>()
     private val processRefreshesInFlight = mutableSetOf<String>()
@@ -328,6 +331,9 @@ internal class LiveGatewaySessionRepository(
                     optimisticCorrectionsByRuntime.clear()
                     progressRuntimeIds.clear()
                     composerStatusRuntimeIds.clear()
+                    // Branch labels are connection-scoped server truth; the
+                    // next session.info re-reports them after reconnect.
+                    branchByDurableId.clear()
                     unsupportedCapabilities.clear()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
@@ -405,8 +411,9 @@ internal class LiveGatewaySessionRepository(
                             progress = existing.progress,
                             composerStatus = existing.composerStatus,
                             activityStartedAtMillis = existing.activityStartedAtMillis,
+                            gitBranch = existing.gitBranch ?: branchByDurableId[row.id],
                         )
-                    } ?: row
+                    } ?: row.copy(gitBranch = branchByDurableId[row.id])
                 },
             )
         }
@@ -1473,6 +1480,12 @@ internal class LiveGatewaySessionRepository(
                 if (running == true) {
                     markRuntimeLive(runtimeId)
                     ephemeralSessions.remove(durableId)
+                }
+                payload.string("branch")?.takeIf(String::isNotBlank)?.let { branch ->
+                    branchByDurableId[durableId] = branch
+                    cache.session(durableId)?.let { row ->
+                        if (row.gitBranch != branch) cache.upsertSession(row.copy(gitBranch = branch))
+                    }
                 }
                 reconcileSessionInfo(durableId, runtimeId, running, payload.status())
                 projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)

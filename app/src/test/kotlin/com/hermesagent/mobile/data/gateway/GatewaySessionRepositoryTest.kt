@@ -525,6 +525,33 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `session info branch reaches the cached session and survives refresh`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit(
+            "session.info",
+            "runtime-a",
+            """{"running":false,"branch":"feat/project-views","stored_session_id":"durable-a"}""",
+        )
+        runCurrent()
+        assertEquals("feat/project-views", cache.session("durable-a")?.gitBranch)
+
+        // A full refresh must not drop the branch the server reported.
+        rpc.sessionListResult = SESSION_LIST
+        repository.refreshSessions()
+        runCurrent()
+        assertEquals("feat/project-views", cache.session("durable-a")?.gitBranch)
+    }
+
+    @Test
     fun `terminal turn completion measures a tool missing its complete event`() = runTest {
         var now = CLOCK
         val cache = SessionCache()

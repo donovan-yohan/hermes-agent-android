@@ -379,7 +379,7 @@ class ChatJourneyTest {
         compose.waitForIdle()
 
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performScrollTo().performClick()
-        compose.onNodeWithText("BUILD SUCCESSFUL").assertIsDisplayed()
+        compose.onNodeWithText("BUILD SUCCESSFUL").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performClick()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew test + 1 command, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Patched file, done").performScrollTo().assertIsDisplayed()
