@@ -782,7 +782,7 @@ class GatewaySessionRepositoryTest {
         assertTrue(attach in 0 until submit)
         assertEquals("runtime-a", rpc.call("file.attach").params.string("session_id"))
         assertEquals("data:text/plain;base64,aGVsbG8=", rpc.call("file.attach").params.string("data_url"))
-        assertEquals("@file:`notes.txt`\nsummarize this", rpc.call("prompt.submit").params.string("text"))
+        assertEquals("@file:`notes.txt`\n\nsummarize this", rpc.call("prompt.submit").params.string("text"))
 
         rpc.attachFailure = GatewayRpcException("too large")
         try {
@@ -795,6 +795,84 @@ class GatewaySessionRepositoryTest {
         } catch (_: GatewayRpcException) {
         }
         assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `image attachments contribute no placeholder text and the optimistic row carries the ref line`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        repository.submit(
+            "durable-a",
+            "explain this chart",
+            attachments = listOf(OutgoingAttachment.Image("chart.png", "AAAA")),
+        )
+
+        val attach = rpc.call("image.attach_bytes")
+        assertEquals("runtime-a", attach.params.string("session_id"))
+        assertEquals("AAAA", attach.params.string("content_base64"))
+        assertEquals("chart.png", attach.params.string("filename"))
+
+        // The wire text is the typed prompt only — never the gateway's
+        // `[User attached image: …]` placeholder prose.
+        assertEquals("explain this chart", rpc.call("prompt.submit").params.string("text"))
+
+        // The optimistic row previews the ref the gateway will persist.
+        val row = cache.transcript("durable-a").filterIsInstance<UserTurn>().single()
+        assertEquals("explain this chart\n@image:/gw/img.png", row.text)
+    }
+
+    @Test
+    fun `an image-only send asks the desktop fallback question`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        repository.submit(
+            "durable-a",
+            "",
+            attachments = listOf(OutgoingAttachment.Image("chart.png", "AAAA")),
+        )
+
+        assertEquals("What do you see in this image?", rpc.call("prompt.submit").params.string("text"))
+        val row = cache.transcript("durable-a").filterIsInstance<UserTurn>().single()
+        assertEquals("What do you see in this image?\n@image:/gw/img.png", row.text)
+    }
+
+    @Test
+    fun `a file ref always reaches the wire even alongside an image with no typed text`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        repository.submit(
+            "durable-a",
+            "",
+            attachments = listOf(
+                OutgoingAttachment.Image("chart.png", "AAAA"),
+                OutgoingAttachment.GenericFile("notes.txt", "data:text/plain;base64,aGVsbG8="),
+            ),
+        )
+
+        // Desktop parity: file refs compose first; the image-only question is
+        // the fallback, never a branch that outranks a staged file.
+        assertEquals("@file:`notes.txt`", rpc.call("prompt.submit").params.string("text"))
     }
 
     @Test

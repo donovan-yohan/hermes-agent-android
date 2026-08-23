@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui.chat.composer
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,35 +8,44 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Text
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Text
+import com.hermesagent.mobile.data.attachments.AttachmentKind
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
+import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
  * Locally acquired attachments waiting to leave with their message. Chips show
  * only a display name and truthful state — never a URI, path, or byte count of
- * payload content. Remove wipes that occurrence's bytes from memory.
+ * payload content. Image drafts show the bounded thumbnail decoded from the
+ * in-memory bytes. Remove wipes that occurrence's bytes from memory.
  */
 @Composable
 internal fun AttachmentChipRow(
     attachments: List<ComposerAttachmentDraft>,
     onRemove: (String) -> Unit,
     modifier: Modifier = Modifier,
+    thumbnails: Map<String, ImageBitmap> = emptyMap(),
 ) {
     val tokens = HermesTheme.tokens
     LazyRow(
@@ -57,6 +67,7 @@ internal fun AttachmentChipRow(
                 is AttachmentStage.Refused ->
                     stage.safeMessage to tokens.destructive
             }
+            val thumbnail = thumbnails[draft.occurrenceId]
             Row(
                 Modifier
                     .heightIn(min = HermesTheme.spacing.touchTarget)
@@ -65,23 +76,44 @@ internal fun AttachmentChipRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (draft.kind == AttachmentKind.Image && thumbnail != null) {
+                    Image(
+                        bitmap = thumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .testTag("Attachment thumbnail ${draft.occurrenceId}"),
+                    )
+                } else {
+                    HermesIconGlyph(
+                        HermesIcon.File,
+                        color = tokens.textTertiary,
+                        size = 14.sp,
+                    )
+                }
                 Text(
                     draft.displayName,
                     style = HermesTheme.type.caption,
                     color = tokens.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    // A LazyRow item has unbounded width, so weight() collapses
+                    // to zero here — an explicit cap is the only thing that
+                    // keeps the name visible on screen.
+                    modifier = Modifier.widthIn(max = 180.dp),
                 )
                 Text(stateText, style = HermesTheme.type.scaffoldMeta, color = stateColor, maxLines = 1)
                 Text(
                     "Remove",
                     style = HermesTheme.type.caption,
                     color = tokens.accent,
-                    textAlign = TextAlign.Center,
                     modifier = Modifier
                         // Destructive action: keep the whole touch target at
-                        // the 48dp floor, not just the caption text.
+                        // the 48dp floor, not just the caption text. The label
+                        // hugs the leading edge so it aligns with the rest of
+                        // the row; the floor extends to its right, not before.
                         .heightIn(min = HermesTheme.spacing.touchTarget)
                         .widthIn(min = HermesTheme.spacing.touchTarget)
                         .clickable(role = Role.Button) { onRemove(draft.occurrenceId) }

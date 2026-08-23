@@ -13,6 +13,7 @@ import com.hermesagent.mobile.data.composer.ModelProvider
 import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.SessionComposerControls
+import com.hermesagent.mobile.data.attachments.ImageRefLines
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
 import com.hermesagent.mobile.data.session.AssistantTurn
@@ -64,6 +65,8 @@ import kotlinx.serialization.json.buildJsonObject
 
 interface GatewaySessionRepository {
     val connectionState: StateFlow<GatewayConnectionState>
+    /** Connection-owned loader for attached-image bytes; null while disconnected. */
+    val imageLoader: StateFlow<GatewayImageLoader?> get() = NO_IMAGE_LOADER
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
     val composerControls: Flow<SessionComposerControls> get() = emptyFlow()
     /** Live required-action requests, keyed by generation/runtime/request/kind. */
@@ -245,6 +248,7 @@ internal class LiveGatewaySessionRepository(
     private val connectionStateFlow: StateFlow<GatewayConnectionState>,
     private val clientFlow: StateFlow<GatewayRpcClient?>,
     private val scope: CoroutineScope,
+    imageLoaderFlow: StateFlow<GatewayImageLoader?> = NO_IMAGE_LOADER,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
@@ -252,9 +256,10 @@ internal class LiveGatewaySessionRepository(
         connection: GatewayConnectionManager,
         scope: CoroutineScope,
         clock: () -> Long = System::currentTimeMillis,
-    ) : this(cache, connection.state, connection.client, scope, clock)
+    ) : this(cache, connection.state, connection.client, scope, connection.imageLoader, clock)
 
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
+    override val imageLoader: StateFlow<GatewayImageLoader?> = imageLoaderFlow
     private val rehomeEvents = MutableSharedFlow<SessionRehome>(extraBufferCapacity = 8)
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
     private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
@@ -734,16 +739,33 @@ internal class LiveGatewaySessionRepository(
         if (attachments.isEmpty()) return submit(durableId, text, queued)
         // Stage everything first. A prompt must never cross after a failed or
         // ambiguous stage; the caller keeps its drafts for in-place retry.
-        val stagedRefs = StringBuilder()
+        val fileRefs = StringBuilder()
+        val imageRefs = mutableListOf<String>()
         for (attachment in attachments) {
             val result = stageOne(durableId, attachment)
             when (result) {
                 is GatewayStageOutcome.Staged -> {
-                    if (result.reference.refText.isNotBlank()) {
-                        if (stagedRefs.isNotEmpty()) stagedRefs.append(' ')
-                        stagedRefs.append(result.reference.refText)
+                    when (attachment) {
+                        // Desktop parity: images contribute nothing to the
+                        // submitted text. The gateway already holds the bytes
+                        // via image.attach_bytes and persists the `@image:`
+                        // refs itself at turn end (`_build_persist_message_with_image_refs`,
+                        // tui_gateway/server.py @ f82f2dba). The attach response's
+                        // `text` field is placeholder prose for the model and
+                        // must never be echoed into the user-visible turn.
+                        is OutgoingAttachment.Image -> {
+                            result.reference.gatewayPath?.let { imageRefs += ImageRefLines.formatRef(it) }
+                        }
+
+                        is OutgoingAttachment.GenericFile -> {
+                            if (result.reference.refText.isNotBlank()) {
+                                if (fileRefs.isNotEmpty()) fileRefs.append('\n')
+                                fileRefs.append(result.reference.refText)
+                            }
+                        }
                     }
                 }
+
                 is GatewayStageOutcome.Rejected -> throw GatewayRpcException(result.safeMessage)
                 is GatewayStageOutcome.Ambiguous ->
                     throw GatewayRpcException("The attachment may not have finished uploading. Check the session before retrying.")
@@ -751,8 +773,20 @@ internal class LiveGatewaySessionRepository(
                     throw GatewayRpcException("This Gateway does not accept that attachment. Update Hermes and try again.")
             }
         }
-        val composed = if (stagedRefs.isEmpty()) text else "${stagedRefs}\n${text.trim()}"
-        return submit(durableId, composed, queued)
+        val typed = text.trim()
+        // Desktop's buildContextText: file refs and typed text compose first,
+        // and the image-only question is the fallback when nothing else is
+        // there — never a branch that outranks a staged file ref.
+        val wireText = listOf(fileRefs.toString(), typed)
+            .filter(String::isNotBlank).joinToString("\n\n")
+            .ifBlank { if (imageRefs.isNotEmpty()) IMAGE_ONLY_PROMPT else "" }
+        require(wireText.isNotBlank())
+        // The optimistic row carries the refs the gateway will persist, so the
+        // live thumbnail renders immediately and the authoritative row that
+        // replaces it is byte-identical.
+        val optimisticText = listOf(wireText, imageRefs.joinToString("\n"))
+            .filter(String::isNotBlank).joinToString("\n")
+        return submitInternal(durableId, wireText, optimisticText, queued)
     }
 
     private suspend fun stageOne(
@@ -818,6 +852,16 @@ internal class LiveGatewaySessionRepository(
         queued: Boolean,
     ): GatewaySubmitOutcome {
         val prompt = text.trim()
+        return submitInternal(durableId, prompt, prompt, queued)
+    }
+
+    private suspend fun submitInternal(
+        durableId: String,
+        wireText: String,
+        optimisticText: String,
+        queued: Boolean,
+    ): GatewaySubmitOutcome {
+        val prompt = wireText
         require(prompt.isNotEmpty())
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot()
@@ -844,7 +888,7 @@ internal class LiveGatewaySessionRepository(
             liveTurnRuntimeIds -= binding.runtimeId
             val previousSession = cache.session(binding.durableId)
             val previousTranscript = cache.transcript(binding.durableId)
-            val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", prompt, now)
+            val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", optimisticText, now)
             optimisticUserByRuntime[binding.runtimeId] = optimisticUser
             cache.appendEntry(binding.durableId, optimisticUser)
             clearProgress(binding.durableId, binding.runtimeId)
@@ -3071,6 +3115,8 @@ private const val RECONCILIATION_FAILED_KIND = "reconcile_failed"
 private const val RECONCILIATION_FAILED_TEXT =
     "This turn could not be checked. Reconnect to the Gateway, then reopen the session."
 private const val PRE_START_FALSE_SETTLE_GRACE_MILLIS = 15_000L
+private const val IMAGE_ONLY_PROMPT = "What do you see in this image?"
+private val NO_IMAGE_LOADER: MutableStateFlow<GatewayImageLoader?> = MutableStateFlow(null)
 private val STATUS_WHITESPACE = Regex("\\s+")
 private val KNOWN_STATUS_UPDATE_KINDS = setOf("compacting", "compacted", "process", "goal", "progress", "thinking")
 private val NO_GOAL_STATUS = Regex("^(?:No active goal|No goal (?:set|to resume)|✓ Goal cleared)\\b.*", RegexOption.IGNORE_CASE)

@@ -6,8 +6,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -15,6 +17,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.AttachmentKind
@@ -26,6 +29,7 @@ import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
 import com.hermesagent.mobile.data.composer.ModelOption
 import com.hermesagent.mobile.data.composer.ModelProvider
 import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -292,4 +296,51 @@ class ComposerControlsAccessibilityTest {
         compose.onNodeWithContentDescription("Remove notes.txt").assertExists().performClick()
         compose.onNodeWithText("That file is larger than 8 MB.").assertExists()
     }
+
+    @Test
+    fun `image chips render the decoded thumbnail`() {
+        // A real 4x4 red PNG (generated, not hand-made): deterministic decoder input.
+        val png = hexBytes(
+            "89504e470d0a1a0a0000000d494844520000000400000004080200000026930929" +
+                "0000001049444154789c63f8cfc000470cc47100ae930ff1d05f239e0000000049454e44ae426082",
+        )
+        val thumbnail = requireNotNull(AttachmentThumbnails.decodeComposer(png))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Composer(
+                    draft = "",
+                    onDraftChange = {},
+                    onSend = {},
+                    onStop = {},
+                    isStreaming = false,
+                    canSend = false,
+                    connected = true,
+                    statusLine = "",
+                    attachments = listOf(
+                        ComposerAttachmentDraft(
+                            occurrenceId = "occ-img",
+                            durableSessionId = "s",
+                            displayName = "pic.png",
+                            kind = AttachmentKind.Image,
+                            stage = AttachmentStage.Ready(1024),
+                        ),
+                    ),
+                    attachmentThumbnails = mapOf("occ-img" to thumbnail),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("Attachment thumbnail occ-img").assertExists()
+        // assertExists also passes for a zero-width node; the on-device bug was
+        // exactly that (weight() collapses in an unbounded LazyRow item).
+        // Robolectric's compressed font metrics render this name at ~7dp, so
+        // non-zero is the honest threshold here — the real rendering is
+        // verified on-device.
+        compose.onNodeWithText("pic.png").assertIsDisplayed().assertWidthIsAtLeast(1.dp)
+        compose.onNodeWithContentDescription("Remove pic.png").assertExists()
+    }
 }
+
+/** Decodes a hex string into bytes — deterministic fixture images without hand-built literals. */
+private fun hexBytes(hex: String): ByteArray =
+    hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

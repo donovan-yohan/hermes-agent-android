@@ -10,7 +10,10 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.printToLog
@@ -23,6 +26,7 @@ import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.composer.TransientComposerQueueStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
@@ -63,7 +67,12 @@ class ChatJourneyTest {
     private lateinit var viewModel: ChatViewModel
     private var themeName by mutableStateOf(BuiltinThemes.DEFAULT_NAME)
 
-    private fun launch(connected: Boolean = true, withSessions: Boolean = true, withRealQueueDrain: Boolean = false) {
+    private fun launch(
+        connected: Boolean = true,
+        withSessions: Boolean = true,
+        withRealQueueDrain: Boolean = false,
+        loader: GatewayImageLoader? = null,
+    ) {
         if (withSessions) {
             cache.upsertSessions(
                 listOf(
@@ -80,7 +89,7 @@ class ChatJourneyTest {
             )
             cache.setTranscript("live-b", listOf(AssistantTurn("row-b", "Second live transcript", NOW - 1)))
         }
-        repository = JourneyRepository(cache, connected)
+        repository = JourneyRepository(cache, connected, loader)
         viewModel = if (withRealQueueDrain) {
             val submitter = object : ComposerQueueSubmitter {
                 override suspend fun submitQueued(
@@ -340,6 +349,70 @@ class ChatJourneyTest {
     }
 
     @Test
+    fun `attached image refs render as a fetched thumbnail and open full size`() {
+        // A real 4x4 red PNG (generated, not hand-made): deterministic decoder input.
+        val png = hexBytes(
+            "89504e470d0a1a0a0000000d494844520000000400000004080200000026930929" +
+                "0000001049444154789c63f8cfc000470cc47100ae930ff1d05f239e0000000049454e44ae426082",
+        )
+        val loader = object : GatewayImageLoader {
+            override suspend fun load(path: String): Result<ByteArray> = Result.success(png)
+        }
+        launch(loader = loader)
+        cache.setTranscript(
+            "live-a",
+            listOf(
+                UserTurn("row-img", "look at this\n@image:`/home/d/images/shot one.png`", NOW),
+            ),
+        )
+        compose.waitForIdle()
+        // The fetch + decode hop off the test's main-clock dispatchers, so a
+        // bounded poll — not waitForIdle — is the honest synchronizer.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("shot one.png").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithContentDescription("shot one.png").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("Full size image").assertExists()
+        compose.onNodeWithTag("Close full size image").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("Full size image").assertDoesNotExist()
+    }
+
+    @Test
+    fun `failed image fetch degrades to a quiet file chip`() {
+        val loader = object : GatewayImageLoader {
+            override suspend fun load(path: String): Result<ByteArray> = Result.failure(Exception("nope"))
+        }
+        launch(loader = loader)
+        cache.setTranscript(
+            "live-a",
+            listOf(UserTurn("row-img", "@image:/home/d/images/gone.png", NOW)),
+        )
+        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("gone.png").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("gone.png").assertIsDisplayed()
+    }
+
+    @Test
+    fun `image refs render as a quiet chip when no loader is connected`() {
+        launch(loader = null)
+        cache.setTranscript(
+            "live-a",
+            listOf(UserTurn("row-img", "@image:/home/d/images/offline.png", NOW)),
+        )
+        compose.waitForIdle()
+
+        // No connection-owned loader: the turn must not vanish — the chip is
+        // the fallback even with nothing to fetch.
+        compose.onNodeWithText("offline.png").assertIsDisplayed()
+    }
+
+    @Test
     fun `rich activity rows expose reasoning terminal payload and patched file diff`() {
         launch()
         cache.setTranscript(
@@ -486,7 +559,13 @@ class ChatJourneyTest {
         }
     }
 
-    private class JourneyRepository(private val cache: SessionCache, connected: Boolean) : GatewaySessionRepository {
+    private class JourneyRepository(
+        private val cache: SessionCache,
+        connected: Boolean,
+        private val loader: GatewayImageLoader? = null,
+    ) : GatewaySessionRepository {
+        override val imageLoader = MutableStateFlow(loader)
+
         override val pendingInputs =
             MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
                 emptyMap(),
@@ -552,3 +631,7 @@ class ChatJourneyTest {
 
 private fun ComposeContentTestRule.countWithText(text: String, substring: Boolean = false): Int =
     onAllNodes(hasText(text, substring = substring)).fetchSemanticsNodes().size
+
+/** Decodes a hex string into bytes — deterministic fixture images without hand-built literals. */
+private fun hexBytes(hex: String): ByteArray =
+    hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
