@@ -17,6 +17,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        providers.environmentVariable("HERMES_ROLLING_DEBUG_KEYSTORE_PATH").orNull?.let { keystorePath ->
+            getByName("debug") {
+                // CI opts into the persistent rolling key explicitly. Local
+                // and pull-request builds keep AGP's normal debug signing.
+                storeFile = file(keystorePath)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
