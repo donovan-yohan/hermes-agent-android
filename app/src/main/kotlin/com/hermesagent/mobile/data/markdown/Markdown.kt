@@ -173,30 +173,36 @@ private fun collectListItems(list: Node): List<List<InlineSpan>> {
  *
  * commonmark-java wraps item content in a Paragraph for tight and loose lists
  * alike, so the content is reached through the block children, not
- * `firstChild` directly. A multi-paragraph item becomes separate lines joined
- * by an em-space break; a nested sub-list recurses into its own flattened
- * lines rather than being glued onto the parent text.
+ * `firstChild` directly. A multi-paragraph or mixed-content item becomes
+ * separate segments joined by an em-dash break; a nested sub-list recurses
+ * into its own flattened lines rather than being glued onto the parent text.
  */
 private fun collectItemLines(item: Node): List<InlineSpan> {
     val lines = mutableListOf<InlineSpan>()
     var child: Node? = item.firstChild
     while (child != null) {
+        // Every arm appends exactly one segment; the separator stays hoisted
+        // here so no child type can silently fuse with the previous one.
+        if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
         when (child) {
-            is Paragraph, is IndentedCodeBlock -> {
-                if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
-                if (child is Paragraph) {
-                    lines += parseInline(child.firstChild)
-                } else {
-                    lines += InlineSpan.Code((child as IndentedCodeBlock).literal.trimEnd('\n'))
-                }
+            is Paragraph -> lines += parseInline(child.firstChild)
+
+            is IndentedCodeBlock -> lines += InlineSpan.Code(child.literal.trimEnd('\n'))
+
+            is FencedCodeBlock -> {
+                val language = child.info?.trim()?.takeIf(String::isNotEmpty)
+                val body = child.literal.trimEnd('\n')
+                lines += InlineSpan.Code(if (language != null) "$language · $body" else body)
             }
 
             is BulletList, is OrderedList -> {
-                for (nested in collectListItems(child)) {
-                    if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
-                    lines += InlineSpan.Plain("• ")
-                    lines += nested
+                val segment = mutableListOf<InlineSpan>()
+                collectListItems(child).forEachIndexed { index, nested ->
+                    if (index > 0) segment += InlineSpan.Plain("\n")
+                    segment += InlineSpan.Plain("• ")
+                    segment += nested
                 }
+                lines += segment
             }
 
             else -> lines += InlineSpan.Plain(PLAIN_TEXT.render(child).trim())

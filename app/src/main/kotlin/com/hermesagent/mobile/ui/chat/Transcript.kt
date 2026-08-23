@@ -902,10 +902,10 @@ private fun TableGrid(
 
         // Column sizing from intrinsics: a Measurable may be measured exactly
         // once, so the probe pass reads intrinsic widths instead of measuring.
-        // The budget comes from [LocalTableViewportWidth], NOT the measure
-        // constraints — horizontalScroll measures this layout with unbounded
-        // width (that is the whole point of a scroller), so constraints alone
-        // would make wrapping dead code and every cell render on one line.
+        // The budget arrives as [viewportBudget] read from BoxWithConstraints
+        // OUTSIDE the scroller — horizontalScroll hands this layout unbounded
+        // width (that is the point of a scroller), so measure constraints
+        // alone would disable wrapping and render every cell on one line.
         val targets = IntArray(columns) { column ->
             (0 until rowCount).maxOf { row -> cells[row][column].first().maxIntrinsicWidth(0) }
         }

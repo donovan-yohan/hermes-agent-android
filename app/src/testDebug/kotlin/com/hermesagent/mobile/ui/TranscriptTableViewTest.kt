@@ -5,6 +5,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -14,6 +15,7 @@ import com.hermesagent.mobile.ui.chat.MarkdownTableScrollerTag
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,6 +107,32 @@ class TranscriptTableViewTest {
         // The scroller exists inside the table card and is on screen — the
         // block owns its overflow container, like a code fence does.
         compose.onNodeWithTag(MarkdownTableScrollerTag).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a wide wrappable table shrinks to the viewport instead of scrolling`() {
+        // Regression guard for the review blocker: horizontalScroll hands its
+        // child unbounded width, so if the viewport budget is not plumbed in
+        // from outside the scroller, TableSizing sees null and this table
+        // renders at full unwrapped width (~2000px). With a real budget, both
+        // columns are multi-word and wrap down instead.
+        launch(
+            """
+            | Alpha column with several ordinary words | Beta column also carrying plenty of words |
+            |---|---|
+            | ${"row one ".repeat(30)}| ${"row two ".repeat(30)} |
+            """.trimIndent(),
+        )
+
+        val window = compose.onRoot().fetchSemanticsNode().boundsInWindow.width
+        val scroller = compose.onNodeWithTag(MarkdownTableScrollerTag)
+            .fetchSemanticsNode().boundsInWindow
+
+        assertTrue(
+            "table rendered ${scroller.width}px wide in a ${window}px window; " +
+                "TableSizing never received a viewport budget",
+            scroller.width <= window + 1f,
+        )
     }
 
     private companion object {
