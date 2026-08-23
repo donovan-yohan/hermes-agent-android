@@ -66,7 +66,7 @@ class ComposerSliceFourAccessibilityTest {
         // geometry.
         val orderedDescriptions = listOf(
             "Goal, collapse",
-            "To do, 1, collapse",
+            "Tasks 0/1, collapse",
             "Subagents, 1, expand",
             "Background, 1, expand",
             "Previews, 1, expand",

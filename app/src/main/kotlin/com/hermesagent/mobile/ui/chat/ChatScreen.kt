@@ -60,6 +60,8 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.ToolActivity
+import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.ui.ChatActions
@@ -359,40 +361,6 @@ private fun JumpToLatestButton(
 }
 
 /**
- * Mobile form of Desktop's composer coding-status strip: the server-reported
- * git branch for this session's working directory, rendered as a quiet bar
- * above the composer. Android has no authorized local git transport, so the
- * label is exactly what the Gateway reported — no path or worktree claims.
- */
-@Composable
-internal fun SessionBranchStrip(branch: String, modifier: Modifier = Modifier) {
-    val tokens = HermesTheme.tokens
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 28.dp)
-            .semantics { contentDescription = "Working branch $branch" }
-            .testTag("Session branch strip")
-            .padding(horizontal = HermesTheme.spacing.pageInset + 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        HermesIconGlyph(
-            icon = HermesIcon.GitBranch,
-            color = tokens.textTertiary,
-            size = 12.sp,
-        )
-        Text(
-            text = branch,
-            style = HermesTheme.type.scaffoldMeta,
-            color = tokens.textSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/**
  * Scroll to the *bottom* of the transcript, not merely to its last item.
  *
  * A streaming block routinely outgrows the viewport, and `scrollToItem` only
@@ -423,17 +391,29 @@ private fun LazyListState.anchor(): Pair<Int, Int> =
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
+    val composerStatus = state.activeSession?.composerStatus
+    val hasQueue = state.composer.runtime.queueEntries.isNotEmpty()
+    val fuseStatusStack = composerStatusGroupCount(composerStatus, hasQueue) == 1 &&
+        state.composer.runtime.pendingInput == null && state.backgroundPendingInput == null
+    val latestSettledToolId = state.transcript.asReversed().firstNotNullOfOrNull { entry ->
+        (entry as? ToolActivity)?.takeIf { it.state != ToolState.Running }?.id
+    }
     Column(Modifier.imePadding().navigationBarsPadding()) {
         LaunchedEffect(state.activeSession?.id) { actions.onComposerStatusOpened() }
-        state.activeSession?.gitBranch?.takeIf(String::isNotBlank)?.let { branch ->
-            SessionBranchStrip(branch = branch)
+        LaunchedEffect(
+            state.activeSession?.id,
+            state.activeSession?.worktreePath,
+            state.isStreaming,
+            latestSettledToolId,
+        ) {
+            actions.onRefreshCodingContext()
         }
         ComposerStatusStack(
             activeSessionId = state.activeSession?.id,
             status = state.activeSession?.composerStatus,
             onRefreshProcesses = actions.onRefreshProcesses,
             onKillProcess = actions.onKillProcess,
-            hasQueue = state.composer.runtime.queueEntries.isNotEmpty(),
+            hasQueue = hasQueue,
             queueContent = {
                 ComposerQueueSection(
                     durableSessionId = state.composer.runtime.activeDurableId,
@@ -454,7 +434,13 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
                     onMarkReadyAfterReview = actions.onMarkQueuedEntryReady,
                 )
             },
-            modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+            fusedToComposer = fuseStatusStack,
+            modifier = Modifier.padding(
+                start = HermesTheme.spacing.pageInset + 8.dp,
+                top = 4.dp,
+                end = HermesTheme.spacing.pageInset + 8.dp,
+                bottom = if (fuseStatusStack) 0.dp else 4.dp,
+            ),
         )
         PendingInputSurface(
             pending = state.composer.runtime.pendingInput,
@@ -474,6 +460,10 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
                 onDismiss = { actions.onDismissSecurePending() },
             )
         }
+        CodingReviewSheet(
+            state = state.composer.codingReview,
+            onDismiss = actions.onDismissCodingReview,
+        )
         Composer(
             draft = state.draft,
             onDraftChange = actions.onDraftChange,
@@ -484,6 +474,13 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             statusLine = state.composerStatus(),
             editorIdentity = state.activeSession?.id,
+            codingHeader = {
+                CodingStatusRow(
+                    context = state.composer.codingContext,
+                    onOpenReview = actions.onOpenCodingReview,
+                )
+            },
+            fusedStatusAbove = fuseStatusStack,
             controls = state.composer,
             onSelectModel = actions.onSelectModel,
             onSelectReasoning = actions.onSelectReasoning,

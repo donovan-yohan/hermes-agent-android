@@ -22,6 +22,8 @@ import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
 import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ComposerGoalStatus
 import com.hermesagent.mobile.data.session.ComposerStatusState
+import com.hermesagent.mobile.data.session.ComposerTodoState
+import com.hermesagent.mobile.data.session.ComposerTodoStatus
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
@@ -43,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -279,6 +282,9 @@ internal class LiveGatewaySessionRepository(
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
     private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
+    /** `todo` tools are hoisted into the composer and never rendered as transcript rows. */
+    private val todoToolIdsByRuntime = mutableMapOf<String, MutableSet<String>>()
+    private val todoClearJobsByDurableId = mutableMapOf<String, Job>()
     private val optimisticUserByRuntime = mutableMapOf<String, UserTurn>()
     /** Accepted corrections remain visible until authoritative transcript reconciliation. */
     private val optimisticCorrectionsByRuntime = mutableMapOf<String, MutableList<UserTurn>>()
@@ -287,6 +293,8 @@ internal class LiveGatewaySessionRepository(
 
     /** Latest server-reported git branch per durable session, connection-scoped. */
     private val branchByDurableId = mutableMapOf<String, String>()
+    /** Latest server-reported session cwd; never inferred from local state. */
+    private val worktreeByDurableId = mutableMapOf<String, String>()
     /** Optional methods are feature-detected once per connection generation. */
     private val unsupportedCapabilities = mutableSetOf<GatewayOptionalCapability>()
     private val processRefreshesInFlight = mutableSetOf<String>()
@@ -332,6 +340,9 @@ internal class LiveGatewaySessionRepository(
                     assistantByRuntime.clear()
                     reasoningByRuntime.clear()
                     toolsByRuntime.clear()
+                    todoToolIdsByRuntime.clear()
+                    todoClearJobsByDurableId.values.forEach(Job::cancel)
+                    todoClearJobsByDurableId.clear()
                     optimisticUserByRuntime.clear()
                     optimisticCorrectionsByRuntime.clear()
                     progressRuntimeIds.clear()
@@ -339,6 +350,7 @@ internal class LiveGatewaySessionRepository(
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
+                    worktreeByDurableId.clear()
                     unsupportedCapabilities.clear()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
@@ -362,7 +374,10 @@ internal class LiveGatewaySessionRepository(
                 // Keep it useful while disconnected, then let the next
                 // authoritative list decide whether it really exists.
                 reset.ephemeralDurableIds.forEach(cache::removeSession)
-                if (reset.clearProjects) cache.clearProjects()
+                if (reset.clearProjects) {
+                    cache.clearProjects()
+                    cache.clearConnectionScopedFields()
+                }
                 if (next != null) {
                     eventJob = scope.launch {
                         next.events.collect { event ->
@@ -416,9 +431,13 @@ internal class LiveGatewaySessionRepository(
                             progress = existing.progress,
                             composerStatus = existing.composerStatus,
                             activityStartedAtMillis = existing.activityStartedAtMillis,
-                            gitBranch = existing.gitBranch ?: branchByDurableId[row.id],
+                            gitBranch = branchByDurableId[row.id] ?: row.gitBranch ?: existing.gitBranch,
+                            worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath ?: existing.worktreePath,
                         )
-                    } ?: row.copy(gitBranch = branchByDurableId[row.id])
+                    } ?: row.copy(
+                        gitBranch = branchByDurableId[row.id] ?: row.gitBranch,
+                        worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath,
+                    )
                 },
             )
         }
@@ -548,6 +567,7 @@ internal class LiveGatewaySessionRepository(
 
         val historyResult = connection.client.request("session.history", objectParams("session_id", runtimeId))
         val history = parseHistory(historyResult, runtimeId, clock())
+        val hydratedTodos = latestComposerTodosFromHistory(historyResult)
         synchronized(stateLock) {
             ensureCurrent(connection)
             val currentRevision = runtimeEventRevision(runtimeId)
@@ -577,6 +597,9 @@ internal class LiveGatewaySessionRepository(
                 preserveProgress = !progressSnapshotIsCurrent,
             )
             cache.rehomeSession(durableId, row, reconciled)
+            hydratedTodos?.takeUnless(::todoListActive)?.let { todos ->
+                setComposerTodos(canonicalId, runtimeId, todos)
+            }
             reconnectDurableIds.remove(durableId)
             reconnectDurableIds.remove(canonicalId)
             if (canonicalId != durableId) {
@@ -1525,10 +1548,31 @@ internal class LiveGatewaySessionRepository(
                     markRuntimeLive(runtimeId)
                     ephemeralSessions.remove(durableId)
                 }
-                payload.string("branch")?.takeIf(String::isNotBlank)?.let { branch ->
-                    branchByDurableId[durableId] = branch
+                val branch = payload.sessionGitBranch()
+                val worktreePath = payload.sessionWorktreePath()
+                val reportsBranch = "branch" in payload || "git_branch" in payload
+                val reportsWorktree = "cwd" in payload
+                if (reportsBranch) {
+                    if (branch == null) {
+                        branchByDurableId.remove(durableId)
+                    } else {
+                        branchByDurableId[durableId] = branch
+                    }
+                }
+                if (reportsWorktree) {
+                    if (worktreePath == null) {
+                        worktreeByDurableId.remove(durableId)
+                    } else {
+                        worktreeByDurableId[durableId] = worktreePath
+                    }
+                }
+                if (reportsBranch || reportsWorktree) {
                     cache.session(durableId)?.let { row ->
-                        if (row.gitBranch != branch) cache.upsertSession(row.copy(gitBranch = branch))
+                        val next = row.copy(
+                            gitBranch = if (reportsBranch) branch else row.gitBranch,
+                            worktreePath = if (reportsWorktree) worktreePath else row.worktreePath,
+                        )
+                        if (next != row) cache.upsertSession(next)
                     }
                 }
                 reconcileSessionInfo(durableId, runtimeId, running, payload.status())
@@ -1913,6 +1957,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun releaseRuntimeGuard(runtimeId: String) {
+        todoToolIdsByRuntime.remove(runtimeId)
         activeRuntimeIds.remove(runtimeId)
         localSubmitStartedAtByRuntime.remove(runtimeId)
         liveTurnRuntimeIds.remove(runtimeId)
@@ -1980,8 +2025,29 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun applyTool(type: String, durableId: String, runtimeId: String, payload: JsonObject) {
-        val tools = toolsByRuntime.getOrPut(runtimeId, ::mutableMapOf)
         val explicitId = payload.string("tool_id") ?: payload.string("tool_call_id") ?: payload.string("id")
+        val todoIds = todoToolIdsByRuntime.getOrPut(runtimeId, ::mutableSetOf)
+        val incomingToolName = payload.string("name")
+        val knownTodoId = when {
+            explicitId != null && explicitId in todoIds -> explicitId
+            explicitId == null && (incomingToolName == null || incomingToolName == "todo") -> todoIds.singleOrNull()
+            else -> null
+        }
+        // A named, identifier-less non-todo tool must never inherit the sole
+        // live todo id. Correlation fallback is safe only when the name is
+        // absent or explicitly `todo`.
+        val isTodo = incomingToolName == "todo" || knownTodoId != null
+        if (isTodo) {
+            val todoId = knownTodoId ?: explicitId ?: "gateway-todo-${sequence.incrementAndGet()}"
+            if (type == "tool.complete") todoIds.remove(todoId) else todoIds += todoId
+            parseComposerTodosFromTool(payload)?.let { todos ->
+                setComposerTodos(durableId, runtimeId, todos)
+            }
+            if (todoIds.isEmpty()) todoToolIdsByRuntime.remove(runtimeId)
+            return
+        }
+        if (todoIds.isEmpty()) todoToolIdsByRuntime.remove(runtimeId)
+        val tools = toolsByRuntime.getOrPut(runtimeId, ::mutableMapOf)
         val id = explicitId ?: tools.keys.singleOrNull() ?: "gateway-tool-${sequence.incrementAndGet()}"
         val previous = tools[id]
         val startedAt = previous?.startedAtMillis ?: clock()
@@ -2118,13 +2184,49 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    /** A terminal turn and a connection reset invalidate all live stack material. */
-    private fun clearConnectionScopedStatus(durableId: String, runtimeId: String) {
+    /** A terminal turn invalidates live rows; a completed todo may briefly land. */
+    private fun clearConnectionScopedStatus(
+        durableId: String,
+        runtimeId: String,
+        preserveFinishedTodos: Boolean = true,
+    ) {
         progressRuntimeIds.remove(runtimeId)
         composerStatusRuntimeIds.remove(runtimeId)
         cache.session(durableId)?.let { existing ->
-            if (existing.progress != null || existing.composerStatus != null) {
-                cache.upsertSession(existing.copy(progress = null, composerStatus = null))
+            val finishedTodos = if (preserveFinishedTodos) {
+                existing.composerStatus?.todos
+                    ?.takeIf(List<ComposerTodoStatus>::isNotEmpty)
+                    ?.takeUnless(::todoListActive)
+            } else {
+                null
+            }
+            val landed = finishedTodos?.let { ComposerStatusState(todos = it) }
+            if (existing.progress != null || existing.composerStatus != landed) {
+                cache.upsertSession(existing.copy(progress = null, composerStatus = landed))
+            }
+        }
+    }
+
+    private fun setComposerTodos(
+        durableId: String,
+        runtimeId: String,
+        todos: List<ComposerTodoStatus>,
+    ) {
+        todoClearJobsByDurableId.remove(durableId)?.cancel()
+        updateComposerStatus(durableId, runtimeId) { current -> current.copy(todos = todos) }
+        if (todos.isNotEmpty() && !todoListActive(todos)) {
+            todoClearJobsByDurableId[durableId] = scope.launch {
+                delay(FINISHED_TODO_LINGER_MILLIS)
+                synchronized(stateLock) {
+                    todoClearJobsByDurableId.remove(durableId)
+                    cache.session(durableId)?.let { existing ->
+                        val status = existing.composerStatus ?: return@let
+                        if (status.todos == todos) {
+                            val cleared = status.copy(todos = emptyList()).takeUnless(ComposerStatusState::hasVisibleRows)
+                            cache.upsertSession(existing.copy(composerStatus = cleared))
+                        }
+                    }
+                }
             }
         }
     }
@@ -2164,7 +2266,9 @@ internal class LiveGatewaySessionRepository(
         sealReasoning(durableId, runtimeId, ToolState.Stopped)
         sealTools(durableId, runtimeId, ToolState.Stopped)
         optimisticCorrectionsByRuntime.remove(runtimeId)
-        clearConnectionScopedStatus(durableId, runtimeId)
+        // A new connection cannot inherit a previous connection's landing
+        // timer or completed task list.
+        clearConnectionScopedStatus(durableId, runtimeId, preserveFinishedTodos = false)
         cache.session(durableId)?.let { existing ->
             cache.upsertSession(
                 existing.copy(
@@ -2320,6 +2424,8 @@ internal class LiveGatewaySessionRepository(
             ?: SessionSummary(targetId, "New session", "", clock())
         cache.rehomeSession(fromId, row, entries)
         if (ephemeralSessions.remove(fromId)) ephemeralSessions += targetId
+        branchByDurableId.remove(fromId)?.let { branchByDurableId[targetId] = it }
+        worktreeByDurableId.remove(fromId)?.let { worktreeByDurableId[targetId] = it }
         identities.bind(targetId, runtimeId)
         rehomeEvents.tryEmit(SessionRehome(fromId, targetId))
         return targetId
@@ -2367,6 +2473,8 @@ internal class LiveGatewaySessionRepository(
             messageCount = snapshot.primitive("message_count")?.toIntOrNull() ?: existing.messageCount,
             source = snapshot.string("source") ?: existing.source,
             remoteProfile = snapshot.string("profile") ?: snapshot.string("profile_name") ?: existing.remoteProfile,
+            gitBranch = snapshot.sessionGitBranch() ?: existing.gitBranch,
+            worktreePath = snapshot.sessionWorktreePath() ?: existing.worktreePath,
             status = status,
             progress = if (preserveProgress) existing.progress else null,
             composerStatus = if (preserveProgress) existing.composerStatus else null,
@@ -2700,6 +2808,25 @@ internal fun parseHistory(result: JsonElement, runtimeId: String, nowMillis: Lon
     return parseMessages(messages, runtimeId, nowMillis)
 }
 
+/** Latest parseable todo call wins; active historical lists are filtered by the caller. */
+internal fun latestComposerTodosFromHistory(result: JsonElement): List<ComposerTodoStatus>? {
+    val root = result as? JsonObject ?: return null
+    val messages = root["messages"] as? JsonArray ?: return null
+    var latest: List<ComposerTodoStatus>? = null
+    messages.forEach messageLoop@ { element ->
+        val message = element as? JsonObject ?: return@messageLoop
+        if (message.string("role") == "tool" && message.todoToolName() == "todo") {
+            parseComposerTodosFromTool(message)?.let { latest = it }
+        }
+        (message["content"] as? JsonArray).orEmpty().forEach partLoop@ { partElement ->
+            val part = partElement as? JsonObject ?: return@partLoop
+            val toolName = part.todoToolName()
+            if (toolName == "todo") parseComposerTodosFromTool(part)?.let { latest = it }
+        }
+    }
+    return latest
+}
+
 private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Long): List<TranscriptEntry> = buildList {
     messages.forEachIndexed { index, element ->
         val message = element as? JsonObject ?: return@forEachIndexed
@@ -2726,6 +2853,7 @@ private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Lon
             }
 
             "tool" -> {
+                if (message.todoToolName() == "todo") return@forEachIndexed
                 val name = message.string("name").safeToolLabel("Tool")
                 add(
                     ToolActivity(
@@ -2758,6 +2886,8 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
         messageCount = root.primitive("message_count")?.toIntOrNull() ?: 0,
         source = root.string("source"),
         remoteProfile = root.string("profile") ?: root.string("profile_name"),
+        gitBranch = root.sessionGitBranch(),
+        worktreePath = root.sessionWorktreePath(),
     )
 }
 
@@ -2788,6 +2918,18 @@ private fun objectParams(name: String, value: String): JsonObject =
     buildJsonObject { put(name, JsonPrimitive(value)) }
 
 private fun JsonObject.messageId(): String? = string("row_id") ?: string("message_id") ?: string("id")
+
+private fun JsonObject.todoToolName(): String? =
+    string("toolName") ?: string("tool_name") ?: string("name")
+
+private fun JsonObject.sessionGitBranch(): String? =
+    (string("branch") ?: string("git_branch"))
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && it.length <= MAX_SESSION_BRANCH }
+
+/** Preserve the server path byte-for-byte; truncation could target another path. */
+private fun JsonObject.sessionWorktreePath(): String? =
+    string("cwd")?.takeIf { it.isNotBlank() && it.length <= MAX_SESSION_CWD }
 
 private fun JsonObject.jsonString(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -3066,6 +3208,13 @@ private fun List<TranscriptEntry>.openUserRunContains(text: String): Boolean {
 
 private fun String.normalizedTranscriptText(): String = replace(STATUS_WHITESPACE, " ").trim()
 
+private fun todoListActive(todos: List<ComposerTodoStatus>): Boolean =
+    todos.any { it.state == ComposerTodoState.Pending || it.state == ComposerTodoState.InProgress }
+
+private fun ComposerStatusState.hasVisibleRows(): Boolean =
+    goal != null || todos.isNotEmpty() || subagents.isNotEmpty() || backgroundProcesses.isNotEmpty() ||
+        previewArtifacts.isNotEmpty() || genericProgress != null || isCompacting
+
 private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<TranscriptEntry> {
     val index = indexOfFirst { it.id == entry.id }
     if (index < 0) return this + entry
@@ -3106,6 +3255,9 @@ private const val MAX_PENDING_TEXT = 1_024
 private const val MAX_PENDING_CHOICE = 240
 private const val MAX_PENDING_CHOICES = 12
 private const val MAX_PENDING_QUESTIONS = 20
+private const val MAX_SESSION_BRANCH = 512
+private const val MAX_SESSION_CWD = 4_096
+private const val FINISHED_TODO_LINGER_MILLIS = 4_000L
 private const val PROJECT_PREVIEW_LIMIT = 3
 private const val MISSING_RPC_METHOD_CODE = -32601
 private const val UNSUPPORTED_CAPABILITY_CODE = 4010

@@ -1,5 +1,8 @@
 package com.hermesagent.mobile.data.voice
 
+import com.hermesagent.mobile.data.gateway.GatewayHttp
+import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
+import com.hermesagent.mobile.data.gateway.GatewayHttpResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,10 +12,10 @@ import org.junit.Test
 
 class VoicePreferenceRepositoryTest {
     private class FakeHttp(
-        private val responses: ArrayDeque<VoiceHttpResult>,
-    ) : GatewayVoiceHttp {
-        val requests = mutableListOf<Pair<String, VoiceHttpRequest?>>()
-        override suspend fun execute(request: VoiceHttpRequest): VoiceHttpResult {
+        private val responses: ArrayDeque<GatewayHttpResult>,
+    ) : GatewayHttp {
+        val requests = mutableListOf<Pair<String, GatewayHttpRequest?>>()
+        override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
             requests += request.method to null
             return responses.removeFirst()
         }
@@ -21,7 +24,7 @@ class VoicePreferenceRepositoryTest {
     @Test
     fun `auto speak reads gateway config voice record`() = runBlocking {
         val body = """{"voice":{"auto_tts":true},"model":"x"}"""
-        val http = FakeHttp(ArrayDeque(listOf(VoiceHttpResult.Success(200, body.toByteArray()))))
+        val http = FakeHttp(ArrayDeque(listOf(GatewayHttpResult.Success(200, body.toByteArray()))))
         val repo = VoicePreferenceRepository { http }
         assertTrue(repo.loadAutoSpeak() == true)
         assertEquals("GET", http.requests.single().first)
@@ -29,7 +32,7 @@ class VoicePreferenceRepositoryTest {
 
     @Test
     fun `missing voice record reads null not false`() = runBlocking {
-        val http = FakeHttp(ArrayDeque(listOf(VoiceHttpResult.Success(200, "{}".toByteArray()))))
+        val http = FakeHttp(ArrayDeque(listOf(GatewayHttpResult.Success(200, "{}".toByteArray()))))
         assertNull(VoicePreferenceRepository { http }.loadAutoSpeak())
     }
 
@@ -39,8 +42,8 @@ class VoicePreferenceRepositoryTest {
         val http = FakeHttp(
             ArrayDeque(
                 listOf(
-                    VoiceHttpResult.Success(200, current.toByteArray()),
-                    VoiceHttpResult.Success(200, """{"ok":true}""".toByteArray()),
+                    GatewayHttpResult.Success(200, current.toByteArray()),
+                    GatewayHttpResult.Success(200, """{"ok":true}""".toByteArray()),
                 ),
             ),
         )
@@ -55,8 +58,8 @@ class VoicePreferenceRepositoryTest {
         val http = FakeHttp(
             ArrayDeque(
                 listOf(
-                    VoiceHttpResult.Success(200, "{}".toByteArray()),
-                    VoiceHttpResult.Rejected(500, "failed"),
+                    GatewayHttpResult.Success(200, "{}".toByteArray()),
+                    GatewayHttpResult.Rejected(500, "failed"),
                 ),
             ),
         )

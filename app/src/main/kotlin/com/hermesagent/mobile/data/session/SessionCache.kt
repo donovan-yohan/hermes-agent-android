@@ -107,6 +107,8 @@ class SessionCache {
                         progress = existing.progress,
                         composerStatus = existing.composerStatus,
                         activityStartedAtMillis = existing.activityStartedAtMillis,
+                        gitBranch = row.gitBranch ?: existing.gitBranch,
+                        worktreePath = row.worktreePath ?: existing.worktreePath,
                     )
                 }
             }
@@ -128,6 +130,22 @@ class SessionCache {
     fun clearProjects() {
         _state.update { current ->
             if (current.projects == ProjectCatalogState()) current else current.copy(projects = ProjectCatalogState())
+        }
+    }
+
+    /** Connection-owned projections must never cross endpoint/profile generations. */
+    fun clearConnectionScopedFields() {
+        _state.update { current ->
+            val sessions = current.sessions.mapValues { (_, row) ->
+                row.copy(
+                    progress = null,
+                    gitBranch = null,
+                    worktreePath = null,
+                    composerStatus = null,
+                    activityStartedAtMillis = null,
+                )
+            }
+            if (sessions == current.sessions) current else current.copy(sessions = sessions)
         }
     }
 

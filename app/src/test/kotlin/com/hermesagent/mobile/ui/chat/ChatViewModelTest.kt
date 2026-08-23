@@ -94,6 +94,111 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `coding context uses only active session worktree truth and opens authenticated review`() = runTest(dispatcher) {
+        cache.upsertSession(
+            requireNotNull(cache.session("session-a")).copy(
+                gitBranch = "feat/composer",
+                worktreePath = "/srv/worktrees/composer",
+            ),
+        )
+        val provider = RecordingCodingContextProvider(
+            context = CodingContext.Available(
+                branch = "feat/composer",
+                worktreePath = "/srv/worktrees/composer",
+                additions = 12,
+                deletions = 3,
+            ),
+            review = CodingReviewResult.Available(
+                listOf(CodingReviewFile("app/Main.kt", 12, 3, "M", staged = false)),
+            ),
+        )
+        val subject = ChatViewModel(
+            cache = cache,
+            repository = repository,
+            sidebarViewStore = sidebarStore,
+            clock = { CLOCK },
+            codingContextProvider = provider,
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.refreshCodingContext()
+        runCurrent()
+        assertEquals(listOf("/srv/worktrees/composer"), provider.contextPaths)
+        assertEquals(listOf("/srv/worktrees/composer" to "feat/composer"), provider.pullRequestPaths)
+        assertEquals(12, (subject.uiState.value.composer.codingContext as CodingContext.Available).additions)
+
+        subject.openCodingReview()
+        runCurrent()
+        assertEquals(listOf("/srv/worktrees/composer"), provider.reviewPaths)
+        val review = subject.uiState.value.composer.codingReview as CodingReviewUiState.Ready
+        assertEquals("app/Main.kt", review.files.single().path)
+    }
+
+    @Test
+    fun `verified git status paints before slower pull request lookup`() = runTest(dispatcher) {
+        cache.upsertSession(
+            requireNotNull(cache.session("session-a")).copy(
+                gitBranch = "feat/composer",
+                worktreePath = "/srv/worktrees/composer",
+            ),
+        )
+        val pullRequestGate = CompletableDeferred<CodingPullRequest?>()
+        val provider = object : CodingContextProvider {
+            override suspend fun contextFor(worktreePath: String) = CodingContext.Available(
+                branch = "feat/composer",
+                worktreePath = worktreePath,
+                additions = 12,
+                deletions = 3,
+            )
+
+            override suspend fun pullRequestFor(worktreePath: String, branch: String): CodingPullRequest? =
+                pullRequestGate.await()
+
+            override suspend fun reviewFor(worktreePath: String) = CodingReviewResult.Unavailable
+        }
+        val subject = ChatViewModel(
+            cache = cache,
+            repository = repository,
+            sidebarViewStore = sidebarStore,
+            clock = { CLOCK },
+            codingContextProvider = provider,
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.refreshCodingContext()
+        runCurrent()
+        assertNull((subject.uiState.value.composer.codingContext as CodingContext.Available).pullRequest)
+
+        pullRequestGate.complete(
+            CodingPullRequest(23, "https://github.com/acme/repo/pull/23", "open", draft = false),
+        )
+        runCurrent()
+        assertEquals(23, (subject.uiState.value.composer.codingContext as CodingContext.Available).pullRequest?.number)
+    }
+
+    @Test
+    fun `coding context makes no status request without server worktree truth`() = runTest(dispatcher) {
+        val provider = RecordingCodingContextProvider()
+        val subject = ChatViewModel(
+            cache = cache,
+            repository = repository,
+            sidebarViewStore = sidebarStore,
+            clock = { CLOCK },
+            codingContextProvider = provider,
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        subject.refreshCodingContext()
+        runCurrent()
+
+        assertTrue(provider.contextPaths.isEmpty())
+        assertTrue(subject.uiState.value.composer.codingContext is CodingContext.Unavailable)
+    }
+
+    @Test
     fun `fresh manual model remains local and becomes the create override`() = runTest(dispatcher) {
         val emptyCache = SessionCache()
         val scope = ComposerControlsScope("test-gateway", "default")
@@ -1481,6 +1586,31 @@ class ChatViewModelTest {
 
         override suspend fun clearManual(scope: ComposerControlsScope) {
             saved = null
+        }
+    }
+
+    private class RecordingCodingContextProvider(
+        private val context: CodingContext = CodingContext.Unavailable,
+        private val pullRequest: CodingPullRequest? = null,
+        private val review: CodingReviewResult = CodingReviewResult.Unavailable,
+    ) : CodingContextProvider {
+        val contextPaths = mutableListOf<String>()
+        val pullRequestPaths = mutableListOf<Pair<String, String>>()
+        val reviewPaths = mutableListOf<String>()
+
+        override suspend fun contextFor(worktreePath: String): CodingContext {
+            contextPaths += worktreePath
+            return context
+        }
+
+        override suspend fun pullRequestFor(worktreePath: String, branch: String): CodingPullRequest? {
+            pullRequestPaths += worktreePath to branch
+            return pullRequest
+        }
+
+        override suspend fun reviewFor(worktreePath: String): CodingReviewResult {
+            reviewPaths += worktreePath
+            return review
         }
     }
 
