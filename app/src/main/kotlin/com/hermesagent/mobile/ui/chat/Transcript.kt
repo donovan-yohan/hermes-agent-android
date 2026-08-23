@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui.chat
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -29,10 +31,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -49,6 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.hermesagent.mobile.data.attachments.ImageRefLines
+import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.markdown.InlineSpan
 import com.hermesagent.mobile.data.markdown.MarkdownBlock
 import com.hermesagent.mobile.data.markdown.parseMarkdown
@@ -59,15 +69,20 @@ import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.DitherMark
 import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.ScaffoldRow
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -97,6 +112,7 @@ fun Transcript(
     isWorking: Boolean = false,
     activityStartedAtMillis: Long? = null,
     progress: SessionProgress? = null,
+    imageLoader: GatewayImageLoader? = null,
 ) {
     val spacing = HermesTheme.spacing
     val hasRunningActivity = entries.any {
@@ -124,7 +140,7 @@ fun Transcript(
     ) {
         items(items = entries, key = { it.id }) { entry ->
             when (entry) {
-                is UserTurn -> UserBubble(entry)
+                is UserTurn -> UserBubble(entry, imageLoader)
                 is AssistantTurn -> AssistantProse(entry)
                 is ReasoningActivity -> ReasoningRow(entry)
                 is ToolActivity -> ToolRow(entry)
@@ -139,30 +155,180 @@ fun Transcript(
 }
 
 @Composable
-private fun UserBubble(turn: UserTurn) {
+private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?) {
     val tokens = HermesTheme.tokens
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Box(
-            Modifier
-                .widthIn(max = 320.dp)
-                .background(tokens.userBubble, RoundedCornerShape(14.dp))
-                .border(1.dp, tokens.userBubbleBorder, RoundedCornerShape(14.dp))
-                .padding(horizontal = 12.dp, vertical = 9.dp)
-                // Keep the bubble as one accessible message. Merging removes
-                // the duplicate readable Text child while preserving any
-                // descendant actions if the bubble gains one later.
-                .semantics(mergeDescendants = true) {
-                    contentDescription = "You said: ${turn.text}"
-                },
+    // Persisted user turns carry trailing `@image:<path>` lines (the
+    // gateway's persist-time rewrite); render them as thumbnails instead of
+    // placeholder prose, exactly like Desktop's extractImageRefs.
+    val (bodyText, imageRefs) = remember(turn.text) { ImageRefLines.split(turn.text) }
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        // Desktop parity: no body text, no bubble — the thumbnail stands alone.
+        if (bodyText.isNotBlank()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Box(
+                    Modifier
+                        .widthIn(max = 320.dp)
+                        .background(tokens.userBubble, RoundedCornerShape(14.dp))
+                        .border(1.dp, tokens.userBubbleBorder, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                        // Keep the bubble as one accessible message. Merging removes
+                        // the duplicate readable Text child while preserving any
+                        // descendant actions if the bubble gains one later.
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "You said: $bodyText"
+                        },
+                ) {
+                    // The parent retains its accessible label and any future actions;
+                    // only this visual leaf is silent so TalkBack does not read the
+                    // message twice through the merged subtree.
+                    Text(
+                        bodyText,
+                        style = HermesTheme.type.body,
+                        color = tokens.textPrimary,
+                        modifier = Modifier.clearAndSetSemantics {},
+                    )
+                }
+            }
+        }
+        imageRefs.forEach { ref ->
+            AttachedImageRow(
+                refLine = ref,
+                imageLoader = imageLoader,
+                modifier = Modifier
+                    .padding(end = HermesTheme.spacing.textIndent)
+                    .testTag("Transcript attached image ${ref.hashCode()}"),
+            )
+        }
+    }
+}
+
+/**
+ * One attached image below a user turn. Fetches the gateway-staged bytes over
+ * the connection-owned loader (bounded, authenticated, 15s) and shows the
+ * downsampled thumbnail; failure degrades to a quiet file chip, never an error
+ * toast. Tapping opens the full-size bitmap over the transcript.
+ */
+@Composable
+private fun AttachedImageRow(
+    refLine: String,
+    imageLoader: GatewayImageLoader?,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    val path = remember(refLine) { ImageRefLines.pathOf(refLine) }
+    var thumbnail by remember(refLine) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(refLine) { mutableStateOf(false) }
+    var showFull by remember(refLine) { mutableStateOf(false) }
+    var full by remember(refLine) { mutableStateOf<ImageBitmap?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(refLine, imageLoader, path) {
+        if (path == null || imageLoader == null) return@LaunchedEffect
+        imageLoader.load(path).fold(
+            onSuccess = { bytes ->
+                val decoded = withContext(Dispatchers.Default) {
+                    AttachmentThumbnails.decodeComposer(bytes)
+                }
+                thumbnail = decoded
+                failed = decoded == null
+            },
+            onFailure = { failed = true },
+        )
+    }
+
+    val label = remember(refLine) { path?.substringAfterLast('/')?.ifBlank { null } ?: "image" }
+    if (failed) {
+        Row(
+            modifier
+                .background(tokens.widgetSurface, RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // The parent retains its accessible label and any future actions;
-            // only this visual leaf is silent so TalkBack does not read the
-            // message twice through the merged subtree.
-            Text(
-                turn.text,
-                style = HermesTheme.type.body,
-                color = tokens.textPrimary,
-                modifier = Modifier.clearAndSetSemantics {},
+            HermesIconGlyph(HermesIcon.File, size = 12.sp, color = tokens.textTertiary)
+            Text(label, style = HermesTheme.type.caption, color = tokens.textSecondary, maxLines = 1)
+        }
+        return
+    }
+
+    val current = thumbnail ?: return
+    if (showFull) {
+        FullSizeImageOverlay(
+            bitmap = full ?: current,
+            label = label,
+            onDismiss = { showFull = false },
+        )
+    }
+    Image(
+        bitmap = current,
+        contentDescription = label,
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .widthIn(max = 220.dp)
+            .heightIn(max = 220.dp)
+            .background(tokens.widgetSurface)
+            .clickable(role = Role.Button) {
+                // The full-resolution decode is only paid on tap; a transcript
+                // full of images stays cheap until the user opens one.
+                if (full == null && path != null && imageLoader != null) {
+                    scope.launch {
+                        imageLoader.load(path).fold(
+                            onSuccess = { bytes ->
+                                withContext(Dispatchers.Default) {
+                                    AttachmentThumbnails.decodeTranscript(bytes)
+                                }?.let { full = it }
+                            },
+                            onFailure = {},
+                        )
+                    }
+                }
+                showFull = true
+            },
+    )
+}
+
+/** Full-screen tap-through viewer with a dismiss affordance. */
+@Composable
+private fun FullSizeImageOverlay(
+    bitmap: ImageBitmap,
+    label: String,
+    onDismiss: () -> Unit,
+) {
+    val tokens = HermesTheme.tokens
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(tokens.chatSurface.copy(alpha = 0.97f))
+                .testTag("Full size image"),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = label,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            HermesIconButton(
+                icon = HermesIcon.Close,
+                contentDescription = "Close image",
+                onClick = onDismiss,
+                modifier = Modifier
+                    .padding(bottom = 24.dp)
+                    .testTag("Close full size image"),
             )
         }
     }

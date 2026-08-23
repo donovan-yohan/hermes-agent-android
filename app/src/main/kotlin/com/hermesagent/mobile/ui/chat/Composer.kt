@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -156,6 +157,7 @@ fun Composer(
     onInsertText: (String) -> Unit = {},
     onPickFiles: () -> Unit = {},
     attachments: List<ComposerAttachmentDraft> = emptyList(),
+    attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
     onRemoveAttachment: (String) -> Unit = {},
     voiceState: VoiceUiState = VoiceUiState.Idle,
     onToggleDictation: () -> Unit = {},
@@ -236,6 +238,7 @@ fun Composer(
                 onCompletionSelected,
                 onInsertText,
                 attachments,
+                attachmentThumbnails,
                 onRemoveAttachment,
                 voiceState,
                 editorFocusRequester,
@@ -355,6 +358,7 @@ private fun ComposerEditor(
     onCompletionSelected: (CompletionItem) -> Unit,
     onInsertText: (String) -> Unit,
     attachments: List<ComposerAttachmentDraft> = emptyList(),
+    attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
     onRemoveAttachment: (String) -> Unit = {},
     voiceState: VoiceUiState = VoiceUiState.Idle,
     focusRequester: FocusRequester,
@@ -417,7 +421,11 @@ private fun ComposerEditor(
     }
     Column(modifier) {
         if (attachments.isNotEmpty()) {
-            AttachmentChipRow(attachments = attachments, onRemove = onRemoveAttachment)
+            AttachmentChipRow(
+                attachments = attachments,
+                onRemove = onRemoveAttachment,
+                thumbnails = attachmentThumbnails,
+            )
         }
         BasicTextField(
             value = editorValue,

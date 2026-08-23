@@ -290,6 +290,7 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth()) {
         Transcript(
             entries = state.transcript,
+            imageLoader = state.imageLoader,
             listState = listState,
             isWorking = state.activeSession?.status == SessionStatus.Working,
             activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
@@ -492,6 +493,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
             onInsertText = actions.onInsertText,
             onPickFiles = actions.onPickFiles,
             attachments = state.composer.runtime.attachments,
+            attachmentThumbnails = state.composer.runtime.attachmentThumbnails,
             onRemoveAttachment = actions.onRemoveAttachment,
             voiceState = state.voice,
             onToggleDictation = actions.onToggleDictation,

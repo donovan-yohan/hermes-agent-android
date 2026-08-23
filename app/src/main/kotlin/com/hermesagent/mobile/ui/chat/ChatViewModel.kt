@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui.chat
 
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
@@ -45,7 +46,9 @@ import com.hermesagent.mobile.data.attachments.AttachmentReadResult
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
@@ -148,6 +151,8 @@ data class ComposerRuntimeUiState(
     val pendingInput: PendingInputRequest? = null,
     /** Locally acquired attachment drafts for this session; memory-only. */
     val attachments: List<ComposerAttachmentDraft> = emptyList(),
+    /** Occurrence-keyed preview bitmaps for image drafts; UI-only, never persisted. */
+    val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
 )
 
 /** A pending action owned by a session other than the one on screen. */
@@ -176,6 +181,8 @@ data class ChatUiState(
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val notice: String? = null,
     val composer: ComposerUiState = ComposerUiState(),
+    /** Connection-owned attached-image loader; null while disconnected. */
+    val imageLoader: GatewayImageLoader? = null,
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
@@ -209,6 +216,8 @@ internal class ChatViewModel(
     private val draft = MutableStateFlow("")
     /** Locally acquired attachment drafts, occurrence-scoped and memory-only. */
     private val attachments = MutableStateFlow<List<ComposerAttachmentDraft>>(emptyList())
+    /** Occurrence-keyed preview bitmaps for image drafts; UI-only, wiped with drafts. */
+    private val attachmentThumbnails = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
     private val activeSessionId = MutableStateFlow<String?>(null)
     private val notice = MutableStateFlow<String?>(null)
     private val selectedProjectId = MutableStateFlow<String?>(null)
@@ -265,9 +274,16 @@ internal class ChatViewModel(
         historyRevision,
         queueScopeReady,
         repository.pendingInputs,
-        attachments,
-    ) { queue, revision, scopeReady, pending, drafts ->
-        LocalComposerState(queue, revision, scopeReady, pending, drafts)
+        combine(attachments, attachmentThumbnails) { drafts, thumbnails -> drafts to thumbnails },
+    ) { queue, revision, scopeReady, pending, draftsWithThumbnails ->
+        LocalComposerState(
+            queue = queue,
+            historyRevision = revision,
+            scopeReady = scopeReady,
+            pendingInputs = pending,
+            attachments = draftsWithThumbnails.first,
+            attachmentThumbnails = draftsWithThumbnails.second,
+        )
     }
 
     val uiState: StateFlow<ChatUiState> = combine(
@@ -276,24 +292,29 @@ internal class ChatViewModel(
         draft,
         activeSessionId,
         combine(
-            composer,
-            voice,
+            repository.imageLoader,
             combine(
+                composer,
+                voice,
                 combine(
-                    repository.connectionState,
-                    notice,
-                    selectedProjectId,
-                    projectLoadingId,
-                    sidebarGrouping,
-                ) { connection, message, projectId, loadingId, grouping ->
-                    NavigationState(connection, message, projectId, loadingId, grouping)
-                },
-                localComposerState,
-            ) { navigation, local -> navigation.copy(localComposer = local) },
-        ) { composerState, voiceState, navigation ->
-            Triple(composerState, voiceState, navigation)
-        },
-    ) { cacheState, queryText, draftText, activeId, composerBundle ->
+                    combine(
+                        repository.connectionState,
+                        notice,
+                        selectedProjectId,
+                        projectLoadingId,
+                        sidebarGrouping,
+                    ) { connection, message, projectId, loadingId, grouping ->
+                        NavigationState(connection, message, projectId, loadingId, grouping)
+                    },
+                    localComposerState,
+                ) { navigation, local -> navigation.copy(localComposer = local) },
+            ) { composerState, voiceState, navigation ->
+                Triple(composerState, voiceState, navigation)
+            },
+        ) { imageLoader, composerBundle -> composerBundle to imageLoader },
+    ) { cacheState, queryText, draftText, activeId, bundle ->
+        val composerBundle = bundle.first
+        val imageLoader = bundle.second
         val navigation = composerBundle.third
         val voiceState = composerBundle.second
         val running = cacheState.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
@@ -350,6 +371,7 @@ internal class ChatViewModel(
             pendingInput = navigation.localComposer.pendingInputs.entries
                 .firstOrNull { it.value.durableSessionId == displayedActiveId }?.value,
             attachments = navigation.localComposer.attachments.filter { it.durableSessionId == displayedActiveId },
+            attachmentThumbnails = navigation.localComposer.attachmentThumbnails,
         )
         val backgroundPending = navigation.localComposer.pendingInputs.values
             .firstOrNull { it.durableSessionId != displayedActiveId }
@@ -383,6 +405,7 @@ internal class ChatViewModel(
             connection = navigation.connection,
             notice = navigation.notice,
             composer = composerBundle.first.copy(runtime = runtime),
+            imageLoader = imageLoader,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -1021,6 +1044,8 @@ internal class ChatViewModel(
                     outgoing.forEach { claimed ->
                         attachmentPayloads.remove(claimed.draft.occurrenceId)?.fill(0)
                         attachmentMimes.remove(claimed.draft.occurrenceId)
+                        attachmentThumbnails.value =
+                            attachmentThumbnails.value - claimed.draft.occurrenceId
                     }
                     attachments.value = attachments.value.filterNot { it.durableSessionId == sessionId }
                 } else {
@@ -1134,6 +1159,16 @@ internal class ChatViewModel(
                         updateAttachment(occurrenceId) {
                             it.copy(kind = result.kind, stage = AttachmentStage.Ready(result.bytes.size))
                         }
+                        // The composer preview is a UI-only projection decoded
+                        // from the same bounded in-memory bytes; a refusal
+                        // needs no bitmap and a non-image keeps its glyph.
+                        if (result.kind == AttachmentKind.Image) {
+                            val decoded = AttachmentThumbnails.decodeComposer(result.bytes)
+                            if (decoded != null) {
+                                attachmentThumbnails.value =
+                                    attachmentThumbnails.value + (occurrenceId to decoded)
+                            }
+                        }
                     }
                 }
                 is AttachmentReadResult.Refused -> {
@@ -1148,6 +1183,7 @@ internal class ChatViewModel(
     fun removeAttachment(occurrenceId: String) {
         attachmentPayloads.remove(occurrenceId)?.fill(0)
         attachmentMimes.remove(occurrenceId)
+        attachmentThumbnails.value = attachmentThumbnails.value - occurrenceId
         attachments.value = attachments.value.filterNot { it.occurrenceId == occurrenceId }
     }
 
@@ -1700,6 +1736,7 @@ internal class ChatViewModel(
         for (payload in attachmentPayloads.values) java.util.Arrays.fill(payload, 0)
         attachmentPayloads.clear()
         attachmentMimes.clear()
+        attachmentThumbnails.value = emptyMap()
         attachments.value = emptyList()
         val id = activeSessionId.value
         val text = draft.value
@@ -2007,6 +2044,8 @@ internal class ChatViewModel(
         val pendingInputs: Map<PendingInputKey, PendingInputRequest> = emptyMap(),
         /** In-memory attachment drafts; UI projects them per active session. */
         val attachments: List<ComposerAttachmentDraft> = emptyList(),
+        /** Occurrence-keyed preview bitmaps for image drafts; UI-only. */
+        val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
     )
 
     companion object {
