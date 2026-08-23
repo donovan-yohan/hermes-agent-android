@@ -62,7 +62,11 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         self.assertEqual(1, self._run(broken))
 
     def test_rejects_prune_without_pipefail_shell(self) -> None:
-        broken = self.valid_text.replace("        shell: bash\n", "", 1)
+        broken = self.valid_text.replace(
+            "      - name: Remove superseded latest APK artifacts\n        shell: bash\n",
+            "      - name: Remove superseded latest APK artifacts\n",
+            1,
+        )
         self.assertNotEqual(self.valid_text, broken)
         self.assertEqual(1, self._run(broken))
 
@@ -93,6 +97,32 @@ class CiWorkflowCheckerTest(unittest.TestCase):
 
     def test_rejects_prune_without_check_dependency(self) -> None:
         broken = self.valid_text.replace("    needs: check\n", "", 1)
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_removed_rolling_signing_step(self) -> None:
+        broken = self.valid_text.replace(
+            "      - name: Restore rolling debug keystore\n", "", 1
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_rolling_signing_on_pull_requests(self) -> None:
+        broken = self.valid_text.replace(
+            "      - name: Restore rolling debug keystore\n        if: github.event_name == 'push'\n",
+            "      - name: Restore rolling debug keystore\n        if: always()\n",
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_removal_step_without_always(self) -> None:
+        broken = self.valid_text.replace(
+            "      - name: Remove rolling debug keystore\n        if: always()\n",
+            "      - name: Remove rolling debug keystore\n"
+            "        if: github.event_name == 'push'\n",
+            1,
+        )
         self.assertNotEqual(self.valid_text, broken)
         self.assertEqual(1, self._run(broken))
 

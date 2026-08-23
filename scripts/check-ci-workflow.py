@@ -26,6 +26,9 @@ REQUIRED = (
     "platform-tools",
     "platforms;android-36",
     "build-tools;36.0.0",
+    "secrets.HERMES_ROLLING_DEBUG_KEYSTORE_BASE64",
+    "base64 --decode",
+    "keytool -list",
     "./gradlew check assembleDebug --no-daemon",
     "actions/upload-artifact@v4",
     "- name: Upload debug APK",
@@ -33,9 +36,7 @@ REQUIRED = (
     "app/build/outputs/apk/debug/app-debug.apk",
     "if-no-files-found: error",
     "retention-days: 90",
-    "if: github.event_name == 'push'",
     "prune:",
-    "shell: bash",
     "rolling APK upload did not return an artifact id",
     "--method DELETE",
 )
@@ -76,10 +77,18 @@ def main() -> int:
             failures.append(f"missing required exact-head workflow contract: {required}")
 
     workflow_permissions = _indented_block(effective, "permissions:")
+    signing_step = _indented_block(effective, "      - name: Restore rolling debug keystore")
+    removal_step = _indented_block(effective, "      - name: Remove rolling debug keystore")
     upload_step = _indented_block(effective, "      - name: Upload debug APK")
     prune_job = _indented_block(effective, "  prune:")
     if "if: always()" in upload_step:
         failures.append("rolling upload must run only after a successful Gradle gate")
+    if "if: github.event_name == 'push'" not in signing_step:
+        failures.append("persistent rolling signing material must be restored only on main pushes")
+    if "if: always()" not in removal_step or "debug.keystore" not in removal_step:
+        failures.append("rolling signing material must be removed after every build, even a failed one")
+    if "shell: bash" not in prune_job:
+        failures.append("prune step must use the pipefail-enabled bash shell")
     if effective.count("actions: write") != 1 or "actions: write" not in prune_job:
         failures.append("actions: write must be scoped only to the prune job")
     if "actions: write" in workflow_permissions:
