@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
         ChatViewModel.factory(
             cache = app.cache,
             repository = app.sessionRepository,
+            codingContextProvider = app.codingContextProvider,
             sidebarViewStore = preferences,
             composerControlsStore = preferences,
             draftStore = app.draftStore,
@@ -219,6 +220,9 @@ class MainActivity : ComponentActivity() {
                     onRespondToPendingInput = chatViewModel::respondToPendingInput,
                     onDismissSecurePending = chatViewModel::dismissSecurePending,
                     onComposerStatusOpened = chatViewModel::composerStatusOpened,
+                    onRefreshCodingContext = chatViewModel::refreshCodingContext,
+                    onOpenCodingReview = chatViewModel::openCodingReview,
+                    onDismissCodingReview = chatViewModel::dismissCodingReview,
                     onRefreshProcesses = chatViewModel::refreshProcesses,
                     onKillProcess = chatViewModel::killProcess,
                     onSelectModel = chatViewModel::selectModel,

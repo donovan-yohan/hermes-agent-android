@@ -75,6 +75,15 @@ data class HermesTokens(
     val statusUnread: Color,
     /** Faintest ink the app has: nothing has ever run here. */
     val statusIdle: Color,
+    /** Desktop's `--ui-green` / `--ui-red` coding-status counters. */
+    val diffAdded: Color,
+    val diffRemoved: Color,
+    /** Desktop's amber untracked-only working-tree count. */
+    val gitUntracked: Color,
+    /** Desktop's fixed `--ui-purple` for merged pull requests. */
+    val pullRequestMerged: Color,
+    /** Desktop task completion glyph, separate from the unread-session dot. */
+    val taskCompleted: Color,
     val destructive: Color,
 ) {
     companion object {
@@ -146,6 +155,16 @@ data class HermesTokens(
                 statusWorking = accent,
                 statusUnread = Emerald500,
                 statusIdle = base.withAlpha(0.36f),
+                // styles.css:196-199,528-530 @
+                // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732.
+                diffAdded = if (dark) Color(0xFF55A583) else Color(0xFF1F8A65),
+                diffRemoved = if (dark) Color(0xFFE75E78) else Color(0xFFCF2D56),
+                // coding-row.tsx:319-324 @ the same pinned SHA.
+                gitUntracked = Amber500,
+                // styles.css:202 + pr-tag.tsx:10-14 @ the pinned SHA.
+                pullRequestMerged = Color(0xFF9E94D5),
+                // status-row.tsx:20-23 @ the pinned SHA — emerald-500/80.
+                taskCompleted = Emerald500.copy(alpha = 0.8f),
                 destructive = palette.destructive,
             )
         }

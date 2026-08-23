@@ -335,8 +335,7 @@ internal class GatewayConnectionManager(
     private val mutex = Mutex()
     private val _state = MutableStateFlow(GatewayConnectionState())
     private val _client = MutableStateFlow<GatewayRpcClient?>(null)
-    private val _voiceHttp =
-        MutableStateFlow<com.hermesagent.mobile.data.voice.GatewayVoiceHttp?>(null)
+    private val _gatewayHttp = MutableStateFlow<GatewayHttp?>(null)
     private val _imageLoader = MutableStateFlow<GatewayImageLoader?>(null)
     private var active: ActiveConnection? = null
     private val connectIntent = AtomicReference(ConnectIntent(generation = 0, job = null))
@@ -357,16 +356,15 @@ internal class GatewayConnectionManager(
     internal val currentGeneration: Long get() = connectIntent.get().generation
 
     /**
-     * Connection-owned authenticated HTTP transport for the audio routes.
+     * Connection-owned authenticated HTTP transport for Gateway REST routes.
      * Null while disconnected; resolved per active leg so callers never hold
      * credentials, origins, or tickets.
      */
-    val voiceHttp: StateFlow<com.hermesagent.mobile.data.voice.GatewayVoiceHttp?> =
-        _voiceHttp.asStateFlow()
+    val gatewayHttp: StateFlow<GatewayHttp?> = _gatewayHttp.asStateFlow()
 
     /**
      * Connection-owned authenticated loader for attached-image bytes. Null
-     * while disconnected; same per-leg credential resolvers as [voiceHttp].
+     * while disconnected; same per-leg credential resolvers as [gatewayHttp].
      */
     val imageLoader: StateFlow<GatewayImageLoader?> = _imageLoader.asStateFlow()
 
@@ -467,7 +465,7 @@ internal class GatewayConnectionManager(
                         rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
                         requireRemoteOpenCurrentLocked(intent, profile, admission)
                         active = ActiveConnection.Remote(rpc, profile)
-                        _voiceHttp.value = com.hermesagent.mobile.data.voice.OkHttpGatewayVoiceHttp(
+                        _gatewayHttp.value = OkHttpGatewayHttp(
                             http = http,
                             resolveEndpoint = { profile.normalizedBaseUrl },
                             resolveAuthorization = {
@@ -561,19 +559,19 @@ internal class GatewayConnectionManager(
             // the RPC client uses — because the backend clears its buffer once
             // connect finishes. The header contract matches the readiness
             // verifier exactly (ASCII token).
-            val voiceToken = backend.token.toString(Charsets.US_ASCII)
-            _voiceHttp.value = com.hermesagent.mobile.data.voice.OkHttpGatewayVoiceHttp(
+            val gatewayToken = backend.token.toString(Charsets.US_ASCII)
+            _gatewayHttp.value = OkHttpGatewayHttp(
                 http = http,
                 resolveEndpoint = { "http://127.0.0.1:${'$'}{forward.localPort}" },
                 resolveAuthorization = {
-                    if (voiceToken.isBlank()) null else "X-Hermes-Session-Token" to voiceToken
+                    if (gatewayToken.isBlank()) null else "X-Hermes-Session-Token" to gatewayToken
                 },
             )
             _imageLoader.value = OkHttpGatewayImageLoader(
                 http = http,
                 resolveEndpoint = { "http://127.0.0.1:${'$'}{forward.localPort}" },
                 resolveAuthorization = {
-                    if (voiceToken.isBlank()) null else "X-Hermes-Session-Token" to voiceToken
+                    if (gatewayToken.isBlank()) null else "X-Hermes-Session-Token" to gatewayToken
                 },
             )
             _client.value = rpc
@@ -670,7 +668,7 @@ internal class GatewayConnectionManager(
         val closing = active
         active = null
         _client.value = null
-        _voiceHttp.value = null
+        _gatewayHttp.value = null
         _imageLoader.value = null
         if (closing != null) {
             runCatching { closing.rpc.close() }

@@ -61,6 +61,11 @@ data class SessionSummary(
      */
     val gitBranch: String? = null,
     /**
+     * Exact session cwd reported by `session.info`. It remains connection-scoped
+     * and is the only path Android may submit to authenticated git status APIs.
+     */
+    val worktreePath: String? = null,
+    /**
      * Connection-scoped composer material projected from the live Gateway.
      * It is deliberately separate from transcript truth and is cleared when
      * the live turn or Gateway connection settles.

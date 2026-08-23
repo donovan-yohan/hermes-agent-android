@@ -74,10 +74,14 @@ class HermesApplication : Application() {
             },
         )
     }
-    internal val voiceHttp: com.hermesagent.mobile.data.voice.GatewayVoiceHttp? get() = gatewayConnection.voiceHttp.value
+    internal val gatewayHttp: com.hermesagent.mobile.data.gateway.GatewayHttp? get() = gatewayConnection.gatewayHttp.value
 
     internal val voiceRepository: com.hermesagent.mobile.data.voice.GatewayVoiceRepository by lazy {
-        com.hermesagent.mobile.data.voice.GatewayVoiceRepository { voiceHttp }
+        com.hermesagent.mobile.data.voice.GatewayVoiceRepository { gatewayHttp }
+    }
+
+    internal val codingContextProvider: com.hermesagent.mobile.ui.chat.CodingContextProvider by lazy {
+        com.hermesagent.mobile.ui.chat.GatewayCodingContextProvider { gatewayHttp }
     }
 
     internal val wakeWordRepository: com.hermesagent.mobile.data.voice.WakeWordRepository by lazy {

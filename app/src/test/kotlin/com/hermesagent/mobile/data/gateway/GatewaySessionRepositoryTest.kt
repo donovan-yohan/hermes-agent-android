@@ -9,6 +9,7 @@ import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
 import com.hermesagent.mobile.data.session.ComposerGoalState
+import com.hermesagent.mobile.data.session.ComposerTodoState
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -424,6 +425,185 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `live todo tool owns the composer task list and never becomes a transcript row`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit(
+            "tool.start",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo","arguments":{"todos":[
+                {"id":"plan","content":"Implement status row","status":"in_progress"},
+                {"id":"tests","content":"Add tests","status":"pending"}
+            ]}}""",
+        )
+        runCurrent()
+
+        val todos = cache.session("durable-a")?.composerStatus?.todos.orEmpty()
+        assertEquals(listOf("plan", "tests"), todos.map { it.id })
+        assertEquals(ComposerTodoState.InProgress, todos.first().state)
+        assertTrue(cache.transcript("durable-a").none { it is ToolActivity && it.toolName == "todo" })
+
+        rpc.emit("message.complete", "runtime-a", """{"text":"done","status":"complete"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.todos.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `named identifierless tool cannot inherit an active todo correlation id`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit(
+            "tool.start",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo","arguments":{"todos":[
+                {"id":"plan","content":"Keep planning","status":"in_progress"}
+            ]}}""",
+        )
+        rpc.emit("tool.start", "runtime-a", """{"name":"terminal","context":"./gradlew check"}""")
+        runCurrent()
+
+        assertEquals(listOf("plan"), cache.session("durable-a")?.composerStatus?.todos?.map { it.id })
+        assertEquals(listOf("terminal"), cache.transcript("durable-a").filterIsInstance<ToolActivity>().map { it.toolName })
+    }
+
+    @Test
+    fun `finished todo list lingers for four seconds then clears`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit(
+            "tool.start",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo","arguments":{"todos":[
+                {"id":"plan","content":"Implement status row","status":"in_progress"}
+            ]}}""",
+        )
+        rpc.emit(
+            "tool.complete",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo","result":{"todos":[
+                {"id":"plan","content":"Implement status row","status":"completed"},
+                {"id":"cancelled","content":"Discarded detour","status":"cancelled"}
+            ]}}""",
+        )
+        runCurrent()
+
+        assertEquals(2, cache.session("durable-a")?.composerStatus?.todos?.size)
+        advanceTimeBy(3_999)
+        runCurrent()
+        assertEquals(2, cache.session("durable-a")?.composerStatus?.todos?.size)
+        advanceTimeBy(1)
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.todos.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `disconnect drops a completed todo landing instead of pinning it`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit(
+            "tool.complete",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo","result":{"todos":[
+                {"id":"done","content":"Finished task","status":"completed"}
+            ]}}""",
+        )
+        runCurrent()
+        assertEquals(1, cache.session("durable-a")?.composerStatus?.todos?.size)
+
+        clients.value = null
+        runCurrent()
+
+        assertTrue(cache.session("durable-a")?.composerStatus?.todos.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `active historical todo list does not pin above a reopened idle composer`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"messages":[{"role":"assistant","content":[
+                {"type":"tool-call","toolName":"todo","args":{"todos":[
+                    {"id":"stale","content":"Old unfinished plan","status":"pending"}
+                ]}}
+            ]}],"count":1}"""
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+
+        assertTrue(cache.session("durable-a")?.composerStatus?.todos.orEmpty().isEmpty())
+        assertTrue(cache.transcript("durable-a").none { it is ToolActivity && it.toolName == "todo" })
+    }
+
+    @Test
+    fun `latest completed historical todo list lands briefly on reopen`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"messages":[{"role":"assistant","content":[
+                {"type":"tool-call","toolName":"todo","args":{"todos":[
+                    {"id":"older","content":"Older state","status":"pending"}
+                ]}},
+                {"type":"tool-call","toolName":"todo","result":{"todos":[
+                    {"id":"latest","content":"Finished state","status":"completed"}
+                ]}}
+            ]}],"count":1}"""
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+        assertEquals(listOf("latest"), cache.session("durable-a")?.composerStatus?.todos?.map { it.id })
+        advanceTimeBy(4_000)
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.todos.orEmpty().isEmpty())
+    }
+
+    @Test
     fun `live tool detail redacts a long private key before truncating it`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -525,7 +705,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `session info branch reaches the cached session and survives refresh`() = runTest {
+    fun `session info branch and exact worktree path reach the cache and survive refresh`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
@@ -539,16 +719,23 @@ class GatewaySessionRepositoryTest {
         rpc.emit(
             "session.info",
             "runtime-a",
-            """{"running":false,"branch":"feat/project-views","stored_session_id":"durable-a"}""",
+            """{"running":false,"branch":"feat/project-views","cwd":"/srv/worktrees/project-views","stored_session_id":"durable-a"}""",
         )
         runCurrent()
         assertEquals("feat/project-views", cache.session("durable-a")?.gitBranch)
+        assertEquals("/srv/worktrees/project-views", cache.session("durable-a")?.worktreePath)
 
-        // A full refresh must not drop the branch the server reported.
+        // A full refresh must not drop the connection-scoped context the server reported.
         rpc.sessionListResult = SESSION_LIST
         repository.refreshSessions()
         runCurrent()
         assertEquals("feat/project-views", cache.session("durable-a")?.gitBranch)
+        assertEquals("/srv/worktrees/project-views", cache.session("durable-a")?.worktreePath)
+
+        rpc.emit("session.info", "runtime-a", """{"running":false,"branch":null,"cwd":null}""")
+        runCurrent()
+        assertEquals(null, cache.session("durable-a")?.gitBranch)
+        assertEquals(null, cache.session("durable-a")?.worktreePath)
     }
 
     @Test
@@ -587,6 +774,20 @@ class GatewaySessionRepositoryTest {
         assertEquals("New session", session.title)
         assertEquals("", session.preview)
         assertEquals(null, session.source)
+    }
+
+    @Test
+    fun `session list aliases preserve exact server cwd and git branch`() {
+        val exactPath = "/srv/worktrees/repo "
+        val session = parseSession(
+            json(
+                """{"id":"durable-git","title":"Git","git_branch":"feat/list","cwd":"$exactPath"}""",
+            ) as JsonObject,
+            nowMillis = 99,
+        )
+
+        assertEquals("feat/list", session.gitBranch)
+        assertEquals(exactPath, session.worktreePath)
     }
 
     @Test

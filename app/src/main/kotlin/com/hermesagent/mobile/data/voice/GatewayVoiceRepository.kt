@@ -1,5 +1,9 @@
 package com.hermesagent.mobile.data.voice
 
+import com.hermesagent.mobile.data.gateway.GatewayHttp
+import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
+import com.hermesagent.mobile.data.gateway.GatewayHttpResult
+import com.hermesagent.mobile.data.gateway.consumeBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -16,7 +20,7 @@ import java.util.Base64
  * Typed audio/wake routes over the connection-owned authenticated HTTP leg.
  * Payloads never log; response bytes are wiped by the caller's ownership.
  */
-class GatewayVoiceRepository(private val http: () -> GatewayVoiceHttp?) {
+class GatewayVoiceRepository(private val http: () -> GatewayHttp?) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun transcribe(key: VoiceSessionKey, audio: CapturedAudio): TranscriptionResult =
@@ -30,10 +34,10 @@ class GatewayVoiceRepository(private val http: () -> GatewayVoiceHttp?) {
             }.toString()
             val budgeted = VoicePolicy.audioTimeoutMillis(VoicePolicy.wireBudgetBytes(audio.bytes.size))
             when (val result = transport.execute(
-                VoiceHttpRequest("api/audio/transcribe", "POST", payload.toRequestBody("application/json".toMediaType()), budgeted),
+                GatewayHttpRequest("api/audio/transcribe", "POST", payload.toRequestBody("application/json".toMediaType()), budgeted),
             )) {
-                is VoiceHttpResult.Rejected -> throw VoiceTransportException(result.safeMessage)
-                is VoiceHttpResult.Success -> parseTranscription(result.bodyBytes)
+                is GatewayHttpResult.Rejected -> throw VoiceTransportException(result.safeMessage)
+                is GatewayHttpResult.Success -> result.consumeBody(::parseTranscription)
             }
         }
 
@@ -56,10 +60,10 @@ class GatewayVoiceRepository(private val http: () -> GatewayVoiceHttp?) {
             val payload = buildJsonObject { put("text", cleanText) }.toString()
             val timeout = VoicePolicy.audioTimeoutMillis(VoicePolicy.wireBudgetBytes(cleanText.length))
             when (val result = transport.execute(
-                VoiceHttpRequest("api/audio/speak", "POST", payload.toRequestBody("application/json".toMediaType()), timeout),
+                GatewayHttpRequest("api/audio/speak", "POST", payload.toRequestBody("application/json".toMediaType()), timeout),
             )) {
-                is VoiceHttpResult.Rejected -> throw VoiceTransportException(result.safeMessage)
-                is VoiceHttpResult.Success -> parseSpeak(result.bodyBytes)
+                is GatewayHttpResult.Rejected -> throw VoiceTransportException(result.safeMessage)
+                is GatewayHttpResult.Success -> result.consumeBody(::parseSpeak)
             }
         }
 

@@ -244,10 +244,23 @@ the safe Slice 3 surface is URL/snippet insertion plus canonical text
 completion with stale-result fencing.
 
 Slice 4 found a similarly important authority boundary: Desktop remote coding
-can inspect repository state through its authenticated
-`apps/desktop/src/lib/desktop-git.ts` and `/api/git` facade. Android currently
-has no authorized Gateway repository-status transport, so it must render
-`CodingContextProvider.Unavailable` with no branch or worktree controls. This
-is not an Electron-only limitation; it is the absence of a verified Android
-remote-git capability contract. Keep the queue profile-scoped and session-keyed
-locally, and keep runtime IDs and Android URIs out of its durable records.
+inspects repository state through its authenticated
+`apps/desktop/src/lib/desktop-git.ts` and `/api/git` facade. Android now uses the
+same boundary through its connection-owned `GatewayHttp`: SSH connections add
+the loopback session token, native remote connections add their bearer token,
+and feature code sees neither credential nor origin. A status request is only
+legal for the exact bounded `cwd` reported by `session.info`; never infer a
+repository path from a title, project label, phone filesystem, or stale global
+checkout. `GET /api/git/status` supplies branch and line deltas,
+`POST /api/git/review/pr-list` supplies the branch PR link, and
+`GET /api/git/review/list` is the branch/delta link destination. If either the
+authenticated transport or server path is absent, render no coding claim.
+
+Desktop's task panel is likewise not a generic tool feed. Only `todo` tool
+payloads enter it, parsed in Desktop field priority (`todos`, `result`, then
+arguments) with bounded JSON-string/wrapper recursion. Show every valid task in
+the stack's bounded scroll region; never truncate the list. An unfinished list
+clears at authoritative turn settlement, while a completed/cancelled list
+lingers for four seconds so the final checkmark can land. Keep the queue
+profile-scoped and session-keyed locally, and keep runtime IDs and Android URIs
+out of its durable records.

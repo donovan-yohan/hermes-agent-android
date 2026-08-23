@@ -38,6 +38,7 @@ enum class HermesIcon(val glyph: String) {
     Error("\uEA87"),
     SymbolMethod("\uEA8C"),
     Check("\uEAB2"),
+    Checklist("\uEAB3"),
     ArrowDown("\uEA9A"),
     ArrowUp("\uEAA1"),
     ChevronDown("\uEAB4"),
@@ -50,7 +51,11 @@ enum class HermesIcon(val glyph: String) {
     Link("\uEB15"),
     Mic("\uEC12"),
     StopCircle("\uEC1F"),
-    GitBranch("\uEC6F"),
+    GitBranch("\uEA68"),
+    CircleSlash("\uEABD"),
+    KebabVertical("\uEB10"),
+    PassFilled("\uEBB3"),
+    Copy("\uEBCC"),
     Close("\uEA76"),
 }
 

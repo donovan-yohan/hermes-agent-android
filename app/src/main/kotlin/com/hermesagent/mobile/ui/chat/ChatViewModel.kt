@@ -133,6 +133,8 @@ data class ComposerUiState(
     val mutation: ComposerMutationUiState = ComposerMutationUiState.Idle,
     val completion: CompletionUiState = CompletionUiState(),
     val runtime: ComposerRuntimeUiState = ComposerRuntimeUiState(),
+    val codingContext: CodingContext = CodingContext.Unavailable,
+    val codingReview: CodingReviewUiState = CodingReviewUiState.Closed,
 )
 
 /** Local, durable-queue-aware composer behavior projected alongside Gateway truth. */
@@ -213,6 +215,7 @@ internal class ChatViewModel(
     private val switchComposerQueueScope: suspend (ComposerQueueScope) -> Unit = {},
     private val composerHistoryController: ComposerHistoryController =
         ComposerHistoryController(cache, TransientComposerHistoryBrowseStore()),
+    private val codingContextProvider: CodingContextProvider = CodingContextProvider.Unavailable,
     /** Reads happen off Main; tests inject the virtual scheduler. */
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -263,6 +266,10 @@ internal class ChatViewModel(
     private var composerLoad: Job? = null
     private var completionLoad: Job? = null
     private var preferenceLoad: Job? = null
+    private var codingLoad: Job? = null
+    private var codingReviewLoad: Job? = null
+    private var codingGeneration = 0L
+    private var codingReviewGeneration = 0L
     private var observedConnectionStatus: GatewayConnectionStatus? = null
     private var queueScopeSwitch: Job? = null
     /** Activity-provided opener for content grants; set by MainActivity. */
@@ -548,6 +555,10 @@ internal class ChatViewModel(
         liveComposerControls = null
         composerLoad?.cancel()
         completionLoad?.cancel()
+        codingLoad?.cancel()
+        codingReviewLoad?.cancel()
+        codingGeneration += 1
+        codingReviewGeneration += 1
         composer.value = ComposerUiState(
             catalog = ComposerCatalogUiState.Loading,
             controls = if (activeSessionId.value == null) freshDraftControls() else ModelControlsSnapshot(),
@@ -1693,6 +1704,110 @@ internal class ChatViewModel(
         }
     }
 
+    fun refreshCodingContext() {
+        activeSessionId.value?.let(::refreshCodingContext)
+    }
+
+    private fun refreshCodingContext(sessionId: String) {
+        val session = cache.session(sessionId)
+        val path = session?.worktreePath?.takeIf(String::isNotBlank)
+        if (path == null) {
+            codingLoad?.cancel()
+            composer.value = composer.value.copy(
+                codingContext = CodingContext.Unavailable,
+                codingReview = CodingReviewUiState.Closed,
+            )
+            return
+        }
+        val generation = ++codingGeneration
+        codingLoad?.cancel()
+        val current = composer.value.codingContext
+        composer.value = composer.value.copy(
+            // Desktop refreshes an already-painted rail silently. Keep verified
+            // truth visible until the replacement request resolves.
+            codingContext = current.takeIf {
+                it is CodingContext.Available && it.worktreePath == path
+            } ?: CodingContext.Loading(path, session.gitBranch),
+            codingReview = CodingReviewUiState.Closed,
+        )
+        codingLoad = viewModelScope.launch {
+            val result = try {
+                codingContextProvider.contextFor(path)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                CodingContext.Unavailable
+            }
+            val isCurrent = {
+                generation == codingGeneration &&
+                    activeSessionId.value == sessionId &&
+                    cache.session(sessionId)?.worktreePath == path
+            }
+            if (!isCurrent()) return@launch
+            val previous = composer.value.codingContext as? CodingContext.Available
+            val paintedResult = if (
+                result is CodingContext.Available &&
+                previous?.worktreePath == result.worktreePath && previous.branch == result.branch
+            ) {
+                result.copy(pullRequest = previous.pullRequest)
+            } else {
+                result
+            }
+            composer.value = composer.value.copy(codingContext = paintedResult)
+
+            val available = paintedResult as? CodingContext.Available ?: return@launch
+            if (available.detached) return@launch
+            val pullRequest = try {
+                codingContextProvider.pullRequestFor(path, available.branch)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                null
+            }
+            if (!isCurrent()) return@launch
+            val painted = composer.value.codingContext as? CodingContext.Available ?: return@launch
+            if (painted.worktreePath == path && painted.branch == available.branch) {
+                composer.value = composer.value.copy(codingContext = painted.copy(pullRequest = pullRequest))
+            }
+        }
+    }
+
+    fun openCodingReview() {
+        val context = composer.value.codingContext as? CodingContext.Available ?: return
+        val sessionId = activeSessionId.value ?: return
+        val generation = ++codingReviewGeneration
+        codingReviewLoad?.cancel()
+        composer.value = composer.value.copy(codingReview = CodingReviewUiState.Loading(context.worktreePath))
+        codingReviewLoad = viewModelScope.launch {
+            val result = try {
+                codingContextProvider.reviewFor(context.worktreePath)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                CodingReviewResult.Unavailable
+            }
+            if (
+                generation != codingReviewGeneration ||
+                activeSessionId.value != sessionId ||
+                (composer.value.codingContext as? CodingContext.Available)?.worktreePath != context.worktreePath
+            ) {
+                return@launch
+            }
+            composer.value = composer.value.copy(
+                codingReview = when (result) {
+                    is CodingReviewResult.Available -> CodingReviewUiState.Ready(context.worktreePath, result.files)
+                    CodingReviewResult.Unavailable -> CodingReviewUiState.Failed(context.worktreePath)
+                },
+            )
+        }
+    }
+
+    fun dismissCodingReview() {
+        codingReviewGeneration += 1
+        codingReviewLoad?.cancel()
+        composer.value = composer.value.copy(codingReview = CodingReviewUiState.Closed)
+    }
+
     fun refreshProcesses() {
         activeSessionId.value?.let { refreshProcesses(it, showFailure = true) }
     }
@@ -2072,6 +2187,7 @@ internal class ChatViewModel(
         fun factory(
             cache: SessionCache,
             repository: GatewaySessionRepository,
+            codingContextProvider: CodingContextProvider,
             sidebarViewStore: SidebarViewStore,
             composerControlsStore: ComposerControlsStore,
             draftStore: SessionDraftStore,
@@ -2088,6 +2204,7 @@ internal class ChatViewModel(
                     ChatViewModel(
                         cache = cache,
                         repository = repository,
+                        codingContextProvider = codingContextProvider,
                         sidebarViewStore = sidebarViewStore,
                         composerControlsStore = composerControlsStore,
                         draftStore = draftStore,

@@ -1,5 +1,9 @@
 package com.hermesagent.mobile.data.voice
 
+import com.hermesagent.mobile.data.gateway.GatewayHttp
+import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
+import com.hermesagent.mobile.data.gateway.GatewayHttpResult
+import com.hermesagent.mobile.data.gateway.consumeBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -16,14 +20,14 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * config key (HTTP GET/PUT /api/config, the same route Desktop uses), never a
  * second local authority. Reads return null while disconnected.
  */
-class VoicePreferenceRepository(private val http: () -> GatewayVoiceHttp?) {
+class VoicePreferenceRepository(private val http: () -> GatewayHttp?) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun loadAutoSpeak(): Boolean? = withContext(Dispatchers.IO) {
         val transport = http() ?: return@withContext null
-        when (val result = transport.execute(VoiceHttpRequest("api/config", "GET", null, VoicePolicy.AUDIO_TIMEOUT_BASE_MILLIS))) {
-            is VoiceHttpResult.Rejected -> null
-            is VoiceHttpResult.Success -> parseAutoSpeak(result.bodyBytes)
+        when (val result = transport.execute(GatewayHttpRequest("api/config", "GET", null, VoicePolicy.AUDIO_TIMEOUT_BASE_MILLIS))) {
+            is GatewayHttpResult.Rejected -> null
+            is GatewayHttpResult.Success -> result.consumeBody(::parseAutoSpeak)
         }
     }
 
@@ -34,24 +38,26 @@ class VoicePreferenceRepository(private val http: () -> GatewayVoiceHttp?) {
      */
     suspend fun saveAutoSpeak(enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         val transport = http() ?: return@withContext false
-        val current = when (val result = transport.execute(VoiceHttpRequest("api/config", "GET", null, VoicePolicy.AUDIO_TIMEOUT_BASE_MILLIS))) {
-            is VoiceHttpResult.Success -> runCatching { json.parseToJsonElement(String(result.bodyBytes, Charsets.UTF_8)).jsonObject }.getOrNull()
-            is VoiceHttpResult.Rejected -> null
+        val current = when (val result = transport.execute(GatewayHttpRequest("api/config", "GET", null, VoicePolicy.AUDIO_TIMEOUT_BASE_MILLIS))) {
+            is GatewayHttpResult.Success -> result.consumeBody { body ->
+                runCatching { json.parseToJsonElement(String(body, Charsets.UTF_8)).jsonObject }.getOrNull()
+            }
+            is GatewayHttpResult.Rejected -> null
         } ?: return@withContext false
         val voice = current["voice"] as? JsonObject ?: JsonObject(emptyMap())
         val updatedVoice = JsonObject(voice + mapOf("auto_tts" to kotlinx.serialization.json.JsonPrimitive(enabled)))
         val updated = JsonObject(current + mapOf("voice" to updatedVoice))
         val payload = buildJsonObject { put("config", updated) }.toString()
-        when (transport.execute(
-            VoiceHttpRequest(
+        when (val result = transport.execute(
+            GatewayHttpRequest(
                 "api/config",
                 "PUT",
                 payload.toRequestBody("application/json".toMediaType()),
                 VoicePolicy.AUDIO_TIMEOUT_BASE_MILLIS,
             ),
         )) {
-            is VoiceHttpResult.Success -> true
-            is VoiceHttpResult.Rejected -> false
+            is GatewayHttpResult.Success -> result.consumeBody { true }
+            is GatewayHttpResult.Rejected -> false
         }
     }
 
