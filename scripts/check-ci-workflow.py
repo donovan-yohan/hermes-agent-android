@@ -29,7 +29,11 @@ REQUIRED = (
     "secrets.HERMES_ROLLING_DEBUG_KEYSTORE_BASE64",
     "base64 --decode",
     "keytool -list",
-    "./gradlew check assembleDebug --no-daemon",
+    "./gradlew check assembleDebug --no-daemon --no-build-cache",
+    "Verify rolling APK signing identity",
+    "verify --print-certs",
+    "expected_digest,,",
+    "actual_digest,,",
     "actions/upload-artifact@v4",
     "- name: Upload debug APK",
     "github.event_name == 'push' && env.ROLLING_ARTIFACT",
@@ -79,6 +83,7 @@ def main() -> int:
     workflow_permissions = _indented_block(effective, "permissions:")
     signing_step = _indented_block(effective, "      - name: Restore rolling debug keystore")
     gradle_step = _indented_block(effective, "      - name: Check and assemble exact head")
+    verification_step = _indented_block(effective, "      - name: Verify rolling APK signing identity")
     removal_step = _indented_block(effective, "      - name: Remove rolling debug keystore")
     upload_step = _indented_block(effective, "      - name: Upload debug APK")
     prune_job = _indented_block(effective, "  prune:")
@@ -86,6 +91,8 @@ def main() -> int:
         failures.append("rolling upload must run only after a successful Gradle gate")
     if "if: github.event_name == 'push'" not in signing_step:
         failures.append("persistent rolling signing material must be restored only on main pushes")
+    if "if: github.event_name == 'push'" not in verification_step:
+        failures.append("rolling APK signing verification must run on main pushes")
     if "if: always()" not in removal_step or "debug.keystore" not in removal_step:
         failures.append("rolling signing material must be removed after every build, even a failed one")
     if "shell: bash" not in prune_job:
@@ -100,10 +107,17 @@ def main() -> int:
         failures.append("prune job must depend on the successful check/upload job")
     if "select(.id != ${CURRENT_ARTIFACT_ID})" not in prune_job:
         failures.append("prune query must exclude the newly uploaded artifact id")
-    if signing_step and gradle_step and effective.index(signing_step) > effective.index(gradle_step):
-        failures.append("rolling debug keystore must be restored before the Gradle build")
-    if upload_step and prune_job and effective.index(upload_step) > effective.index(prune_job):
-        failures.append("rolling APK must be uploaded before superseded artifacts are pruned")
+    ordered = (
+        ("rolling debug keystore restore", signing_step),
+        ("Gradle build", gradle_step),
+        ("rolling APK signing verification", verification_step),
+        ("rolling APK upload", upload_step),
+        ("artifact pruning", prune_job),
+    )
+    present = [(name, effective.index(block)) for name, block in ordered if block]
+    for (first, first_at), (second, second_at) in zip(present, present[1:]):
+        if first_at > second_at:
+            failures.append(f"{first} must run before {second}")
     if failures:
         for failure in failures:
             print(f"FAIL  {failure}")

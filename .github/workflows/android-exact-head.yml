@@ -53,7 +53,36 @@ jobs:
             -storepass android \
             -alias androiddebugkey >/dev/null
       - name: Check and assemble exact head
-        run: ./gradlew check assembleDebug --no-daemon
+        run: ./gradlew check assembleDebug --no-daemon --no-build-cache
+      - name: Verify rolling APK signing identity
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$apksigner" || {
+            echo '::error::Android apksigner was not found.'
+            exit 1
+          }
+
+          certificate="$RUNNER_TEMP/rolling-debug.cer"
+          keytool -exportcert \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -file "$certificate" >/dev/null
+          read -r expected_digest _ < <(sha256sum "$certificate")
+
+          actual_digest="$("$apksigner" verify --print-certs "$apk" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          test -n "$actual_digest" || {
+            echo '::error::The APK signing certificate could not be read.'
+            exit 1
+          }
+          if [ "${expected_digest,,}" != "${actual_digest,,}" ]; then
+            echo '::error::The APK was not signed by the rolling debug key.'
+            exit 1
+          fi
       - name: Upload debug APK
         id: apk
         uses: actions/upload-artifact@v4

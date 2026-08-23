@@ -32,13 +32,24 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return checker.main()
 
+    def _remove_step(
+        self, text: str, start_marker: str, end_marker: str
+    ) -> tuple[str, str]:
+        start = text.index(start_marker)
+        end = text.index(end_marker)
+        return text[start:end], text[:start] + text[end:]
+
+    def _insert_before(self, text: str, block: str, marker: str) -> str:
+        at = text.index(marker)
+        return text[:at] + block + text[at:]
+
     def test_accepts_repository_workflow(self) -> None:
         self.assertEqual(0, self._run(self.valid_text))
 
     def test_rejects_commented_out_gradle_gate(self) -> None:
         broken = self.valid_text.replace(
-            "        run: ./gradlew check assembleDebug --no-daemon",
-            "        # run: ./gradlew check assembleDebug --no-daemon",
+            "        run: ./gradlew check assembleDebug --no-daemon --no-build-cache",
+            "        # run: ./gradlew check assembleDebug --no-daemon --no-build-cache",
         )
         self.assertEqual(1, self._run(broken))
 
@@ -126,21 +137,13 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         self.assertEqual(1, self._run(broken))
 
     def test_rejects_signing_restored_after_gradle(self) -> None:
-        signing_start = self.valid_text.index(
-            "      - name: Restore rolling debug keystore\n"
+        signing_step, without_signing = self._remove_step(
+            self.valid_text,
+            "      - name: Restore rolling debug keystore\n",
+            "      - name: Check and assemble exact head\n",
         )
-        gradle_start = self.valid_text.index(
-            "      - name: Check and assemble exact head\n"
-        )
-        signing_step = self.valid_text[signing_start:gradle_start]
-        without_signing = (
-            self.valid_text[:signing_start] + self.valid_text[gradle_start:]
-        )
-        upload_start = without_signing.index("      - name: Upload debug APK\n")
-        broken = (
-            without_signing[:upload_start]
-            + signing_step
-            + without_signing[upload_start:]
+        broken = self._insert_before(
+            without_signing, signing_step, "      - name: Upload debug APK\n"
         )
         self.assertEqual(1, self._run(broken))
 
@@ -152,6 +155,44 @@ class CiWorkflowCheckerTest(unittest.TestCase):
             1,
         )
         self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_cached_signed_apk_outputs(self) -> None:
+        broken = self.valid_text.replace(" --no-build-cache", "", 1)
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_removed_signing_verification(self) -> None:
+        _, broken = self._remove_step(
+            self.valid_text,
+            "      - name: Verify rolling APK signing identity\n",
+            "      - name: Upload debug APK\n",
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_signing_verification_on_pull_requests(self) -> None:
+        broken = self.valid_text.replace(
+            "      - name: Verify rolling APK signing identity\n"
+            "        if: github.event_name == 'push'\n",
+            "      - name: Verify rolling APK signing identity\n"
+            "        if: always()\n",
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_signing_verification_after_upload(self) -> None:
+        verification_step, without_verification = self._remove_step(
+            self.valid_text,
+            "      - name: Verify rolling APK signing identity\n",
+            "      - name: Upload debug APK\n",
+        )
+        broken = self._insert_before(
+            without_verification,
+            verification_step,
+            "      - name: Remove rolling debug keystore\n",
+        )
         self.assertEqual(1, self._run(broken))
 
 

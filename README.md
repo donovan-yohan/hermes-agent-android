@@ -41,7 +41,8 @@ The workflow uploads the replacement first, then deletes older artifacts with
 that name, so this is a rolling debug APK rather than a version archive.
 Main builds are signed with a stable debug key, so a new `hermes-mobile-latest`
 APK installs over the previous one without uninstalling; pull-request APKs use
-the runner's throwaway key and will not.
+the runner's throwaway key and will not. CI verifies that signing identity
+against the finished APK before replacing the artifact.
 GitHub requires sign-in to download Actions artifacts and retains this one for
 up to 90 days. Versioned release builds remain a separate manual process.
 
