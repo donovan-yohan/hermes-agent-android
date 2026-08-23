@@ -123,6 +123,16 @@ class HermesApplication : Application() {
         appScope.launch {
             restoreSavedRemoteGateway(preferences, gatewayConnection)
         }
+        // Desktop parity (use-gateway-boot.ts): the window becoming visible is
+        // a reconnect nudge. On a phone the equivalent moment is app
+        // foregrounding after Doze or a tunnel loss killed the socket.
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : androidx.lifecycle.DefaultLifecycleObserver {
+                override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                    gatewayConnection.nudgeRemoteReconnect()
+                }
+            },
+        )
     }
 }
 

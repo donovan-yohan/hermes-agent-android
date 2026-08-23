@@ -41,6 +41,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.Random
 
 enum class GatewayConnectionStatus(val label: String) {
     Disconnected("Disconnected"),
@@ -330,6 +331,7 @@ internal class GatewayConnectionManager(
     },
     private val remoteConnector: RemoteGatewayConnector? = null,
     private val reconnectWait: suspend (Long) -> Unit = { millis -> delay(millis) },
+    private val reconnectJitter: () -> Double = { Random().nextDouble() },
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : Closeable, GatewayConnectionController {
     private val mutex = Mutex()
@@ -344,6 +346,8 @@ internal class GatewayConnectionManager(
     private var desiredRemoteProfile: RemoteGatewayProfile? = null
     private var remoteConnectedAtMillis: Long? = null
     private var remoteReconnectAttempts = 0
+    /** Wall-clock start of the current failure episode; null while healthy. */
+    private var remoteFailingSinceMillis: Long? = null
     private var networkAvailable = true
     private val networkAvailableSignal = AtomicBoolean(true)
     private var reconnectGeneration = 0L
@@ -484,6 +488,7 @@ internal class GatewayConnectionManager(
                             },
                         )
                         remoteConnectedAtMillis = nowMillis()
+                        remoteFailingSinceMillis = null
                         _client.value = rpc
                         _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
                         watchRpc(rpc)
@@ -694,24 +699,36 @@ internal class GatewayConnectionManager(
                 val stableConnection = remoteConnectedAtMillis
                     ?.let { connectedAt -> nowMillis() - connectedAt >= STABLE_REMOTE_CONNECTION_MILLIS }
                     ?: false
-                if (stableConnection) remoteReconnectAttempts = 0
-                if (reconnect == null) {
-                    _state.value = GatewayConnectionState(
-                        GatewayConnectionStatus.NeedsAttention,
-                        "The Gateway connection closed. Reconnect to continue.",
-                    )
-                } else if (!networkAvailable) {
+                if (stableConnection) {
+                    remoteReconnectAttempts = 0
+                    remoteFailingSinceMillis = null
+                }
+                if (!networkAvailable) {
                     cancelReconnectLocked()
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,
                         NETWORK_WAIT_MESSAGE,
                     )
+                } else if (reconnect == null) {
+                    // No desired route to retry against (user-initiated close).
+                    _state.value = GatewayConnectionState(
+                        GatewayConnectionStatus.NeedsAttention,
+                        "The Gateway connection closed. Reconnect to continue.",
+                    )
                 } else {
                     remoteReconnectAttempts += 1
-                    if (remoteReconnectAttempts > REMOTE_RECONNECT_DELAYS_MILLIS.size) {
+                    // Desktop parity: retries are unbounded with full-jitter
+                    // backoff. Escalation is time-based — after
+                    // RECONNECT_ESCALATE_AFTER_MILLIS of continuous failure
+                    // the state explains itself, but the loop keeps retrying
+                    // underneath instead of stranding the user on a button.
+                    val failingSince = remoteFailingSinceMillis ?: nowMillis().also {
+                        remoteFailingSinceMillis = it
+                    }
+                    if (nowMillis() - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
                         _state.value = GatewayConnectionState(
                             GatewayConnectionStatus.NeedsAttention,
-                            "The Gateway keeps disconnecting. Reconnect when the network is stable.",
+                            "Still trying to reach the Gateway. Check your connection or the host.",
                         )
                     } else {
                         _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
@@ -720,11 +737,7 @@ internal class GatewayConnectionManager(
                 // Publish the user-facing edge before SSH cleanup, which may
                 // need a bounded remote command and must not leave stale Connected UI.
                 closeActive()
-                if (
-                    reconnect != null &&
-                    networkAvailable &&
-                    remoteReconnectAttempts in 1..REMOTE_RECONNECT_DELAYS_MILLIS.size
-                ) {
+                if (reconnect != null && networkAvailable) {
                     scheduleRemoteReconnectLocked(reconnect)
                 }
             }
@@ -748,7 +761,11 @@ internal class GatewayConnectionManager(
         while (true) {
             val delayMillis = mutex.withLock {
                 if (!canReconnectLocked(profile, generation)) return
-                REMOTE_RECONNECT_DELAYS_MILLIS[remoteReconnectAttempts - 1]
+                // Full-jitter exponential backoff, Desktop's exact shape:
+                // uniform in [0, min(cap, base * 2^attempt)) so a restarting
+                // Gateway is not redialed in lockstep by every client.
+                minOf(RECONNECT_BACKOFF_CAP_MILLIS, RECONNECT_BACKOFF_BASE_MILLIS shl (remoteReconnectAttempts - 1).coerceAtMost(16))
+                    .let { ceiling -> (reconnectJitter() * ceiling).toLong() }
             }
             reconnectWait(delayMillis)
             val intent = beginReconnectIntent(
@@ -774,19 +791,26 @@ internal class GatewayConnectionManager(
                         if (!canReconnectLocked(profile, generation)) return
                         if (!result.retryable) {
                             reconnectJob = null
-                            return
-                        }
-                        remoteReconnectAttempts += 1
-                        if (remoteReconnectAttempts <= REMOTE_RECONNECT_DELAYS_MILLIS.size) {
-                            _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
-                            true
-                        } else {
-                            reconnectJob = null
                             _state.value = GatewayConnectionState(
                                 GatewayConnectionStatus.NeedsAttention,
-                                "The Gateway keeps disconnecting. Reconnect when the network is stable.",
+                                result.message,
                             )
                             false
+                        } else {
+                            remoteReconnectAttempts += 1
+                            val failingSince = remoteFailingSinceMillis ?: nowMillis().also {
+                                remoteFailingSinceMillis = it
+                            }
+                            // Escalation is informational: the loop continues.
+                            if (nowMillis() - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
+                                _state.value = GatewayConnectionState(
+                                    GatewayConnectionStatus.NeedsAttention,
+                                    "Still trying to reach the Gateway. Check your connection or the host.",
+                                )
+                            } else {
+                                _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                            }
+                            true
                         }
                     }
                     if (!retry) return
@@ -801,8 +825,28 @@ internal class GatewayConnectionManager(
         networkAvailableSignal.get() &&
             networkAvailable &&
             desiredRemoteProfile == profile &&
-            reconnectGeneration == generation &&
-            remoteReconnectAttempts in 1..REMOTE_RECONNECT_DELAYS_MILLIS.size
+            reconnectGeneration == generation
+
+    /**
+     * Wake/online/foreground nudge: when a desired remote route exists but
+     * nothing is connected, reset the backoff ladder and redial immediately.
+     * A healthy connection is never torn down; a user-driven Disconnected
+     * state is never overridden because [desiredRemoteProfile] is null there.
+     */
+    fun nudgeRemoteReconnect() {
+        scope.launch {
+            mutex.withLock {
+                val profile = desiredRemoteProfile ?: return@withLock
+                if (networkAvailable && active == null) {
+                    cancelReconnectLocked()
+                    remoteReconnectAttempts = 1
+                    remoteFailingSinceMillis = null
+                    _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                    scheduleRemoteReconnectLocked(profile)
+                }
+            }
+        }
+    }
 
     private fun requireRemoteOpenCurrentLocked(
         intent: ConnectIntent,
@@ -833,6 +877,7 @@ internal class GatewayConnectionManager(
         desiredRemoteProfile = null
         remoteConnectedAtMillis = null
         remoteReconnectAttempts = 0
+        remoteFailingSinceMillis = null
         cancelReconnectLocked()
     }
 
@@ -926,7 +971,15 @@ internal class GatewayConnectionManager(
     private companion object {
         const val NETWORK_WAIT_MESSAGE = "Waiting for a network connection."
         const val STABLE_REMOTE_CONNECTION_MILLIS = 30_000L
-        val REMOTE_RECONNECT_DELAYS_MILLIS = longArrayOf(0L, 1_000L, 5_000L)
+        /** Full-jitter backoff shape, from Desktop's reconnect-backoff.ts. */
+        const val RECONNECT_BACKOFF_BASE_MILLIS = 300L
+        const val RECONNECT_BACKOFF_CAP_MILLIS = 15_000L
+        /**
+         * After this long failing continuously, surface a calm actionable
+         * state — while retries continue underneath. Time-based, matching
+         * Desktop's ~45s calibration.
+         */
+        const val RECONNECT_ESCALATE_AFTER_MILLIS = 45_000L
     }
 }
 

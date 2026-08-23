@@ -354,6 +354,106 @@ class RemoteGatewayTest {
     }
 
     @Test
+    fun `repeated remote failures keep retrying instead of stranding the user`() = runTest {
+        val api = FakeAuthApi()
+        val authenticator = NativeGatewayAuthenticator(
+            api = api,
+            store = MemoryTokenStore(VALID_TOKENS),
+            login = GatewayNativeLogin { _, _ -> error("cached restore must not open login") },
+            nowSeconds = { 1_000L },
+        )
+        var attempts = 0
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ ->
+                attempts += 1
+                FakeRpc()
+            },
+            reconnectWait = {},
+            reconnectJitter = { 0.0 },
+        )
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        val firstAttempt = attempts
+
+        // Simulate the readiness failure the way the manager observes it: the
+        // opened socket closes server-side before session.list completes.
+        repeat(10) {
+            (manager.client.value as? FakeRpc)?.failFromServer() ?: return@repeat
+            runCurrent()
+            runCurrent()
+        }
+
+        assertTrue(
+            "reconnect loop must keep attempting (first=$firstAttempt)",
+            attempts >= firstAttempt + 3,
+        )
+        manager.disconnect()
+    }
+
+    @Test
+    fun `foreground nudge redials a dead remote route immediately`() = runTest {
+        val api = FakeAuthApi()
+        val authenticator = NativeGatewayAuthenticator(
+            api = api,
+            store = MemoryTokenStore(VALID_TOKENS),
+            login = GatewayNativeLogin { _, _ -> error("cached restore must not open login") },
+            nowSeconds = { 1_000L },
+        )
+        val first = FakeRpc()
+        val second = FakeRpc()
+        val pending = ArrayDeque<GatewayRpcClient>(listOf(first, second))
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> pending.removeFirst() },
+            reconnectWait = {},
+            reconnectJitter = { 0.0 },
+        )
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        first.failFromServer()
+        runCurrent()
+
+        // Simulate the app returning to the foreground after the socket died.
+        manager.nudgeRemoteReconnect()
+        runCurrent()
+
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        assertTrue(second.calls.isNotEmpty())
+        manager.disconnect()
+    }
+
+    @Test
+    fun `nudge never disturbs a healthy connection or an explicit disconnect`() = runTest {
+        val api = FakeAuthApi()
+        val authenticator = NativeGatewayAuthenticator(
+            api = api,
+            store = MemoryTokenStore(VALID_TOKENS),
+            login = GatewayNativeLogin { _, _ -> error("cached restore must not open login") },
+            nowSeconds = { 1_000L },
+        )
+        val rpc = FakeRpc()
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> rpc },
+            reconnectWait = {},
+        )
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        manager.nudgeRemoteReconnect()
+        runCurrent()
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+
+        manager.disconnect()
+        manager.nudgeRemoteReconnect()
+        runCurrent()
+        assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
+    }
+
+    @Test
     fun `network loss cancels a delayed remote retry before ticket mint`() = runTest {
         val api = FakeAuthApi()
         val authenticator = NativeGatewayAuthenticator(
@@ -713,6 +813,20 @@ class RemoteGatewayTest {
             withContext(NonCancellable) { releaseRequest.await() }
             return buildJsonObject {}
         }
+
+        override fun close() {
+            closedByClient = true
+        }
+    }
+
+    /** Readiness round trip always fails: the retry loop's honest subject. */
+    private class FailingAtReadinessRpc : GatewayRpcClient {
+        override val events = MutableSharedFlow<GatewayEvent>()
+        override val closed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        var closedByClient = false
+
+        override suspend fun request(method: String, params: JsonObject): JsonElement =
+            throw GatewayConnectionException("The Gateway could not be reached.")
 
         override fun close() {
             closedByClient = true
