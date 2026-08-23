@@ -19,16 +19,24 @@ spec.loader.exec_module(checker)
 class CiWorkflowCheckerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.original_workflow = checker.WORKFLOW
+        self.original_build_file = checker.BUILD_FILE
         self.valid_text = self.original_workflow.read_text(encoding="utf-8")
+        self.valid_build_text = self.original_build_file.read_text(encoding="utf-8")
         self.temp = tempfile.TemporaryDirectory()
         setattr(checker, "WORKFLOW", Path(self.temp.name) / "workflow.yml")
+        setattr(checker, "BUILD_FILE", Path(self.temp.name) / "build.gradle.kts")
 
     def tearDown(self) -> None:
         setattr(checker, "WORKFLOW", self.original_workflow)
+        setattr(checker, "BUILD_FILE", self.original_build_file)
         self.temp.cleanup()
 
-    def _run(self, text: str) -> int:
+    def _run(self, text: str, build_text: str | None = None) -> int:
         checker.WORKFLOW.write_text(text, encoding="utf-8")
+        checker.BUILD_FILE.write_text(
+            build_text if build_text is not None else self.valid_build_text,
+            encoding="utf-8",
+        )
         with contextlib.redirect_stdout(io.StringIO()):
             return checker.main()
 
@@ -194,6 +202,58 @@ class CiWorkflowCheckerTest(unittest.TestCase):
             "      - name: Remove rolling debug keystore\n",
         )
         self.assertEqual(1, self._run(broken))
+
+    def test_rejects_unexported_rolling_keystore_path(self) -> None:
+        broken = self.valid_text.replace(
+            "          echo \"HERMES_ROLLING_DEBUG_KEYSTORE_PATH=$keystore\" >> \"$GITHUB_ENV\"\n",
+            "",
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_restoring_into_agp_default_keystore_path(self) -> None:
+        broken = self.valid_text.replace(
+            '          keystore="$RUNNER_TEMP/rolling-debug.keystore"\n',
+            '          keystore="$HOME/.android/debug.keystore"\n',
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_verification_against_an_implicit_keystore(self) -> None:
+        broken = self.valid_text.replace(
+            '            -keystore "$HERMES_ROLLING_DEBUG_KEYSTORE_PATH" \\\n',
+            '            -keystore "$HOME/.android/debug.keystore" \\\n',
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_cleanup_without_pre_export_fallback(self) -> None:
+        broken = self.valid_text.replace(
+            '${HERMES_ROLLING_DEBUG_KEYSTORE_PATH:-$RUNNER_TEMP/rolling-debug.keystore}',
+            '${HERMES_ROLLING_DEBUG_KEYSTORE_PATH:-}',
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_renamed_rolling_keystore_env(self) -> None:
+        broken_build = self.valid_build_text.replace(
+            'providers.environmentVariable("HERMES_ROLLING_DEBUG_KEYSTORE_PATH").orNull',
+            'providers.environmentVariable("IGNORED_KEYSTORE_PATH").orNull',
+            1,
+        )
+        self.assertNotEqual(self.valid_build_text, broken_build)
+        self.assertEqual(1, self._run(self.valid_text, broken_build))
+
+    def test_rejects_block_commented_signing_config(self) -> None:
+        broken_build = self.valid_build_text.replace(
+            'getByName("debug")', '/* getByName("debug") */', 1
+        )
+        self.assertNotEqual(self.valid_build_text, broken_build)
+        self.assertEqual(1, self._run(self.valid_text, broken_build))
 
 
 if __name__ == "__main__":

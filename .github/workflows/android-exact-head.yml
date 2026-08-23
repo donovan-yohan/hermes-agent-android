@@ -45,13 +45,14 @@ jobs:
             echo '::error::HERMES_ROLLING_DEBUG_KEYSTORE_BASE64 is required for main builds.'
             exit 1
           }
-          install -d -m 700 "$HOME/.android"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
+          keystore="$RUNNER_TEMP/rolling-debug.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
           keytool -list \
-            -keystore "$HOME/.android/debug.keystore" \
+            -keystore "$keystore" \
             -storepass android \
             -alias androiddebugkey >/dev/null
+          echo "HERMES_ROLLING_DEBUG_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
       - name: Check and assemble exact head
         run: ./gradlew check assembleDebug --no-daemon --no-build-cache
       - name: Verify rolling APK signing identity
@@ -67,7 +68,7 @@ jobs:
 
           certificate="$RUNNER_TEMP/rolling-debug.cer"
           keytool -exportcert \
-            -keystore "$HOME/.android/debug.keystore" \
+            -keystore "$HERMES_ROLLING_DEBUG_KEYSTORE_PATH" \
             -storepass android \
             -alias androiddebugkey \
             -file "$certificate" >/dev/null
@@ -94,7 +95,7 @@ jobs:
       - name: Remove rolling debug keystore
         if: always()
         shell: bash
-        run: rm -f "$HOME/.android/debug.keystore"
+        run: rm -f "${HERMES_ROLLING_DEBUG_KEYSTORE_PATH:-$RUNNER_TEMP/rolling-debug.keystore}"
 
   # Separate job so only this one holds `actions: write`, and it runs after the
   # upload so the replacement artifact exists before any older one is deleted.

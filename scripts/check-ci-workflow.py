@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Keep the Android exact-head GitHub workflow's delivery contract explicit.
+"""Keep the Android exact-head delivery contract explicit.
 
-This is intentionally standard-library-only and validates the runner-facing
+This covers two files: the exact-head GitHub workflow and the rolling debug
+signing config in `app/build.gradle.kts` that the workflow opts into. It is
+intentionally standard-library-only and validates the runner-facing
 requirements which a YAML formatter cannot infer: event coverage, JDK/SDK pins,
-exact Gradle gate, and rolling main APK lifecycle.
+exact Gradle gate, rolling main APK lifecycle, and the env-gated debug signing
+config both ends have to agree on.
 """
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 WORKFLOW = Path(".github/workflows/android-exact-head.yml")
+BUILD_FILE = Path("app/build.gradle.kts")
+ROLLING_KEYSTORE_ENV = "HERMES_ROLLING_DEBUG_KEYSTORE_PATH"
 REQUIRED = (
     "pull_request:",
     "push:\n    branches: [main]",
@@ -29,6 +35,7 @@ REQUIRED = (
     "secrets.HERMES_ROLLING_DEBUG_KEYSTORE_BASE64",
     "base64 --decode",
     "keytool -list",
+    'keystore="$RUNNER_TEMP/rolling-debug.keystore"',
     "./gradlew check assembleDebug --no-daemon --no-build-cache",
     "Verify rolling APK signing identity",
     "verify --print-certs",
@@ -44,6 +51,31 @@ REQUIRED = (
     "rolling APK upload did not return an artifact id",
     "--method DELETE",
 )
+# Only the opt-in seam is asserted here; the runtime `apksigner verify` step is
+# authoritative for the keystore's actual store/alias/password material.
+BUILD_REQUIRED = (
+    f'providers.environmentVariable("{ROLLING_KEYSTORE_ENV}")',
+    'getByName("debug")',
+)
+
+
+def _read_text(path: Path) -> str | None:
+    """Return a file's text, or None after reporting why it could not be read."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as error:
+        print(f"FAIL  {path}: {error}")
+        return None
+
+
+def _effective_text(text: str, comment: str) -> str:
+    """Return text with comments removed so a commented-out contract cannot pass."""
+    if comment == "//":
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return "\n".join(
+        line for line in text.splitlines()
+        if not line.lstrip().startswith(comment)
+    )
 
 
 def _indented_block(text: str, marker: str) -> str:
@@ -64,21 +96,21 @@ def _indented_block(text: str, marker: str) -> str:
 
 
 def main() -> int:
-    try:
-        text = WORKFLOW.read_text(encoding="utf-8")
-    except OSError as error:
-        print(f"FAIL  {WORKFLOW}: {error}")
+    text = _read_text(WORKFLOW)
+    build_text = _read_text(BUILD_FILE)
+    if text is None or build_text is None:
         return 1
     failures = []
     if "\t" in text:
         failures.append("tabs are not allowed in workflow YAML")
-    effective = "\n".join(
-        line for line in text.splitlines()
-        if not line.lstrip().startswith("#")
-    )
+    effective = _effective_text(text, "#")
     for required in REQUIRED:
         if required not in effective:
             failures.append(f"missing required exact-head workflow contract: {required}")
+    effective_build = _effective_text(build_text, "//")
+    for required in BUILD_REQUIRED:
+        if required not in effective_build:
+            failures.append(f"missing required rolling signing configuration: {required}")
 
     workflow_permissions = _indented_block(effective, "permissions:")
     signing_step = _indented_block(effective, "      - name: Restore rolling debug keystore")
@@ -91,10 +123,19 @@ def main() -> int:
         failures.append("rolling upload must run only after a successful Gradle gate")
     if "if: github.event_name == 'push'" not in signing_step:
         failures.append("persistent rolling signing material must be restored only on main pushes")
+    exports_keystore_path = (
+        f"{ROLLING_KEYSTORE_ENV}=" in signing_step and '"$GITHUB_ENV"' in signing_step
+    )
+    if not exports_keystore_path:
+        failures.append("rolling keystore path must be exported for the Gradle build")
+    if '-keystore "$HERMES_ROLLING_DEBUG_KEYSTORE_PATH"' not in verification_step:
+        failures.append("finished APK must be compared with the explicitly configured keystore")
     if "if: github.event_name == 'push'" not in verification_step:
         failures.append("rolling APK signing verification must run on main pushes")
     if "if: always()" not in removal_step or "debug.keystore" not in removal_step:
         failures.append("rolling signing material must be removed after every build, even a failed one")
+    if "$RUNNER_TEMP/rolling-debug.keystore" not in removal_step:
+        failures.append("rolling signing cleanup must cover restore failures before the path export")
     if "shell: bash" not in prune_job:
         failures.append("prune step must use the pipefail-enabled bash shell")
     if "if: github.event_name == 'push'" not in prune_job:
@@ -122,7 +163,11 @@ def main() -> int:
         for failure in failures:
             print(f"FAIL  {failure}")
         return 1
-    print("ok    Android exact-head workflow gates PR/main, uploads one rolling main APK, and prunes superseded artifacts")
+    print(
+        "ok    Android exact-head workflow gates PR/main, uploads one rolling main APK, "
+        "prunes superseded artifacts, and app/build.gradle.kts keeps the rolling debug "
+        "signing config env-gated"
+    )
     return 0
 
 
