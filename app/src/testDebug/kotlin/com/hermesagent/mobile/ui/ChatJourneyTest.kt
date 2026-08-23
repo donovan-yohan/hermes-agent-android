@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hermesagent.mobile.ui.chat.ComposerBusyKind
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
@@ -46,6 +47,7 @@ import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -294,6 +296,21 @@ class ChatJourneyTest {
     }
 
     @Test
+    fun `ready image without text enables send and reaches repository`() {
+        launch()
+        viewModel.attachmentReadDispatcher = Dispatchers.Unconfined
+        viewModel.openAttachmentStream = { RED_PNG_4X4.inputStream() }
+
+        viewModel.addAttachmentFromGrant("content://fixture/pic.png", "pic.png", "image/png")
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Send message").assertIsEnabled().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("live-a" to ""), repository.submitted)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
     fun `disconnected chat shows truthful status and disables send`() {
         launch(connected = false)
         cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
@@ -350,13 +367,8 @@ class ChatJourneyTest {
 
     @Test
     fun `attached image refs render as a fetched thumbnail and open full size`() {
-        // A real 4x4 red PNG (generated, not hand-made): deterministic decoder input.
-        val png = hexBytes(
-            "89504e470d0a1a0a0000000d494844520000000400000004080200000026930929" +
-                "0000001049444154789c63f8cfc000470cc47100ae930ff1d05f239e0000000049454e44ae426082",
-        )
         val loader = object : GatewayImageLoader {
-            override suspend fun load(path: String): Result<ByteArray> = Result.success(png)
+            override suspend fun load(path: String): Result<ByteArray> = Result.success(RED_PNG_4X4)
         }
         launch(loader = loader)
         cache.setTranscript(
@@ -635,3 +647,9 @@ private fun ComposeContentTestRule.countWithText(text: String, substring: Boolea
 /** Decodes a hex string into bytes — deterministic fixture images without hand-built literals. */
 private fun hexBytes(hex: String): ByteArray =
     hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+/** A real 4x4 red PNG (generated, not hand-made): deterministic decoder input. */
+private val RED_PNG_4X4 = hexBytes(
+    "89504e470d0a1a0a0000000d494844520000000400000004080200000026930929" +
+        "0000001049444154789c63f8cfc000470cc47100ae930ff1d05f239e0000000049454e44ae426082",
+)

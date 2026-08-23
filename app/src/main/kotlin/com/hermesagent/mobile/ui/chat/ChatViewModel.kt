@@ -153,7 +153,10 @@ data class ComposerRuntimeUiState(
     val attachments: List<ComposerAttachmentDraft> = emptyList(),
     /** Occurrence-keyed preview bitmaps for image drafts; UI-only, never persisted. */
     val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
-)
+) {
+    /** An attachment whose bytes are in hand, so a message can leave with no text. */
+    val hasReadyAttachment: Boolean get() = attachments.any { it.stage is AttachmentStage.Ready }
+}
 
 /** A pending action owned by a session other than the one on screen. */
 data class BackgroundPendingInput(
@@ -188,7 +191,8 @@ data class ChatUiState(
         get() = connection.status == GatewayConnectionStatus.Connected
     val canSend: Boolean
         get() = canCreateSession &&
-            activeSession?.status == SessionStatus.Idle && draft.isNotBlank()
+            activeSession?.status == SessionStatus.Idle &&
+            (draft.isNotBlank() || composer.runtime.hasReadyAttachment)
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
     val liveStatusText: String? get() = activeSession?.progress?.text
 }
@@ -1306,6 +1310,7 @@ internal class ChatViewModel(
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             busyKind = state.composer.runtime.busyKind,
             hasText = state.draft.isNotBlank(),
+            canSend = state.canSend,
             redirectEligible = state.composer.runtime.canRedirect,
             queueCount = state.composer.runtime.queueEntries.size,
         ).primary

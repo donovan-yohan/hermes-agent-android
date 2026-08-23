@@ -22,13 +22,14 @@ internal fun composerActionState(
     connected: Boolean,
     busyKind: ComposerBusyKind,
     hasText: Boolean,
+    canSend: Boolean,
     redirectEligible: Boolean,
     queueCount: Int,
 ): ComposerActionState {
     if (!connected) return ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
     return when (busyKind) {
         ComposerBusyKind.Idle -> when {
-            hasText -> ComposerActionState(ComposerPrimaryAction.Send, showQueueSecondary = false)
+            canSend -> ComposerActionState(ComposerPrimaryAction.Send, showQueueSecondary = false)
             queueCount > 0 -> ComposerActionState(ComposerPrimaryAction.SendNext, showQueueSecondary = false)
             else -> ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
         }

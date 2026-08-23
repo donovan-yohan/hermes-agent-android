@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -105,15 +106,12 @@ internal fun AttachmentChipRow(
                     modifier = Modifier.widthIn(max = 180.dp),
                 )
                 Text(stateText, style = HermesTheme.type.scaffoldMeta, color = stateColor, maxLines = 1)
-                Text(
-                    "Remove",
-                    style = HermesTheme.type.caption,
-                    color = tokens.accent,
+                Box(
                     modifier = Modifier
-                        // Destructive action: keep the whole touch target at
-                        // the 48dp floor, not just the caption text. The label
-                        // hugs the leading edge so it aligns with the rest of
-                        // the row; the floor extends to its right, not before.
+                        // Text lays its glyph at the top of a min-height box.
+                        // Center an ordinary caption inside the 48dp target so
+                        // the visible label, not just its semantics bounds,
+                        // aligns with the attachment content.
                         .heightIn(min = HermesTheme.spacing.touchTarget)
                         .widthIn(min = HermesTheme.spacing.touchTarget)
                         .clickable(role = Role.Button) { onRemove(draft.occurrenceId) }
@@ -121,7 +119,15 @@ internal fun AttachmentChipRow(
                             contentDescription = "Remove ${draft.displayName}"
                         }
                         .testTag("Attachment remove ${draft.occurrenceId}"),
-                )
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        "Remove",
+                        style = HermesTheme.type.caption,
+                        color = tokens.accent,
+                        modifier = Modifier.testTag("Attachment remove label ${draft.occurrenceId}"),
+                    )
+                }
             }
         }
     }
