@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -795,7 +796,7 @@ private fun MarkdownBlockView(block: MarkdownBlock) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 block.items.forEachIndexed { index, item ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${index + 1}.", style = HermesTheme.type.body, color = tokens.textTertiary)
+                        Text("${block.start + index}.", style = HermesTheme.type.body, color = tokens.textTertiary)
                         Text(item.annotated(), style = HermesTheme.type.body, color = tokens.textPrimary)
                     }
                 }
@@ -824,19 +825,21 @@ internal const val MarkdownTableScrollerTag = "markdown_table_scroller"
 @Composable
 private fun TableView(block: MarkdownBlock.Table) {
     val shape = RoundedCornerShape(10.dp)
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .background(HermesTheme.tokens.widgetSurface, shape)
             .border(1.dp, HermesTheme.tokens.strokeTertiary, shape)
-            .clipToBounds(),
+            // Rounded-corner clip: clipToBounds would leave square corners.
+            .clip(shape),
     ) {
+        val viewportPx = constraints.maxWidth
         Box(
             Modifier
                 .testTag(MarkdownTableScrollerTag)
                 .horizontalScroll(rememberScrollState()),
         ) {
-            TableGrid(block)
+            TableGrid(block, viewportPx.takeIf { it != Constraints.Infinity })
         }
     }
 }
@@ -857,7 +860,10 @@ private class TableCellPlacement(
 )
 
 @Composable
-private fun TableGrid(block: MarkdownBlock.Table) {
+private fun TableGrid(
+    block: MarkdownBlock.Table,
+    viewportBudget: Int?,
+) {
     val tokens = HermesTheme.tokens
     val interiorRule = tokens.strokeQuaternary
     val headerRule = tokens.strokeSecondary
@@ -896,17 +902,17 @@ private fun TableGrid(block: MarkdownBlock.Table) {
 
         // Column sizing from intrinsics: a Measurable may be measured exactly
         // once, so the probe pass reads intrinsic widths instead of measuring.
+        // The budget comes from [LocalTableViewportWidth], NOT the measure
+        // constraints — horizontalScroll measures this layout with unbounded
+        // width (that is the whole point of a scroller), so constraints alone
+        // would make wrapping dead code and every cell render on one line.
         val targets = IntArray(columns) { column ->
             (0 until rowCount).maxOf { row -> cells[row][column].first().maxIntrinsicWidth(0) }
         }
         val floors = IntArray(columns) { column ->
             (0 until rowCount).maxOf { row -> cells[row][column].first().minIntrinsicWidth(0) }
         }
-        val widths = TableSizing.resolve(
-            targets,
-            floors,
-            if (constraints.hasBoundedWidth) constraints.maxWidth else null,
-        )
+        val widths = TableSizing.resolve(targets, floors, viewportBudget)
 
         // Pass two: wrap onto the shared boundaries and place once.
         val columnStarts = FloatArray(columns)

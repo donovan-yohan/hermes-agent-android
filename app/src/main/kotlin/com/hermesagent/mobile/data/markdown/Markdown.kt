@@ -2,7 +2,7 @@ package com.hermesagent.mobile.data.markdown
 
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TableBody
-import org.commonmark.ext.gfm.tables.TableCell
+import org.commonmark.ext.gfm.tables.TableCell as CmTableCell
 import org.commonmark.ext.gfm.tables.TableHead
 import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.node.BlockQuote
@@ -21,6 +21,7 @@ import org.commonmark.node.SoftLineBreak
 import org.commonmark.node.StrongEmphasis
 import org.commonmark.node.Text
 import org.commonmark.parser.Parser
+import org.commonmark.renderer.text.TextContentRenderer
 
 /**
  * The transcript markdown model.
@@ -43,8 +44,12 @@ sealed interface MarkdownBlock {
     /** A bullet item's lines, already inline-parsed. */
     data class Bullets(val items: List<List<InlineSpan>>) : MarkdownBlock
 
-    /** An ordered item's lines, already inline-parsed; numbering starts at 1. */
-    data class Numbered(val items: List<List<InlineSpan>>) : MarkdownBlock
+    /** An ordered item's lines, already inline-parsed. */
+    data class Numbered(
+        val items: List<List<InlineSpan>>,
+        /** The value the list's first item displays; GFM start attr, default 1. */
+        val start: Int = 1,
+    ) : MarkdownBlock
 
     /**
      * A GFM pipe table. Rows are normalised to [columnCount]: short rows are
@@ -78,18 +83,24 @@ private val PARSER: Parser = Parser.builder()
     .extensions(listOf(TablesExtension.create()))
     .build()
 
+/** Renders inline subtrees to their visible text, spec-correctly. */
+private val PLAIN_TEXT: TextContentRenderer = TextContentRenderer.builder()
+    .extensions(listOf(TablesExtension.create()))
+    .build()
+
 /**
  * Parse markdown into blocks via the CommonMark AST.
  *
- * Streaming note: CommonMark parses a whole document, but re-parsing a growing
- * string is monotonic for settled prefixes — earlier tokens never change what
- * they produced once more text follows them, which is all the transcript needs
- * to avoid per-token flicker.
+ * Streaming safety comes from CommonMark itself: an unterminated fenced code
+ * block extends to end-of-input, so a half-arrived fence parses as
+ * [MarkdownBlock.CodeFence] rather than flickering prose, and re-parsing a
+ * growing string is monotonic for settled prefixes — earlier tokens never
+ * change what they produced once more text follows them.
  */
 fun parseMarkdown(source: String): List<MarkdownBlock> {
     if (source.isBlank()) return emptyList()
 
-    val document = PARSER.parse(withClosedStreamingFence(source))
+    val document = PARSER.parse(source)
     val blocks = mutableListOf<MarkdownBlock>()
     var child = document.firstChild
     while (child != null) {
@@ -97,18 +108,6 @@ fun parseMarkdown(source: String): List<MarkdownBlock> {
         child = child.next
     }
     return blocks
-}
-
-/**
- * Streaming tail repair: if the source ends inside an unterminated fenced code
- * block, close it, so in-flight code parses as a [MarkdownBlock.CodeFence]
- * instead of vanishing into paragraph text until the real closer arrives.
- * Incomplete paragraphs and table rows are already valid markdown on their own.
- */
-private fun withClosedStreamingFence(source: String): String {
-    val fenceOpen = Regex("(?m)^(```|~~~)").findAll(source).count() % 2 == 1
-    if (!fenceOpen) return source
-    return source.trimEnd('\n') + "\n```\n"
 }
 
 /** Maps one top-level node into zero or more blocks (quotes flatten). */
@@ -128,7 +127,7 @@ private fun collectBlock(node: Node, out: MutableList<MarkdownBlock>) {
 
         is OrderedList -> {
             val items = collectListItems(node)
-            if (items.isNotEmpty()) out += MarkdownBlock.Numbered(items)
+            if (items.isNotEmpty()) out += MarkdownBlock.Numbered(items, node.startNumber.coerceAtLeast(1))
         }
 
         // A quote renders as its inner blocks flattened into the transcript;
@@ -163,16 +162,49 @@ private fun collectListItems(list: Node): List<List<InlineSpan>> {
     val items = mutableListOf<List<InlineSpan>>()
     var item: Node? = list.firstChild
     while (item != null) {
-        // A list item's first child carries its inline content; loose lists
-        // wrap it in a Paragraph, tight ones expose inlines directly.
-        val content = item.firstOrNullChild()
-        items += parseInline(content)
+        items += collectItemLines(item)
         item = item.next
     }
     return items
 }
 
-private fun Node.firstOrNullChild(): Node? = firstChild
+/**
+ * One list item to inline lines.
+ *
+ * commonmark-java wraps item content in a Paragraph for tight and loose lists
+ * alike, so the content is reached through the block children, not
+ * `firstChild` directly. A multi-paragraph item becomes separate lines joined
+ * by an em-space break; a nested sub-list recurses into its own flattened
+ * lines rather than being glued onto the parent text.
+ */
+private fun collectItemLines(item: Node): List<InlineSpan> {
+    val lines = mutableListOf<InlineSpan>()
+    var child: Node? = item.firstChild
+    while (child != null) {
+        when (child) {
+            is Paragraph, is IndentedCodeBlock -> {
+                if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
+                if (child is Paragraph) {
+                    lines += parseInline(child.firstChild)
+                } else {
+                    lines += InlineSpan.Code((child as IndentedCodeBlock).literal.trimEnd('\n'))
+                }
+            }
+
+            is BulletList, is OrderedList -> {
+                for (nested in collectListItems(child)) {
+                    if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
+                    lines += InlineSpan.Plain("• ")
+                    lines += nested
+                }
+            }
+
+            else -> lines += InlineSpan.Plain(PLAIN_TEXT.render(child).trim())
+        }
+        child = child.next
+    }
+    return lines
+}
 
 private fun TableBlock.mapTable(): MarkdownBlock.Table? {
     val head = firstChild as? TableHead ?: return null
@@ -202,7 +234,7 @@ private fun rowCells(container: Node): List<MarkdownBlock.TableCell> {
     val cells = mutableListOf<MarkdownBlock.TableCell>()
     var descendant: Node? = container.firstChild
     while (descendant != null) {
-        if (descendant is TableCell) {
+        if (descendant is CmTableCell) {
             cells += MarkdownBlock.TableCell(parseInline(descendant.firstChild))
         } else if (descendant.firstChild != null) {
             cells += rowCells(descendant)

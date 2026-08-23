@@ -165,6 +165,7 @@ class MarkdownTest {
         val blocks = parseMarkdown("3. first\n4. second")
 
         val numbered = blocks.filterIsInstance<MarkdownBlock.Numbered>().single()
+        assertEquals(3, numbered.start)
         assertEquals(
             listOf(
                 listOf<InlineSpan>(InlineSpan.Plain("first")),
@@ -172,6 +173,50 @@ class MarkdownTest {
             ),
             numbered.items,
         )
+    }
+
+    @Test
+    fun `list items keep their inline formatting`() {
+        // Regression: commonmark wraps tight-list item content in a Paragraph,
+        // so reading firstChild directly flattened everything to plain text.
+        val blocks = parseMarkdown("- **bold** item\n- a `code` one")
+        val bullets = blocks.filterIsInstance<MarkdownBlock.Bullets>().single()
+
+        assertEquals(
+            listOf<InlineSpan>(InlineSpan.Strong("bold"), InlineSpan.Plain(" item")),
+            bullets.items[0],
+        )
+        assertEquals(
+            listOf<InlineSpan>(InlineSpan.Plain("a "), InlineSpan.Code("code"), InlineSpan.Plain(" one")),
+            bullets.items[1],
+        )
+    }
+
+    @Test
+    fun `nested list items are separated, not fused`() {
+        // Regression: walking block siblings without separators produced
+        // "outernested anested b".
+        val bullets = parseMarkdown("- outer\n  - nested a\n  - nested b")
+            .filterIsInstance<MarkdownBlock.Bullets>()
+            .single()
+
+        val joined = bullets.items.single().joinToString("") { it.text }
+        assertTrue(joined.startsWith("outer"))
+        assertTrue(joined.contains("nested a"))
+        assertTrue(joined.contains("nested b"))
+        assertTrue("fused words", !joined.contains("anested"))
+    }
+
+    @Test
+    fun `a tilde fence streams as code without corruption`() {
+        // Regression: the deleted fence-repair hack appended ``` into ~~~
+        // bodies and fabricated empty fences around complete ones.
+        val fence = parseMarkdown("~~~sh\nprintf HI").filterIsInstance<MarkdownBlock.CodeFence>().single()
+        assertEquals("sh", fence.language)
+        assertEquals("printf HI", fence.code)
+
+        val repaired = parseMarkdown("```\n~~~\n```").filterIsInstance<MarkdownBlock.CodeFence>()
+        assertEquals(1, repaired.size)
     }
 
     @Test
