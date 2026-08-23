@@ -61,6 +61,41 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         self.assertNotEqual(self.valid_text, broken)
         self.assertEqual(1, self._run(broken))
 
+    def test_rejects_prune_without_pipefail_shell(self) -> None:
+        broken = self.valid_text.replace("        shell: bash\n", "", 1)
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_always_upload_after_failed_gate(self) -> None:
+        broken = self.valid_text.replace(
+            "        id: apk\n",
+            "        if: always()\n        id: apk\n",
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_prune_without_current_artifact_exclusion(self) -> None:
+        broken = self.valid_text.replace(
+            " | select(.id != ${CURRENT_ARTIFACT_ID})", "", 1
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_workflow_level_actions_write(self) -> None:
+        broken = self.valid_text.replace(
+            "permissions:\n  contents: read",
+            "permissions:\n  actions: write\n  contents: read",
+            1,
+        ).replace("      actions: write\n", "", 1)
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_prune_without_check_dependency(self) -> None:
+        broken = self.valid_text.replace("    needs: check\n", "", 1)
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
 
 if __name__ == "__main__":
     unittest.main()

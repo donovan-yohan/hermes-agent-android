@@ -58,6 +58,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Remove superseded latest APK artifacts
+        shell: bash
         env:
           CURRENT_ARTIFACT_ID: ${{ needs.check.outputs.artifact-id }}
           GH_TOKEN: ${{ github.token }}
