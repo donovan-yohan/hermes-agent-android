@@ -36,6 +36,8 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -338,6 +340,16 @@ class ComposerControlsAccessibilityTest {
         // verified on-device.
         compose.onNodeWithText("pic.png").assertIsDisplayed().assertWidthIsAtLeast(1.dp)
         compose.onNodeWithContentDescription("Remove pic.png").assertExists()
+
+        val removeTarget = compose.onNodeWithTag("Attachment remove occ-img").fetchSemanticsNode().boundsInRoot
+        val removeLabel = compose.onNodeWithTag(
+            "Attachment remove label occ-img",
+            useUnmergedTree = true,
+        ).fetchSemanticsNode().boundsInRoot
+        val thumbnailBounds = compose.onNodeWithTag("Attachment thumbnail occ-img")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("The caption must not consume the full touch target", removeLabel.height < removeTarget.height)
+        assertEquals(thumbnailBounds.center.y, removeLabel.center.y, 1f)
     }
 }
 

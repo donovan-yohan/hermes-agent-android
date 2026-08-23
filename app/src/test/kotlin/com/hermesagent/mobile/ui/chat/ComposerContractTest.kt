@@ -16,13 +16,17 @@ class ComposerContractTest {
             actionState(ComposerBusyKind.Idle, hasText = true).primary,
         )
         assertEquals(
+            ComposerPrimaryAction.Send,
+            actionState(ComposerBusyKind.Idle, hasText = false, canSend = true).primary,
+        )
+        assertEquals(
             ComposerPrimaryAction.Redirect,
             actionState(ComposerBusyKind.Streaming, hasText = true).primary,
         )
         assertTrue(actionState(ComposerBusyKind.Streaming, hasText = true).showQueueSecondary)
         assertEquals(
             ComposerPrimaryAction.Stop,
-            actionState(ComposerBusyKind.Streaming, hasText = false).primary,
+            actionState(ComposerBusyKind.Streaming, hasText = false, canSend = true).primary,
         )
         // Stop is a safety control: queued entries alone never replace it
         // with send-next while a turn is live.
@@ -60,6 +64,7 @@ class ComposerContractTest {
                 connected = false,
                 busyKind = ComposerBusyKind.Idle,
                 hasText = true,
+                canSend = true,
                 redirectEligible = true,
                 queueCount = 0,
             ).primary,
@@ -251,12 +256,14 @@ class ComposerContractTest {
     private fun actionState(
         busyKind: ComposerBusyKind,
         hasText: Boolean,
+        canSend: Boolean = hasText,
         redirectEligible: Boolean = true,
         queueCount: Int = 0,
     ) = composerActionState(
         connected = true,
         busyKind = busyKind,
         hasText = hasText,
+        canSend = canSend,
         redirectEligible = redirectEligible,
         queueCount = queueCount,
     )

@@ -193,6 +193,7 @@ fun Composer(
         connected = connected,
         busyKind = busyKind,
         hasText = draft.isNotBlank(),
+        canSend = canSend,
         redirectEligible = canRedirect,
         queueCount = queueCount,
     )
