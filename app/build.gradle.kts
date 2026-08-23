@@ -128,6 +128,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.media3.exoplayer)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.commonmark)
+    implementation(libs.commonmark.gfm.tables)
 
     testImplementation(libs.junit)
     // ThemeParityTest walks the palette/token contract reflectively so a new

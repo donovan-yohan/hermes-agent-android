@@ -37,8 +37,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -52,8 +57,10 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -61,6 +68,7 @@ import com.hermesagent.mobile.data.attachments.ImageRefLines
 import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.markdown.InlineSpan
 import com.hermesagent.mobile.data.markdown.MarkdownBlock
+import com.hermesagent.mobile.data.markdown.TableSizing
 import com.hermesagent.mobile.data.markdown.parseMarkdown
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ReasoningActivity
@@ -783,8 +791,169 @@ private fun MarkdownBlockView(block: MarkdownBlock) {
                 }
             }
 
+        is MarkdownBlock.Numbered ->
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                block.items.forEachIndexed { index, item ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${index + 1}.", style = HermesTheme.type.body, color = tokens.textTertiary)
+                        Text(item.annotated(), style = HermesTheme.type.body, color = tokens.textPrimary)
+                    }
+                }
+            }
+
+        is MarkdownBlock.Table -> TableView(block)
+
         is MarkdownBlock.CodeFence -> CodeFenceView(block)
     }
+}
+
+/** Tag on [TableView]'s scroll container so journeys can find it. */
+internal const val MarkdownTableScrollerTag = "markdown_table_scroller"
+
+/**
+ * A pipe table rendered as an actual grid.
+ *
+ * Desktop lets a wide table overflow its message with an inner scroller
+ * (`apps/desktop/src/styles.css`, `.md table` @ `f82f2dba`); a phone has less
+ * width still, so the same contract applies as code fences: the block owns its
+ * horizontal scroll and the page body never moves sideways. Columns size to
+ * their content and shrink toward their widest unbreakable run under a tight
+ * viewport ([TableSizing]); cells wrap within their column, so long inline
+ * code breaks instead of clipping.
+ */
+@Composable
+private fun TableView(block: MarkdownBlock.Table) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(HermesTheme.tokens.widgetSurface, shape)
+            .border(1.dp, HermesTheme.tokens.strokeTertiary, shape)
+            .clipToBounds(),
+    ) {
+        Box(
+            Modifier
+                .testTag(MarkdownTableScrollerTag)
+                .horizontalScroll(rememberScrollState()),
+        ) {
+            TableGrid(block)
+        }
+    }
+}
+
+/** Hairline anchors recorded by [TableGrid]'s measure pass for its draw pass. */
+private class TableGridGeometry(
+    val columnStarts: List<Float>,
+    val rowStarts: List<Float>,
+    val width: Float,
+    val height: Float,
+)
+
+/** One measured cell and where its row/column boundary puts it. */
+private class TableCellPlacement(
+    val placeable: Placeable,
+    val x: Float,
+    val y: Float,
+)
+
+@Composable
+private fun TableGrid(block: MarkdownBlock.Table) {
+    val tokens = HermesTheme.tokens
+    val interiorRule = tokens.strokeQuaternary
+    val headerRule = tokens.strokeSecondary
+    // Written during measure, read by drawBehind on the following frame.
+    var geometry by remember(block) { mutableStateOf<TableGridGeometry?>(null) }
+
+    SubcomposeLayout(
+        Modifier.drawBehind {
+            val grid = geometry ?: return@drawBehind
+            for (x in grid.columnStarts.drop(1)) {
+                drawLine(interiorRule, Offset(x, 0f), Offset(x, grid.height), strokeWidth = 1.dp.toPx())
+            }
+            grid.rowStarts.getOrNull(1)?.let { y ->
+                drawLine(headerRule, Offset(0f, y), Offset(grid.width, y), strokeWidth = 1.dp.toPx())
+            }
+            for (y in grid.rowStarts.drop(2)) {
+                drawLine(interiorRule, Offset(0f, y), Offset(grid.width, y), strokeWidth = 1.dp.toPx())
+            }
+        },
+    ) { constraints ->
+        val columns = block.columnCount.coerceAtLeast(1)
+        val rowCount = block.rows.size + 1
+
+        fun cellSpans(row: Int, column: Int): List<InlineSpan> =
+            if (row == 0) {
+                block.header.getOrNull(column)?.spans.orEmpty()
+            } else {
+                block.rows.getOrNull(row - 1)?.getOrNull(column)?.spans.orEmpty()
+            }
+
+        val cells = Array(rowCount) { row ->
+            Array(columns) { column ->
+                subcompose(row * columns + column) { MarkdownCell(cellSpans(row, column), row == 0) }
+            }
+        }
+
+        // Column sizing from intrinsics: a Measurable may be measured exactly
+        // once, so the probe pass reads intrinsic widths instead of measuring.
+        val targets = IntArray(columns) { column ->
+            (0 until rowCount).maxOf { row -> cells[row][column].first().maxIntrinsicWidth(0) }
+        }
+        val floors = IntArray(columns) { column ->
+            (0 until rowCount).maxOf { row -> cells[row][column].first().minIntrinsicWidth(0) }
+        }
+        val widths = TableSizing.resolve(
+            targets,
+            floors,
+            if (constraints.hasBoundedWidth) constraints.maxWidth else null,
+        )
+
+        // Pass two: wrap onto the shared boundaries and place once.
+        val columnStarts = FloatArray(columns)
+        var gridWidth = 0f
+        for (column in 0 until columns) {
+            columnStarts[column] = gridWidth
+            gridWidth += widths[column]
+        }
+        val rowStarts = FloatArray(rowCount)
+        var gridHeight = 0f
+        val placed = mutableListOf<TableCellPlacement>()
+        for (row in 0 until rowCount) {
+            rowStarts[row] = gridHeight
+            var rowHeight = 0
+            val rowPlacements = ArrayList<TableCellPlacement>(columns)
+            for (column in 0 until columns) {
+                val placeable = cells[row][column].first().measure(
+                    Constraints(minWidth = widths[column], maxWidth = widths[column]),
+                )
+                rowPlacements += TableCellPlacement(placeable, columnStarts[column], gridHeight)
+                if (placeable.height > rowHeight) rowHeight = placeable.height
+            }
+            placed += rowPlacements
+            gridHeight += rowHeight
+        }
+
+        geometry = TableGridGeometry(
+            columnStarts = columnStarts.toList(),
+            rowStarts = rowStarts.toList(),
+            width = gridWidth,
+            height = gridHeight,
+        )
+        layout(gridWidth.toInt().coerceAtLeast(constraints.minWidth), gridHeight.toInt()) {
+            for (cell in placed) cell.placeable.place(cell.x.roundToInt(), cell.y.roundToInt())
+        }
+    }
+}
+
+@Composable
+private fun MarkdownCell(spans: List<InlineSpan>, header: Boolean) {
+    Text(
+        text = spans.ifEmpty { listOf(InlineSpan.Plain(" ")) }.annotated(),
+        style = if (header) HermesTheme.type.bodyStrong else HermesTheme.type.body,
+        color = HermesTheme.tokens.textPrimary,
+        softWrap = true,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+    )
 }
 
 /**
@@ -805,7 +974,7 @@ private fun CodeFenceView(block: MarkdownBlock.CodeFence) {
             Text(it, style = HermesTheme.type.sectionLabel, color = tokens.textTertiary)
         }
         Text(
-            text = block.code,
+            text = block.code.trimEnd('\n').ifEmpty { " " },
             style = HermesTheme.type.code,
             color = tokens.textSecondary,
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -813,7 +982,16 @@ private fun CodeFenceView(block: MarkdownBlock.CodeFence) {
     }
 }
 
-/** Inline spans as one annotated string, so text still selects and wraps. */
+/**
+ * Inline spans as one annotated string, so text still selects and wraps.
+ *
+ * Known limitation: a *single token* with no break opportunity that is wider
+ * than the remaining line (a 60-character identifier in running prose) still
+ * pushes past the margin — Compose's [LineBreak] has no `anywhere` word-break
+ * policy on this BOM, and inserting zero-width spaces would corrupt copied
+ * identifiers. Tables and fences contain their own overflow, which is where
+ * this actually bites; revisit if upstream ships `WordBreak.Anywhere`.
+ */
 @Composable
 private fun List<InlineSpan>.annotated(): AnnotatedString {
     val tokens = HermesTheme.tokens
