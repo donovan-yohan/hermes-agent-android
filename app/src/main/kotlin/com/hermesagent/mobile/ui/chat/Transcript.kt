@@ -227,7 +227,13 @@ private fun AttachedImageRow(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(refLine, imageLoader, path) {
-        if (path == null || imageLoader == null) return@LaunchedEffect
+        if (path == null || imageLoader == null) {
+            // No fetch is possible — but the turn must not vanish: degrade to
+            // the quiet chip instead of rendering nothing (image-only turns
+            // in disconnected/cached history).
+            failed = true
+            return@LaunchedEffect
+        }
         imageLoader.load(path).fold(
             onSuccess = { bytes ->
                 val decoded = withContext(Dispatchers.Default) {

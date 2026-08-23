@@ -399,6 +399,20 @@ class ChatJourneyTest {
     }
 
     @Test
+    fun `image refs render as a quiet chip when no loader is connected`() {
+        launch(loader = null)
+        cache.setTranscript(
+            "live-a",
+            listOf(UserTurn("row-img", "@image:/home/d/images/offline.png", NOW)),
+        )
+        compose.waitForIdle()
+
+        // No connection-owned loader: the turn must not vanish — the chip is
+        // the fallback even with nothing to fetch.
+        compose.onNodeWithText("offline.png").assertIsDisplayed()
+    }
+
+    @Test
     fun `rich activity rows expose reasoning terminal payload and patched file diff`() {
         launch()
         cache.setTranscript(

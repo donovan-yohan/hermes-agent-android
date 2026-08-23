@@ -774,15 +774,12 @@ internal class LiveGatewaySessionRepository(
             }
         }
         val typed = text.trim()
-        // Desktop's buildContextText: file refs lead, typed text follows, and
-        // an image-only send asks the same question the gateway's own
-        // image-ref message would.
-        val wireText = when {
-            typed.isNotEmpty() -> listOf(fileRefs.toString(), typed)
-                .filter(String::isNotBlank).joinToString("\n\n")
-            imageRefs.isNotEmpty() -> IMAGE_ONLY_PROMPT
-            else -> fileRefs.toString()
-        }
+        // Desktop's buildContextText: file refs and typed text compose first,
+        // and the image-only question is the fallback when nothing else is
+        // there — never a branch that outranks a staged file ref.
+        val wireText = listOf(fileRefs.toString(), typed)
+            .filter(String::isNotBlank).joinToString("\n\n")
+            .ifBlank { if (imageRefs.isNotEmpty()) IMAGE_ONLY_PROMPT else "" }
         require(wireText.isNotBlank())
         // The optimistic row carries the refs the gateway will persist, so the
         // live thumbnail renders immediately and the authoritative row that

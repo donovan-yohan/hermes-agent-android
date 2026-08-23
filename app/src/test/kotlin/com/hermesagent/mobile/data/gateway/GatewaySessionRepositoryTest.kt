@@ -851,6 +851,31 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `a file ref always reaches the wire even alongside an image with no typed text`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        repository.submit(
+            "durable-a",
+            "",
+            attachments = listOf(
+                OutgoingAttachment.Image("chart.png", "AAAA"),
+                OutgoingAttachment.GenericFile("notes.txt", "data:text/plain;base64,aGVsbG8="),
+            ),
+        )
+
+        // Desktop parity: file refs compose first; the image-only question is
+        // the fallback, never a branch that outranks a staged file.
+        assertEquals("@file:`notes.txt`", rpc.call("prompt.submit").params.string("text"))
+    }
+
+    @Test
     fun `unscoped stream remains pinned when another session is opened`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
