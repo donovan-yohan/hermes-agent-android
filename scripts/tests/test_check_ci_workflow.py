@@ -42,6 +42,25 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         )
         self.assertEqual(1, self._run(broken))
 
+    def test_rejects_removed_prune_job(self) -> None:
+        head, marker, _ = self.valid_text.partition("  prune:\n")
+        self.assertTrue(marker, "workflow no longer declares a prune job")
+        self.assertEqual(1, self._run(head))
+
+    def test_rejects_removed_workflow_permissions(self) -> None:
+        broken = self.valid_text.replace("permissions:\n  contents: read\n", "", 1)
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_removed_rolling_upload(self) -> None:
+        broken = self.valid_text.replace(
+            "github.event_name == 'push' && env.ROLLING_ARTIFACT",
+            "github.event_name == 'push' && 'wrong-artifact'",
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
 
 if __name__ == "__main__":
     unittest.main()
