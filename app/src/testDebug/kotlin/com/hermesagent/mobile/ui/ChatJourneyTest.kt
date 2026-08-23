@@ -379,7 +379,7 @@ class ChatJourneyTest {
         compose.waitForIdle()
 
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performScrollTo().performClick()
-        compose.onNodeWithText("BUILD SUCCESSFUL").assertIsDisplayed()
+        compose.onNodeWithText("BUILD SUCCESSFUL").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew check, done").performClick()
         compose.onNodeWithContentDescription("Tool Ran ./gradlew test + 1 command, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Patched file, done").performScrollTo().assertIsDisplayed()
@@ -462,7 +462,8 @@ class ChatJourneyTest {
         cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Idle))
         compose.waitForIdle()
 
-        assertEquals(1, repository.submitted.size)
+        // The drained entry must be the settled session's, not just any queue.
+        assertEquals(listOf("live-a" to "drain me"), repository.submitted)
         assertEquals(0, viewModel.uiState.value.composer.runtime.queueEntries.size)
     }
 

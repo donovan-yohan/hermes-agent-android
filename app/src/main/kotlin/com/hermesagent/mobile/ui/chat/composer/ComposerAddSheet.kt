@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
@@ -69,10 +70,7 @@ internal fun ComposerAddControl(
             .testTag("Composer add control"),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.size(28.dp).background(tokens.widgetSurface, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { HermesIconGlyph(HermesIcon.Add, color = if (enabled) tokens.textSecondary else tokens.textQuaternary) }
+        HermesIconGlyph(HermesIcon.Add, color = if (enabled) tokens.textSecondary else tokens.textQuaternary, size = 15.sp)
     }
     when (sheet) {
         AddSheet.Menu -> ComposerAddSheet(

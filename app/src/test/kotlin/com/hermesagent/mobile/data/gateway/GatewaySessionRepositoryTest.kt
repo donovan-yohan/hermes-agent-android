@@ -525,6 +525,33 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `session info branch reaches the cached session and survives refresh`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit(
+            "session.info",
+            "runtime-a",
+            """{"running":false,"branch":"feat/project-views","stored_session_id":"durable-a"}""",
+        )
+        runCurrent()
+        assertEquals("feat/project-views", cache.session("durable-a")?.gitBranch)
+
+        // A full refresh must not drop the branch the server reported.
+        rpc.sessionListResult = SESSION_LIST
+        repository.refreshSessions()
+        runCurrent()
+        assertEquals("feat/project-views", cache.session("durable-a")?.gitBranch)
+    }
+
+    @Test
     fun `terminal turn completion measures a tool missing its complete event`() = runTest {
         var now = CLOCK
         val cache = SessionCache()
@@ -1182,6 +1209,117 @@ class GatewaySessionRepositoryTest {
         // only same-session turns gate a send (Desktop per-target parity).
         repository.submit("durable-a", "must go through")
         assertEquals(2, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `a rejected submit on a non-pinned concurrent session rolls back and stays usable`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        // durable-a owns the pin; durable-b's submit is definitely rejected.
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first")
+        repository.openSession("durable-b")
+        rpc.promptFailures = 1
+        assertTrue(runCatching { repository.submit("durable-b", "second") }.isFailure)
+        runCurrent()
+
+        assertEquals(SessionStatus.Idle, cache.session("durable-b")?.status)
+        assertFalse(cache.transcript("durable-b").any { it is UserTurn && it.text == "second" })
+        // The rollback frees b's guard: the retry goes out instead of wedging.
+        repository.submit("durable-b", "second")
+        assertEquals(3, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `stop and steer reach a live non-pinned concurrent session`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first")
+        repository.openSession("durable-b")
+        rpc.emit("session.info", "runtime-b", """{"running":true}""")
+        runCurrent()
+
+        assertEquals(GatewayInterruptOutcome.Interrupted, repository.requestInterrupt("durable-b"))
+        assertEquals(1, rpc.calls.count { it.method == "session.interrupt" })
+    }
+
+    @Test
+    fun `a stale pre-start heartbeat does not settle or release a concurrent submit`() = runTest {
+        val cache = SessionCache()
+        var now = CLOCK
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { now }
+        runCurrent()
+
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first")
+        repository.openSession("durable-b")
+        repository.submit("durable-b", "second")
+        // Heartbeat for b that predates its turn arriving inside the grace.
+        rpc.emit("session.info", "runtime-b", """{"running":false}""")
+        runCurrent()
+
+        assertEquals(SessionStatus.Working, cache.session("durable-b")?.status)
+        assertTrue(runCatching { repository.submit("durable-b", "third") }.exceptionOrNull() is GatewayRpcException)
+
+        // After the grace expires the same heartbeat settles normally.
+        now += 15_001
+        rpc.emit("session.info", "runtime-b", """{"stored_session_id":"durable-b","running":false}""")
+        runCurrent()
+        assertEquals(SessionStatus.Idle, cache.session("durable-b")?.status)
+        repository.submit("durable-b", "third")
+        assertEquals(3, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `a surviving locally submitted turn inherits identifier-less attribution`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first")
+        repository.openSession("durable-b")
+        rpc.emit("message.start", "runtime-b", """{"id":"b-reply","role":"assistant"}""")
+        repository.submit("durable-b", "second")
+        // a settles first while b is still live.
+        rpc.emit("message.complete", "runtime-a", """{"text":"done","status":"complete"}""")
+        runCurrent()
+
+        rpc.emit("message.delta", null, """{"delta":"for-b"}""")
+        runCurrent()
+        assertTrue(
+            cache.transcript("durable-b").filterIsInstance<AssistantTurn>().any { it.markdown.contains("for-b") },
+        )
+        assertFalse(cache.transcript("durable-a").filterIsInstance<AssistantTurn>().any { it.markdown.contains("for-b") })
     }
 
     @Test

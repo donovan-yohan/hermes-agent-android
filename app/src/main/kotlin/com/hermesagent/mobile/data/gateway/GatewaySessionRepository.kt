@@ -279,6 +279,9 @@ internal class LiveGatewaySessionRepository(
     private val optimisticCorrectionsByRuntime = mutableMapOf<String, MutableList<UserTurn>>()
     private val progressRuntimeIds = mutableSetOf<String>()
     private val composerStatusRuntimeIds = mutableSetOf<String>()
+
+    /** Latest server-reported git branch per durable session, connection-scoped. */
+    private val branchByDurableId = mutableMapOf<String, String>()
     /** Optional methods are feature-detected once per connection generation. */
     private val unsupportedCapabilities = mutableSetOf<GatewayOptionalCapability>()
     private val processRefreshesInFlight = mutableSetOf<String>()
@@ -299,6 +302,9 @@ internal class LiveGatewaySessionRepository(
     private var unscopedRuntimeId: String? = null
     private var localSubmitStartedAtMillis: Long? = null
     private var unscopedTurnIsLive = false
+    /** Per-runtime submit timestamp and liveness, keyed by runtime session id. */
+    private val localSubmitStartedAtByRuntime = mutableMapOf<String, Long>()
+    private val liveTurnRuntimeIds = mutableSetOf<String>()
 
     init {
         scope.launch {
@@ -325,10 +331,15 @@ internal class LiveGatewaySessionRepository(
                     optimisticCorrectionsByRuntime.clear()
                     progressRuntimeIds.clear()
                     composerStatusRuntimeIds.clear()
+                    // Branch labels are connection-scoped server truth; the
+                    // next session.info re-reports them after reconnect.
+                    branchByDurableId.clear()
                     unsupportedCapabilities.clear()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
                     activeRuntimeIds.clear()
+                    localSubmitStartedAtByRuntime.clear()
+                    liveTurnRuntimeIds.clear()
                     // Pending prompts are connection-scoped memory; a new
                     // client rehydrates only through fresh resume responses.
                     mutablePendingInputs.value = emptyMap()
@@ -400,8 +411,9 @@ internal class LiveGatewaySessionRepository(
                             progress = existing.progress,
                             composerStatus = existing.composerStatus,
                             activityStartedAtMillis = existing.activityStartedAtMillis,
+                            gitBranch = existing.gitBranch ?: branchByDurableId[row.id],
                         )
-                    } ?: row
+                    } ?: row.copy(gitBranch = branchByDurableId[row.id])
                 },
             )
         }
@@ -828,6 +840,8 @@ internal class LiveGatewaySessionRepository(
                 unscopedTurnIsLive = false
             }
             activeRuntimeIds += binding.runtimeId
+            localSubmitStartedAtByRuntime[binding.runtimeId] = now
+            liveTurnRuntimeIds -= binding.runtimeId
             val previousSession = cache.session(binding.durableId)
             val previousTranscript = cache.transcript(binding.durableId)
             val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", prompt, now)
@@ -863,9 +877,14 @@ internal class LiveGatewaySessionRepository(
             val ambiguous = failure is CancellationException ||
                 (failure is GatewayRpcException && failure.requestMayHaveBeenAccepted)
             synchronized(stateLock) {
-                val canRollback = unscopedRuntimeId == binding.runtimeId && !unscopedTurnIsLive && !ambiguous
+                // A definite, non-live rejection rolls its own submit back —
+                // not just the runtime that happens to own the event pin.
+                // Ambiguous acknowledgements still keep the optimistic row.
+                val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds
                 if (canRollback) {
                     releaseRuntimeGuard(binding.runtimeId)
+                    localSubmitStartedAtByRuntime.remove(binding.runtimeId)
+                    liveTurnRuntimeIds.remove(binding.runtimeId)
                     optimisticUserByRuntime.remove(binding.runtimeId)
                     cache.setTranscript(binding.durableId, optimistic.transcript)
                     optimistic.session?.let(cache::upsertSession)
@@ -1029,7 +1048,9 @@ internal class LiveGatewaySessionRepository(
             val runtimeId = identities.runtimeFor(durableId) ?: return GatewayInterruptOutcome.NotActive
             val session = cache.session(durableId)
             if (session?.status == SessionStatus.NeedsInput) return GatewayInterruptOutcome.NeedsInput
-            if (unscopedRuntimeId != runtimeId || runtimeId !in activeRuntimeIds) {
+            // A live app-submitted or remotely reported turn is interruptible
+            // regardless of which runtime owns the identifier-less event pin.
+            if (runtimeId !in activeRuntimeIds) {
                 return GatewayInterruptOutcome.NotActive
             }
             SessionBinding(durableId, runtimeId)
@@ -1297,15 +1318,13 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.runtimeFor(binding.durableId) == binding.runtimeId &&
-                unscopedRuntimeId == binding.runtimeId &&
                 binding.runtimeId in activeRuntimeIds
         }
 
     private fun canMutateBoundSession(binding: SessionBinding, connection: ConnectionSnapshot): Boolean =
         synchronized(stateLock) {
             ensureCurrent(connection)
-            identities.runtimeFor(binding.durableId) == binding.runtimeId &&
-                (unscopedRuntimeId == null || unscopedRuntimeId == binding.runtimeId)
+            identities.runtimeFor(binding.durableId) == binding.runtimeId
         }
 
     private fun recordOptimisticCorrection(
@@ -1462,10 +1481,16 @@ internal class LiveGatewaySessionRepository(
                     markRuntimeLive(runtimeId)
                     ephemeralSessions.remove(durableId)
                 }
+                payload.string("branch")?.takeIf(String::isNotBlank)?.let { branch ->
+                    branchByDurableId[durableId] = branch
+                    cache.session(durableId)?.let { row ->
+                        if (row.gitBranch != branch) cache.upsertSession(row.copy(gitBranch = branch))
+                    }
+                }
                 reconcileSessionInfo(durableId, runtimeId, running, payload.status())
                 projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
                 val settled = running == false && settleStoppedSessionInfo(durableId, runtimeId)
-                if (running == false && !settled && unscopedRuntimeId != runtimeId) {
+                if (running == false && !settled && !isLocallySubmitted(runtimeId)) {
                     releaseRuntimeGuard(runtimeId)
                 }
                 rehomed || settled
@@ -1751,20 +1776,33 @@ internal class LiveGatewaySessionRepository(
      * apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:663-724.
      */
     private fun settleStoppedSessionInfo(durableId: String, runtimeId: String): Boolean {
-        if (unscopedRuntimeId != runtimeId) return false
-        val submittedAt = localSubmitStartedAtMillis
+        val locallySubmitted = isLocallySubmitted(runtimeId)
+        val submittedAt = when {
+            runtimeId in localSubmitStartedAtByRuntime -> localSubmitStartedAtByRuntime[runtimeId]
+            unscopedRuntimeId == runtimeId -> localSubmitStartedAtMillis
+            else -> null
+        }
         val remainingGrace = submittedAt?.let {
             (PRE_START_FALSE_SETTLE_GRACE_MILLIS - (clock() - it)).coerceAtLeast(0)
         } ?: 0
-        if (!unscopedTurnIsLive && remainingGrace > 0) {
+        // The grace protects a submit whose turn has not reported live yet;
+        // once events proved the turn live (or it was resumed live), an
+        // authoritative running=false settles immediately.
+        if (locallySubmitted && runtimeId !in liveTurnRuntimeIds && remainingGrace > 0) {
             return false
         }
         settleStoppedRuntime(durableId, runtimeId)
         return true
     }
 
+    /** A local submit or resume owns this runtime's pre-start settle edge. */
+    private fun isLocallySubmitted(runtimeId: String): Boolean =
+        runtimeId in localSubmitStartedAtByRuntime ||
+            (unscopedRuntimeId == runtimeId && localSubmitStartedAtMillis != null)
+
     private fun markRuntimeLive(runtimeId: String) {
         activeRuntimeIds += runtimeId
+        liveTurnRuntimeIds += runtimeId
         if (unscopedRuntimeId == runtimeId) {
             unscopedTurnIsLive = true
         }
@@ -1786,7 +1824,14 @@ internal class LiveGatewaySessionRepository(
         }
         val status = when (running) {
             true -> reportedStatus?.takeIf { it != SessionStatus.Idle } ?: SessionStatus.Working
-            false -> if (unscopedRuntimeId == runtimeId) existing.status else SessionStatus.Idle
+            // A pre-start heartbeat must not wipe an optimistic local submit
+            // for this runtime; settleStoppedSessionInfo owns that edge.
+            false ->
+                if (isLocallySubmitted(runtimeId)) {
+                    existing.status
+                } else {
+                    SessionStatus.Idle
+                }
             null -> reportedStatus ?: existing.status
         }
         if (status != existing.status) {
@@ -1825,7 +1870,23 @@ internal class LiveGatewaySessionRepository(
 
     private fun releaseRuntimeGuard(runtimeId: String) {
         activeRuntimeIds.remove(runtimeId)
-        if (unscopedRuntimeId == runtimeId) clearUnscopedRuntime()
+        localSubmitStartedAtByRuntime.remove(runtimeId)
+        liveTurnRuntimeIds.remove(runtimeId)
+        if (unscopedRuntimeId == runtimeId || unscopedRuntimeId == null) {
+            // Exactly one remaining locally submitted runtime inherits the
+            // identifier-less event pin, so its stream keeps flowing after the
+            // previous owner settles (or after ambiguity left the pin
+            // unowned). With zero or multiple candidates there is no safe
+            // owner and identifier-less events stay unattributed.
+            val inheriting = activeRuntimeIds.filter { it in localSubmitStartedAtByRuntime }.singleOrNull()
+            if (inheriting != null && inheriting != runtimeId) {
+                unscopedRuntimeId = inheriting
+                localSubmitStartedAtMillis = localSubmitStartedAtByRuntime[inheriting]
+                unscopedTurnIsLive = inheriting in liveTurnRuntimeIds
+            } else if (unscopedRuntimeId == runtimeId) {
+                clearUnscopedRuntime()
+            }
+        }
     }
 
     private fun completeMessage(durableId: String, runtimeId: String, payload: JsonObject) {
@@ -2041,6 +2102,8 @@ internal class LiveGatewaySessionRepository(
     private fun connectionScopedRuntimeIds(): Set<String> = buildSet {
         unscopedRuntimeId?.let(::add)
         addAll(activeRuntimeIds)
+        addAll(liveTurnRuntimeIds)
+        addAll(localSubmitStartedAtByRuntime.keys)
         addAll(assistantByRuntime.keys)
         addAll(reasoningByRuntime.keys)
         addAll(toolsByRuntime.keys)

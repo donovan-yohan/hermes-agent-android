@@ -68,6 +68,8 @@ internal fun ModelControl(
     onSelectFast: (FastMode) -> Unit,
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier,
+    /** Collapsed control renders one line: model · provider · effort/fast. */
+    singleLine: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     val tokens = HermesTheme.tokens
@@ -108,31 +110,46 @@ internal fun ModelControl(
                 stateDescription = scopeLabel
             }
             .testTag("Composer model control")
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        if (singleLine) {
+            val modifiers = listOfNotNull(
+                controls.reasoning?.wireValue?.takeUnless { it == "none" }?.replaceFirstChar { it.uppercase() },
+                controls.fast?.wireValue?.takeUnless { it == "normal" }?.let { "Fast" },
+            ).joinToString(" · ")
             Text(
-                text = modelLabel,
-                style = HermesTheme.type.caption,
-                color = if (isLoading) tokens.textTertiary else tokens.textSecondary,
+                text = if (modifiers.isNotBlank()) "$modelLabel · $modifiers" else modelLabel,
+                style = HermesTheme.type.scaffoldMeta,
+                color = if (isDeferred) tokens.accent else tokens.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 150.dp),
             )
-            val modifiers = listOfNotNull(
-                providerLabel,
-                controls.reasoning?.wireValue?.takeUnless { it == "none" },
-                controls.fast?.wireValue?.takeUnless { it == "normal" },
-            ).joinToString(" · ")
-            if (modifiers.isNotBlank() || isDeferred) {
+        } else {
+            Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    text = if (isDeferred) "Applies after this turn" else modifiers,
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = if (isDeferred) tokens.accent else tokens.scaffoldMeta,
+                    text = modelLabel,
+                    style = HermesTheme.type.caption,
+                    color = if (isLoading) tokens.textTertiary else tokens.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val modifiers = listOfNotNull(
+                    providerLabel,
+                    controls.reasoning?.wireValue?.takeUnless { it == "none" },
+                    controls.fast?.wireValue?.takeUnless { it == "normal" },
+                ).joinToString(" · ")
+                if (modifiers.isNotBlank() || isDeferred) {
+                    Text(
+                        text = if (isDeferred) "Applies after this turn" else modifiers,
+                        style = HermesTheme.type.scaffoldMeta,
+                        color = if (isDeferred) tokens.accent else tokens.scaffoldMeta,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         if (isManualNewDraft && !isLiveSession) {

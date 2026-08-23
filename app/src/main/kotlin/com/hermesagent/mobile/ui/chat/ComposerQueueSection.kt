@@ -199,10 +199,10 @@ private fun QueueActions(
     onRedirectNow: () -> Unit,
     onMarkReadyAfterReview: () -> Unit,
 ) {
-    // Rows group by meaning — delivery (Send next/Redirect) then maintenance
+    // Rows group by meaning — delivery (Send next/Redirect) above maintenance
     // (Edit/Delete) — so a ready entry reads as one compact card instead of
-    // three scattered touch rows. Every target keeps the 48dp minimum; the
-    // widest ready row (Send next + Redirect now + Delete) still fits 320dp.
+    // two scattered action rows. Targets stay ≥48dp tall; the widest delivery
+    // row (Send next + Redirect now) fits narrow 320dp screens.
     Column(Modifier.fillMaxWidth()) {
         if (entry.delivery == QueuedPromptDelivery.Ambiguous) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

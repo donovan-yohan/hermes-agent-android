@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -19,6 +20,7 @@ import com.hermesagent.mobile.data.voice.VoiceUiState
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
@@ -37,7 +39,9 @@ internal fun VoiceDictationControl(
         is VoiceUiState.DictationRecording ->
             Triple("Stop dictation", HermesIcon.StopCircle, true)
         is VoiceUiState.DictationTranscribing ->
-            Triple("Transcribing", HermesIcon.Thinking, false)
+            Triple("Transcribing", HermesIcon.Mic, false)
+        is VoiceUiState.Error ->
+            Triple(s.recovery, HermesIcon.Error, true)
         else -> Triple("Start dictation", HermesIcon.Mic, true)
     }
     Box(
@@ -52,10 +56,10 @@ internal fun VoiceDictationControl(
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.size(28.dp).background(tokens.widgetSurface, CircleShape),
+            Modifier.size(22.dp).background(if (state is VoiceUiState.Error) tokens.destructive.copy(alpha = 0.16f) else Color.Transparent, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            HermesIconGlyph(icon, color = if (enabled) tokens.textSecondary else tokens.textQuaternary)
+            HermesIconGlyph(icon, color = if (enabled) tokens.textSecondary else tokens.textQuaternary, size = 15.sp)
         }
     }
 }
@@ -85,15 +89,11 @@ internal fun VoiceConversationControl(
             .testTag("Voice conversation control"),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.size(28.dp).background(tokens.widgetSurface, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            HermesIconGlyph(
-                if (active) HermesIcon.Error else HermesIcon.Mic,
-                color = tokens.textSecondary,
-            )
-        }
+        HermesIconGlyph(
+            if (active) HermesIcon.Error else HermesIcon.Mic,
+            color = tokens.textSecondary,
+            size = 15.sp,
+        )
     }
     if (active) {
         Text(
@@ -119,6 +119,7 @@ internal fun VoiceConversationControl(
             HermesIconGlyph(
                 HermesIcon.Edit,
                 color = if (state.muted) tokens.destructive else tokens.textSecondary,
+                size = 15.sp,
             )
         }
     }

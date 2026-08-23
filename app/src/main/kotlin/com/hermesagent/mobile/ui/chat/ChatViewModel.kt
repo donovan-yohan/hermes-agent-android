@@ -296,8 +296,7 @@ internal class ChatViewModel(
     ) { cacheState, queryText, draftText, activeId, composerBundle ->
         val navigation = composerBundle.third
         val voiceState = composerBundle.second
-        val blocking = cacheState.sessions.values.filter { it.status in PROMPT_BLOCKING_STATUSES }
-        val running = blocking.size
+        val running = cacheState.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
         // SessionCache publishes this alias in the same atomic update that
         // moves a compressed parent to its canonical tip. Resolve it here so
         // the later navigation event cannot create a blank intermediate frame.
@@ -1197,7 +1196,24 @@ internal class ChatViewModel(
                         }
                     }
                 }
+                if (dictationStop == null) voice.value = VoiceUiState.Idle
             }
+        }
+    }
+
+    /** Engine hook: surface a failed transcription as state, never as silence. */
+    fun reportDictationFailure(message: String) {
+        if (voice.value is VoiceUiState.DictationTranscribing || voice.value is VoiceUiState.DictationRecording) {
+            voice.value = VoiceUiState.Idle
+        }
+        notice.value = message
+    }
+
+    /** Engine hook: publish the live capture meter for the recording state. */
+    fun reportDictationLevel(level: Float) {
+        val current = voice.value
+        if (current is VoiceUiState.DictationRecording) {
+            voice.value = current.copy(level = level.coerceIn(0f, 1f))
         }
     }
 

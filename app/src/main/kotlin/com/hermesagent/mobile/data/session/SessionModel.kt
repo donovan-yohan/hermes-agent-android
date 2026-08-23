@@ -55,6 +55,12 @@ data class SessionSummary(
     /** Latest coalesced Gateway `status.update` (`{kind,text}`), if useful. */
     val progress: SessionProgress? = null,
     /**
+     * Server-reported git branch for this session's working directory,
+     * carried by authoritative `session.info` events. Null when the Gateway
+     * did not report one (older servers, detached worktrees, no repository).
+     */
+    val gitBranch: String? = null,
+    /**
      * Connection-scoped composer material projected from the live Gateway.
      * It is deliberately separate from transcript truth and is cleared when
      * the live turn or Gateway connection settles.

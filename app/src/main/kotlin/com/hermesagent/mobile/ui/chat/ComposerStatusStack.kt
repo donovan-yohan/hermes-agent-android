@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
+import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ComposerPreviewArtifact
 import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.data.session.ComposerSubagentStatus
@@ -55,7 +56,8 @@ fun ComposerStatusStack(
     var dismissedPreviewIds by rememberSaveable(activeSessionId) { mutableStateOf(emptySet<String>()) }
     val previews = visiblePreviews.filterNot { it.id in dismissedPreviewIds }
     val hasRows = status != null && (
-        status.goal != null || status.todos.isNotEmpty() || status.subagents.isNotEmpty() ||
+        (status.goal != null && status.goal.state != ComposerGoalState.None) ||
+            status.todos.isNotEmpty() || status.subagents.isNotEmpty() ||
             status.backgroundProcesses.isNotEmpty() || previews.isNotEmpty() ||
             status.genericProgress != null || status.isCompacting
         ) || hasQueue
@@ -70,7 +72,7 @@ fun ComposerStatusStack(
             .semantics { contentDescription = "Composer status" },
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        status?.goal?.let { goal ->
+        status?.goal?.takeIf { it.state != ComposerGoalState.None }?.let { goal ->
             StatusGroup("${activeSessionId}:goal", "Goal", defaultExpanded = true) {
                 StatusText(goal.title ?: goal.rawText)
                 goal.detail?.takeIf(String::isNotBlank)?.let { StatusText(it) }

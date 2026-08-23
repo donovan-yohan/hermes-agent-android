@@ -146,7 +146,7 @@ class MainActivity : ComponentActivity() {
                 while (chatViewModel.uiState.value.voice
                     is com.hermesagent.mobile.data.voice.VoiceUiState.DictationRecording
                 ) {
-                    mic.pump()
+                    chatViewModel.reportDictationLevel(mic.pump())
                     delay(100)
                 }
             }
@@ -159,12 +159,19 @@ class MainActivity : ComponentActivity() {
                         durableSessionId = durableSessionId,
                     )
                     val captured = com.hermesagent.mobile.data.voice.CapturedAudio("audio/wav", pcm)
-                    // Transport failures must surface as state, never crash:
-                    // the transcription route is remote and can fail for many
-                    // ordinary reasons (offline, provider down, timeout).
+                    // Transport and provider failures must surface as honest
+                    // state, never masquerade as silence.
                     val result = runCatching {
                         app.voiceRepository.transcribe(key, captured)
-                    }.getOrElse { com.hermesagent.mobile.data.voice.TranscriptionResult.Silence }
+                    }.getOrElse { failure ->
+                        captured.close()
+                        chatViewModel.reportDictationFailure(
+                            (failure as? com.hermesagent.mobile.data.voice.VoiceTransportException)
+                                ?.safeMessage
+                                ?: "Dictation could not be completed. Try again.",
+                        )
+                        return@launch
+                    }
                     captured.close()
                     onDone(result)
                 }
