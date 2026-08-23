@@ -3,15 +3,25 @@ name: Android exact-head
 on:
   pull_request:
   push:
+    branches: [main]
 
 permissions:
   contents: read
+
+env:
+  ROLLING_ARTIFACT: hermes-mobile-latest
+
+concurrency:
+  group: android-exact-head-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
     name: check and debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      artifact-id: ${{ steps.apk.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -27,9 +37,38 @@ jobs:
             build-tools;36.0.0
       - name: Check and assemble exact head
         run: ./gradlew check assembleDebug --no-daemon
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload debug APK
+        id: apk
+        uses: actions/upload-artifact@v4
         with:
-          name: app-debug-${{ github.sha }}
+          name: ${{ github.event_name == 'push' && env.ROLLING_ARTIFACT || format('app-debug-{0}', github.sha) }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 90
+
+  # Separate job so only this one holds `actions: write`, and it runs after the
+  # upload so the replacement artifact exists before any older one is deleted.
+  prune:
+    name: prune superseded latest APKs
+    if: github.event_name == 'push'
+    needs: check
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Remove superseded latest APK artifacts
+        shell: bash
+        env:
+          CURRENT_ARTIFACT_ID: ${{ needs.check.outputs.artifact-id }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          test -n "$CURRENT_ARTIFACT_ID" || {
+            echo '::error::The rolling APK upload did not return an artifact id.'
+            exit 1
+          }
+          gh api --paginate \
+            "repos/${REPOSITORY}/actions/artifacts?name=${ROLLING_ARTIFACT}&per_page=100" \
+            --jq ".artifacts[] | select(.id != ${CURRENT_ARTIFACT_ID}) | .id" |
+          xargs -r -I{} gh api --method DELETE "repos/${REPOSITORY}/actions/artifacts/{}"

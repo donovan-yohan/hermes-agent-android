@@ -32,6 +32,16 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 minSdk 26, compile/target 36. The debug build installs as
 `com.hermesagent.mobile.debug`.
 
+### Latest main APK
+
+Every successful `main` build publishes a GitHub Actions artifact named
+`hermes-mobile-latest` on the
+[Android exact-head workflow](https://github.com/donovan-yohan/hermes-agent-android/actions/workflows/android-exact-head.yml?query=branch%3Amain).
+The workflow uploads the replacement first, then deletes older artifacts with
+that name, so this is a rolling debug APK rather than a version archive.
+GitHub requires sign-in to download Actions artifacts and retains this one for
+up to 90 days. Versioned release builds remain a separate manual process.
+
 ## What Phase 2 contains
 
 - The six pinned Hermes Desktop themes with light/dark resolution, semantic
