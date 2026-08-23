@@ -116,6 +116,34 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         self.assertNotEqual(self.valid_text, broken)
         self.assertEqual(1, self._run(broken))
 
+    def test_rejects_prune_on_pull_requests(self) -> None:
+        broken = self.valid_text.replace(
+            "  prune:\n    name: prune superseded latest APKs\n    if: github.event_name == 'push'\n",
+            "  prune:\n    name: prune superseded latest APKs\n    if: always()\n",
+            1,
+        )
+        self.assertNotEqual(self.valid_text, broken)
+        self.assertEqual(1, self._run(broken))
+
+    def test_rejects_signing_restored_after_gradle(self) -> None:
+        signing_start = self.valid_text.index(
+            "      - name: Restore rolling debug keystore\n"
+        )
+        gradle_start = self.valid_text.index(
+            "      - name: Check and assemble exact head\n"
+        )
+        signing_step = self.valid_text[signing_start:gradle_start]
+        without_signing = (
+            self.valid_text[:signing_start] + self.valid_text[gradle_start:]
+        )
+        upload_start = without_signing.index("      - name: Upload debug APK\n")
+        broken = (
+            without_signing[:upload_start]
+            + signing_step
+            + without_signing[upload_start:]
+        )
+        self.assertEqual(1, self._run(broken))
+
     def test_rejects_removal_step_without_always(self) -> None:
         broken = self.valid_text.replace(
             "      - name: Remove rolling debug keystore\n        if: always()\n",

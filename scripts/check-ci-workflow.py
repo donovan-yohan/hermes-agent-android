@@ -78,6 +78,7 @@ def main() -> int:
 
     workflow_permissions = _indented_block(effective, "permissions:")
     signing_step = _indented_block(effective, "      - name: Restore rolling debug keystore")
+    gradle_step = _indented_block(effective, "      - name: Check and assemble exact head")
     removal_step = _indented_block(effective, "      - name: Remove rolling debug keystore")
     upload_step = _indented_block(effective, "      - name: Upload debug APK")
     prune_job = _indented_block(effective, "  prune:")
@@ -89,6 +90,8 @@ def main() -> int:
         failures.append("rolling signing material must be removed after every build, even a failed one")
     if "shell: bash" not in prune_job:
         failures.append("prune step must use the pipefail-enabled bash shell")
+    if "if: github.event_name == 'push'" not in prune_job:
+        failures.append("prune job must run only on main pushes")
     if effective.count("actions: write") != 1 or "actions: write" not in prune_job:
         failures.append("actions: write must be scoped only to the prune job")
     if "actions: write" in workflow_permissions:
@@ -97,6 +100,8 @@ def main() -> int:
         failures.append("prune job must depend on the successful check/upload job")
     if "select(.id != ${CURRENT_ARTIFACT_ID})" not in prune_job:
         failures.append("prune query must exclude the newly uploaded artifact id")
+    if signing_step and gradle_step and effective.index(signing_step) > effective.index(gradle_step):
+        failures.append("rolling debug keystore must be restored before the Gradle build")
     if upload_step and prune_job and effective.index(upload_step) > effective.index(prune_job):
         failures.append("rolling APK must be uploaded before superseded artifacts are pruned")
     if failures:
