@@ -194,7 +194,7 @@
         "attachment-error-removal"
       ],
       "deviation": {
-        "reason": "Desktop drag-drop/paste acquisition is adapted to an Android SAF picker; bytes are staged before submit and only Gateway-returned reference text enters prompts. Remaining deviations (folders, clipboard images, previews) stay unavailable rather than enabled no-ops until implemented.",
+        "reason": "Desktop drag-drop/paste acquisition is adapted to an Android SAF picker; bytes are staged before submit and only Gateway-returned reference text enters prompts. Folder, clipboard-image, and drag/drop acquisition remain unavailable rather than enabled no-ops.",
         "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt:44-52",
         "approved_by": "Slice 3 attachment boundary"
       },
@@ -256,7 +256,7 @@
         "completion-no-results"
       ],
       "deviation": {
-        "reason": "Android replaces Desktop hover/nested menus and rich chips with accessible bottom sheets and canonical plain text; native-only attachment contributions remain gated by Slice 6 byte staging.",
+        "reason": "Android replaces Desktop hover/nested menus and rich chips with accessible bottom sheets and canonical plain text. File/image acquisition uses SAF-backed staged attachments; folder and arbitrary Desktop JS contributions remain unavailable.",
         "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/CompletionPopup.kt:18-55",
         "approved_by": "Slice 3 mobile adaptation contract"
       },
