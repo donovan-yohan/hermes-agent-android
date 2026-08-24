@@ -49,3 +49,23 @@ Two frames captured one second apart
 movement: Working and Stalled are ringed, while NeedsInput, Background, and
 Idle are unringed. Capture shared the emulator with other work; no private
 data was used.
+
+## Default-dark sidebar color contract
+
+For Android commit `44b409c610d0c0cb8e21d1856ea2bfaf4b5a81c3` against pinned
+Desktop source `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`, the default-dark
+sidebar uses the Nous palette defined in `presets.ts:174-232`: sidebar raw
+`#010409`, accent `#4A84FE`, and outline `#E6EDF3`. The selected sidebar row
+follows `styles.css:308-312`, with active raw `#2084ABFA`; on Android its
+composited observed color is `#121827`. This raw-versus-composited distinction
+is part of the visual parity contract.
+
+Evidence for this exact implementation: production APK SHA-256
+`3c9103f6c5e3ba9bb7f4ed493130971aa33841c6ac135b7fe9231174f4fd8d70`; fixture
+APK SHA-256 `3e578294c1573cf30dc1612addf9317246493934e2c0b3d3bfb6cd9d40c4aa95`;
+Google `sdk_gphone16k_arm64` emulator, API 37, 1280x2856 at 480 dpi; cold
+launches of 719ms and 658ms; `topResumed` and fatal scans clean; frame hashes
+`39f606f2dec595b000d922144cded5dcac9f2d5d4e7a55be3249d2d8dcc17960` and
+`768e990bf64869acbfc9fb7d4adadfc1f367aa6559a308d77052ef85b25d1cce`;
+pixel diff 19,210 pixels bounded to y=306..601.
+No private data was used.
