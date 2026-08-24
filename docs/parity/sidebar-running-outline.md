@@ -31,6 +31,21 @@ row keeps its existing one clickable target and one spoken label.
 - `ChatAccessibilityLayoutTest` proves a running row has one, not duplicate,
   accessible label.
 
-Capture state: pending physical/emulator visual capture of a synthetic running
-row in dark and light themes. The fixture must contain no user session text,
-host, path, token, credential, or fingerprint.
+Capture evidence: the exact signed merged-main CI APK
+(`33b652a2567940d8ff223e7aa015bafc3b628d7ba68eb55c53d1472c8f2f5752`)
+was installed and cold-launched through `MainActivity` on the Server-Mac
+`emulator-5554`; the fatal/ANR scan was clean.
+
+A sanitized debug-only fixture, based on `60a5120`, rendered the real
+production `SessionList` on Google `sdk_gphone16k_arm64` (Android 17/API 37,
+1280x2856 at 480 dpi); fixture APK SHA-256:
+`53710ffc12efdedc3f3137bf7ffc254bcbb2020f08505d5aa61bbad6091bbbfb`.
+
+Two frames captured one second apart
+(`6f8ca5376f14cb3fbd2b09bfec1ff94faee8493e2a3d99d01355bd96a8221c0b`,
+`0b0ff2fc5303dc4531f6aa0262bdb26744cf9b3ba0fc12c8c41f2b155a89fa48`) and the
+5-second video
+(`e3ba873a16cea195252cf701e0b16ef7b4698f27f79fcda0ac81e8f50d95fbfc`) prove
+movement: Working and Stalled are ringed, while NeedsInput, Background, and
+Idle are unringed. Capture shared the emulator with other work; no private
+data was used.
