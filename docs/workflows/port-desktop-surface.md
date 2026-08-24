@@ -47,6 +47,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Tool scaffolding | `apps/desktop/src/components/chat/scaffold-row.tsx` | One colour and one size for every "what the agent did" line |
 | Inline widget | `apps/desktop/src/components/chat/widget-shell.ts:12` | Shared radius, mode-derived fill, **no border** |
 | Session status | `apps/desktop/src/app/chat/session-status-dot.tsx:22-77` | Six states; colour + fill/hollow, never motion |
+| Running-session row outline | `apps/desktop/src/store/session-dot-state.ts:70-80`; `apps/desktop/src/app/chat/sidebar/session-row.tsx:254-258,404`; `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113,1129-1144,1157-1161`; `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,84-108` | Working and stalled alone own the flush 1.25px travelling outline; needs-input stays live but yields to its amber dot, and reduced motion leaves a static ring |
 | Transcript tail and jump control | `apps/desktop/src/components/assistant-ui/thread/list.tsx:389-398,651-680`; `apps/desktop/src/app/chat/scroll-to-bottom-button.tsx` | Open at the newest content, follow only while parked there, and expose one floating return action after the reader scrolls away |
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
@@ -266,3 +267,15 @@ clears at authoritative turn settlement, while a completed/cancelled list
 lingers for four seconds so the final checkmark can land. Keep the queue
 profile-scoped and session-keyed locally, and keep runtime IDs and Android URIs
 out of its durable records.
+
+The running-session outline added a motion-specific sidebar pitfall: derive the
+ring from the same backend-authoritative status that paints the dot, never from
+a local animator or a streaming callback. In particular, `Working` and
+`Stalled` get the ring, while `NeedsInput` is still live but deliberately yields
+to its amber action cue; `Background` remains unringed. Keep the decoration as
+a sibling paint layer so it cannot change row measurement, hit testing, or the
+single row accessibility label. Android's animation clock respects system
+duration scale; use `ValueAnimator.areAnimatorsEnabled()` to omit the infinite
+clock and paint a visible phase-zero ring when animations are removed. The full
+source/deviation ledger is
+[`docs/parity/sidebar-running-outline.md`](../parity/sidebar-running-outline.md).
