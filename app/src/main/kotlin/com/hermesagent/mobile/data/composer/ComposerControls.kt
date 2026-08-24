@@ -19,20 +19,34 @@ sealed interface ReasoningEffort {
     val wireValue: String
 
     data object None : ReasoningEffort { override val wireValue = "none" }
+    data object Minimal : ReasoningEffort { override val wireValue = "minimal" }
     data object Low : ReasoningEffort { override val wireValue = "low" }
     data object Medium : ReasoningEffort { override val wireValue = "medium" }
     data object High : ReasoningEffort { override val wireValue = "high" }
     data object XHigh : ReasoningEffort { override val wireValue = "xhigh" }
+    data object Max : ReasoningEffort { override val wireValue = "max" }
+    data object Ultra : ReasoningEffort { override val wireValue = "ultra" }
     data class Unknown(override val wireValue: String) : ReasoningEffort
 
     companion object {
+        /**
+         * Ascending scale, mirroring the backend's VALID_REASONING_EFFORTS
+         * (hermes_constants.py) and Desktop's REASONING_EFFORTS
+         * (apps/desktop/src/lib/reasoning-effort.ts). `none` is not a level;
+         * it is thinking disabled and owned by its own choice.
+         */
+        val LEVELS: List<ReasoningEffort> = listOf(Minimal, Low, Medium, High, XHigh, Max, Ultra)
+
         fun fromWire(raw: String?): ReasoningEffort? = raw?.trim()?.takeIf(String::isNotEmpty)?.let {
             when (it.lowercase()) {
-                "none", "off", "false" -> None
+                "none", "off", "false", "disabled" -> None
+                "minimal" -> Minimal
                 "low" -> Low
                 "medium" -> Medium
                 "high" -> High
                 "xhigh", "extra_high" -> XHigh
+                "max" -> Max
+                "ultra" -> Ultra
                 else -> Unknown(it)
             }
         }
