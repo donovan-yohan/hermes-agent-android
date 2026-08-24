@@ -1,7 +1,7 @@
 # Status and roadmap
 
 > **Last implementation audit:** 2026-08-24 against `hermes-mobile`
-> `7b0b4eb508f9f94a9484bb215098f80fb88ea351`. This is a directional roadmap,
+> `2de8ae2d4c257ef0ae0df026bfb97637750e7c3a`. This is a directional roadmap,
 > not a release schedule.
 
 Hermes Mobile is an active Phase 2 Android client, not a complete port of every
@@ -63,9 +63,9 @@ for the Managed SSH lifecycle.
 - Live transcript with Markdown paragraphs, headings, lists, tables, code
   fences, reasoning/tool activity, attached-image thumbnails, and image
   lightbox viewing.
-- Multiline drafts, history and undo/redo, provider/model selection, reasoning
-  effort, fast mode, slash/path/session completions, emoji search, and plain-text
-  URL/prompt insertion.
+- Multiline drafts, history and undo/redo, provider/model selection, the full
+  backend reasoning scale through Ultra, fast mode, slash/path/session
+  completions, emoji search, and plain-text URL/prompt insertion.
 - Send, stop, redirect, steer, durable text queues, queue edit/delete, park,
   resume, and send-next behavior scoped to the target session.
 - Clarification, dangerous-command approval, and secure sudo/secret response

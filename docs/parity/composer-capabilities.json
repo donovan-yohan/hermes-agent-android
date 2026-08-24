@@ -145,8 +145,8 @@
       "state_authority": "backend-authoritative",
       "platform_dependency": "Gateway model metadata and update events",
       "android_status": "partial",
-      "android_behavior": "Android now loads Gateway model/provider metadata and effective controls through typed repository methods; fresh-draft choices are scoped manual preferences, live changes use optimistic/deferred/rejected rollback semantics, and create overrides are snapshotted at send. Compose exposes loading/error, provider/model, reasoning, fast, and deferred states with 48dp semantics. Visual capture evidence remains open.",
-      "android_tests": "ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover catalog/effective mapping, session-scoped config requests, deferred and rejected mutations, create snapshots, stale completion fencing, and 48dp/scope semantics.",
+      "android_behavior": "Android loads Gateway model/provider metadata and effective controls through typed repository methods; fresh-draft choices are scoped manual preferences, live changes use optimistic/deferred/rejected rollback semantics, and create overrides are snapshotted at send. Compose exposes loading/error, provider/model, the backend-aligned Minimal-through-Ultra reasoning scale, fast, and deferred states with 48dp semantics. Visual capture evidence remains open.",
+      "android_tests": "ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover catalog/effective mapping, the complete reasoning scale, session-scoped config requests, deferred and rejected mutations, create snapshots, stale completion fencing, and 48dp/scope semantics.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/model-pill.tsx:26-173"
