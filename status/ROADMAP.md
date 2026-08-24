@@ -86,8 +86,10 @@ for the Managed SSH lifecycle.
 - Full task-list rows and completion counts, goals, subagents, background
   processes, previews, generic progress, compaction, and queued prompts in the
   composer status stack.
-- Mobile does not yet provide file contents, patch/diff contents, an editor,
-  terminal/PTY, or a full Desktop-style review pane.
+- Gateway-supplied inline diffs render in transcript tool rows. The dedicated
+  coding/review surface does not yet provide repository file contents,
+  changed-file patches, an editor, terminal/PTY, or a full Desktop-style review
+  pane.
 
 ### Appearance and Android adaptation
 
@@ -109,7 +111,7 @@ for the Managed SSH lifecycle.
 | Session management | Create/open/history work; rename and archive are absent. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
-| Coding workspace | Status counters and changed-file metadata work; diff contents, files, editing, terminal, and review workflows do not. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
+| Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
 | Desktop management breadth | No dedicated mobile screens for profiles/bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugins, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
 | Device evidence | Exact-head physical Pixel PKCE, network handoff, IME, TalkBack, media, and process-death acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
