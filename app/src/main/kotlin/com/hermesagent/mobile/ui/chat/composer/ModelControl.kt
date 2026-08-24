@@ -287,6 +287,8 @@ private fun ModelControlSheet(
             HorizontalDivider(color = tokens.strokeTertiary)
             Text("Reasoning", style = HermesTheme.type.sectionLabel, color = tokens.textTertiary)
             val reasoningSupported = selectedOption?.supportsReasoning == true
+            val thinkingOn = controls.reasoning?.wireValue != ReasoningEffort.None.wireValue
+            val defaultLevel = ReasoningEffort.Medium
             val reasoningDisabledReason = when {
                 selectedOption == null -> "Reasoning availability could not be checked"
                 !reasoningSupported -> "Reasoning is not available for this model"
@@ -294,18 +296,47 @@ private fun ModelControlSheet(
                 isDeferred -> "Available after this turn"
                 else -> null
             }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = HermesTheme.spacing.touchTarget)
+                    .clickable(
+                        enabled = reasoningDisabledReason == null,
+                        role = Role.Switch,
+                    ) { onSelectReasoning(if (thinkingOn) ReasoningEffort.None else defaultLevel) }
+                    .semantics {
+                        contentDescription = buildString {
+                            append("Thinking")
+                            reasoningDisabledReason?.let { append(". $it") }
+                        }
+                        stateDescription = if (thinkingOn) "On" else "Off"
+                        if (reasoningDisabledReason != null) disabled()
+                    }
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text("Thinking", style = HermesTheme.type.body, color = if (reasoningSupported) tokens.textPrimary else tokens.textQuaternary)
+                    if (!reasoningSupported && selectedOption != null) {
+                        Text(
+                            "Reasoning is not available for this model",
+                            style = HermesTheme.type.scaffoldMeta,
+                            color = tokens.scaffoldMeta,
+                        )
+                    }
+                }
+                Text(
+                    if (thinkingOn) "On" else "Off",
+                    style = HermesTheme.type.caption,
+                    color = if (thinkingOn) tokens.accent else tokens.textTertiary,
+                )
+            }
             ReasoningChoices(
                 selected = controls.reasoning,
                 disabledReason = reasoningDisabledReason,
                 onSelect = onSelectReasoning,
             )
-            if (selectedOption != null && !reasoningSupported) {
-                Text(
-                    "Reasoning is not available for this model.",
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.scaffoldMeta,
-                )
-            }
             HorizontalDivider(color = tokens.strokeTertiary)
             val fastSupported = selectedOption?.supportsFast == true
             FastModeRow(
@@ -366,20 +397,30 @@ private fun ReasoningChoices(
     disabledReason: String?,
     onSelect: (ReasoningEffort) -> Unit,
 ) {
-    val options = listOf(
-        ReasoningEffort.None,
-        ReasoningEffort.Low,
-        ReasoningEffort.Medium,
-        ReasoningEffort.High,
-        ReasoningEffort.XHigh,
+    // Desktop's picker offers the full backend scale for every reasoning
+    // model; model.options deliberately omits per-model effort lists because
+    // they under-report (inventory.py) — capability gating stays boolean.
+    val options = ReasoningEffort.LEVELS
+    val off = ReasoningEffort.None
+    val labels = mapOf(
+        ReasoningEffort.Minimal to "Min",
+        ReasoningEffort.Low to "Low",
+        ReasoningEffort.Medium to "Med",
+        ReasoningEffort.High to "High",
+        ReasoningEffort.XHigh to "XHigh",
+        ReasoningEffort.Max to "Max",
+        ReasoningEffort.Ultra to "Ultra",
     )
     val tokens = HermesTheme.tokens
     val enabled = disabledReason == null
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         options.forEach { option ->
             val chosen = option.wireValue == selected?.wireValue
             Text(
-                text = if (option == ReasoningEffort.XHigh) "XHigh" else option.wireValue.replaceFirstChar { it.uppercase() },
+                text = labels[option] ?: option.wireValue.replaceFirstChar { it.uppercase() },
                 style = HermesTheme.type.caption,
                 color = if (chosen) tokens.accentForeground else tokens.textSecondary,
                 modifier = Modifier
@@ -399,6 +440,17 @@ private fun ReasoningChoices(
             )
         }
     }
+    val chosenOff = selected?.wireValue == off.wireValue
+    Text(
+        text = if (chosenOff) {
+            "Thinking is off. Pick a level to turn it back on."
+        } else {
+            "Thinking stays on at every level. Turn it off from Thinking."
+        },
+        style = HermesTheme.type.scaffoldMeta,
+        color = tokens.scaffoldMeta,
+        modifier = Modifier.padding(top = 2.dp),
+    )
 }
 
 @Composable

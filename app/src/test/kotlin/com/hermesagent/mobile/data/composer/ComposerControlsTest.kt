@@ -17,9 +17,22 @@ class ComposerControlsTest {
 
     @Test
     fun `unknown Gateway control values remain representable`() {
-        assertEquals(ReasoningEffort.Unknown("ultra"), ReasoningEffort.fromWire("ultra"))
+        assertEquals(ReasoningEffort.Unknown("invented"), ReasoningEffort.fromWire("invented"))
         assertEquals(FastMode.Unknown("turbo"), FastMode.fromWire("turbo"))
         assertTrue(ComposerModelSelection("model").isSpecified)
+    }
+
+    @Test
+    fun `reasoning scale mirrors the backend VALID_REASONING_EFFORTS`() {
+        assertEquals(
+            listOf("minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+            ReasoningEffort.LEVELS.map { it.wireValue },
+        )
+        ReasoningEffort.LEVELS.forEach { level ->
+            assertEquals(level, ReasoningEffort.fromWire(level.wireValue))
+        }
+        assertEquals(ReasoningEffort.Ultra, ReasoningEffort.fromWire("ULTRA"))
+        assertEquals(ReasoningEffort.Max, ReasoningEffort.fromWire(" max "))
     }
 
     @Test

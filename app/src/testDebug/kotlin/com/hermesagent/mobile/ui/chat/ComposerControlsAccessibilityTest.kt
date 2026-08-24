@@ -1,6 +1,10 @@
 package com.hermesagent.mobile.ui.chat
 
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -107,7 +111,7 @@ class ComposerControlsAccessibilityTest {
     }
 
     @Test
-    fun `reasoning is capability gated and includes xhigh`() {
+    fun `reasoning is capability gated and offers the full backend scale`() {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 Composer(
@@ -142,13 +146,68 @@ class ComposerControlsAccessibilityTest {
         }
 
         compose.onNodeWithContentDescription("Open model controls", substring = true).performClick()
-        compose.onNodeWithText("XHigh").assertExists()
+        ReasoningEffort.LEVELS.forEach { level ->
+            compose.onNodeWithText(
+                when (level) {
+                    ReasoningEffort.Minimal -> "Min"
+                    ReasoningEffort.Medium -> "Med"
+                    ReasoningEffort.XHigh -> "XHigh"
+                    ReasoningEffort.Max -> "Max"
+                    ReasoningEffort.Ultra -> "Ultra"
+                    else -> level.wireValue.replaceFirstChar { it.uppercase() }
+                },
+            ).assertExists()
+        }
         compose.onNodeWithContentDescription(
             "Reasoning xhigh. Reasoning is not available for this model",
         ).assertHeightIsAtLeast(HermesSpacing().touchTarget)
             .assertIsNotEnabled()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
-        compose.onNodeWithText("Reasoning is not available for this model.").assertExists()
+        compose.onNodeWithContentDescription(
+            "Thinking. Reasoning is not available for this model",
+        ).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `thinking toggle owns the off state while the scale stays levels only`() {
+        var selected by mutableStateOf<ReasoningEffort?>(ReasoningEffort.None)
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Composer(
+                    draft = "",
+                    onDraftChange = {},
+                    onSend = {},
+                    onStop = {},
+                    isStreaming = false,
+                    canSend = false,
+                    connected = true,
+                    statusLine = "",
+                    controls = ComposerUiState(
+                        catalog = ComposerCatalogUiState.Ready(
+                            ModelCatalog(
+                                providers = listOf(ModelProvider("acme", "Acme", listOf(ModelOption("m")))),
+                                effectiveSelection = ComposerModelSelection("m", "acme"),
+                            ),
+                        ),
+                        controls = ModelControlsSnapshot(
+                            selection = ComposerModelSelection("m", "acme"),
+                            reasoning = selected,
+                        ),
+                    ),
+                    onSelectReasoning = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Open model controls", substring = true).performClick()
+        compose.onNodeWithContentDescription("Thinking")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Off"))
+            .performClick()
+        assertEquals(ReasoningEffort.Medium, selected)
+
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Thinking")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "On"))
     }
 
     @Test
@@ -171,7 +230,7 @@ class ComposerControlsAccessibilityTest {
 
         compose.onNodeWithContentDescription("Open model controls", substring = true).performClick()
         compose.onNodeWithContentDescription(
-            "Reasoning none. Reasoning availability could not be checked",
+            "Thinking. Reasoning availability could not be checked",
         ).assertIsNotEnabled()
         compose.onNodeWithText("Loading model choices…").assertExists()
         compose.onNodeWithText("Fast mode availability could not be checked").assertExists()
