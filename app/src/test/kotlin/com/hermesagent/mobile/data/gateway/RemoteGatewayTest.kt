@@ -442,13 +442,64 @@ class RemoteGatewayTest {
             attempts += 1
             if (attempts == 1) FailingAtReadinessRpc() else recovered
         }
+        // Production restores during Application.onCreate, before the first
+        // Activity advances ProcessLifecycleOwner to STARTED.
+        manager.applicationForegroundChanged(false)
 
         val result = manager.restoreRemote(PROFILE)
         runCurrent()
         assertTrue(result is GatewayConnectResult.Failed)
         assertEquals(1, attempts)
-        assertEquals(GatewayConnectionStatus.Connecting, manager.state.value.status)
+        assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
 
+        manager.applicationForegroundChanged(true)
+        runCurrent()
+        assertEquals(GatewayConnectionStatus.Connecting, manager.state.value.status)
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(2, attempts)
+        assertTrue(manager.client.value === recovered)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        manager.disconnect()
+    }
+
+    @Test
+    fun `foreground resume re-arms while a fenced retry intent unwinds`() = runTest {
+        val first = FakeRpc()
+        val recovered = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        var attempts = 0
+        val manager = remoteManager(
+            reconnectWait = { retryPermits.receive() },
+            reconnectJitter = { 0.0 },
+            beforeReconnectCancellationCleanup = {
+                cleanupStarted.complete(Unit)
+                releaseCleanup.await()
+            },
+        ) { _, _ ->
+            attempts += 1
+            if (attempts == 1) first else recovered
+        }
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        first.failFromServer()
+        runCurrent()
+
+        manager.applicationForegroundChanged(false)
+        retryPermits.send(Unit)
+        runCurrent()
+        cleanupStarted.await()
+
+        // The foreground nudge observes the automatic intent that is still in
+        // cancellation cleanup and yields. Cleanup must re-arm after releasing
+        // that intent instead of leaving the route stranded on Disconnected.
+        manager.applicationForegroundChanged(true)
+        runCurrent()
+        releaseCleanup.complete(Unit)
+        runCurrent()
         retryPermits.send(Unit)
         runCurrent()
 
@@ -935,6 +986,7 @@ class RemoteGatewayTest {
         reconnectWait: suspend (Long) -> Unit,
         reconnectJitter: () -> Double = { kotlin.random.Random.nextDouble() },
         nowMillis: () -> Long = System::currentTimeMillis,
+        beforeReconnectCancellationCleanup: suspend () -> Unit = {},
         openRpc: suspend (String, String) -> GatewayRpcClient,
     ) = GatewayConnectionManager(
         scope = backgroundScope,
@@ -943,6 +995,7 @@ class RemoteGatewayTest {
         reconnectWait = reconnectWait,
         reconnectJitter = reconnectJitter,
         nowMillis = nowMillis,
+        beforeReconnectCancellationCleanup = beforeReconnectCancellationCleanup,
     )
 
     private fun okhttp3.Request.bodyAsUtf8(): String {

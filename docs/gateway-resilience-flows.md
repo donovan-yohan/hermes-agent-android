@@ -13,7 +13,7 @@ an expected event on a phone, not an error state.
 
 | Scenario | Desktop behavior | Mobile before | Mobile after |
 |---|---|---|---|
-| App cold start, saved route | Boot connects; transient boot faults retry with backoff (max 5) | One-shot `restoreRemote`; failure = dead until manual tap | Same one-shot attempt, but retryable failures enter the unlimited full-jitter retry loop instead of dying silently |
+| App cold start, saved route | Boot connects; transient boot faults retry with backoff (max 5) | One-shot `restoreRemote`; failure = dead until manual tap | Same one-shot attempt; a retryable failure enters the unlimited full-jitter loop when the app reaches the foreground |
 | Wi-Fi → cellular handoff | `online` event → immediate reconnect, unlimited full-jitter backoff (300ms→15s cap) | 3 attempts (0/1/5s), then permanent "keeps disconnecting" red text | Unlimited full-jitter retries; network recovery resets attempts |
 | Tunnel/underground (no radio) | Waits; reconnect nudged by `online` | Burns its 3 attempts while offline, gives up before signal returns | Network-loss path holds "Waiting for network"; first stable-network event restarts fresh retries |
 | Screen off / Doze mid-session | n/a (desktop) — mobile analog of macOS sleep | Socket dies; state goes NeedsAttention; no foreground nudge | Automatic redials pause in the background; foreground resume reconnects immediately when the route exists and the socket is down |
@@ -42,8 +42,10 @@ an expected event on a phone, not an error state.
 6. **Honest failure gating.** Only these are surfaced as user-actionable
    states: auth required (interactive sign-in needed), host-key review or
    mismatch, gateway unreachable with network confirmed up *and* escalation
-   threshold passed, or explicit disconnect by the user. Everything else is
-   `Connecting`.
+   threshold passed, or explicit disconnect by the user. Other foreground
+   recovery is `Connecting`; a background-paused route falls back to
+   `Disconnected` until foreground resume, unless the episode has already
+   escalated — the latched actionable surface outranks it.
 
 ## Implementation map
 
