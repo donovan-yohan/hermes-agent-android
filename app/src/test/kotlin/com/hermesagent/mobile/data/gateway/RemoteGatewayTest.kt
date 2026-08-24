@@ -11,6 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -354,41 +355,165 @@ class RemoteGatewayTest {
     }
 
     @Test
-    fun `repeated remote failures keep retrying instead of stranding the user`() = runTest {
-        val api = FakeAuthApi()
-        val authenticator = NativeGatewayAuthenticator(
-            api = api,
-            store = MemoryTokenStore(VALID_TOKENS),
-            login = GatewayNativeLogin { _, _ -> error("cached restore must not open login") },
-            nowSeconds = { 1_000L },
-        )
+    fun `network recovery starts a fresh failure episode`() = runTest {
+        val first = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
         var attempts = 0
-        val manager = GatewayConnectionManager(
-            scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
-            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ ->
-                attempts += 1
-                FakeRpc()
-            },
-            reconnectWait = {},
+        var virtualNow = 0L
+        val manager = remoteManager(
+            reconnectWait = { retryPermits.receive() },
             reconnectJitter = { 0.0 },
-        )
+            nowMillis = { virtualNow },
+        ) { _, _ ->
+            attempts += 1
+            if (attempts == 1) first else FailingAtReadinessRpc()
+        }
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        first.failFromServer()
+        runCurrent()
+
+        manager.networkAvailabilityChanged(false)
+        runCurrent()
+        virtualNow = 60_000L
+        manager.networkAvailabilityChanged(true)
+        runCurrent()
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(2, attempts)
+        // A fresh episode is Connecting with no escalated copy carried over.
+        assertEquals(GatewayConnectionState(GatewayConnectionStatus.Connecting), manager.state.value)
+        manager.disconnect()
+    }
+
+    @Test
+    fun `repeated remote failures keep retrying instead of stranding the user`() = runTest {
+        val first = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        val observedDelays = mutableListOf<Long>()
+        var attempts = 0
+        val manager = remoteManager(
+            reconnectWait = { millis ->
+                observedDelays += millis
+                retryPermits.receive()
+            },
+            reconnectJitter = { 0.5 },
+        ) { _, _ ->
+            attempts += 1
+            if (attempts == 1) first else FailingAtReadinessRpc()
+        }
         manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
         runCurrent()
         val firstAttempt = attempts
 
-        // Simulate the readiness failure the way the manager observes it: the
-        // opened socket closes server-side before session.list completes.
-        repeat(10) {
-            (manager.client.value as? FakeRpc)?.failFromServer() ?: return@repeat
-            runCurrent()
+        first.failFromServer()
+        runCurrent()
+        repeat(8) {
+            retryPermits.send(Unit)
             runCurrent()
         }
 
-        assertTrue(
-            "reconnect loop must keep attempting (first=$firstAttempt)",
-            attempts >= firstAttempt + 3,
+        assertEquals(
+            "retry loop must keep attempting past the former three-step ladder",
+            firstAttempt + 8,
+            attempts,
         )
+        assertEquals(
+            listOf(150L, 300L, 600L, 1_200L, 2_400L, 4_800L, 7_500L, 7_500L),
+            observedDelays.take(8),
+        )
+        manager.disconnect()
+    }
+
+    @Test
+    fun `a failed cold-start restore arms the retry loop`() = runTest {
+        // The reviewer's blocker: before this PR the initial-open failure
+        // path returned Failed without scheduling anything, so a saved route
+        // on an unreachable host stranded the app on a red state until the
+        // user tapped something.
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        val recovered = FakeRpc()
+        var attempts = 0
+        val manager = remoteManager(
+            reconnectWait = { retryPermits.receive() },
+            reconnectJitter = { 0.0 },
+        ) { _, _ ->
+            attempts += 1
+            if (attempts == 1) FailingAtReadinessRpc() else recovered
+        }
+
+        val result = manager.restoreRemote(PROFILE)
+        runCurrent()
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(1, attempts)
+        assertEquals(GatewayConnectionStatus.Connecting, manager.state.value.status)
+
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(2, attempts)
+        assertTrue(manager.client.value === recovered)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        manager.disconnect()
+    }
+
+    @Test
+    fun `sustained failure escalates the message but keeps retrying`() = runTest {
+        val first = FakeRpc()
+        val recovered = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        var attempts = 0
+        var retriesFail = true
+        var virtualNow = 0L
+        val manager = remoteManager(
+            reconnectWait = { retryPermits.receive() },
+            reconnectJitter = { 0.0 },
+            nowMillis = { virtualNow },
+        ) { _, _ ->
+            attempts += 1
+            when {
+                attempts == 1 -> first
+                retriesFail -> FailingAtReadinessRpc()
+                else -> recovered
+            }
+        }
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        first.failFromServer()
+        runCurrent()
+
+        virtualNow = 46_000L
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(
+            GatewayConnectionStatus.NeedsAttention,
+            manager.state.value.status,
+        )
+        assertTrue(
+            "expected escalated copy, got: ${manager.state.value.message}",
+            manager.state.value.message?.startsWith("Still trying to reach the Gateway.") == true,
+        )
+        val attemptsAtEscalation = attempts
+
+        retriesFail = false
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(attemptsAtEscalation + 1, attempts)
+        assertTrue(manager.client.value === recovered)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+
+        // Success starts a fresh failure episode even when the recovered
+        // connection did not stay up for the 30-second stability threshold.
+        retriesFail = true
+        virtualNow = 47_000L
+        recovered.failFromServer()
+        runCurrent()
+        retryPermits.send(Unit)
+        runCurrent()
+        assertEquals(GatewayConnectionState(GatewayConnectionStatus.Connecting), manager.state.value)
         manager.disconnect()
     }
 
@@ -451,6 +576,70 @@ class RemoteGatewayTest {
         manager.nudgeRemoteReconnect()
         runCurrent()
         assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
+    }
+
+    @Test
+    fun `foreground nudge does not replay a terminal remote failure`() = runTest {
+        var attempts = 0
+        val manager = remoteManager(reconnectWait = {}, reconnectJitter = { 0.0 }) { _, _ ->
+            attempts += 1
+            FailingAtReadinessRpc(
+                GatewayAuthException("Sign in to this Gateway before reconnecting.", statusCode = 401),
+            )
+        }
+
+        val result = manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        assertTrue(result is GatewayConnectResult.Failed && !result.retryable)
+        assertEquals(1, attempts)
+
+        manager.nudgeRemoteReconnect()
+        runCurrent()
+
+        assertEquals(1, attempts)
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        manager.disconnect()
+    }
+
+    @Test
+    fun `foreground nudge cannot replace an explicit remote open`() = runTest {
+        val api = FakeAuthApi()
+        val first = BlockingReadinessRpc()
+        val replacementRpc = BlockingReadinessRpc()
+        val unusedFallback = FakeRpc()
+        val pending = ArrayDeque<GatewayRpcClient>(listOf(first, replacementRpc, unusedFallback))
+        val manager = remoteManager(
+            api = api,
+            reconnectWait = {},
+            reconnectJitter = { 0.0 },
+        ) { _, _ -> pending.removeFirst() }
+        val firstConnect = backgroundScope.async {
+            manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        }
+        first.requestStarted.await()
+
+        val replacement = PROFILE.copy(baseUrl = "https://replacement.example/hermes/")
+        val replacementConnect = backgroundScope.async {
+            manager.connectRemote(replacement, GatewayBrowserLauncher {})
+        }
+        // Queue the replacement's admission and then the foreground nudge
+        // behind the first open's mutex. When the first open releases it, the
+        // nudge wins the narrow gap between the replacement's two lock passes.
+        manager.nudgeRemoteReconnect()
+        runCurrent()
+        first.releaseRequest.complete(Unit)
+        runCurrent()
+
+        assertTrue(firstConnect.isCancelled)
+        assertFalse(replacementConnect.isCancelled)
+        assertTrue("explicit replacement must reach readiness", replacementRpc.requestStarted.isCompleted)
+        replacementRpc.releaseRequest.complete(Unit)
+        runCurrent()
+
+        assertEquals(GatewayConnectResult.Connected, replacementConnect.await())
+        assertTrue(manager.client.value === replacementRpc)
+        assertTrue(unusedFallback.calls.isEmpty())
+        assertEquals(2, api.ticketTokens.size)
+        manager.disconnect()
     }
 
     @Test
@@ -664,6 +853,34 @@ class RemoteGatewayTest {
         assertTrue(api.ticketTokens.isEmpty())
     }
 
+    /** Cached-token authenticator: a restore in these tests must never open a login. */
+    private fun cachedAuthenticator(api: FakeAuthApi) = NativeGatewayAuthenticator(
+        api = api,
+        store = MemoryTokenStore(VALID_TOKENS),
+        login = GatewayNativeLogin { _, _ -> error("cached restore must not open login") },
+        nowSeconds = { 1_000L },
+    )
+
+    /**
+     * Shared-mode manager over a cached-token remote connector. Defaults mirror
+     * the production ones, so a test that omits a seam is not silently made
+     * deterministic; everything a test asserts on stays a parameter.
+     */
+    private fun kotlinx.coroutines.test.TestScope.remoteManager(
+        api: FakeAuthApi = FakeAuthApi(),
+        reconnectWait: suspend (Long) -> Unit,
+        reconnectJitter: () -> Double = { kotlin.random.Random.nextDouble() },
+        nowMillis: () -> Long = System::currentTimeMillis,
+        openRpc: suspend (String, String) -> GatewayRpcClient,
+    ) = GatewayConnectionManager(
+        scope = backgroundScope,
+        installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+        remoteConnector = RemoteGatewayConnector(cachedAuthenticator(api), openRpc),
+        reconnectWait = reconnectWait,
+        reconnectJitter = reconnectJitter,
+        nowMillis = nowMillis,
+    )
+
     private fun okhttp3.Request.bodyAsUtf8(): String {
         val buffer = okio.Buffer()
         body?.writeTo(buffer)
@@ -820,13 +1037,14 @@ class RemoteGatewayTest {
     }
 
     /** Readiness round trip always fails: the retry loop's honest subject. */
-    private class FailingAtReadinessRpc : GatewayRpcClient {
+    private class FailingAtReadinessRpc(
+        private val failure: Throwable = GatewayConnectionException("The Gateway could not be reached."),
+    ) : GatewayRpcClient {
         override val events = MutableSharedFlow<GatewayEvent>()
         override val closed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         var closedByClient = false
 
-        override suspend fun request(method: String, params: JsonObject): JsonElement =
-            throw GatewayConnectionException("The Gateway could not be reached.")
+        override suspend fun request(method: String, params: JsonObject): JsonElement = throw failure
 
         override fun close() {
             closedByClient = true

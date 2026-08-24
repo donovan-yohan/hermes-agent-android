@@ -39,9 +39,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlin.random.Random
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.Random
 
 enum class GatewayConnectionStatus(val label: String) {
     Disconnected("Disconnected"),
@@ -331,7 +331,7 @@ internal class GatewayConnectionManager(
     },
     private val remoteConnector: RemoteGatewayConnector? = null,
     private val reconnectWait: suspend (Long) -> Unit = { millis -> delay(millis) },
-    private val reconnectJitter: () -> Double = { Random().nextDouble() },
+    private val reconnectJitter: () -> Double = { Random.nextDouble() },
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : Closeable, GatewayConnectionController {
     private val mutex = Mutex()
@@ -429,6 +429,7 @@ internal class GatewayConnectionManager(
         return openRemote(profile, browser, intent) {
             desiredRemoteProfile = profile
             remoteReconnectAttempts = 0
+            remoteFailingSinceMillis = null
             cancelReconnectLocked()
             RemoteOpenAdmission(reconnectGeneration, networkEventGeneration.get())
         }
@@ -436,11 +437,27 @@ internal class GatewayConnectionManager(
 
     override suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult {
         val intent = beginConnectIntent(currentCoroutineContext()[Job])
-        return openRemote(profile, browser = null, intent) {
+        val result = openRemote(profile, browser = null, intent) {
             desiredRemoteProfile = profile
+            remoteReconnectAttempts = 0
+            remoteFailingSinceMillis = null
             cancelReconnectLocked()
             RemoteOpenAdmission(reconnectGeneration, networkEventGeneration.get())
         }
+        if (remoteConnector != null && result is GatewayConnectResult.Failed && result.retryable) {
+            mutex.withLock {
+                // A cold-start restore has no established socket whose monitor
+                // could arm retries. Join the same reconnect loop explicitly,
+                // after openRemote releases its connect intent.
+                // `active == null` and a released intent are both required: an
+                // open that succeeded between the two lock passes leaves no job
+                // but does leave a live connection.
+                if (remoteRouteLiveLocked(profile) && active == null && connectIntent.get().job == null) {
+                    armRemoteReconnectLocked(profile, failingSinceMillis = nowMillis())
+                }
+            }
+        }
+        return result
     }
 
     private suspend fun openRemote(
@@ -520,7 +537,16 @@ internal class GatewayConnectionManager(
                 mutex.withLock {
                     requireRemoteOpenCurrentLocked(intent, profile, failedAdmission)
                     closeActive()
-                    fail(null, safeConnectionMessage(failure), retryable = failure.isRetryableRemoteConnectionFailure())
+                    val retryable = failure.isRetryableRemoteConnectionFailure()
+                    if (!retryable && desiredRemoteProfile == profile) {
+                        // Keep the persisted profile for the explicit sign-in
+                        // action, but stop foreground/network nudges from
+                        // replaying a terminal non-interactive failure.
+                        desiredRemoteProfile = null
+                        remoteReconnectAttempts = 0
+                        remoteFailingSinceMillis = null
+                    }
+                    fail(null, safeConnectionMessage(failure), retryable = retryable)
                 }
             }
         } finally {
@@ -643,9 +669,10 @@ internal class GatewayConnectionManager(
                     return@withLock
                 }
                 closeActive()
-                remoteReconnectAttempts = 1
-                _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
-                scheduleRemoteReconnectLocked(profile)
+                // The outage ended; any failure episode from before it is a
+                // different episode. Without the null clock, one post-tunnel
+                // failure inherits the old one and escalates instantly.
+                armRemoteReconnectLocked(profile, failingSinceMillis = null)
             }
         }
     }
@@ -716,23 +743,7 @@ internal class GatewayConnectionManager(
                         "The Gateway connection closed. Reconnect to continue.",
                     )
                 } else {
-                    remoteReconnectAttempts += 1
-                    // Desktop parity: retries are unbounded with full-jitter
-                    // backoff. Escalation is time-based — after
-                    // RECONNECT_ESCALATE_AFTER_MILLIS of continuous failure
-                    // the state explains itself, but the loop keeps retrying
-                    // underneath instead of stranding the user on a button.
-                    val failingSince = remoteFailingSinceMillis ?: nowMillis().also {
-                        remoteFailingSinceMillis = it
-                    }
-                    if (nowMillis() - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
-                        _state.value = GatewayConnectionState(
-                            GatewayConnectionStatus.NeedsAttention,
-                            "Still trying to reach the Gateway. Check your connection or the host.",
-                        )
-                    } else {
-                        _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
-                    }
+                    recordRemoteFailureLocked()
                 }
                 // Publish the user-facing edge before SSH cleanup, which may
                 // need a bounded remote command and must not leave stale Connected UI.
@@ -741,6 +752,45 @@ internal class GatewayConnectionManager(
                     scheduleRemoteReconnectLocked(reconnect)
                 }
             }
+        }
+    }
+
+    /**
+     * Called only while [mutex] is held. Arms a fresh retry ladder for [profile].
+     *
+     * [failingSinceMillis] is the episode clock the escalation copy is measured
+     * against: `null` starts it at the next failure (a nudge or a recovered
+     * network has not failed yet), while a cold-start restore passes the moment
+     * of the failure that is arming the loop.
+     */
+    private fun armRemoteReconnectLocked(
+        profile: RemoteGatewayProfile,
+        failingSinceMillis: Long?,
+    ) {
+        remoteReconnectAttempts = 1
+        remoteFailingSinceMillis = failingSinceMillis
+        _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+        scheduleRemoteReconnectLocked(profile)
+    }
+
+    /**
+     * Called only while [mutex] is held. Records one failed remote attempt and
+     * publishes the user-facing edge. Desktop parity: retries are unbounded with
+     * full-jitter backoff, so escalation is time-based — after
+     * RECONNECT_ESCALATE_AFTER_MILLIS of continuous failure the state explains
+     * itself, but the loop keeps retrying underneath instead of stranding the
+     * user on a button.
+     */
+    private fun recordRemoteFailureLocked() {
+        remoteReconnectAttempts += 1
+        val now = nowMillis()
+        val failingSince = remoteFailingSinceMillis ?: now.also {
+            remoteFailingSinceMillis = it
+        }
+        _state.value = if (now - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
+            GatewayConnectionState(GatewayConnectionStatus.NeedsAttention, STILL_TRYING_MESSAGE)
+        } else {
+            GatewayConnectionState(GatewayConnectionStatus.Connecting)
         }
     }
 
@@ -787,33 +837,23 @@ internal class GatewayConnectionManager(
                 }
 
                 is GatewayConnectResult.Failed -> {
-                    val retry = mutex.withLock {
-                        if (!canReconnectLocked(profile, generation)) return
+                    mutex.withLock {
+                        // The generation gate runs before the route gate: a
+                        // terminal failure clears desiredRemoteProfile, and the
+                        // NeedsAttention edge below still has to be published.
+                        if (reconnectGeneration != generation) return
                         if (!result.retryable) {
                             reconnectJob = null
                             _state.value = GatewayConnectionState(
                                 GatewayConnectionStatus.NeedsAttention,
                                 result.message,
                             )
-                            false
-                        } else {
-                            remoteReconnectAttempts += 1
-                            val failingSince = remoteFailingSinceMillis ?: nowMillis().also {
-                                remoteFailingSinceMillis = it
-                            }
-                            // Escalation is informational: the loop continues.
-                            if (nowMillis() - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
-                                _state.value = GatewayConnectionState(
-                                    GatewayConnectionStatus.NeedsAttention,
-                                    "Still trying to reach the Gateway. Check your connection or the host.",
-                                )
-                            } else {
-                                _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
-                            }
-                            true
+                            return
                         }
+                        if (!canReconnectLocked(profile, generation)) return
+                        // Escalation is informational: the loop continues.
+                        recordRemoteFailureLocked()
                     }
-                    if (!retry) return
                 }
 
                 else -> return
@@ -821,11 +861,18 @@ internal class GatewayConnectionManager(
         }
     }
 
-    private fun canReconnectLocked(profile: RemoteGatewayProfile, generation: Long): Boolean =
+    /**
+     * Called only while [mutex] is held. The route is still the one we want and
+     * the network is up by both the synchronous signal and the guarded flag —
+     * they disagree in both directions mid-transition, so both must hold.
+     */
+    private fun remoteRouteLiveLocked(profile: RemoteGatewayProfile): Boolean =
         networkAvailableSignal.get() &&
             networkAvailable &&
-            desiredRemoteProfile == profile &&
-            reconnectGeneration == generation
+            desiredRemoteProfile == profile
+
+    private fun canReconnectLocked(profile: RemoteGatewayProfile, generation: Long): Boolean =
+        remoteRouteLiveLocked(profile) && reconnectGeneration == generation
 
     /**
      * Wake/online/foreground nudge: when a desired remote route exists but
@@ -836,13 +883,13 @@ internal class GatewayConnectionManager(
     fun nudgeRemoteReconnect() {
         scope.launch {
             mutex.withLock {
+                // Any open already in flight outranks the nudge: bumping the
+                // generation here could cancel an interactive connect and then
+                // claim its released intent non-interactively.
+                if (connectIntent.get().job != null) return@withLock
                 val profile = desiredRemoteProfile ?: return@withLock
-                if (networkAvailable && active == null) {
-                    cancelReconnectLocked()
-                    remoteReconnectAttempts = 1
-                    remoteFailingSinceMillis = null
-                    _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
-                    scheduleRemoteReconnectLocked(profile)
+                if (remoteRouteLiveLocked(profile) && active == null) {
+                    armRemoteReconnectLocked(profile, failingSinceMillis = null)
                 }
             }
         }
@@ -970,6 +1017,9 @@ internal class GatewayConnectionManager(
 
     private companion object {
         const val NETWORK_WAIT_MESSAGE = "Waiting for a network connection."
+        const val STILL_TRYING_MESSAGE =
+            "Still trying to reach the Gateway. Check your connection or the host."
+        /** A connection that held this long counts as healthy again. */
         const val STABLE_REMOTE_CONNECTION_MILLIS = 30_000L
         /** Full-jitter backoff shape, from Desktop's reconnect-backoff.ts. */
         const val RECONNECT_BACKOFF_BASE_MILLIS = 300L
