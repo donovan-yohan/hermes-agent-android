@@ -140,11 +140,11 @@ class HermesPreferencesTest {
         assertNull(ComposerControlsCodec.decode("""{"version":"2","model":"ignored"}"""))
 
         val restored = ComposerControlsCodec.decode(
-            """{"version":"1","model":"future-model","provider":"future","reasoning":"ultra","fast":"turbo"}""",
+            """{"version":"1","model":"future-model","provider":"future","reasoning":"future-level","fast":"turbo"}""",
         )
 
         assertEquals("future-model", restored?.selection?.model)
-        assertEquals(ReasoningEffort.Unknown("ultra"), restored?.reasoning)
+        assertEquals(ReasoningEffort.Unknown("future-level"), restored?.reasoning)
         assertEquals(FastMode.Unknown("turbo"), restored?.fast)
     }
 
