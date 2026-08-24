@@ -1,5 +1,12 @@
 package com.hermesagent.mobile.ui.sessions
 
+import android.animation.ValueAnimator
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,8 +37,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -59,6 +70,7 @@ import com.hermesagent.mobile.ui.common.StatusDot
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesTokens
+import kotlin.math.abs
 
 /**
  * Sessions.
@@ -491,58 +503,168 @@ private fun SessionRow(
     val tokens = HermesTheme.tokens
     val dot = session.status.dot(tokens)
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = HermesTheme.spacing.touchTarget)
-            .clickable(onClick = onClick)
-            .testTag("Session row ${session.id}")
-            .background(if (active) tokens.widgetSurface else tokens.sidebarSurface)
-            .padding(start = HermesTheme.spacing.pageInset - 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
-            .semantics {
-                selected = active
-                contentDescription = "${session.title}. ${dot.description}"
-            },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        // Active edge: a 2dp accent bar, not a box around the row.
-        Box(
-            Modifier
-                .width(2.dp)
-                .height(28.dp)
+    // The outline is paint-only. Keeping it as a sibling layer means it cannot
+    // change the row's size, click target, or one authoritative spoken label.
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .clickable(onClick = onClick)
+                .testTag("Session row ${session.id}")
                 .background(
-                    if (active) tokens.accent else Color.Transparent,
-                    RoundedCornerShape(1.dp),
-                ),
-        )
-
-        StatusDot(
-            color = dot.color,
-            filled = dot.filled,
-            contentDescription = null,
-            size = if (session.status == SessionStatus.Idle) 6.dp else 7.dp,
-        )
-
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                text = session.title,
-                style = HermesTheme.type.sessionTitle,
-                color = if (active) tokens.textPrimary else tokens.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                    color = if (active) tokens.widgetSurface else tokens.sidebarSurface,
+                    shape = SessionRowShape,
+                )
+                .padding(start = HermesTheme.spacing.pageInset - 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+                .semantics {
+                    selected = active
+                    contentDescription = "${session.title}. ${dot.description}"
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Active edge: a 2dp accent bar, not a box around the row.
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .height(28.dp)
+                    .background(
+                        if (active) tokens.accent else Color.Transparent,
+                        RoundedCornerShape(1.dp),
+                    ),
             )
-            if (session.preview.isNotBlank()) {
+
+            StatusDot(
+                color = dot.color,
+                filled = dot.filled,
+                contentDescription = null,
+                size = if (session.status == SessionStatus.Idle) 6.dp else 7.dp,
+            )
+
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    text = session.preview,
-                    style = HermesTheme.type.sessionPreview,
-                    color = tokens.textTertiary,
+                    text = session.title,
+                    style = HermesTheme.type.sessionTitle,
+                    color = if (active) tokens.textPrimary else tokens.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (session.preview.isNotBlank()) {
+                    Text(
+                        text = session.preview,
+                        style = HermesTheme.type.sessionPreview,
+                        color = tokens.textTertiary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
+
+        if (session.status.showsRunningOutline()) {
+            RunningSessionOutline(Modifier.matchParentSize())
+        }
     }
+}
+
+private val SessionRowShape = RoundedCornerShape(6.dp)
+
+/** CSS 160deg in Android's y-down coordinate space. */
+internal val SessionRunningOutlineDirection = Offset(0.34202015f, 0.9396926f)
+
+/**
+ * The linear-gradient line that covers a transformed layer: CSS resolves its
+ * length by projecting the layer bounds onto the gradient direction, not by
+ * choosing the larger side. Kept pure so the 300%-layer geometry stays pinned.
+ */
+internal fun sessionRunningOutlineGradientLength(
+    layerWidth: Float,
+    layerHeight: Float,
+    direction: Offset = SessionRunningOutlineDirection,
+): Float = abs(layerWidth * direction.x) + abs(layerHeight * direction.y)
+
+/** Desktop's `showsRunningArc`: only a turn that is working or stalled owns the ring. */
+internal fun SessionStatus.showsRunningOutline(): Boolean = this == SessionStatus.Working || this == SessionStatus.Stalled
+
+/**
+ * Paint-only Android port of Desktop's `.arc-border.arc-row` at
+ * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`:
+ * `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113,1129-1144`.
+ *
+ * The 300%-sized, 160-degree gradient travels from -10% to -50% over 2.23s,
+ * matching Desktop's compositor travel. A Canvas layer keeps the 1.25dp ring
+ * flush with the row and out of its semantics and pointer-input trees.
+ */
+@Composable
+private fun RunningSessionOutline(modifier: Modifier = Modifier) {
+    val tokens = HermesTheme.tokens
+    // `areAnimatorsEnabled()` follows Android's system duration scale. Do not
+    // compose an infinite clock at all when the user has removed animations;
+    // phase zero is still a deliberately visible arc. Rows are lazy content,
+    // so an off-screen session owns neither this layer nor its animation.
+    val phase = if (ValueAnimator.areAnimatorsEnabled()) RunningOutlinePhase() else 0f
+    val c1 = tokens.sessionRunningOutline
+    val c2 = c1.copy(alpha = c1.alpha * 0.45f)
+
+    Canvas(modifier.clearAndSetSemantics {}) {
+        val strokeWidth = 1.25.dp.toPx()
+        val layerWidth = size.width * 3f
+        val layerHeight = size.height * 3f
+        // Desktop's `translate(-10%, -10%)` to `translate(-50%, -50%)` on the
+        // 300% pseudo-element. CSS angle 160deg points down and slightly right
+        // in Android's y-down coordinate space.
+        val offset = -(0.10f + 0.40f * phase)
+        val layerCenter = Offset(
+            x = layerWidth * (0.5f + offset),
+            y = layerHeight * (0.5f + offset),
+        )
+        val direction = SessionRunningOutlineDirection
+        val gradientLength = sessionRunningOutlineGradientLength(layerWidth, layerHeight, direction)
+        val gradientStart = layerCenter - direction * (gradientLength / 2f)
+        val gradientEnd = layerCenter + direction * (gradientLength / 2f)
+        val transparent = Color.Transparent
+
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colorStops = arrayOf(
+                    0.00f to transparent,
+                    0.15f to transparent,
+                    0.20f to c1,
+                    0.25f to c2,
+                    0.35f to transparent,
+                    0.40f to transparent,
+                    0.55f to transparent,
+                    0.60f to c1,
+                    0.65f to c2,
+                    0.75f to transparent,
+                    0.80f to transparent,
+                    0.95f to transparent,
+                    1.00f to c1,
+                ),
+                start = gradientStart,
+                end = gradientEnd,
+            ),
+            topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f),
+            size = size.copy(width = size.width - strokeWidth, height = size.height - strokeWidth),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx() - strokeWidth / 2f),
+            style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+@Composable
+private fun RunningOutlinePhase(): Float {
+    val transition = rememberInfiniteTransition(label = "session-running-outline")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2_230, easing = LinearEasing),
+        ),
+        label = "session-running-outline-travel",
+    )
+    return phase
 }
 
 /** The dot lookup. Colour and fill carry the meaning; nothing animates. */

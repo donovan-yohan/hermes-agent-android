@@ -71,6 +71,8 @@ data class HermesTokens(
     val statusNeedsInput: Color,
     /** Accent: the turn is running. */
     val statusWorking: Color,
+    /** Sidebar running outline: foreground in dark mode, accent in light mode. */
+    val sessionRunningOutline: Color,
     /** Emerald: the turn finished while the user was looking elsewhere. */
     val statusUnread: Color,
     /** Faintest ink the app has: nothing has ever run here. */
@@ -153,6 +155,11 @@ data class HermesTokens(
                 accentForeground = palette.midgroundForeground ?: readableOn(accent),
                 statusNeedsInput = Amber500,
                 statusWorking = accent,
+                // `styles.css:1011-1040,1129-1144` @
+                // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: the sidebar
+                // outline's bright stop is --dt-foreground in dark mode and
+                // --dt-midground in light mode.
+                sessionRunningOutline = if (dark) palette.foreground else accent,
                 statusUnread = Emerald500,
                 statusIdle = base.withAlpha(0.36f),
                 // styles.css:196-199,528-530 @

@@ -19,10 +19,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionListRow
+import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -118,9 +121,63 @@ class ChatAccessibilityLayoutTest {
         )
     }
 
+    @Test
+    fun `running session outline stays decorative and keeps the row label singular`() {
+        val running = SessionSummary(
+            id = "s-running-outline",
+            title = "Running outline",
+            preview = "",
+            lastActiveAtMillis = NOW,
+            status = SessionStatus.Working,
+        )
+        launch(sessionRows = listOf(SessionListRow.Row(running)))
+
+        compose.onNodeWithContentDescription("Running outline. Running").assertIsDisplayed()
+        assertEquals(
+            "the Canvas outline must not add a second readable node",
+            1,
+            compose.nodesWithContentDescription("Running outline. Running").size,
+        )
+    }
+
+    @Test
+    fun `running project preview uses the same decorative outline path`() {
+        val preview = SessionSummary(
+            id = "s-running-project-preview",
+            title = "Running project preview",
+            preview = "",
+            lastActiveAtMillis = NOW,
+            status = SessionStatus.Stalled,
+        )
+        launch(
+            projects = listOf(
+                ProjectSummary(
+                    id = "p-running",
+                    label = "Running project",
+                    path = null,
+                    sessionCount = 1,
+                    previewSessions = listOf(preview),
+                ),
+            ),
+            projectsAvailable = true,
+            sidebarGrouping = SidebarGrouping.Project,
+        )
+
+        compose.onNodeWithContentDescription("Running project preview. Running, nothing arriving")
+            .assertIsDisplayed()
+        assertEquals(
+            "project previews share the row and must not gain decorative semantics",
+            1,
+            compose.nodesWithContentDescription("Running project preview. Running, nothing arriving").size,
+        )
+    }
+
     private fun launch(
         transcript: List<TranscriptEntry> = emptyList(),
         sessionRows: List<SessionListRow> = emptyList(),
+        projects: List<ProjectSummary> = emptyList(),
+        projectsAvailable: Boolean? = null,
+        sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
         modifier: Modifier = Modifier,
         wideRailInsets: (() -> WindowInsets)? = null,
     ) {
@@ -131,6 +188,9 @@ class ChatAccessibilityLayoutTest {
                         activeSession = activeSession(),
                         transcript = transcript,
                         sessionRows = sessionRows,
+                        projects = projects,
+                        projectsAvailable = projectsAvailable,
+                        sidebarGrouping = sidebarGrouping,
                     ),
                     actions = ChatActions(),
                     onOpenSettings = {},

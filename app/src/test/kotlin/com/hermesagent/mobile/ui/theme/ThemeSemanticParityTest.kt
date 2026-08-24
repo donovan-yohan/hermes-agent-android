@@ -117,6 +117,24 @@ class ThemeSemanticParityTest {
     }
 
     @Test
+    fun `running outline uses the desktop bright stop in each rendered mode`() {
+        // styles.css:1011-1040,1129-1144 @
+        // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: `.arc-row` keeps
+        // --arc-c1 at --dt-foreground in dark mode and --dt-midground in light.
+        for (preset in BuiltinThemes.ALL) {
+            for (dark in listOf(false, true)) {
+                val palette = preset.paletteFor(dark)
+                val expected = if (dark) palette.foreground else palette.midground ?: palette.ring
+                assertEquals(
+                    "${preset.name}/${if (dark) "dark" else "light"}: running outline bright stop",
+                    expected,
+                    HermesTokens.from(palette, dark).sessionRunningOutline,
+                )
+            }
+        }
+    }
+
+    @Test
     fun `optional bubble and sidebar seeds fall back the way desktop does`() {
         // context.tsx:209 (bubble seed is `userBubble ?? popover`), :226
         // (`userBubbleBorder ?? border`), :206 (`sidebarBackground ?? background`).
