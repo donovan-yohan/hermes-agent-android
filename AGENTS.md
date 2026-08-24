@@ -16,14 +16,15 @@ Phase 2 ships both connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../data/gateway/` | Remote lifecycle, HTTP/JSON-RPC connection, live session repository, network monitor | Gateway startup, ownership, forwarding, sessions, live turns |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
+| `status/` | Current shipping status, limitations, and roadmap direction | Checking what works now or remains deferred |
 | `docs/workflows/` | Durable port + theme-sync checklists | Before porting a Desktop surface or syncing themes |
 | `docs/adr/` | Decisions with consequences | Before changing the SSH seam |
 | `docs/spikes/` | The research this repo was founded on | Background; long |
 | `.chalk/` | chalkbag source (skills, permissions, providers) | Editing agent config; see `.chalk/README.md` |
 | `scripts/` | Repo invariants, run by `./gradlew check` | Adding a repo-level gate |
 
-Start with `docs/phase-2-architecture.md` — connection sequence, state map,
-limitations, and evidence.
+Start with `status/ROADMAP.md` for current capabilities and limitations, then
+`docs/phase-2-architecture.md` for connection sequence, state map, and evidence.
 
 ## Commands
 
@@ -116,6 +117,7 @@ calendar-shaped.
 
 | Path | Covers |
 |---|---|
+| `status/ROADMAP.md` | Current capabilities, evidence limits, known gaps, and roadmap direction |
 | `docs/workflows/port-desktop-surface.md` | Porting any Desktop UI/capability: pinning, source-and-test reading, state classification, mobile adaptation, evidence |
 | `docs/workflows/sync-desktop-themes.md` | Desktop theme/token changes: inventory diff, mapping, fonts, parity, visual checks |
 | `docs/adr/0002-shared-remote-gateway.md` | Preferred Remote Gateway topology, native authentication, and multi-client boundary |
