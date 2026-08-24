@@ -1,84 +1,118 @@
-# hermes-mobile
+# Hermes Mobile
 
-Native Kotlin/Jetpack Compose client for operating a remote Hermes Agent over
-an app-managed SSH tunnel.
+Native Kotlin and Jetpack Compose client for a self-hosted Hermes Agent.
 
-## Status
+The recommended setup is one host-owned **Remote Gateway** shared by Desktop
+and mobile. Each client signs in independently; Mobile never starts or stops
+the shared server. **Managed SSH** remains available as a fallback when Mobile
+should own a private remote Gateway process.
 
-**Phase 2 gateway vertical slice — `0.2.0-phase2`.** The app opens a verified
-SSH connection, starts a loopback-bound remote `hermes serve`, holds a
-loopback-only local forward, proves authenticated HTTP ownership and JSON-RPC
-WebSocket readiness, then lists/resumes/creates real sessions and sends,
-streams, or interrupts a live turn.
+Hermes Mobile is an active Phase 2 project, not a complete port of every
+Desktop surface. See [Status and roadmap](status/ROADMAP.md) for detailed
+implementation status, limitations, and next slices.
 
-Production startup has no demo seed or local turn engine. Offline tests use
-fakes at SSH, process, HTTP, and WebSocket seams.
+## Recommended topology
 
-The slice deliberately starts a fresh positively-owned remote process after a
-reconnect; safe lockfile reuse is not implemented yet. It also has no Android
-foreground service, so it does not promise an uninterrupted background
-connection. Submitted turns are serialized because upstream stream events may
-omit their session id. See [the Phase 2 architecture](docs/phase-2-architecture.md).
-
-## Build
-
-```bash
-export ANDROID_HOME=/opt/android-sdk        # JDK 17; platform 36, build-tools 35/36
-./gradlew check                             # unit tests + lint + repo invariants
-./gradlew assembleDebug                     # app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+```text
+Desktop ───────┐
+               ├── Remote Gateway ── one Hermes profile and session database
+Mobile ────────┘
 ```
 
-minSdk 26, compile/target 36. The debug build installs as
-`com.hermesagent.mobile.debug`.
+Remote Gateway requires an HTTPS endpoint with gated native PKCE support.
+Desktop and Mobile keep separate sign-ins while using the same host-owned
+Gateway and backend state.
 
-### Latest main APK
+> Until the Gateway's multi-client fan-out update is available, do not open or
+> control the same **running session** from Desktop and Mobile simultaneously.
+> Using different sessions on the same Remote Gateway is supported.
 
-Every successful `main` build publishes a GitHub Actions artifact named
-`hermes-mobile-latest` on the
-[Android exact-head workflow](https://github.com/donovan-yohan/hermes-agent-android/actions/workflows/android-exact-head.yml?query=branch%3Amain).
-The workflow uploads the replacement first, then deletes older artifacts with
-that name, so this is a rolling debug APK rather than a version archive.
-Main builds are signed with a stable debug key, so a new `hermes-mobile-latest`
-APK installs over the previous one without uninstalling; pull-request APKs use
-the runner's throwaway key and will not. CI verifies that signing identity
-against the finished APK before replacing the artifact.
-GitHub requires sign-in to download Actions artifacts and retains this one for
-up to 90 days. Versioned release builds remain a separate manual process.
+Managed SSH is the fallback for a private, app-owned backend. It starts and
+forwards a separate Gateway over SSH and must not be used to create competing
+servers against the same Hermes profile.
 
-## What Phase 2 contains
+## Desktop vs Mobile
 
-- The six pinned Hermes Desktop themes with light/dark resolution, semantic
-  tokens, an in-app picker, and an offline parity gate.
-- Native chat and sessions backed by authenticated Gateway JSON-RPC:
-  `session.list`, `session.create`, `session.resume`, `session.activate`,
-  `session.history`, `prompt.submit`, and `session.interrupt`.
-- Explicit durable-to-runtime session identity and connection-generation
-  handling, so switching sessions cannot steal an unscoped live stream.
-- SSH password, SAF-imported private key, or Tailscale SSH auth with mandatory
-  host-key review, no auth fallback, memory-only credentials, and redacted
-  failures.
-- Linux remote discovery/capability checks, per-install ownership namespace,
-  stdin-only token upload, owned-process cleanup, and a bind-and-hold
-  `127.0.0.1` forward.
-- Concise Gateway copy plus a tracked review workflow and deterministic source
-  gate for essay-length primary UI strings.
+**Supported** means Mobile has a tested native counterpart, not that the UI is
+identical. **Partial** names a useful implemented subset. **Not yet** means
+there is no dedicated mobile surface.
 
-Rename and archive are not presented as local durable actions in this slice;
-search remains UI-local and session creation/navigation are backend-authoritative.
+| Area | Hermes Desktop | Hermes Mobile |
+|---|---|---|
+| Remote connection and sign-in | Local and remote Gateway workflows | **Supported** — Remote Gateway over HTTPS with independent native browser PKCE; recommended for Desktop + Mobile |
+| Managed remote backend | SSH lifecycle and forwarding | **Supported** — fallback only; app-managed SSH, mandatory host-key review, one selected auth method, private Gateway ownership, and guarded cleanup |
+| Sessions and projects | Create, browse, search, group, rename, archive, and project views | **Partial** — list/create/open/history, date and project grouping, project creation, unread/running state, and local search; no rename/archive |
+| Live chat and transcript | Streaming conversation, Markdown, tools, progress, and media | **Supported** — streamed messages, reasoning/tool rows, Markdown tables and code, attached-image thumbnails, and lightbox viewing |
+| Composer and model controls | Rich editor, references, completions, model, effort, and fast mode | **Supported** — core controls: multiline drafts, history/undo, model/provider, the full reasoning scale through Ultra, fast mode, slash/path/session/emoji completion, and plain-text references |
+| Turn control and queues | Send, stop, redirect/steer, queue, park, and send next | **Supported** — target-session isolation, concurrent distinct-session sends, durable text queues, edit/delete/park/resume, redirect, steer, stop, and send next |
+| Required input | Clarification, approvals, sudo, and secret prompts | **Supported** — single/batch clarification, Gateway-offered approval choices, and secure wiped sudo/secret entry |
+| Attachments | Files, images, folders, paste, and drag/drop | **Partial** — Android file/image picker, bounded byte staging, preview chips, image-only send, transcript thumbnails, and lightbox; no folders, clipboard images, or drag/drop |
+| Voice | Dictation, conversation, auto-speak, wake word, and barge-in | **Partial** — dictation, conversation, auto-speak, and user-started wake-word service; barge-in and complete device/recovery evidence remain open |
+| Coding context and review | Branch/worktree, pull requests, Git status, diff, files, editor, terminal, and review panes | **Partial** — branch/worktree, PR link, ahead/behind and diff counters, plus changed-file metadata; no review-pane diff contents, editor, files pane, or terminal. Transcript tool rows can render Gateway-supplied inline diffs |
+| Agent status | Goals, tasks, subagents, background work, previews, queues, and compaction | **Supported** — full task list and counts, goals, subagents, processes, previews, queue state, progress, and compaction |
+| Appearance | Built-in and custom themes plus Desktop chrome | **Partial** — all six built-in themes at the pinned Desktop authority, system/light/dark mode, and mobile chat chrome; no custom themes |
+| Desktop workbench | Multi-pane files, terminal/PTY, review, and desktop window workflows | **Not yet** — the changed-file sheet is the only native workspace view |
+| Management surfaces | Profiles/bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugins, Kanban, and messaging settings | **Not yet** — no dedicated mobile screens; agents can still use Gateway-exposed capabilities in chat |
+| Background lifecycle | Persistent desktop process and notifications | **Partial** — reconnect and a wake-word foreground service exist, but uninterrupted background Gateway connectivity is not claimed |
 
-## Product boundary
+## Install the rolling APK
 
-SSH is the backend path: connect to a host, start remote Hermes, forward the
-private Gateway to the device, and present a native Android interface. Running
-Hermes locally on Android, Hermes Cloud, and direct public Gateway URLs are not
-targets of this slice.
+The project currently ships one rolling debug APK from the latest successful
+`main` build:
 
-## Docs
+1. Open the
+   [Android exact-head workflow](https://github.com/donovan-yohan/hermes-agent-android/actions/workflows/android-exact-head.yml).
+2. Select the newest successful run on `main`.
+3. Download `hermes-mobile-latest`. GitHub requires sign-in to download Actions
+   artifacts.
+4. Extract and install the APK:
 
-- [Phase 2 architecture and evidence](docs/phase-2-architecture.md) — start here
-- [ADR 0001: SSH transport and Gateway lifecycle](docs/adr/0001-ssh-probe-to-tunnel.md)
-- [Product-copy review](docs/workflows/review-product-copy.md)
-- [Porting a Desktop surface](docs/workflows/port-desktop-surface.md)
-- [Syncing Desktop themes](docs/workflows/sync-desktop-themes.md)
-- [Phase 1 historical baseline](docs/phase-1-architecture.md)
+   ```bash
+   adb install -r app-debug.apk
+   ```
+
+The rolling artifact uses a persistent debug signing identity, so a newer
+rolling build updates an earlier rolling install in place. It cannot update a
+locally built debug APK signed by a different key. Older rolling artifacts are
+pruned after the replacement uploads; the remaining artifact expires after 90
+days. This is a development channel, not a versioned production release.
+
+## Build and verify
+
+Requirements: JDK 17 and an Android SDK with platform 36 and build-tools 35/36.
+
+```bash
+export ANDROID_HOME=/opt/android-sdk
+./gradlew check assembleDebug
+```
+
+The debug APK is written to:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+`./gradlew check` runs debug and release unit tests, Android lint, product-copy
+checks, theme/composer parity contracts, and repository invariants.
+
+## Security boundaries
+
+- Remote Gateway stores only non-secret endpoint/provider settings in ordinary
+  preferences. Endpoint-scoped OAuth tokens are encrypted with Android
+  Keystore and kept in no-backup storage.
+- Managed SSH passwords, passphrases, and imported private-key bytes are
+  in-memory only and wiped after use. Host keys require explicit first-use
+  review; a changed key has no accept path.
+- Secrets and credentials must not enter logs, UI status, argv, screenshots,
+  ordinary preferences, or repository fixtures.
+- One host-owned Remote Gateway is the sharing model. Multiple app-owned
+  Gateways must not target the same effective `HERMES_HOME`.
+
+## Documentation
+
+- [Status and roadmap](status/ROADMAP.md)
+- [Phase 2 architecture](docs/phase-2-architecture.md)
+- [Remote Gateway ADR](docs/adr/0002-shared-remote-gateway.md)
+- [Managed SSH ADR](docs/adr/0001-ssh-probe-to-tunnel.md)
+- [Desktop surface port workflow](docs/workflows/port-desktop-surface.md)
+- [Theme parity workflow](docs/workflows/sync-desktop-themes.md)

@@ -34,7 +34,7 @@ enum class GatewayConnectionMode {
     Ssh,
 }
 
-/** Non-secret configuration for a host-owned, shared Hermes Gateway. */
+/** Non-secret configuration for a host-owned Remote Gateway. */
 data class RemoteGatewayProfile(
     val baseUrl: String = "",
     val provider: String = "",

@@ -234,7 +234,7 @@ class RemoteGatewayTest {
         var openedTicket: String? = null
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             sshOpen = { _, _ -> sshOpened = true; error("SSH must not open") },
             remoteConnector = RemoteGatewayConnector(authenticator) { baseUrl, ticket ->
                 openedBaseUrl = baseUrl
@@ -304,7 +304,7 @@ class RemoteGatewayTest {
         val pending = ArrayDeque(listOf(first, second))
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> pending.removeFirst() },
             reconnectWait = {},
         )
@@ -335,7 +335,7 @@ class RemoteGatewayTest {
         val pending = ArrayDeque(listOf(first, second))
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> pending.removeFirst() },
             reconnectWait = {},
         )
@@ -367,7 +367,7 @@ class RemoteGatewayTest {
         val releaseRetry = CompletableDeferred<Unit>()
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> first },
             reconnectWait = {
                 retryWaiting.complete(Unit)
@@ -402,7 +402,7 @@ class RemoteGatewayTest {
         val rpc = BlockingReadinessRpc()
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> rpc },
         )
         val connect = backgroundScope.async {
@@ -436,7 +436,7 @@ class RemoteGatewayTest {
         val pending = ArrayDeque<GatewayRpcClient>(listOf(first, second))
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> pending.removeFirst() },
         )
         val firstConnect = backgroundScope.async {
@@ -476,7 +476,7 @@ class RemoteGatewayTest {
         val pending = ArrayDeque<GatewayRpcClient>(listOf(first, second))
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> pending.removeFirst() },
         )
         val firstConnect = backgroundScope.async {
@@ -517,7 +517,7 @@ class RemoteGatewayTest {
         val releaseRetry = CompletableDeferred<Unit>()
         val manager = GatewayConnectionManager(
             scope = backgroundScope,
-            installStore = GatewayInstallStore { error("shared mode has no process ownership") },
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
             remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> pending.removeFirst() },
             reconnectWait = {
                 retryWaiting.complete(Unit)

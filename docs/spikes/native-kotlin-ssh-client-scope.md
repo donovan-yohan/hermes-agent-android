@@ -1,5 +1,9 @@
 # Native Kotlin SSH Client for Hermes Desktop — Architecture Scope
 
+> Historical research scope. Its SSH-only product premise is superseded by
+> [ADR 0002](../adr/0002-shared-remote-gateway.md); retain it as source context,
+> not current product guidance.
+
 **Spike type:** research-only architecture scope. No production code was written.
 **Date:** 2026-08-19.
 **Upstream pin:** `NousResearch/hermes-agent` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` (branch `main`, local read-only checkout `~/.hermes/hermes-agent`, verified clean before and after research).

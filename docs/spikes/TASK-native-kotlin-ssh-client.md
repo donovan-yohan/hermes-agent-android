@@ -1,5 +1,9 @@
 # Task: scope a native Kotlin Android port of Hermes Desktop
 
+> **Historical task packet.** Its SSH-only product scope was superseded by
+> [ADR 0002](../adr/0002-shared-remote-gateway.md): Remote Gateway is now the
+> default and recommended sharing route, with Managed SSH as a fallback.
+
 You are Claude Code running the **Fable** model. Follow the user-level Fable orchestration policy: remain the planner/orchestrator and delegate substantive research lanes to **Opus subagents**. This is a research and architecture spike, not implementation.
 
 ## Source of truth

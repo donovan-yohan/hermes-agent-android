@@ -126,7 +126,7 @@ class HermesApplication : Application() {
     }
 }
 
-/** Restores only a valid saved shared route; interactive sign-in remains user initiated. */
+/** Restores only a valid saved Remote Gateway; interactive sign-in remains user initiated. */
 internal suspend fun restoreSavedRemoteGateway(
     profiles: RemoteGatewayProfileStore,
     connection: GatewayConnectionController,

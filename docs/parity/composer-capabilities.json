@@ -85,7 +85,7 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose text input and Gateway session identity",
       "android_status": "partial",
-      "android_behavior": "Composer now provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Rich inline chips and native attachment acquisition remain missing.",
+      "android_behavior": "Composer provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Rich inline reference chips remain missing; native file/image acquisition is tracked by the attachments capability.",
       "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, ChatJourneyTest, and ComposerReferenceTextTest cover draft retention/fencing, process recreation, multiline input, keyboard guards, canonical reference text, and Android-local path exclusions.",
       "desktop_citations": {
         "source": [
@@ -116,7 +116,7 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Gateway prompt.submit and interrupt RPCs",
       "android_status": "partial",
-      "android_behavior": "Slice 4 adds a profile-scoped, durable text-only FIFO queue keyed by canonical session id, explicit queue edit/save/cancel/delete/send-next/resume controls, parked queues before guarded interrupt, and deterministic idle/send, running/redirect, empty/stop, NeedsInput/queue, and idle-empty/send-next actions. Desktop per-target-session busy parity: an idle selected session sends directly while other sessions run; only same-session turns gate it, and send-next drains without waiting on unrelated running sessions. Redirect uses session.redirect only: rejected, unsupported, and failed results retain one local queued copy; ambiguous results remain review-required with no automatic retry. Queue entries never contain Android URIs or attachments. Visual capture and native attachment evidence remain open for later slices.",
+      "android_behavior": "Android provides a profile-scoped, durable text-only FIFO queue keyed by canonical session id, explicit queue edit/save/cancel/delete/send-next/resume controls, parked queues before guarded interrupt, and deterministic idle/send, running/redirect, empty/stop, NeedsInput/queue, and idle-empty/send-next actions. Desktop per-target-session busy parity: an idle selected session sends directly while other sessions run; only same-session turns gate it, and send-next drains without waiting on unrelated running sessions. Redirect uses session.redirect only: rejected, unsupported, and failed results retain one local queued copy; ambiguous results remain review-required with no automatic retry. Queue entries never contain Android URIs or attachments. Visual capture evidence remains open.",
       "android_tests": "ComposerQueueStoreTest, ComposerQueueControllerTest, ComposerQueueHistoryTest, ComposerContractTest, ChatViewModelTest, and ChatJourneyTest cover profile isolation, FIFO, parking, ambiguity, no duplicate drain, redirect fallback, history/undo, IME/modifier guards, and cross-session send isolation. Full visual/device evidence remains open.",
       "desktop_citations": {
         "source": [
@@ -145,8 +145,8 @@
       "state_authority": "backend-authoritative",
       "platform_dependency": "Gateway model metadata and update events",
       "android_status": "partial",
-      "android_behavior": "Android now loads Gateway model/provider metadata and effective controls through typed repository methods; fresh-draft choices are scoped manual preferences, live changes use optimistic/deferred/rejected rollback semantics, and create overrides are snapshotted at send. Compose exposes loading/error, provider/model, reasoning, fast, and deferred states with 48dp semantics. Visual capture evidence remains open.",
-      "android_tests": "ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover catalog/effective mapping, session-scoped config requests, deferred and rejected mutations, create snapshots, stale completion fencing, and 48dp/scope semantics.",
+      "android_behavior": "Android loads Gateway model/provider metadata and effective controls through typed repository methods; fresh-draft choices are scoped manual preferences, live changes use optimistic/deferred/rejected rollback semantics, and create overrides are snapshotted at send. Compose exposes loading/error, provider/model, the backend-aligned Minimal-through-Ultra reasoning scale, fast, and deferred states with 48dp semantics. Visual capture evidence remains open.",
+      "android_tests": "ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover catalog/effective mapping, the complete reasoning scale, session-scoped config requests, deferred and rejected mutations, create snapshots, stale completion fencing, and 48dp/scope semantics.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/model-pill.tsx:26-173"
@@ -175,8 +175,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Android scoped URI grants, decode/resize, and Gateway upload/reference routes",
       "android_status": "partial",
-      "android_behavior": "Slice 6 adds SAF file acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, and occurrence-keyed chips whose remove wipes payload bytes. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
-      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes and refusal surfacing; GatewaySessionRepositoryTest proves attach-before-submit ordering, session_id on attach RPCs, and that a refused stage blocks prompt.submit; ComposerControlsAccessibilityTest proves chip name/state/remove semantics and the Files add-sheet row. Visual capture, preview thumbnails, retry-after-refusal-in-place, detach cleanup, and reconnect/reacquire behavior remain open.",
+      "android_behavior": "Android uses SAF file/image acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, image-only sends, occurrence-keyed preview chips whose remove wipes payload bytes, and fetched transcript-image thumbnails with a full-size lightbox. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
+      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes and refusal surfacing; GatewaySessionRepositoryTest proves attach-before-submit ordering, image-only fallback text, session_id on attach RPCs, and refusal fencing; ComposerControlsAccessibilityTest proves thumbnail/chip name/state/remove semantics; ChatJourneyTest proves fetched transcript thumbnails and full-size viewing. Retry-after-refusal in place, detach cleanup, reconnect/reacquire behavior, and physical-device evidence remain open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/attachments.tsx:18-233",
@@ -194,7 +194,7 @@
         "attachment-error-removal"
       ],
       "deviation": {
-        "reason": "Desktop drag-drop/paste acquisition is adapted to an Android SAF picker; bytes are staged before submit and only Gateway-returned reference text enters prompts. Remaining deviations (folders, clipboard images, previews) stay unavailable rather than enabled no-ops until implemented.",
+        "reason": "Desktop drag-drop/paste acquisition is adapted to an Android SAF picker; bytes are staged before submit and only Gateway-returned reference text enters prompts. Folder, clipboard-image, and drag/drop acquisition remain unavailable rather than enabled no-ops.",
         "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt:44-52",
         "approved_by": "Slice 3 attachment boundary"
       },
@@ -207,7 +207,7 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Android microphone permission, recorder, speech APIs, and audio focus",
       "android_status": "partial",
-      "android_behavior": "Slice 7 adds the audio authority seam (connection-owned authenticated HTTP transport with per-leg credential resolution cleared on close), typed transcribe/speak routes with Desktop contracts and empty-transcript-as-silence, bounded 16 kHz PCM capture with zero-on-close buffers and a raw cap enforced while pumping, sequence-fenced Media3 playback with finally-deleted temp files, the pure conversation state machine with operation fencing and whole-utterance stop matching, an exclusive mic-owner engine mutex, composer dictation and conversation controls (phase pill/mute/end replacing the action cluster while active) that never auto-submit, auto-speak backed by the Gateway's canonical voice.auto_tts config via read-modify-write of /api/config, and the wake-word lease protocol (wake.status/start/stop/pause/resume/feed with surface 'gui', client capture, explicit persist only on user gestures, local frame validation) served by a user-started microphone foreground service with a persistent notification. Still open: barge-in concurrent capture pipeline, permission recovery journeys, streaming TTS fallback path, and physical-device evidence.",
+      "android_behavior": "Android provides the audio authority seam (connection-owned authenticated HTTP transport with per-leg credential resolution cleared on close), typed transcribe/speak routes with Desktop contracts and empty-transcript-as-silence, bounded 16 kHz PCM capture with zero-on-close buffers and a raw cap enforced while pumping, sequence-fenced Media3 playback with finally-deleted temp files, the pure conversation state machine with operation fencing and whole-utterance stop matching, an exclusive mic-owner engine mutex, composer dictation and conversation controls (phase pill/mute/end replacing the action cluster while active) that never auto-submit, auto-speak backed by the Gateway's canonical voice.auto_tts config via read-modify-write of /api/config, and the wake-word lease protocol (wake.status/start/stop/pause/resume/feed with surface 'gui', client capture, explicit persist only on user gestures, local frame validation) served by a user-started microphone foreground service with a persistent notification. Still open: barge-in concurrent capture pipeline, permission recovery journeys, streaming TTS fallback path, and physical-device evidence.",
       "android_tests": "VoicePolicyTest covers wire budgets, timeout scaling, and whole-utterance stop matching; VoiceEngineTest proves exclusive mic ownership, sequencer invalidation, and byte wiping for CapturedAudio/SpeechAudio; WakeWordRepositoryTest covers status parsing, persist semantics, refusal reasons, and local frame validation; VoicePreferenceRepositoryTest covers the /api/config read-modify-write. Emulator evidence: dictation start/stop cycle survives with an empty crash buffer after a transport-failure crash was found and fixed (transcription failures now surface as silence with the draft preserved). Conversation controller journeys, barge-in tests, streaming-TTS fallback tests, and physical-device acceptance remain open per plan section 5.",
       "desktop_citations": {
         "source": [
@@ -235,7 +235,7 @@
       "state_authority": "ui-only",
       "platform_dependency": "Gateway completion/context providers and Android accessible menus",
       "android_status": "partial",
-      "android_behavior": "Android provides a phone-safe Add bottom sheet for URL and prompt snippets, canonical plain-text URL/path/session/Git references, Gateway slash/path completions, local emoji search, explicit loading/error/no-result rows, and generation/session/cwd fencing. File/image/folder contributions remain excluded pending Slice 6 byte staging; rich chips and arbitrary Desktop JS contributions are not ported.",
+      "android_behavior": "Android provides a phone-safe Add bottom sheet for URL and prompt snippets, canonical plain-text URL/path/session/Git references, Gateway slash/path completions, local emoji search, explicit loading/error/no-result rows, and generation/session/cwd fencing. File and image contributions use the staged attachment flow; folder contributions, rich chips, and arbitrary Desktop JS contributions are not ported.",
       "android_tests": "ComposerReferenceTextTest, ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover canonical wire text, URL/path boundaries, emoji ranking, mapped slash/path requests, stale generation fencing, accessible popup rows, and safe Add-sheet omissions.",
       "desktop_citations": {
         "source": [
@@ -256,7 +256,7 @@
         "completion-no-results"
       ],
       "deviation": {
-        "reason": "Android replaces Desktop hover/nested menus and rich chips with accessible bottom sheets and canonical plain text; native-only attachment contributions remain gated by Slice 6 byte staging.",
+        "reason": "Android replaces Desktop hover/nested menus and rich chips with accessible bottom sheets and canonical plain text. File/image acquisition uses SAF-backed staged attachments; folder and arbitrary Desktop JS contributions remain unavailable.",
         "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/CompletionPopup.kt:18-55",
         "approved_by": "Slice 3 mobile adaptation contract"
       },
@@ -269,8 +269,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Gateway runtime status events",
       "android_status": "partial",
-      "android_behavior": "Slice 4 projects goal, todo, subagent, background/process, preview, generic progress, and durable queue rows into a bounded, separately scrolling stack ordered goal, todo, subagent, background plus preview, queue. Background actions are capability-gated. CodingContextProvider is Unavailable on Android, so branch/worktree controls are absent: the current Android Gateway has no authorized remote repository-status transport. Desktop remote coding can use its authenticated apps/desktop/src/lib/desktop-git.ts and /api/git facade; that authority does not exist in Android's Gateway contract. Visual capture and any future remote git capability remain open.",
-      "android_tests": "GatewaySessionRepositoryTest covers status projection, optional process/goal capability absence, and terminal clearing; ComposerStatusStack and ChatJourney coverage cover accessibility/order as the synthetic visual matrix is completed. Full visual/device evidence remains open.",
+      "android_behavior": "Android projects goal, the full todo list and completion count, subagent, background/process, preview, generic progress, compaction, and durable queue rows into a bounded separately scrolling stack. Background actions are capability-gated. A connection-owned authenticated HTTP provider now loads the Gateway-authored cwd's branch/worktree, pull request, ahead/behind, additions/deletions and untracked counters, plus changed-file metadata for a mobile review sheet. Diff contents, file editing, and terminal/PTY remain absent; full visual and physical-device evidence remains open.",
+      "android_tests": "GatewaySessionRepositoryTest and ComposerTodoParserTest cover status projection and complete task-list parsing; CodingContextProviderTest covers authenticated status, pull-request, and changed-file contracts; ChatViewModelTest covers generation-fenced loading; ComposerStatusSurfaceTest covers full task counts, coding counters, links, and accessibility. Full visual/device evidence remains open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/status-stack/index.tsx:1",

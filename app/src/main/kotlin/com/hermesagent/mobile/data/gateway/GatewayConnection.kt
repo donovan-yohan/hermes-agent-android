@@ -79,7 +79,7 @@ internal interface GatewayConnectionController {
         browser: GatewayBrowserLauncher,
     ): GatewayConnectResult
 
-    /** Restores a saved shared Gateway without opening an interactive browser. */
+    /** Restores a saved Remote Gateway without opening an interactive browser. */
     suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult =
         GatewayConnectResult.Failed(null, "Reconnect to this Gateway from settings.")
 

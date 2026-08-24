@@ -1,6 +1,8 @@
-# ADR 0002 — Host-owned shared Gateway with native authentication
+# ADR 0002 — Host-owned Remote Gateway with native authentication
 
 **Status:** implemented as the default connection route, 2026-08-20
+**Terminology amended:** 2026-08-24 — product label changed from Shared Gateway
+to Remote Gateway; the ownership and authentication decision is unchanged
 **Authority:** `NousResearch/hermes-agent` @
 `59795c40fff95b3029b8f2b02164da892429070f`
 
@@ -23,7 +25,7 @@ instead of creating another server.
 
 ## Decision
 
-The default route is **Shared Gateway**:
+The default and recommended route is **Remote Gateway**:
 
 ```text
 Desktop ───────┐
@@ -39,7 +41,7 @@ separate **Managed SSH** route for a private, app-owned backend.
 The process-scoped `GatewayConnectionManager` still publishes one RPC client.
 Its active connection is now a sealed choice:
 
-- shared remote: close the authenticated WebSocket only;
+- Remote Gateway: close the authenticated WebSocket only;
 - managed SSH: close RPC, forward, positively-owned process, and SSH transport.
 
 Changing route or endpoint first disconnects the active route. The two security
@@ -94,9 +96,9 @@ the first client's stream. Upstream issue `#86784` adds fan-out attachment but
 is not part of this pin.
 
 Until equivalent support is present, the product states the limitation beside
-the shared route: do not open or control the same running session from Desktop
-and Mobile simultaneously. Shared process ownership is implemented; concurrent
-multi-controller policy is not claimed.
+the Remote Gateway route: do not open or control the same running session from
+Desktop and Mobile simultaneously. Shared process ownership is implemented;
+concurrent multi-controller policy is not claimed.
 
 ## Consequences
 

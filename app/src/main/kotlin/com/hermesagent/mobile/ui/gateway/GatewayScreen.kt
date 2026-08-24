@@ -47,14 +47,14 @@ fun GatewayScreen(
                 selected = state.mode,
                 label = {
                     when (it) {
-                        GatewayConnectionMode.Remote -> "Shared Gateway"
+                        GatewayConnectionMode.Remote -> "Remote Gateway"
                         GatewayConnectionMode.Ssh -> "Managed SSH"
                     }
                 },
                 onSelect = gatewayActions.onModeChange,
                 describe = {
                     when (it) {
-                        GatewayConnectionMode.Remote -> "Use a shared Remote Gateway"
+                        GatewayConnectionMode.Remote -> "Use a host-owned Remote Gateway"
                         GatewayConnectionMode.Ssh -> "Use an app-managed Gateway over SSH"
                     }
                 },
@@ -84,9 +84,9 @@ private fun RemoteGatewayScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Shared Gateway", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
+            Text("Remote Gateway", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
             Text(
-                "Connect to one host-owned Hermes Gateway. Desktop and mobile sign in independently; this app never starts or stops that server.",
+                "Connect Desktop and mobile to one host-owned Hermes Gateway. This is the recommended sharing route: each client signs in independently, and this app never starts or stops the server.",
                 style = HermesTheme.type.body,
                 color = tokens.textSecondary,
             )
