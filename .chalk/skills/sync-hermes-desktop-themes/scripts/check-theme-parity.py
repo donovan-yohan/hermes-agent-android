@@ -96,7 +96,10 @@ def parse_desktop(source: str) -> tuple[list[Preset], str]:
         die("could not find BUILTIN_THEMES in presets.ts")
 
     ordered: list[Preset] = []
-    for key, symbol in re.findall(r"(\w+):\s*(\w+Theme)", registry.group(1)):
+    for quoted_key, bare_key, symbol in re.findall(
+        r"(?:'([^']+)'|(\w+)):\s*(\w+Theme)", registry.group(1)
+    ):
+        key = quoted_key or bare_key
         if symbol not in by_symbol:
             die(f"BUILTIN_THEMES references unknown symbol `{symbol}`")
         preset = by_symbol[symbol]

@@ -130,7 +130,7 @@ class ThemeParityTest {
 
     @Test
     fun `cyberpunk keeps desktop's whole-ui monospace behaviour`() {
-        // presets.ts:237-240 sets fontSans AND fontMono to Courier. Every other
+        // presets.ts:806-809 sets fontSans AND fontMono to Courier. Every other
         // preset only names a mono face.
         assertEquals(HermesFontFamily.Mono, BuiltinThemes.Cyberpunk.fonts.sans)
         for (preset in BuiltinThemes.ALL.filterNot { it.name == "cyberpunk" }) {

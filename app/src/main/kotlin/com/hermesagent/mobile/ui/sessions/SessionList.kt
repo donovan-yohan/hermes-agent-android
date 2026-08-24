@@ -513,7 +513,10 @@ private fun SessionRow(
                 .clickable(onClick = onClick)
                 .testTag("Session row ${session.id}")
                 .background(
-                    color = if (active) tokens.widgetSurface else tokens.sidebarSurface,
+                    // `--ui-row-active-background` at styles.css:308-312 @
+                    // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8. This must be
+                    // a semantic token: all skins use the same Desktop mix.
+                    color = if (active) tokens.sessionRowActiveSurface else tokens.sidebarSurface,
                     shape = SessionRowShape,
                 )
                 .padding(start = HermesTheme.spacing.pageInset - 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)

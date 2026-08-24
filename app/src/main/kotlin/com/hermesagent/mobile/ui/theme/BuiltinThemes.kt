@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Color
 /**
  * Built-in Hermes themes, ported from Desktop's registry at
  * `apps/desktop/src/themes/presets.ts` (upstream `NousResearch/hermes-agent`
- * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ * @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`).
  *
  * **Adding a theme is a data edit.** Append to [ALL] and nothing else changes:
  * the picker enumerates this list, components read semantic tokens, and
@@ -18,83 +18,265 @@ import androidx.compose.ui.graphics.Color
  */
 object BuiltinThemes {
 
-    // presets.ts:22-24
+    // presets.ts:187,195-198 @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8
     private val NousBlue = Color(0xFF0053FD)
-    private val PsycheBlue = Color(0xFF1540B1)
-    private val PsycheWarm = Color(0xFFFFE6CB)
 
-    // presets.ts:26-27
-    private fun nousTint(pct: Float) = mixPremultiplied(NousBlue, pct, Color.White)
-    private fun nousTintTransparent(pct: Float) = mixPremultiplied(NousBlue, pct, Color.Transparent)
-
-    /**
-     * presets.ts:34-97. The one preset upstream ships with a hand-tuned dark
-     * half, so both halves are transcribed rather than synthesised.
-     */
+    /** `presets.ts:174-277` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
     val Nous = HermesThemePreset(
         name = "nous",
         label = "Nous",
-        description = "Glass neutrals with Nous blue accents",
+        description = "GitHub chrome, Nous blue accent",
         colors = HermesPalette(
-            background = Color(0xFFF8FAFF),
-            foreground = Color(0xFF17171A),
-            card = Color(0xFFFFFFFF),
-            cardForeground = Color(0xFF17171A),
-            muted = nousTint(5f),
-            mutedForeground = Color(0xFF666678),
+            background = Color(0xFFFFFFFF),
+            foreground = Color(0xFF1F2328),
+            card = Color(0xFFF6F8FA),
+            cardForeground = Color(0xFF1F2328),
+            muted = Color(0xFFF6F6F6),
+            mutedForeground = Color(0xFF656D76),
             popover = Color(0xFFFFFFFF),
-            popoverForeground = Color(0xFF17171A),
+            popoverForeground = Color(0xFF1F2328),
             primary = NousBlue,
-            primaryForeground = Color(0xFFFCFCFC),
-            secondary = nousTint(7f),
-            secondaryForeground = Color(0xFF242432),
-            accent = nousTint(10f),
-            accentForeground = Color(0xFF202030),
-            border = nousTintTransparent(22f),
-            input = nousTintTransparent(30f),
+            primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFFDEEAFF),
+            secondaryForeground = Color(0xFF1F2328),
+            accent = Color(0xFFE3EDFF),
+            accentForeground = Color(0xFF1F2328),
+            border = Color(0xFFD0D7DE),
+            input = Color(0xFFFFFFFF),
             ring = NousBlue,
-            destructive = Color(0xFFC72E4D),
+            destructive = Color(0xFFCF222E),
             destructiveForeground = Color(0xFFFFFFFF),
             midground = NousBlue,
+            midgroundForeground = Color(0xFFFFFFFF),
             composerRing = NousBlue,
-            sidebarBackground = Color(0xFFF3F7FF),
-            sidebarBorder = nousTintTransparent(18f),
-            userBubble = nousTint(6f),
-            userBubbleBorder = nousTintTransparent(24f),
+            sidebarBackground = Color(0xFFF6F8FA),
+            sidebarBorder = Color(0xFFD0D7DE),
+            userBubble = Color(0xFFDAE7FD),
+            userBubbleBorder = Color(0xFFD0D7DE),
         ),
         darkColors = HermesPalette(
-            background = Color(0xFF0D2F86),
-            foreground = PsycheWarm,
-            card = Color(0xFF12378F),
-            cardForeground = PsycheWarm,
-            muted = Color(0xFF183F9A),
-            mutedForeground = Color(0xFFB5C7F3),
-            popover = Color(0xFF123A96),
-            popoverForeground = PsycheWarm,
-            primary = PsycheWarm,
-            primaryForeground = Color(0xFF0D2F86),
-            secondary = Color(0xFF1B45A4),
-            secondaryForeground = Color(0xFFE0E8FF),
-            accent = PsycheBlue,
-            accentForeground = Color(0xFFF0F4FF),
-            border = Color(0xFF3158AD),
-            input = Color(0xFF0B2566),
-            ring = PsycheWarm,
-            destructive = Color(0xFFC0473A),
-            destructiveForeground = Color(0xFFFEF2F2),
-            midground = NousBlue,
-            composerRing = PsycheWarm,
-            sidebarBackground = Color(0xFF09286F),
-            sidebarBorder = Color(0xFF234A9C),
-            userBubble = Color(0xFF143B91),
-            userBubbleBorder = Color(0xFF3A63BD),
+            background = Color(0xFF0D1117),
+            foreground = Color(0xFFE6EDF3),
+            card = Color(0xFF010409),
+            cardForeground = Color(0xFFE6EDF3),
+            muted = Color(0xFF1A1E24),
+            mutedForeground = Color(0xFF7D8590),
+            popover = Color(0xFF161B22),
+            popoverForeground = Color(0xFFE6EDF3),
+            primary = Color(0xFF4A84FE),
+            primaryForeground = Color(0xFF161616),
+            secondary = Color(0xFF1D2E4F),
+            secondaryForeground = Color(0xFFE6EDF3),
+            accent = Color(0xFF17243A),
+            accentForeground = Color(0xFFE6EDF3),
+            border = Color(0xFF30363D),
+            input = Color(0xFF0D1117),
+            ring = Color(0xFF4A84FE),
+            destructive = Color(0xFFF85149),
+            destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF4A84FE),
+            midgroundForeground = Color(0xFF161616),
+            composerRing = Color(0xFF4A84FE),
+            sidebarBackground = Color(0xFF010409),
+            sidebarBorder = Color(0xFF30363D),
+            userBubble = Color(0xFF07162C),
+            userBubbleBorder = Color(0xFF30363D),
         ),
-        // presets.ts:92-96 asks for Courier Prime over a Google Fonts URL for
+        // presets.ts:234-237 asks for Courier Prime over a Google Fonts URL for
         // mono; Android substitutes the platform monospace (no runtime fetch).
         fonts = HermesFontChoice(),
     )
 
-    /** presets.ts:100-134. Dark-first; light comes from [synthLightColors]. */
+    /** `presets.ts:56-159` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    val Github = HermesThemePreset(
+        name = "github",
+        label = "GitHub",
+        description = "GitHub Light Default and Dark Default",
+        colors = HermesPalette(
+            background = Color(0xFFFFFFFF), foreground = Color(0xFF1F2328),
+            card = Color(0xFFF6F8FA), cardForeground = Color(0xFF1F2328),
+            muted = Color(0xFFF6F6F6), mutedForeground = Color(0xFF656D76),
+            popover = Color(0xFFFFFFFF), popoverForeground = Color(0xFF1F2328),
+            primary = Color(0xFF196D31), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFFDFEBE2), secondaryForeground = Color(0xFF1F2328),
+            accent = Color(0xFFE3EDE6), accentForeground = Color(0xFF1F2328),
+            border = Color(0xFFD0D7DE), input = Color(0xFFFFFFFF), ring = Color(0xFF196D31),
+            destructive = Color(0xFFCF222E), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF196D31), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFF196D31), sidebarBackground = Color(0xFFF6F8FA),
+            sidebarBorder = Color(0xFFD0D7DE), userBubble = Color(0xFFDBE7E2),
+            userBubbleBorder = Color(0xFFD0D7DE),
+        ),
+        darkColors = HermesPalette(
+            background = Color(0xFF0D1117), foreground = Color(0xFFE6EDF3),
+            card = Color(0xFF010409), cardForeground = Color(0xFFE6EDF3),
+            muted = Color(0xFF1A1E24), mutedForeground = Color(0xFF7D8590),
+            popover = Color(0xFF161B22), popoverForeground = Color(0xFFE6EDF3),
+            primary = Color(0xFF4F9E5E), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFF1F382B), secondaryForeground = Color(0xFFE6EDF3),
+            accent = Color(0xFF192A24), accentForeground = Color(0xFFE6EDF3),
+            border = Color(0xFF30363D), input = Color(0xFF0D1117), ring = Color(0xFF4F9E5E),
+            destructive = Color(0xFFF85149), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF4F9E5E), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFF4F9E5E), sidebarBackground = Color(0xFF010409),
+            sidebarBorder = Color(0xFF30363D), userBubble = Color(0xFF0F2018),
+            userBubbleBorder = Color(0xFF30363D),
+        ),
+        // `presets.ts:116-119` requests Courier Prime for mono; Android uses platform mono.
+        fonts = HermesFontChoice(),
+    )
+
+    /** `presets.ts:280-382` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    val Catppuccin = HermesThemePreset(
+        name = "catppuccin",
+        label = "Catppuccin",
+        description = "Soothing pastels — Latte and Mocha",
+        colors = HermesPalette(
+            background = Color(0xFFEFF1F5), foreground = Color(0xFF4C4F69),
+            card = Color(0xFFE6E9EF), cardForeground = Color(0xFF4C4F69),
+            muted = Color(0xFFE8EBEF), mutedForeground = Color(0xFF4C4F69),
+            popover = Color(0xFFE6E9EF), popoverForeground = Color(0xFF4C4F69),
+            primary = Color(0xFF6D2EBF), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFFDDD6ED), secondaryForeground = Color(0xFF4C4F69),
+            accent = Color(0xFFDFDAEF), accentForeground = Color(0xFF4C4F69),
+            border = Color(0xFFACB0BE), input = Color(0xFFCCD0DA), ring = Color(0xFF6D2EBF),
+            destructive = Color(0xFFD20F39), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF6D2EBF), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFF6D2EBF), sidebarBackground = Color(0xFFE6E9EF),
+            sidebarBorder = Color(0xFFACB0BE), userBubble = Color(0xFFD7D3E9),
+            userBubbleBorder = Color(0xFFACB0BE),
+        ),
+        darkColors = HermesPalette(
+            background = Color(0xFF1E1E2E), foreground = Color(0xFFCDD6F4),
+            card = Color(0xFF181825), cardForeground = Color(0xFFCDD6F4),
+            muted = Color(0xFF29293A), mutedForeground = Color(0xFFCDD6F4),
+            popover = Color(0xFF181825), popoverForeground = Color(0xFFCDD6F4),
+            primary = Color(0xFFCBA6F7), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFF4E4466), secondaryForeground = Color(0xFFCDD6F4),
+            accent = Color(0xFF3D3652), accentForeground = Color(0xFFCDD6F4),
+            border = Color(0xFF585B70), input = Color(0xFF313244), ring = Color(0xFFCBA6F7),
+            destructive = Color(0xFFF38BA8), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFFCBA6F7), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFFCBA6F7), sidebarBackground = Color(0xFF181825),
+            sidebarBorder = Color(0xFF585B70), userBubble = Color(0xFF38324B),
+            userBubbleBorder = Color(0xFF585B70),
+        ),
+    )
+
+    /** `presets.ts:385-485` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    val Everforest = HermesThemePreset(
+        name = "everforest",
+        label = "Everforest",
+        description = "Warm, low-contrast forest greens",
+        colors = HermesPalette(
+            background = Color(0xFFFDF6E3), foreground = Color(0xFF5C6A72),
+            card = Color(0xFFFDF6E3), cardForeground = Color(0xFF5C6A72),
+            muted = Color(0xFFF7F0DE), mutedForeground = Color(0xFF939F91),
+            popover = Color(0xFFFDF6E3), popoverForeground = Color(0xFF5C6A72),
+            primary = Color(0xFF586B35), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFFE6E3CB), secondaryForeground = Color(0xFF5C6A72),
+            accent = Color(0xFFE9E5CE), accentForeground = Color(0xFF5C6A72),
+            border = Color(0xFFFDF6E3), input = Color(0xFFFDF6E3), ring = Color(0xFF586B35),
+            destructive = Color(0xFFF1706F), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF586B35), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFF586B35), sidebarBackground = Color(0xFFFDF6E3),
+            sidebarBorder = Color(0xFFFDF6E3), userBubble = Color(0xFFE9E5CE),
+            userBubbleBorder = Color(0xFFFDF6E3),
+        ),
+        darkColors = HermesPalette(
+            background = Color(0xFF2D353B), foreground = Color(0xFFD3C6AA),
+            card = Color(0xFF2D353B), cardForeground = Color(0xFFD3C6AA),
+            muted = Color(0xFF373E42), mutedForeground = Color(0xFF859289),
+            popover = Color(0xFF2D353B), popoverForeground = Color(0xFFD3C6AA),
+            primary = Color(0xFFA7C080), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFF4F5C4E), secondaryForeground = Color(0xFFD3C6AA),
+            accent = Color(0xFF434E47), accentForeground = Color(0xFFD3C6AA),
+            border = Color(0xFF2D353B), input = Color(0xFF2D353B), ring = Color(0xFFA7C080),
+            destructive = Color(0xFFDA6362), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFFA7C080), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFFA7C080), sidebarBackground = Color(0xFF2D353B),
+            sidebarBorder = Color(0xFF2D353B), userBubble = Color(0xFF434E47),
+            userBubbleBorder = Color(0xFF2D353B),
+        ),
+    )
+
+    /** `presets.ts:488-588` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    val Solarized = HermesThemePreset(
+        name = "solarized",
+        label = "Solarized",
+        description = "Fixed-contrast light and dark",
+        colors = HermesPalette(
+            background = Color(0xFFFDF6E3), foreground = Color(0xFF1F1F1F),
+            card = Color(0xFFD3CBB7), cardForeground = Color(0xFF1F1F1F),
+            muted = Color(0xFFF4EDDB), mutedForeground = Color(0xFF9CA8A6),
+            popover = Color(0xFFEEE8D5), popoverForeground = Color(0xFF1F1F1F),
+            primary = Color(0xFF675E34), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFFE8E1CB), secondaryForeground = Color(0xFF1F1F1F),
+            accent = Color(0xFFEBE4CE), accentForeground = Color(0xFF1F1F1F),
+            border = Color(0xFFDDD6C1), input = Color(0xFFDDD6C1), ring = Color(0xFF675E34),
+            destructive = Color(0xFFE25563), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF675E34), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFF675E34), sidebarBackground = Color(0xFFEEE8D5),
+            sidebarBorder = Color(0xFFDDD6C1), userBubble = Color(0xFFC6BEA7),
+            userBubbleBorder = Color(0xFFDDD6C1),
+        ),
+        darkColors = HermesPalette(
+            background = Color(0xFF002B36), foreground = Color(0xFF839496),
+            card = Color(0xFF002B36), cardForeground = Color(0xFF839496),
+            muted = Color(0xFF08313C), mutedForeground = Color(0xFF586E75),
+            popover = Color(0xFF001F26), popoverForeground = Color(0xFF839496),
+            primary = Color(0xFF6EA1C4), primaryForeground = Color(0xFFFFFFFF),
+            secondary = Color(0xFF1F4C5E), secondaryForeground = Color(0xFF839496),
+            accent = Color(0xFF144050), accentForeground = Color(0xFF839496),
+            border = Color(0xFF234751), input = Color(0xFF073642), ring = Color(0xFF6EA1C4),
+            destructive = Color(0xFFE35957), destructiveForeground = Color(0xFFFFFFFF),
+            midground = Color(0xFF6EA1C4), midgroundForeground = Color(0xFFFFFFFF),
+            composerRing = Color(0xFF6EA1C4), sidebarBackground = Color(0xFF001F26),
+            sidebarBorder = Color(0xFF234751), userBubble = Color(0xFF144050),
+            userBubbleBorder = Color(0xFF234751),
+        ),
+    )
+
+    /** `presets.ts:601-664` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    val NousAlt = HermesThemePreset(
+        name = "nous-alt",
+        label = "Nous Alt",
+        description = "Glass neutrals, cream on mission-blue",
+        colors = HermesPalette(
+            background = Color(0xFFF8FAFF), foreground = Color(0xFF17171A),
+            card = Color(0xFFFFFFFF), cardForeground = Color(0xFF17171A),
+            muted = mixPremultiplied(NousBlue, 5f, Color.White), mutedForeground = Color(0xFF666678),
+            popover = Color(0xFFFFFFFF), popoverForeground = Color(0xFF17171A),
+            primary = NousBlue, primaryForeground = Color(0xFFFCFCFC),
+            secondary = mixPremultiplied(NousBlue, 7f, Color.White), secondaryForeground = Color(0xFF242432),
+            accent = mixPremultiplied(NousBlue, 10f, Color.White), accentForeground = Color(0xFF202030),
+            border = mixPremultiplied(Color(0xFF0053FD), 22f, Color.Transparent),
+            input = mixPremultiplied(Color(0xFF0053FD), 30f, Color.Transparent), ring = NousBlue,
+            destructive = Color(0xFFC72E4D), destructiveForeground = Color(0xFFFFFFFF),
+            midground = NousBlue, composerRing = NousBlue, sidebarBackground = Color(0xFFF3F7FF),
+            sidebarBorder = mixPremultiplied(Color(0xFF0053FD), 18f, Color.Transparent),
+            userBubble = mixPremultiplied(NousBlue, 6f, Color.White),
+            userBubbleBorder = mixPremultiplied(Color(0xFF0053FD), 24f, Color.Transparent),
+        ),
+        darkColors = HermesPalette(
+            background = Color(0xFF0D2F86), foreground = Color(0xFFFFE6CB),
+            card = Color(0xFF12378F), cardForeground = Color(0xFFFFE6CB),
+            muted = Color(0xFF183F9A), mutedForeground = Color(0xFFB5C7F3),
+            popover = Color(0xFF123A96), popoverForeground = Color(0xFFFFE6CB),
+            primary = Color(0xFFFFE6CB), primaryForeground = Color(0xFF0D2F86),
+            secondary = Color(0xFF1B45A4), secondaryForeground = Color(0xFFE0E8FF),
+            accent = Color(0xFF1540B1), accentForeground = Color(0xFFF0F4FF),
+            border = Color(0xFF3158AD), input = Color(0xFF0B2566), ring = Color(0xFFFFE6CB),
+            destructive = Color(0xFFC0473A), destructiveForeground = Color(0xFFFEF2F2),
+            midground = NousBlue, composerRing = Color(0xFFFFE6CB), sidebarBackground = Color(0xFF09286F),
+            sidebarBorder = Color(0xFF234A9C), userBubble = Color(0xFF143B91),
+            userBubbleBorder = Color(0xFF3A63BD),
+        ),
+        // `presets.ts:659-662` requests Courier Prime for mono; Android uses platform mono.
+        fonts = HermesFontChoice(),
+    )
+
+    /** `presets.ts:670-704` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
     val Midnight = HermesThemePreset(
         name = "midnight",
         label = "Midnight",
@@ -129,7 +311,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** presets.ts:137-171. Dark-first. */
+    /** `presets.ts:706-740` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
     val Ember = HermesThemePreset(
         name = "ember",
         label = "Ember",
@@ -164,7 +346,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** presets.ts:174-204. Dark-first, no typography block upstream. */
+    /** `presets.ts:743-773` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
     val Mono = HermesThemePreset(
         name = "mono",
         label = "Mono",
@@ -198,7 +380,7 @@ object BuiltinThemes {
     )
 
     /**
-     * presets.ts:207-241. Dark-first. The one preset whose typography changes
+     * `presets.ts:776-810` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. The one preset whose typography changes
      * the whole UI: upstream sets `fontSans` *and* `fontMono` to Courier, so
      * body text goes monospace. That behaviour survives the substitution.
      */
@@ -235,7 +417,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(sans = HermesFontFamily.Mono, mono = HermesFontFamily.Mono),
     )
 
-    /** presets.ts:244-277. Dark-first. */
+    /** `presets.ts:813-846` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
     val Slate = HermesThemePreset(
         name = "slate",
         label = "Slate",
@@ -270,10 +452,13 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** Registry order matches `BUILTIN_THEMES` at presets.ts:279-286. */
-    val ALL: List<HermesThemePreset> = listOf(Nous, Midnight, Ember, Mono, Cyberpunk, Slate)
+    /** Registry order matches `BUILTIN_THEMES` at `presets.ts:848-860`. */
+    val ALL: List<HermesThemePreset> = listOf(
+        Nous, Github, Catppuccin, Everforest, Solarized, NousAlt,
+        Midnight, Ember, Mono, Slate, Cyberpunk,
+    )
 
-    /** presets.ts:291 — the skin used when nothing is persisted. */
+    /** `presets.ts:864-865` — the skin used when nothing is persisted. */
     const val DEFAULT_NAME: String = "nous"
 
     private val byName: Map<String, HermesThemePreset> = ALL.associateBy { it.name }

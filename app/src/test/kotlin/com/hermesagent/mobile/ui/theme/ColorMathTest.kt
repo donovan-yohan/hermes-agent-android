@@ -33,10 +33,14 @@ class ColorMathTest {
     }
 
     @Test
-    fun `readableOn matches desktop's 0_58 luminance split`() {
-        // color.ts:63-65
+    fun `readableOn chooses the higher WCAG contrast candidate`() {
+        // color.ts:62-74 @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
         assertEquals(Color(0xFF161616), readableOn(Color.White))
         assertEquals(Color(0xFFFFFFFF), readableOn(Color(0xFF0D2F86)))
+        // Both colours fall below the former 0.58 luminance threshold, which
+        // incorrectly chose white. Desktop now measures the two candidates.
+        assertEquals(Color(0xFF161616), readableOn(Color(0xFF4F9E5E)))
+        assertEquals(Color(0xFF161616), readableOn(Color(0xFFCBA6F7)))
     }
 
     @Test
@@ -59,6 +63,13 @@ class ColorMathTest {
         assertTrue("synthesis collapsed two presets onto one palette", monoLight != slateLight)
         assertEquals(Color.White, monoLight.background)
         assertEquals(Color(0xFF161616), monoLight.foreground)
+
+        // context.tsx:98,114 — synthesized primary/midground labels delegate
+        // to readableOn. Cyberpunk's bright green demonstrates the
+        // contrast-based result that differs from the retired threshold.
+        val cyberpunkLight = synthLightColors(BuiltinThemes.Cyberpunk)
+        assertEquals(Color(0xFF161616), cyberpunkLight.primaryForeground)
+        assertEquals(Color(0xFF161616), cyberpunkLight.midgroundForeground)
     }
 
     @Test

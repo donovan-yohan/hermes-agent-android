@@ -11,8 +11,9 @@ import kotlin.math.roundToInt
  * same palette from the same seed instead of two lookalike approximations.
  *
  * Provenance (upstream `NousResearch/hermes-agent` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`):
- *   - [mix], [relativeLuminance], [readableOn] — `apps/desktop/src/themes/color.ts:29-65`
+ * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`):
+ *   - [mix], [relativeLuminance], [contrastRatio], [readableOn] —
+ *     `apps/desktop/src/themes/color.ts:29-74`
  *   - [mixPremultiplied] — CSS `color-mix(in srgb, …)` semantics, which is what
  *     `apps/desktop/src/styles.css` uses for every derived token.
  *
@@ -72,9 +73,12 @@ fun contrastRatio(a: Color, b: Color): Float {
     return (hi + 0.05f) / (lo + 0.05f)
 }
 
-/** Desktop `readableOn` — a legible foreground for a given background. */
-fun readableOn(color: Color): Color =
-    if (relativeLuminance(color) > 0.58f) Color(0xFF161616) else Color(0xFFFFFFFF)
+/** Desktop `readableOn` — choose the candidate with the stronger WCAG contrast. */
+fun readableOn(color: Color): Color {
+    val white = Color.White
+    val nearBlack = Color(0xFF161616)
+    return if (contrastRatio(color, white) >= contrastRatio(color, nearBlack)) white else nearBlack
+}
 
 /**
  * Desktop `renderedModeFor` (`themes/context.tsx:148-158`): a palette may keep

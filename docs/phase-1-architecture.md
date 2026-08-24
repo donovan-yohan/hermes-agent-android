@@ -13,3 +13,20 @@ The Phase 1 safety decisions remain in force: mandatory TOFU review, changed
 host keys fail closed, one auth method per attempt, credentials remain
 memory-only, UI-visible failures are redacted, and session cache updates merge
 rather than clobber.
+
+## Desktop theme font substitutions
+
+Desktop may load the listed web fonts; Android bundles no webfont and makes no
+runtime font request. The preset still records the requested role, then uses
+the matching platform family:
+
+| Desktop preset / font | Android result |
+|---|---|
+| `nous`, `github`, `nous-alt` / Courier Prime mono | Platform monospace |
+| `midnight`, `slate` / JetBrains Mono | Platform monospace |
+| `ember` / IBM Plex Mono | Platform monospace |
+| `cyberpunk` / Courier for sans and mono | Platform monospace for both roles |
+| `catppuccin`, `everforest`, `solarized`, `mono` / no typography override | Platform sans and monospace defaults |
+
+`cyberpunk` is load-bearing: because Desktop assigns Courier to both roles,
+Android also renders its body text with the monospace family.
