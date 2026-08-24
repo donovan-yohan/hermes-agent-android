@@ -1,6 +1,7 @@
 # ADR 0001 — App-owned SSH transport and remote Gateway lifecycle
 
 **Status:** implemented for the Phase 2 vertical slice, 2026-08-19
+**Amended:** 2026-08-24 — current per-runtime concurrency contract recorded below
 **Source:** `docs/spikes/native-kotlin-ssh-client-scope.md` §5, §7
 **Authority:** `NousResearch/hermes-agent` @
 `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
@@ -21,7 +22,7 @@ Phase 2 needs the authenticated connection to outlive one command.
 ## Decision
 
 This is now the explicit **Managed SSH** route. It is not the default topology
-for Desktop plus Mobile; ADR 0002 defines the host-owned shared Gateway route.
+for Desktop plus Mobile; ADR 0002 defines the host-owned Remote Gateway route.
 No two app-owned servers may target the same effective `HERMES_HOME`.
 
 Extend the existing internal `SshTransport` with only the capabilities consumed
@@ -136,11 +137,12 @@ holds a connection-scoped durable-to-runtime map: resume accepts a durable id;
 activate, history, submit, and interrupt receive runtime ids only. Reconnect
 clears the map.
 
-An event carrying a runtime id maps directly. An unscoped live-turn event is
-pinned to the runtime that last submitted the turn. Selecting another session
-does not retarget it; completion can mark its source session unread. The app
-allows one outstanding submitted turn at a time because two interleaved
-unscoped streams have no truthful routing key.
+An event carrying a runtime id maps directly. An unscoped live-turn event stays
+on one safe runtime pin. Selecting another session does not retarget it;
+completion can mark its source session unread. Distinct sessions may submit
+concurrently because scoped events retain per-runtime ownership. A second
+concurrent submit never steals the unscoped pin, and exactly one remaining
+local runtime may inherit it after the prior owner settles.
 
 ## Current limitation: restart, not reuse
 

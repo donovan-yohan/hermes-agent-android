@@ -220,7 +220,7 @@ internal class OkHttpGatewayRpcClient private constructor(
             return connectRequest(http, request, requestTimeoutMillis)
         }
 
-        /** Opens a shared remote Gateway with a fresh, single-use WS ticket. */
+        /** Opens a Remote Gateway with a fresh, single-use WS ticket. */
         suspend fun connectRemote(
             http: OkHttpClient,
             baseUrl: String,

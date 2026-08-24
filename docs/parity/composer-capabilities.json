@@ -85,7 +85,7 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose text input and Gateway session identity",
       "android_status": "partial",
-      "android_behavior": "Composer now provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Rich inline chips and native attachment acquisition remain missing.",
+      "android_behavior": "Composer provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Rich inline reference chips remain missing; native file/image acquisition is tracked by the attachments capability.",
       "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, ChatJourneyTest, and ComposerReferenceTextTest cover draft retention/fencing, process recreation, multiline input, keyboard guards, canonical reference text, and Android-local path exclusions.",
       "desktop_citations": {
         "source": [
@@ -175,8 +175,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Android scoped URI grants, decode/resize, and Gateway upload/reference routes",
       "android_status": "partial",
-      "android_behavior": "Slice 6 adds SAF file acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, and occurrence-keyed chips whose remove wipes payload bytes. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
-      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes and refusal surfacing; GatewaySessionRepositoryTest proves attach-before-submit ordering, session_id on attach RPCs, and that a refused stage blocks prompt.submit; ComposerControlsAccessibilityTest proves chip name/state/remove semantics and the Files add-sheet row. Visual capture, preview thumbnails, retry-after-refusal-in-place, detach cleanup, and reconnect/reacquire behavior remain open.",
+      "android_behavior": "Android uses SAF file/image acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, image-only sends, occurrence-keyed preview chips whose remove wipes payload bytes, and fetched transcript-image thumbnails with a full-size lightbox. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
+      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes and refusal surfacing; GatewaySessionRepositoryTest proves attach-before-submit ordering, image-only fallback text, session_id on attach RPCs, and refusal fencing; ComposerControlsAccessibilityTest proves thumbnail/chip name/state/remove semantics; ChatJourneyTest proves fetched transcript thumbnails and full-size viewing. Retry-after-refusal in place, detach cleanup, reconnect/reacquire behavior, and physical-device evidence remain open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/attachments.tsx:18-233",
@@ -269,8 +269,8 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Gateway runtime status events",
       "android_status": "partial",
-      "android_behavior": "Slice 4 projects goal, todo, subagent, background/process, preview, generic progress, and durable queue rows into a bounded, separately scrolling stack ordered goal, todo, subagent, background plus preview, queue. Background actions are capability-gated. CodingContextProvider is Unavailable on Android, so branch/worktree controls are absent: the current Android Gateway has no authorized remote repository-status transport. Desktop remote coding can use its authenticated apps/desktop/src/lib/desktop-git.ts and /api/git facade; that authority does not exist in Android's Gateway contract. Visual capture and any future remote git capability remain open.",
-      "android_tests": "GatewaySessionRepositoryTest covers status projection, optional process/goal capability absence, and terminal clearing; ComposerStatusStack and ChatJourney coverage cover accessibility/order as the synthetic visual matrix is completed. Full visual/device evidence remains open.",
+      "android_behavior": "Android projects goal, the full todo list and completion count, subagent, background/process, preview, generic progress, compaction, and durable queue rows into a bounded separately scrolling stack. Background actions are capability-gated. A connection-owned authenticated HTTP provider now loads the Gateway-authored cwd's branch/worktree, pull request, ahead/behind, additions/deletions and untracked counters, plus changed-file metadata for a mobile review sheet. Diff contents, file editing, and terminal/PTY remain absent; full visual and physical-device evidence remains open.",
+      "android_tests": "GatewaySessionRepositoryTest and ComposerTodoParserTest cover status projection and complete task-list parsing; CodingContextProviderTest covers authenticated status, pull-request, and changed-file contracts; ChatViewModelTest covers generation-fenced loading; ComposerStatusSurfaceTest covers full task counts, coding counters, links, and accessibility. Full visual/device evidence remains open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/status-stack/index.tsx:1",

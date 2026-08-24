@@ -53,7 +53,7 @@ class HermesPreferencesTest {
     }
 
     @Test
-    fun `shared Gateway route round-trips only non-secret connection metadata`() = runBlocking {
+    fun `Remote Gateway route round-trips only non-secret connection metadata`() = runBlocking {
         val remote = RemoteGatewayProfile(
             baseUrl = "https://gateway.example/hermes",
             provider = "fixture-provider",

@@ -38,7 +38,7 @@ class GatewayJourneyTest {
     val compose = createComposeRule()
 
     @Test
-    fun `shared Gateway is the default route and managed SSH stays a separate mode`() {
+    fun `Remote Gateway is the default route and Managed SSH stays a separate mode`() {
         var state by mutableStateOf(GatewaySettingsUiState())
         compose.setContent {
             HermesTheme(AppearanceSelection()) {
@@ -51,7 +51,7 @@ class GatewayJourneyTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Use a shared Remote Gateway").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Use a host-owned Remote Gateway").assertIsDisplayed()
         compose.onNodeWithText("Sign in and connect").assertExists()
         compose.onNodeWithContentDescription("Use an app-managed Gateway over SSH").performClick()
 

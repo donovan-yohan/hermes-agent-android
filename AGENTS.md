@@ -1,8 +1,9 @@
 # hermes-mobile
 
-Native Kotlin/Jetpack Compose Android client for a self-hosted Hermes Agent,
-reached over an app-managed SSH tunnel. Phase 2 ships a live remote lifecycle,
-authenticated Gateway transport, backend sessions, and live turns.
+Native Kotlin/Jetpack Compose Android client for a self-hosted Hermes Agent.
+The preferred shared topology is an authenticated, host-owned Remote Gateway;
+Managed SSH remains an explicit fallback for an app-owned private backend.
+Phase 2 ships both connection routes, backend sessions, and live turns.
 
 ## Directory map
 
@@ -117,6 +118,7 @@ calendar-shaped.
 |---|---|
 | `docs/workflows/port-desktop-surface.md` | Porting any Desktop UI/capability: pinning, source-and-test reading, state classification, mobile adaptation, evidence |
 | `docs/workflows/sync-desktop-themes.md` | Desktop theme/token changes: inventory diff, mapping, fonts, parity, visual checks |
-| `docs/adr/0001-ssh-probe-to-tunnel.md` | SSH transport, remote ownership, Gateway readiness, and restart limitation |
+| `docs/adr/0002-shared-remote-gateway.md` | Preferred Remote Gateway topology, native authentication, and multi-client boundary |
+| `docs/adr/0001-ssh-probe-to-tunnel.md` | Managed SSH transport, remote ownership, Gateway readiness, and restart limitation |
 | `.chalk/README.md` | chalkbag source-of-truth rules |
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |

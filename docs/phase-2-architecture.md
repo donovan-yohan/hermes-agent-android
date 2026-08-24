@@ -1,14 +1,16 @@
 # Phase 2 — live remote Gateway vertical slice
 
-Authority: `NousResearch/hermes-agent` at
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. The pinned source and tests were
-inspected read-only; the checkout was neither modified nor fetched.
+Authorities: `NousResearch/hermes-agent` at
+`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` for the original Desktop/SSH
+contract and `59795c40fff95b3029b8f2b02164da892429070f` for native Remote
+Gateway authentication. The pinned source and tests were inspected read-only;
+the checkout was neither modified nor fetched.
 
 ## What is real
 
 | Area | Current behavior |
 |---|---|
-| Shared Gateway | Default route. Connects to one host-owned authenticated Gateway without SSH process ownership. Gated native PKCE, Keystore-encrypted tokens, bearer REST, a fresh single-use WebSocket ticket, and a JSON-RPC readiness request are required. |
+| Remote Gateway | Default and recommended route. Connects to one host-owned authenticated Gateway without SSH process ownership. Gated native PKCE, Keystore-encrypted tokens, bearer REST, a fresh single-use WebSocket ticket, and a JSON-RPC readiness request are required. |
 | SSH | sshj opens one verified connection using exactly the selected auth method. First use stops before auth; a changed key has no accept path. |
 | Remote lifecycle | Linux/architecture gate, login-shell Hermes discovery, executable and capability checks, descriptor-validated stdin-only token upload, detached loopback `hermes serve`, exact readiness marker, served-dashboard token adoption, the shared ownership-lock schema, and positive argv/death proof before cleanup. |
 | Forward | The listener is bound and held on `127.0.0.1:0` before sshj receives it. It closes with the connection. |
@@ -16,11 +18,11 @@ inspected read-only; the checkout was neither modified nor fetched.
 | Sessions | Live list, create, resume/activate, history, send, stream, tools, status, error, and interrupt. Durable navigation ids and runtime ids are separate. |
 | Projects | Gateway-authored `projects.tree` overview plus `projects.project_sessions` drill-in. Android does not infer membership from cwd; older Gateways retain the flat session list. |
 | App graph | `HermesApplication` owns the process-scoped connection, remote authenticator/token store, repository, network monitor, and backend-authoritative `SessionCache`. Production startup seeds nothing. |
-| UI | Gateways defaults to Shared Gateway URL/provider and browser sign-in. Managed SSH is a separate route with destination, optional remote Hermes profile, one selected auth method, host-key review, concise status/connect controls, and a secondary SSH diagnostic. Chat reports the same short connection states. |
+| UI | Gateways defaults to Remote Gateway URL/provider and browser sign-in. Managed SSH is a separate fallback with destination, optional remote Hermes profile, one selected auth method, host-key review, concise status/connect controls, and a secondary SSH diagnostic. Chat reports the same short connection states. |
 
 ## Connection sequence
 
-### Shared Gateway (default)
+### Remote Gateway (recommended)
 
 1. Normalize the HTTPS base URL; reject cleartext HTTP, credentials, query, and fragment.
 2. Require a gated `/api/status` advertising `native_pkce`.
@@ -87,7 +89,7 @@ or exception text.
 | Project catalog/membership | `SessionCache` | Overview snapshots replace the catalog; selected-project snapshots replace that project's membership. Rehome and tombstone updates publish atomically with session identity. |
 | Remote or SSH/process/forward/RPC | `GatewayConnectionManager` | One process-scoped active connection. Remote close ends only RPC; Managed SSH close tears down every positively-owned leg. |
 | Durable to runtime ids | `LiveGatewaySessionRepository` | Mapping is connection-scoped and cleared on reconnect. Runtime-only RPC methods never receive durable ids. |
-| Stream ownership | `LiveGatewaySessionRepository.submittedRuntime` | An event without `session_id` remains pinned to the runtime that submitted the turn, not the session currently visible. One app-submitted turn may be outstanding at a time because two interleaved unscoped streams cannot be assigned safely. |
+| Stream ownership | `LiveGatewaySessionRepository` runtime guards | Scoped events route to their runtime. An event without `session_id` remains on one safe runtime pin rather than following the visible session; concurrent distinct-session submits are allowed, and pin inheritance occurs only when exactly one remaining local runtime is safe. |
 | Draft text | `SessionDraftStore` + `ChatViewModel` | Private local UI data keyed only by canonical durable session id. Dedicated no-backup DataStore; text only, 50-entry MRU cap; never backend/cache truth. |
 | Search/project selection/navigation notice | `ChatViewModel` | Screen-lifetime UI state; never written into backend cache or the draft store. |
 | Connection configuration | `HermesPreferences` | Route, non-secret Remote URL/provider, or SSH host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. OAuth tokens are not DataStore values. |
@@ -97,9 +99,10 @@ not wire authoritative backend methods for them. Search is explicitly local
 filtering. Project overview and drill-in use authoritative Gateway membership;
 the selected project's backend path is used as the cwd for a new session.
 Create, open, history, send, and stop are live Gateway operations.
-The user can switch sessions while a turn runs, but another submit stays
-disabled until that turn completes; this preserves ownership when the Gateway
-omits `session_id` from stream events.
+The user can switch sessions while a turn runs. The same target session remains
+busy, while another idle session can submit concurrently. Scoped events route
+per runtime; identifier-less events remain on the single safe local pin instead
+of being painted into the session currently on screen.
 
 ## Remote ownership and current restart policy
 
@@ -159,9 +162,11 @@ The SSH client owns keepalive. A default-network handoff or loss cancels an
 in-progress connect or closes the active SSH/forward/RPC graph and exposes
 Needs attention with a reconnect action.
 
-There is no foreground service in this slice. Android may suspend or stop the
-process in the background, so uninterrupted background operation is not
-claimed. A process restart begins disconnected and reconnects explicitly.
+There is no general foreground service for the Gateway connection. The
+user-started wake-word service is narrowly scoped to microphone listening and a
+persistent notification. Android may still suspend or stop the app, so
+uninterrupted background Gateway operation is not claimed. A process restart
+begins disconnected and reconnects explicitly.
 
 ## Offline evidence and physical-device gap
 

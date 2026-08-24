@@ -68,7 +68,7 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
  * - the session sidebar's grouping mode;
- * - the selected Gateway route and the shared Gateway's non-secret URL/provider;
+ * - the selected Gateway route and the Remote Gateway's non-secret URL/provider;
  * - SSH host, port, username, remote Hermes profile, auth *method*, and the
  *   accepted host-key fingerprint;
  * - one random per-install Gateway ownership id.

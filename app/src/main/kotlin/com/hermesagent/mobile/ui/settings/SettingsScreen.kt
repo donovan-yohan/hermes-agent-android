@@ -38,7 +38,7 @@ fun SettingsScreen(
         )
         SettingsRow(
             label = "Gateways",
-            description = "Configure and test SSH access to a Hermes host.",
+            description = "Connect a Remote Gateway or use Managed SSH.",
             traversalIndex = 1f,
             onClick = onOpenGateways,
         )
