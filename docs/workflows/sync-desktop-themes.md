@@ -29,14 +29,14 @@ covered by reading the diff and by `ColorMathTest`.
 
 | What changed upstream | What to do here |
 |---|---|
-| New preset | Append to `BuiltinThemes.ALL` + a row in `DesktopThemeLedger.ENTRIES`. Nothing else. |
+| New preset | Insert it in the exact Desktop `BUILTIN_THEMES` order in `BuiltinThemes.ALL` + add its matching row to `DesktopThemeLedger.ENTRIES`. Nothing else. |
 | Preset removed | Remove from both. Check nothing persisted references it — `BuiltinThemes.resolve` already falls back to the default for unknown names, and `ThemeParityTest` asserts that. |
 | Label / description edited | Update both files; the parity test compares them exactly. |
 | Colour value edited | Update `BuiltinThemes.kt`, keeping expressions as expressions. |
 | New colour key | Add the field to `HermesPalette` (nullable only if it is optional upstream), resolve it in `HermesTokens.from` with the same fallback Desktop uses, and add the key to `DesktopThemeLedger.REQUIRED_COLOR_KEYS` or `OPTIONAL_COLOR_KEYS`. |
 | A key's *meaning* changed | Change the derivation in `HermesTokens` once. Never at a call site. |
 | Font changed | Update the preset's `HermesFontChoice` and its comment, and the substitution table in `docs/phase-1-architecture.md`. |
-| `synthLightColors` changed | Re-port it line for line from `apps/desktop/src/themes/context.tsx`. It is the light half of five of the six presets. |
+| `synthLightColors` changed | Re-port it line for line from `apps/desktop/src/themes/context.tsx`. It is the light half of every dark-first preset. |
 
 ## 3. The three files that move together
 

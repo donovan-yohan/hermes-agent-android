@@ -41,7 +41,7 @@ data class HermesPalette(
      * pills. Falls back to [ring].
      */
     val midground: Color? = null,
-    /** Auto-derived from [midground] luminance when omitted. */
+    /** Auto-derived for readable contrast on [midground] when omitted. */
     val midgroundForeground: Color? = null,
     /** Composer outline / focus colour. Falls back to [midground]. */
     val composerRing: Color? = null,

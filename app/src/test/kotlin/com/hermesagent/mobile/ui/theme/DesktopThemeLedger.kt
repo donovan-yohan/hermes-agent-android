@@ -4,8 +4,8 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`, file
- * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-19 from the
+ * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`, file
+ * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-24 from the
  * read-only checkout at `~/.hermes/hermes-agent`.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
@@ -21,10 +21,10 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "f82f2dbabd9e66b714f2b4f8a40447fe0c13e732"
+    const val PINNED_SHA = "45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
-    /** presets.ts:291 — `DEFAULT_SKIN_NAME`. */
+    /** `presets.ts:864-865` — `DEFAULT_SKIN_NAME`. */
     const val DEFAULT_SKIN = "nous"
 
     data class Entry(
@@ -37,14 +37,19 @@ object DesktopThemeLedger {
         val sourceLines: String,
     )
 
-    /** presets.ts:279-286 — `BUILTIN_THEMES`, in declaration order. */
+    /** `presets.ts:848-860` — `BUILTIN_THEMES`, in declaration order. */
     val ENTRIES: List<Entry> = listOf(
-        Entry("nous", "Nous", "Glass neutrals with Nous blue accents", true, "34-97"),
-        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "100-134"),
-        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "137-171"),
-        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "174-204"),
-        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "207-241"),
-        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "244-277"),
+        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "174-277"),
+        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "56-159"),
+        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "280-382"),
+        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "385-485"),
+        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "488-588"),
+        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "601-664"),
+        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "670-704"),
+        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "706-740"),
+        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "743-773"),
+        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "813-846"),
+        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "776-810"),
     )
 
     /**

@@ -49,6 +49,8 @@ data class HermesTokens(
     val chatSurface: Color,
     /** The session list backdrop (`--ui-bg-sidebar`). */
     val sidebarSurface: Color,
+    /** The selected session's fill (`--ui-row-active-background`). */
+    val sessionRowActiveSurface: Color,
     /** The card/editor fill (`--ui-bg-editor`, Desktop's `--dt-card`). */
     val cardSurface: Color,
     /** Inline tool/artifact widget fill (`--ui-widget-surface-background`). */
@@ -138,6 +140,15 @@ data class HermesTokens(
                 // modes, so its seed paints unchanged and the neutral behind it
                 // never shows.
                 sidebarSurface = palette.sidebarBackground ?: palette.background,
+                // `--ui-row-active-background` at styles.css:308-312 @
+                // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: keep the
+                // Desktop nested color-mix expression rather than resolving a
+                // Nous-only literal at the session-row call site.
+                sessionRowActiveSurface = mixPremultiplied(
+                    accent,
+                    8f,
+                    base.withAlpha(0.05f),
+                ),
                 cardSurface = editor,
                 // styles.css:359 / :root.dark:550 — a dark card sits *above* the
                 // chrome, so a widget wearing the raw card fill reads as a lit
@@ -152,7 +163,10 @@ data class HermesTokens(
                 inlineCodeBackground = mixPremultiplied(knobs.codeInk, knobs.codeBackgroundMix, Color.Transparent),
                 inlineCodeForeground = mixPremultiplied(knobs.codeInk, 88f, Color.Transparent),
                 accent = accent,
-                accentForeground = palette.midgroundForeground ?: readableOn(accent),
+                // `--dt-accent-foreground` is a palette semantic of its own;
+                // it must not inherit the distinct midground foreground.
+                // context.tsx:233-240 @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
+                accentForeground = palette.accentForeground,
                 statusNeedsInput = Amber500,
                 statusWorking = accent,
                 // `styles.css:1011-1040,1129-1144` @
