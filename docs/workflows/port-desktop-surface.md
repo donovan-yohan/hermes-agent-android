@@ -238,10 +238,12 @@ For composer controls, two boundaries are easy to lose: `model.options` and
 `session.info` own effective model/provider/reasoning/fast state, while a new
 draft's manual pick is only a connection/profile-scoped local preference until
 the create request is linearized. Likewise, completion results are remote
-workspace suggestions, not Android file paths. Keep `content://` and clipboard
-data out of the wire text until a real Slice 6 byte-staging handoff exists;
-the safe Slice 3 surface is URL/snippet insertion plus canonical text
-completion with stale-result fencing.
+workspace suggestions, not Android file paths. Keep `content://`, Android local
+paths, and clipboard data out of wire text. File/image acquisition uses bounded
+Android reads plus the staged Gateway byte handoff; folders and clipboard-image
+acquisition stay unavailable until equivalent flows exist. The safe completion
+surface is URL/snippet insertion plus canonical text completion with
+stale-result fencing.
 
 Slice 4 found a similarly important authority boundary: Desktop remote coding
 inspects repository state through its authenticated
