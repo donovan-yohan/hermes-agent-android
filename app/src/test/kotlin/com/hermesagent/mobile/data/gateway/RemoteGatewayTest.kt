@@ -461,7 +461,7 @@ class RemoteGatewayTest {
     @Test
     fun `sustained failure escalates the message but keeps retrying`() = runTest {
         val first = FakeRpc()
-        val recovered = FakeRpc()
+        val recovered = BlockingReadinessRpc()
         val retryPermits = Channel<Unit>(Channel.UNLIMITED)
         var attempts = 0
         var retriesFail = true
@@ -499,6 +499,17 @@ class RemoteGatewayTest {
 
         retriesFail = false
         retryPermits.send(Unit)
+        recovered.requestStarted.await()
+
+        assertEquals(
+            "escalated UI must stay latched while a retry is in flight",
+            GatewayConnectionState(
+                GatewayConnectionStatus.NeedsAttention,
+                "Still trying to reach the Gateway. Check your connection or the host.",
+            ),
+            manager.state.value,
+        )
+        recovered.releaseRequest.complete(Unit)
         runCurrent()
 
         assertEquals(attemptsAtEscalation + 1, attempts)
@@ -514,6 +525,59 @@ class RemoteGatewayTest {
         retryPermits.send(Unit)
         runCurrent()
         assertEquals(GatewayConnectionState(GatewayConnectionStatus.Connecting), manager.state.value)
+        manager.disconnect()
+    }
+
+    @Test
+    fun `background pauses automatic retries until foreground resume`() = runTest {
+        val first = FakeRpc()
+        val recovered = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        var attempts = 0
+        val manager = remoteManager(
+            reconnectWait = { retryPermits.receive() },
+            reconnectJitter = { 0.0 },
+        ) { _, _ ->
+            attempts += 1
+            if (attempts == 1) first else recovered
+        }
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        first.failFromServer()
+        runCurrent()
+
+        manager.applicationForegroundChanged(false)
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals("background transition must fence the delayed dial", 1, attempts)
+
+        manager.applicationForegroundChanged(true)
+        runCurrent()
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(2, attempts)
+        assertTrue(manager.client.value === recovered)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        manager.disconnect()
+    }
+
+    @Test
+    fun `background gate never blocks an explicit remote open`() = runTest {
+        val rpc = FakeRpc()
+        var attempts = 0
+        val manager = remoteManager(reconnectWait = {}) { _, _ ->
+            attempts += 1
+            rpc
+        }
+        manager.applicationForegroundChanged(false)
+
+        val result = manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+
+        assertEquals(GatewayConnectResult.Connected, result)
+        assertEquals(1, attempts)
+        assertTrue(manager.client.value === rpc)
         manager.disconnect()
     }
 
@@ -1033,6 +1097,10 @@ class RemoteGatewayTest {
 
         override fun close() {
             closedByClient = true
+        }
+
+        fun failFromServer() {
+            closed.tryEmit(Unit)
         }
     }
 

@@ -37,8 +37,11 @@ limitations, and likely next slices behind that table.
   refusal, one selected authentication method with no fallback, in-memory
   credential handling, loopback forwarding, remote process ownership proofs,
   and guarded cleanup.
-- Default-network loss or handoff closes stale connection state and exposes a
-  reconnect path. Remote Gateway disconnect never kills the host-owned server.
+- Default-network loss or handoff closes stale connection state. While the app
+  is foregrounded, Remote Gateway retries transient failures with full-jitter
+  backoff and resumes immediately after network recovery or foreground return;
+  background redials pause. Managed SSH exposes a manual reconnect path. A
+  Remote Gateway disconnect never kills the host-owned server.
 
 See [ADR 0002](../docs/adr/0002-shared-remote-gateway.md) for Remote Gateway
 ownership and authentication, and [ADR 0001](../docs/adr/0001-ssh-probe-to-tunnel.md)
@@ -106,7 +109,7 @@ for the Managed SSH lifecycle.
 | Limitation | What is true now | Exit condition |
 |---|---|---|
 | Same running session on two clients | One Remote Gateway safely shares process and session storage, but Desktop and mobile should not open or control the same running session simultaneously. Different sessions are safe. | Gateway multi-client event fan-out with equivalent mobile coverage. |
-| Android background lifecycle | There is no general foreground service for the Gateway connection. Android may suspend or stop the app; uninterrupted background connectivity is not claimed. The wake-word service is narrowly scoped to user-enabled microphone listening. | A justified Android lifecycle design with notification, power, privacy, reconnect, and process-death acceptance evidence. |
+| Android background lifecycle | There is no general foreground service for the Gateway connection. Automatic Remote Gateway redials pause while the app is backgrounded and resume on foreground return; Android may suspend or stop the app, so uninterrupted background connectivity is not claimed. The wake-word service is narrowly scoped to user-enabled microphone listening. | A justified Android lifecycle design with notification, power, privacy, reconnect, and process-death acceptance evidence. |
 | Managed SSH reconnect | A reconnect starts a fresh owned backend; safe lockfile reuse is not implemented. Positively unowned or ambiguous processes are never killed. | Full lock, argv, profile, home, token, HTTP ownership, and RPC readiness proof before reuse. |
 | Session management | Create/open/history work; rename and archive are absent. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |

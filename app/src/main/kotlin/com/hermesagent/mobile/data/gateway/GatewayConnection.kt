@@ -348,8 +348,12 @@ internal class GatewayConnectionManager(
     private var remoteReconnectAttempts = 0
     /** Wall-clock start of the current failure episode; null while healthy. */
     private var remoteFailingSinceMillis: Long? = null
+    /** Once raised, the actionable surface stays stable until this episode ends. */
+    private var remoteReconnectEscalated = false
     private var networkAvailable = true
     private val networkAvailableSignal = AtomicBoolean(true)
+    /** Automatic redials are foreground-only; explicit opens remain user-owned. */
+    private val applicationForegroundSignal = AtomicBoolean(true)
     private var reconnectGeneration = 0L
     private val networkEventGeneration = AtomicLong()
 
@@ -426,24 +430,12 @@ internal class GatewayConnectionManager(
         browser: GatewayBrowserLauncher,
     ): GatewayConnectResult {
         val intent = beginConnectIntent(currentCoroutineContext()[Job])
-        return openRemote(profile, browser, intent) {
-            desiredRemoteProfile = profile
-            remoteReconnectAttempts = 0
-            remoteFailingSinceMillis = null
-            cancelReconnectLocked()
-            RemoteOpenAdmission(reconnectGeneration, networkEventGeneration.get())
-        }
+        return openRemote(profile, browser, intent) { claimRemoteRouteLocked(profile) }
     }
 
     override suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult {
         val intent = beginConnectIntent(currentCoroutineContext()[Job])
-        val result = openRemote(profile, browser = null, intent) {
-            desiredRemoteProfile = profile
-            remoteReconnectAttempts = 0
-            remoteFailingSinceMillis = null
-            cancelReconnectLocked()
-            RemoteOpenAdmission(reconnectGeneration, networkEventGeneration.get())
-        }
+        val result = openRemote(profile, browser = null, intent) { claimRemoteRouteLocked(profile) }
         if (remoteConnector != null && result is GatewayConnectResult.Failed && result.retryable) {
             mutex.withLock {
                 // A cold-start restore has no established socket whose monitor
@@ -478,7 +470,7 @@ internal class GatewayConnectionManager(
                     val connector = remoteConnector
                         ?: return@withLock fail(null, "Remote Gateway connections are unavailable in this build.")
                     closeActive()
-                    _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                    publishUnlessEscalatedLocked(GatewayConnectionState(GatewayConnectionStatus.Connecting))
                     val rpc = connector.open(profile, browser)
                     try {
                         // The authenticated RPC round trip, not merely a WS
@@ -505,7 +497,7 @@ internal class GatewayConnectionManager(
                             },
                         )
                         remoteConnectedAtMillis = nowMillis()
-                        remoteFailingSinceMillis = null
+                        beginRemoteFailureEpisodeLocked(null)
                         _client.value = rpc
                         _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
                         watchRpc(rpc)
@@ -544,9 +536,13 @@ internal class GatewayConnectionManager(
                         // replaying a terminal non-interactive failure.
                         desiredRemoteProfile = null
                         remoteReconnectAttempts = 0
-                        remoteFailingSinceMillis = null
+                        beginRemoteFailureEpisodeLocked(null)
                     }
-                    fail(null, safeConnectionMessage(failure), retryable = retryable)
+                    val message = safeConnectionMessage(failure)
+                    publishUnlessEscalatedLocked(
+                        GatewayConnectionState(GatewayConnectionStatus.NeedsAttention, message),
+                    )
+                    GatewayConnectResult.Failed(null, message, retryable)
                 }
             }
         } finally {
@@ -728,7 +724,7 @@ internal class GatewayConnectionManager(
                     ?: false
                 if (stableConnection) {
                     remoteReconnectAttempts = 0
-                    remoteFailingSinceMillis = null
+                    beginRemoteFailureEpisodeLocked(null)
                 }
                 if (!networkAvailable) {
                     cancelReconnectLocked()
@@ -768,7 +764,7 @@ internal class GatewayConnectionManager(
         failingSinceMillis: Long?,
     ) {
         remoteReconnectAttempts = 1
-        remoteFailingSinceMillis = failingSinceMillis
+        beginRemoteFailureEpisodeLocked(failingSinceMillis)
         _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
         scheduleRemoteReconnectLocked(profile)
     }
@@ -787,7 +783,10 @@ internal class GatewayConnectionManager(
         val failingSince = remoteFailingSinceMillis ?: now.also {
             remoteFailingSinceMillis = it
         }
-        _state.value = if (now - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
+        if (now - failingSince >= RECONNECT_ESCALATE_AFTER_MILLIS) {
+            remoteReconnectEscalated = true
+        }
+        _state.value = if (remoteReconnectEscalated) {
             GatewayConnectionState(GatewayConnectionStatus.NeedsAttention, STILL_TRYING_MESSAGE)
         } else {
             GatewayConnectionState(GatewayConnectionStatus.Connecting)
@@ -797,6 +796,7 @@ internal class GatewayConnectionManager(
     /** Called only while [mutex] is held. */
     private fun scheduleRemoteReconnectLocked(profile: RemoteGatewayProfile) {
         cancelReconnectLocked()
+        if (!applicationForegroundSignal.get()) return
         val generation = reconnectGeneration
         val expectedIntentGeneration = connectIntent.get().generation
         reconnectJob = scope.launch { runRemoteReconnect(profile, generation, expectedIntentGeneration) }
@@ -825,7 +825,11 @@ internal class GatewayConnectionManager(
 
             val result = openRemote(profile, browser = null, intent) {
                 if (!canReconnectLocked(profile, generation)) throw CancellationException()
-                RemoteOpenAdmission(generation, networkEventGeneration.get())
+                RemoteOpenAdmission(
+                    routeGeneration = generation,
+                    networkGeneration = networkEventGeneration.get(),
+                    requireForeground = true,
+                )
             }
             reconnectIntentGeneration = intent.generation
             when (result) {
@@ -872,7 +876,19 @@ internal class GatewayConnectionManager(
             desiredRemoteProfile == profile
 
     private fun canReconnectLocked(profile: RemoteGatewayProfile, generation: Long): Boolean =
-        remoteRouteLiveLocked(profile) && reconnectGeneration == generation
+        applicationForegroundSignal.get() &&
+            remoteRouteLiveLocked(profile) &&
+            reconnectGeneration == generation
+
+    /**
+     * Process lifecycle gate for automatic Remote Gateway redials. A retry
+     * already inside a bounded network call may finish after backgrounding,
+     * but no later automatic attempt is admitted until foreground resume.
+     */
+    fun applicationForegroundChanged(foreground: Boolean) {
+        applicationForegroundSignal.set(foreground)
+        if (foreground) nudgeRemoteReconnect()
+    }
 
     /**
      * Wake/online/foreground nudge: when a desired remote route exists but
@@ -883,6 +899,7 @@ internal class GatewayConnectionManager(
     fun nudgeRemoteReconnect() {
         scope.launch {
             mutex.withLock {
+                if (!applicationForegroundSignal.get()) return@withLock
                 // Any open already in flight outranks the nudge: bumping the
                 // generation here could cancel an interactive connect and then
                 // claim its released intent non-interactively.
@@ -906,7 +923,8 @@ internal class GatewayConnectionManager(
             !networkAvailable ||
             desiredRemoteProfile != profile ||
             reconnectGeneration != admission.routeGeneration ||
-            networkEventGeneration.get() != admission.networkGeneration
+            networkEventGeneration.get() != admission.networkGeneration ||
+            (admission.requireForeground && !applicationForegroundSignal.get())
         ) {
             throw CancellationException()
         }
@@ -919,13 +937,52 @@ internal class GatewayConnectionManager(
         reconnectJob = null
     }
 
+    /**
+     * Called only while [mutex] is held. Claims [profile] for an explicit open:
+     * a fresh failure episode, no pending retry, and a snapshot of both
+     * generations. Explicit opens are user-owned, so they are never fenced by
+     * the process-lifecycle gate.
+     */
+    private fun claimRemoteRouteLocked(profile: RemoteGatewayProfile): RemoteOpenAdmission {
+        desiredRemoteProfile = profile
+        remoteReconnectAttempts = 0
+        beginRemoteFailureEpisodeLocked(null)
+        cancelReconnectLocked()
+        return RemoteOpenAdmission(
+            routeGeneration = reconnectGeneration,
+            networkGeneration = networkEventGeneration.get(),
+            requireForeground = false,
+        )
+    }
+
     /** Called only while [mutex] is held. */
     private fun clearRemoteRouteLocked() {
         desiredRemoteProfile = null
         remoteConnectedAtMillis = null
         remoteReconnectAttempts = 0
-        remoteFailingSinceMillis = null
+        beginRemoteFailureEpisodeLocked(null)
         cancelReconnectLocked()
+    }
+
+    /**
+     * Called only while [mutex] is held. The escalation latch belongs to the
+     * failure episode, so the episode clock owns it: starting or clearing the
+     * clock always lowers the latch, and nothing else may raise it except
+     * [recordRemoteFailureLocked].
+     */
+    private fun beginRemoteFailureEpisodeLocked(startedAtMillis: Long?) {
+        remoteFailingSinceMillis = startedAtMillis
+        remoteReconnectEscalated = false
+    }
+
+    /**
+     * Called only while [mutex] is held. Once an episode has escalated, its
+     * actionable surface is latched for the rest of that episode: retries keep
+     * running underneath, but they must not replace it with `Connecting` or a
+     * transient transport message.
+     */
+    private fun publishUnlessEscalatedLocked(state: GatewayConnectionState) {
+        if (!remoteReconnectEscalated) _state.value = state
     }
 
     private fun fail(
@@ -973,6 +1030,8 @@ internal class GatewayConnectionManager(
     private data class RemoteOpenAdmission(
         val routeGeneration: Long,
         val networkGeneration: Long,
+        /** Automatic redials are foreground-only; explicit opens are not. */
+        val requireForeground: Boolean,
     )
 
     private fun beginConnectIntent(job: Job?): ConnectIntent {

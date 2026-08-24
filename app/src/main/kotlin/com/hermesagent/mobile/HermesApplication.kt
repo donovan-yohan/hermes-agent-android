@@ -120,19 +120,27 @@ class HermesApplication : Application() {
         // only from an authenticated Gateway connection.
         sessionRepository
         networkMonitor = GatewayNetworkMonitor(this, gatewayConnection::networkAvailabilityChanged).also { it.start() }
-        appScope.launch {
-            restoreSavedRemoteGateway(preferences, gatewayConnection)
-        }
         // Desktop parity (use-gateway-boot.ts): the window becoming visible is
-        // a reconnect nudge. On a phone the equivalent moment is app
-        // foregrounding after Doze or a tunnel loss killed the socket.
-        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+        // a reconnect nudge. Mobile also stops automatic redials while the app
+        // is backgrounded; an already-open socket is not torn down.
+        val processLifecycle = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle
+        gatewayConnection.applicationForegroundChanged(
+            processLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED),
+        )
+        processLifecycle.addObserver(
             object : androidx.lifecycle.DefaultLifecycleObserver {
                 override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
-                    gatewayConnection.nudgeRemoteReconnect()
+                    gatewayConnection.applicationForegroundChanged(true)
+                }
+
+                override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+                    gatewayConnection.applicationForegroundChanged(false)
                 }
             },
         )
+        appScope.launch {
+            restoreSavedRemoteGateway(preferences, gatewayConnection)
+        }
     }
 }
 
