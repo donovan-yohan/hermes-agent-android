@@ -280,6 +280,8 @@ internal class LiveGatewaySessionRepository(
     private val refreshMutex = Mutex()
     /** Serializes catalog and detail snapshots so stale details cannot resurrect a removed project. */
     private val projectMutex = Mutex()
+    /** One stage-plus-submit sequence per durable session; keyed, not global. */
+    private val submitMutexes = KeyedMutex<String>()
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
     private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
@@ -925,13 +927,17 @@ internal class LiveGatewaySessionRepository(
         if (paths.isEmpty()) return true
         return try {
             paths.asReversed().forEach { path ->
-                connection.client.request(
+                val result = connection.client.request(
                     "image.detach",
                     buildJsonObject {
                         put("session_id", JsonPrimitive(runtimeId))
                         put("path", JsonPrimitive(path))
                     },
-                )
+                ).asObject("image.detach")
+                // `detached:false` means another same-session prompt already
+                // consumed this path: cleanup did not reconcile our slot, so
+                // the caller must not declare the batch retryable.
+                if (result.boolean("detached") != true) return false
                 synchronized(stateLock) { ensureCurrent(connection) }
             }
             true
@@ -960,6 +966,23 @@ internal class LiveGatewaySessionRepository(
         require(prompt.isNotEmpty())
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot()
+        // One stage-plus-submit owner per session: a durable text drain that
+        // slips in here would reach the Gateway's busy handler first and claim
+        // the shared attached_images slot for the wrong prompt.
+        return submitMutexes.withLock(durableId) {
+            submitInternalLocked(binding, connection, wireText, optimisticText, queued)
+        }
+    }
+
+    private suspend fun submitInternalLocked(
+        binding: SessionBinding,
+        connection: ConnectionSnapshot,
+        wireText: String,
+        optimisticText: String,
+        queued: Boolean,
+    ): GatewaySubmitOutcome {
+        val durableId = binding.durableId
+        val prompt = wireText
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
         val optimistic: OptimisticSubmit? = synchronized(stateLock) {
@@ -1011,8 +1034,13 @@ internal class LiveGatewaySessionRepository(
             synchronized(stateLock) {
                 ensureCurrent(connection)
                 if (optimistic == null) {
-                    val displayText = ImageRefLines.split(optimisticText).first.trim()
-                        .ifBlank { "Attachment" }
+                    // Strip only @image: lines; a @file: ref is real prompt
+                    // content and must stay readable in the queue row.
+                    val displayText = optimisticText
+                        .lineSequence()
+                        .filterNot { line -> line.startsWith("@image:") }
+                        .joinToString("\n")
+                        .trim()
                     updateComposerStatus(binding.durableId, binding.runtimeId) { status ->
                         status.copy(
                             gatewayQueuedPrompts = (
@@ -1681,7 +1709,11 @@ internal class LiveGatewaySessionRepository(
                 }
                 reconcileSessionInfo(durableId, runtimeId, running, payload.status())
                 projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
-                val settled = running == false && settleStoppedSessionInfo(durableId, runtimeId)
+                // The Gateway emits this settled snapshot after a turn ends but
+                // before its queued next-turn prompt drains; the queue must not
+                // blink out of the composer during that window.
+                val settled = running == false && (settleStoppedSessionInfo(durableId, runtimeId) ||
+                    armGatewayQueueDrain(durableId, runtimeId))
                 if (running == false && !settled && !isLocallySubmitted(runtimeId)) {
                     releaseRuntimeGuard(runtimeId)
                 }
@@ -2373,6 +2405,8 @@ internal class LiveGatewaySessionRepository(
                     cache.session(durableId)?.let { existing ->
                         val status = existing.composerStatus ?: return@let
                         if (status.todos == todos) {
+                            // Drop only the todos; a Gateway queue row must not
+                            // be deleted by this cleanup timer.
                             val cleared = status.copy(todos = emptyList()).takeUnless(ComposerStatusState::hasVisibleRows)
                             cache.upsertSession(existing.copy(composerStatus = cleared))
                         }
@@ -2638,9 +2672,24 @@ internal class LiveGatewaySessionRepository(
         projection: LiveSessionProjection,
         runtimeId: String,
     ): SessionSummary {
-        val prompts = listOfNotNull(
-            projection.queuedUser?.let { text -> ComposerGatewayQueuedPrompt("gateway-queued-$runtimeId", text) },
-        )
+        val local = composerStatus?.gatewayQueuedPrompts.orEmpty()
+        val prompts = when {
+            // Authoritative absence: the Gateway holds nothing queued.
+            projection.hasAuthoritativeState && projection.queuedUser == null -> emptyList()
+            // The Gateway snapshot exposes only the FIFO head. Keep any local
+            // tail rows the head does not contradict; they stay visible until
+            // a drain or interrupt proves otherwise.
+            else -> {
+                val head = projection.queuedUser?.let { text ->
+                    ComposerGatewayQueuedPrompt("gateway-queued-$runtimeId", text)
+                }
+                if (head != null) {
+                    listOf(head) + local.filter { it.text != head.text }
+                } else {
+                    local
+                }
+            }
+        }.takeLast(MAX_GATEWAY_QUEUE_ROWS)
         val status = (composerStatus ?: ComposerStatusState())
             .copy(gatewayQueuedPrompts = prompts)
             .takeIf(ComposerStatusState::hasVisibleRows)

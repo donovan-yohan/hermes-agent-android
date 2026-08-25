@@ -1296,7 +1296,37 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `busy attachment rejection keeps text and bytes ready for one safe retry`() = runTest(dispatcher) {
+    fun `accepted submit clears only its claimed chips and keeps later additions`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "first bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/first", "first.bin", null)
+        viewModel.setDraft("send first")
+        repository.submitGate = CompletableDeferred()
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        viewModel.openAttachmentStream = { "second bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/second", "second.bin", null)
+        runCurrent()
+        assertEquals(2, viewModel.uiState.value.composer.runtime.attachments.size)
+
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+
+        val remaining = viewModel.uiState.value.composer.runtime.attachments
+        assertEquals(1, remaining.size)
+        assertEquals("second.bin", remaining.single().displayName)
+        assertEquals(1, repository.submittedAttachments.size)
+    }
+
+    @Test
+    fun `ambiguous busy attachment restores the caption for review without clobbering a newer draft`() =
+        runTest(dispatcher) {
         collectState()
         runCurrent()
         cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
@@ -1304,25 +1334,31 @@ class ChatViewModelTest {
         viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
         viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
         viewModel.setDraft("inspect this")
-        repository.failSubmit = true
+        repository.submitOutcome = GatewaySubmitOutcome.Ambiguous
         runCurrent()
 
         viewModel.performComposerPrimaryAction()
         runCurrent()
 
         assertTrue(repository.redirects.isEmpty())
-        assertTrue(repository.submitted.isEmpty())
+        assertEquals(1, repository.submitAttempts)
         assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
-        assertEquals("inspect this", viewModel.uiState.value.draft)
-        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.ReviewRequired)
 
-        repository.failSubmit = false
+        // The user starts a new thought while the ambiguous result is pending;
+        // the editor keeps it, and the chip itself preserves the exact caption.
+        viewModel.setDraft("newer thought")
+        runCurrent()
+        assertEquals("newer thought", viewModel.uiState.value.draft)
+        val reviewChip = viewModel.uiState.value.composer.runtime.attachments.single().stage as AttachmentStage.ReviewRequired
+        assertEquals("inspect this", reviewChip.submittedText)
+
+        // The review-required chip blocks any automatic re-send of the
+        // possibly accepted payload.
         viewModel.performComposerPrimaryAction()
         runCurrent()
 
-        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
-        assertEquals("session-a" to "inspect this", repository.submitted.single())
-        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+        assertEquals(1, repository.submitAttempts)
     }
 
     @Test
@@ -1814,12 +1850,16 @@ class ChatViewModelTest {
         val chips = viewModel.uiState.value.composer.runtime.attachments
         assertEquals(1, chips.size)
         assertTrue(chips.single().stage is AttachmentStage.ReviewRequired)
-        assertEquals("with a file", viewModel.uiState.value.draft)
+        // The editor stays clear (the send was accepted into the wire), but the
+        // chip itself carries the exact caption for review.
         assertTrue(viewModel.uiState.value.notice!!.contains("may have been sent"))
+        val chip = chips.single().stage as AttachmentStage.ReviewRequired
+        assertEquals("with a file", chip.submittedText)
 
+        // A review-required chip blocks any automatic re-send of the possibly
+        // accepted payload.
         viewModel.performComposerPrimaryAction()
         runCurrent()
         assertEquals(1, repository.submitAttempts)
-        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
     }
 }

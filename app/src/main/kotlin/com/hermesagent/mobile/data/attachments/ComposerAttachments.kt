@@ -34,8 +34,14 @@ sealed interface AttachmentStage {
      * A mutating Gateway acknowledgement was lost. The bytes and caption stay
      * visible for review, but this occurrence cannot be submitted again until
      * the user removes it and checks the session for the possibly accepted turn.
+     * [submittedText] preserves the exact prompt that may have landed even when
+     * the user has already typed a newer draft.
      */
-    data class ReviewRequired(val byteCount: Int, val safeMessage: String) : AttachmentStage
+    data class ReviewRequired(
+        val byteCount: Int,
+        val safeMessage: String,
+        val submittedText: String = "",
+    ) : AttachmentStage
     /** Local refusal (too large, unknown type, read failure). Retryable in place. */
     data class Refused(val safeMessage: String) : AttachmentStage
 }

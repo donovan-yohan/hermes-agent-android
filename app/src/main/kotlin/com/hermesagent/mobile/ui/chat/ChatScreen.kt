@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -403,9 +405,18 @@ private fun StickyCurrentPrompt(
             modifier = Modifier
                 .fillMaxWidth()
                 // This is a sibling overlay, so explicitly share the
-                // transcript's scroll state. Clickable keeps taps while this
-                // recognizer owns drags and flings begun on the bubble.
-                .scrollable(state = listState, orientation = Orientation.Vertical)
+                // transcript's scroll state with identical gesture direction.
+                // Clickable keeps taps while this recognizer owns drags and
+                // flings begun on the bubble.
+                .scrollable(
+                    state = listState,
+                    orientation = Orientation.Vertical,
+                    reverseDirection = ScrollableDefaults.reverseDirection(
+                        layoutDirection = LocalLayoutDirection.current,
+                        orientation = Orientation.Vertical,
+                        reverseScrolling = false,
+                    ),
+                )
                 .heightIn(min = HermesTheme.spacing.touchTarget)
                 .clipToBounds(),
             maxLines = 4,
@@ -689,7 +700,7 @@ private fun ChatUiState.composerStatus(): String = notice ?: when {
     connection.status == GatewayConnectionStatus.NeedsAttention ->
         connection.message ?: "Open Gateways to reconnect"
     connection.status == GatewayConnectionStatus.Disconnected -> "Open Gateways to connect"
-    isStreaming -> "Hermes is responding — tap ■ to stop"
+    isStreaming -> "Hermes is responding — use Stop to end the turn"
     else -> "Connected to Gateway"
 }
 

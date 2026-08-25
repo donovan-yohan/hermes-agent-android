@@ -1029,8 +1029,10 @@ internal class ChatViewModel(
         }
         pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.Refused)?.safeMessage }?.let { refusal ->
             notice.value = refusal
-            return
         }
+        // A locally refused chip is skipped, not fatal: the rest of the
+        // payload (typed text, healthy chips) still sends. A review-required
+        // chip above does hard-stop, because its mutation may have landed.
         if ((prompt.isEmpty() && ready.isEmpty()) || (!queued && !activeIsIdle) ||
             repository.connectionState.value.status != GatewayConnectionStatus.Connected
         ) return
@@ -1091,7 +1093,7 @@ internal class ChatViewModel(
                             attachmentMimes.remove(occurrenceId)
                         }
                         attachmentThumbnails.value = attachmentThumbnails.value - claimedIds
-                        attachments.value = attachments.value.filterNot { it.durableSessionId == sessionId }
+                        attachments.value = attachments.value.filterNot { it.occurrenceId in claimedIds }
                         composerHistoryController.reset(sessionId)
                         invalidateHistory()
                         if (composer.value.mutation is ComposerMutationUiState.Deferred) {
@@ -1101,19 +1103,18 @@ internal class ChatViewModel(
                         if (projectId != null) runCatching { repository.refreshProjects() }
                     }
                     GatewaySubmitOutcome.Ambiguous -> {
-                        markAttachmentsReviewRequired(sessionId)
-                        if (outgoing.isNotEmpty()) restoreSubmittedDraft(sessionId, submittedPrompt)
+                        markAttachmentsReviewRequired(sessionId, submittedPrompt)
                         notice.value = "This message may have been sent. Check this session and wait for Hermes before trying again."
                     }
                 }
             } catch (cancelled: CancellationException) {
-                markAttachmentsReviewRequired(sessionId)
+                markAttachmentsReviewRequired(sessionId, submittedPrompt)
                 throw cancelled
             } catch (failure: Throwable) {
                 val rpcFailure = failure as? GatewayRpcException
                 val ambiguous = rpcFailure?.requestMayHaveBeenAccepted == true
                 if (ambiguous) {
-                    markAttachmentsReviewRequired(sessionId)
+                    markAttachmentsReviewRequired(sessionId, submittedPrompt)
                 } else {
                     markAttachmentsUnsent(sessionId)
                 }
@@ -1125,14 +1126,14 @@ internal class ChatViewModel(
                 } else {
                     safe ?: "The message was not sent. Reconnect to the Gateway and try again."
                 }
-                if (!ambiguous || outgoing.isNotEmpty()) {
-                    restoreSubmittedDraft(sessionId, submittedPrompt)
-                }
+                if (!ambiguous) restoreSubmittedDraft(sessionId, submittedPrompt)
             }
         }
     }
 
     private fun restoreSubmittedDraft(sessionId: String, submittedPrompt: String) {
+        // A newer edit wins everywhere. An ambiguous attachment's exact caption
+        // lives on its review-required chip instead of overwriting user work.
         if (submittedPrompt.isBlank() || !draftSnapshot[sessionId].isNullOrBlank()) return
         rememberDraft(sessionId, submittedPrompt)
         if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = submittedPrompt
@@ -1144,11 +1145,12 @@ internal class ChatViewModel(
         resettleInFlightAttachments(sessionId, AttachmentStage::Ready)
 
     /** A possibly accepted mutation stays visible but is never silently retryable. */
-    private fun markAttachmentsReviewRequired(sessionId: String) =
+    private fun markAttachmentsReviewRequired(sessionId: String, submittedText: String = "") =
         resettleInFlightAttachments(sessionId) { bytes ->
             AttachmentStage.ReviewRequired(
                 byteCount = bytes,
                 safeMessage = "May have been sent — check the session, then remove and attach again if needed.",
+                submittedText = submittedText,
             )
         }
 
@@ -1488,7 +1490,11 @@ internal class ChatViewModel(
             composerQueueController.park(sessionId)
             try {
                 when (repository.requestInterrupt(sessionId)) {
-                    com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> Unit
+                    com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> {
+                        if (cache.session(sessionId)?.composerStatus?.gatewayQueuedPrompts.orEmpty().isNotEmpty()) {
+                            notice.value = "Stopped. Any queued next-turn messages were discarded with the turn."
+                        }
+                    }
                     com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.NeedsInput ->
                         notice.value = "Hermes needs a response. Your queue remains parked."
                     else -> notice.value = "Hermes could not be stopped. Check the Gateway connection."

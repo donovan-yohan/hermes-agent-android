@@ -90,4 +90,18 @@ class ComposerStatusStackVisibilityTest {
         compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
         compose.onNodeWithText("inspect this screenshot").assertIsDisplayed()
     }
+
+    @Test
+    fun `file reference text renders readably in the Gateway queue group`() {
+        setContent(
+            ComposerStatusState(
+                gatewayQueuedPrompts = listOf(
+                    ComposerGatewayQueuedPrompt("queued-2", "@file:`notes.txt` check this"),
+                ),
+            ),
+        )
+
+        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithText("@file:`notes.txt` check this").assertIsDisplayed()
+    }
 }
