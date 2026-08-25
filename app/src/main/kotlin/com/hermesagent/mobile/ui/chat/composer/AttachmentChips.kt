@@ -65,6 +65,8 @@ internal fun AttachmentChipRow(
                     stage.phaseLabel to tokens.textTertiary
                 is AttachmentStage.Staged ->
                     "Added" to tokens.textSecondary
+                is AttachmentStage.ReviewRequired ->
+                    stage.safeMessage to tokens.destructive
                 is AttachmentStage.Refused ->
                     stage.safeMessage to tokens.destructive
             }

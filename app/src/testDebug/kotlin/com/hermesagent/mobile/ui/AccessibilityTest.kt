@@ -29,6 +29,8 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.ToolActivity
+import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
@@ -101,6 +103,12 @@ class AccessibilityTest {
         )
         state = state.copy(
             connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
+            transcript = state.transcript + ToolActivity(
+                id = "running-tool",
+                label = "read_file",
+                detail = "Inspecting source",
+                state = ToolState.Running,
+            ),
         )
         compose.waitForIdle()
 

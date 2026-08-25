@@ -276,6 +276,7 @@ fun Composer(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
+                        if (action.showStopSecondary) ComposerSecondaryStopAction(onStop)
                         if (layoutMode == ComposerLayoutMode.Full) {
                             Text(
                                 text = statusLine,
@@ -563,6 +564,16 @@ private fun ComposerSecondaryQueueAction(onQueue: () -> Unit) {
         label = "Queue",
         onClick = onQueue,
         modifier = Modifier.semantics { contentDescription = "Queue message" },
+    )
+}
+
+@Composable
+private fun ComposerSecondaryStopAction(onStop: () -> Unit) {
+    TextButton(
+        label = "Stop",
+        onClick = onStop,
+        color = HermesTheme.tokens.destructive,
+        modifier = Modifier.semantics { contentDescription = "Stop generating" },
     )
 }
 

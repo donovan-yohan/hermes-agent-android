@@ -64,7 +64,8 @@ enum class QueuedPromptDelivery { Ready, Ambiguous }
  * Text-only private queue record. It contains no runtime Gateway ID, Android
  * URI, attachment reference, credential, or secret field. Busy attachments
  * bypass this store: their in-memory bytes stage directly into the Gateway's
- * connection-scoped next-turn queue.
+ * connection-scoped next-turn queue, whose accepted text is projected from
+ * live Gateway state rather than copied into this private durable store.
  */
 data class QueuedPrompt(
     val id: String,

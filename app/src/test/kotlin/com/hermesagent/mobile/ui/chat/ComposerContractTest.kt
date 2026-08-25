@@ -28,10 +28,12 @@ class ComposerContractTest {
             ComposerPrimaryAction.Queue,
             actionState(ComposerBusyKind.Streaming, hasText = true, hasAttachments = true).primary,
         )
+        assertTrue(actionState(ComposerBusyKind.Streaming, hasText = true, hasAttachments = true).showStopSecondary)
         assertEquals(
             ComposerPrimaryAction.Queue,
             actionState(ComposerBusyKind.Streaming, hasText = false, hasAttachments = true).primary,
         )
+        assertTrue(actionState(ComposerBusyKind.Streaming, hasText = false, hasAttachments = true).showStopSecondary)
         assertEquals(
             ComposerPrimaryAction.Stop,
             actionState(ComposerBusyKind.Streaming, hasText = false, canSend = true).primary,

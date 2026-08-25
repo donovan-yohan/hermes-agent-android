@@ -126,12 +126,10 @@ fun Transcript(
     imageLoader: GatewayImageLoader? = null,
 ) {
     val spacing = HermesTheme.spacing
-    val hasRunningActivity = entries.any {
-        (it is ReasoningActivity && it.state == ToolState.Running) ||
-            (it is ToolActivity && it.state == ToolState.Running)
-    }
-    val turnIsWorking = isWorking || entries.any { it is AssistantTurn && it.streaming }
-    val showTurnProgress = turnIsWorking && !hasRunningActivity
+    // Progress has exactly one owner: the live transcript tail. A running tool
+    // or reasoning row is related activity, not a substitute for the Gateway's
+    // current status text.
+    val showTurnProgress = isWorking || entries.any { it is AssistantTurn && it.streaming }
 
     if (entries.isEmpty() && !showTurnProgress) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {

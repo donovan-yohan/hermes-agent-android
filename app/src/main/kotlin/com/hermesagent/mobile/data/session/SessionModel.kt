@@ -92,7 +92,14 @@ data class ComposerStatusState(
     val subagents: List<ComposerSubagentStatus> = emptyList(),
     val backgroundProcesses: List<ComposerBackgroundProcess> = emptyList(),
     val previewArtifacts: List<ComposerPreviewArtifact> = emptyList(),
+    /** Accepted by the Gateway for a later turn; connection-scoped, never persisted locally. */
+    val gatewayQueuedPrompts: List<ComposerGatewayQueuedPrompt> = emptyList(),
     val isCompacting: Boolean = false,
+)
+
+data class ComposerGatewayQueuedPrompt(
+    val id: String,
+    val text: String,
 )
 
 enum class ComposerGoalState { Active, Waiting, Paused, Done, None, Unknown }

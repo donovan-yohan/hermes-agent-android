@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.semantics.SemanticsActions
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -24,6 +25,7 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -151,12 +153,12 @@ class TranscriptFollowTest {
             UserTurn("u2", "$second\n@image:/synthetic/not-shown.png", NOW),
             AssistantTurn("a2", long("second"), NOW, streaming = true),
         ))
-        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.onNodeWithContentDescription("Current prompt: $second").performClick()
         compose.waitForIdle()
         compose.onNodeWithContentDescription("You said: $second").assertIsDisplayed()
         compose.onNodeWithText("first paragraph 1.").performScrollTo()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.onNodeWithContentDescription("Current prompt: $first").performClick()
         compose.waitForIdle()
         compose.onNodeWithContentDescription("You said: $first").assertIsDisplayed()
         assertEquals(0, compose.onAllNodes(hasText("@image:/synthetic/not-shown.png"), useUnmergedTree = true).fetchSemanticsNodes().size)
@@ -166,11 +168,11 @@ class TranscriptFollowTest {
     fun `pin is hidden while source is visible and visible at response tail`() {
         launch(listOf(UserTurn("u", "visible source", NOW)), streaming = false)
         compose.onNodeWithContentDescription("You said: visible source").assertIsDisplayed()
-        assertEquals(0, compose.onAllNodes(hasContentDescription("Return to current prompt")).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: visible source")).fetchSemanticsNodes().size)
 
         state = chatState(streamed(80), streaming = true)
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Return to current prompt").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Current prompt: tell me something long").assertIsDisplayed()
     }
 
     @Test
@@ -179,7 +181,7 @@ class TranscriptFollowTest {
         state = chatState(listOf(UserTurn("u", prompt, NOW), AssistantTurn("a", (1..80).joinToString("\n\n") { "Initial $it." }, NOW, streaming = true)), true)
         compose.setContent { HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) { ChatScreen(state, ChatActions(), {}) } }
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.onNodeWithContentDescription("Current prompt: $prompt").performClick()
         compose.waitForIdle()
         compose.onNodeWithContentDescription("You said: $prompt").assertIsDisplayed()
         state = chatState(listOf(UserTurn("u", prompt, NOW), AssistantTurn("a", (1..160).joinToString("\n\n") { "Later $it." }, NOW, streaming = true)), true)
@@ -190,10 +192,10 @@ class TranscriptFollowTest {
     @Test
     fun `session switch and delayed history reset the prompt identity`() {
         launch(streamed(80))
-        compose.onNodeWithContentDescription("Return to current prompt").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Current prompt: tell me something long").assertIsDisplayed()
         state = chatState(emptyList(), false, "new-session")
         compose.waitForIdle()
-        assertEquals(0, compose.onAllNodes(hasContentDescription("Return to current prompt")).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: tell me something long")).fetchSemanticsNodes().size)
 
         // The new session's history may arrive after the empty first frame.
         // Its pin must resolve its own stable id, never the prior session's.
@@ -207,7 +209,7 @@ class TranscriptFollowTest {
             "new-session",
         )
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.onNodeWithContentDescription("Current prompt: $replacement").performClick()
         compose.waitForIdle()
         compose.onNodeWithContentDescription("You said: $replacement").assertIsDisplayed()
         assertEquals(0, compose.onAllNodes(hasContentDescription("You said: tell me something long")).fetchSemanticsNodes().size)
@@ -221,7 +223,17 @@ class TranscriptFollowTest {
                 AssistantTurn("reply", (1..80).joinToString("\n\n") { "Reply $it." }, NOW, streaming = true),
             ),
         )
-        assertEquals(0, compose.onAllNodes(hasContentDescription("Return to current prompt")).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: @image:/synthetic/only.png")).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `pinned prompt shares the transcript scroll action`() {
+        launch(streamed(80))
+        val pinned = compose.onNodeWithContentDescription("Current prompt: tell me something long")
+            .assertIsDisplayed()
+            .fetchSemanticsNode()
+
+        assertTrue(pinned.config.contains(SemanticsActions.ScrollBy))
     }
 
     private companion object {

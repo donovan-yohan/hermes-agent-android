@@ -3,7 +3,9 @@ package com.hermesagent.mobile.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -355,6 +357,7 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
                 StickyCurrentPrompt(
                     promptId = owner.id,
                     body = promptBody,
+                    listState = listState,
                     onClick = onReturn,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
@@ -374,6 +377,7 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
 private fun StickyCurrentPrompt(
     promptId: String,
     body: String,
+    listState: LazyListState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -383,24 +387,31 @@ private fun StickyCurrentPrompt(
         Brush.verticalGradient(0f to tokens.userBubble.copy(alpha = 0f), 1f to tokens.userBubble)
     }
     Box(
-        modifier = modifier.fillMaxWidth().background(tokens.chatSurface).padding(
-            start = HermesTheme.spacing.pageInset,
-            end = HermesTheme.spacing.pageInset,
-            top = HermesTheme.spacing.turnGap,
-            bottom = HermesTheme.spacing.turnGap,
-        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .background(tokens.chatSurface)
+            .padding(
+                start = HermesTheme.spacing.pageInset,
+                end = HermesTheme.spacing.pageInset,
+                top = HermesTheme.spacing.turnGap,
+                bottom = HermesTheme.spacing.turnGap,
+            ),
     ) {
         UserTurnBubble(
             body = body,
-            contentDescription = "Return to current prompt",
+            contentDescription = "Current prompt: $body",
             modifier = Modifier
                 .fillMaxWidth()
+                // This is a sibling overlay, so explicitly share the
+                // transcript's scroll state. Clickable keeps taps while this
+                // recognizer owns drags and flings begun on the bubble.
+                .scrollable(state = listState, orientation = Orientation.Vertical)
                 .heightIn(min = HermesTheme.spacing.touchTarget)
                 .clipToBounds(),
             maxLines = 4,
             overflow = TextOverflow.Clip,
             onClick = onClick,
-            onClickLabel = "Return to current prompt",
+            onClickLabel = "Return to prompt",
             onTextLayout = { overflowing = it.hasVisualOverflow },
         ) {
             // The clipped fourth line reads as a hard cut without this; the

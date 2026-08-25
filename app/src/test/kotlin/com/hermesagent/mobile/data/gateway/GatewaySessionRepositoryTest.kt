@@ -1059,6 +1059,152 @@ class GatewaySessionRepositoryTest {
         assertTrue(requireNotNull(submits.last().params["queued"]).jsonPrimitive.boolean)
         assertEquals(transcriptBeforeQueue, cache.transcript("durable-a"))
         assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+        assertEquals(
+            "inspect this",
+            cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.single()?.text,
+        )
+
+        rpc.emit("message.complete", "runtime-a", """{"text":"first done"}""")
+        runCurrent()
+        assertEquals(1, cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.size)
+        rpc.emit("message.start", "runtime-a", """{"id":"queued-answer","role":"assistant"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `definite prompt rejection detaches a staged image before allowing retry`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { promptFailures = 1 }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        val failure = runCatching {
+            repository.submit(
+                "durable-a",
+                "inspect this",
+                attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+            )
+        }.exceptionOrNull() as GatewayRpcException
+
+        assertFalse(failure.requestMayHaveBeenAccepted)
+        assertEquals(listOf("image.attach_bytes", "prompt.submit", "image.detach"), rpc.calls.takeLast(3).map { it.method })
+        assertEquals("/gw/img.png", rpc.call("image.detach").params.string("path"))
+    }
+
+    @Test
+    fun `failed detach converts a definite rejection into review-required`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            promptFailures = 1
+            detachFailure = GatewayRpcException("detach unavailable")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        val failure = runCatching {
+            repository.submit(
+                "durable-a",
+                "inspect this",
+                attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+            )
+        }.exceptionOrNull() as GatewayRpcException
+
+        assertTrue(failure.requestMayHaveBeenAccepted)
+    }
+
+    @Test
+    fun `lost stage acknowledgement is review-required and never submits the prompt`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            attachFailure = GatewayRpcException("attachment acknowledgement lost", requestMayHaveBeenAccepted = true)
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        val failure = runCatching {
+            repository.submit(
+                "durable-a",
+                "inspect this",
+                attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+            )
+        }.exceptionOrNull() as GatewayRpcException
+
+        assertTrue(failure.requestMayHaveBeenAccepted)
+        assertEquals(0, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `later stage rejection detaches earlier images and never submits the prompt`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { failImageAttachAt = 2 }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+
+        val failure = runCatching {
+            repository.submit(
+                "durable-a",
+                "compare these",
+                attachments = listOf(
+                    OutgoingAttachment.Image("one.png", "AAAA"),
+                    OutgoingAttachment.Image("two.png", "BBBB"),
+                ),
+            )
+        }.exceptionOrNull() as GatewayRpcException
+
+        assertFalse(failure.requestMayHaveBeenAccepted)
+        assertEquals(0, rpc.calls.count { it.method == "prompt.submit" })
+        assertEquals("/gw/img.png", rpc.call("image.detach").params.string("path"))
+    }
+
+    @Test
+    fun `resume projects an accepted Gateway queue entry above the composer`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            resumeA = RESUME_RUNNING.dropLast(1) + ",\"queued\":{\"user\":\"inspect after this\"}}"
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+
+        assertEquals(
+            "inspect after this",
+            cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.single()?.text,
+        )
     }
 
     @Test
@@ -2588,6 +2734,9 @@ class GatewaySessionRepositoryTest {
         var slashResult = """{"items":[]}"""
         var pathResult = """{"items":[]}"""
         var attachFailure: Throwable? = null
+        var detachFailure: Throwable? = null
+        var failImageAttachAt: Int? = null
+        var imageAttachCount = 0
         var eventOverflowed = false
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
@@ -2678,11 +2827,20 @@ class GatewaySessionRepositoryTest {
                     json(goalStatusResult)
                 }
                 "image.attach_bytes" -> {
+                    imageAttachCount += 1
+                    if (failImageAttachAt == imageAttachCount) throw GatewayRpcException("attachment rejected")
                     attachFailure?.let { failure ->
                         attachFailure = null
                         throw failure
                     }
                     json("""{"attached":true,"path":"/gw/img.png","text":"[User attached image: img.png]"}""")
+                }
+                "image.detach" -> {
+                    detachFailure?.let { failure ->
+                        detachFailure = null
+                        throw failure
+                    }
+                    json("""{"detached":true,"count":0}""")
                 }
                 "file.attach" -> {
                     attachFailure?.let { failure ->

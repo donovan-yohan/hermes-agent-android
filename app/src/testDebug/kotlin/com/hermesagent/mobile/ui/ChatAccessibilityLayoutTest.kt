@@ -75,8 +75,8 @@ class ChatAccessibilityLayoutTest {
     fun `pinned prompt has one concise action and 48dp target`() {
         val prompt = "Keep this prompt in view"
         launch(transcript = listOf(UserTurn("u", prompt, NOW), AssistantTurn("a", (1..80).joinToString("\n\n") { "Response $it." }, NOW, streaming = true)))
-        val pinned = compose.onNodeWithContentDescription("Return to current prompt").fetchSemanticsNode()
-        assertEquals(listOf("Return to current prompt"), pinned.config[SemanticsProperties.ContentDescription])
+        val pinned = compose.onNodeWithContentDescription("Current prompt: $prompt").fetchSemanticsNode()
+        assertEquals(listOf("Current prompt: $prompt"), pinned.config[SemanticsProperties.ContentDescription])
         assertTrue(pinned.boundsInRoot.height >= 48 * compose.density.density)
     }
 

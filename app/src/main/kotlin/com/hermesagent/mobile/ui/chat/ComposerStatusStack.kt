@@ -165,6 +165,17 @@ fun ComposerStatusStack(
             }
         }
         if (status?.isCompacting == true) StatusText("Hermes is compacting this session.")
+        status?.gatewayQueuedPrompts?.takeIf { it.isNotEmpty() }?.let { prompts ->
+            StatusGroup(
+                "${activeSessionId}:gateway-queue",
+                "Queued next",
+                defaultExpanded = true,
+                count = prompts.size,
+                fusedToComposer = fuseSingleGroup,
+            ) {
+                prompts.forEach { prompt -> StatusText(prompt.text) }
+            }
+        }
         // Queue is intentionally the final status-stack group so its expanded
         // rows share this bounded scroll region rather than pushing the IME
         // composer off screen.
@@ -183,6 +194,7 @@ internal fun composerStatusGroupCount(
     status?.backgroundProcesses?.isNotEmpty() == true,
     previewCount > 0,
     status?.isCompacting == true,
+    status?.gatewayQueuedPrompts?.isNotEmpty() == true,
     hasQueue,
 ).count { it }
 

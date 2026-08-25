@@ -30,6 +30,12 @@ sealed interface AttachmentStage {
     data class Staging(val phaseLabel: String) : AttachmentStage
     /** The Gateway accepted the bytes; only this reference is prompt-safe. */
     data class Staged(val reference: StagedAttachmentReference) : AttachmentStage
+    /**
+     * A mutating Gateway acknowledgement was lost. The bytes and caption stay
+     * visible for review, but this occurrence cannot be submitted again until
+     * the user removes it and checks the session for the possibly accepted turn.
+     */
+    data class ReviewRequired(val byteCount: Int, val safeMessage: String) : AttachmentStage
     /** Local refusal (too large, unknown type, read failure). Retryable in place. */
     data class Refused(val safeMessage: String) : AttachmentStage
 }

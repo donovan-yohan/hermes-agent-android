@@ -19,6 +19,7 @@ import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
+import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
 import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ComposerGoalStatus
 import com.hermesagent.mobile.data.session.ComposerStatusState
@@ -290,6 +291,8 @@ internal class LiveGatewaySessionRepository(
     private val optimisticCorrectionsByRuntime = mutableMapOf<String, MutableList<UserTurn>>()
     private val progressRuntimeIds = mutableSetOf<String>()
     private val composerStatusRuntimeIds = mutableSetOf<String>()
+    /** A completed turn with a visible Gateway queue consumes one row at the next message.start. */
+    private val queuedPromptDrainReadyRuntimeIds = mutableSetOf<String>()
 
     /** Latest server-reported git branch per durable session, connection-scoped. */
     private val branchByDurableId = mutableMapOf<String, String>()
@@ -347,6 +350,7 @@ internal class LiveGatewaySessionRepository(
                     optimisticCorrectionsByRuntime.clear()
                     progressRuntimeIds.clear()
                     composerStatusRuntimeIds.clear()
+                    queuedPromptDrainReadyRuntimeIds.clear()
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
@@ -588,7 +592,7 @@ internal class LiveGatewaySessionRepository(
             val priorStatus = cache.session(canonicalId)?.status ?: cache.session(durableId)?.status ?: SessionStatus.Idle
             val status = reconcileLiveState(runtimeId, projection, localLive.isNotEmpty(), reconciled, priorStatus)
             if (progressSnapshotIsCurrent) progressRuntimeIds.remove(runtimeId)
-            val row = canonicalSummary(
+            val canonicalRow = canonicalSummary(
                 durableId,
                 canonicalId,
                 liveSnapshot,
@@ -596,6 +600,11 @@ internal class LiveGatewaySessionRepository(
                 liveSnapshotIsCurrent,
                 preserveProgress = !progressSnapshotIsCurrent,
             )
+            val row = if (liveSnapshotIsCurrent) {
+                canonicalRow.withGatewayQueueProjection(projection, runtimeId)
+            } else {
+                canonicalRow
+            }
             cache.rehomeSession(durableId, row, reconciled)
             hydratedTodos?.takeUnless(::todoListActive)?.let { todos ->
                 setComposerTodos(canonicalId, runtimeId, todos)
@@ -760,12 +769,37 @@ internal class LiveGatewaySessionRepository(
         attachments: List<OutgoingAttachment>,
     ): GatewaySubmitOutcome {
         if (attachments.isEmpty()) return submit(durableId, text, queued)
+        val binding = try {
+            ensureRuntime(durableId)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            throw GatewayRpcException("Reopen this session before attaching files.")
+        }
+        val connection = try {
+            connectionSnapshot()
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            throw GatewayRpcException("Reconnect to the Gateway and try again.")
+        }
         // Stage everything first. A prompt must never cross after a failed or
         // ambiguous stage; the caller keeps its drafts for in-place retry.
         val fileRefs = StringBuilder()
         val imageRefs = mutableListOf<String>()
+        val stagedImagePaths = mutableListOf<String>()
+        var hasUndetachableImage = false
+
+        suspend fun rejectAfterCleanup(failure: GatewayRpcException): Nothing {
+            if (hasUndetachableImage || !detachStagedImages(connection, binding.runtimeId, stagedImagePaths)) {
+                throw GatewayRpcException(
+                    "The attachment upload could not be reconciled. Check this session before trying again.",
+                    requestMayHaveBeenAccepted = true,
+                )
+            }
+            throw failure
+        }
+
         for (attachment in attachments) {
-            val result = stageOne(durableId, attachment)
+            val result = stageOne(binding, connection, attachment)
             when (result) {
                 is GatewayStageOutcome.Staged -> {
                     when (attachment) {
@@ -777,7 +811,13 @@ internal class LiveGatewaySessionRepository(
                         // `text` field is placeholder prose for the model and
                         // must never be echoed into the user-visible turn.
                         is OutgoingAttachment.Image -> {
-                            result.reference.gatewayPath?.let { imageRefs += ImageRefLines.formatRef(it) }
+                            val path = result.reference.gatewayPath
+                            if (path == null) {
+                                hasUndetachableImage = true
+                            } else {
+                                stagedImagePaths += path
+                                imageRefs += ImageRefLines.formatRef(path)
+                            }
                         }
 
                         is OutgoingAttachment.GenericFile -> {
@@ -789,11 +829,21 @@ internal class LiveGatewaySessionRepository(
                     }
                 }
 
-                is GatewayStageOutcome.Rejected -> throw GatewayRpcException(result.safeMessage)
-                is GatewayStageOutcome.Ambiguous ->
-                    throw GatewayRpcException("The attachment may not have finished uploading. Check the session before retrying.")
-                GatewayStageOutcome.Unsupported ->
-                    throw GatewayRpcException("This Gateway does not accept that attachment. Update Hermes and try again.")
+                is GatewayStageOutcome.Rejected ->
+                    rejectAfterCleanup(GatewayRpcException(result.safeMessage))
+                is GatewayStageOutcome.Ambiguous -> {
+                    // Known earlier paths can be detached, but this lost
+                    // acknowledgement may hide one more accepted path whose id
+                    // never reached Android. The batch is review-required.
+                    detachStagedImages(connection, binding.runtimeId, stagedImagePaths)
+                    throw GatewayRpcException(
+                        "The attachment may not have finished uploading. Check the session before retrying.",
+                        requestMayHaveBeenAccepted = true,
+                    )
+                }
+                GatewayStageOutcome.Unsupported -> rejectAfterCleanup(
+                    GatewayRpcException("This Gateway does not accept that attachment. Update Hermes and try again."),
+                )
             }
         }
         val typed = text.trim()
@@ -809,24 +859,21 @@ internal class LiveGatewaySessionRepository(
         // replaces it is byte-identical.
         val optimisticText = listOf(wireText, imageRefs.joinToString("\n"))
             .filter(String::isNotBlank).joinToString("\n")
-        return submitInternal(durableId, wireText, optimisticText, queued)
+        return try {
+            submitInternal(durableId, wireText, optimisticText, queued)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
+            rejectAfterCleanup(
+                failure as? GatewayRpcException ?: GatewayRpcException("The message was not sent."),
+            )
+        }
     }
 
     private suspend fun stageOne(
-        durableId: String,
+        binding: SessionBinding,
+        connection: ConnectionSnapshot,
         attachment: OutgoingAttachment,
     ): GatewayStageOutcome {
-        val binding = try {
-            ensureRuntime(durableId)
-        } catch (failure: Throwable) {
-            if (failure is CancellationException) throw failure
-            return GatewayStageOutcome.Rejected("Reopen this session before attaching files.")
-        }
-        val connection = try {
-            connectionSnapshot()
-        } catch (failure: Throwable) {
-            return GatewayStageOutcome.Rejected("Reconnect to the Gateway and try again.")
-        }
         return try {
             val result = when (attachment) {
                 is OutgoingAttachment.Image -> connection.client.request(
@@ -866,6 +913,31 @@ internal class LiveGatewaySessionRepository(
             } else {
                 GatewayStageOutcome.Rejected(safeGatewayTerminalError(failure.message ?: "The attachment was refused."))
             }
+        }
+    }
+
+    /** Remove known image paths from the Gateway's shared pre-submit slot. */
+    private suspend fun detachStagedImages(
+        connection: ConnectionSnapshot,
+        runtimeId: String,
+        paths: List<String>,
+    ): Boolean {
+        if (paths.isEmpty()) return true
+        return try {
+            paths.asReversed().forEach { path ->
+                connection.client.request(
+                    "image.detach",
+                    buildJsonObject {
+                        put("session_id", JsonPrimitive(runtimeId))
+                        put("path", JsonPrimitive(path))
+                    },
+                )
+                synchronized(stateLock) { ensureCurrent(connection) }
+            }
+            true
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            false
         }
     }
 
@@ -936,7 +1008,24 @@ internal class LiveGatewaySessionRepository(
 
         try {
             requestPromptSubmit(connection, binding.runtimeId, prompt, queued)
-            synchronized(stateLock) { ephemeralSessions.remove(binding.durableId) }
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (optimistic == null) {
+                    val displayText = ImageRefLines.split(optimisticText).first.trim()
+                        .ifBlank { "Attachment" }
+                    updateComposerStatus(binding.durableId, binding.runtimeId) { status ->
+                        status.copy(
+                            gatewayQueuedPrompts = (
+                                status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(
+                                    id = "gateway-queued-${sequence.incrementAndGet()}",
+                                    text = displayText,
+                                )
+                            ).takeLast(MAX_GATEWAY_QUEUE_ROWS),
+                        )
+                    }
+                }
+                ephemeralSessions.remove(binding.durableId)
+            }
             return GatewaySubmitOutcome.Accepted
         } catch (failure: Throwable) {
             val ambiguous = failure is CancellationException || failure.isAmbiguousGatewayMutation()
@@ -1145,12 +1234,12 @@ internal class LiveGatewaySessionRepository(
         return try {
             val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
                 .asObject("session.interrupt")
-            synchronized(stateLock) { ensureCurrent(connection) }
-            if (result.string("status") == "interrupted") {
-                GatewayInterruptOutcome.Interrupted
-            } else {
-                GatewayInterruptOutcome.Rejected
+            val interrupted = result.string("status") == "interrupted"
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (interrupted) clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
             }
+            if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
         } catch (failure: Throwable) {
             interruptFailureOutcome(failure)
         }
@@ -1601,6 +1690,7 @@ internal class LiveGatewaySessionRepository(
 
             "message.start" -> {
                 if ((payload.string("role") ?: "assistant") == "assistant") {
+                    consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     val turn = AssistantTurn(
                         id = payload.messageId() ?: "gateway-assistant-${sequence.incrementAndGet()}",
                         markdown = payload.contentText(),
@@ -1696,7 +1786,11 @@ internal class LiveGatewaySessionRepository(
                 sealTools(durableId, runtimeId, ToolState.Failed)
                 optimisticUserByRuntime.remove(runtimeId)
                 optimisticCorrectionsByRuntime.remove(runtimeId)
-                clearConnectionScopedStatus(durableId, runtimeId)
+                clearConnectionScopedStatus(
+                    durableId,
+                    runtimeId,
+                    preserveGatewayQueue = armGatewayQueueDrain(durableId, runtimeId),
+                )
                 setStatus(durableId, SessionStatus.Idle)
                 ephemeralSessions.remove(durableId)
                 releaseRuntimeGuard(runtimeId)
@@ -2033,7 +2127,11 @@ internal class LiveGatewaySessionRepository(
         )
         optimisticUserByRuntime.remove(runtimeId)
         optimisticCorrectionsByRuntime.remove(runtimeId)
-        clearConnectionScopedStatus(durableId, runtimeId)
+        clearConnectionScopedStatus(
+            durableId,
+            runtimeId,
+            preserveGatewayQueue = !interrupted && armGatewayQueueDrain(durableId, runtimeId),
+        )
         setStatus(durableId, SessionStatus.Idle)
         ephemeralSessions.remove(durableId)
         releaseRuntimeGuard(runtimeId)
@@ -2201,6 +2299,7 @@ internal class LiveGatewaySessionRepository(
         durableId: String,
         runtimeId: String,
         preserveFinishedTodos: Boolean = true,
+        preserveGatewayQueue: Boolean = false,
     ) {
         progressRuntimeIds.remove(runtimeId)
         composerStatusRuntimeIds.remove(runtimeId)
@@ -2212,11 +2311,51 @@ internal class LiveGatewaySessionRepository(
             } else {
                 null
             }
-            val landed = finishedTodos?.let { ComposerStatusState(todos = it) }
+            val gatewayQueue = if (preserveGatewayQueue) {
+                existing.composerStatus?.gatewayQueuedPrompts.orEmpty()
+            } else {
+                emptyList()
+            }
+            val landed = ComposerStatusState(
+                todos = finishedTodos.orEmpty(),
+                gatewayQueuedPrompts = gatewayQueue,
+            ).takeIf(ComposerStatusState::hasVisibleRows)
             if (existing.progress != null || existing.composerStatus != landed) {
                 cache.upsertSession(existing.copy(progress = null, composerStatus = landed))
             }
         }
+    }
+
+    /**
+     * A visible Gateway queue survives this terminal turn and consumes one row
+     * at the next message.start. Reports whether any row is left to preserve.
+     */
+    private fun armGatewayQueueDrain(durableId: String, runtimeId: String): Boolean {
+        val pending = cache.session(durableId)?.composerStatus?.gatewayQueuedPrompts?.isNotEmpty() == true
+        if (pending) queuedPromptDrainReadyRuntimeIds += runtimeId
+        return pending
+    }
+
+    private fun consumeGatewayQueuedPromptIfReady(durableId: String, runtimeId: String) {
+        if (!queuedPromptDrainReadyRuntimeIds.remove(runtimeId)) return
+        mutateGatewayQueuedPrompts(durableId) { prompts -> prompts.drop(1) }
+    }
+
+    private fun clearGatewayQueuedPrompts(durableId: String, runtimeId: String) {
+        queuedPromptDrainReadyRuntimeIds.remove(runtimeId)
+        mutateGatewayQueuedPrompts(durableId) { emptyList() }
+    }
+
+    /** Rewrite an existing session's Gateway queue rows; an emptied stack drops the group. */
+    private fun mutateGatewayQueuedPrompts(
+        durableId: String,
+        update: (List<ComposerGatewayQueuedPrompt>) -> List<ComposerGatewayQueuedPrompt>,
+    ) {
+        val existing = cache.session(durableId) ?: return
+        val status = existing.composerStatus ?: return
+        val next = status.copy(gatewayQueuedPrompts = update(status.gatewayQueuedPrompts))
+            .takeIf(ComposerStatusState::hasVisibleRows)
+        if (next != status) cache.upsertSession(existing.copy(composerStatus = next))
     }
 
     private fun setComposerTodos(
@@ -2269,6 +2408,7 @@ internal class LiveGatewaySessionRepository(
         addAll(optimisticCorrectionsByRuntime.keys)
         addAll(progressRuntimeIds)
         addAll(composerStatusRuntimeIds)
+        addAll(queuedPromptDrainReadyRuntimeIds)
     }
 
     private fun settleConnectionLoss(durableId: String, runtimeId: String) {
@@ -2492,6 +2632,21 @@ internal class LiveGatewaySessionRepository(
             composerStatus = if (preserveProgress) existing.composerStatus else null,
             activityStartedAtMillis = activityStartedAtMillis,
         ) ?: parsed.copy(status = status, activityStartedAtMillis = activityStartedAtMillis)
+    }
+
+    private fun SessionSummary.withGatewayQueueProjection(
+        projection: LiveSessionProjection,
+        runtimeId: String,
+    ): SessionSummary {
+        val prompts = listOfNotNull(
+            projection.queuedUser?.let { text -> ComposerGatewayQueuedPrompt("gateway-queued-$runtimeId", text) },
+        )
+        val status = (composerStatus ?: ComposerStatusState())
+            .copy(gatewayQueuedPrompts = prompts)
+            .takeIf(ComposerStatusState::hasVisibleRows)
+        if (status == composerStatus) return this
+        if (status != null) composerStatusRuntimeIds += runtimeId
+        return copy(composerStatus = status)
     }
 
     private fun runtimeEventRevision(runtimeId: String): RuntimeEventRevision =
@@ -3096,6 +3251,7 @@ private data class LiveSessionProjection(
     val running: Boolean?,
     val status: SessionStatus?,
     val inflight: InflightProjection?,
+    val queuedUser: String?,
     val hasAuthoritativeState: Boolean,
 ) {
     val retainedFailure: Boolean
@@ -3108,11 +3264,16 @@ private val EMPTY_LIVE_SESSION_PROJECTION = LiveSessionProjection(
     running = null,
     status = null,
     inflight = null,
+    queuedUser = null,
     hasAuthoritativeState = false,
 )
 
 private fun parseLiveSessionProjection(root: JsonObject, fallbackTime: Long): LiveSessionProjection {
     val inflightRoot = root["inflight"] as? JsonObject
+    val queuedUser = (root["queued"] as? JsonObject)
+        ?.string("user")
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
     val corrections = (inflightRoot?.get("corrections") as? JsonArray).orEmpty().mapNotNull { item ->
         (item as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf(String::isNotEmpty)
     }
@@ -3140,7 +3301,8 @@ private fun parseLiveSessionProjection(root: JsonObject, fallbackTime: Long): Li
         running = root.boolean("running"),
         status = root.status(),
         inflight = inflight,
-        hasAuthoritativeState = "running" in root || "status" in root || "inflight" in root,
+        queuedUser = queuedUser,
+        hasAuthoritativeState = "running" in root || "status" in root || "inflight" in root || "queued" in root,
     )
 }
 
@@ -3225,7 +3387,7 @@ private fun todoListActive(todos: List<ComposerTodoStatus>): Boolean =
 
 private fun ComposerStatusState.hasVisibleRows(): Boolean =
     goal != null || todos.isNotEmpty() || subagents.isNotEmpty() || backgroundProcesses.isNotEmpty() ||
-        previewArtifacts.isNotEmpty() || isCompacting
+        previewArtifacts.isNotEmpty() || gatewayQueuedPrompts.isNotEmpty() || isCompacting
 
 private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<TranscriptEntry> {
     val index = indexOfFirst { it.id == entry.id }
@@ -3271,6 +3433,7 @@ private const val MAX_SESSION_BRANCH = 512
 private const val MAX_SESSION_CWD = 4_096
 private const val FINISHED_TODO_LINGER_MILLIS = 4_000L
 private const val PROJECT_PREVIEW_LIMIT = 3
+private const val MAX_GATEWAY_QUEUE_ROWS = 8
 private const val MISSING_RPC_METHOD_CODE = -32601
 private const val UNSUPPORTED_CAPABILITY_CODE = 4010
 private const val MAX_GATEWAY_ERROR_CLASSIFICATION_CHARS = 4_096

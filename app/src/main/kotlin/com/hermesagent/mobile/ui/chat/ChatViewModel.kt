@@ -1019,17 +1019,21 @@ internal class ChatViewModel(
         // Desktop parity (isTargetSessionBusy): the selected session's own
         // authoritative status gates its send — other sessions' turns never do.
         val activeIsIdle = cache.session(sessionId)?.status == SessionStatus.Idle
-        if ((prompt.isEmpty() && ready.isEmpty()) || (!queued && !activeIsIdle) ||
-            repository.connectionState.value.status != GatewayConnectionStatus.Connected
-        ) return
         if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) {
             notice.value = "Still reading an attachment — try again in a moment."
+            return
+        }
+        pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.ReviewRequired)?.safeMessage }?.let { warning ->
+            notice.value = warning
             return
         }
         pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.Refused)?.safeMessage }?.let { refusal ->
             notice.value = refusal
             return
         }
+        if ((prompt.isEmpty() && ready.isEmpty()) || (!queued && !activeIsIdle) ||
+            repository.connectionState.value.status != GatewayConnectionStatus.Connected
+        ) return
         // Resolve every payload once: a chip whose bytes are already gone
         // fails the whole send before the draft is cleared.
         val readyPayloads = ready.map { draft ->
@@ -1040,7 +1044,6 @@ internal class ChatViewModel(
             draft to payload
         }
 
-        clearDraftAfterDelivery(sessionId)
         // Payload bytes are claimed for the wire but chips stay visible until
         // the Gateway answers, so a failed or timed-out stage keeps its
         // retryable draft instead of evaporating.
@@ -1060,6 +1063,18 @@ internal class ChatViewModel(
             )
         }
         val submittedPrompt = prompt
+        val claimedIds = outgoing.mapTo(mutableSetOf()) { it.draft.occurrenceId }
+        // Claim before launching the first RPC. This single-owner fence turns
+        // a second Queue tap into a status notice instead of a duplicate
+        // Gateway mutation.
+        attachments.value = attachments.value.map { attachment ->
+            if (attachment.occurrenceId in claimedIds) {
+                attachment.copy(stage = AttachmentStage.Staging("Uploading"))
+            } else {
+                attachment
+            }
+        }
+        clearDraftAfterDelivery(sessionId)
         notice.value = null
         viewModelScope.launch {
             try {
@@ -1069,19 +1084,14 @@ internal class ChatViewModel(
                     queued = queued,
                     attachments = outgoing.map { it.outgoing },
                 )
-                if (result == GatewaySubmitOutcome.Accepted) {
-                    outgoing.forEach { claimed ->
-                        attachmentPayloads.remove(claimed.draft.occurrenceId)?.fill(0)
-                        attachmentMimes.remove(claimed.draft.occurrenceId)
-                        attachmentThumbnails.value =
-                            attachmentThumbnails.value - claimed.draft.occurrenceId
-                    }
-                    attachments.value = attachments.value.filterNot { it.durableSessionId == sessionId }
-                } else {
-                    markAttachmentsUnsent(sessionId)
-                }
                 when (result) {
                     GatewaySubmitOutcome.Accepted -> {
+                        claimedIds.forEach { occurrenceId ->
+                            attachmentPayloads.remove(occurrenceId)?.fill(0)
+                            attachmentMimes.remove(occurrenceId)
+                        }
+                        attachmentThumbnails.value = attachmentThumbnails.value - claimedIds
+                        attachments.value = attachments.value.filterNot { it.durableSessionId == sessionId }
                         composerHistoryController.reset(sessionId)
                         invalidateHistory()
                         if (composer.value.mutation is ComposerMutationUiState.Deferred) {
@@ -1091,40 +1101,68 @@ internal class ChatViewModel(
                         if (projectId != null) runCatching { repository.refreshProjects() }
                     }
                     GatewaySubmitOutcome.Ambiguous -> {
+                        markAttachmentsReviewRequired(sessionId)
+                        if (outgoing.isNotEmpty()) restoreSubmittedDraft(sessionId, submittedPrompt)
                         notice.value = "This message may have been sent. Check this session and wait for Hermes before trying again."
                     }
                 }
             } catch (cancelled: CancellationException) {
-                markAttachmentsUnsent(sessionId)
+                markAttachmentsReviewRequired(sessionId)
                 throw cancelled
             } catch (failure: Throwable) {
-                markAttachmentsUnsent(sessionId)
+                val rpcFailure = failure as? GatewayRpcException
+                val ambiguous = rpcFailure?.requestMayHaveBeenAccepted == true
+                if (ambiguous) {
+                    markAttachmentsReviewRequired(sessionId)
+                } else {
+                    markAttachmentsUnsent(sessionId)
+                }
                 // Stage refusals arrive as GatewayRpcException whose message is
                 // already sanitized for people; anything else stays generic.
-                val safe = (failure as? GatewayRpcException)?.message
-                    ?.takeIf(String::isNotBlank)
-                notice.value = safe ?: "The message was not sent. Reconnect to the Gateway and try again."
-                if (draftSnapshot[sessionId].isNullOrBlank()) {
-                    rememberDraft(sessionId, submittedPrompt)
-                    if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = submittedPrompt
-                    viewModelScope.launch { persistDraft(sessionId, submittedPrompt) }
+                val safe = rpcFailure?.message?.takeIf(String::isNotBlank)
+                notice.value = if (ambiguous) {
+                    safe ?: "This message may have been sent. Check this session before trying again."
+                } else {
+                    safe ?: "The message was not sent. Reconnect to the Gateway and try again."
+                }
+                if (!ambiguous || outgoing.isNotEmpty()) {
+                    restoreSubmittedDraft(sessionId, submittedPrompt)
                 }
             }
         }
     }
 
+    private fun restoreSubmittedDraft(sessionId: String, submittedPrompt: String) {
+        if (submittedPrompt.isBlank() || !draftSnapshot[sessionId].isNullOrBlank()) return
+        rememberDraft(sessionId, submittedPrompt)
+        if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = submittedPrompt
+        viewModelScope.launch { persistDraft(sessionId, submittedPrompt) }
+    }
+
     /** A failed or timed-out submit returns its drafts to Ready for retry. */
-    private fun markAttachmentsUnsent(sessionId: String) {
+    private fun markAttachmentsUnsent(sessionId: String) =
+        resettleInFlightAttachments(sessionId, AttachmentStage::Ready)
+
+    /** A possibly accepted mutation stays visible but is never silently retryable. */
+    private fun markAttachmentsReviewRequired(sessionId: String) =
+        resettleInFlightAttachments(sessionId) { bytes ->
+            AttachmentStage.ReviewRequired(
+                byteCount = bytes,
+                safeMessage = "May have been sent — check the session, then remove and attach again if needed.",
+            )
+        }
+
+    /**
+     * Move this session's claimed chips out of the in-flight stages. The true
+     * size comes back from the retained payload: future reservations read it,
+     * and a zeroed count would let the aggregate bound be exceeded on retry.
+     */
+    private fun resettleInFlightAttachments(sessionId: String, settled: (Int) -> AttachmentStage) {
         attachments.value = attachments.value.map { draft ->
             if (draft.durableSessionId != sessionId) return@map draft
             when (draft.stage) {
-                // Restore the true size from the retained payload: future
-                // reservations read it, and a zeroed count would let the
-                // aggregate bound be exceeded on the retry path.
-                is AttachmentStage.Staging, is AttachmentStage.Staged -> {
-                    val bytes = attachmentPayloads[draft.occurrenceId]?.size ?: 0
-                    draft.copy(stage = AttachmentStage.Ready(bytes))
-                }
+                is AttachmentStage.Staging, is AttachmentStage.Staged ->
+                    draft.copy(stage = settled(attachmentPayloads[draft.occurrenceId]?.size ?: 0))
                 else -> draft
             }
         }
@@ -1152,6 +1190,7 @@ internal class ChatViewModel(
                 val stage = draft.stage
                 when (stage) {
                     is AttachmentStage.Ready -> stage.byteCount.toLong()
+                    is AttachmentStage.ReviewRequired -> stage.byteCount.toLong()
                     is AttachmentStage.Reading, is AttachmentStage.Staging ->
                         AttachmentPolicy.MAX_BYTES_PER_ATTACHMENT.toLong()
                     else -> 0L

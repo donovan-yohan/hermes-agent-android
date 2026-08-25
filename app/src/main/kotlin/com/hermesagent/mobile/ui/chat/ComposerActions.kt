@@ -12,6 +12,7 @@ enum class ComposerPrimaryAction { None, Send, Redirect, Stop, SendNext, Queue }
 data class ComposerActionState(
     val primary: ComposerPrimaryAction,
     val showQueueSecondary: Boolean = false,
+    val showStopSecondary: Boolean = false,
 )
 
 /**
@@ -39,7 +40,10 @@ internal fun composerActionState(
             // Attachments cannot ride a redirect into a live tool result. The
             // Gateway queues the whole payload for the next turn instead.
             when {
-                hasAttachments -> ComposerActionState(ComposerPrimaryAction.Queue)
+                hasAttachments -> ComposerActionState(
+                    ComposerPrimaryAction.Queue,
+                    showStopSecondary = true,
+                )
                 hasText -> ComposerActionState(ComposerPrimaryAction.Redirect, showQueueSecondary = true)
                 else -> ComposerActionState(ComposerPrimaryAction.Stop)
             }

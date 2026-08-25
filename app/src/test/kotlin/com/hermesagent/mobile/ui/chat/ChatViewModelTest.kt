@@ -1269,6 +1269,33 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `busy attachment has one in-flight owner across repeated Queue taps`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect once")
+        repository.submitGate = CompletableDeferred()
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+        assertEquals(1, repository.submitAttempts)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Staging)
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+        assertEquals(1, repository.submitAttempts)
+
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
     fun `busy attachment rejection keeps text and bytes ready for one safe retry`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -1404,6 +1431,7 @@ class ChatViewModelTest {
         var createdWorkspace: String? = null
         var failSubmit = false
         var submitGate: CompletableDeferred<Unit>? = null
+        var submitAttempts = 0
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
         var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
         val redirects = mutableListOf<Pair<String, String>>()
@@ -1544,6 +1572,7 @@ class ChatViewModelTest {
             queued: Boolean,
             attachments: List<OutgoingAttachment>,
         ): GatewaySubmitOutcome {
+            submitAttempts += 1
             submitGate?.await()
             if (failSubmit) error("fixture failure")
             queuedSubmissions += durableId to queued
@@ -1767,9 +1796,10 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `failed attachment submit keeps drafts retryable and surfaces the refusal`() = runTest(dispatcher) {
+    fun `ambiguous attachment submit keeps the caption and blocks automatic retry`() = runTest(dispatcher) {
         collectState()
         runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
         viewModel.openAttachmentStream = { "hello gateway".toByteArray().inputStream() }
         viewModel.attachmentReadDispatcher = dispatcher
         viewModel.addAttachmentFromGrant("content://fixture/g", "notes.txt", "text/plain")
@@ -1778,12 +1808,18 @@ class ChatViewModelTest {
 
         viewModel.setDraft("with a file")
         runCurrent()
-        viewModel.submit()
+        viewModel.performComposerPrimaryAction()
         runCurrent()
 
         val chips = viewModel.uiState.value.composer.runtime.attachments
         assertEquals(1, chips.size)
-        assertTrue(chips.single().stage is AttachmentStage.Ready)
+        assertTrue(chips.single().stage is AttachmentStage.ReviewRequired)
+        assertEquals("with a file", viewModel.uiState.value.draft)
         assertTrue(viewModel.uiState.value.notice!!.contains("may have been sent"))
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+        assertEquals(1, repository.submitAttempts)
+        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
     }
 }

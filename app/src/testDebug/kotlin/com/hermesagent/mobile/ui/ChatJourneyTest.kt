@@ -323,6 +323,7 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Message Hermes").performTextInput("inspect this")
         compose.waitForIdle()
 
+        compose.onNodeWithContentDescription("Stop generating").assertIsEnabled()
         compose.onNodeWithContentDescription("Queue message").assertIsEnabled().performClick()
         compose.waitForIdle()
 
