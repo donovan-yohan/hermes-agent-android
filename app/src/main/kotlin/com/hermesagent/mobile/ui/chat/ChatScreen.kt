@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -55,6 +59,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hermesagent.mobile.data.attachments.ImageRefLines
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
@@ -234,6 +239,11 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var showJump by remember(state.activeSession?.id) { mutableStateOf(false) }
     var hasUnseenActivity by remember(state.activeSession?.id) { mutableStateOf(false) }
+    // This remains UI-local. The authoritative transcript supplies the turn
+    // owning the visible response; following only describes this reader's
+    // viewport. Desktop: apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355
+    // @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
+    var following by remember(state.activeSession?.id) { mutableStateOf(true) }
 
     // Landing on a session jumps to the tail; growth after that only follows a
     // reader who is still there. Scrolling up is deliberate, and yanking
@@ -255,7 +265,6 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
         }.first { ready -> ready }
 
         listState.scrollToTail()
-        var following = true
         var observedTranscript = transcript.value
 
         snapshotFlow {
@@ -310,6 +319,95 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
                 onClick = { scope.launch { listState.scrollToTail() } },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
             )
+        }
+        // Scrolling changes firstVisibleItemIndex at every item boundary. Read
+        // it inside a derived state so only the pin — not the whole pane —
+        // recomposes, and only when the *owning* turn actually changes.
+        val prompt by remember(listState, state.transcript) {
+            derivedStateOf {
+                val entries = state.transcript
+                val firstVisible = listState.firstVisibleItemIndex.coerceAtMost(entries.lastIndex)
+                if (entries.getOrNull(firstVisible) is UserTurn) return@derivedStateOf null
+                for (index in firstVisible - 1 downTo 0) {
+                    (entries[index] as? UserTurn)?.let { return@derivedStateOf it }
+                }
+                null
+            }
+        }
+        if (prompt != null) {
+            val owner = prompt!!
+            val promptBody = remember(owner.id, owner.text) {
+                ImageRefLines.split(owner.text).first.takeIf(String::isNotBlank)
+            }
+            if (promptBody != null) {
+                // Capture the id and the transcript holder, never the whole
+                // ChatUiState: this lambda must keep one identity across every
+                // scroll recomposition.
+                val onReturn = remember(state.activeSession?.id, owner.id) {
+                    {
+                        val currentIndex = transcript.value.indexOfFirst { it.id == owner.id }
+                        if (currentIndex >= 0) {
+                            following = false
+                            scope.launch { listState.scrollToItem(currentIndex) }
+                        }
+                    }
+                }
+                StickyCurrentPrompt(
+                    promptId = owner.id,
+                    body = promptBody,
+                    onClick = onReturn,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Mobile form of Desktop's sticky human-turn continuity. It retains the user
+ * bubble grammar and returns to its source without owning transcript state.
+ * Desktop: `apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355`,
+ * `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:28-52,321-367`, and
+ * `apps/desktop/src/styles.css:1538-1569` @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
+ */
+@Composable
+private fun StickyCurrentPrompt(
+    promptId: String,
+    body: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    var overflowing by remember(promptId, body) { mutableStateOf(false) }
+    val fade = remember(tokens.userBubble) {
+        Brush.verticalGradient(0f to tokens.userBubble.copy(alpha = 0f), 1f to tokens.userBubble)
+    }
+    Box(
+        modifier = modifier.fillMaxWidth().background(tokens.chatSurface).padding(
+            start = HermesTheme.spacing.pageInset,
+            end = HermesTheme.spacing.pageInset,
+            top = HermesTheme.spacing.turnGap,
+            bottom = HermesTheme.spacing.turnGap,
+        ),
+    ) {
+        UserTurnBubble(
+            body = body,
+            contentDescription = "Return to current prompt",
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .clipToBounds(),
+            maxLines = 4,
+            overflow = TextOverflow.Clip,
+            onClick = onClick,
+            onClickLabel = "Return to current prompt",
+            onTextLayout = { overflowing = it.hasVisualOverflow },
+        ) {
+            // The clipped fourth line reads as a hard cut without this; the
+            // fade is what says "there is more of this prompt above".
+            if (overflowing) {
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(18.dp).background(fade))
+            }
         }
     }
 }
@@ -580,7 +678,6 @@ private fun ChatUiState.composerStatus(): String = notice ?: when {
     connection.status == GatewayConnectionStatus.NeedsAttention ->
         connection.message ?: "Open Gateways to reconnect"
     connection.status == GatewayConnectionStatus.Disconnected -> "Open Gateways to connect"
-    liveStatusText != null -> liveStatusText.orEmpty()
     isStreaming -> "Hermes is responding — tap ■ to stop"
     else -> "Connected to Gateway"
 }

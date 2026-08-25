@@ -75,7 +75,7 @@ data class SessionSummary(
     val activityStartedAtMillis: Long? = null,
 )
 
-/** A transient backend progress notice; one value per session, never a transcript row. */
+/** A transient backend notice rendered at the live turn tail, never stored as transcript content. */
 data class SessionProgress(
     val kind: String,
     val text: String,
@@ -92,7 +92,6 @@ data class ComposerStatusState(
     val subagents: List<ComposerSubagentStatus> = emptyList(),
     val backgroundProcesses: List<ComposerBackgroundProcess> = emptyList(),
     val previewArtifacts: List<ComposerPreviewArtifact> = emptyList(),
-    val genericProgress: SessionProgress? = null,
     val isCompacting: Boolean = false,
 )
 

@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -21,6 +23,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -58,9 +61,9 @@ class TranscriptFollowTest {
         compose.waitForIdle()
     }
 
-    private fun chatState(transcript: List<TranscriptEntry>, streaming: Boolean) = ChatUiState(
+    private fun chatState(transcript: List<TranscriptEntry>, streaming: Boolean, sessionId: String = SESSION) = ChatUiState(
         activeSession = SessionSummary(
-            id = SESSION,
+            id = sessionId,
             title = "Streaming turn",
             preview = "",
             lastActiveAtMillis = NOW,
@@ -136,6 +139,89 @@ class TranscriptFollowTest {
         compose.waitForIdle()
 
         compose.onNodeWithText("Paragraph 60 of the reply.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `pinned prompt follows visible turn and excludes image references`() {
+        val first = "first prompt"
+        val second = "second prompt"
+        fun long(prefix: String) = (1..80).joinToString("\n\n") { "$prefix paragraph $it." }
+        launch(listOf(
+            UserTurn("u1", first, NOW), AssistantTurn("a1", long("first"), NOW),
+            UserTurn("u2", "$second\n@image:/synthetic/not-shown.png", NOW),
+            AssistantTurn("a2", long("second"), NOW, streaming = true),
+        ))
+        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("You said: $second").assertIsDisplayed()
+        compose.onNodeWithText("first paragraph 1.").performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("You said: $first").assertIsDisplayed()
+        assertEquals(0, compose.onAllNodes(hasText("@image:/synthetic/not-shown.png"), useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `pin is hidden while source is visible and visible at response tail`() {
+        launch(listOf(UserTurn("u", "visible source", NOW)), streaming = false)
+        compose.onNodeWithContentDescription("You said: visible source").assertIsDisplayed()
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Return to current prompt")).fetchSemanticsNodes().size)
+
+        state = chatState(streamed(80), streaming = true)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Return to current prompt").assertIsDisplayed()
+    }
+
+    @Test
+    fun `pin return disarms follow across later streaming growth`() {
+        val prompt = "return to this exact prompt"
+        state = chatState(listOf(UserTurn("u", prompt, NOW), AssistantTurn("a", (1..80).joinToString("\n\n") { "Initial $it." }, NOW, streaming = true)), true)
+        compose.setContent { HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) { ChatScreen(state, ChatActions(), {}) } }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("You said: $prompt").assertIsDisplayed()
+        state = chatState(listOf(UserTurn("u", prompt, NOW), AssistantTurn("a", (1..160).joinToString("\n\n") { "Later $it." }, NOW, streaming = true)), true)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("You said: $prompt").assertIsDisplayed()
+    }
+
+    @Test
+    fun `session switch and delayed history reset the prompt identity`() {
+        launch(streamed(80))
+        compose.onNodeWithContentDescription("Return to current prompt").assertIsDisplayed()
+        state = chatState(emptyList(), false, "new-session")
+        compose.waitForIdle()
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Return to current prompt")).fetchSemanticsNodes().size)
+
+        // The new session's history may arrive after the empty first frame.
+        // Its pin must resolve its own stable id, never the prior session's.
+        val replacement = "new session delayed prompt"
+        state = chatState(
+            listOf(
+                UserTurn("new-u", replacement, NOW),
+                AssistantTurn("new-a", (1..80).joinToString("\n\n") { "New reply $it." }, NOW, streaming = true),
+            ),
+            true,
+            "new-session",
+        )
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Return to current prompt").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("You said: $replacement").assertIsDisplayed()
+        assertEquals(0, compose.onAllNodes(hasContentDescription("You said: tell me something long")).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `attachment only user prompt omits pin`() {
+        launch(
+            listOf(
+                UserTurn("image", "@image:/synthetic/only.png", NOW),
+                AssistantTurn("reply", (1..80).joinToString("\n\n") { "Reply $it." }, NOW, streaming = true),
+            ),
+        )
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Return to current prompt")).fetchSemanticsNodes().size)
     }
 
     private companion object {

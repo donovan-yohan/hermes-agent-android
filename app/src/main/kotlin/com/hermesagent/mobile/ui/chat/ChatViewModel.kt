@@ -196,7 +196,6 @@ data class ChatUiState(
             activeSession?.status == SessionStatus.Idle &&
             (draft.isNotBlank() || composer.runtime.hasReadyAttachment)
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
-    val liveStatusText: String? get() = activeSession?.progress?.text
 }
 
 /** UI-only chat state over the process-scoped live Gateway repository/cache. */
@@ -1009,7 +1008,10 @@ internal class ChatViewModel(
     }
 
     /** The explicit idle action; a busy action is resolved by [performComposerPrimaryAction]. */
-    fun submit() {
+    fun submit() = submitToGateway(queued = false)
+
+    /** Attachments can use the Gateway's busy queue; the durable local queue remains text-only. */
+    private fun submitToGateway(queued: Boolean) {
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
         val pending = attachments.value.filter { it.durableSessionId == sessionId }
@@ -1017,12 +1019,25 @@ internal class ChatViewModel(
         // Desktop parity (isTargetSessionBusy): the selected session's own
         // authoritative status gates its send — other sessions' turns never do.
         val activeIsIdle = cache.session(sessionId)?.status == SessionStatus.Idle
-        if ((prompt.isEmpty() && ready.isEmpty()) || !activeIsIdle ||
+        if ((prompt.isEmpty() && ready.isEmpty()) || (!queued && !activeIsIdle) ||
             repository.connectionState.value.status != GatewayConnectionStatus.Connected
         ) return
         if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) {
             notice.value = "Still reading an attachment — try again in a moment."
             return
+        }
+        pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.Refused)?.safeMessage }?.let { refusal ->
+            notice.value = refusal
+            return
+        }
+        // Resolve every payload once: a chip whose bytes are already gone
+        // fails the whole send before the draft is cleared.
+        val readyPayloads = ready.map { draft ->
+            val payload = attachmentPayloads[draft.occurrenceId] ?: run {
+                notice.value = "That attachment is no longer available. Remove it and attach it again."
+                return
+            }
+            draft to payload
         }
 
         clearDraftAfterDelivery(sessionId)
@@ -1030,8 +1045,7 @@ internal class ChatViewModel(
         // the Gateway answers, so a failed or timed-out stage keeps its
         // retryable draft instead of evaporating.
         data class Claimed(val draft: ComposerAttachmentDraft, val outgoing: OutgoingAttachment)
-        val outgoing = ready.mapNotNull { draft ->
-            val payload = attachmentPayloads[draft.occurrenceId] ?: return@mapNotNull null
+        val outgoing = readyPayloads.map { (draft, payload) ->
             val mime = attachmentMimes[draft.occurrenceId]
             val encoded = when (draft.kind) {
                 AttachmentKind.Image -> AttachmentEncoding.base64(payload)
@@ -1052,7 +1066,7 @@ internal class ChatViewModel(
                 val result = repository.submit(
                     sessionId,
                     submittedPrompt,
-                    queued = false,
+                    queued = queued,
                     attachments = outgoing.map { it.outgoing },
                 )
                 if (result == GatewaySubmitOutcome.Accepted) {
@@ -1321,6 +1335,7 @@ internal class ChatViewModel(
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             busyKind = state.composer.runtime.busyKind,
             hasText = state.draft.isNotBlank(),
+            hasAttachments = state.composer.runtime.attachments.isNotEmpty(),
             canSend = state.canSend,
             redirectEligible = state.composer.runtime.canRedirect,
             queueCount = state.composer.runtime.queueEntries.size,
@@ -1335,8 +1350,22 @@ internal class ChatViewModel(
         }
     }
 
+    /**
+     * The composer's one Queue entry point, for both the primary tap and the
+     * secondary queue action. Choosing between the Gateway's busy queue and
+     * the text-only durable queue happens here and nowhere else, so the two
+     * routes cannot drift apart.
+     */
     fun queueDraft() {
         val sessionId = activeSessionId.value ?: return
+        if (attachments.value.any { it.durableSessionId == sessionId }) {
+            submitToGateway(queued = true)
+        } else {
+            queueTextDraft(sessionId)
+        }
+    }
+
+    private fun queueTextDraft(sessionId: String) {
         val prompt = draft.value.trim()
         if (prompt.isEmpty() || !queueScopeReady.value) return
         viewModelScope.launch {

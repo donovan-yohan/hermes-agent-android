@@ -10,10 +10,13 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -21,7 +24,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.ui.chat.ChatScreen
@@ -84,6 +90,22 @@ class AccessibilityTest {
     fun `a settled turn announces nothing`() {
         launchChat(streaming = false)
         assertEquals(0, compose.countWithContentDescription(WORKING))
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w700dp-h800dp")
+    fun `transient progress appears once at the live transcript tail`() {
+        launchChat(
+            streaming = true,
+            progress = SessionProgress(kind = "thinking", text = CONTEMPLATING),
+        )
+        state = state.copy(
+            connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
+        )
+        compose.waitForIdle()
+
+        compose.onAllNodesWithText(CONTEMPLATING).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("Composer status").assertCountEquals(0)
     }
 
     // ── Touch targets ─────────────────────────────────────────────────────
@@ -226,8 +248,10 @@ class AccessibilityTest {
 
     // ── Fixtures ──────────────────────────────────────────────────────────
 
-    private fun launchChat(streaming: Boolean) {
-        state = chatState(streaming, markdown = "Working on it.")
+    private fun launchChat(streaming: Boolean, progress: SessionProgress? = null) {
+        state = chatState(streaming, markdown = "Working on it.").let { current ->
+            current.copy(activeSession = current.activeSession?.copy(progress = progress))
+        }
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 ChatScreen(state = state, actions = ChatActions(), onOpenSettings = {})
@@ -298,6 +322,7 @@ class AccessibilityTest {
         const val SESSION = "s-a11y"
         const val NOW = 1_755_600_000_000L
         const val WORKING = "Hermes is working"
+        const val CONTEMPLATING = "Contemplating…"
         val SIX_LINE_DRAFT = (1..6).joinToString("\n") { "Line $it" }
         val MULTILINE_DRAFT = """
             This first line deliberately has enough words to wrap across the full composer width before it ends.

@@ -861,7 +861,7 @@ internal class LiveGatewaySessionRepository(
             if (failure.isUnsupportedGatewayCapability()) {
                 markCapabilityUnsupported(GatewayOptionalCapability.Attachments, connection)
                 GatewayStageOutcome.Unsupported
-            } else if (failure is GatewayRpcException && failure.requestMayHaveBeenAccepted) {
+            } else if (failure.isAmbiguousGatewayMutation()) {
                 GatewayStageOutcome.Ambiguous
             } else {
                 GatewayStageOutcome.Rejected(safeGatewayTerminalError(failure.message ?: "The attachment was refused."))
@@ -888,14 +888,19 @@ internal class LiveGatewaySessionRepository(
         require(prompt.isNotEmpty())
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot()
-        val optimistic = synchronized(stateLock) {
+        // Null means the payload is queued behind this runtime's live turn: it
+        // registers no optimistic state and so has nothing to roll back.
+        val optimistic: OptimisticSubmit? = synchronized(stateLock) {
             ensureCurrent(connection)
-            if (binding.runtimeId in activeRuntimeIds) {
-                throw GatewayRpcException("Hermes is already working in this session.")
-            }
             val currentRuntime = identities.runtimeFor(binding.durableId)
             if (currentRuntime != binding.runtimeId) {
                 throw GatewayRpcException("Hermes did not activate this session.")
+            }
+            if (binding.runtimeId in activeRuntimeIds) {
+                // An explicit queue payload belongs behind the live turn and
+                // must not claim its local ownership.
+                if (queued) return@synchronized null
+                throw GatewayRpcException("Hermes is already working in this session.")
             }
             val now = clock()
             if (unscopedRuntimeId == null) {
@@ -930,31 +935,25 @@ internal class LiveGatewaySessionRepository(
         }
 
         try {
-            connection.client.request(
-                "prompt.submit",
-                buildJsonObject {
-                    put("session_id", JsonPrimitive(binding.runtimeId))
-                    put("text", JsonPrimitive(prompt))
-                    if (queued) put("queued", JsonPrimitive(true))
-                },
-            )
+            requestPromptSubmit(connection, binding.runtimeId, prompt, queued)
             synchronized(stateLock) { ephemeralSessions.remove(binding.durableId) }
             return GatewaySubmitOutcome.Accepted
         } catch (failure: Throwable) {
-            val ambiguous = failure is CancellationException ||
-                (failure is GatewayRpcException && failure.requestMayHaveBeenAccepted)
-            synchronized(stateLock) {
-                // A definite, non-live rejection rolls its own submit back —
-                // not just the runtime that happens to own the event pin.
-                // Ambiguous acknowledgements still keep the optimistic row.
-                val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds
-                if (canRollback) {
-                    releaseRuntimeGuard(binding.runtimeId)
-                    localSubmitStartedAtByRuntime.remove(binding.runtimeId)
-                    liveTurnRuntimeIds.remove(binding.runtimeId)
-                    optimisticUserByRuntime.remove(binding.runtimeId)
-                    cache.setTranscript(binding.durableId, optimistic.transcript)
-                    optimistic.session?.let(cache::upsertSession)
+            val ambiguous = failure is CancellationException || failure.isAmbiguousGatewayMutation()
+            if (optimistic != null) {
+                synchronized(stateLock) {
+                    // A definite, non-live rejection rolls its own submit back —
+                    // not just the runtime that happens to own the event pin.
+                    // Ambiguous acknowledgements still keep the optimistic row.
+                    val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds
+                    if (canRollback) {
+                        releaseRuntimeGuard(binding.runtimeId)
+                        localSubmitStartedAtByRuntime.remove(binding.runtimeId)
+                        liveTurnRuntimeIds.remove(binding.runtimeId)
+                        optimisticUserByRuntime.remove(binding.runtimeId)
+                        cache.setTranscript(binding.durableId, optimistic.transcript)
+                        optimistic.session?.let(cache::upsertSession)
+                    }
                 }
             }
             if (ambiguous) {
@@ -966,6 +965,22 @@ internal class LiveGatewaySessionRepository(
             }
             throw failure
         }
+    }
+
+    private suspend fun requestPromptSubmit(
+        connection: ConnectionSnapshot,
+        runtimeId: String,
+        prompt: String,
+        queued: Boolean,
+    ) {
+        connection.client.request(
+            "prompt.submit",
+            buildJsonObject {
+                put("session_id", JsonPrimitive(runtimeId))
+                put("text", JsonPrimitive(prompt))
+                if (queued) put("queued", JsonPrimitive(true))
+            },
+        )
     }
 
     override suspend fun interrupt(durableId: String) {
@@ -2156,20 +2171,17 @@ internal class LiveGatewaySessionRepository(
         cache.session(durableId)?.let { existing ->
             val progress = SessionProgress(kind, text)
             val previous = existing.composerStatus
-            val status = (previous ?: ComposerStatusState()).let { current ->
-                current.copy(
-                    genericProgress = progress,
-                    isCompacting = when (kind) {
-                        "compacting" -> true
-                        "compacted" -> false
-                        else -> current.isCompacting
-                    },
-                    goal = if (kind == "goal") parseGatewayGoalStatus(text, current.goal) else current.goal,
+            val status = when (kind) {
+                "compacting" -> (previous ?: ComposerStatusState()).copy(isCompacting = true)
+                "compacted" -> previous?.copy(isCompacting = false)
+                "goal" -> (previous ?: ComposerStatusState()).copy(
+                    goal = parseGatewayGoalStatus(text, previous?.goal),
                 )
+                else -> previous
             }
             cache.upsertSession(existing.copy(progress = progress, composerStatus = status))
             progressRuntimeIds += runtimeId
-            composerStatusRuntimeIds += runtimeId
+            if (status != null) composerStatusRuntimeIds += runtimeId
             advanceProgressEventRevision(runtimeId)
         }
     }
@@ -2177,7 +2189,7 @@ internal class LiveGatewaySessionRepository(
     private fun clearProgress(durableId: String, runtimeId: String) {
         progressRuntimeIds.remove(runtimeId)
         cache.session(durableId)?.let { existing ->
-            val status = existing.composerStatus?.copy(genericProgress = null, isCompacting = false)
+            val status = existing.composerStatus?.copy(isCompacting = false)
             if (existing.progress != null || status != existing.composerStatus) {
                 cache.upsertSession(existing.copy(progress = null, composerStatus = status))
             }
@@ -3213,7 +3225,7 @@ private fun todoListActive(todos: List<ComposerTodoStatus>): Boolean =
 
 private fun ComposerStatusState.hasVisibleRows(): Boolean =
     goal != null || todos.isNotEmpty() || subagents.isNotEmpty() || backgroundProcesses.isNotEmpty() ||
-        previewArtifacts.isNotEmpty() || genericProgress != null || isCompacting
+        previewArtifacts.isNotEmpty() || isCompacting
 
 private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<TranscriptEntry> {
     val index = indexOfFirst { it.id == entry.id }

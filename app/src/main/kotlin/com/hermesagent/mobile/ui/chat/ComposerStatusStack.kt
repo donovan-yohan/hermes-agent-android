@@ -164,7 +164,6 @@ fun ComposerStatusStack(
                 }
             }
         }
-        status?.genericProgress?.text?.takeIf(String::isNotBlank)?.let { StatusText(it) }
         if (status?.isCompacting == true) StatusText("Hermes is compacting this session.")
         // Queue is intentionally the final status-stack group so its expanded
         // rows share this bounded scroll region rather than pushing the IME
@@ -183,7 +182,6 @@ internal fun composerStatusGroupCount(
     status?.subagents?.isNotEmpty() == true,
     status?.backgroundProcesses?.isNotEmpty() == true,
     previewCount > 0,
-    !status?.genericProgress?.text.isNullOrBlank(),
     status?.isCompacting == true,
     hasQueue,
 ).count { it }

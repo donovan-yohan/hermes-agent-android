@@ -1030,6 +1030,38 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `busy queued image stages and enters the Gateway queue without stealing live ownership`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        val transcriptBeforeQueue = cache.transcript("durable-a")
+
+        val outcome = repository.submit(
+            "durable-a",
+            "inspect this",
+            queued = true,
+            attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+        )
+
+        assertEquals(GatewaySubmitOutcome.Accepted, outcome)
+        val submits = rpc.calls.filter { it.method == "prompt.submit" }
+        assertEquals(2, submits.size)
+        assertEquals("inspect this", submits.last().params.string("text"))
+        assertTrue(requireNotNull(submits.last().params["queued"]).jsonPrimitive.boolean)
+        assertEquals(transcriptBeforeQueue, cache.transcript("durable-a"))
+        assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+    }
+
+    @Test
     fun `an image-only send asks the desktop fallback question`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -2057,6 +2089,15 @@ class GatewaySessionRepositoryTest {
         runCurrent()
         repository.openSession("durable-a")
 
+        rpc.emit("status.update", "runtime-a", """{"kind":"thinking","text":"Contemplating…"}""")
+        runCurrent()
+        assertEquals("Contemplating…", cache.session("durable-a")?.progress?.text)
+        assertEquals(
+            "transient turn progress belongs in the transcript, not above the composer",
+            null,
+            cache.session("durable-a")?.composerStatus,
+        )
+
         rpc.emit("status.update", "runtime-a", """{"kind":"compacting","text":"Summarizing context…"}""")
         runCurrent()
         assertEquals("compacting", cache.session("durable-a")?.progress?.kind)
@@ -2140,7 +2181,7 @@ class GatewaySessionRepositoryTest {
         )
         runCurrent()
 
-        val rendered = requireNotNull(cache.session("durable-a")?.composerStatus?.genericProgress?.text)
+        val rendered = requireNotNull(cache.session("durable-a")?.progress?.text)
         assertFalse(rendered.contains("sentinel-status-token"))
         assertTrue(rendered.contains("<redacted>"))
         assertTrue(rendered.length <= 240)

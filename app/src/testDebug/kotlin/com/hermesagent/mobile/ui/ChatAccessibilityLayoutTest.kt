@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -68,6 +69,15 @@ class ChatAccessibilityLayoutTest {
 
         compose.onNodeWithContentDescription("Hermes started replying").assertIsDisplayed()
         assertEquals(1, compose.nodesWithContentDescription("Hermes started replying").size)
+    }
+
+    @Test
+    fun `pinned prompt has one concise action and 48dp target`() {
+        val prompt = "Keep this prompt in view"
+        launch(transcript = listOf(UserTurn("u", prompt, NOW), AssistantTurn("a", (1..80).joinToString("\n\n") { "Response $it." }, NOW, streaming = true)))
+        val pinned = compose.onNodeWithContentDescription("Return to current prompt").fetchSemanticsNode()
+        assertEquals(listOf("Return to current prompt"), pinned.config[SemanticsProperties.ContentDescription])
+        assertTrue(pinned.boundsInRoot.height >= 48 * compose.density.density)
     }
 
     @Test

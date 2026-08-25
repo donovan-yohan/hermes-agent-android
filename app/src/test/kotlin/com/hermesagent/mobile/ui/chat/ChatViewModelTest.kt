@@ -906,7 +906,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `active gateway progress reaches the existing composer status surface`() = runTest(dispatcher) {
+    fun `active gateway progress remains available to the transcript projection`() = runTest(dispatcher) {
         collectState()
         runCurrent()
         cache.upsertSession(
@@ -917,7 +917,7 @@ class ChatViewModelTest {
         )
         runCurrent()
 
-        assertEquals("Summarizing context…", viewModel.uiState.value.liveStatusText)
+        assertEquals("Summarizing context…", viewModel.uiState.value.activeSession?.progress?.text)
     }
 
     @Test
@@ -1247,6 +1247,58 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `busy primary queues attachment bytes with text instead of redirecting text alone`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect this")
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertTrue(repository.redirects.isEmpty())
+        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
+        assertEquals("session-a" to "inspect this", repository.submitted.single())
+        assertTrue(repository.submittedAttachments.single().second.single() is OutgoingAttachment.GenericFile)
+        assertEquals("", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `busy attachment rejection keeps text and bytes ready for one safe retry`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect this")
+        repository.failSubmit = true
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+        assertEquals("inspect this", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
+
+        repository.failSubmit = false
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
+        assertEquals("session-a" to "inspect this", repository.submitted.single())
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
     fun `ambiguous redirect is visible but cannot auto retry`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -1372,6 +1424,7 @@ class ChatViewModelTest {
         var pathGate: CompletableDeferred<Unit>? = null
         var lastPathDurableId: String? = null
         val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
+        val queuedSubmissions = mutableListOf<Pair<String, Boolean>>()
         var lastPathCwd: String? = null
         private var slashCalls = 0
 
@@ -1493,6 +1546,7 @@ class ChatViewModelTest {
         ): GatewaySubmitOutcome {
             submitGate?.await()
             if (failSubmit) error("fixture failure")
+            queuedSubmissions += durableId to queued
             if (attachments.isNotEmpty()) submittedAttachments += durableId to attachments
             submitted += durableId to text
             cache.session(durableId)?.let { cache.upsertSession(it.copy(status = SessionStatus.Working)) }

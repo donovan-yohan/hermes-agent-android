@@ -195,6 +195,7 @@ fun Composer(
         connected = connected,
         busyKind = busyKind,
         hasText = draft.isNotBlank(),
+        hasAttachments = attachments.isNotEmpty(),
         canSend = canSend,
         redirectEligible = canRedirect,
         queueCount = queueCount,
