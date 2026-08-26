@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -74,6 +76,21 @@ fun HermesTheme(
     val dark = remember(palette, requestedDark) { rendersDark(palette.background, requestedDark) }
     val tokens = remember(palette, dark) { HermesTokens.from(palette, dark) }
     val typeScale = remember(preset.fonts) { hermesTypeScale(preset.fonts) }
+    // Material 3 seeds selection from `colorScheme.primary`, which is a theme
+    // seed and therefore a different highlight on every skin. Desktop pins one
+    // (`--ui-selection-background`), so the tokens own it here too; the drag
+    // handles are an Android affordance Desktop has no equivalent for and wear
+    // the brand stroke.
+    //
+    // App-wide on purpose, not transcript-only: Desktop's `*::selection` rule
+    // is global (`styles.css:767` @ `45fcaaa5`), so the composer and every
+    // other text field get the same highlight rather than Material's primary.
+    val selectionColors = remember(tokens) {
+        TextSelectionColors(
+            handleColor = tokens.accent,
+            backgroundColor = tokens.selectionBackground,
+        )
+    }
 
     CompositionLocalProvider(
         LocalHermesTokens provides tokens,
@@ -85,8 +102,14 @@ fun HermesTheme(
         MaterialTheme(
             colorScheme = palette.toMaterialColorScheme(dark, tokens),
             typography = typeScale.toMaterialTypography(),
-            content = content,
-        )
+        ) {
+            // Inside MaterialTheme on purpose: it provides its own
+            // LocalTextSelectionColors, and the Hermes one has to win.
+            CompositionLocalProvider(
+                LocalTextSelectionColors provides selectionColors,
+                content = content,
+            )
+        }
     }
 }
 
