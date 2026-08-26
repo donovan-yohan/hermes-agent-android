@@ -133,15 +133,20 @@ class SessionCache {
         }
     }
 
-    /** Connection-owned projections must never cross endpoint/profile generations. */
-    fun clearConnectionScopedFields() {
+    /** Clear connection-owned projections; acknowledged queue rows may bridge a reconnect for resume reconciliation. */
+    fun clearConnectionScopedFields(preserveGatewayQueue: Boolean = false) {
         _state.update { current ->
             val sessions = current.sessions.mapValues { (_, row) ->
+                val composerStatus = if (preserveGatewayQueue) {
+                    row.composerStatus.retainingGatewayQueue()
+                } else {
+                    null
+                }
                 row.copy(
                     progress = null,
                     gitBranch = null,
                     worktreePath = null,
-                    composerStatus = null,
+                    composerStatus = composerStatus,
                     activityStartedAtMillis = null,
                 )
             }

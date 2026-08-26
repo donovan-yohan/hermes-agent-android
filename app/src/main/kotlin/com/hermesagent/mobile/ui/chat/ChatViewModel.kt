@@ -1027,7 +1027,8 @@ internal class ChatViewModel(
             notice.value = warning
             return
         }
-        pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.Refused)?.safeMessage }?.let { refusal ->
+        val refusalWarning = pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.Refused)?.safeMessage }
+        refusalWarning?.let { refusal ->
             notice.value = refusal
         }
         // A locally refused chip is skipped, not fatal: the rest of the
@@ -1077,7 +1078,7 @@ internal class ChatViewModel(
             }
         }
         clearDraftAfterDelivery(sessionId)
-        notice.value = null
+        notice.value = refusalWarning
         viewModelScope.launch {
             try {
                 val result = repository.submit(
@@ -1486,12 +1487,17 @@ internal class ChatViewModel(
             notice.value = "Hermes needs a response. Answer the request above."
             return
         }
+        val hadGatewayQueue = cache.session(sessionId)
+            ?.composerStatus
+            ?.gatewayQueuedPrompts
+            .orEmpty()
+            .isNotEmpty()
         viewModelScope.launch {
             composerQueueController.park(sessionId)
             try {
                 when (repository.requestInterrupt(sessionId)) {
                     com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> {
-                        if (cache.session(sessionId)?.composerStatus?.gatewayQueuedPrompts.orEmpty().isNotEmpty()) {
+                        if (hadGatewayQueue) {
                             notice.value = "Stopped. Any queued next-turn messages were discarded with the turn."
                         }
                     }

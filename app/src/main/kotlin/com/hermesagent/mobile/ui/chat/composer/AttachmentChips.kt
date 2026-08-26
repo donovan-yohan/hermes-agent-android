@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -66,7 +67,7 @@ internal fun AttachmentChipRow(
                 is AttachmentStage.Staged ->
                     "Added" to tokens.textSecondary
                 is AttachmentStage.ReviewRequired ->
-                    stage.safeMessage to tokens.destructive
+                    reviewRequiredStateText(stage) to tokens.destructive
                 is AttachmentStage.Refused ->
                     stage.safeMessage to tokens.destructive
             }
@@ -96,18 +97,24 @@ internal fun AttachmentChipRow(
                         size = 14.sp,
                     )
                 }
-                Text(
-                    draft.displayName,
-                    style = HermesTheme.type.caption,
-                    color = tokens.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    // A LazyRow item has unbounded width, so weight() collapses
-                    // to zero here — an explicit cap is the only thing that
-                    // keeps the name visible on screen.
-                    modifier = Modifier.widthIn(max = 180.dp),
-                )
-                Text(stateText, style = HermesTheme.type.scaffoldMeta, color = stateColor, maxLines = 1)
+                // A LazyRow item has unbounded width. Bound the text column so
+                // review copy cannot push the Remove action off a phone screen.
+                Column(Modifier.widthIn(max = 195.dp)) {
+                    Text(
+                        draft.displayName,
+                        style = HermesTheme.type.caption,
+                        color = tokens.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stateText,
+                        style = HermesTheme.type.scaffoldMeta,
+                        color = stateColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Box(
                     modifier = Modifier
                         // Text lays its glyph at the top of a min-height box.
@@ -140,3 +147,19 @@ private fun formattedByteCount(bytes: Int): String = when {
     bytes >= 1024 -> "${bytes / 1024} KB"
     else -> "$bytes B"
 }
+
+private fun reviewRequiredStateText(stage: AttachmentStage.ReviewRequired): String {
+    val normalizedCaption = stage.submittedText
+        .replace(WHITESPACE, " ")
+        .trim()
+    if (normalizedCaption.isEmpty()) return stage.safeMessage
+    val submittedCaption = if (normalizedCaption.length <= MAX_REVIEW_CAPTION_CHARS) {
+        normalizedCaption
+    } else {
+        normalizedCaption.take(MAX_REVIEW_CAPTION_CHARS - 1) + "…"
+    }
+    return "May have been sent: $submittedCaption · Check the session, then remove and attach again if needed."
+}
+
+private const val MAX_REVIEW_CAPTION_CHARS = 120
+private val WHITESPACE = Regex("\\s+")

@@ -92,7 +92,7 @@ data class ComposerStatusState(
     val subagents: List<ComposerSubagentStatus> = emptyList(),
     val backgroundProcesses: List<ComposerBackgroundProcess> = emptyList(),
     val previewArtifacts: List<ComposerPreviewArtifact> = emptyList(),
-    /** Accepted by the Gateway for a later turn; connection-scoped, never persisted locally. */
+    /** Accepted for a later turn; retained across reconnect, but never persisted locally. */
     val gatewayQueuedPrompts: List<ComposerGatewayQueuedPrompt> = emptyList(),
     val isCompacting: Boolean = false,
 )
@@ -100,7 +100,17 @@ data class ComposerStatusState(
 data class ComposerGatewayQueuedPrompt(
     val id: String,
     val text: String,
+    /** Local identity for the inferred server envelope containing this occurrence. */
+    val gatewayBatchId: String = id,
+    /** Whether another text-only occurrence may still merge into this envelope. */
+    val gatewayBatchMergeable: Boolean = false,
 )
+
+/** Keep only accepted Gateway queue rows; null when no queue remains visible. */
+internal fun ComposerStatusState?.retainingGatewayQueue(): ComposerStatusState? =
+    this?.gatewayQueuedPrompts
+        ?.takeIf(List<ComposerGatewayQueuedPrompt>::isNotEmpty)
+        ?.let { ComposerStatusState(gatewayQueuedPrompts = it) }
 
 enum class ComposerGoalState { Active, Waiting, Paused, Done, None, Unknown }
 

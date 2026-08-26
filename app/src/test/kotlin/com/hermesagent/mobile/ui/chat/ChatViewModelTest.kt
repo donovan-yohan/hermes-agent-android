@@ -29,6 +29,8 @@ import com.hermesagent.mobile.data.prefs.ComposerControlsScope
 import com.hermesagent.mobile.data.prefs.ComposerControlsStore
 import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
 import com.hermesagent.mobile.data.prefs.TransientComposerControlsStore
+import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
+import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
@@ -1325,6 +1327,55 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `definite attachment rejection restores the draft and ready chip for retry`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect this")
+        repository.failSubmit = true
+        runCurrent()
+
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals("inspect this", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
+        assertEquals(
+            "The message was not sent. Reconnect to the Gateway and try again.",
+            viewModel.uiState.value.notice,
+        )
+
+        repository.failSubmit = false
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(2, repository.submitAttempts)
+        assertEquals("", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `accepted text keeps the warning for a refused attachment chip`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { null }
+        viewModel.addAttachmentFromGrant("content://fixture/unreadable", "unreadable.bin", null)
+        runCurrent()
+        val refused = viewModel.uiState.value.composer.runtime.attachments.single().stage as AttachmentStage.Refused
+        viewModel.setDraft("send the healthy text")
+
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(listOf("session-a" to "send the healthy text"), repository.submitted)
+        assertEquals(refused.safeMessage, viewModel.uiState.value.notice)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Refused)
+    }
+
+    @Test
     fun `ambiguous busy attachment restores the caption for review without clobbering a newer draft`() =
         runTest(dispatcher) {
         collectState()
@@ -1335,20 +1386,23 @@ class ChatViewModelTest {
         viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
         viewModel.setDraft("inspect this")
         repository.submitOutcome = GatewaySubmitOutcome.Ambiguous
+        repository.submitGate = CompletableDeferred()
         runCurrent()
 
         viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Staging)
+
+        // The user starts a new thought while the ambiguous result is pending.
+        viewModel.setDraft("newer thought")
+        repository.submitGate?.complete(Unit)
         runCurrent()
 
         assertTrue(repository.redirects.isEmpty())
         assertEquals(1, repository.submitAttempts)
         assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
         assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.ReviewRequired)
-
-        // The user starts a new thought while the ambiguous result is pending;
-        // the editor keeps it, and the chip itself preserves the exact caption.
-        viewModel.setDraft("newer thought")
-        runCurrent()
         assertEquals("newer thought", viewModel.uiState.value.draft)
         val reviewChip = viewModel.uiState.value.composer.runtime.attachments.single().stage as AttachmentStage.ReviewRequired
         assertEquals("inspect this", reviewChip.submittedText)
@@ -1397,6 +1451,32 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals("NeedsInput must not send a second interrupt", listOf("session-a"), repository.interrupted)
+    }
+
+    @Test
+    fun `stop reports discarded Gateway queue after interrupt clears its projection`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val current = requireNotNull(cache.session("session-a"))
+        cache.upsertSession(
+            current.copy(
+                status = SessionStatus.Working,
+                composerStatus = ComposerStatusState(
+                    gatewayQueuedPrompts = listOf(ComposerGatewayQueuedPrompt("queued-1", "after this")),
+                ),
+            ),
+        )
+        repository.clearGatewayQueueOnInterrupt = true
+        runCurrent()
+
+        viewModel.stop()
+        runCurrent()
+
+        assertTrue(cache.session("session-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+        assertEquals(
+            "Stopped. Any queued next-turn messages were discarded with the turn.",
+            viewModel.uiState.value.notice,
+        )
     }
 
     @Test
@@ -1628,9 +1708,19 @@ class ChatViewModelTest {
         }
 
         var interruptOutcome: GatewayInterruptOutcome? = null
+        var clearGatewayQueueOnInterrupt = false
 
         override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
             interrupted += durableId
+            if (clearGatewayQueueOnInterrupt) {
+                cache.session(durableId)?.let { session ->
+                    cache.upsertSession(
+                        session.copy(
+                            composerStatus = session.composerStatus?.copy(gatewayQueuedPrompts = emptyList()),
+                        ),
+                    )
+                }
+            }
             return interruptOutcome ?: when (cache.session(durableId)?.status) {
                 SessionStatus.NeedsInput -> GatewayInterruptOutcome.NeedsInput
                 else -> GatewayInterruptOutcome.Interrupted

@@ -35,6 +35,7 @@ import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.session.retainingGatewayQueue
 import com.hermesagent.mobile.data.ssh.redact
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -293,8 +294,8 @@ internal class LiveGatewaySessionRepository(
     private val optimisticCorrectionsByRuntime = mutableMapOf<String, MutableList<UserTurn>>()
     private val progressRuntimeIds = mutableSetOf<String>()
     private val composerStatusRuntimeIds = mutableSetOf<String>()
-    /** A completed turn with a visible Gateway queue consumes one row at the next message.start. */
-    private val queuedPromptDrainReadyRuntimeIds = mutableSetOf<String>()
+    /** A completed turn consumes its accepted head envelope at the next message.start. */
+    private val queuedPromptDrainReadyBatchIdsByRuntime = mutableMapOf<String, String>()
 
     /** Latest server-reported git branch per durable session, connection-scoped. */
     private val branchByDurableId = mutableMapOf<String, String>()
@@ -352,7 +353,7 @@ internal class LiveGatewaySessionRepository(
                     optimisticCorrectionsByRuntime.clear()
                     progressRuntimeIds.clear()
                     composerStatusRuntimeIds.clear()
-                    queuedPromptDrainReadyRuntimeIds.clear()
+                    queuedPromptDrainReadyBatchIdsByRuntime.clear()
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
@@ -382,7 +383,9 @@ internal class LiveGatewaySessionRepository(
                 reset.ephemeralDurableIds.forEach(cache::removeSession)
                 if (reset.clearProjects) {
                     cache.clearProjects()
-                    cache.clearConnectionScopedFields()
+                    cache.clearConnectionScopedFields(
+                        preserveGatewayQueue = reset.reconnectDurableIds.isNotEmpty(),
+                    )
                 }
                 if (next != null) {
                     eventJob = scope.launch {
@@ -771,6 +774,22 @@ internal class LiveGatewaySessionRepository(
         attachments: List<OutgoingAttachment>,
     ): GatewaySubmitOutcome {
         if (attachments.isEmpty()) return submit(durableId, text, queued)
+        // The per-session lock must cover staging AND submit: the Gateway's
+        // attached_images slot is session-global, so a concurrent text drain
+        // that submitted between our last stage and prompt.submit would claim
+        // the staged images for the wrong prompt.
+        return submitMutexes.withLock(durableId) {
+            submitAttachmentsLocked(durableId, text, queued, attachments)
+        }
+    }
+
+    /** Called only while [submitMutexes] owns this durable session. */
+    private suspend fun submitAttachmentsLocked(
+        durableId: String,
+        text: String,
+        queued: Boolean,
+        attachments: List<OutgoingAttachment>,
+    ): GatewaySubmitOutcome {
         val binding = try {
             ensureRuntime(durableId)
         } catch (failure: Throwable) {
@@ -862,7 +881,14 @@ internal class LiveGatewaySessionRepository(
         val optimisticText = listOf(wireText, imageRefs.joinToString("\n"))
             .filter(String::isNotBlank).joinToString("\n")
         return try {
-            submitInternal(durableId, wireText, optimisticText, queued)
+            submitInternalLocked(
+                binding,
+                connection,
+                wireText,
+                optimisticText,
+                queued,
+                gatewayQueueMergeable = attachments.none { it is OutgoingAttachment.Image },
+            )
         } catch (failure: Throwable) {
             if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
             rejectAfterCleanup(
@@ -925,8 +951,9 @@ internal class LiveGatewaySessionRepository(
         paths: List<String>,
     ): Boolean {
         if (paths.isEmpty()) return true
-        return try {
-            paths.asReversed().forEach { path ->
+        var allDetached = true
+        paths.asReversed().forEach { path ->
+            try {
                 val result = connection.client.request(
                     "image.detach",
                     buildJsonObject {
@@ -937,14 +964,14 @@ internal class LiveGatewaySessionRepository(
                 // `detached:false` means another same-session prompt already
                 // consumed this path: cleanup did not reconcile our slot, so
                 // the caller must not declare the batch retryable.
-                if (result.boolean("detached") != true) return false
+                if (result.boolean("detached") != true) allDetached = false
                 synchronized(stateLock) { ensureCurrent(connection) }
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                allDetached = false
             }
-            true
-        } catch (failure: Throwable) {
-            if (failure is CancellationException) throw failure
-            false
         }
+        return allDetached
     }
 
     override suspend fun submit(
@@ -961,17 +988,18 @@ internal class LiveGatewaySessionRepository(
         wireText: String,
         optimisticText: String,
         queued: Boolean,
-    ): GatewaySubmitOutcome {
-        val prompt = wireText
-        require(prompt.isNotEmpty())
+    ): GatewaySubmitOutcome = submitMutexes.withLock(durableId) {
+        require(wireText.isNotEmpty())
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot()
-        // One stage-plus-submit owner per session: a durable text drain that
-        // slips in here would reach the Gateway's busy handler first and claim
-        // the shared attached_images slot for the wrong prompt.
-        return submitMutexes.withLock(durableId) {
-            submitInternalLocked(binding, connection, wireText, optimisticText, queued)
-        }
+        submitInternalLocked(
+            binding,
+            connection,
+            wireText,
+            optimisticText,
+            queued,
+            gatewayQueueMergeable = true,
+        )
     }
 
     private suspend fun submitInternalLocked(
@@ -980,9 +1008,8 @@ internal class LiveGatewaySessionRepository(
         wireText: String,
         optimisticText: String,
         queued: Boolean,
+        gatewayQueueMergeable: Boolean,
     ): GatewaySubmitOutcome {
-        val durableId = binding.durableId
-        val prompt = wireText
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
         val optimistic: OptimisticSubmit? = synchronized(stateLock) {
@@ -1018,7 +1045,7 @@ internal class LiveGatewaySessionRepository(
             previousSession?.let { session ->
                 cache.upsertSession(
                     session.copy(
-                        preview = prompt,
+                        preview = wireText,
                         lastActiveAtMillis = now,
                         status = SessionStatus.Working,
                         activityStartedAtMillis = now,
@@ -1030,7 +1057,7 @@ internal class LiveGatewaySessionRepository(
         }
 
         try {
-            requestPromptSubmit(connection, binding.runtimeId, prompt, queued)
+            requestPromptSubmit(connection, binding.runtimeId, wireText, queued)
             synchronized(stateLock) {
                 ensureCurrent(connection)
                 if (optimistic == null) {
@@ -1042,13 +1069,21 @@ internal class LiveGatewaySessionRepository(
                         .joinToString("\n")
                         .trim()
                     updateComposerStatus(binding.durableId, binding.runtimeId) { status ->
+                        val occurrenceId = "gateway-queued-${sequence.incrementAndGet()}"
+                        val head = status.gatewayQueuedPrompts.firstOrNull()
+                        // Gateway merges text only while the queue is a single
+                        // text envelope. Once another envelope exists, every
+                        // later arrival remains separate.
+                        val joinsOnlyEnvelope = gatewayQueueMergeable &&
+                            head?.gatewayBatchMergeable == true &&
+                            status.gatewayQueuedPrompts.all { it.gatewayBatchId == head.gatewayBatchId }
                         status.copy(
-                            gatewayQueuedPrompts = (
-                                status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(
-                                    id = "gateway-queued-${sequence.incrementAndGet()}",
-                                    text = displayText,
-                                )
-                            ).takeLast(MAX_GATEWAY_QUEUE_ROWS),
+                            gatewayQueuedPrompts = status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(
+                                id = occurrenceId,
+                                text = displayText,
+                                gatewayBatchId = if (joinsOnlyEnvelope) head.gatewayBatchId else occurrenceId,
+                                gatewayBatchMergeable = gatewayQueueMergeable,
+                            ),
                         )
                     }
                 }
@@ -1710,10 +1745,16 @@ internal class LiveGatewaySessionRepository(
                 reconcileSessionInfo(durableId, runtimeId, running, payload.status())
                 projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
                 // The Gateway emits this settled snapshot after a turn ends but
-                // before its queued next-turn prompt drains; the queue must not
-                // blink out of the composer during that window.
-                val settled = running == false && (settleStoppedSessionInfo(durableId, runtimeId) ||
-                    armGatewayQueueDrain(durableId, runtimeId))
+                // before its queued next-turn prompt drains. Preserve the queue
+                // while settling, then arm it only after settlement succeeds;
+                // a pre-start running=false heartbeat is not a drain edge.
+                val preserveGatewayQueue = running == false && hasGatewayQueuedPrompts(durableId)
+                val settled = running == false && settleStoppedSessionInfo(
+                    durableId,
+                    runtimeId,
+                    preserveGatewayQueue = preserveGatewayQueue,
+                )
+                if (settled && preserveGatewayQueue) armGatewayQueueDrain(durableId, runtimeId)
                 if (running == false && !settled && !isLocallySubmitted(runtimeId)) {
                     releaseRuntimeGuard(runtimeId)
                 }
@@ -2004,7 +2045,11 @@ internal class LiveGatewaySessionRepository(
      * Source: NousResearch/hermes-agent @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
      * apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:663-724.
      */
-    private fun settleStoppedSessionInfo(durableId: String, runtimeId: String): Boolean {
+    private fun settleStoppedSessionInfo(
+        durableId: String,
+        runtimeId: String,
+        preserveGatewayQueue: Boolean = false,
+    ): Boolean {
         val locallySubmitted = isLocallySubmitted(runtimeId)
         val submittedAt = when {
             runtimeId in localSubmitStartedAtByRuntime -> localSubmitStartedAtByRuntime[runtimeId]
@@ -2020,7 +2065,7 @@ internal class LiveGatewaySessionRepository(
         if (locallySubmitted && runtimeId !in liveTurnRuntimeIds && remainingGrace > 0) {
             return false
         }
-        settleStoppedRuntime(durableId, runtimeId)
+        settleStoppedRuntime(durableId, runtimeId, preserveGatewayQueue)
         return true
     }
 
@@ -2077,7 +2122,11 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    private fun settleStoppedRuntime(durableId: String, runtimeId: String) {
+    private fun settleStoppedRuntime(
+        durableId: String,
+        runtimeId: String,
+        preserveGatewayQueue: Boolean = false,
+    ) {
         clearPendingInputsForRuntime(runtimeId)
         assistantByRuntime.remove(runtimeId)?.let { partial ->
             cache.putEntry(durableId, partial.copy(streaming = false, stopped = true))
@@ -2086,7 +2135,11 @@ internal class LiveGatewaySessionRepository(
         sealTools(durableId, runtimeId, ToolState.Stopped)
         optimisticUserByRuntime.remove(runtimeId)
         optimisticCorrectionsByRuntime.remove(runtimeId)
-        clearConnectionScopedStatus(durableId, runtimeId)
+        clearConnectionScopedStatus(
+            durableId,
+            runtimeId,
+            preserveGatewayQueue = preserveGatewayQueue,
+        )
         setStatus(durableId, SessionStatus.Idle)
         releaseRuntimeGuard(runtimeId)
     }
@@ -2359,22 +2412,36 @@ internal class LiveGatewaySessionRepository(
     }
 
     /**
-     * A visible Gateway queue survives this terminal turn and consumes one row
-     * at the next message.start. Reports whether any row is left to preserve.
+     * A visible Gateway queue survives this terminal turn and consumes its head
+     * server envelope at the next message.start. Reports whether a head exists.
      */
     private fun armGatewayQueueDrain(durableId: String, runtimeId: String): Boolean {
-        val pending = cache.session(durableId)?.composerStatus?.gatewayQueuedPrompts?.isNotEmpty() == true
-        if (pending) queuedPromptDrainReadyRuntimeIds += runtimeId
-        return pending
+        val headBatchId = cache.session(durableId)
+            ?.composerStatus
+            ?.gatewayQueuedPrompts
+            ?.firstOrNull()
+            ?.gatewayBatchId
+            ?: return false
+        queuedPromptDrainReadyBatchIdsByRuntime[runtimeId] = headBatchId
+        return true
     }
 
+    private fun hasGatewayQueuedPrompts(durableId: String): Boolean =
+        cache.session(durableId)?.composerStatus?.gatewayQueuedPrompts?.isNotEmpty() == true
+
     private fun consumeGatewayQueuedPromptIfReady(durableId: String, runtimeId: String) {
-        if (!queuedPromptDrainReadyRuntimeIds.remove(runtimeId)) return
-        mutateGatewayQueuedPrompts(durableId) { prompts -> prompts.drop(1) }
+        val headBatchId = queuedPromptDrainReadyBatchIdsByRuntime.remove(runtimeId) ?: return
+        mutateGatewayQueuedPrompts(durableId) { prompts ->
+            if (prompts.firstOrNull()?.gatewayBatchId == headBatchId) {
+                prompts.dropWhile { it.gatewayBatchId == headBatchId }
+            } else {
+                prompts
+            }
+        }
     }
 
     private fun clearGatewayQueuedPrompts(durableId: String, runtimeId: String) {
-        queuedPromptDrainReadyRuntimeIds.remove(runtimeId)
+        queuedPromptDrainReadyBatchIdsByRuntime.remove(runtimeId)
         mutateGatewayQueuedPrompts(durableId) { emptyList() }
     }
 
@@ -2407,7 +2474,7 @@ internal class LiveGatewaySessionRepository(
                         if (status.todos == todos) {
                             // Drop only the todos; a Gateway queue row must not
                             // be deleted by this cleanup timer.
-                            val cleared = status.copy(todos = emptyList()).takeUnless(ComposerStatusState::hasVisibleRows)
+                            val cleared = status.copy(todos = emptyList()).takeIf(ComposerStatusState::hasVisibleRows)
                             cache.upsertSession(existing.copy(composerStatus = cleared))
                         }
                     }
@@ -2442,7 +2509,7 @@ internal class LiveGatewaySessionRepository(
         addAll(optimisticCorrectionsByRuntime.keys)
         addAll(progressRuntimeIds)
         addAll(composerStatusRuntimeIds)
-        addAll(queuedPromptDrainReadyRuntimeIds)
+        addAll(queuedPromptDrainReadyBatchIdsByRuntime.keys)
     }
 
     private fun settleConnectionLoss(durableId: String, runtimeId: String) {
@@ -2454,7 +2521,16 @@ internal class LiveGatewaySessionRepository(
         optimisticCorrectionsByRuntime.remove(runtimeId)
         // A new connection cannot inherit a previous connection's landing
         // timer or completed task list.
-        clearConnectionScopedStatus(durableId, runtimeId, preserveFinishedTodos = false)
+        clearConnectionScopedStatus(
+            durableId,
+            runtimeId,
+            preserveFinishedTodos = false,
+            // Locally projected rows exist only after a successful queued
+            // prompt.submit acknowledgement. Keep those accepted occurrences
+            // for resume reconciliation: the Gateway exposes only its FIFO
+            // head, so dropping the local tail here would be unrecoverable.
+            preserveGatewayQueue = true,
+        )
         cache.session(durableId)?.let { existing ->
             cache.upsertSession(
                 existing.copy(
@@ -2476,6 +2552,7 @@ internal class LiveGatewaySessionRepository(
                 existing.copy(
                     status = SessionStatus.Idle,
                     progress = SessionProgress(RECONCILIATION_FAILED_KIND, RECONCILIATION_FAILED_TEXT),
+                    composerStatus = null,
                 ),
             )
         }
@@ -2663,7 +2740,11 @@ internal class LiveGatewaySessionRepository(
             worktreePath = snapshot.sessionWorktreePath() ?: existing.worktreePath,
             status = status,
             progress = if (preserveProgress) existing.progress else null,
-            composerStatus = if (preserveProgress) existing.composerStatus else null,
+            composerStatus = if (preserveProgress) {
+                existing.composerStatus
+            } else {
+                existing.composerStatus.retainingGatewayQueue()
+            },
             activityStartedAtMillis = activityStartedAtMillis,
         ) ?: parsed.copy(status = status, activityStartedAtMillis = activityStartedAtMillis)
     }
@@ -2675,21 +2756,39 @@ internal class LiveGatewaySessionRepository(
         val local = composerStatus?.gatewayQueuedPrompts.orEmpty()
         val prompts = when {
             // Authoritative absence: the Gateway holds nothing queued.
-            projection.hasAuthoritativeState && projection.queuedUser == null -> emptyList()
-            // The Gateway snapshot exposes only the FIFO head. Keep any local
-            // tail rows the head does not contradict; they stay visible until
-            // a drain or interrupt proves otherwise.
+            projection.hasAuthoritativeQueueState && projection.queuedUser == null -> emptyList()
+            // The Gateway snapshot exposes only the FIFO head. Consecutive
+            // text-only submissions may share that server envelope, so compare
+            // local batch suffixes rather than deduplicating occurrence text.
+            // Gateway may remove a queued self-copy of the live user prompt
+            // from the front of an otherwise merged text envelope.
             else -> {
-                val head = projection.queuedUser?.let { text ->
-                    ComposerGatewayQueuedPrompt("gateway-queued-$runtimeId", text)
-                }
-                if (head != null) {
-                    listOf(head) + local.filter { it.text != head.text }
+                val headText = projection.queuedUser
+                if (headText != null) {
+                    val matchingOccurrenceStart = local.indices.firstOrNull { index ->
+                        val candidate = local[index]
+                        local
+                            .drop(index)
+                            .takeWhile { it.gatewayBatchId == candidate.gatewayBatchId }
+                            .joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text) == headText
+                    }
+                    if (matchingOccurrenceStart != null) {
+                        local.drop(matchingOccurrenceStart)
+                    } else {
+                        val occurrenceId = "gateway-queued-${sequence.incrementAndGet()}"
+                        listOf(
+                            ComposerGatewayQueuedPrompt(
+                                id = occurrenceId,
+                                text = headText,
+                                gatewayBatchId = occurrenceId,
+                            ),
+                        ) + local
+                    }
                 } else {
                     local
                 }
             }
-        }.takeLast(MAX_GATEWAY_QUEUE_ROWS)
+        }
         val status = (composerStatus ?: ComposerStatusState())
             .copy(gatewayQueuedPrompts = prompts)
             .takeIf(ComposerStatusState::hasVisibleRows)
@@ -3302,6 +3401,7 @@ private data class LiveSessionProjection(
     val inflight: InflightProjection?,
     val queuedUser: String?,
     val hasAuthoritativeState: Boolean,
+    val hasAuthoritativeQueueState: Boolean,
 ) {
     val retainedFailure: Boolean
         get() = inflight?.error?.isNotBlank() == true || inflight?.status.equals("error", ignoreCase = true)
@@ -3315,6 +3415,7 @@ private val EMPTY_LIVE_SESSION_PROJECTION = LiveSessionProjection(
     inflight = null,
     queuedUser = null,
     hasAuthoritativeState = false,
+    hasAuthoritativeQueueState = false,
 )
 
 private fun parseLiveSessionProjection(root: JsonObject, fallbackTime: Long): LiveSessionProjection {
@@ -3346,12 +3447,17 @@ private fun parseLiveSessionProjection(root: JsonObject, fallbackTime: Long): Li
         projection.user.isNotBlank() || projection.assistant.isNotBlank() || projection.corrections.isNotEmpty() ||
             projection.streaming || projection.error.isNotBlank() || !projection.status.isNullOrBlank()
     }
+    val hasAuthoritativeState = "running" in root || "status" in root || "inflight" in root || "queued" in root
     return LiveSessionProjection(
         running = root.boolean("running"),
         status = root.status(),
         inflight = inflight,
         queuedUser = queuedUser,
-        hasAuthoritativeState = "running" in root || "status" in root || "inflight" in root || "queued" in root,
+        hasAuthoritativeState = hasAuthoritativeState,
+        // session.resume/session.activate are complete live snapshots and name
+        // their runtime. Partial responses must not erase locally accepted rows
+        // merely because they omit the optional `queued` object.
+        hasAuthoritativeQueueState = "session_id" in root && hasAuthoritativeState,
     )
 }
 
@@ -3482,7 +3588,6 @@ private const val MAX_SESSION_BRANCH = 512
 private const val MAX_SESSION_CWD = 4_096
 private const val FINISHED_TODO_LINGER_MILLIS = 4_000L
 private const val PROJECT_PREVIEW_LIMIT = 3
-private const val MAX_GATEWAY_QUEUE_ROWS = 8
 private const val MISSING_RPC_METHOD_CODE = -32601
 private const val UNSUPPORTED_CAPABILITY_CODE = 4010
 private const val MAX_GATEWAY_ERROR_CLASSIFICATION_CHARS = 4_096
