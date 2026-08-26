@@ -84,6 +84,28 @@ class HermesApplication : Application() {
         com.hermesagent.mobile.ui.chat.GatewayCodingContextProvider { gatewayHttp }
     }
 
+    internal val relayRepository: com.hermesagent.mobile.data.relay.RelayPluginRepository by lazy {
+        com.hermesagent.mobile.data.relay.RelayPluginRepository { gatewayHttp }
+    }
+
+    /**
+     * Availability is process-scoped because it follows the one live Gateway
+     * connection, not a screen. It probes on a connection edge and on an
+     * explicit refresh only — never on a timer — so holding it costs nothing
+     * while no Relay surface is looking.
+     */
+    internal val relayAvailability: com.hermesagent.mobile.data.relay.RelayAvailabilityController by lazy {
+        com.hermesagent.mobile.data.relay.RelayAvailabilityController(
+            scope = appScope,
+            probe = relayRepository,
+            connection = gatewayConnection.state,
+            credentials = object : com.hermesagent.mobile.data.relay.RelayCredentialRefresher {
+                override suspend fun refreshOnce(): Boolean = gatewayConnection.refreshCredential()
+                override suspend fun signInAvailable(): Boolean = gatewayConnection.signInAvailable()
+            },
+        )
+    }
+
     internal val wakeWordRepository: com.hermesagent.mobile.data.voice.WakeWordRepository by lazy {
         com.hermesagent.mobile.data.voice.WakeWordRepository(rpc = { gatewayConnection.client.value })
     }

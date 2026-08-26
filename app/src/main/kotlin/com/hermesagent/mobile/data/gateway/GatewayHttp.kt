@@ -16,12 +16,40 @@ class GatewayHttpRequest(
     val timeoutMillis: Long,
     val query: Map<String, String> = emptyMap(),
     val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /**
+     * Whether a refusal's own explanation is worth reading back.
+     *
+     * Off by default because a refusal body is only useful to a caller that
+     * acts differently on it, and [GatewayHttpResult.Rejected.envelopeBytes]
+     * transfers ownership: a caller that never classifies a refusal would
+     * otherwise pay an extra bounded read and hold a backend-authored buffer
+     * it never wipes.
+     */
+    val captureEnvelope: Boolean = false,
 )
 
 sealed interface GatewayHttpResult {
     /** Response body bytes; ownership transfers to the caller, who must wipe. */
     class Success(val statusCode: Int, val bodyBytes: ByteArray) : GatewayHttpResult
-    class Rejected(val statusCode: Int, val safeMessage: String) : GatewayHttpResult
+
+    /**
+     * A refused hop. [safeMessage] remains the only thing a surface may show.
+     *
+     * [envelopeBytes] is the refusing service's own structured explanation,
+     * read under a tight bound. A status code alone cannot tell "this
+     * credential lapsed" from "no credential at all", or "the backend is down"
+     * from "the backend answered nonsense"; the services that know write it
+     * down, so a caller that must act differently reads their answer instead of
+     * guessing. It is empty when the hop wrote no body, and empty for every
+     * request that did not ask for it via
+     * [GatewayHttpRequest.captureEnvelope]. Ownership transfers to the caller,
+     * who must wipe it, and nothing inside it may be shown verbatim.
+     */
+    class Rejected(
+        val statusCode: Int,
+        val safeMessage: String,
+        val envelopeBytes: ByteArray = ByteArray(0),
+    ) : GatewayHttpResult
 }
 
 /** Consume transferred response ownership and wipe the mutable byte buffer. */
@@ -30,6 +58,14 @@ internal inline fun <T> GatewayHttpResult.Success.consumeBody(block: (ByteArray)
         block(bodyBytes)
     } finally {
         bodyBytes.fill(0)
+    }
+
+/** Consume a refusal envelope and wipe the mutable byte buffer. */
+internal inline fun <T> GatewayHttpResult.Rejected.consumeEnvelope(block: (ByteArray) -> T): T =
+    try {
+        block(envelopeBytes)
+    } finally {
+        envelopeBytes.fill(0)
     }
 
 /**
@@ -98,6 +134,16 @@ internal class OkHttpGatewayHttp(
                             in 500..599 -> "The Gateway could not complete that request. Try again."
                             else -> "Hermes refused that Gateway request."
                         },
+                        // Read only for a caller that asked, and bounded hard
+                        // even then: a refusal envelope is a handful of JSON
+                        // fields, and anything larger is not one. An oversized
+                        // or unreadable body simply yields no envelope, which
+                        // callers already have to handle.
+                        envelopeBytes = if (request.captureEnvelope) {
+                            response.body?.readBounded(MAX_ENVELOPE_BYTES) ?: ByteArray(0)
+                        } else {
+                            ByteArray(0)
+                        },
                     )
                 }
             }
@@ -122,3 +168,6 @@ private fun okhttp3.ResponseBody.readBounded(maxBytes: Long): ByteArray? {
 }
 
 private const val DEFAULT_MAX_RESPONSE_BYTES = 24L * 1024L * 1024L
+
+/** A refusal envelope is a handful of JSON fields; anything larger is not one. */
+private const val MAX_ENVELOPE_BYTES = 8L * 1024L

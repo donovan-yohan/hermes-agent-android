@@ -109,6 +109,65 @@ class GatewayHttpTest {
         assertEquals(401, result.statusCode)
         assertFalse(result.safeMessage.contains("secret"))
     }
+
+    @Test
+    fun `hands a refusal envelope to the caller without ever showing it`() = runTest {
+        val envelope = """{"error":"session_expired","reason":"invalid_or_expired_session"}"""
+        val transport = OkHttpGatewayHttp(
+            clientResponding { request -> response(request, 401, envelope) },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        val result = transport.execute(
+            GatewayHttpRequest("api/config", "GET", null, 100, captureEnvelope = true),
+        ) as GatewayHttpResult.Rejected
+
+        // The caller can classify the refusal...
+        assertEquals(envelope, result.envelopeBytes.toString(Charsets.UTF_8))
+        // ...but the only thing a surface may show still says nothing about it.
+        assertFalse(result.safeMessage.contains("session_expired"))
+        assertFalse(result.safeMessage.contains("reason"))
+
+        // Consuming wipes the buffer: a refusal body outlives nothing.
+        result.consumeEnvelope { }
+        assertTrue(result.envelopeBytes.all { it == 0.toByte() })
+    }
+
+    @Test
+    fun `an oversized refusal body yields no envelope rather than an unbounded read`() = runTest {
+        val transport = OkHttpGatewayHttp(
+            clientResponding { request -> response(request, 500, "x".repeat(64 * 1024)) },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        val result = transport.execute(
+            GatewayHttpRequest("api/config", "GET", null, 100, captureEnvelope = true),
+        ) as GatewayHttpResult.Rejected
+        assertEquals(500, result.statusCode)
+        assertTrue(result.envelopeBytes.isEmpty())
+    }
+
+    @Test
+    fun `a caller that does not classify refusals is handed no envelope to wipe`() = runTest {
+        // The default. Every pre-existing REST caller reads only safeMessage,
+        // so a refusal body it never asked for would be an extra read and an
+        // un-wiped backend buffer it has no reason to hold.
+        val transport = OkHttpGatewayHttp(
+            clientResponding { request ->
+                response(request, 401, """{"error":"session_expired","detail":"secret backend detail"}""")
+            },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        val result = transport.execute(GatewayHttpRequest("api/config", "GET", null, 100))
+            as GatewayHttpResult.Rejected
+        assertEquals(401, result.statusCode)
+        assertTrue(result.envelopeBytes.isEmpty())
+        assertFalse(result.safeMessage.contains("secret"))
+    }
 }
 
 private fun clientResponding(block: (Request) -> Response): OkHttpClient = OkHttpClient.Builder()
