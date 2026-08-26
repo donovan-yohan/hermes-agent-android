@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Placeable
@@ -814,14 +815,19 @@ private fun InlineDiffPanel(
         if (expanded) {
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
+                    // diff-lines.tsx:41-51 @
+                    // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — a changed line
+                    // is its own tint plus its own ink, from the theme's
+                    // green/red and never statusUnread/destructive. Why those
+                    // were the wrong semantic: docs/parity/inline-diff-tokens.md.
                     val background = when {
-                        line.startsWith("+") -> tokens.statusUnread.copy(alpha = 0.10f)
-                        line.startsWith("-") -> tokens.destructive.copy(alpha = 0.10f)
-                        else -> tokens.chatSurface.copy(alpha = 0f)
+                        line.startsWith("+") -> tokens.diffAddedBackground
+                        line.startsWith("-") -> tokens.diffRemovedBackground
+                        else -> Color.Transparent
                     }
                     val foreground = when {
-                        line.startsWith("+") -> tokens.statusUnread
-                        line.startsWith("-") -> tokens.destructive
+                        line.startsWith("+") -> tokens.diffAddedForeground
+                        line.startsWith("-") -> tokens.diffRemovedForeground
                         else -> tokens.textSecondary
                     }
                     Text(

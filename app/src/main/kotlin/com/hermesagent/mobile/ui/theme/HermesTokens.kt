@@ -89,9 +89,14 @@ data class HermesTokens(
     val statusUnread: Color,
     /** Faintest ink the app has: nothing has ever run here. */
     val statusIdle: Color,
-    /** Desktop's `--ui-green` / `--ui-red` coding-status counters. */
+    /** Desktop's `--ui-green` / `--ui-red` counters, which are also the diff add/remove borders. */
     val diffAdded: Color,
     val diffRemoved: Color,
+    /** The tint an added or removed diff line paints behind itself, and the ink it paints on. */
+    val diffAddedBackground: Color,
+    val diffAddedForeground: Color,
+    val diffRemovedBackground: Color,
+    val diffRemovedForeground: Color,
     /** Desktop's amber untracked-only working-tree count. */
     val gitUntracked: Color,
     /** Desktop's fixed `--ui-purple` for merged pull requests. */
@@ -102,7 +107,7 @@ data class HermesTokens(
 ) {
     companion object {
         // Tailwind amber-500 / emerald-500, the two literals Desktop's status
-        // dot uses across every skin (session-status-dot.tsx:33,64).
+        // dot uses across every skin (session-status-dot.tsx:63-65).
         private val Amber500 = Color(0xFFF59E0B)
         private val Emerald500 = Color(0xFF10B981)
 
@@ -136,6 +141,21 @@ data class HermesTokens(
                 knobs.bubbleMix,
                 knobs.neutralCard,
             )
+
+            // styles.css:196-199,528-529 @
+            // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — `--ui-green` /
+            // `--ui-red` are fixed per mode, so a diff reads the same in every
+            // skin. They are also the diff *border* seeds (`:222,225`).
+            val diffAdded = if (dark) Color(0xFF55A583) else Color(0xFF1F8A65)
+            val diffRemoved = if (dark) Color(0xFFE75E78) else Color(0xFFCF2D56)
+
+            // styles.css:223-224,226-227 and `:root.dark:531-532` @ the same
+            // SHA. The background is the seed at 12%; the foreground mixes the
+            // seed toward the page — 70% toward #000 in light, 62% toward #fff
+            // in dark — which is why only the foregrounds need a dark override.
+            fun diffTint(seed: Color) = mixPremultiplied(seed, 12f, Color.Transparent)
+            fun diffInk(seed: Color) =
+                if (dark) mixPremultiplied(seed, 62f, Color.White) else mixPremultiplied(seed, 70f, Color.Black)
 
             return HermesTokens(
                 textPrimary = base.withAlpha(0.94f),
@@ -193,10 +213,12 @@ data class HermesTokens(
                 sessionRunningOutline = if (dark) palette.foreground else accent,
                 statusUnread = Emerald500,
                 statusIdle = base.withAlpha(0.36f),
-                // styles.css:196-199,528-530 @
-                // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732.
-                diffAdded = if (dark) Color(0xFF55A583) else Color(0xFF1F8A65),
-                diffRemoved = if (dark) Color(0xFFE75E78) else Color(0xFFCF2D56),
+                diffAdded = diffAdded,
+                diffRemoved = diffRemoved,
+                diffAddedBackground = diffTint(diffAdded),
+                diffAddedForeground = diffInk(diffAdded),
+                diffRemovedBackground = diffTint(diffRemoved),
+                diffRemovedForeground = diffInk(diffRemoved),
                 // coding-row.tsx:319-324 @ the same pinned SHA.
                 gitUntracked = Amber500,
                 // styles.css:202 + pr-tag.tsx:10-14 @ the pinned SHA.

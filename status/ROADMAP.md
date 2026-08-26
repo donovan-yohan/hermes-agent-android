@@ -209,4 +209,5 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 - [Managed SSH ADR](../docs/adr/0001-ssh-probe-to-tunnel.md)
 - [Composer capability contract](../docs/parity/composer-capabilities.json)
 - [Transcript selection and copy parity](../docs/parity/transcript-selection-copy.md)
+- [Inline diff token parity](../docs/parity/inline-diff-tokens.md)
 - [Theme parity workflow](../docs/workflows/sync-desktop-themes.md)
