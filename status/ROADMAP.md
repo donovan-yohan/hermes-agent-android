@@ -66,6 +66,10 @@ for the Managed SSH lifecycle.
 - Live transcript with Markdown paragraphs, headings, lists, tables, code
   fences, reasoning/tool activity, attached-image thumbnails, and image
   lightbox viewing.
+- Long-press text selection scoped to one turn's prose and to user bubbles,
+  plus a per-reply copy control that writes the reply as rendered plain text.
+  Tool output, inline diffs and reasoning text are not selectable yet, though
+  Desktop selects them; the platform selection toolbar has no device capture.
 - Multiline drafts, history and undo/redo, provider/model selection, the full
   backend reasoning scale through Ultra, fast mode, slash/path/session
   completions, emoji search, and plain-text URL/prompt insertion.
@@ -179,4 +183,5 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 - [Remote Gateway ADR](../docs/adr/0002-shared-remote-gateway.md)
 - [Managed SSH ADR](../docs/adr/0001-ssh-probe-to-tunnel.md)
 - [Composer capability contract](../docs/parity/composer-capabilities.json)
+- [Transcript selection and copy parity](../docs/parity/transcript-selection-copy.md)
 - [Theme parity workflow](../docs/workflows/sync-desktop-themes.md)

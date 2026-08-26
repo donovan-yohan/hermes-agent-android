@@ -128,6 +128,25 @@ class ThemeSemanticParityTest {
     }
 
     @Test
+    fun `the selection highlight is one fixed amber per mode, never the accent`() {
+        // styles.css:382 / :root.dark:564 @ DesktopThemeLedger.PINNED_SHA
+        // (45fcaaa5), where every other expectation in this file is read, pins
+        // color-mix(in srgb, #ffd24a 55%|38%, transparent) for every skin, so a
+        // highlight cannot vanish into a warm palette or follow the brand hue.
+        // Byte-identical at f82f2dba (styles.css:368 / :root.dark:545), the SHA
+        // the rest of the port cites, so the two pins do not disagree here.
+        for ((dark, expected) in listOf(false to "#8cffd24a", true to "#61ffd24a")) {
+            for (preset in BuiltinThemes.ALL) {
+                assertEquals(
+                    "${preset.name}/${if (dark) "dark" else "light"}: --ui-selection-background",
+                    expected,
+                    HermesTokens.from(preset.paletteFor(dark), dark).selectionBackground.argb(),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `running outline uses the desktop bright stop in each rendered mode`() {
         // styles.css:1011-1040,1129-1144 @
         // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: `.arc-row` keeps

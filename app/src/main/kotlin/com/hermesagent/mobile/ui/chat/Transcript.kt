@@ -1,5 +1,8 @@
 package com.hermesagent.mobile.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +29,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,11 +51,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -72,6 +80,7 @@ import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.markdown.InlineSpan
 import com.hermesagent.mobile.data.markdown.MarkdownBlock
 import com.hermesagent.mobile.data.markdown.TableSizing
+import com.hermesagent.mobile.data.markdown.replyPlainText
 import com.hermesagent.mobile.data.markdown.parseMarkdown
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ReasoningActivity
@@ -180,6 +189,14 @@ internal fun UserTurnBubble(
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
+    /**
+     * Whether the message text may be selected. Opt-in, and off for the pinned
+     * prompt: Desktop makes the *message* selectable and leaves chrome
+     * `user-select: none` (`styles.css:1176-1194` @ `f82f2dba`), and the pin is
+     * chrome — it owns a vertical drag and a return tap that a selection
+     * gesture would compete with.
+     */
+    selectable: Boolean = false,
     onClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
     onTextLayout: (TextLayoutResult) -> Unit = {},
@@ -207,15 +224,22 @@ internal fun UserTurnBubble(
         // The parent retains its accessible label and its actions; only this
         // visual leaf is silent so TalkBack does not read the message twice
         // through the merged subtree.
-        Text(
-            body,
-            style = HermesTheme.type.body,
-            color = tokens.textPrimary,
-            maxLines = maxLines,
-            overflow = overflow,
-            onTextLayout = onTextLayout,
-            modifier = Modifier.clearAndSetSemantics {},
-        )
+        val text = @Composable {
+            Text(
+                body,
+                style = HermesTheme.type.body,
+                color = tokens.textPrimary,
+                maxLines = maxLines,
+                overflow = overflow,
+                onTextLayout = onTextLayout,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
+        // Desktop selects the user bubble too, and tests it there
+        // (`user-message-selection.test.ts` @ `f82f2dba`): the bubble is a
+        // button, so the blanket `button { user-select: none }` is undone for
+        // the message text alone (`styles.css:1188-1194`).
+        if (selectable) SelectionContainer { text() } else text()
         overlay()
     }
 }
@@ -234,10 +258,13 @@ private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?) {
         // Desktop parity: no body text, no bubble — the thumbnail stands alone.
         if (bodyText.isNotBlank()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                // Selectable here, never in the pinned copy of the same
+                // prompt: the pin is chrome that owns a drag and a return tap.
                 UserTurnBubble(
                     body = bodyText,
                     contentDescription = "You said: $bodyText",
                     modifier = Modifier.widthIn(max = 320.dp),
+                    selectable = true,
                 )
             }
         }
@@ -399,6 +426,9 @@ private fun FullSizeImageOverlay(
 @Composable
 private fun AssistantProse(turn: AssistantTurn) {
     val blocks = remember(turn.markdown) { parseMarkdown(turn.markdown) }
+    // Projected from the blocks the renderer already parsed, so a streamed
+    // delta costs one CommonMark pass, not two.
+    val reply = remember(blocks) { blocks.replyPlainText() }
 
     Column(
         modifier = Modifier
@@ -416,10 +446,29 @@ private fun AssistantProse(turn: AssistantTurn) {
             ),
         verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap),
     ) {
-        for (block in blocks) {
-            MarkdownBlockView(block)
+        // One container per turn, which is the whole of Desktop's rule ported:
+        // `[data-selectable-text='true']` makes the message subtree — and only
+        // that subtree — `user-select: text` (`styles.css:1176-1180` @
+        // `f82f2dba`). A selection may therefore run across this reply's
+        // paragraphs, lists and fences and stops at its edge; it can never span
+        // two turns or swallow the scaffolding between them, because a sibling
+        // turn is a different container and chrome is in none at all.
+        //
+        // Kept mounted while the turn streams. Compose anchors a selection to
+        // text offsets inside the child layouts, so re-laying the settled
+        // prefix out does not drop it; only the tail block the delta rewrites
+        // can lose an anchor.
+        SelectionContainer {
+            Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
+                for (block in blocks) {
+                    MarkdownBlockView(block)
+                }
+            }
         }
 
+        // Deliberately outside the container. Desktop keeps every control
+        // `user-select: none` (`styles.css:1182-1186`), and a stop notice or a
+        // failure banner is chrome about the turn, not the reply's words.
         if (turn.stopped) {
             ScaffoldRow(label = "Stopped by you")
         }
@@ -427,6 +476,80 @@ private fun AssistantProse(turn: AssistantTurn) {
         turn.error?.let { message ->
             ErrorState(title = "That turn failed", description = message)
         }
+
+        if (reply.isNotBlank()) {
+            ReplyActions(reply)
+        }
+    }
+}
+
+/**
+ * The per-reply action bar.
+ *
+ * Desktop mounts one under every assistant message and reveals it on hover
+ * (`assistant-message.tsx:245-293` @ `f82f2dba`). A phone has no hover, so the
+ * mobile form of "revealed on hover" is "always mounted, always quiet": the
+ * control wears the scaffold meta ink and reads as scaffolding until it is
+ * touched, and the height it occupies is the height Desktop already reserves.
+ *
+ * One deliberate difference. Desktop keeps its bar mounted from the first frame
+ * of a turn; this appears with the reply's first visible text, because a
+ * control that copies nothing is worse than a control that arrives a token
+ * late. The shift is one row, once, at the very start of a turn rather than at
+ * its end — the settle that Desktop's comment is actually protecting.
+ *
+ * It carries the whole reply rather than the current selection, because
+ * drag-selecting several screens of prose with two handles is the one thing a
+ * phone is worse at than a mouse — the system Copy in the selection toolbar
+ * still handles "copy this sentence".
+ */
+@Composable
+private fun ReplyActions(reply: String) {
+    val tokens = HermesTheme.tokens
+    val platformContext = LocalContext.current
+    // Not keyed on the reply: a delta must not silently retract a confirmation
+    // the reader is still looking at. The item key already scopes this to one
+    // turn, and the timer below is what ends it.
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(REPLY_COPY_CONFIRM_MILLIS)
+            copied = false
+        }
+    }
+
+    // The confirmation is the control's own state, not a toast: Android 13+
+    // already raises a system clipboard notice, and a second one would be the
+    // app talking over the platform.
+    val label = if (copied) "Reply copied" else "Copy reply"
+    val copy = remember(reply, platformContext) {
+        {
+            val clipboard = platformContext
+                .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Hermes reply", reply))
+            copied = true
+        }
+    }
+    // Remembered because a CustomAccessibilityAction's equality includes its
+    // lambda: rebuilding the list every recomposition would re-invalidate this
+    // node's semantics on every streamed token.
+    val replyActions = remember(copy) {
+        listOf(CustomAccessibilityAction(label = "Copy reply") { copy(); true })
+    }
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        HermesIconButton(
+            icon = if (copied) HermesIcon.Check else HermesIcon.Copy,
+            contentDescription = label,
+            onClick = copy,
+            tint = if (copied) tokens.taskCompleted else tokens.scaffoldMeta,
+            // The same action offered through TalkBack's actions menu. Compose
+            // only surfaces custom actions on a node a screen reader can focus,
+            // and merging the reply itself into one focusable node would cost
+            // per-paragraph navigation on a long answer, so it rides the
+            // control that is already focusable.
+            modifier = Modifier.semantics { customActions = replyActions },
+        )
     }
 }
 
@@ -824,7 +947,13 @@ private fun MarkdownBlockView(block: MarkdownBlock) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 for (item in block.items) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("•", style = HermesTheme.type.body, color = tokens.textTertiary)
+                        // A browser's `<li>` marker is not a text node, so
+                        // dragging across a list copies the items and not the
+                        // bullets. Match that. Whole-reply copy keeps them —
+                        // see `assistantReplyPlainText`.
+                        DisableSelection {
+                            Text("•", style = HermesTheme.type.body, color = tokens.textTertiary)
+                        }
                         Text(item.annotated(), style = HermesTheme.type.body, color = tokens.textPrimary)
                     }
                 }
@@ -834,7 +963,9 @@ private fun MarkdownBlockView(block: MarkdownBlock) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 block.items.forEachIndexed { index, item ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${block.start + index}.", style = HermesTheme.type.body, color = tokens.textTertiary)
+                        DisableSelection {
+                            Text("${block.start + index}.", style = HermesTheme.type.body, color = tokens.textTertiary)
+                        }
                         Text(item.annotated(), style = HermesTheme.type.body, color = tokens.textPrimary)
                     }
                 }
@@ -1015,7 +1146,11 @@ private fun CodeFenceView(block: MarkdownBlock.CodeFence) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         block.language?.let {
-            Text(it, style = HermesTheme.type.sectionLabel, color = tokens.textTertiary)
+            // The tag labels the fence; it is not part of the code, so it stays
+            // out of a selection that runs through one.
+            DisableSelection {
+                Text(it, style = HermesTheme.type.sectionLabel, color = tokens.textTertiary)
+            }
         }
         Text(
             text = block.code.trimEnd('\n').ifEmpty { " " },
@@ -1057,3 +1192,6 @@ private fun List<InlineSpan>.annotated(): AnnotatedString {
         }
     }
 }
+
+/** How long the copy control holds its confirmation before settling back. */
+private const val REPLY_COPY_CONFIRM_MILLIS = 1_500L

@@ -63,6 +63,16 @@ data class HermesTokens(
     val inlineCodeBackground: Color,
     val inlineCodeForeground: Color,
 
+    /**
+     * The highlight painted behind selected transcript text
+     * (`--ui-selection-background`, `styles.css:382` / `:root.dark:564` @
+     * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`, the theme ledger's pin;
+     * unchanged at `f82f2dba`, `styles.css:368` / `545`). Like inline code, this is a
+     * *fixed* ink per mode rather than the theme accent, so a highlight reads
+     * the same in every skin and never disappears into a warm palette.
+     */
+    val selectionBackground: Color,
+
     // ── Accent ────────────────────────────────────────────────────────────
     /** `--ui-accent`: the brand stroke. Resolved midground, never null. */
     val accent: Color,
@@ -95,6 +105,9 @@ data class HermesTokens(
         // dot uses across every skin (session-status-dot.tsx:33,64).
         private val Amber500 = Color(0xFFF59E0B)
         private val Emerald500 = Color(0xFF10B981)
+
+        /** `--ui-selection-background`'s seed, identical in both modes. */
+        private val SelectionInk = Color(0xFFFFD24A)
 
         /**
          * Resolve a palette into semantic tokens.
@@ -162,6 +175,10 @@ data class HermesTokens(
                 // reads the same in every skin.
                 inlineCodeBackground = mixPremultiplied(knobs.codeInk, knobs.codeBackgroundMix, Color.Transparent),
                 inlineCodeForeground = mixPremultiplied(knobs.codeInk, 88f, Color.Transparent),
+                // styles.css:382 / :root.dark:564 @ the theme ledger's pin —
+                // one amber highlight for every skin, weaker in dark so it
+                // does not blow out.
+                selectionBackground = mixPremultiplied(SelectionInk, knobs.selectionMix, Color.Transparent),
                 accent = accent,
                 // `--dt-accent-foreground` is a palette semantic of its own;
                 // it must not inherit the distinct midground foreground.
@@ -210,6 +227,7 @@ private data class ModeKnobs(
     val neutralCard: Color,
     val codeInk: Color,
     val codeBackgroundMix: Float,
+    val selectionMix: Float,
 ) {
     companion object {
         private val Light = ModeKnobs(
@@ -220,6 +238,7 @@ private data class ModeKnobs(
             neutralCard = Color(0xFFFCFCFC),
             codeInk = Color(0xFF141414),
             codeBackgroundMix = 5f,
+            selectionMix = 55f,
         )
 
         private val Dark = ModeKnobs(
@@ -230,6 +249,7 @@ private data class ModeKnobs(
             neutralCard = Color(0xFF161618),
             codeInk = Color(0xFFFFFFFF),
             codeBackgroundMix = 7f,
+            selectionMix = 38f,
         )
 
         fun of(dark: Boolean): ModeKnobs = if (dark) Dark else Light
