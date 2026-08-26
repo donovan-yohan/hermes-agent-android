@@ -254,6 +254,7 @@ internal class LiveGatewaySessionRepository(
     private val clientFlow: StateFlow<GatewayRpcClient?>,
     private val scope: CoroutineScope,
     imageLoaderFlow: StateFlow<GatewayImageLoader?> = NO_IMAGE_LOADER,
+    private val stopDispatchWaitMillis: Long = STOP_DISPATCH_WAIT_MILLIS,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
@@ -261,7 +262,7 @@ internal class LiveGatewaySessionRepository(
         connection: GatewayConnectionManager,
         scope: CoroutineScope,
         clock: () -> Long = System::currentTimeMillis,
-    ) : this(cache, connection.state, connection.client, scope, connection.imageLoader, clock)
+    ) : this(cache, connection.state, connection.client, scope, connection.imageLoader, clock = clock)
 
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
     override val imageLoader: StateFlow<GatewayImageLoader?> = imageLoaderFlow
@@ -287,6 +288,8 @@ internal class LiveGatewaySessionRepository(
     private val turnDispatchMutexes = KeyedMutex<String>()
     /** Stop invalidates submit transactions that have not reached their final dispatch. */
     private val interruptEpochByDurableId = mutableMapOf<String, Long>()
+    /** Confirmed Stop epochs suppress a queued row whose acknowledgement arrives afterward. */
+    private val confirmedInterruptEpochByDurableId = mutableMapOf<String, Long>()
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
     private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
@@ -796,7 +799,7 @@ internal class LiveGatewaySessionRepository(
         val interrupted = synchronized(stateLock) {
             (interruptEpochByDurableId[durableId] ?: 0L) != expectedEpoch
         }
-        if (interrupted) throw GatewayRpcException("The message was not sent because the turn was stopped.")
+        if (interrupted) throw GatewayRpcException("The message was not sent because Stop was requested.")
     }
 
     /** Called only while [submitMutexes] owns this durable session. */
@@ -1086,7 +1089,9 @@ internal class LiveGatewaySessionRepository(
                 requestPromptSubmit(connection, binding.runtimeId, wireText, queued)
                 synchronized(stateLock) {
                     ensureCurrent(connection)
-                    if (optimistic == null) {
+                    val stoppedBeforeAcknowledgement =
+                        (confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L) > interruptEpoch
+                    if (optimistic == null && !stoppedBeforeAcknowledgement) {
                         // Strip only @image: lines; a @file: ref is real prompt
                         // content and must stay readable in the queue row.
                         val displayText = optimisticText
@@ -1305,7 +1310,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
-        val binding = synchronized(stateLock) {
+        val (binding, interruptEpoch) = synchronized(stateLock) {
             val runtimeId = identities.runtimeFor(durableId) ?: return GatewayInterruptOutcome.NotActive
             val session = cache.session(durableId)
             if (session?.status == SessionStatus.NeedsInput) return GatewayInterruptOutcome.NeedsInput
@@ -1314,28 +1319,47 @@ internal class LiveGatewaySessionRepository(
             if (runtimeId !in activeRuntimeIds) {
                 return GatewayInterruptOutcome.NotActive
             }
-            interruptEpochByDurableId[durableId] = (interruptEpochByDurableId[durableId] ?: 0L) + 1L
-            SessionBinding(durableId, runtimeId)
+            val nextEpoch = (interruptEpochByDurableId[durableId] ?: 0L) + 1L
+            interruptEpochByDurableId[durableId] = nextEpoch
+            SessionBinding(durableId, runtimeId) to nextEpoch
         }
         val connection = try {
             connectionSnapshot()
         } catch (failure: Throwable) {
             return interruptPreflightFailureOutcome(failure)
         }
-        return turnDispatchMutexes.withLock(durableId) {
-            try {
-                val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
-                    .asObject("session.interrupt")
-                val interrupted = result.string("status") == "interrupted"
-                synchronized(stateLock) {
-                    ensureCurrent(connection)
-                    if (interrupted) clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
-                }
-                if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
-            } catch (failure: Throwable) {
-                interruptFailureOutcome(failure)
+        val ordered = turnDispatchMutexes.withLockWithin(durableId, stopDispatchWaitMillis) {
+            requestInterruptNow(binding, connection, interruptEpoch)
+        }
+        // prompt.submit can wait 30 minutes for a lost acknowledgement. Once
+        // its frame has been sent, waiting longer does not improve ordering:
+        // the Gateway reads this later interrupt from the same ordered socket.
+        // Source: NousResearch/hermes-agent @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+        // tui_gateway/ws.py:411-517 (read, dispatch, reply, then next read).
+        return ordered ?: requestInterruptNow(binding, connection, interruptEpoch)
+    }
+
+    private suspend fun requestInterruptNow(
+        binding: SessionBinding,
+        connection: ConnectionSnapshot,
+        interruptEpoch: Long,
+    ): GatewayInterruptOutcome = try {
+        val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
+            .asObject("session.interrupt")
+        val interrupted = result.string("status") == "interrupted"
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            if (interrupted) {
+                confirmedInterruptEpochByDurableId[binding.durableId] = maxOf(
+                    interruptEpoch,
+                    confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L,
+                )
+                clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
             }
         }
+        if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
+    } catch (failure: Throwable) {
+        interruptFailureOutcome(failure)
     }
 
     override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome {
@@ -3456,28 +3480,56 @@ private data class GatewayQueueHeadMatch(
     val foreignSuffix: String? = null,
 )
 
-private fun List<ComposerGatewayQueuedPrompt>.matchGatewayQueueHead(headText: String): GatewayQueueHeadMatch? =
-    indices.firstNotNullOfOrNull { index ->
+private fun List<ComposerGatewayQueuedPrompt>.matchGatewayQueueHead(headText: String): GatewayQueueHeadMatch? {
+    fun batchAt(index: Int): Pair<List<ComposerGatewayQueuedPrompt>, String> {
         val candidate = this[index]
         val batch = drop(index).takeWhile { it.gatewayBatchId == candidate.gatewayBatchId }
-        val batchText = batch.joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text)
-        when {
-            batchText == headText -> GatewayQueueHeadMatch(index, batch.size)
-            batch.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable) &&
+        return batch to batch.joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text)
+    }
+
+    // An earlier mergeable row may be a textual prefix/suffix of the real
+    // authoritative head. Preserve the old exact-match priority globally.
+    indices.firstNotNullOfOrNull { index ->
+        val (batch, batchText) = batchAt(index)
+        if (batchText == headText) GatewayQueueHeadMatch(index, batch.size) else null
+    }?.let { return it }
+
+    // Within one inferred envelope, preserve the earliest matching occurrence
+    // (and therefore the most local ids). Across envelopes, prefer the latest
+    // plausible batch because earlier envelopes may already have drained.
+    val looseMatchesByBatch = linkedMapOf<String, GatewayQueueHeadMatch>()
+    indices.forEach { index ->
+        val (batch, batchText) = batchAt(index)
+        val batchId = this[index].gatewayBatchId
+        if (batchId in looseMatchesByBatch) return@forEach
+        val batchIsMergeable = batch.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable)
+        val surroundedNeedle = "\n\n$batchText\n\n"
+        val surroundedAt = if (batchIsMergeable) headText.indexOf(surroundedNeedle) else -1
+        val match = when {
+            batchIsMergeable &&
                 headText.startsWith("$batchText\n\n") -> GatewayQueueHeadMatch(
                 localStart = index,
                 batchSize = batch.size,
                 foreignSuffix = headText.removePrefix("$batchText\n\n"),
             )
-            batch.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable) &&
+            batchIsMergeable &&
                 headText.endsWith("\n\n$batchText") -> GatewayQueueHeadMatch(
                 localStart = index,
                 batchSize = batch.size,
                 foreignPrefix = headText.removeSuffix("\n\n$batchText"),
             )
+            surroundedAt >= 0 -> GatewayQueueHeadMatch(
+                localStart = index,
+                batchSize = batch.size,
+                foreignPrefix = headText.substring(0, surroundedAt),
+                foreignSuffix = headText.substring(surroundedAt + surroundedNeedle.length),
+            )
             else -> null
         }
+        if (match != null) looseMatchesByBatch[batchId] = match
     }
+    return looseMatchesByBatch.values.maxByOrNull(GatewayQueueHeadMatch::localStart)
+}
 
 private val EMPTY_LIVE_SESSION_PROJECTION = LiveSessionProjection(
     running = null,
@@ -3666,6 +3718,7 @@ private const val RECONCILIATION_FAILED_KIND = "reconcile_failed"
 private const val RECONCILIATION_FAILED_TEXT =
     "This turn could not be checked. Reconnect to the Gateway, then reopen the session."
 private const val PRE_START_FALSE_SETTLE_GRACE_MILLIS = 15_000L
+private const val STOP_DISPATCH_WAIT_MILLIS = 2_000L
 private const val IMAGE_ONLY_PROMPT = "What do you see in this image?"
 private val NO_IMAGE_LOADER: MutableStateFlow<GatewayImageLoader?> = MutableStateFlow(null)
 private val STATUS_WHITESPACE = Regex("\\s+")

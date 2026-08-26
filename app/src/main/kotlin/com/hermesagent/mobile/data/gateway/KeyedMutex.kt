@@ -2,6 +2,7 @@ package com.hermesagent.mobile.data.gateway
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * A mutex per key, created on first use and never removed for the lifetime of
@@ -19,5 +20,25 @@ internal class KeyedMutex<K : Any> {
     suspend fun <T> withLock(key: K, block: suspend () -> T): T {
         val mutex = synchronized(creationLock) { locks.getOrPut(key) { Mutex() } }
         return mutex.withLock { block() }
+    }
+
+    /** Wait at most [timeoutMillis] to acquire this key; never times out [block]. */
+    suspend fun <T : Any> withLockWithin(
+        key: K,
+        timeoutMillis: Long,
+        block: suspend () -> T,
+    ): T? {
+        require(timeoutMillis > 0)
+        val mutex = synchronized(creationLock) { locks.getOrPut(key) { Mutex() } }
+        val acquired = withTimeoutOrNull(timeoutMillis) {
+            mutex.lock()
+            true
+        } == true
+        if (!acquired) return null
+        return try {
+            block()
+        } finally {
+            mutex.unlock()
+        }
     }
 }

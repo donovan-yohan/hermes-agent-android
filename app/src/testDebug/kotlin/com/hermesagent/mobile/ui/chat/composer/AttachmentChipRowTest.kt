@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.attachments.AttachmentKind
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
@@ -46,20 +48,24 @@ class AttachmentChipRowTest {
             }
         }
 
-        compose.onNodeWithText(
-            "May have been sent: inspect this screenshot",
-            substring = true,
-        ).assertIsDisplayed()
-        compose.onNodeWithText(
-            "Check the session, then remove and attach again if needed.",
-            substring = true,
-        ).assertIsDisplayed()
+        val reviewCopy =
+            "May have been sent: inspect this screenshot · Check the session, then remove and attach again if needed."
+        val caption = compose.onNodeWithText(reviewCopy).assertIsDisplayed()
+            .fetchSemanticsNode().boundsInWindow
         val remove = compose.onNodeWithContentDescription("Remove shot.png").assertIsDisplayed()
             .fetchSemanticsNode().boundsInWindow
         val viewport = compose.onRoot().fetchSemanticsNode().boundsInWindow
+        val twoLineHeightWithTolerance = with(compose.density) { 34.sp.toPx() + 1.dp.toPx() }
+        assertTrue(
+            "Review copy $caption exceeds its two-line bound of $twoLineHeightWithTolerance px",
+            caption.height <= twoLineHeightWithTolerance,
+        )
         assertTrue(
             "Remove action $remove is clipped outside the $viewport viewport",
-            remove.left >= viewport.left && remove.right <= viewport.right,
+            remove.left >= viewport.left &&
+                remove.top >= viewport.top &&
+                remove.right <= viewport.right &&
+                remove.bottom <= viewport.bottom,
         )
     }
 }
