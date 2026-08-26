@@ -1000,9 +1000,9 @@ class RemoteGatewayTest {
 
     @Test
     fun `two rotations of the same credential spend the one-time refresh token once`() = runTest {
-        // `/auth/native/refresh` retires the refresh token it is given and
-        // returns a new pair (hermes-agent @
-        // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+        // `/auth/native/refresh` returns a new access/refresh pair and 401s a
+        // refresh token every provider rejects, reuse-detected included
+        // (hermes-agent @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
         // `hermes_cli/dashboard_auth/routes.py:1027-1079`). Two callers that
         // POST the same one-time token race each other into a rejection, and
         // race each other's `store.save`. Load, refresh and save are therefore
@@ -1076,6 +1076,40 @@ class RemoteGatewayTest {
 
         assertFalse("a rotation cannot succeed into a store that was cleared", rotating.await())
         assertEquals(null, store.tokens)
+    }
+
+    @Test
+    fun `a sign-in that lands mid-rotation is not overwritten by the refresh it raced`() = runTest {
+        // Sign-out and interactive sign-in both write to the store outside the
+        // rotation lock, so a rotation can come back off the wire to a store
+        // that is non-null and holds someone else's credential. A store that
+        // merely has *something* in it is not the store this rotation started
+        // from, and writing into it hands the person who just signed in a
+        // credential minted from the identity they signed out of.
+        val gate = CompletableDeferred<Unit>()
+        val api = GatedRefreshApi(gate)
+        val store = MemoryTokenStore(VALID_TOKENS)
+        val authenticator = NativeGatewayAuthenticator(api, store, { _, _ -> OTHER_ACCOUNT_TOKENS })
+
+        val rotating = async { authenticator.refreshAccessToken(PROFILE) }
+        runCurrent()
+        assertEquals("the refresh must already be on the wire", 1, api.refreshCalls)
+
+        // The production sequence, through the real entry points: signing out
+        // clears, and the sign-in that follows takes `ticket()`'s empty-store
+        // branch straight to `store.save` — neither one waits on the rotation.
+        authenticator.signOut(PROFILE)
+        assertEquals("ticket-1", authenticator.ticket(PROFILE, GatewayBrowserLauncher {}))
+        assertEquals(OTHER_ACCOUNT_TOKENS, store.tokens)
+
+        gate.complete(Unit)
+
+        assertFalse(
+            "a rotation cannot succeed into a credential it did not start from",
+            rotating.await(),
+        )
+        assertEquals("the credential the person signed in as", OTHER_ACCOUNT_TOKENS, store.tokens)
+        assertEquals("and no second rotation was spent chasing it", 1, api.refreshCalls)
     }
 
     @Test
@@ -1313,6 +1347,18 @@ class RemoteGatewayTest {
 
         /** Already lapsed, so `ticket()` takes its rotation branch. */
         val EXPIRED_TOKENS = VALID_TOKENS.copy(expiresAt = 0L)
+
+        /**
+         * A different sign-in landing on the same Gateway: a credential no
+         * rotation of [VALID_TOKENS] is entitled to overwrite.
+         */
+        val OTHER_ACCOUNT_TOKENS = GatewayNativeTokens(
+            accessToken = "access-other-account",
+            refreshToken = "refresh-other-account",
+            expiresAt = 30_000L,
+            provider = "fixture-provider",
+            userId = "other-fixture-user",
+        )
 
         /** What one successful rotation hands back — including a *new* refresh token. */
         val ROTATED_TOKENS = GatewayNativeTokens(

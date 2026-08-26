@@ -29,9 +29,9 @@ data class RelayAvailabilityState(
     /**
      * Whether the person holding this device can sign in to the live leg at
      * all, as the connection owner answers it at the moment this state
-     * settled. False on managed SSH and token mode, and false before anything
-     * has been asked — copy that offers a sign-in that does not exist is worse
-     * than copy that offers a reconnect that does.
+     * settled. False on managed SSH, and false before anything has been asked
+     * — copy that offers a sign-in that does not exist is worse than copy that
+     * offers a reconnect that does.
      */
     val signInAvailable: Boolean = false,
 ) {
@@ -51,9 +51,9 @@ interface RelayCredentialRefresher {
     /**
      * Whether a sign-in on this device could supply the live leg's credential.
      *
-     * False on managed SSH and token mode, whose credential lives exactly as
-     * long as the connection: there is no Gateway sign-in on those legs, so a
-     * refusal there has to ask for the reconnect that actually is the remedy.
+     * False on managed SSH, whose credential lives exactly as long as the
+     * connection: there is no Gateway sign-in on that leg, so a refusal there
+     * has to ask for the reconnect that actually is the remedy.
      */
     suspend fun signInAvailable(): Boolean
 }
@@ -353,11 +353,11 @@ class RelayAvailabilityController(
  *
  * [signInAvailable] is [RelayAvailabilityState.signInAvailable] — the
  * connection owner's answer to whether a sign-in on this device exists at all.
- * On managed SSH and token mode it does not, so a refusal asks for the
- * reconnect that is the real remedy rather than for a sign-in the app cannot
- * offer. It has no default on purpose: a surface must take it from the state
- * that owns it, and [RelayAvailabilityState.statusMessage] is the way to do
- * that without threading it by hand.
+ * On managed SSH it does not, so a refusal asks for the reconnect that is the
+ * real remedy rather than for a sign-in the app cannot offer. It has no default
+ * on purpose: a surface must take it from the state that owns it, and
+ * [RelayAvailabilityState.statusMessage] is the way to do that without
+ * threading it by hand.
  */
 fun RelayAvailability.statusMessage(signInAvailable: Boolean): String? = when (this) {
     is RelayAvailability.Available -> null
@@ -368,6 +368,9 @@ fun RelayAvailability.statusMessage(signInAvailable: Boolean): String? = when (t
     RelayAvailability.GatewayUnreachable -> TRANSPORT_DOWN_MESSAGE
 }
 
+/** The line for this state, with the leg fact taken from the state itself. */
+fun RelayAvailabilityState.statusMessage(): String? = availability?.statusMessage(signInAvailable)
+
 /**
  * The lane's own explanation, shown *beside* [statusMessage] and never in place
  * of it — the contract [RelayChannelsStatus.message] is written under.
@@ -377,9 +380,6 @@ fun RelayAvailability.statusMessage(signInAvailable: Boolean): String? = when (t
  * redacted, collapsed to one line, and bounded. Null when the lane said nothing
  * usable.
  */
-/** The line for this state, with the leg fact taken from the state itself. */
-fun RelayAvailabilityState.statusMessage(): String? = availability?.statusMessage(signInAvailable)
-
 fun RelayAvailability.statusDetail(): String? = when (this) {
     is RelayAvailability.Available -> channels.message
         ?.let(::redact)
