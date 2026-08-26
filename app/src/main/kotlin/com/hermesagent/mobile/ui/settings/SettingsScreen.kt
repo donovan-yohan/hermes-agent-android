@@ -13,11 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -26,6 +28,13 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenGateways: () -> Unit,
+    onOpenRelay: () -> Unit,
+    /**
+     * Whether this Gateway exposes the Relay plugin. A Gateway without it is a
+     * fact about that Gateway, so the row stays where Relay lives and says so,
+     * rather than disappearing or raising an error somewhere else.
+     */
+    relayAvailable: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val tokens = HermesTheme.tokens
@@ -42,6 +51,19 @@ fun SettingsScreen(
             traversalIndex = 1f,
             onClick = onOpenGateways,
         )
+        SettingsRow(
+            label = "Relay channels",
+            description = if (relayAvailable) {
+                // Desktop's own launcher wording (hermes-plugin-relay @
+                // `563a8c8`, `desktop/plugin.js:376`).
+                "Channels, transcripts, and messaging live in their own workspace."
+            } else {
+                RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
+            },
+            traversalIndex = 2f,
+            enabled = relayAvailable,
+            onClick = onOpenRelay,
+        )
     }
 }
 
@@ -52,6 +74,7 @@ private fun SettingsRow(
     description: String,
     traversalIndex: Float,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     val tokens = HermesTheme.tokens
     Column {
@@ -59,20 +82,28 @@ private fun SettingsRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = HermesTheme.spacing.touchTarget)
-                .clickable(onClick = onClick)
+                .clickable(enabled = enabled, onClick = onClick)
                 .clearAndSetSemantics {
                     role = Role.Button
                     this.traversalIndex = traversalIndex
                     testTag = "settings-row-${label.lowercase()}"
                     contentDescription = "$label. $description"
-                    onClick(label = "Open $label") {
-                        onClick()
-                        true
+                    if (enabled) {
+                        onClick(label = "Open $label") {
+                            onClick()
+                            true
+                        }
+                    } else {
+                        disabled()
                     }
                 }
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
         ) {
-            Text(text = label, style = HermesTheme.type.sessionTitle, color = tokens.textPrimary)
+            Text(
+                text = label,
+                style = HermesTheme.type.sessionTitle,
+                color = if (enabled) tokens.textPrimary else tokens.textQuaternary,
+            )
             Text(
                 text = description,
                 style = HermesTheme.type.caption,

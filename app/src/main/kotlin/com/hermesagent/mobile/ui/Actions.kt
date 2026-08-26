@@ -66,6 +66,24 @@ class ChatActions(
     val onToggleVoiceMute: () -> Unit = {},
 )
 
+/**
+ * The Relay workspace's own actions. Navigation is deliberately absent: this
+ * surface asks the ViewModel for data and the app shell decides where "back"
+ * and "sign in" go.
+ */
+class RelayActions(
+    val onSelectChannel: (String) -> Unit = {},
+    val onClearSelection: () -> Unit = {},
+    val onRetry: () -> Unit = {},
+    /**
+     * The surface became visible, or stopped being visible. Relay's contract is
+     * a poll rather than a stream, so this is what bounds it: nothing keeps
+     * asking the Gateway once the screen is gone.
+     */
+    val onResume: () -> Unit = {},
+    val onPause: () -> Unit = {},
+)
+
 class AppearanceActions(
     val onSelectTheme: (String) -> Unit = {},
     val onSelectMode: (HermesThemeMode) -> Unit = {},
