@@ -1,15 +1,12 @@
 package com.hermesagent.mobile.data.relay
 
-import com.hermesagent.mobile.data.gateway.GatewayHttp
-import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
 import com.hermesagent.mobile.data.gateway.GatewayHttpResult
-import java.util.ArrayDeque
+import com.hermesagent.mobile.data.gateway.RecordingGatewayHttp
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okio.Buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -653,20 +650,3 @@ private suspend fun postRefusal(statusCode: Int, envelope: String): RelayPostRes
 private fun RelayPostResult.failure(): RelayPostResult.Failed = this as RelayPostResult.Failed
 
 /** Records every request and replays queued results; extra calls get an empty 200. */
-private class RecordingGatewayHttp(private vararg val results: GatewayHttpResult) : GatewayHttp {
-    val requests = mutableListOf<GatewayHttpRequest>()
-    val bodies = mutableListOf<String>()
-    private val queue = ArrayDeque(results.toList())
-
-    override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
-        requests.add(request)
-        val buffer = Buffer()
-        request.body?.writeTo(buffer)
-        bodies.add(buffer.readUtf8())
-        return if (queue.isEmpty()) {
-            GatewayHttpResult.Success(200, ByteArray(0))
-        } else {
-            queue.removeFirst()
-        }
-    }
-}

@@ -55,8 +55,87 @@ class GatewayHttpTest {
         )
 
         val valid = OkHttpGatewayHttp(never, { "https://gateway.example" }, { "Authorization" to "x" })
-        assertTrue(valid.execute(GatewayHttpRequest("api/config", "DELETE", null, 100)) is GatewayHttpResult.Rejected)
+        // A verb this transport does not serve stays refused: widening the set
+        // to DELETE and PATCH did not turn the `when` into a passthrough.
+        assertTrue(valid.execute(GatewayHttpRequest("api/config", "HEAD", null, 100)) is GatewayHttpResult.Rejected)
         assertTrue(valid.execute(GatewayHttpRequest("api/config", "POST", null, 100)) is GatewayHttpResult.Rejected)
+        assertTrue(valid.execute(GatewayHttpRequest("api/config", "PATCH", null, 100)) is GatewayHttpResult.Rejected)
+    }
+
+    @Test
+    fun `sends DELETE with no body and refuses one that carries a body`() = runTest {
+        var captured: Request? = null
+        val transport = OkHttpGatewayHttp(
+            clientResponding { request ->
+                captured = request
+                response(request, 200, """{"ok":true}""")
+            },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        val deleted = transport.execute(
+            GatewayHttpRequest(
+                path = "api/sessions/abc",
+                method = "DELETE",
+                body = null,
+                timeoutMillis = 100,
+                query = mapOf("profile" to "work"),
+            ),
+        ) as GatewayHttpResult.Success
+        assertEquals(200, deleted.statusCode)
+        assertEquals("DELETE", captured?.method)
+        assertEquals("/api/sessions/abc", captured?.url?.encodedPath)
+        assertEquals("work", captured?.url?.queryParameter("profile"))
+        // No body at all, the way GET carries none — not an empty one.
+        assertTrue(captured?.body == null)
+
+        // A DELETE that carries a body is a caller sending scope this route
+        // would ignore; it never reaches the wire.
+        var reached = false
+        val refusing = OkHttpGatewayHttp(
+            clientResponding { request ->
+                reached = true
+                response(request, 200, """{"ok":true}""")
+            },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+        val refused = refusing.execute(
+            GatewayHttpRequest(
+                path = "api/sessions/abc",
+                method = "DELETE",
+                body = "{}".toRequestBody("application/json".toMediaType()),
+                timeoutMillis = 100,
+            ),
+        ) as GatewayHttpResult.Rejected
+        assertTrue(refused.safeMessage.contains("unsupported"))
+        assertFalse(reached)
+    }
+
+    @Test
+    fun `sends PATCH with the caller's body`() = runTest {
+        var captured: Request? = null
+        val transport = OkHttpGatewayHttp(
+            clientResponding { request ->
+                captured = request
+                response(request, 200, """{"ok":true,"title":"Renamed"}""")
+            },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        val result = transport.execute(
+            GatewayHttpRequest(
+                path = "api/sessions/abc",
+                method = "PATCH",
+                body = """{"title":"Renamed"}""".toRequestBody("application/json".toMediaType()),
+                timeoutMillis = 100,
+            ),
+        ) as GatewayHttpResult.Success
+        assertEquals(200, result.statusCode)
+        assertEquals("PATCH", captured?.method)
+        assertEquals(19L, captured?.body?.contentLength())
     }
 
     @Test
