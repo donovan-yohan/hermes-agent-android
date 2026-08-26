@@ -138,10 +138,14 @@ would quietly list the launch profile's rows under a name that is gone. Once
 `profiles.list` has actually answered, a scope it does not contain returns to the
 Gateway's own profile with `That profile is no longer available.`; a roster that
 has not answered leaves the scope alone, because losing it there would take away
-the rail's way out. In the window before that, `_response_profile_name`
+the rail's way out. In the window before that, a listing made under the stale
+scope stamps the launch profile's rows with the missing name, and a later
+listing does not take that stamp back; those rows stay visible in the All view
+and each one is corrected when it is opened, because `_response_profile_name`
 (`server.py:1494-1503`) reports the profile the Gateway really acted under on
-every `session.*` payload, so an authoritative event corrects a stamp that a
-listing guessed.
+`session.info`-shaped payloads (`methods_session.py:157`, `server.py:5688,
+8462`) — not on `session.list` rows. A cold restart is clean, since the
+corrected scope is persisted. Tracked as a follow-up.
 
 **Leaving a profile leaves the project drill-in too.**
 Desktop's project catalog is per-profile because `projects.tree` resolves through
