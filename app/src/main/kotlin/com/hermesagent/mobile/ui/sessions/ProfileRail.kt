@@ -158,17 +158,7 @@ fun ProfileRail(
                 // profile, layers face when showing everything. Leaving a
                 // profile therefore never lands on all.
                 val defaultProfile = state.defaultProfile
-                if (!state.loaded && !state.scope.isDefault) {
-                    // No roster, but the scope says we are somewhere other than
-                    // the Gateway's own profile. Nothing here knows that
-                    // profile's label, so the way back is named canonically.
-                    ProfilePill(
-                        icon = HermesIcon.Home,
-                        contentDescription = switchToProfile(DEFAULT_PROFILE),
-                        active = false,
-                        onClick = { actions.onSelectProfile(DEFAULT_PROFILE) },
-                    )
-                } else if (state.multiProfile && defaultProfile != null) {
+                if (state.multiProfile && defaultProfile != null) {
                     ProfilePill(
                         icon = if (state.scope.isAll) HermesIcon.Layers else HermesIcon.Home,
                         contentDescription = if (state.onDefault) {
@@ -204,6 +194,20 @@ fun ProfileRail(
                         },
                         active = state.onDefault,
                         onClick = { actions.onSelectProfile(defaultProfile.name) },
+                    )
+                } else if (!state.scope.isDefault) {
+                    // No default profile to render — an unanswered roster, or an
+                    // answered one that has none — while the scope says we are
+                    // somewhere other than the Gateway's own profile. This is
+                    // the way back, and it must render in every such state or
+                    // the rail reserves its slot and leaves it empty. Nothing
+                    // here knows the profile's label, so it is named
+                    // canonically.
+                    ProfilePill(
+                        icon = HermesIcon.Home,
+                        contentDescription = switchToProfile(DEFAULT_PROFILE),
+                        active = false,
+                        onClick = { actions.onSelectProfile(DEFAULT_PROFILE) },
                     )
                 }
 

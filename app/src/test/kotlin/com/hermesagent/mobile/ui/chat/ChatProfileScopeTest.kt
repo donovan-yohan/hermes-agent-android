@@ -10,6 +10,7 @@ import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.gateway.ProfileRouting
 import com.hermesagent.mobile.data.prefs.ProfileScopeStore
 import com.hermesagent.mobile.data.profiles.GatewayProfileConnectionState
+import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
 import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.data.profiles.ProfileRepository
 import com.hermesagent.mobile.data.profiles.ProfileRosterState
@@ -204,6 +205,71 @@ class ChatProfileScopeTest {
         runCurrent()
 
         assertEquals(listOf(listOf("work")), repository.listed.map { it.listProfiles })
+    }
+
+    @Test
+    fun `a saved scope the Gateway no longer has falls back to its own profile`() = runTest(dispatcher) {
+        // The Gateway does not refuse an unresolvable profile: it falls back to
+        // the launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so a
+        // stale scope would quietly list the launch profile's rows under a name
+        // that no longer exists. Once the roster has actually answered, it goes.
+        val stale = RecordingProfileScopeStore(ProfileScope(activeProfile = "retired"))
+        val subject = ChatViewModel(
+            cache = cache,
+            repository = repository,
+            profileScopeStore = stale,
+            profileRepository = profiles,
+            clock = { CLOCK },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        assertEquals(DEFAULT_PROFILE, subject.uiState.value.profileRail.scope.activeProfile)
+        assertNull(repository.routing.activeProfile)
+        assertEquals("That profile is no longer available.", subject.uiState.value.notice)
+    }
+
+    @Test
+    fun `a scope the roster has not answered for yet is left alone`() = runTest(dispatcher) {
+        // A roster that never loads must not cost the user their scope — that
+        // is what keeps the rail's way out reachable on a Gateway whose
+        // profiles.list never answers.
+        val unanswered = object : ProfileRepository {
+            override val roster = MutableStateFlow(ProfileRosterState())
+            override suspend fun refreshProfiles(): Boolean = false
+        }
+        val subject = ChatViewModel(
+            cache = cache,
+            repository = repository,
+            profileScopeStore = RecordingProfileScopeStore(ProfileScope(activeProfile = "retired")),
+            profileRepository = unanswered,
+            clock = { CLOCK },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        assertEquals("retired", subject.uiState.value.profileRail.scope.activeProfile)
+        assertNull(subject.uiState.value.notice)
+    }
+
+    @Test
+    fun `the unified view keeps browsing when its target profile retires`() = runTest(dispatcher) {
+        val stale = RecordingProfileScopeStore(
+            ProfileScope(activeProfile = "retired", showAllProfiles = true),
+        )
+        val subject = ChatViewModel(
+            cache = cache,
+            repository = repository,
+            profileScopeStore = stale,
+            profileRepository = profiles,
+            clock = { CLOCK },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+
+        // Only the profile new work targets was stale, not the choice to browse.
+        assertTrue(subject.uiState.value.profileRail.scope.isAll)
+        assertEquals(DEFAULT_PROFILE, subject.uiState.value.profileRail.scope.activeProfile)
     }
 
     @Test

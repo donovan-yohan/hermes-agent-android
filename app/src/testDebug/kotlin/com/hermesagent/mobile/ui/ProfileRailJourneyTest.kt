@@ -2,6 +2,8 @@ package com.hermesagent.mobile.ui
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -32,10 +34,14 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
+import com.hermesagent.mobile.ui.sessions.ProfileRail
+import com.hermesagent.mobile.ui.sessions.ProfileRailActions
+import com.hermesagent.mobile.ui.sessions.ProfileRailState
 import com.hermesagent.mobile.ui.sessions.PROJECT_PROFILE_SCOPE_NOTE
 import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -212,6 +218,41 @@ class ProfileRailJourneyTest {
         compose.waitForIdle()
 
         assertNull(repository.routing.activeProfile)
+    }
+
+    /**
+     * Every rail state that has no default profile to render must still render
+     * the way out. Driven directly, because the ViewModel reconciles a scope an
+     * answered roster does not contain and this state would not hold still.
+     */
+    @Test
+    fun `no default profile to render still leaves the way out of a named scope`() {
+        var rosterLoaded by mutableStateOf(false)
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ProfileRail(
+                    state = ProfileRailState(
+                        profiles = emptyList(),
+                        scope = ProfileScope(activeProfile = "work"),
+                        loaded = rosterLoaded,
+                    ),
+                    actions = ProfileRailActions(),
+                )
+            }
+        }
+        compose.waitForIdle()
+
+        // The rail is visible and reserves a slot for this pill whether or not
+        // the roster answered; a guard narrower than that reserves the slot and
+        // renders nothing into it.
+        compose.onNodeWithContentDescription("Switch to default").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Manage profiles…").assertIsDisplayed()
+
+        rosterLoaded = true
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Switch to default").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Manage profiles…").assertIsDisplayed()
     }
 
     @Test

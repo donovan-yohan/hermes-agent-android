@@ -51,7 +51,9 @@ strength for the active profile (`profile-switcher.tsx:696-698`), while the same
 glyph on a session row, a roster line or the picker is never dimmed at all. The
 `home` face belonging to the default profile alone: a profile that resolves to
 no identity colour still carries its initial, tinted against
-`--ui-text-quaternary` (`profile-glyph.tsx:21-41`). The deterministic hue — same 32-bit
+`--ui-text-quaternary` and written in the ink it inherits from its container —
+`color: color ?? undefined` (`profile-glyph.tsx:21-41`,
+`profile-switcher.tsx:704`), which is `LocalContentColor` here. The deterministic hue — same 32-bit
 rolling hash, same `hsl(h 68% 58%)` — so a profile is the same colour on both
 clients. The default profile having no colour of its own. The toggle and the
 squares staying hidden until a second profile exists, while Manage is always
@@ -77,7 +79,7 @@ including the Default badge living on the detail rather than the row.
 | Roster count in `PanelHeader` subtitle | The overlay header's subtitle | Same place, one header |
 | Per-profile Electron backend pool (`store/profile.ts:303`) | The `profile` parameter on the session RPCs | Electron-only; the parameter is the portable equivalent |
 | Cross-profile union via `GET /api/profiles/sessions?profile=all` | A bounded `session.list` fan-out: the launch profile plus each named profile | The JSON-RPC lane has no twin for that REST route. Rows land in the backend-authoritative cache, which merges and never drops |
-| Session rows carry `profile` (`/api/profiles/sessions`) | Rows out of a named profile's leg are stamped with the profile that was asked for, except any row the launch leg already answered with | `session.list`'s compact rows carry no profile at the pin (`methods_session.py:204-214`). The launch-profile leg is left unstamped, which is the `default` bucket by the filter's own rule (`profile-scope.ts:12`); a profile a `session.info` event named authoritatively is never taken away by a later listing. A profile the Gateway cannot resolve is not an error there — `_profile_home` answers None and `_profile_db` hands back the launch handle (`server.py:1476-1491,1519-1533`) — so the named leg can return the launch profile's own rows, and the fan-out asks the launch profile first precisely so those rows can be left alone |
+| Session rows carry `profile` (`/api/profiles/sessions`) | Rows out of a named profile's leg are stamped with the profile that was asked for, except any row the launch leg already answered with, and nothing at all when a requested launch leg failed | `session.list`'s compact rows carry no profile at the pin (`methods_session.py:204-214`). The launch-profile leg is left unstamped, which is the `default` bucket by the filter's own rule (`profile-scope.ts:12`); a profile a `session.info` event named authoritatively is never taken away by a later listing. A profile the Gateway cannot resolve is not an error there — `_profile_home` answers None and `_profile_db` hands back the launch handle (`server.py:1476-1491,1519-1533`) — so the named leg can return the launch profile's own rows, and the fan-out asks the launch profile first precisely so those rows can be left alone |
 | Per-profile project catalog (its backend resolves `projects.tree` under that profile's home) | The catalog is the launch profile's, and the Project grouping says so in every scope that is not it: the unified view keeps the catalog under that line, a named scope hides it and names the way back | `projects.tree` and `projects.project_sessions` take no `profile` and resolve through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135`). Silently showing one profile's projects while every profile is in view reads as "these are all of them", and showing them under another profile's scope reads as that profile's |
 | Roster is `$profiles`, a renderer atom | `ProfileRosterCache`, with the same epoch guard | Same invariant, this app's authority model |
 | `plug` pill beside Manage deep-linking to the Gateways page while only one connection exists (`profile-switcher.tsx:334-341`) | Not ported | Gateway identity is a separate surface here: PR #76 owns the connections registry and its switcher at the sidebar head. A second route to it from the foot would give this app two answers to "where do I change Gateway" |
@@ -126,6 +128,21 @@ profile with no control to leave it is a trap Desktop cannot have, because its
 rail only exists inside a connected app. With no roster to name the default
 profile's label, that one control is named canonically — `Switch to default`.
 
+**A persisted scope the Gateway does not have falls back rather than being sent.**
+Desktop's scope follows a live gateway it just opened, so it cannot name a
+profile that does not exist.
+*Reason:* this app persists the scope, and the Gateway does not refuse an
+unresolvable name — `_profile_home` answers None and `_profile_db` hands back the
+launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so a stale scope
+would quietly list the launch profile's rows under a name that is gone. Once
+`profiles.list` has actually answered, a scope it does not contain returns to the
+Gateway's own profile with `That profile is no longer available.`; a roster that
+has not answered leaves the scope alone, because losing it there would take away
+the rail's way out. In the window before that, `_response_profile_name`
+(`server.py:1494-1503`) reports the profile the Gateway really acted under on
+every `session.*` payload, so an authoritative event corrects a stamp that a
+listing guessed.
+
 **Leaving a profile leaves the project drill-in too.**
 Desktop's project catalog is per-profile because `projects.tree` resolves through
 that profile's `HERMES_HOME`.
@@ -172,6 +189,15 @@ Not deviations — things this slice does not ship, stated rather than hidden.
   (once unnamed, once named), which is a wasted request rather than a wrong
   answer: nothing here knows the launch profile's name, because `session.list`
   does not report it.
+- **A launch profile that is also a roster profile keeps no stamp in the unified
+  view.** The fan-out asks the launch profile first with no parameter, so its
+  rows are left unstamped and land in the `default` bucket — even on a Gateway
+  launched under a profile the roster also lists by name. The rows are all
+  present and the filter agrees with itself; only the per-row tag reads
+  `Profile: default` rather than that profile's name. Naming it would take
+  either a `profile_name` on `session.list`'s compact rows, which the pin does
+  not send (`methods_session.py:204-214`), or a second request purely to learn
+  the launch profile's own name.
 - **Profile-scoped projects.** The project catalog stays the launch profile's;
   see the adaptation table. The Project grouping states that outside the default
   scope rather than listing another profile's projects.

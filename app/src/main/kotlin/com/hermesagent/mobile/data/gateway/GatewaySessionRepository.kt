@@ -469,8 +469,11 @@ internal class LiveGatewaySessionRepository(
         val profiles = synchronized(stateLock) { profileRouting }.listProfiles.distinct().ifEmpty { listOf(null) }
         var firstFailure: Throwable? = null
         var answered = false
-        // Ids the launch-profile leg answered with, in this refresh only.
+        // Ids the launch-profile leg answered with, in this refresh only, and
+        // whether it answered at all.
         val launchRowIds = mutableSetOf<String>()
+        val launchLegRequested = profiles.any { it == null }
+        var launchLegAnswered = false
         for (profile in profiles) {
             val result = try {
                 connection.client.request(
@@ -509,7 +512,15 @@ internal class LiveGatewaySessionRepository(
             // them would move them under an owner that does not exist and no
             // later refresh would take it back.
             val rows = if (profile == null) {
+                launchLegAnswered = true
                 parsed.mapTo(launchRowIds, SessionSummary::id)
+                parsed
+            } else if (launchLegRequested && !launchLegAnswered) {
+                // The leg that would have told us which rows are the launch
+                // profile's failed. Without it there is no way to tell a
+                // fallback answer from a real one, so nothing is stamped:
+                // an unstamped row reads as the launch profile's, which is
+                // recoverable, while a wrong owner is not.
                 parsed
             } else {
                 parsed.map { row ->
