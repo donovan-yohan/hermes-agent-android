@@ -30,6 +30,8 @@ import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.gateway.ConnectionsUiState
 import com.hermesagent.mobile.ui.gateway.GatewayScreen
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
+import com.hermesagent.mobile.ui.profiles.ProfilesScreen
+import com.hermesagent.mobile.ui.profiles.profileCount
 import com.hermesagent.mobile.ui.relay.RelayScreen
 import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
@@ -42,7 +44,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Chat is home. Settings has two short child surfaces, so a saved destination
  * is sufficient without a navigation graph.
  */
-enum class HermesDestination { Chat, Settings, Appearance, Gateways, Relay }
+enum class HermesDestination { Chat, Settings, Appearance, Gateways, Relay, Profiles }
 
 @Composable
 fun HermesApp(
@@ -72,6 +74,7 @@ fun HermesApp(
                 state = chatState,
                 actions = chatActions,
                 onOpenSettings = { destination = HermesDestination.Settings },
+                onOpenProfiles = { destination = HermesDestination.Profiles },
                 sidebarHeader = {
                     ConnectionSwitcherBar(
                         state = connectionsState,
@@ -80,6 +83,18 @@ fun HermesApp(
                     )
                 },
             )
+
+            // "Manage profiles…" is a sidebar affordance, so its back goes home
+            // rather than through Settings.
+            HermesDestination.Profiles -> OverlayScaffold(
+                title = "Profiles",
+                subtitle = chatState.profiles.profiles.size
+                    .takeIf { chatState.profiles.loaded && it > 0 }
+                    ?.let(::profileCount),
+                onBack = onBack,
+            ) {
+                ProfilesScreen(chatState.profiles)
+            }
 
             HermesDestination.Settings -> OverlayScaffold(
                 title = "Settings",
@@ -189,6 +204,7 @@ internal fun OverlayScaffold(
 internal fun HermesDestination.backDestination(): HermesDestination = when (this) {
     HermesDestination.Chat -> HermesDestination.Chat
     HermesDestination.Settings -> HermesDestination.Chat
+    HermesDestination.Profiles -> HermesDestination.Chat
     HermesDestination.Appearance,
     HermesDestination.Gateways,
     HermesDestination.Relay,

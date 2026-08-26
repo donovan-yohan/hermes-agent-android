@@ -133,6 +133,17 @@ class HermesApplication : Application() {
     internal val sessionRepository: LiveGatewaySessionRepository by lazy {
         LiveGatewaySessionRepository(cache, gatewayConnection, appScope)
     }
+
+    /**
+     * The profile roster follows the one live Gateway connection, so it is
+     * process-scoped like the session cache. `profiles.list` is only ever asked
+     * on a connection edge or an explicit refresh — never on a timer.
+     */
+    internal val profileRepository: com.hermesagent.mobile.data.profiles.ProfileRepository by lazy {
+        com.hermesagent.mobile.data.profiles.GatewayProfileRepository(
+            rpc = { gatewayConnection.client.value },
+        )
+    }
     internal val composerQueueController: ComposerQueueController by lazy {
         ComposerQueueController(
             store = composerQueueStore,

@@ -15,6 +15,7 @@ Phase 2 ships both connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../data/ssh/` | sshj transport/opener/probe, destination parser, TOFU policy, redaction | SSH, destinations, host keys, secrets |
 | `app/src/main/kotlin/.../data/connections/` | Saved connections registry, dedupe/display rules, the connection switch | Adding, editing, removing or switching a saved Gateway |
 | `app/src/main/kotlin/.../data/gateway/` | Remote lifecycle, HTTP/JSON-RPC connection, live session repository, network monitor | Gateway startup, ownership, forwarding, sessions, live turns |
+| `app/src/main/kotlin/.../data/profiles/` | Hermes profile roster, identity colour, active scope, session-RPC routing | Which profile the sidebar is in, or what a session RPC is scoped to |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
 | `status/` | Current shipping status, limitations, and roadmap direction | Checking what works now or remains deferred |
@@ -144,3 +145,4 @@ calendar-shaped.
 | `docs/adr/0001-ssh-probe-to-tunnel.md` | Managed SSH transport, remote ownership, Gateway readiness, and restart limitation |
 | `.chalk/README.md` | chalkbag source-of-truth rules |
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |
+| `docs/parity/profile-switcher.md` | Profile rail, active-profile scope, and the read-only roster: pin, adaptation, deviations |

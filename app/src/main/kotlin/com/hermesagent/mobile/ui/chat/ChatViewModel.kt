@@ -49,6 +49,7 @@ import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayImageLoader
+import com.hermesagent.mobile.data.gateway.ProfileRouting
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
@@ -63,7 +64,20 @@ import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.prefs.ComposerControlsScope
 import com.hermesagent.mobile.data.prefs.ComposerControlsStore
 import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
+import com.hermesagent.mobile.data.prefs.ProfileScopeStore
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
+import com.hermesagent.mobile.data.prefs.TransientProfileScopeStore
+import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
+import com.hermesagent.mobile.data.profiles.GatewayProfileConnectionState
+import com.hermesagent.mobile.data.profiles.NoProfileRepository
+import com.hermesagent.mobile.data.profiles.ProfileRepository
+import com.hermesagent.mobile.data.profiles.ProfileRosterState
+import com.hermesagent.mobile.data.profiles.ProfileScope
+import com.hermesagent.mobile.data.profiles.filterSessionsByProfileScope
+import com.hermesagent.mobile.data.profiles.normalizeProfileKey
+import com.hermesagent.mobile.data.profiles.sessionListProfiles
+import com.hermesagent.mobile.ui.profiles.ProfilesUiState
+import com.hermesagent.mobile.ui.sessions.ProfileRailState
 import com.hermesagent.mobile.data.prefs.SidebarViewStore
 import com.hermesagent.mobile.data.prefs.TransientSidebarViewStore
 import com.hermesagent.mobile.data.session.ProjectSummary
@@ -86,6 +100,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -173,6 +188,12 @@ data class ChatUiState(
     val projects: List<ProjectSummary> = emptyList(),
     val projectsAvailable: Boolean? = null,
     val sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
+    /** The foot rail: this Gateway's profiles and the scope the sidebar is in. */
+    val profileRail: ProfileRailState = ProfileRailState(),
+    /** False while the sidebar is scoped to a profile the project catalog is not. */
+    val projectsInProfileScope: Boolean = true,
+    /** The read-only roster behind "Manage profiles…". */
+    val profiles: ProfilesUiState = ProfilesUiState(),
     val selectedProject: ProjectSummary? = null,
     val projectLoading: Boolean = false,
     val activeSession: SessionSummary? = null,
@@ -215,6 +236,9 @@ internal class ChatViewModel(
     private val composerHistoryController: ComposerHistoryController =
         ComposerHistoryController(cache, TransientComposerHistoryBrowseStore()),
     private val codingContextProvider: CodingContextProvider = CodingContextProvider.Unavailable,
+    /** Saved profile scope. Declared late so existing positional callers keep working. */
+    private val profileScopeStore: ProfileScopeStore = TransientProfileScopeStore(),
+    private val profileRepository: ProfileRepository = NoProfileRepository,
     /** Reads happen off Main; tests inject the virtual scheduler. */
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -229,6 +253,8 @@ internal class ChatViewModel(
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
+    /** UI-only authority, restored from and saved to a preference. */
+    private val profileScope = MutableStateFlow(ProfileScope())
     private val composer = MutableStateFlow(ComposerUiState())
     /** Engine-owned voice state; contains no media bytes. */
     private val voice = MutableStateFlow<VoiceUiState>(VoiceUiState.Idle)
@@ -242,6 +268,7 @@ internal class ChatViewModel(
     private val createdProjectBySession = mutableMapOf<String, String>()
     private var navigationGeneration = 0L
     private var sidebarGroupingGeneration = 0L
+    private var profileScopeGeneration = 0L
     private var choseInitialSession = false
     private var previousStatuses = emptyMap<String, SessionStatus>()
     private var draftSnapshot = linkedMapOf<String, String>()
@@ -251,6 +278,8 @@ internal class ChatViewModel(
     private var draftRevision = 0L
     private var draftWrite: Job? = null
     private var composerScope: ComposerControlsScope? = null
+    /** The Hermes profile half of the queue scope; null while on the Gateway's own. */
+    private var composerQueueProfile: String? = null
     private var newDraftPreference: NewDraftComposerPreference? = null
     /** A delayed store snapshot cannot replace a choice made in this scope. */
     private var newDraftPreferenceTouched = false
@@ -312,9 +341,9 @@ internal class ChatViewModel(
                         notice,
                         selectedProjectId,
                         projectLoadingId,
-                        sidebarGrouping,
-                    ) { connection, message, projectId, loadingId, grouping ->
-                        NavigationState(connection, message, projectId, loadingId, grouping)
+                        combine(sidebarGrouping, profileScope, profileRepository.roster, ::SidebarViewState),
+                    ) { connection, message, projectId, loadingId, sidebarView ->
+                        NavigationState(connection, message, projectId, loadingId, sidebarView)
                     },
                     localComposerState,
                 ) { navigation, local -> navigation.copy(localComposer = local) },
@@ -333,20 +362,36 @@ internal class ChatViewModel(
         // the later navigation event cannot create a blank intermediate frame.
         val displayedActiveId = activeId?.let { cacheState.rehomes[it] ?: it }
         val active = displayedActiveId?.let(cacheState.sessions::get)
-        val selectedProject = navigation.projectId?.let(cacheState.projects.projects::get)
-        val scopedSessions = selectedProject?.id
-            ?.let { cacheState.projects.memberships[it].orEmpty() }
-            ?.mapNotNull(cacheState.sessions::get)
-            ?: cacheState.sessions.values.toList()
-        val projects = if (selectedProject == null) {
+        // `projects.tree` and `projects.project_sessions` resolve through the
+        // Gateway's own HERMES_HOME and take no profile
+        // (`tui_gateway/methods_config.py:108-132,135`), so the project catalog
+        // belongs to the launch profile. A named scope must not browse it as if
+        // it were that profile's.
+        val profileScopeState = navigation.sidebarView.profileScope
+        val projectsInScope = profileScopeState.isAll || profileScopeState.isDefault
+        val selectedProject = navigation.projectId
+            ?.takeIf { projectsInScope }
+            ?.let(cacheState.projects.projects::get)
+        // The sidebar shows one profile at a time; the unified view shows every
+        // profile's rows (`apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`).
+        // The cache keeps every row it has ever been told about either way.
+        val scopedSessions = filterSessionsByProfileScope(
+            selectedProject?.id
+                ?.let { cacheState.projects.memberships[it].orEmpty() }
+                ?.mapNotNull(cacheState.sessions::get)
+                ?: cacheState.sessions.values.toList(),
+            navigation.sidebarView.profileScope.key,
+        )
+        val projects = if (selectedProject == null && projectsInScope) {
             sortProjectsForOverview(
                 cacheState.projects.projects.values,
                 cacheState.projects.activeProjectId,
             ).map { project ->
                 project.copy(
-                    previewSessions = project.previewSessions.map { preview ->
-                        cacheState.sessions[preview.id] ?: preview
-                    },
+                    previewSessions = filterSessionsByProfileScope(
+                        project.previewSessions.map { preview -> cacheState.sessions[preview.id] ?: preview },
+                        profileScopeState.key,
+                    ),
                 )
             }.filter { it.matchesProjectQuery(queryText) }
         } else {
@@ -402,7 +447,18 @@ internal class ChatViewModel(
             ),
             projects = projects,
             projectsAvailable = cacheState.projects.available,
-            sidebarGrouping = navigation.grouping,
+            sidebarGrouping = navigation.sidebarView.grouping,
+            profileRail = ProfileRailState(
+                profiles = navigation.sidebarView.roster.profiles,
+                scope = navigation.sidebarView.profileScope,
+                loaded = navigation.sidebarView.roster.loaded,
+            ),
+            projectsInProfileScope = projectsInScope,
+            profiles = ProfilesUiState(
+                profiles = navigation.sidebarView.roster.profiles,
+                loaded = navigation.sidebarView.roster.loaded,
+                connected = navigation.connection.status == GatewayConnectionStatus.Connected,
+            ),
             selectedProject = selectedProject,
             projectLoading = selectedProject != null && navigation.loadingProjectId == selectedProject.id,
             activeSession = active,
@@ -446,6 +502,33 @@ internal class ChatViewModel(
             if (sidebarGroupingGeneration == restoreGeneration) sidebarGrouping.value = restored
         }
         viewModelScope.launch {
+            val restoreGeneration = profileScopeGeneration
+            val restored = profileScopeStore.profileScope.first()
+            if (profileScopeGeneration == restoreGeneration) profileScope.value = restored
+        }
+        // The repository only ever learns the scope as the `profile` parameter
+        // its session RPCs carry. Re-listing after a scope change is what makes
+        // a newly visible profile's rows arrive; the cache keeps the rest.
+        viewModelScope.launch {
+            var seenRouting = false
+            combine(profileScope, profileRepository.roster) { scope, roster ->
+                ProfileRouting(scope.sessionProfileParam, sessionListProfiles(scope, roster.profiles))
+            }
+                .distinctUntilChanged()
+                .collect { routing ->
+                    val first = !seenRouting
+                    seenRouting = true
+                    repository.setProfileRouting(routing)
+                    // A scope that has not moved off the Gateway's own profile
+                    // is what the connection's own bootstrap already listed;
+                    // asking again at every launch would be a second
+                    // session.list for the same rows.
+                    if (first && routing == ProfileRouting()) return@collect
+                    if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return@collect
+                    runCatching { repository.refreshSessions() }
+                }
+        }
+        viewModelScope.launch {
             repository.sessionRehomes.collect { rehome ->
                 draftStoreReady.await()
                 adoptCanonicalSession(rehome.oldDurableId, rehome.newDurableId)
@@ -462,9 +545,20 @@ internal class ChatViewModel(
                 if (connection.status == observedConnectionStatus) return@collect
                 observedConnectionStatus = connection.status
                 invalidateComposerRuntimeState()
-                if (connection.status == GatewayConnectionStatus.Connected) {
+                val connected = connection.status == GatewayConnectionStatus.Connected
+                profileRepository.connectionChanged(
+                    if (connection.status == GatewayConnectionStatus.Disconnected) {
+                        GatewayProfileConnectionState.Gone
+                    } else {
+                        GatewayProfileConnectionState.Changed
+                    },
+                )
+                if (connected) {
                     refreshComposer(activeSessionId.value)
                     activeSessionId.value?.let(::drainQueueIfIdle)
+                    // profiles.list is a slow-lane call with its own budget, so
+                    // it rides its own job and never delays the composer.
+                    launch { runCatching { profileRepository.refreshProfiles() } }
                 }
             }
         }
@@ -507,22 +601,39 @@ internal class ChatViewModel(
      * production; test-only stores use an isolated in-memory scope.
      */
     private suspend fun observeComposerScope() {
-        composerControlsStore.activeScope.collect(::bindComposerScope)
+        // The queue is private per endpoint *and* per Hermes profile: text
+        // parked while scoped to one profile must never be presented while
+        // scoped to another.
+        combine(composerControlsStore.activeScope, profileScope) { scope, profiles ->
+            scope to normalizeProfileKey(profiles.activeProfile).takeIf { it != DEFAULT_PROFILE }
+        }
+            .distinctUntilChanged()
+            .collect { (scope, hermesProfile) -> bindComposerScope(scope, hermesProfile) }
     }
 
-    private fun bindComposerScope(scope: ComposerControlsScope) {
-        if (composerScope == scope) return
-        // Any change to this scope is a change of session set, not just a change
-        // of address. The scope's second half is the SSH *remote Hermes
-        // profile*, and two profiles on one host are two different Hermes homes
-        // with two different session histories — comparing only the address
-        // would leave one install's sessions painted under the other's. A
-        // provider change on a Remote row costs a reload it did not strictly
-        // need; showing another install's conversations costs more.
+    private fun isComposerScopeBound(scope: ComposerControlsScope, hermesProfile: String?): Boolean =
+        composerScope == scope && composerQueueProfile == hermesProfile
+
+    private fun bindComposerScope(scope: ComposerControlsScope, hermesProfile: String?) {
+        if (isComposerScopeBound(scope, hermesProfile)) return
+        // Any change to the *endpoint* scope is a change of session set, not
+        // just a change of address. The scope's second half is the SSH *remote
+        // Hermes profile*, and two profiles on one host are two different
+        // Hermes homes with two different session histories — comparing only
+        // the address would leave one install's sessions painted under the
+        // other's. A provider change on a Remote row costs a reload it did not
+        // strictly need; showing another install's conversations costs more.
         //
-        // The first bind is not a change: there was no endpoint to leave.
-        val endpointChanged = composerScope != null
+        // The first bind is not a change: there was no endpoint to leave. Nor
+        // is a Hermes-profile switch, which reaches this function with the same
+        // endpoint: those sessions are the same connection's, the rail's own
+        // scope decides which of them are shown, and `selectProfile` already
+        // starts fresh where Desktop does — leaving the endpoint here would
+        // also close the open session on a mere All-profiles toggle, which
+        // Desktop deliberately leaves alone.
+        val endpointChanged = composerScope != null && composerScope != scope
         composerScope = scope
+        composerQueueProfile = hermesProfile
         if (endpointChanged) leaveEndpoint()
         queueScopeReady.value = false
         queueEdit.value = null
@@ -534,9 +645,13 @@ internal class ChatViewModel(
             // so equal durable IDs cannot inherit transient UI state.
             composerQueueController.resetTransientScopeState()
             switchComposerQueueScope(
-                ComposerQueueScope.forConnectionProfile(scope.connectionIdentity, scope.profileIdentity),
+                ComposerQueueScope.forConnectionProfile(
+                    scope.connectionIdentity,
+                    scope.profileIdentity,
+                    hermesProfile,
+                ),
             )
-            if (composerScope == scope) {
+            if (isComposerScopeBound(scope, hermesProfile)) {
                 queueScopeReady.value = true
                 activeSessionId.value?.let(::drainQueueIfIdle)
             }
@@ -548,7 +663,7 @@ internal class ChatViewModel(
         preferenceLoad?.cancel()
         preferenceLoad = viewModelScope.launch {
             composerControlsStore.preference(scope).collect { preference ->
-                if (composerScope != scope) return@collect
+                if (!isComposerScopeBound(scope, hermesProfile)) return@collect
                 if (!newDraftPreferenceTouched) {
                     newDraftPreference = preference
                     if (activeSessionId.value == null) publishFreshDraftControls()
@@ -853,6 +968,64 @@ internal class ChatViewModel(
                     }
                 }
         }
+    }
+
+    /**
+     * Switch the sidebar to `name`: leave the unified view, point new chats at
+     * it, and — when this is a real switch — start fresh there rather than
+     * leaving the reader inside another profile's session
+     * (`apps/desktop/src/store/profile.ts:453-466`).
+     *
+     * Nothing here interrupts anything. A turn running in the profile being
+     * left keeps running and lands as an unread row, exactly as it does when
+     * the reader simply opens another session.
+     */
+    fun selectProfile(name: String) {
+        val target = normalizeProfileKey(name)
+        val current = profileScope.value
+        val switching = current.showAllProfiles || target != normalizeProfileKey(current.activeProfile)
+        applyProfileScope(ProfileScope(activeProfile = target, showAllProfiles = false))
+        if (switching) startFreshSessionInScope()
+    }
+
+    /**
+     * Desktop's opt-in unified browse view (`store/profile.ts:481-483`). It
+     * deliberately leaves the concrete profile alone, so leaving it returns to
+     * the profile you were in — and it does not start a fresh session.
+     */
+    fun showAllProfiles() {
+        val current = profileScope.value
+        if (current.showAllProfiles) return
+        applyProfileScope(current.copy(showAllProfiles = true))
+    }
+
+    private fun applyProfileScope(scope: ProfileScope) {
+        profileScopeGeneration += 1
+        if (profileScope.value == scope) return
+        profileScope.value = scope
+        viewModelScope.launch {
+            runCatching { profileScopeStore.saveProfileScope(scope) }
+                .onFailure { failure ->
+                    if (failure is CancellationException) throw failure
+                    if (profileScope.value == scope) {
+                        notice.value = "This profile could not be saved. Try switching again."
+                    }
+                }
+        }
+    }
+
+    /**
+     * Desktop's `requestFreshSession()`: land in a new chat in the profile just
+     * picked. The project drill-in is left too — a project catalog belongs to
+     * the profile it was read from.
+     */
+    private fun startFreshSessionInScope() {
+        navigationGeneration += 1
+        invalidateCompletionState()
+        selectedProjectId.value = null
+        projectLoadingId.value = null
+        flushDraft()
+        rehome(null)
     }
 
     fun selectProject(id: String) {
@@ -2188,19 +2361,14 @@ internal class ChatViewModel(
             CompletionItem("@git:", "@git:", "Attach git context", "git"),
             CompletionItem("@session:", "@session:", "Reference a session", "session"),
         ).filter { it.text.removePrefix("@").startsWith(lower) }
-        // session.list is scoped to one Gateway profile, but its compact rows
-        // omit profile_name. Reuse the profile reported by any opened sibling
-        // instead of silently rewriting every reference to `default`.
-        val scopedProfile = cache.state.value.sessions.values
-            .asSequence()
-            .mapNotNull { it.remoteProfile?.trim()?.takeIf(String::isNotEmpty) }
-            .firstOrNull()
-            ?: "default"
+        // The cache now holds rows from several profiles at once, so a row
+        // that names no profile is a launch-profile row — never a reason to
+        // borrow a sibling's profile and emit a reference to the wrong one.
         val sessions = cache.state.value.sessions.values
             .sortedByDescending(SessionSummary::lastActiveAtMillis)
             .asSequence()
             .map { session ->
-                val profile = session.remoteProfile?.trim()?.takeIf(String::isNotEmpty) ?: scopedProfile
+                val profile = session.remoteProfile?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_PROFILE
                 CompletionItem(
                     text = ComposerReference.Session("$profile/${session.id}").wireText,
                     display = session.title.ifBlank { "Session ${session.id.take(8)}" },
@@ -2251,12 +2419,19 @@ internal class ChatViewModel(
         if (session.status == SessionStatus.Unread) cache.upsertSession(session.copy(status = SessionStatus.Idle))
     }
 
+    /** The sidebar's saved view choices plus the roster the rail paints from. */
+    private data class SidebarViewState(
+        val grouping: SidebarGrouping = SidebarGrouping.Date,
+        val profileScope: ProfileScope = ProfileScope(),
+        val roster: ProfileRosterState = ProfileRosterState(),
+    )
+
     private data class NavigationState(
         val connection: GatewayConnectionState,
         val notice: String?,
         val projectId: String?,
         val loadingProjectId: String?,
-        val grouping: SidebarGrouping,
+        val sidebarView: SidebarViewState,
         val composer: ComposerUiState = ComposerUiState(),
         val localComposer: LocalComposerState = LocalComposerState(),
     )
@@ -2300,6 +2475,8 @@ internal class ChatViewModel(
             repository: GatewaySessionRepository,
             codingContextProvider: CodingContextProvider,
             sidebarViewStore: SidebarViewStore,
+            profileScopeStore: ProfileScopeStore,
+            profileRepository: ProfileRepository,
             composerControlsStore: ComposerControlsStore,
             draftStore: SessionDraftStore,
             draftScope: CoroutineScope,
@@ -2317,6 +2494,8 @@ internal class ChatViewModel(
                         repository = repository,
                         codingContextProvider = codingContextProvider,
                         sidebarViewStore = sidebarViewStore,
+                        profileScopeStore = profileScopeStore,
+                        profileRepository = profileRepository,
                         composerControlsStore = composerControlsStore,
                         draftStore = draftStore,
                         applicationDraftScope = draftScope,

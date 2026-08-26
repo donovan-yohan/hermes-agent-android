@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +58,7 @@ import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.label
+import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.DitherMark
 import com.hermesagent.mobile.ui.common.HermesIcon
@@ -64,6 +66,7 @@ import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.PrimaryButton
+import com.hermesagent.mobile.ui.common.ProfileTag
 import com.hermesagent.mobile.ui.common.SearchField
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.StatusDot
@@ -109,6 +112,11 @@ fun SessionList(
      * sessions.
      */
     header: @Composable () -> Unit = {},
+    /** The foot rail's profiles and scope; empty means no Gateway has answered. */
+    profileRail: ProfileRailState = ProfileRailState(),
+    profileRailActions: ProfileRailActions = ProfileRailActions(),
+    /** False while the sidebar is scoped to a profile the project catalog is not. */
+    projectsInProfileScope: Boolean = true,
 ) {
     val tokens = HermesTheme.tokens
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project && selectedProject == null
@@ -198,6 +206,13 @@ fun SessionList(
                 color = tokens.textTertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
+        } else if (sidebarGrouping == SidebarGrouping.Project && !projectsInProfileScope) {
+            Text(
+                text = "This Gateway lists projects for one profile. Switch to the default profile to browse them.",
+                style = HermesTheme.type.scaffoldMeta,
+                color = tokens.textTertiary,
+                modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+            )
         } else if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == false) {
             Text(
                 text = "Project views aren’t available on this Gateway.",
@@ -208,6 +223,8 @@ fun SessionList(
         }
 
         when {
+            showingProjectOverview && !projectsInProfileScope -> Spacer(Modifier.weight(1f))
+
             showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
                 title = if (query.isBlank()) "No projects" else "Nothing matches",
                 description = when {
@@ -215,6 +232,7 @@ fun SessionList(
                     canCreate -> "Create a project with the + above."
                     else -> "No projects were returned by this Gateway."
                 },
+                modifier = Modifier.weight(1f),
             )
 
             showingProjectOverview -> LazyColumn(
@@ -234,6 +252,7 @@ fun SessionList(
             projectLoading -> EmptyState(
                 title = "Opening project…",
                 description = "Hermes is loading this project’s session history.",
+                modifier = Modifier.weight(1f),
             )
 
             rows.isEmpty() -> EmptyState(
@@ -246,6 +265,7 @@ fun SessionList(
                     canCreate -> "Start one with the + above."
                     else -> "Connect to a Gateway to start a session."
                 },
+                modifier = Modifier.weight(1f),
             )
 
             else -> {
@@ -268,12 +288,22 @@ fun SessionList(
                                 session = row.session,
                                 active = row.session.id == activeSessionId,
                                 onClick = { onSelect(row.session.id) },
+                                // A single-profile scope already says which
+                                // profile every row belongs to, so the tag only
+                                // earns its place in the unified view.
+                                owner = if (profileRail.scope.isAll) {
+                                    profileRail.owner(row.session.remoteProfile)
+                                } else {
+                                    null
+                                },
                             )
                         }
                     }
                 }
             }
         }
+
+        ProfileRail(state = profileRail, actions = profileRailActions)
     }
 
     if (projectCreateVisible) {
@@ -506,6 +536,8 @@ private fun SessionRow(
     session: SessionSummary,
     active: Boolean,
     onClick: () -> Unit,
+    /** The owning profile's chip, or null when the scope already names it. */
+    owner: HermesProfile? = null,
 ) {
     val tokens = HermesTheme.tokens
     val dot = session.status.dot(tokens)
@@ -570,6 +602,8 @@ private fun SessionRow(
                     )
                 }
             }
+
+            if (owner != null) ProfileTag(profile = owner)
         }
 
         if (session.status.showsRunningOutline()) {

@@ -79,6 +79,7 @@ import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.common.scrollToTail
 import com.hermesagent.mobile.ui.common.VerticalHairline
+import com.hermesagent.mobile.ui.sessions.ProfileRailActions
 import com.hermesagent.mobile.ui.sessions.SessionList
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -105,6 +106,8 @@ fun ChatScreen(
     actions: ChatActions,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    /** "Manage profiles…" leaves the sidebar, so the app shell owns where it goes. */
+    onOpenProfiles: () -> Unit = {},
     /** Injectable only for layout tests; production uses the device navigation bars. */
     wideRailInsets: WindowInsets = WindowInsets.navigationBars,
     /** Rail chrome above the session header — the connection switcher. */
@@ -112,9 +115,9 @@ fun ChatScreen(
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, wideRailInsets, sidebarHeader)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, wideRailInsets, sidebarHeader)
         } else {
-            CompactLayout(state, actions, onOpenSettings, sidebarHeader)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, sidebarHeader)
         }
     }
 }
@@ -129,6 +132,7 @@ private fun CompactLayout(
     state: ChatUiState,
     actions: ChatActions,
     onOpenSettings: () -> Unit,
+    onOpenProfiles: () -> Unit,
     sidebarHeader: @Composable () -> Unit,
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -157,6 +161,10 @@ private fun CompactLayout(
                         actions.onCreateSession()
                         scope.launch { drawerState.close() }
                     },
+                    onManageProfiles = {
+                        onOpenProfiles()
+                        scope.launch { drawerState.close() }
+                    },
                 )
             }
         },
@@ -183,6 +191,7 @@ private fun WideLayout(
     state: ChatUiState,
     actions: ChatActions,
     onOpenSettings: () -> Unit,
+    onOpenProfiles: () -> Unit,
     railInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
 ) {
@@ -202,6 +211,7 @@ private fun WideLayout(
                 .testTag(WIDE_RAIL_TAG)
                 .background(HermesTheme.tokens.sidebarSurface)
                 .windowInsetsPadding(railInsets),
+            onManageProfiles = onOpenProfiles,
         )
         VerticalHairline(Modifier.fillMaxHeight())
         Column(Modifier.weight(1f)) {
@@ -225,6 +235,7 @@ private fun SessionsPane(
     modifier: Modifier = Modifier,
     onSelectSession: (String) -> Unit = actions.onSelectSession,
     onCreateSession: () -> Unit = actions.onCreateSession,
+    onManageProfiles: () -> Unit = {},
 ) {
     SessionList(
         rows = state.sessionRows,
@@ -245,6 +256,15 @@ private fun SessionsPane(
         onCreate = onCreateSession,
         modifier = modifier,
         header = header,
+        profileRail = state.profileRail,
+        projectsInProfileScope = state.projectsInProfileScope,
+        profileRailActions = remember(actions, onManageProfiles) {
+            ProfileRailActions(
+                onSelectProfile = actions.onSelectProfile,
+                onShowAllProfiles = actions.onShowAllProfiles,
+                onManageProfiles = onManageProfiles,
+            )
+        },
     )
 }
 
