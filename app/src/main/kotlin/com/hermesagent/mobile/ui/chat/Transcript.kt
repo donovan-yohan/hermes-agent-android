@@ -464,8 +464,8 @@ private fun AssistantProse(turn: AssistantTurn) {
         // pinned by `TranscriptSelectionTest`. Copying a live turn is what the
         // control below is for.
         //
-        // Emitted only when there is prose, so an image-only or empty turn does
-        // not spend a turnGap on a zero-height container.
+        // Emitted only when there is prose, so an empty turn does not spend a
+        // turnGap on a zero-height container.
         if (hasProse) {
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
