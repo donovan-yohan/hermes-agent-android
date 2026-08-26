@@ -60,6 +60,17 @@ class ProfileScopeTest {
     }
 
     @Test
+    fun `the fan-out asks the launch profile first`() {
+        // Load-bearing order: a profile the Gateway cannot resolve falls back
+        // to the launch handle (`tui_gateway/server.py:1476-1491,1519-1533`),
+        // so the refresh has to know which rows the launch profile claimed
+        // before it stamps anything with a named owner.
+        val roster = listOf(profile("work"), profile("default", isDefault = true), profile("lab"))
+
+        assertEquals(null, sessionListProfiles(ProfileScope(showAllProfiles = true), roster).first())
+    }
+
+    @Test
     fun `the unified scope fans out over the launch profile and every named one`() {
         val roster = listOf(profile("default", isDefault = true), profile("work"), profile("lab"))
         val scope = ProfileScope(activeProfile = "work", showAllProfiles = true)

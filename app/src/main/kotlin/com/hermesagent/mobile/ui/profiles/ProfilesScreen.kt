@@ -148,7 +148,7 @@ private fun ProfileRosterRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        ProfileGlyph(profile = profile, size = 16.dp, active = active)
+        ProfileGlyph(profile = profile, size = 16.dp)
         Text(
             text = profile.label,
             style = HermesTheme.type.sessionTitle,

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
@@ -22,18 +23,23 @@ import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.gateway.ProfileRouting
 import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.data.profiles.ProfileRepository
+import com.hermesagent.mobile.data.prefs.TransientProfileScopeStore
 import com.hermesagent.mobile.data.profiles.ProfileRosterState
+import com.hermesagent.mobile.data.profiles.ProfileScope
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
+import com.hermesagent.mobile.ui.sessions.PROJECT_PROFILE_SCOPE_NOTE
 import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -190,7 +196,70 @@ class ProfileRailJourneyTest {
         assertEquals("team-4", repository.routing.activeProfile)
     }
 
-    private fun launch(profiles: List<HermesProfile> = ROSTER) {
+    @Test
+    fun `a persisted named scope keeps its way out when the roster never loads`() {
+        // profiles.list is a slow-lane call that an older or refusing Gateway
+        // may never answer. The scope is persisted, so without this the sidebar
+        // opens inside a profile with no control to leave it and no route to
+        // the roster.
+        launch(profiles = emptyList(), rosterLoaded = false, scope = ProfileScope(activeProfile = "work"))
+        openSessions()
+
+        compose.onNodeWithContentDescription("Switch to default").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Manage profiles…").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Switch to default").performClick()
+        compose.waitForIdle()
+
+        assertNull(repository.routing.activeProfile)
+    }
+
+    @Test
+    fun `nothing paints before the first answer in the Gateway's own scope`() {
+        launch(profiles = emptyList(), rosterLoaded = false)
+        openSessions()
+
+        assertEquals(0, compose.nodesWithDescription("Manage profiles…"))
+    }
+
+    @Test
+    fun `the unified view says the project catalog is one profile's`() {
+        launch()
+        openSessions()
+        compose.onNodeWithContentDescription("Show all profiles").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithText("Project").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(PROJECT_PROFILE_SCOPE_NOTE).assertIsDisplayed()
+        // The catalog stays browsable in the unified view; only a named scope
+        // has nothing there to browse.
+        assertEquals(1, compose.countWithText("Hermes mobile"))
+    }
+
+    @Test
+    fun `a named scope hides the catalog and says where it went`() {
+        launch()
+        openSessions()
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithText("Project").performClick()
+        compose.waitForIdle()
+        assertEquals(1, compose.countWithText("Hermes mobile"))
+
+        compose.onNodeWithContentDescription("Switch to work").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(PROJECT_PROFILE_SCOPE_NOTE).assertIsDisplayed()
+        assertEquals(0, compose.countWithText("Hermes mobile"))
+    }
+
+    private fun launch(
+        profiles: List<HermesProfile> = ROSTER,
+        rosterLoaded: Boolean = true,
+        scope: ProfileScope = ProfileScope(),
+    ) {
         cache.upsertSessions(
             listOf(
                 SessionSummary("home-row", "Home planning", "", NOW, remoteProfile = null),
@@ -201,11 +270,16 @@ class ProfileRailJourneyTest {
             "home-row",
             listOf(com.hermesagent.mobile.data.session.AssistantTurn("a1", "Home reply", NOW)),
         )
+        cache.replaceProjectOverview(
+            listOf(ProjectSummary("project-mobile", "Hermes mobile", "/work/mobile", sessionCount = 1)),
+            activeProjectId = null,
+        )
         repository = RailRepository()
         viewModel = ChatViewModel(
             cache = cache,
             repository = repository,
-            profileRepository = RailProfiles(profiles),
+            profileScopeStore = TransientProfileScopeStore(scope),
+            profileRepository = RailProfiles(profiles, rosterLoaded),
             clock = { NOW },
         )
         compose.setContent {
@@ -216,6 +290,7 @@ class ProfileRailJourneyTest {
                 sshState = SshUiState(),
                 appearance = AppearanceSelection(),
                 chatActions = ChatActions(
+                    onSidebarGroupingChange = viewModel::setSidebarGrouping,
                     onSelectSession = viewModel::selectSession,
                     onSelectProfile = viewModel::selectProfile,
                     onShowAllProfiles = viewModel::showAllProfiles,
@@ -239,8 +314,8 @@ class ProfileRailJourneyTest {
         compose.waitForIdle()
     }
 
-    private class RailProfiles(rows: List<HermesProfile>) : ProfileRepository {
-        override val roster = MutableStateFlow(ProfileRosterState(rows, loaded = true))
+    private class RailProfiles(rows: List<HermesProfile>, loaded: Boolean) : ProfileRepository {
+        override val roster = MutableStateFlow(ProfileRosterState(rows, loaded = loaded))
         override suspend fun refreshProfiles(): Boolean = true
         override fun connectionChanged(state: com.hermesagent.mobile.data.profiles.GatewayProfileConnectionState) = Unit
     }

@@ -57,6 +57,12 @@ data class ProfileScope(
  * then each named profile, each carrying its own `profile` parameter. Rows
  * accumulate in the backend-authoritative cache; nothing is dropped between
  * calls.
+ *
+ * **The launch profile is always first, and that order is load-bearing.** A
+ * profile the Gateway cannot resolve falls back to the launch handle
+ * (`tui_gateway/server.py:1476-1491,1519-1533`) rather than failing, so the
+ * refresh needs to know which rows the launch profile already claimed before
+ * it stamps anything with a named owner.
  */
 fun sessionListProfiles(scope: ProfileScope, roster: List<HermesProfile>): List<String?> = when {
     !scope.showAllProfiles -> listOf(scope.sessionProfileParam)

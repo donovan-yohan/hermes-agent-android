@@ -257,7 +257,7 @@ private fun SessionsPane(
         modifier = modifier,
         header = header,
         profileRail = state.profileRail,
-        projectsInProfileScope = state.projectsInProfileScope,
+        projectScope = state.projectScope,
         profileRailActions = remember(actions, onManageProfiles) {
             ProfileRailActions(
                 onSelectProfile = actions.onSelectProfile,

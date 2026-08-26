@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -78,8 +79,14 @@ data class ProfileRailState(
      * Nothing to switch between, and nothing to manage, until a Gateway has
      * answered. Once it has, the rail stays — an empty roster still needs its
      * one route to "Manage profiles…".
+     *
+     * A scope that is not the Gateway's own profile keeps the rail regardless.
+     * The scope is persisted and `profiles.list` may never answer (an older
+     * Gateway, a refusing one, a cold slow-lane call), and a sidebar scoped to a
+     * profile with no way back out of it is a trap. `isDefault` is already false
+     * for the unified view, so this covers that too.
      */
-    val visible: Boolean get() = loaded
+    val visible: Boolean get() = loaded || !scope.isDefault
 
     /**
      * The roster row a session's `profile` names. A row from a profile this
@@ -141,7 +148,8 @@ fun ProfileRail(
             val target = HermesTheme.spacing.touchTarget
             // Every pinned pill holds its slot; whatever is left is the strip's
             // budget. One square per slot, never a squeezed square.
-            val pinnedPills = if (state.multiProfile || state.defaultProfile != null) 2 else 1
+            val leftPill = state.multiProfile || state.defaultProfile != null || !state.scope.isDefault
+            val pinnedPills = if (leftPill) 2 else 1
             val capacity = ((maxWidth - target * pinnedPills) / target).toInt().coerceAtLeast(0)
             val condensed = state.named.size > capacity
 
@@ -150,7 +158,17 @@ fun ProfileRail(
                 // profile, layers face when showing everything. Leaving a
                 // profile therefore never lands on all.
                 val defaultProfile = state.defaultProfile
-                if (state.multiProfile && defaultProfile != null) {
+                if (!state.loaded && !state.scope.isDefault) {
+                    // No roster, but the scope says we are somewhere other than
+                    // the Gateway's own profile. Nothing here knows that
+                    // profile's label, so the way back is named canonically.
+                    ProfilePill(
+                        icon = HermesIcon.Home,
+                        contentDescription = switchToProfile(DEFAULT_PROFILE),
+                        active = false,
+                        onClick = { actions.onSelectProfile(DEFAULT_PROFILE) },
+                    )
+                } else if (state.multiProfile && defaultProfile != null) {
                     ProfilePill(
                         icon = if (state.scope.isAll) HermesIcon.Layers else HermesIcon.Home,
                         contentDescription = if (state.onDefault) {
@@ -173,10 +191,18 @@ fun ProfileRail(
                     )
                 } else if (defaultProfile != null) {
                     // Single profile: the active default's home mark, no toggle.
+                    // Desktop hardcodes it active because one profile is always
+                    // the one you are in; a scope persisted for a profile this
+                    // Gateway no longer has makes that false here, and the mark
+                    // becomes the way back.
                     ProfilePill(
                         icon = HermesIcon.Home,
-                        contentDescription = defaultProfile.label,
-                        active = true,
+                        contentDescription = if (state.onDefault) {
+                            defaultProfile.label
+                        } else {
+                            switchToProfile(defaultProfile.label)
+                        },
+                        active = state.onDefault,
                         onClick = { actions.onSelectProfile(defaultProfile.name) },
                     )
                 }
@@ -282,7 +308,16 @@ private fun ProfileSquare(
             },
         contentAlignment = Alignment.Center,
     ) {
-        ProfileGlyph(profile = profile, size = 20.dp, active = active)
+        // Desktop dims the whole resting square — tint, ring and initial
+        // together — and pops it to full strength when it is the active one
+        // (`profile-switcher.tsx:696-698`). Alpha rides the mark, not the 48dp
+        // target, so the touch area and its label are untouched.
+        ProfileGlyph(
+            profile = profile,
+            modifier = Modifier.alpha(if (active) 1f else INACTIVE_SQUARE_ALPHA),
+            size = 20.dp,
+            active = active,
+        )
     }
 }
 
@@ -309,7 +344,7 @@ private fun CondensedProfileControl(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (active != null) ProfileGlyph(profile = active, size = 16.dp, active = true)
+        if (active != null) ProfileGlyph(profile = active, size = 16.dp)
         Text(
             text = active?.label ?: PROFILES_TITLE,
             style = HermesTheme.type.caption,
@@ -361,7 +396,7 @@ private fun ProfilePickerRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(Modifier.width(2.dp))
-        ProfileGlyph(profile = profile, size = 16.dp, active = active)
+        ProfileGlyph(profile = profile, size = 16.dp)
         Text(
             text = profile.label,
             style = HermesTheme.type.body,
@@ -379,6 +414,9 @@ internal const val SHOW_ALL_PROFILES = "Show all profiles"
 internal const val MANAGE_PROFILES = "Manage profiles…"
 
 internal fun switchToProfile(name: String): String = "Switch to $name"
+
+/** Desktop's `opacity-55` on a resting rail square (`profile-switcher.tsx:697`). */
+private const val INACTIVE_SQUARE_ALPHA = 0.55f
 
 // ── Previews ───────────────────────────────────────────────────────────────
 // Every profile below is invented. No host, profile or person in this repo
