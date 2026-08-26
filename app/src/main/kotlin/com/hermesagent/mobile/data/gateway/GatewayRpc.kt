@@ -323,5 +323,11 @@ internal fun JsonObject.string(name: String): String? =
 internal fun gatewayRpcTimeoutMillis(method: String, defaultTimeoutMillis: Long = 15_000L): Long =
     when (method) {
         "prompt.submit" -> 1_800_000L
+        // profiles.list rides the Gateway's slow-method lane
+        // (tui_gateway/server.py:263-271): it walks each profile's skill tree
+        // and opens each profile's state.db, which is seconds-scale on a cold
+        // disk. Desktop gives the same call its own 60s boot budget rather
+        // than the generic one (apps/desktop/src/hermes.ts:77-88).
+        "profiles.list" -> 60_000L
         else -> defaultTimeoutMillis
     }

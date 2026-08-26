@@ -550,7 +550,10 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `session references use the scoped Gateway profile rather than hard-coded default`() = runTest(dispatcher) {
+    fun `each session reference names the profile that owns that session`() = runTest(dispatcher) {
+        // The cache holds rows from several profiles at once once the sidebar
+        // can browse them all, so a row that names no profile is a
+        // launch-profile row — never a reason to borrow a sibling's.
         cache.upsertSession(requireNotNull(cache.session("session-b")).copy(remoteProfile = "worker"))
         collectState()
         runCurrent()
@@ -562,7 +565,9 @@ class ChatViewModelTest {
         val references = viewModel.uiState.value.composer.completion.items
             .filter { it.kind == "session" && it.text.startsWith("@session:`") }
         assertTrue(references.isNotEmpty())
-        assertTrue(references.all { it.text.startsWith("@session:`worker/") })
+        assertTrue(references.any { it.text.startsWith("@session:`worker/session-b") })
+        assertTrue(references.any { it.text.startsWith("@session:`default/session-a") })
+        assertFalse(references.any { it.text.startsWith("@session:`worker/session-a") })
     }
 
     @Test

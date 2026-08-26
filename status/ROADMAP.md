@@ -61,6 +61,26 @@ for the Managed SSH lifecycle.
 - Session rename and archive do not have mobile product surfaces yet. Search is
   local filtering rather than a backend query.
 
+### Profiles
+
+- The Gateway's profiles at the sidebar foot: a default/all toggle pinned left,
+  the named profiles between, and "Manage profiles…" pinned right, with the
+  active profile in its own colour. Past the phone's width budget the strip
+  collapses to a picker sheet.
+- Picking a profile scopes the session list to it and starts fresh there; the
+  All-profiles view unifies every profile's rows and tags each with its owner.
+  Switching never interrupts a turn running in the profile being left, and
+  queued composer text cannot cross profiles.
+- `session.list`, `session.create` and `session.resume` carry the profile
+  parameter the Gateway already accepts; the unified view fans `session.list`
+  out over the launch profile and each named one.
+- A read-only roster behind "Manage profiles…" — label, Default badge, path,
+  model, provider and skill count. Creating, renaming, deleting, recolouring,
+  reordering, avatars and the SOUL.md editor are absent.
+- The project catalog remains the Gateway's own profile's: the Gateway's project
+  RPCs take no profile, so the Project grouping states that outside the default
+  scope rather than listing another profile's projects.
+
 ### Chat and composer
 
 - Live transcript with Markdown paragraphs, headings, lists, tables, code
@@ -144,7 +164,7 @@ for the Managed SSH lifecycle.
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
-| Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. There are still no dedicated mobile screens for profiles/bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
+| Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
 | Device evidence | Exact-head physical Pixel PKCE, network handoff, IME, TalkBack, media, and process-death acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
 
@@ -209,4 +229,5 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 - [Managed SSH ADR](../docs/adr/0001-ssh-probe-to-tunnel.md)
 - [Composer capability contract](../docs/parity/composer-capabilities.json)
 - [Transcript selection and copy parity](../docs/parity/transcript-selection-copy.md)
+- [Profile rail and roster parity](../docs/parity/profile-switcher.md)
 - [Theme parity workflow](../docs/workflows/sync-desktop-themes.md)

@@ -11,6 +11,9 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
+import com.hermesagent.mobile.data.profiles.ProfileScope
+import com.hermesagent.mobile.data.profiles.normalizeProfileKey
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
@@ -67,7 +70,7 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  *
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
- * - the session sidebar's grouping mode;
+ * - the session sidebar's grouping mode and active profile scope;
  * - the selected Gateway route and the Remote Gateway's non-secret URL/provider;
  * - SSH host, port, username, remote Hermes profile, auth *method*, and the
  *   accepted host-key fingerprint;
@@ -95,6 +98,7 @@ class HermesPreferences(private val context: Context) :
     GatewayInstallStore,
     RemoteGatewayProfileStore,
     SidebarViewStore,
+    ProfileScopeStore,
     ComposerControlsStore {
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
@@ -108,6 +112,19 @@ class HermesPreferences(private val context: Context) :
         prefs[SIDEBAR_GROUPING]
             ?.let { stored -> SidebarGrouping.entries.firstOrNull { it.name == stored } }
             ?: SidebarGrouping.Date
+    }
+
+    /**
+     * The scope the rail last left the sidebar in. An unrecognised or blank
+     * profile name normalises to the Gateway's own profile, which is what a
+     * fresh install carries — so a profile deleted on the host degrades to the
+     * default scope rather than to an empty sidebar.
+     */
+    override val profileScope: Flow<ProfileScope> = context.hermesDataStore.data.map { prefs ->
+        ProfileScope(
+            activeProfile = normalizeProfileKey(prefs[PROFILE_ACTIVE]),
+            showAllProfiles = prefs[PROFILE_SHOW_ALL] == "true",
+        )
     }
 
     /**
@@ -155,6 +172,14 @@ class HermesPreferences(private val context: Context) :
 
     override suspend fun saveSidebarGrouping(grouping: SidebarGrouping) {
         context.hermesDataStore.edit { prefs -> prefs[SIDEBAR_GROUPING] = grouping.name }
+    }
+
+    override suspend fun saveProfileScope(scope: ProfileScope) {
+        context.hermesDataStore.edit { prefs ->
+            val active = normalizeProfileKey(scope.activeProfile)
+            if (active == DEFAULT_PROFILE) prefs.remove(PROFILE_ACTIVE) else prefs[PROFILE_ACTIVE] = active
+            if (scope.showAllProfiles) prefs[PROFILE_SHOW_ALL] = "true" else prefs.remove(PROFILE_SHOW_ALL)
+        }
     }
 
     /**
@@ -246,6 +271,8 @@ class HermesPreferences(private val context: Context) :
         val THEME_NAME = stringPreferencesKey("appearance.theme")
         val THEME_MODE = stringPreferencesKey("appearance.mode")
         val SIDEBAR_GROUPING = stringPreferencesKey("sidebar.grouping")
+        val PROFILE_ACTIVE = stringPreferencesKey("sidebar.profile.active")
+        val PROFILE_SHOW_ALL = stringPreferencesKey("sidebar.profile.showAll")
         val HOST = stringPreferencesKey("host.single.host")
         val PORT = intPreferencesKey("host.single.port")
         val USERNAME = stringPreferencesKey("host.single.username")

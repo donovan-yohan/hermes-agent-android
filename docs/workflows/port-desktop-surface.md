@@ -76,6 +76,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Composer completion authority | `apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts:24-153`; `apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts:61-250`; `apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts:16-214`; `apps/desktop/src/app/chat/composer/url-refs.ts:1-103`; `apps/desktop/src/app/chat/composer/path-refs.ts:1-103` | Fence async results by trigger, text, runtime/cwd and generation; serialize URL/path/session references as canonical text before considering rich chips |
 | Relay channels + transcript | `hermes-plugin-relay` @ `563a8c8`: `desktop/plugin.js:23,109-130,481-497,502-517,1073-1083`; `relay_proxy.py:228-320`; `docs/desktop.md` | Backend-owned channel order, the archived name-line annotation, the three-second visible-page poll and its ready-lane gate, and the projected wire shape. Full ledger: [`docs/parity/relay-channels-surface.md`](../parity/relay-channels-surface.md) |
 | Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
+| Profile rail, scope and roster | `apps/desktop/src/app/chat/sidebar/profile-switcher.tsx:119-345`, `profile-scope.ts`; `src/store/profile.ts:22-33,423-483`; `src/lib/profile-color.ts`; `src/components/ui/profile-glyph.tsx`; `src/app/profiles/index.tsx`; `src/app/overlays/panel.tsx`; `tui_gateway/methods_profiles.py`, `methods_session.py`, `server.py:263,1476-1533` | Which profile the sidebar is in, what a switch resets, how a profile is marked, and the one parameter that makes a session RPC profile-scoped. Full ledger: [`docs/parity/profile-switcher.md`](../parity/profile-switcher.md) |
 
 Treat lifecycle files as contracts with every process that consumes them, not
 as Android-private metadata. A structurally plausible lock with renamed keys or
@@ -298,6 +299,27 @@ clears at authoritative turn settlement, while a completed/cancelled list
 lingers for four seconds so the final checkmark can land. Keep the queue
 profile-scoped and session-keyed locally, and keep runtime IDs and Android URIs
 out of its durable records.
+
+Two things about *panels* came out of the profiles slice, and both are the same
+mistake in different clothes: reading only the wide layout. Desktop's `Panel`
+already stacks its list above its detail once the card narrows
+(`app/overlays/panel.tsx:88-98,126-128`), so the phone shape was upstream's own
+narrow shape rather than a deviation to justify — and `PanelMeta`'s label column
+is plain quiet text, *not* the uppercase section label, so mapping it onto
+`SectionLabel` would have added a treatment Desktop does not have there. Read the
+narrow branch of a responsive component before writing a deviation ledger entry
+about it.
+
+A third came out of its copy. An issue that quotes a string may be quoting the
+i18n *key*: `sidebar.row.ownedByProfile` renders `Profile: ${profile}`, not
+"Owned by …". Take the value from the pin and the component's own test, never
+from the ticket.
+
+And one about scoping a wire call: a `profile` parameter that a blank value
+resolves to the launch profile is not the same as one that defaults to
+`"default"`. Omitting it is what keeps a single-profile install's requests
+byte-identical to the ones it already makes, which is the difference between a
+scoping feature and a migration.
 
 The running-session outline added a motion-specific sidebar pitfall: derive the
 ring from the same backend-authoritative status that paints the dot, never from
