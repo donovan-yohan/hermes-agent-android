@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.session
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -93,6 +94,48 @@ class SessionCacheTest {
         assertEquals(listOf("turn-1"), cache.transcript("tip").map { it.id })
         assertTrue(cache.transcript("parent").isEmpty())
         assertEquals("tip", cache.state.value.rehomes["parent"])
+    }
+
+    @Test
+    fun `a durable row id survives a rehome and a re-reported history stays a no-op`() {
+        cache.upsertSession(row("parent", title = "Long chat"))
+        // What an authoritative `session.history` read hydrates: the durable
+        // `messages.id` the Gateway stamped, alongside its local rendering key.
+        val persisted = listOf(
+            UserTurn("101", "hello", 0, rowId = TranscriptRowId(101)),
+            AssistantTurn("102", "hi", 0, rowId = TranscriptRowId(102)),
+        )
+        cache.setTranscript("parent", persisted)
+
+        cache.rehomeSession("parent", row("tip", title = "Long chat"), cache.transcript("parent"))
+
+        assertEquals(
+            listOf(TranscriptRowId(101), TranscriptRowId(102)),
+            cache.transcript("tip").map(TranscriptEntry::rowId),
+        )
+        val before = cache.state.value
+
+        // The same rows, read again after a reconnect: an authoritative merge
+        // that changes nothing must still hand Compose the same state object.
+        cache.setTranscript("tip", persisted)
+
+        assertSame("a re-reported transcript must not churn identity", before, cache.state.value)
+    }
+
+    @Test
+    fun `stamping a live row with its durable id is a real change, not a no-op`() {
+        cache.upsertSession(row("a"))
+        // A live row the backend has not written down yet: locally minted id, no address.
+        val live = UserTurn("local-user-1", "ship it", 0)
+        cache.putEntry("a", live)
+        val before = cache.state.value
+
+        cache.putEntry("a", live.copy(rowId = TranscriptRowId(101)))
+
+        assertNotSame("gaining a durable address is not an identical entry", before, cache.state.value)
+        val stamped = cache.transcript("a").single()
+        assertEquals(TranscriptRowId(101), stamped.rowId)
+        assertEquals("local-user-1", stamped.id)
     }
 
     @Test

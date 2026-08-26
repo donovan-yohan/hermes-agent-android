@@ -16,6 +16,8 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
+import com.hermesagent.mobile.data.session.TranscriptEntry
+import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.UserTurn
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
@@ -40,6 +42,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -287,11 +290,98 @@ class GatewaySessionRepositoryTest {
         assertEquals(1_700_000_456_789, sessions[1].lastActiveAtMillis)
 
         val history = parseHistory(json(HISTORY), "runtime-a", 99)
-        assertEquals(listOf("row-u", "row-a", "runtime-a-history-2"), history.map { it.id })
+        assertEquals(listOf("101", "102", "runtime-a-history-2"), history.map { it.id })
         assertEquals("hello", (history[0] as UserTurn).text)
         assertEquals("hi", (history[1] as AssistantTurn).markdown)
         assertEquals("Read", (history[2] as ToolActivity).label)
         assertEquals("Read file.txt", (history[2] as ToolActivity).detail)
+    }
+
+    @Test
+    fun `history is asked for durable row ids and every persisted turn carries one`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { historyResult = HISTORY }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+
+        // Without the flag the read is unstamped and the one durable address a
+        // client has for a turn is silently stripped
+        // (tui_gateway/methods_session.py:2597-2606 @ f82f2dba).
+        assertEquals(JsonPrimitive(true), rpc.call("session.history").params["include_row_ids"])
+        val transcript = cache.transcript("durable-a")
+        assertEquals(
+            listOf(TranscriptRowId(101), TranscriptRowId(102), null),
+            transcript.map(TranscriptEntry::rowId),
+        )
+        // Upstream projects a tool row before it stamps row_id, so it has no
+        // durable address and must not be handed a fabricated one.
+        assertNull(transcript.filterIsInstance<ToolActivity>().single().rowId)
+    }
+
+    @Test
+    fun `a gateway that ignores the row id flag still hydrates and no id is invented`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { historyResult = HISTORY_WITHOUT_ROW_IDS }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+
+        val transcript = cache.transcript("durable-a")
+        assertEquals("hello", transcript.filterIsInstance<UserTurn>().single().text)
+        assertEquals("hi", transcript.filterIsInstance<AssistantTurn>().single().markdown)
+        assertEquals("Read", transcript.filterIsInstance<ToolActivity>().single().label)
+        assertTrue(
+            "an unstamped transcript has no durable ids, and none may be minted from a local key",
+            transcript.all { it.rowId == null },
+        )
+        assertEquals(
+            listOf("runtime-a-history-0", "runtime-a-history-1", "runtime-a-history-2"),
+            transcript.map(TranscriptEntry::id),
+        )
+    }
+
+    @Test
+    fun `durable row ids survive a reconnect and the rehome onto canonical identity`() = runTest {
+        val cache = SessionCache()
+        val first = FakeRpc().apply { historyResult = HISTORY }
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val hydrated = cache.transcript("durable-a").map(TranscriptEntry::rowId)
+
+        clients.value = null
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        val second = FakeRpc().apply {
+            historyResult = HISTORY
+            resumeA = RESUME_COMPRESSION_TIP
+        }
+        clients.value = second
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+
+        val canonical = repository.openSession("durable-a")
+
+        assertEquals("continuation-tip", canonical)
+        assertEquals(JsonPrimitive(true), second.call("session.history").params["include_row_ids"])
+        assertEquals(listOf(TranscriptRowId(101), TranscriptRowId(102), null), hydrated)
+        assertEquals(hydrated, cache.transcript("continuation-tip").map(TranscriptEntry::rowId))
+        assertTrue(cache.transcript("durable-a").isEmpty())
     }
 
     @Test
@@ -2582,7 +2672,7 @@ class GatewaySessionRepositoryTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
             resumeA = RESUME_RUNNING
-            historyResult = """{"messages":[{"row_id":"stored-user","role":"user","text":"current prompt"}],"count":1}"""
+            historyResult = """{"messages":[{"row_id":201,"role":"user","text":"current prompt"}],"count":1}"""
         }
         val repository = LiveGatewaySessionRepository(
             cache,
@@ -2628,7 +2718,7 @@ class GatewaySessionRepositoryTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
             resumeA = RESUME_RETAINED_FAILURE
-            historyResult = """{"messages":[{"row_id":"stored-user","role":"user","text":"long job"}],"count":1}"""
+            historyResult = """{"messages":[{"row_id":201,"role":"user","text":"long job"}],"count":1}"""
         }
         val repository = LiveGatewaySessionRepository(
             cache,
@@ -2699,8 +2789,8 @@ class GatewaySessionRepositoryTest {
         assertEquals(1, transcript.filterIsInstance<UserTurn>().size)
         assertEquals(1, transcript.filterIsInstance<AssistantTurn>().size)
         assertEquals(1, transcript.filterIsInstance<ToolActivity>().size)
-        assertEquals("stored-user", transcript.filterIsInstance<UserTurn>().single().id)
-        assertEquals("stored-assistant", transcript.filterIsInstance<AssistantTurn>().single().id)
+        assertEquals("201", transcript.filterIsInstance<UserTurn>().single().id)
+        assertEquals("202", transcript.filterIsInstance<AssistantTurn>().single().id)
         assertEquals("runtime-a-history-2", transcript.filterIsInstance<ToolActivity>().single().id)
         assertTrue(transcript.none { it.id.startsWith("local-") || it.id.startsWith("gateway-") })
     }
@@ -2719,7 +2809,7 @@ class GatewaySessionRepositoryTest {
         repository.openSession("durable-a")
         repository.submit("durable-a", "stale local prompt")
         rpc.activateResult = ACTIVATE_IDLE
-        rpc.historyResult = """{"messages":[{"row_id":"stored-user","role":"user","text":"server truth"}],"count":1}"""
+        rpc.historyResult = """{"messages":[{"row_id":201,"role":"user","text":"server truth"}],"count":1}"""
 
         repository.openSession("durable-a")
 
@@ -2737,7 +2827,7 @@ class GatewaySessionRepositoryTest {
         }
         val rpc = FakeRpc().apply {
             resumeA = RESUME_COMPRESSION_TIP
-            historyResult = """{"messages":[{"row_id":"tip-reply","role":"assistant","text":"after compression"}],"count":1}"""
+            historyResult = """{"messages":[{"row_id":301,"role":"assistant","text":"after compression"}],"count":1}"""
         }
         val repository = LiveGatewaySessionRepository(
             cache,
@@ -2757,7 +2847,7 @@ class GatewaySessionRepositoryTest {
         assertEquals(null, cache.session("parent-root"))
         assertEquals("Long chat", cache.session("continuation-tip")?.title)
         // Completed rows come from authoritative history; this resume reports no inflight row to preserve.
-        assertEquals(listOf("tip-reply"), cache.transcript("continuation-tip").map { it.id })
+        assertEquals(listOf("301"), cache.transcript("continuation-tip").map { it.id })
 
         rpc.emit("message.start", "runtime-a", """{"id":"live-tip","role":"assistant"}""")
         rpc.emit("message.delta", "runtime-a", """{"delta":"routed to tip"}""")
@@ -3644,14 +3734,19 @@ class GatewaySessionRepositoryTest {
             {"id":"durable-b","title":"Renamed B","preview":"new b","started_at":1700000457,"message_count":1,"source":"desktop"}
         ]}"""
         const val HISTORY = """{"messages":[
-            {"row_id":"row-u","role":"user","text":"hello","timestamp":1700000000},
-            {"row_id":"row-a","role":"assistant","text":"hi"},
+            {"row_id":101,"role":"user","text":"hello","timestamp":1700000000},
+            {"row_id":102,"role":"assistant","text":"hi"},
+            {"role":"tool","name":"Read","context":"Read file.txt","args":{"path":"file.txt"}}
+        ],"count":3}"""
+        const val HISTORY_WITHOUT_ROW_IDS = """{"messages":[
+            {"role":"user","text":"hello","timestamp":1700000000},
+            {"role":"assistant","text":"hi"},
             {"role":"tool","name":"Read","context":"Read file.txt","args":{"path":"file.txt"}}
         ],"count":3}"""
         const val ACTIVATE_IDLE = """{"session_id":"runtime-a","session_key":"durable-a","message_count":3,"messages":[],"inflight":null,"running":false,"started_at":1700001000.125,"status":"idle"}"""
         const val AUTHORITATIVE_COMPLETED_HISTORY = """{"messages":[
-            {"row_id":"stored-user","role":"user","text":"ship it","timestamp":1700001001},
-            {"row_id":"stored-assistant","role":"assistant","text":"done","timestamp":1700001002},
+            {"row_id":201,"role":"user","text":"ship it","timestamp":1700001001},
+            {"row_id":202,"role":"assistant","text":"done","timestamp":1700001002},
             {"role":"tool","name":"read_file","context":"README.md"}
         ],"count":3}"""
     }
