@@ -124,10 +124,13 @@ internal class NativeGatewayAuthenticator(
     /**
      * Serializes load → refresh → save for one process.
      *
-     * `/auth/native/refresh` hands back a *new* refresh token and retires the
-     * one it was given (hermes-agent @
+     * `/auth/native/refresh` hands back a *new* access/refresh pair in its
+     * response body, and answers a refresh token every provider rejects —
+     * dead, expired, or reuse-detected — with a 401 (hermes-agent @
      * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
-     * `hermes_cli/dashboard_auth/routes.py:1027-1079`). Two callers — the
+     * `hermes_cli/dashboard_auth/routes.py:1027-1079`; where the presented
+     * token is actually retired is the session provider's business, which that
+     * route does not show). Two callers — the
      * reconnect path's [ticket] and a REST leg's [refreshAccessToken] — that
      * POST the same one-time token race each other into a rejection, and their
      * two [GatewayTokenStore.save] calls race over which rotation survives.
@@ -172,8 +175,9 @@ internal class NativeGatewayAuthenticator(
 
     /**
      * Deliberately outside [rotation]: a person tapping sign out must not wait
-     * on a network refresh. [rotate] re-reads the store before it writes, so a
-     * clear that lands mid-rotation still wins.
+     * on a network refresh. [rotate] re-checks *which* credential the store
+     * holds before it writes, so a clear that lands mid-rotation still wins —
+     * and so does whatever the person signs in as next.
      */
     suspend fun signOut(profile: RemoteGatewayProfile) {
         profile.normalizedBaseUrl?.let { store.clear(it) }
@@ -207,16 +211,23 @@ internal class NativeGatewayAuthenticator(
      * refresh token is what the comparison is on, because it is the one-time
      * half — the access token only happens to rotate with it.
      *
-     * The store is read once more after the network call, because [signOut]
-     * deliberately does *not* take this lock: parking a person's sign-out
-     * behind a bounded network refresh would be worse than the window it
-     * closes. Saving into a store that was cleared mid-flight would silently
-     * undo that sign-out and leave a usable credential on disk.
+     * The store is read once more after the network call, and what it has to
+     * still hold is the *exact refresh token this rotation spent* — identity,
+     * not presence. Both of the store's other writers are deliberately outside
+     * this lock: [signOut], because parking a person's sign out behind a
+     * bounded network refresh would be worse than the window it closes, and
+     * interactive sign-in, because a browser round trip must never park
+     * another caller behind it. Between the POST and the save, then, the store
+     * can be cleared *and* filled again — possibly as a different account. A
+     * presence check reads that store as fine and writes the pre-sign-out
+     * identity over the credential the person just signed in as; only identity
+     * catches it. Either way the save silently undoes the person's most recent
+     * action.
      *
      * Null means no rotation is available — nothing stored, nothing to rotate
-     * with, the Gateway refused, or the credential was signed out from under
-     * it. It is never a partial success: the stored tokens are replaced only
-     * when a whole new set arrives.
+     * with, the Gateway refused, or the stored credential changed underneath
+     * the rotation. It is never a partial success: the stored tokens are
+     * replaced only when a whole new set arrives.
      */
     private suspend fun rotate(
         baseUrl: String,
@@ -229,8 +240,9 @@ internal class NativeGatewayAuthenticator(
         val refreshToken = current.refreshToken.takeIf(String::isNotBlank) ?: return@withLock null
         val refreshed = api.refresh(baseUrl, refreshToken, current.provider) ?: return@withLock null
         // Same question again, because the answer can have changed while the
-        // refresh was on the wire.
-        if (store.load(baseUrl) == null) return@withLock null
+        // refresh was on the wire — and it is the same question: not "is
+        // anything stored" but "is this still the credential I am rotating".
+        if (store.load(baseUrl)?.refreshToken != refreshToken) return@withLock null
         store.save(baseUrl, refreshed)
         refreshed
     }

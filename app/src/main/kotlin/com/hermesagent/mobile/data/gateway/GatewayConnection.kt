@@ -90,9 +90,9 @@ internal interface GatewayConnectionController {
      * Rotate the live leg's credential once, without user interaction, for a
      * REST caller the Gateway just refused.
      *
-     * False means this leg has nothing to rotate — an SSH-tunneled loopback
-     * session token and a token-mode gateway token both live for the lifetime
-     * of the connection that carries them — or the rotation was refused. The
+     * False means this leg has nothing to rotate — the managed SSH leg's
+     * loopback session token lives for the lifetime of the forward that
+     * carries it — or the rotation was refused. The
      * caller's next honest move is the app's ordinary sign-in, never a second
      * rotation.
      */
@@ -102,9 +102,9 @@ internal interface GatewayConnectionController {
      * Whether a sign-in on this device could supply the live leg's credential.
      *
      * True only on the host-owned Remote Gateway leg, which has a sign-in.
-     * Managed SSH and token mode do not: their credential is created by the
-     * connection and dies with it, so copy that sends someone to sign in there
-     * points at a door that is not in the building. Reconnecting is.
+     * Managed SSH does not: its credential is created by the connection and
+     * dies with it, so copy that sends someone to sign in there points at a
+     * door that is not in the building. Reconnecting is.
      */
     suspend fun signInAvailable(): Boolean = false
 

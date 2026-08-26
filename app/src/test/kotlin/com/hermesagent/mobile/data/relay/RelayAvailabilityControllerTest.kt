@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -160,8 +161,8 @@ class RelayAvailabilityControllerTest {
 
     @Test
     fun `a rotation the connection cannot perform goes straight to sign-in`() = runTest {
-        // The SSH-tunneled and token-mode legs carry a connection-lifetime
-        // token with nothing to rotate; they must not re-probe on a refusal.
+        // The managed SSH leg carries a connection-lifetime token with nothing
+        // to rotate; it must not re-probe on a refusal.
         val probe = ScriptedProbe(LAPSED)
         val refresher = CountingRefresher(rotates = false)
         val controller = controller(probe, MutableStateFlow(connected()), refresher = refresher)
@@ -360,8 +361,8 @@ class RelayAvailabilityControllerTest {
         )
         advanceUntilIdle()
 
-        // Managed SSH and token mode have no Gateway sign-in at all, so the
-        // only honest next step is the one that rebuilds the credential.
+        // Managed SSH has no Gateway sign-in at all, so the only honest next
+        // step is the one that rebuilds the credential.
         assertEquals(NO_CREDENTIAL, onSsh.state.value.availability)
         assertFalse(onSsh.state.value.signInAvailable)
         assertEquals(TRANSPORT_DOWN_MESSAGE, onSsh.state.value.statusMessage())
@@ -410,6 +411,52 @@ class RelayAvailabilityControllerTest {
         assertNull(RelayAvailability.Missing.statusDetail())
         assertNull(NO_CREDENTIAL.statusDetail())
         assertNull(RelayAvailability.GatewayUnreachable.statusDetail())
+    }
+
+    @Test
+    fun `a lane with too much to say is cut to the room the surface has`() = runTest {
+        // A remote host authors this string, so its length is not the app's to
+        // trust: the detail line gets one bounded line's worth, however long
+        // the lane's message is.
+        val long = RelayAvailability.Available(
+            RelayChannelsStatus(
+                RelayLaneState.ERROR,
+                message = "Relay is unhappy. ".repeat(40),
+                guidance = null,
+            ),
+        ).statusDetail()
+
+        assertEquals(160, long!!.length)
+        assertTrue(long.startsWith("Relay is unhappy. Relay is unhappy."))
+
+        // The bound is a ceiling, not a pad: a message that already fits is
+        // handed over whole.
+        val short = RelayAvailability.Available(
+            RelayChannelsStatus(RelayLaneState.ERROR, message = "Relay is unhappy.", guidance = null),
+        ).statusDetail()
+        assertEquals("Relay is unhappy.", short)
+    }
+
+    @Test
+    fun `a cycle that dies without ever settling still clears the spinner it started`() = runTest {
+        // The probe seam is not this controller's code. A client that wraps its
+        // own `withTimeout` raises a TimeoutCancellationException, which is a
+        // CancellationException the cycle correctly refuses to treat as an
+        // answer — so it ends having settled nothing, from somewhere that is
+        // neither `startProbe` nor `stopProbe` and therefore never bumped the
+        // generation. The completion backstop is the only thing left that can
+        // take the spinner down.
+        val controller = controller(
+            { withTimeout(1L) { delay(1_000L); READY } },
+            MutableStateFlow(connected()),
+        )
+        advanceUntilIdle()
+
+        // Nothing was claimed about Relay — the cycle never reached an answer.
+        assertNull(controller.state.value.availability)
+        // But the surface is not left pending forever, which is the one outcome
+        // this controller exists to prevent.
+        assertFalse(controller.state.value.probing)
     }
 
     private fun TestScope.controller(
