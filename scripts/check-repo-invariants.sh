@@ -160,4 +160,26 @@ else
   ok "inline diffs read the diff tokens, each marker paired with its own tint and ink"
 fi
 
+
+# ── 11. The instrumented emulator lane stays offline ─────────────────────────
+# S38's contract is that no test in `app/src/androidTest/` needs a real Gateway,
+# a credential, or a host name. A URL literal or a PEM header is the shape that
+# breaks it: the moment one appears, the lane has stopped being reproducible on
+# any runner and has started depending on somebody's machine.
+lane="app/src/androidTest"
+if [[ ! -d "$lane" ]]; then
+  problem "$lane is missing; the instrumented lane is what CI's emulator job runs."
+else
+  lane_targets="$(
+    grep -rInE -e 'https?://[A-Za-z0-9]' -e '-----BEGIN' "$lane" 2>/dev/null || true
+  )"
+  if [[ -n "$lane_targets" ]]; then
+    problem "the instrumented lane names a network target or key material:"
+    note "$(echo "$lane_targets" | head -5)"
+    note "fix: construct the state locally; the lane must run with no Gateway reachable."
+  else
+    ok "the instrumented lane names no Gateway, host or key material"
+  fi
+fi
+
 exit $fail

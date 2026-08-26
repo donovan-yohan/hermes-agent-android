@@ -18,7 +18,7 @@ limitations, and likely next slices behind that table.
 | Android support | API 26+ (Android 8.0+), target API 36. |
 | App version | `0.2.0-phase2` (`versionCode` 2). |
 | Distribution | One rolling, persistently debug-signed `hermes-mobile-latest` artifact from successful `main` builds. No production release channel yet. |
-| Validation boundary | JVM and Robolectric gates are broad. Exact-head physical Pixel acceptance remains open. |
+| Validation boundary | JVM and Robolectric gates are broad, and an instrumented lane runs on a CI emulator for the claims Robolectric cannot make. Exact-head physical Pixel acceptance remains open. |
 
 ## What works now
 
@@ -167,7 +167,7 @@ for the Managed SSH lifecycle.
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
 | Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
-| Device evidence | Exact-head physical Pixel PKCE, network handoff, IME, TalkBack, media, and process-death acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
+| Device evidence | An instrumented emulator lane runs on every CI build and covers what an emulator honestly can: connection-state copy on a real display, 48 dp targets and labels as the platform accessibility tree publishes them, real IME insets under the composer, a real orientation change, and saved-state restore across a real Activity recreate. It is not physical acceptance and does not stand in for it: PKCE browser hand-off, real radio, network handoff, TalkBack, media, and a system-initiated process kill remain unproven, and exact-head physical Pixel acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
 
 ## Roadmap direction
 

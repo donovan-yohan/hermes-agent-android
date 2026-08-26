@@ -97,6 +97,90 @@ jobs:
         shell: bash
         run: rm -f "${HERMES_ROLLING_DEBUG_KEYSTORE_PATH:-$RUNNER_TEMP/rolling-debug.keystore}"
 
+  # The instrumented lane. Independent of the APK job on purpose: an emulator
+  # failure must not withhold the rolling artifact, and a broken build must not
+  # be reported as a device failure. Its scope is stated in the job itself.
+  instrumented:
+    name: instrumented emulator lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: State what this lane proves
+        shell: bash
+        run: |
+          echo 'This emulator lane does not substitute for physical acceptance.'
+          echo 'PKCE browser hand-off, real radio, network handoff, TalkBack and media stay on the device matrix.'
+          echo 'ActivityScenario.recreate() is a real destroy/recreate, not a system-initiated process kill.'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+      # Without KVM the x86_64 image falls back to software emulation and the
+      # lane stops fitting in any sensible timeout.
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # The AVD and its cold snapshot are the expensive part; caching them is
+      # what keeps a warm run inside the timeout above.
+      - name: Cache the emulator image and AVD
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-google_apis-x86_64-pixel_6-v1
+      - name: Create the AVD snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'AVD created; the snapshot is now cacheable.'
+      # pixel_6 is pinned, not incidental: the chat surface switches to its wide
+      # layout above 720 dp, and OrientationTest asserts the rotated window
+      # really crosses that breakpoint rather than passing vacuously.
+      - name: Run the instrumented lane
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb shell settings put secure show_ime_with_hard_keyboard 1
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache
+      - name: Upload instrumented lane evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-results-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: warn
+          retention-days: 14
+
   # Separate job so only this one holds `actions: write`, and it runs after the
   # upload so the replacement artifact exists before any older one is deleted.
   prune:

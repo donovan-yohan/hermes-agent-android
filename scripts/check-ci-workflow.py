@@ -5,8 +5,10 @@ This covers two files: the exact-head GitHub workflow and the rolling debug
 signing config in `app/build.gradle.kts` that the workflow opts into. It is
 intentionally standard-library-only and validates the runner-facing
 requirements which a YAML formatter cannot infer: event coverage, JDK/SDK pins,
-exact Gradle gate, rolling main APK lifecycle, and the env-gated debug signing
-config both ends have to agree on.
+exact Gradle gate, rolling main APK lifecycle, the env-gated debug signing
+config both ends have to agree on, and the instrumented emulator lane — its
+job, its pinned device, its stated boundary, and the fact that it has tests to
+run at all.
 """
 from __future__ import annotations
 
@@ -17,6 +19,26 @@ import sys
 WORKFLOW = Path(".github/workflows/android-exact-head.yml")
 BUILD_FILE = Path("app/build.gradle.kts")
 ROLLING_KEYSTORE_ENV = "HERMES_ROLLING_DEBUG_KEYSTORE_PATH"
+ANDROID_TEST_SOURCES = Path("app/src/androidTest/kotlin")
+# The lane's honesty is part of its contract, so it is asserted rather than
+# left to a reviewer to notice going missing.
+INSTRUMENTED_BOUNDARY = (
+    "This emulator lane does not substitute for physical acceptance."
+)
+INSTRUMENTED_MATRIX = (
+    "PKCE browser hand-off, real radio, network handoff, TalkBack and media "
+    "stay on the device matrix."
+)
+# The chat surface switches to its wide layout above 720 dp, and the rotation
+# test asserts the landscape window really crosses it. A different profile
+# would turn that assertion vacuous, so the device is part of the contract.
+INSTRUMENTED_DEVICE = (
+    "reactivecircus/android-emulator-runner@v2",
+    "api-level: 34",
+    "target: google_apis",
+    "arch: x86_64",
+    "profile: pixel_6",
+)
 REQUIRED = (
     "pull_request:",
     "push:\n    branches: [main]",
@@ -50,12 +72,26 @@ REQUIRED = (
     "prune:",
     "rolling APK upload did not return an artifact id",
     "--method DELETE",
+    "instrumented:",
+    "Enable KVM",
+    "~/.android/avd/*",
+    "~/.android/adb*",
+    "./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache",
+    "app/build/outputs/androidTest-results/connected/**",
 )
 # Only the opt-in seam is asserted here; the runtime `apksigner verify` step is
 # authoritative for the keystore's actual store/alias/password material.
 BUILD_REQUIRED = (
     f'providers.environmentVariable("{ROLLING_KEYSTORE_ENV}")',
     'getByName("debug")',
+    # The emulator job runs `connectedDebugAndroidTest`; that task compiles
+    # nothing unless the source set and its test runtime are still wired up.
+    'getByName("androidTest").kotlin.srcDir("src/androidTest/kotlin")',
+    "androidTestImplementation(libs.compose.ui.test.junit4)",
+    'testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"',
+    # `check` compiles and dexes the lane so a broken one fails locally rather
+    # than an emulator job away.
+    'dependsOn("assembleDebugAndroidTest")',
 )
 
 
@@ -148,6 +184,52 @@ def main() -> int:
         failures.append("prune job must depend on the successful check/upload job")
     if "select(.id != ${CURRENT_ARTIFACT_ID})" not in prune_job:
         failures.append("prune query must exclude the newly uploaded artifact id")
+    instrumented_job = _indented_block(effective, "  instrumented:")
+    if not instrumented_job:
+        failures.append(
+            "the instrumented emulator lane job is missing; "
+            "app/src/androidTest/ is only a claim until CI runs it on a device"
+        )
+    else:
+        if "timeout-minutes:" not in instrumented_job:
+            failures.append("the instrumented lane must be time-bounded")
+        if "needs:" in instrumented_job:
+            failures.append(
+                "the instrumented lane must not depend on another job; "
+                "an emulator failure must not withhold the rolling APK"
+            )
+        if "connectedDebugAndroidTest" not in instrumented_job:
+            failures.append("the instrumented lane must run the connected androidTest task")
+        for pin in INSTRUMENTED_DEVICE:
+            if pin not in instrumented_job:
+                failures.append(f"the instrumented lane must pin its device: {pin}")
+        if "Enable KVM" not in instrumented_job:
+            failures.append("the instrumented lane needs KVM to fit its timeout")
+        if "actions/cache@v4" not in instrumented_job:
+            failures.append("the instrumented lane must cache the AVD")
+        if "actions/upload-artifact@v4" not in instrumented_job:
+            failures.append("the instrumented lane must upload its results as evidence")
+        for sentence in (INSTRUMENTED_BOUNDARY, INSTRUMENTED_MATRIX):
+            if sentence not in instrumented_job:
+                failures.append(
+                    f"the instrumented lane must state its boundary in the workflow: {sentence}"
+                )
+    if "needs: instrumented" in effective:
+        failures.append("no job may gate on the instrumented lane; it is evidence, not a build step")
+
+    instrumented_upload = _indented_block(
+        effective, "      - name: Upload instrumented lane evidence"
+    )
+    if instrumented_upload and "if: always()" not in instrumented_upload:
+        failures.append("a failing instrumented run is exactly when its results are needed")
+
+    lane_tests = sorted(ANDROID_TEST_SOURCES.rglob("*Test.kt")) if ANDROID_TEST_SOURCES.is_dir() else []
+    if not lane_tests:
+        failures.append(
+            f"{ANDROID_TEST_SOURCES} holds no *Test.kt; "
+            "the emulator job would pass by running nothing"
+        )
+
     ordered = (
         ("rolling debug keystore restore", signing_step),
         ("Gradle build", gradle_step),
@@ -165,8 +247,9 @@ def main() -> int:
         return 1
     print(
         "ok    Android exact-head workflow gates PR/main, uploads one rolling main APK, "
-        "prunes superseded artifacts, and app/build.gradle.kts keeps the rolling debug "
-        "signing config env-gated"
+        "prunes superseded artifacts, runs the instrumented lane on a pinned emulator "
+        f"with its boundary stated ({len(lane_tests)} test classes), and "
+        "app/build.gradle.kts keeps the rolling debug signing config env-gated"
     )
     return 0
 
