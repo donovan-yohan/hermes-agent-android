@@ -152,15 +152,50 @@ data class ComposerPreviewArtifact(
     val detail: String? = null,
 )
 
+/**
+ * The Gateway's durable address for one persisted message — the `messages.id`
+ * it stamps onto a history row when the transcript is read with row ids
+ * (NousResearch/hermes-agent @ `f82f2dba`,
+ * `tui_gateway/methods_session.py:2597-2606`: "the durable row id is how
+ * clients address a specific persisted turn"; the wire value is projected at
+ * `tui_gateway/server.py:7640-7646`).
+ *
+ * A separate type because it is not interchangeable with [TranscriptEntry.id]:
+ * that id is a rendering key this client mints, and it exists for every row —
+ * live, optimistic or rehydrated. This one exists only for a row the backend
+ * has actually written down, which is what an addressed action (rewind,
+ * reactions, backfill dedupe, read-aloud) needs.
+ */
+@JvmInline
+value class TranscriptRowId(val value: Long)
+
 /** One block in a transcript. */
 sealed interface TranscriptEntry {
+    /**
+     * The rendering key. Locally minted — stable within a session's transcript
+     * but meaningless to the backend, and never an address to send back.
+     */
     val id: String
+
+    /**
+     * The durable row this entry was projected from, or null when the backend
+     * has not written it down (a live or optimistic row) or the Gateway does
+     * not stamp row ids. Null is the honest answer; nothing here is ever
+     * invented from a local id.
+     *
+     * One persisted row can project to more than one entry — an assistant row
+     * carrying reasoning yields both a [ReasoningActivity] and an
+     * [AssistantTurn] — so this addresses the row, not the entry, and is not
+     * unique across a transcript. [id] remains the per-entry key.
+     */
+    val rowId: TranscriptRowId?
 }
 
 data class UserTurn(
     override val id: String,
     val text: String,
     val atMillis: Long,
+    override val rowId: TranscriptRowId? = null,
 ) : TranscriptEntry
 
 data class AssistantTurn(
@@ -173,6 +208,7 @@ data class AssistantTurn(
     val error: String? = null,
     /** Set when the user stopped generation. Desktop keeps the partial text. */
     val stopped: Boolean = false,
+    override val rowId: TranscriptRowId? = null,
 ) : TranscriptEntry
 
 /** Provider reasoning, kept separate from answer prose like Desktop's reasoning disclosure. */
@@ -182,6 +218,7 @@ data class ReasoningActivity(
     val state: ToolState,
     val startedAtMillis: Long? = null,
     val elapsedSeconds: Double = 0.0,
+    override val rowId: TranscriptRowId? = null,
 ) : TranscriptEntry
 
 /** A tool run, rendered as scaffolding rather than as a message. */
@@ -196,6 +233,7 @@ data class ToolActivity(
     val resultText: String? = null,
     val inlineDiff: String? = null,
     val startedAtMillis: Long? = null,
+    override val rowId: TranscriptRowId? = null,
 ) : TranscriptEntry
 
 enum class ToolState { Running, Done, Failed, Stopped }

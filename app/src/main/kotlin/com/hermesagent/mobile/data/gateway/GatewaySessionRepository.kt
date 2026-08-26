@@ -34,6 +34,7 @@ import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
+import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.retainingGatewayQueue
 import com.hermesagent.mobile.data.ssh.redact
@@ -581,7 +582,7 @@ internal class LiveGatewaySessionRepository(
             }
         }
 
-        val historyResult = connection.client.request("session.history", objectParams("session_id", runtimeId))
+        val historyResult = connection.client.request("session.history", historyParams(runtimeId))
         val history = parseHistory(historyResult, runtimeId, clock())
         val hydratedTodos = latestComposerTodosFromHistory(historyResult)
         synchronized(stateLock) {
@@ -3223,9 +3224,10 @@ private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Lon
     messages.forEachIndexed { index, element ->
         val message = element as? JsonObject ?: return@forEachIndexed
         val id = message.messageId() ?: "$runtimeId-history-$index"
+        val rowId = message.durableRowId()
         val time = message.timestamp(nowMillis)
         when (message.string("role")) {
-            "user" -> add(UserTurn(id, message.answerText(), time))
+            "user" -> add(UserTurn(id, message.answerText(), time, rowId = rowId))
             "assistant" -> {
                 val reasoning = message.reasoningText()
                 reasoning.takeIf(String::isNotBlank)?.let {
@@ -3235,12 +3237,13 @@ private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Lon
                             text = it.safePayloadText().orEmpty(),
                             state = ToolState.Done,
                             elapsedSeconds = message.durationSeconds(),
+                            rowId = rowId,
                         ),
                     )
                 }
                 val answer = message.answerText()
                 if (answer.isNotBlank()) {
-                    add(AssistantTurn(id, answer, time))
+                    add(AssistantTurn(id, answer, time, rowId = rowId))
                 }
             }
 
@@ -3260,6 +3263,11 @@ private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Lon
                         argsText = message.toolInputText(),
                         resultText = message["result"].safePayloadText() ?: message["content"].safePayloadText(),
                         inlineDiff = message.jsonString("inline_diff")?.safePayloadText(),
+                        // Upstream's tool projection returns at server.py:7601-7615,
+                        // before the row_id stamp at :7645, so this is null today.
+                        // Read rather than hardcoded: a Gateway that starts
+                        // stamping tool rows must not have that address dropped.
+                        rowId = rowId,
                     ),
                 )
             }
@@ -3309,7 +3317,56 @@ private fun Throwable.isAmbiguousGatewayMutation(): Boolean =
 private fun objectParams(name: String, value: String): JsonObject =
     buildJsonObject { put(name, JsonPrimitive(value)) }
 
+/**
+ * Params for `session.history`, including a forward-compatible
+ * `include_row_ids` hedge.
+ *
+ * Be honest about what this flag does today: nothing. At
+ * NousResearch/hermes-agent @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` the
+ * handler hardcodes `include_row_ids=True` on its own read and never looks at
+ * request params (`tui_gateway/methods_session.py:2597-2606`), so the pinned
+ * Gateway stamps every persisted row with its `messages.id` whether or not we
+ * ask. The flag is sent so that a Gateway which one day makes the stamped read
+ * opt-in still answers a stamped transcript, because that stamp is the only
+ * durable address a client has for one turn — the ids this app mints are
+ * rendering keys and differ between a live, an optimistic and a rehydrated row.
+ *
+ * Sending it is safe on the pinned Gateway for a narrow, method-specific
+ * reason, not a protocol guarantee: dispatch only type-checks that `params` is
+ * an object (`tui_gateway/server.py:2064-2081`) and this handler then reads
+ * `session_id` alone (`_sess_nowait`, `server.py:2518-2520`), so an extra key
+ * is inert here. Handlers validate their own params and do refuse requests —
+ * `message.react` answers 4023 when its row address is missing
+ * (`methods_session.py:1252-1260`) — so this tolerance must be re-checked per
+ * method, never assumed.
+ *
+ * Either way [durableRowId] reports no durable identity when a response
+ * carries no `row_id`, rather than inventing one.
+ */
+private fun historyParams(sessionId: String): JsonObject = buildJsonObject {
+    put("session_id", JsonPrimitive(sessionId))
+    put("include_row_ids", JsonPrimitive(true))
+}
+
+/**
+ * The rendering key for a projected row: whatever identifier the row carries,
+ * `row_id` first because a persisted row's is the most stable of them. Unlike
+ * [durableRowId] this tolerates any shape — a key only has to be unique down
+ * the rendered list, never addressable back to the backend.
+ */
 private fun JsonObject.messageId(): String? = string("row_id") ?: string("message_id") ?: string("id")
+
+/**
+ * The durable `messages.id` of a persisted row, or null.
+ *
+ * Null covers every case where the backend has not given us an address: an
+ * older Gateway that ships no `row_id`, a live row it has not written down
+ * yet, or a value that is not a positive integer row id. Nothing is fabricated
+ * from the local rendering key — a made-up address would later rewind or react
+ * to the wrong turn.
+ */
+private fun JsonObject.durableRowId(): TranscriptRowId? =
+    primitive("row_id")?.toLongOrNull()?.takeIf { it > 0 }?.let(::TranscriptRowId)
 
 private fun JsonObject.todoToolName(): String? =
     string("toolName") ?: string("tool_name") ?: string("name")
@@ -3723,6 +3780,16 @@ private fun ComposerStatusState.hasVisibleRows(): Boolean =
     goal != null || todos.isNotEmpty() || subagents.isNotEmpty() || backgroundProcesses.isNotEmpty() ||
         previewArtifacts.isNotEmpty() || gatewayQueuedPrompts.isNotEmpty() || isCompacting
 
+/**
+ * Replace by rendering key, or append.
+ *
+ * Note for the `Show earlier` backfill (#68 S25): this replaces wholesale, so
+ * a live entry landing on the id of a hydrated one would erase that row's
+ * [TranscriptEntry.rowId]. Unreachable at the pinned Gateway — a live row
+ * arrives with no durable stamp and its own minted key, never a persisted
+ * row's — but once a page can be merged into a live transcript, a replace
+ * whose incoming `rowId` is null must keep the address already held.
+ */
 private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<TranscriptEntry> {
     val index = indexOfFirst { it.id == entry.id }
     if (index < 0) return this + entry
