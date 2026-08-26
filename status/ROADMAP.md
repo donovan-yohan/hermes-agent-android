@@ -104,9 +104,12 @@ for the Managed SSH lifecycle.
 
 ### Relay channels
 
-- Read-only Relay workspace behind a Settings entry point: the channel list in
-  the hub's own order with archived channels annotated in place, and one
-  channel's transcript oldest-to-newest by the hub's `seq`.
+- Relay workspace behind a Settings entry point: the channel list in the
+  hub's own order with archived channels annotated in place, one channel's
+  transcript oldest-to-newest by the hub's `seq`, and a composer under the
+  transcript. Each draft is sent once under one client message id that a
+  retry reuses byte-for-byte; the encoded body is bounded before any request
+  goes out, and a conflict keeps the draft instead of claiming delivery.
 - Honest states for every answer the plugin can give — a Gateway with no Relay,
   a lane that needs authorization on the host, an offline or errored lane, an
   unreadable answer, and a connection that has not happened yet. Relay's own
@@ -115,7 +118,7 @@ for the Managed SSH lifecycle.
   resumed and the lane is ready. A failed refresh keeps the last good answer
   under one quiet stale line instead of blanking the screen or raising an
   error.
-- No composer: sending, editing, and thread replies are absent. No pagination
+- Editing and thread replies are absent. No pagination
   beyond the frozen contract's bounded 50-message window, no Harnesses
   inspector, and no `POST /connection/authorize` write. Selection is never
   persisted. Physical-device capture and acceptance for this surface are open.
@@ -141,7 +144,7 @@ for the Managed SSH lifecycle.
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
-| Desktop management breadth | The Relay plugin surface ships read-only. There are still no dedicated mobile screens for profiles/bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
+| Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. There are still no dedicated mobile screens for profiles/bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
 | Device evidence | Exact-head physical Pixel PKCE, network handoff, IME, TalkBack, media, and process-death acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
 
