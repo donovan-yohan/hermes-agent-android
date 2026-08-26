@@ -102,7 +102,11 @@ fun interface RelayAvailabilityProbe {
  *
  * Before the first Connected edge the state is deliberately empty — no
  * availability and no spinner. Nothing has been asked yet, and "unreachable" is
- * an answer rather than the absence of one.
+ * an answer rather than the absence of one. It stays empty for as long as no
+ * Gateway is saved at all, because a device with nothing to connect to has
+ * nothing that could be unreachable: `configured` is what tells those two
+ * apart, and the surface renders the first as "connect a Gateway" and the
+ * second as "reconnect".
  *
  * [RelayLaneState.AUTH_REQUIRED] is deliberately *not* acted on here: redeeming
  * the host's grant through `POST /connection/authorize` consumes a one-time
@@ -113,6 +117,7 @@ class RelayAvailabilityController(
     private val scope: CoroutineScope,
     private val probe: RelayAvailabilityProbe,
     connection: Flow<GatewayConnectionState>,
+    configured: Flow<Boolean>,
     private val credentials: RelayCredentialRefresher,
     private val wait: suspend (Long) -> Unit = { millis -> delay(millis) },
 ) {
@@ -122,6 +127,7 @@ class RelayAvailabilityController(
     /** One transition. Only the command loop may act on these. */
     private sealed interface Command {
         data class Status(val status: GatewayConnectionStatus) : Command
+        data class Configured(val configured: Boolean) : Command
         data object Refresh : Command
         data class Settle(val generation: Long, val answer: Settled) : Command
 
@@ -153,11 +159,33 @@ class RelayAvailabilityController(
      */
     private var observedStatus: GatewayConnectionStatus = GatewayConnectionStatus.Disconnected
 
+    /**
+     * Whether a Gateway is saved at all, as the profile store last answered it.
+     *
+     * False until it answers, and that is not a guess: the empty state already
+     * on screen in that window says exactly this, so acting on `false` there
+     * cannot change what anyone is looking at. Starting from `true` could —
+     * into the claim that a saved Gateway is unreachable on a device that has
+     * none, which is the bug this flag exists to stop. The window is the
+     * profile store's first read, and a status applied inside it is re-derived
+     * the moment that read lands.
+     */
+    private var gatewayConfigured = false
+
+    /**
+     * Whether any status has been acted on, or the seed still stands and
+     * nothing has been claimed. It is what lets a late [gatewayConfigured]
+     * answer revise the sentence it changes without inventing one where the
+     * controller has deliberately said nothing.
+     */
+    private var statusApplied = false
+
     init {
         scope.launch {
             for (command in commands) {
                 when (command) {
                     is Command.Status -> onConnectionStatus(command.status)
+                    is Command.Configured -> onConfigured(command.configured)
                     Command.Refresh -> applyStatus(observedStatus)
                     is Command.Settle -> onSettled(command.generation, command.answer)
                     is Command.CycleEnded -> onCycleEnded(command.generation)
@@ -169,6 +197,9 @@ class RelayAvailabilityController(
         }.invokeOnCompletion { commands.close() }
         scope.launch {
             connection.collect { commands.trySend(Command.Status(it.status)) }
+        }
+        scope.launch {
+            configured.collect { commands.trySend(Command.Configured(it)) }
         }
     }
 
@@ -197,10 +228,35 @@ class RelayAvailabilityController(
     }
 
     /**
+     * The profile store answered, or a Gateway was added or forgotten.
+     *
+     * Only the not-connected states read this flag, so only a state one of them
+     * produced is re-derived. Before anything has been applied the seed stands:
+     * learning that a Gateway is saved is not an answer about Relay, and
+     * publishing one here would settle "unreachable" before the app has so much
+     * as tried to connect. A Connected state's answer came from the Gateway
+     * itself and does not change because a profile was edited — and re-applying
+     * it would spend a probe on an edit.
+     */
+    private fun onConfigured(configured: Boolean) {
+        if (configured == gatewayConfigured) return
+        gatewayConfigured = configured
+        if (!statusApplied) return
+        when (observedStatus) {
+            GatewayConnectionStatus.Disconnected,
+            GatewayConnectionStatus.NeedsAttention,
+            -> applyStatus(observedStatus)
+
+            else -> Unit
+        }
+    }
+
+    /**
      * What a given connection status means for the Relay state, whether it just
      * arrived or [refresh] asked what it currently implies.
      */
     private fun applyStatus(status: GatewayConnectionStatus) {
+        statusApplied = true
         when (status) {
             GatewayConnectionStatus.Connected -> startProbe()
 
@@ -208,11 +264,20 @@ class RelayAvailabilityController(
             // one on screen and let the Connected edge re-probe.
             GatewayConnectionStatus.Connecting -> stopProbe()
 
+            // "Unreachable" is a claim about a Gateway, so it needs one to be
+            // about. With none saved there is nothing that was reached for and
+            // nothing a retry could reach: the state stays empty, and the
+            // surface asks for the Gateway instead of offering a retry with no
+            // target. A saved Gateway that is down keeps the reconnect answer.
             GatewayConnectionStatus.Disconnected,
             GatewayConnectionStatus.NeedsAttention,
             -> {
                 stopProbe()
-                _state.value = RelayAvailabilityState(RelayAvailability.GatewayUnreachable)
+                _state.value = if (gatewayConfigured) {
+                    RelayAvailabilityState(RelayAvailability.GatewayUnreachable)
+                } else {
+                    RelayAvailabilityState()
+                }
             }
         }
     }

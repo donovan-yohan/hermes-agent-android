@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.ssh.HostProfile
+import com.hermesagent.mobile.data.ssh.HostProfileStore
 import com.hermesagent.mobile.data.ssh.SshCredential
 import com.hermesagent.mobile.restoreSavedRemoteGateway
 import java.net.Socket
@@ -14,6 +15,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -1205,6 +1207,41 @@ class RemoteGatewayTest {
         }
         override suspend fun clear(baseUrl: String) {
             tokens = null
+        }
+    }
+
+    @Test
+    fun `a Gateway counts as configured only on the route that could connect`() = runTest {
+        val hosts = MemoryHostProfileStore()
+        val remote = MemoryRemoteProfileStore(
+            GatewayConnectionMode.Remote,
+            RemoteGatewayProfile(),
+        )
+
+        // A fresh install: neither route has anything to connect to.
+        assertFalse(gatewayConfigured(remote, hosts).first())
+
+        // Only the selected route can produce a connection, so only its own
+        // profile decides — the same pair `restoreSavedRemoteGateway` gates on.
+        hosts.hostProfile.value = HostProfile(host = "hermes.example", username = "ada")
+        assertFalse(gatewayConfigured(remote, hosts).first())
+
+        remote.profile.value = RemoteGatewayProfile(baseUrl = "https://hermes.example")
+        assertTrue(gatewayConfigured(remote, hosts).first())
+
+        // A URL that never parses is not a Gateway to connect to.
+        remote.profile.value = RemoteGatewayProfile(baseUrl = "not a url")
+        assertFalse(gatewayConfigured(remote, hosts).first())
+
+        // And the managed SSH route reads its own saved host.
+        remote.mode.value = GatewayConnectionMode.Ssh
+        assertTrue(gatewayConfigured(remote, hosts).first())
+    }
+
+    private class MemoryHostProfileStore : HostProfileStore {
+        override val hostProfile = MutableStateFlow(HostProfile())
+        override suspend fun saveHostProfile(profile: HostProfile) {
+            hostProfile.value = profile
         }
     }
 

@@ -112,8 +112,9 @@ for the Managed SSH lifecycle.
   goes out, and a conflict keeps the draft instead of claiming delivery.
 - Honest states for every answer the plugin can give — a Gateway with no Relay,
   a lane that needs authorization on the host, an offline or errored lane, an
-  unreadable answer, and a connection that has not happened yet. Relay's own
-  words render beside this app's sentence, never instead of it.
+  unreadable answer, a saved Gateway that is down, and a device with no Gateway
+  set up yet, which asks for one rather than offering a retry with no target.
+  Relay's own words render beside this app's sentence, never instead of it.
 - The pane on screen refreshes every three seconds while the surface is
   resumed and the lane is ready. A failed refresh keeps the last good answer
   under one quiet stale line instead of blanking the screen or raising an
