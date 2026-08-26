@@ -37,6 +37,8 @@ RENDERED_DATA_SOURCES = (
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshjProbe.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshProbe.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshSessionOpener.kt",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/voice/SpeechText.kt",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/voice/VoicePolicy.kt",
 )
 
 

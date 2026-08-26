@@ -1,9 +1,23 @@
 package com.hermesagent.mobile.data.voice
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import java.util.concurrent.atomic.AtomicBoolean
+
 /**
- * Named policy constants for the Android voice stack. Values follow the
- * Desktop conversation defaults; device calibration may adjust them only with
+ * Named policy for the Android voice stack: the numeric conversation
+ * constants, and the spoken stop-phrase rules that decide when an utterance
+ * ends a conversation instead of becoming a turn. Values follow the Desktop
+ * conversation defaults; device calibration may adjust them only with
  * recorded evidence. These are policy, not UI timing.
+ *
+ * The stop-phrase half is a port of Desktop's
+ * `apps/desktop/src/lib/voice-stop-word.ts:1-105` and the phrase-list resolution
+ * in `apps/desktop/src/store/voice-prefs.ts:15-38`
+ * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. Pure functions only: nothing
+ * here logs, and a transcript never leaves the call it arrived on.
  */
 object VoicePolicy {
     /** Client raw capture ceiling, conservatively below the server 25 MiB cap. */
@@ -29,6 +43,47 @@ object VoicePolicy {
     /** Barge-in settle deadline before showing the retry state. */
     const val INTERRUPT_SETTLE_MILLIS = 5_000L
 
+    /**
+     * Canonical spoken stop commands, verbatim from Desktop
+     * `voice-stop-word.ts:17-34`. This is the embedded default used whenever the
+     * Gateway's `voice.stop_phrases` cannot be read, and its first entry is the
+     * phrase the start notice names — the same `"stop"` Desktop falls back to.
+     */
+    val DEFAULT_STOP_PHRASES: List<String> = listOf(
+        "stop",
+        "stop listening",
+        "stop it",
+        "stop please",
+        "please stop",
+        "stop stop",
+        "that is all",
+        "that's all",
+        "never mind",
+        "nevermind",
+        "end conversation",
+        "end the conversation",
+        "goodbye",
+        "good bye",
+        "bye",
+        "cancel",
+    )
+
+    /**
+     * Optional address prefixes, verbatim from Desktop `voice-stop-word.ts:38`,
+     * so "hermes stop" / "ok stop" / "hey hermes, stop" still count. The
+     * comma-suffixed entries are unreachable once punctuation is stripped; they
+     * are kept so this list diffs clean against Desktop's.
+     */
+    private val ADDRESS_PREFIXES: List<String> =
+        listOf("hey hermes", "hey hermes,", "hermes", "hermes,", "ok", "okay", "hey")
+
+    private val UTTERANCE_PUNCTUATION_RE = Regex("""[.,!?;:…]+""")
+
+    // Desktop's normalize() collapses JavaScript's \s; Java's is ASCII-only, so
+    // reuse the spelled-out class rather than let a non-breaking space in an
+    // STT transcript defeat the match.
+    private val WHITESPACE_RUN_RE = Regex("[$JS_WHITESPACE]+")
+
     fun wireBudgetBytes(rawBytes: Int): Int =
         (rawBytes / WIRE_EXPANSION_DENOMINATOR) * WIRE_EXPANSION_NUMERATOR + 4096
 
@@ -36,15 +91,123 @@ object VoicePolicy {
         (AUDIO_TIMEOUT_BASE_MILLIS + estimatedWireBytes / 1024L).coerceAtMost(AUDIO_TIMEOUT_MAX_MILLIS)
 
     /**
-     * Whole-utterance stop matching: true only when the normalized utterance
-     * equals a configured stop phrase exactly — substantive speech containing
-     * "stop" stays a message.
+     * Lowercase, drop the punctuation speech-to-text sprinkles on ("stop.",
+     * "stop!", "stop…"), collapse whitespace. Locale-independent by
+     * construction so a device locale cannot change what ends a conversation.
+     */
+    private fun normalizeUtterance(text: String): String =
+        WHITESPACE_RUN_RE.replace(UTTERANCE_PUNCTUATION_RE.replace(text.lowercase(), " "), " ").trim()
+
+    /**
+     * Removes a leading address to Hermes. A bare address ("hermes", "hey") is
+     * not a stop command on its own, so it is never stripped to nothing.
+     */
+    private fun stripAddressPrefix(text: String): String {
+        for (prefix in ADDRESS_PREFIXES) {
+            if (text == prefix) continue
+            if (text.startsWith("$prefix ")) return text.removePrefix("$prefix ").trim()
+        }
+        return text
+    }
+
+    /**
+     * Whole-utterance stop matching: true only when the normalized utterance —
+     * with or without an address prefix — equals a configured stop phrase
+     * exactly. Substantive speech that merely contains "stop" ("stop the docker
+     * container") stays a message. An empty phrase list disables the feature.
      */
     fun isStopUtterance(transcript: String, stopPhrases: List<String>): Boolean {
-        val normalized = transcript.trim().lowercase().replace(Regex("\\s+"), " ")
+        val normalized = normalizeUtterance(transcript)
         if (normalized.isEmpty()) return false
-        return stopPhrases.any { phrase ->
-            normalized == phrase.trim().lowercase().replace(Regex("\\s+"), " ")
+        val phrases = stopPhrases.mapNotNullTo(mutableSetOf()) { normalizeUtterance(it).ifEmpty { null } }
+        return normalized in phrases || stripAddressPrefix(normalized) in phrases
+    }
+
+    /**
+     * Typed-stop interception for the composer: a bare stop command typed while
+     * the voice conversation is live ends the conversation instead of being sent
+     * as a turn. Attachments mean the message is a real payload — never
+     * intercepted. Outside a conversation typed text always passes through.
+     */
+    fun interceptsTypedStop(
+        conversationActive: Boolean,
+        text: String,
+        stopPhrases: List<String>,
+        attachmentCount: Int = 0,
+    ): Boolean = conversationActive && attachmentCount == 0 && isStopUtterance(text, stopPhrases)
+
+    /**
+     * Resolves the live phrase list. `null` means the Gateway config could not be
+     * read (or does not carry the key), so the embedded default applies; an
+     * explicit empty list is the user turning the feature off and stays empty.
+     */
+    fun stopPhrasesOrDefault(configured: List<String>?): List<String> =
+        configured?.map(String::trim)?.filter(String::isNotEmpty) ?: DEFAULT_STOP_PHRASES
+
+    /**
+     * Reads `voice.stop_phrases` out of a `GET /api/config` record, the same key
+     * Desktop reads, resolved the way the backend loader
+     * `tools/voice_mode.py:1270-1291` resolves it: a failed read, a missing
+     * `voice` section, a missing key, or a malformed value (a non-string
+     * scalar, `null`, or an object) all fall back to [DEFAULT_STOP_PHRASES]
+     * rather than silently killing spoken stop. Only a list disables the
+     * feature, and only by being empty once blank entries are dropped.
+     *
+     * A bare string is coerced to a one-entry list, as the backend does. List
+     * entries that are not primitives are dropped, which converges with the
+     * backend's `isinstance(p, (str, int, float))` filter; Desktop instead
+     * stringifies them through `String(entry)`.
+     */
+    fun stopPhrasesFromConfig(config: JsonObject?): List<String> {
+        val raw = (config?.get("voice") as? JsonObject)?.get("stop_phrases")
+        val configured = when {
+            raw is JsonArray -> raw.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            raw is JsonPrimitive && raw.isString -> listOf(raw.content)
+            else -> null
         }
+        return stopPhrasesOrDefault(configured)
+    }
+
+    /**
+     * The conversation start notice, verbatim from Desktop
+     * `apps/desktop/src/i18n/en.ts:168`.
+     */
+    fun stopNotice(phrase: String): String = "Say \"$phrase\" to end the voice chat."
+
+    /**
+     * The notice for a resolved phrase list, or null when stop phrases are
+     * disabled — an empty list suppresses the notice as well as the matching.
+     */
+    fun stopNoticeFor(stopPhrases: List<String>): String? =
+        stopPhrases.firstOrNull { it.isNotBlank() }?.let { stopNotice(it.trim()) }
+}
+
+/**
+ * Holds the once-per-conversation contract for the start notice: a conversation
+ * announces how to end it exactly once, however many times the loop re-arms
+ * inside it. [onConversationEnded] re-arms the notice for the next conversation.
+ *
+ * The flag flips only when a notice is actually produced, so a conversation
+ * that starts before the Gateway config resolves — or while stop phrases are
+ * disabled — does not silently spend its one announcement. The flip is a CAS
+ * because the controller's entry point (`beginCycle`) is not a suspend
+ * function and carries no lock of its own.
+ */
+class VoiceStartNotice(private val stopPhrases: () -> List<String>) {
+    private val announced = AtomicBoolean(false)
+
+    /**
+     * The notice for a conversation starting now, or null when this
+     * conversation already announced it or stop phrases are disabled.
+     */
+    fun onConversationStarted(): String? {
+        if (announced.get()) return null
+        val notice = VoicePolicy.stopNoticeFor(stopPhrases()) ?: return null
+        return if (announced.compareAndSet(false, true)) notice else null
+    }
+
+    /** Re-arms the notice so the next conversation announces itself again. */
+    fun onConversationEnded() {
+        announced.set(false)
     }
 }
