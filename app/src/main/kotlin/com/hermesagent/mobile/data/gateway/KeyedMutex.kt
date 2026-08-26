@@ -30,15 +30,25 @@ internal class KeyedMutex<K : Any> {
     ): T? {
         require(timeoutMillis > 0)
         val mutex = synchronized(creationLock) { locks.getOrPut(key) { Mutex() } }
+        // The timeout can fire between lock() returning and the block returning
+        // its value, which reports "not acquired" while the mutex is in fact
+        // held. Unlocking outside the timeout scope would then never run and
+        // this key would deadlock every later submit and Stop for the lifetime
+        // of the process. Take the lock under an owner token so that losing the
+        // race is detectable here and the lock can be handed back.
+        val owner = Any()
         val acquired = withTimeoutOrNull(timeoutMillis) {
-            mutex.lock()
+            mutex.lock(owner)
             true
         } == true
-        if (!acquired) return null
+        if (!acquired) {
+            if (mutex.holdsLock(owner)) mutex.unlock(owner)
+            return null
+        }
         return try {
             block()
         } finally {
-            mutex.unlock()
+            mutex.unlock(owner)
         }
     }
 }

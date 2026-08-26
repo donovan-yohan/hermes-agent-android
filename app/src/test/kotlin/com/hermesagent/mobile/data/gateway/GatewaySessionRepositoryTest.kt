@@ -1378,15 +1378,12 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `a later loose head match wins after earlier envelopes drained`() = runTest {
+    fun `a later loose head match wins only when a reconnect could have hidden the drain`() = runTest {
         val cache = SessionCache()
-        val rpc = FakeRpc()
-        val repository = LiveGatewaySessionRepository(
-            cache,
-            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
-            MutableStateFlow<GatewayRpcClient?>(rpc),
-            backgroundScope,
-        ) { CLOCK }
+        val first = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
         runCurrent()
         repository.openSession("durable-a")
         repository.submit("durable-a", "first turn")
@@ -1400,13 +1397,120 @@ class GatewaySessionRepositoryTest {
         repository.submit("durable-a", "head", queued = true)
         val accepted = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
 
-        rpc.activateResult = RESUME_RUNNING.dropLast(1) +
-            ",\"queued\":{\"user\":\"head\\n\\ntail\"}}"
-        repository.openSession("durable-a")
+        // "head\n\ntail" reads two ways: our "tail" batch with someone else's
+        // "head" in front, or our later "head" batch with their "tail" behind
+        // and the first two envelopes already run. Only a connection loss can
+        // hide a drain, so that reading needs the reconnect to license it.
+        clients.value = null
+        connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        val second = FakeRpc().apply {
+            resumeA = RESUME_RUNNING.dropLast(1) +
+                ",\"queued\":{\"user\":\"head\\n\\ntail\"}}"
+        }
+        clients.value = second
+        connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
         val reconciled = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
 
         assertEquals(listOf("head", "tail"), reconciled.map { it.text })
         assertEquals(accepted.last(), reconciled.first())
+        assertEquals(1, reconciled.map { it.gatewayBatchId }.toSet().size)
+    }
+
+    @Test
+    fun `a connected head keeps the earliest matching batch and everything queued behind it`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        // Another client queued "theirs" first, so our text merged in behind it.
+        repository.submit("durable-a", "ok", queued = true)
+        repository.submit(
+            "durable-a",
+            "image turn",
+            queued = true,
+            attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+        )
+        repository.submit("durable-a", "ok", queued = true)
+        val accepted = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+        assertEquals(3, accepted.size)
+        assertEquals(3, accepted.map { it.gatewayBatchId }.toSet().size)
+
+        rpc.activateResult = RESUME_RUNNING.dropLast(1) +
+            ",\"queued\":{\"user\":\"theirs\\n\\nok\"}}"
+        repository.openSession("durable-a")
+        val reconciled = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+
+        // The trailing "ok" is a look-alike for the head, not the head itself:
+        // reading it as the head would drop the image turn queued in front of it.
+        assertEquals(listOf("theirs", "ok", "image turn", "ok"), reconciled.map { it.text })
+        assertEquals(accepted, reconciled.drop(1))
+    }
+
+    @Test
+    fun `an authoritative head covering only the front of a local batch keeps its tail`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        repository.submit("durable-a", "one", queued = true)
+        repository.submit("durable-a", "two", queued = true)
+        repository.submit("durable-a", "three", queued = true)
+        val accepted = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+        assertEquals(3, accepted.size)
+        assertEquals(1, accepted.map { it.gatewayBatchId }.toSet().size)
+
+        // Another client's image envelope split the batch server-side, so the
+        // authoritative head stops after "two" and "three" waits behind it.
+        rpc.activateResult = RESUME_RUNNING.dropLast(1) +
+            ",\"queued\":{\"user\":\"one\\n\\ntwo\"}}"
+        repository.openSession("durable-a")
+        val reconciled = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+
+        assertEquals(listOf("one", "two", "three"), reconciled.map { it.text })
+        assertEquals(accepted, reconciled)
+    }
+
+    @Test
+    fun `authoritative foreign text before the local head preserves its occurrence`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        repository.submit("durable-a", "ours", queued = true)
+        val accepted = requireNotNull(
+            cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.single(),
+        )
+
+        rpc.activateResult = RESUME_RUNNING.dropLast(1) +
+            ",\"queued\":{\"user\":\"theirs\\n\\nours\"}}"
+        repository.openSession("durable-a")
+        val reconciled = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+
+        assertEquals(listOf("theirs", "ours"), reconciled.map { it.text })
+        assertEquals(accepted, reconciled.last())
         assertEquals(1, reconciled.map { it.gatewayBatchId }.toSet().size)
     }
 
@@ -1513,6 +1617,8 @@ class GatewaySessionRepositoryTest {
         // Stop remains an emergency control: it completes while the upload is
         // still waiting, and invalidates the not-yet-dispatched prompt.
         assertEquals(GatewayInterruptOutcome.Interrupted, interrupt.await())
+        // Nothing was on the wire to order against, so Stop paid no wait at all.
+        assertEquals(0L, testScheduler.currentTime)
         assertEquals(1, rpc.calls.count { it.method == "session.interrupt" })
         rpc.imageAttachResponse?.complete(
             json("""{"attached":true,"path":"/gw/img.png","text":"[User attached image: img.png]"}"""),
@@ -1526,6 +1632,59 @@ class GatewaySessionRepositoryTest {
                 .filter {
                     it.method in setOf("prompt.submit", "image.attach_bytes", "session.interrupt", "image.detach")
                 }
+                .map(RpcCall::method),
+        )
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `stop orders after an attachment prompt that is already on the wire`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            stopDispatchWaitMillis = 2_000L,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        rpc.promptResponse = CompletableDeferred()
+
+        val attachmentSubmit = async {
+            repository.submit(
+                "durable-a",
+                "attachment turn",
+                queued = true,
+                attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+            )
+        }
+        runCurrent()
+        val interrupt = async { repository.requestInterrupt("durable-a") }
+        runCurrent()
+
+        assertEquals(0, rpc.calls.count { it.method == "session.interrupt" })
+        advanceTimeBy(500L)
+        runCurrent()
+        assertEquals(0, rpc.calls.count { it.method == "session.interrupt" })
+
+        rpc.promptResponse?.complete(json("{}"))
+        runCurrent()
+
+        // The wait is a ceiling, not a schedule: Stop goes out the moment the
+        // prompt frame is away, not at the full stopDispatchWaitMillis.
+        assertEquals(1, rpc.calls.count { it.method == "session.interrupt" })
+        assertEquals(500L, testScheduler.currentTime)
+
+        assertEquals(GatewaySubmitOutcome.Accepted, attachmentSubmit.await())
+        assertEquals(GatewayInterruptOutcome.Interrupted, interrupt.await())
+        assertEquals(
+            listOf("image.attach_bytes", "prompt.submit", "session.interrupt"),
+            rpc.calls
+                .dropWhile { it.method != "image.attach_bytes" }
+                .filter { it.method in setOf("image.attach_bytes", "prompt.submit", "session.interrupt") }
                 .map(RpcCall::method),
         )
         assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())

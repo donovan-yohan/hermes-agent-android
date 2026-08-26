@@ -612,8 +612,14 @@ internal class LiveGatewaySessionRepository(
                 liveSnapshotIsCurrent,
                 preserveProgress = !progressSnapshotIsCurrent,
             )
+            // Queue drains arrive as live events, so only a connection loss can
+            // have hidden one. This id stays in reconnectDurableIds until the
+            // post-reconnect reconciliation below clears it, and that window is
+            // the only thing that licenses reading a local batch as drained.
+            val mayHaveMissedDrain =
+                durableId in reconnectDurableIds || canonicalId in reconnectDurableIds
             val row = if (liveSnapshotIsCurrent) {
-                canonicalRow.withGatewayQueueProjection(projection, runtimeId)
+                canonicalRow.withGatewayQueueProjection(projection, runtimeId, mayHaveMissedDrain)
             } else {
                 canonicalRow
             }
@@ -1334,8 +1340,14 @@ internal class LiveGatewaySessionRepository(
         // prompt.submit can wait 30 minutes for a lost acknowledgement. Once
         // its frame has been sent, waiting longer does not improve ordering:
         // the Gateway reads this later interrupt from the same ordered socket.
+        // The reader loop awaits dispatch before its next receive_text, and
+        // dispatch runs a non-pooled method inline to completion on that
+        // thread, so the submit handler finishes before the interrupt frame is
+        // read at all. Neither prompt.submit nor session.interrupt is in
+        // _LONG_HANDLERS; this ordering does NOT hold for methods that are.
         // Source: NousResearch/hermes-agent @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
-        // tui_gateway/ws.py:411-517 (read, dispatch, reply, then next read).
+        // tui_gateway/ws.py:339 (loop), :341 (receive_text), :392 (dispatch);
+        // tui_gateway/server.py:198-328 (_LONG_HANDLERS), :2110-2147 (dispatch).
         return ordered ?: requestInterruptNow(binding, connection, interruptEpoch)
     }
 
@@ -2806,6 +2818,7 @@ internal class LiveGatewaySessionRepository(
     private fun SessionSummary.withGatewayQueueProjection(
         projection: LiveSessionProjection,
         runtimeId: String,
+        mayHaveMissedDrain: Boolean,
     ): SessionSummary {
         val local = composerStatus?.gatewayQueuedPrompts.orEmpty()
         val prompts = when {
@@ -2819,7 +2832,7 @@ internal class LiveGatewaySessionRepository(
             else -> {
                 val headText = projection.queuedUser
                 if (headText != null) {
-                    val match = local.matchGatewayQueueHead(headText)
+                    val match = local.matchGatewayQueueHead(headText, mayHaveMissedDrain)
                     if (match != null) {
                         val retained = local.drop(match.localStart)
                         val batchId = retained.first().gatewayBatchId
@@ -3480,55 +3493,99 @@ private data class GatewayQueueHeadMatch(
     val foreignSuffix: String? = null,
 )
 
-private fun List<ComposerGatewayQueuedPrompt>.matchGatewayQueueHead(headText: String): GatewayQueueHeadMatch? {
-    fun batchAt(index: Int): Pair<List<ComposerGatewayQueuedPrompt>, String> {
+/**
+ * Map the Gateway's authoritative head-envelope text back onto the local queue
+ * rows. The snapshot exposes only the FIFO head, so a local batch can be wider
+ * than the head (its tail sits in later envelopes) and the head can carry
+ * another client's occurrences around ours.
+ *
+ * [mayHaveMissedDrain] is the only evidence that an EARLIER local batch could
+ * already have drained. While the app is connected it observes every drain, so
+ * the earliest plausible batch is the head; preferring a later look-alike there
+ * silently drops every row in front of it, queued image turns included.
+ */
+private fun List<ComposerGatewayQueuedPrompt>.matchGatewayQueueHead(
+    headText: String,
+    mayHaveMissedDrain: Boolean,
+): GatewayQueueHeadMatch? {
+    fun batchFrom(index: Int): List<ComposerGatewayQueuedPrompt> {
         val candidate = this[index]
-        val batch = drop(index).takeWhile { it.gatewayBatchId == candidate.gatewayBatchId }
-        return batch to batch.joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text)
+        return drop(index).takeWhile { it.gatewayBatchId == candidate.gatewayBatchId }
     }
 
-    // An earlier mergeable row may be a textual prefix/suffix of the real
-    // authoritative head. Preserve the old exact-match priority globally.
-    indices.firstNotNullOfOrNull { index ->
-        val (batch, batchText) = batchAt(index)
-        if (batchText == headText) GatewayQueueHeadMatch(index, batch.size) else null
-    }?.let { return it }
+    fun textOf(rows: List<ComposerGatewayQueuedPrompt>): String =
+        rows.joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text)
 
-    // Within one inferred envelope, preserve the earliest matching occurrence
-    // (and therefore the most local ids). Across envelopes, prefer the latest
-    // plausible batch because earlier envelopes may already have drained.
-    val looseMatchesByBatch = linkedMapOf<String, GatewayQueueHeadMatch>()
-    indices.forEach { index ->
-        val (batch, batchText) = batchAt(index)
-        val batchId = this[index].gatewayBatchId
-        if (batchId in looseMatchesByBatch) return@forEach
-        val batchIsMergeable = batch.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable)
-        val surroundedNeedle = "\n\n$batchText\n\n"
-        val surroundedAt = if (batchIsMergeable) headText.indexOf(surroundedNeedle) else -1
-        val match = when {
-            batchIsMergeable &&
-                headText.startsWith("$batchText\n\n") -> GatewayQueueHeadMatch(
-                localStart = index,
-                batchSize = batch.size,
-                foreignSuffix = headText.removePrefix("$batchText\n\n"),
-            )
-            batchIsMergeable &&
-                headText.endsWith("\n\n$batchText") -> GatewayQueueHeadMatch(
-                localStart = index,
-                batchSize = batch.size,
-                foreignPrefix = headText.removeSuffix("\n\n$batchText"),
-            )
-            surroundedAt >= 0 -> GatewayQueueHeadMatch(
-                localStart = index,
-                batchSize = batch.size,
-                foreignPrefix = headText.substring(0, surroundedAt),
-                foreignSuffix = headText.substring(surroundedAt + surroundedNeedle.length),
-            )
-            else -> null
+    // An exact head is unambiguous, so it outranks any loose look-alike; the
+    // earliest such batch keeps the most local occurrence ids.
+    fun exactPass(sizesOf: (List<ComposerGatewayQueuedPrompt>) -> List<Int>): GatewayQueueHeadMatch? =
+        indices.firstNotNullOfOrNull { index ->
+            val batch = batchFrom(index)
+            sizesOf(batch).firstNotNullOfOrNull { size ->
+                if (textOf(batch.take(size)) == headText) {
+                    GatewayQueueHeadMatch(index, size)
+                } else {
+                    null
+                }
+            }
         }
-        if (match != null) looseMatchesByBatch[batchId] = match
+
+    fun loosePass(sizesOf: (List<ComposerGatewayQueuedPrompt>) -> List<Int>): GatewayQueueHeadMatch? {
+        val looseMatchesByBatch = linkedMapOf<String, GatewayQueueHeadMatch>()
+        indices.forEach { index ->
+            val batchId = this[index].gatewayBatchId
+            if (batchId in looseMatchesByBatch) return@forEach
+            val batch = batchFrom(index)
+            val match = sizesOf(batch).firstNotNullOfOrNull { size ->
+                val part = batch.take(size)
+                if (!part.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable)) {
+                    return@firstNotNullOfOrNull null
+                }
+                val batchText = textOf(part)
+                val surroundedNeedle = "\n\n$batchText\n\n"
+                val surroundedAt = headText.indexOf(surroundedNeedle)
+                when {
+                    headText.startsWith("$batchText\n\n") -> GatewayQueueHeadMatch(
+                        localStart = index,
+                        batchSize = size,
+                        foreignSuffix = headText.removePrefix("$batchText\n\n"),
+                    )
+                    headText.endsWith("\n\n$batchText") -> GatewayQueueHeadMatch(
+                        localStart = index,
+                        batchSize = size,
+                        foreignPrefix = headText.removeSuffix("\n\n$batchText"),
+                    )
+                    surroundedAt >= 0 -> GatewayQueueHeadMatch(
+                        localStart = index,
+                        batchSize = size,
+                        foreignPrefix = headText.substring(0, surroundedAt),
+                        foreignSuffix = headText.substring(surroundedAt + surroundedNeedle.length),
+                    )
+                    else -> null
+                }
+            }
+            if (match != null) looseMatchesByBatch[batchId] = match
+        }
+        return if (mayHaveMissedDrain) {
+            looseMatchesByBatch.values.maxByOrNull(GatewayQueueHeadMatch::localStart)
+        } else {
+            looseMatchesByBatch.values.minByOrNull(GatewayQueueHeadMatch::localStart)
+        }
     }
-    return looseMatchesByBatch.values.maxByOrNull(GatewayQueueHeadMatch::localStart)
+
+    val wholeBatch = { batch: List<ComposerGatewayQueuedPrompt> -> listOf(batch.size) }
+    exactPass(wholeBatch)?.let { return it }
+    loosePass(wholeBatch)?.let { return it }
+
+    // Nothing matched a whole batch. The head may still cover only the front of
+    // one local batch, its tail having landed in a later envelope; prepending
+    // the head as a foreign row there would show the user their own text twice.
+    // Retry over proper prefixes of two or more rows: a one-row prefix is the
+    // ambiguous single-occurrence case, where reading the head as somebody
+    // else's text keeps every local row visible instead of hiding one.
+    val batchPrefix = { batch: List<ComposerGatewayQueuedPrompt> -> (batch.size - 1 downTo 2).toList() }
+    exactPass(batchPrefix)?.let { return it }
+    return loosePass(batchPrefix)
 }
 
 private val EMPTY_LIVE_SESSION_PROJECTION = LiveSessionProjection(
