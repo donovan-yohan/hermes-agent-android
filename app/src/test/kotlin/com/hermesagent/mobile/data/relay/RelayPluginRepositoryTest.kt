@@ -68,13 +68,15 @@ class RelayPluginRepositoryTest {
             RelayPluginRepository { RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "nope")) }
                 .availability(),
         )
+        // A refusal that explains nothing is never assumed to be a lapsed
+        // credential: an unexplained refusal must not spend a rotation.
         assertEquals(
-            RelayAvailability.SignInRequired,
+            RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
             RelayPluginRepository { RecordingGatewayHttp(GatewayHttpResult.Rejected(401, "nope")) }
                 .availability(),
         )
         assertEquals(
-            RelayAvailability.SignInRequired,
+            RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
             RelayPluginRepository { RecordingGatewayHttp(GatewayHttpResult.Rejected(403, "nope")) }
                 .availability(),
         )
@@ -117,6 +119,36 @@ class RelayPluginRepositoryTest {
         val offline = probeRefusal(503, relayError("relay_unavailable", retryable = true))
         assertNull((offline as RelayAvailability.Available).channels.message)
         assertNull(offline.channels.guidance)
+    }
+
+    @Test
+    fun `the refusing service decides the remedy, not the status code`() = runTest {
+        // The Gateway's own gate, bearer presented and lapsed. Only this shape
+        // may cost a rotation.
+        assertEquals(
+            RelayAvailability.SignInRequired(RelaySignInReason.SessionExpired),
+            probeRefusal(401, GATE_SESSION_EXPIRED_ENVELOPE),
+        )
+        assertEquals(
+            RelayAvailability.SignInRequired(RelaySignInReason.SessionExpired),
+            probeRefusal(401, """{"error":"unauthenticated","reason":"refresh_expired"}"""),
+        )
+
+        // Same gate, same status, nothing presented: nothing to rotate.
+        assertEquals(
+            RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
+            probeRefusal(401, GATE_UNAUTHENTICATED_ENVELOPE),
+        )
+        assertEquals(
+            RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
+            probeRefusal(401, "not json at all"),
+        )
+
+        // The plugin's own auth_required is the *host's* Relay credential. No
+        // sign-in on this device can supply it, so it is a lane state and never
+        // a sign-in prompt.
+        val lane = probeRefusal(401, relayError("auth_required", retryable = false))
+        assertEquals(RelayLaneState.AUTH_REQUIRED, (lane as RelayAvailability.Available).channels.state)
     }
 
     @Test
@@ -447,6 +479,21 @@ private fun refusal(statusCode: Int, envelope: String) = GatewayHttpResult.Rejec
     "Hermes refused that Gateway request.",
     envelope.toByteArray(Charsets.UTF_8),
 )
+
+/**
+ * Verbatim from the Gateway auth gate, hermes-agent @
+ * f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+ * `hermes_cli/dashboard_auth/middleware.py:145-163` — a bearer that was
+ * presented and did not verify (`:356-373`).
+ */
+private const val GATE_SESSION_EXPIRED_ENVELOPE =
+    """{"error":"session_expired","detail":"Unauthorized",""" +
+        """"reason":"invalid_or_expired_session","login_url":"/login?next=%2F"}"""
+
+/** Same gate, nothing presented (`middleware.py:388`). */
+private const val GATE_UNAUTHENTICATED_ENVELOPE =
+    """{"error":"unauthenticated","detail":"Unauthorized",""" +
+        """"reason":"no_cookie","login_url":"/login"}"""
 
 /** The plugin's structured refusal envelope (`dashboard/plugin_api.py:85-88` at the pin). */
 private fun relayError(code: String, retryable: Boolean): String =

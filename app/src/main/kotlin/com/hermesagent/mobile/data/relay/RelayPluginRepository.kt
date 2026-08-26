@@ -44,6 +44,19 @@ data class RelayChannelsStatus(
 )
 
 /**
+ * Why the Gateway refused this client, taken from the refusal envelope its
+ * author wrote rather than guessed from the status code. The two answers have
+ * different remedies, so they are different values.
+ */
+enum class RelaySignInReason {
+    /** A credential was presented and has lapsed; one rotation may recover it. */
+    SessionExpired,
+
+    /** Nothing the Gateway recognises was presented; rotating would be a guess. */
+    NoCredential,
+}
+
+/**
  * Whether this Gateway exposes the hermes-plugin-relay backend at all. The
  * runtime gate answers 404 for a missing *or* disabled plugin — one honest
  * "not available on this Gateway" state covers both.
@@ -55,8 +68,12 @@ sealed interface RelayAvailability {
     /** Plugin absent or disabled on this Gateway; offer nothing Relay-shaped. */
     data object Missing : RelayAvailability
 
-    /** Gateway authentication did not accept this client's credentials. */
-    data object SignInRequired : RelayAvailability
+    /**
+     * Gateway authentication did not accept this client's credentials.
+     * [reason] decides whether a rotation is worth spending before asking the
+     * person to sign in again.
+     */
+    data class SignInRequired(val reason: RelaySignInReason) : RelayAvailability
 
     /** The plugin responded, but not in the pinned v1 shape. */
     data object Incompatible : RelayAvailability
@@ -158,10 +175,10 @@ internal data class RelayErrorEnvelope(val code: String, val retryable: Boolean)
  * projected field fails the whole parse so callers keep their previous data
  * instead of painting a half-truth.
  */
-class RelayPluginRepository(private val http: () -> GatewayHttp?) {
+class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailabilityProbe {
 
     /** Probe the plugin without touching channel data. Cheap enough to poll. */
-    suspend fun availability(): RelayAvailability = withContext(Dispatchers.IO) {
+    override suspend fun availability(): RelayAvailability = withContext(Dispatchers.IO) {
         val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
         when (val result = transport.execute(relayRequest(CONNECTION_STATUS))) {
             is GatewayHttpResult.Rejected ->
@@ -312,25 +329,45 @@ private fun parseAvailability(bytes: ByteArray): RelayAvailability {
 /**
  * Read a refusal the way its author wrote it.
  *
- * The plugin's own refusals carry `{"error":{"code","message","retryable"}}`
- * (`dashboard/plugin_api.py:85-88` at the pin). When that envelope is present
- * the plugin is mounted, enabled and talking whatever it is refusing — which
- * leaves the runtime gate's envelope-less 404 as the only honest "not on this
- * Gateway". Only the classification is used; no text is carried out.
+ * Two different services can refuse the same request, and only one of them is
+ * about a credential this device holds:
+ *
+ * - The **plugin** answers `{"error":{"code","message","retryable"}}`
+ *   (`dashboard/plugin_api.py:85-88` at the pin). Its `auth_required` is the
+ *   *host's* own Relay credential, which no sign-in on this device can supply,
+ *   so it reads as the lane state it actually is. That the plugin wrote an
+ *   envelope at all also proves it is mounted and enabled, which leaves the
+ *   runtime gate's envelope-less 404 as the only honest "not on this Gateway".
+ * - The **Gateway's auth gate** answers `{"error":"session_expired"` or
+ *   `"unauthenticated","reason":…}` (hermes-agent @
+ *   `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+ *   `hermes_cli/dashboard_auth/middleware.py:112-163`; a presented bearer that
+ *   did not verify takes the `invalid_or_expired_session` branch at
+ *   `:356-373`). That is this client's credential, and only it may cost a
+ *   rotation or send someone to sign in.
+ *
+ * Only the classification is used; no text from an envelope is carried out. A
+ * refusal this build cannot classify never spends a rotation.
  */
 private fun refusalToAvailability(statusCode: Int, envelope: ByteArray): RelayAvailability {
-    parseRelayError(envelope)?.let { error ->
-        return when (error.code) {
-            ERROR_AUTH_REQUIRED -> RelayAvailability.SignInRequired
+    val root = parseObject(envelope)
+    root?.obj("error")?.let { pluginError ->
+        return when (pluginError.string("code")) {
+            ERROR_AUTH_REQUIRED -> lane(RelayLaneState.AUTH_REQUIRED)
             ERROR_RELAY_UNAVAILABLE -> lane(RelayLaneState.OFFLINE)
             ERROR_RELAY_INVALID_RESPONSE, ERROR_RELAY_FAILED -> lane(RelayLaneState.ERROR)
             // A resource-shaped refusal cannot describe a connection probe.
             else -> RelayAvailability.Incompatible
         }
     }
+    if (root != null && root.containsKey("error")) {
+        val lapsed = root.string("error") == GATE_SESSION_EXPIRED ||
+            root.string("reason") in GATE_LAPSED_REASONS
+        return if (lapsed) SESSION_EXPIRED else NO_CREDENTIAL
+    }
     return when (statusCode) {
         404 -> RelayAvailability.Missing
-        401, 403 -> RelayAvailability.SignInRequired
+        401, 403 -> NO_CREDENTIAL
         else -> RelayAvailability.GatewayUnreachable
     }
 }
@@ -500,6 +537,15 @@ internal const val MAX_ID_BYTES = 512
 // Refusal codes the plugin writes into its error envelope
 // (`dashboard/plugin_api.py:92-113` at the pin). Codes this build does not
 // know stay unclassified rather than being folded into a neighbour.
+private val SESSION_EXPIRED = RelayAvailability.SignInRequired(RelaySignInReason.SessionExpired)
+private val NO_CREDENTIAL = RelayAvailability.SignInRequired(RelaySignInReason.NoCredential)
+
+/** The auth gate's error code for a credential that was presented and lapsed. */
+private const val GATE_SESSION_EXPIRED = "session_expired"
+
+/** Gate reasons meaning a credential existed and lapsed, not that none was sent. */
+private val GATE_LAPSED_REASONS = setOf("invalid_or_expired_session", "refresh_expired")
+
 private const val ERROR_AUTH_REQUIRED = "auth_required"
 private const val ERROR_CONFLICT = "conflict"
 private const val ERROR_RELAY_UNAVAILABLE = "relay_unavailable"

@@ -86,6 +86,18 @@ internal interface GatewayConnectionController {
 
     suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile)
 
+    /**
+     * Rotate the live leg's credential once, without user interaction, for a
+     * REST caller the Gateway just refused.
+     *
+     * False means this leg has nothing to rotate — an SSH-tunneled loopback
+     * session token and a token-mode gateway token both live for the lifetime
+     * of the connection that carries them — or the rotation was refused. The
+     * caller's next honest move is the app's ordinary sign-in, never a second
+     * rotation.
+     */
+    suspend fun refreshCredential(): Boolean = false
+
     suspend fun disconnect()
 }
 
@@ -576,6 +588,17 @@ internal class GatewayConnectionManager(
 
     override suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile) {
         remoteConnector?.signOut(profile)
+    }
+
+    override suspend fun refreshCredential(): Boolean {
+        // Only the remote leg carries a rotatable bearer. Read the live
+        // connection under the same lock that installs it, so a rotation can
+        // never be aimed at a profile that is already gone.
+        val profile = mutex.withLock { (active as? ActiveConnection.Remote)?.profile } ?: return false
+        val connector = remoteConnector ?: return false
+        // A rotation that throws is a rotation that did not happen; the caller
+        // falls through to sign-in rather than treating it as an outage.
+        return runCatching { connector.refreshAccessToken(profile) }.getOrDefault(false)
     }
 
     private suspend fun finishConnect(

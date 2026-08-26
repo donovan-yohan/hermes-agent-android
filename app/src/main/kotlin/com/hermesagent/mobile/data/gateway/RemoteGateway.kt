@@ -157,6 +157,26 @@ internal class NativeGatewayAuthenticator(
         profile.normalizedBaseUrl?.let { store.clear(it) }
     }
 
+    /**
+     * Rotate the stored access token once, without a browser — the same
+     * rotation step [refreshOrSignIn] performs, minus its interactive
+     * fallback. A REST leg that was refused can spend exactly one of these
+     * before the app has to ask the person to sign in again; it deliberately
+     * cannot start a sign-in on its own.
+     *
+     * False means no rotation happened, for any reason. It is never a partial
+     * success: the stored tokens are replaced only when a whole new set
+     * arrives.
+     */
+    suspend fun refreshAccessToken(profile: RemoteGatewayProfile): Boolean {
+        val baseUrl = profile.normalizedBaseUrl ?: return false
+        val tokens = store.load(baseUrl) ?: return false
+        val refreshToken = tokens.refreshToken.takeIf(String::isNotBlank) ?: return false
+        val refreshed = api.refresh(baseUrl, refreshToken, tokens.provider) ?: return false
+        store.save(baseUrl, refreshed)
+        return true
+    }
+
     private suspend fun refreshOrSignIn(
         profile: RemoteGatewayProfile,
         tokens: GatewayNativeTokens,
@@ -422,6 +442,10 @@ internal class RemoteGatewayConnector(
     /** Bearer token for the connection-owned audio HTTP leg; null when absent. */
     suspend fun accessToken(profile: RemoteGatewayProfile): String? =
         profile.normalizedBaseUrl?.let { authenticator.tokens(it)?.accessToken }
+
+    /** Rotate that bearer once, non-interactively, for a refused REST leg. */
+    suspend fun refreshAccessToken(profile: RemoteGatewayProfile): Boolean =
+        authenticator.refreshAccessToken(profile)
 
     suspend fun open(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): GatewayRpcClient {
         val baseUrl = profile.normalizedBaseUrl
