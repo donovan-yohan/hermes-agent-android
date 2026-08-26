@@ -3,9 +3,11 @@ package com.hermesagent.mobile.data.relay
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import java.util.ArrayDeque
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +17,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -46,13 +49,18 @@ class RelayAvailabilityControllerTest {
     @Test
     fun `becoming connected probes once and settles on the answer`() = runTest {
         val probe = ScriptedProbe(READY)
+        // The real seed: GatewayConnection starts Disconnected, so the first
+        // emission repeats what the app already knows rather than reporting a
+        // change.
         val connection = MutableStateFlow(GatewayConnectionState())
         val controller = controller(probe, connection)
 
-        // Disconnected is an answer in itself: nothing authenticated exists to
-        // ask, and saying so costs no probe.
+        // An initial emission is not an edge. Nothing has been claimed about
+        // Relay, nothing is spinning, and no probe was spent saying so.
         runCurrent()
-        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+        assertNull(controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+        assertFalse(controller.state.value.awaitingFirstAnswer)
         assertEquals(0, probe.calls)
 
         connection.value = connected()
@@ -97,10 +105,7 @@ class RelayAvailabilityControllerTest {
         assertFalse(settled.probing)
         assertFalse(settled.awaitingFirstAnswer)
         // The copy that belongs beside where Relay would live, not in an error.
-        assertEquals(
-            RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE,
-            RelayAvailability.Missing.statusMessage(),
-        )
+        assertEquals(RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE, settled.statusMessage())
     }
 
     @Test
@@ -245,9 +250,25 @@ class RelayAvailabilityControllerTest {
 
     @Test
     fun `the only spinner is the one before any answer has ever arrived`() = runTest {
+        // Driven from the seed a cold start actually has, so the spinner this
+        // asserts is one production can reach: Disconnected, Connecting,
+        // Connected, probing.
         val probe = ScriptedProbe(RelayAvailability.GatewayUnreachable, READY)
-        val controller = controller(probe, MutableStateFlow(connected()))
+        val connection = MutableStateFlow(GatewayConnectionState())
+        val controller = controller(probe, connection)
+        advanceUntilIdle()
+        assertNull(controller.state.value.availability)
+        assertFalse(controller.state.value.awaitingFirstAnswer)
 
+        // A connection attempt is still not an answer, and still not a spinner
+        // on the Relay surface.
+        connection.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+        advanceUntilIdle()
+        assertNull(controller.state.value.availability)
+        assertFalse(controller.state.value.awaitingFirstAnswer)
+        assertEquals(0, probe.calls)
+
+        connection.value = connected()
         advanceTimeBy(1)
         runCurrent()
         assertNull(controller.state.value.availability)
@@ -258,10 +279,143 @@ class RelayAvailabilityControllerTest {
         assertEquals(READY, controller.state.value.availability)
     }
 
+    @Test
+    fun `a refresh with nothing to ask answers at once instead of spending a cycle`() = runTest {
+        // A disconnected Gateway has no authenticated route to probe. Running a
+        // cycle anyway would show a spinner for the whole retry budget before
+        // reaching the answer the connection status already gave.
+        val probe = ScriptedProbe()
+        val waits = mutableListOf<Long>()
+        val connection = MutableStateFlow(GatewayConnectionState())
+        val controller = controller(probe, connection, waits = waits)
+        advanceUntilIdle()
+
+        controller.refresh()
+        runCurrent()
+
+        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+        assertEquals(0, probe.calls)
+        assertEquals(emptyList<Long>(), waits)
+
+        // A reconnect attempt is still not something to ask, and still must not
+        // blank the answer already on screen.
+        connection.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+        advanceUntilIdle()
+        controller.refresh()
+        advanceUntilIdle()
+        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+        assertEquals(0, probe.calls)
+    }
+
+    /**
+     * The C1 ordering rule, stated as a test.
+     *
+     * A cycle that has been superseded may not write. Under
+     * `StandardTestDispatcher` this cannot reproduce the *thread* race the rule
+     * also closes — everything here runs on one virtual thread — so the probe
+     * instead suspends where cancellation cannot promptly reach it, which
+     * produces the same shape: an answer arriving after the transition that
+     * replaced it. The controller must drop it either way, because
+     * cancellation is cooperative and a probe is a seam an implementation
+     * outside this file owns.
+     */
+    @Test
+    fun `an answer from a superseded cycle never overwrites the state that replaced it`() = runTest {
+        val probe = StubbornProbe()
+        val connection = MutableStateFlow(GatewayConnectionState())
+        val controller = controller(probe, connection)
+        advanceUntilIdle()
+
+        connection.value = connected()
+        advanceUntilIdle()
+        assertEquals(1, probe.parked.size)
+        assertTrue(controller.state.value.awaitingFirstAnswer)
+
+        // Refresh replaces the in-flight cycle; the replaced one is still
+        // parked, holding an answer nobody asked for any more.
+        controller.refresh()
+        advanceUntilIdle()
+        assertEquals(2, probe.parked.size)
+
+        // Then the connection drops. This is the state the surface must keep.
+        connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        advanceUntilIdle()
+        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+
+        // Both stale answers land late. Neither may be believed.
+        probe.releaseAll(READY)
+        advanceUntilIdle()
+        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+    }
+
+    @Test
+    fun `a leg with no sign-in asks for a reconnect instead of a sign-in`() = runTest {
+        val onSsh = controller(
+            ScriptedProbe(NO_CREDENTIAL),
+            MutableStateFlow(connected()),
+            refresher = CountingRefresher(rotates = false, hasSignIn = false),
+        )
+        advanceUntilIdle()
+
+        // Managed SSH and token mode have no Gateway sign-in at all, so the
+        // only honest next step is the one that rebuilds the credential.
+        assertEquals(NO_CREDENTIAL, onSsh.state.value.availability)
+        assertFalse(onSsh.state.value.signInAvailable)
+        assertEquals(TRANSPORT_DOWN_MESSAGE, onSsh.state.value.statusMessage())
+
+        val onRemote = controller(
+            ScriptedProbe(NO_CREDENTIAL),
+            MutableStateFlow(connected()),
+            refresher = CountingRefresher(rotates = false, hasSignIn = true),
+        )
+        advanceUntilIdle()
+
+        assertTrue(onRemote.state.value.signInAvailable)
+        assertEquals(RELAY_SIGN_IN_MESSAGE, onRemote.state.value.statusMessage())
+    }
+
+    @Test
+    fun `the lane's own words are a detail beside the state, redacted and bounded`() = runTest {
+        val lane = RelayAvailability.Available(
+            RelayChannelsStatus(
+                RelayLaneState.ERROR,
+                message = "Relay could not reach the\n  host: Authorization: Bearer host-side-token",
+                guidance = null,
+            ),
+        )
+
+        // The app owns the state line, so an Available state has none of its
+        // own: the lane is rendered as the lane it is.
+        assertNull(lane.statusMessage(signInAvailable = false))
+
+        val detail = lane.statusDetail()
+        assertFalse("a host-authored credential reached a surface", detail!!.contains("host-side-token"))
+        assertTrue(detail.contains("<redacted>"))
+        // One line, beside the state — including the separators `\s` misses.
+        assertFalse(detail.contains("\n"))
+        assertEquals(detail, detail.trim())
+        val exotic = RelayAvailability.Available(
+            RelayChannelsStatus(
+                RelayLaneState.OFFLINE,
+                message = "Relay is\u0085offline\u2028on\u00a0this\u200bhost.",
+                guidance = null,
+            ),
+        ).statusDetail()
+        assertEquals("Relay is offline on this host.", exotic)
+
+        // Nothing but the lane has a detail to show.
+        assertNull(RelayAvailability.Missing.statusDetail())
+        assertNull(NO_CREDENTIAL.statusDetail())
+        assertNull(RelayAvailability.GatewayUnreachable.statusDetail())
+    }
+
     private fun TestScope.controller(
         probe: RelayAvailabilityProbe,
         connection: MutableStateFlow<GatewayConnectionState>,
-        refresher: RelayCredentialRefresher = CountingRefresher(rotates = false),
+        refresher: RelayCredentialRefresher = CountingRefresher(rotates = false, hasSignIn = true),
         waits: MutableList<Long> = mutableListOf(),
     ) = RelayAvailabilityController(
         scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()).also(scopes::add),
@@ -297,12 +451,36 @@ private class ScriptedProbe(vararg answers: RelayAvailability) : RelayAvailabili
     }
 }
 
-private class CountingRefresher(private val rotates: Boolean) : RelayCredentialRefresher {
+private class CountingRefresher(
+    private val rotates: Boolean,
+    private val hasSignIn: Boolean = true,
+) : RelayCredentialRefresher {
     var calls = 0
         private set
 
     override suspend fun refreshOnce(): Boolean {
         calls++
         return rotates
+    }
+
+    override suspend fun signInAvailable(): Boolean = hasSignIn
+}
+
+/**
+ * Parks every call where cancellation cannot promptly reach it, then answers
+ * all of them at once. Stands in for a probe whose suspension is not a
+ * cancellation point — the shape the controller's ordering rule has to survive.
+ */
+private class StubbornProbe : RelayAvailabilityProbe {
+    val parked = mutableListOf<CompletableDeferred<RelayAvailability>>()
+
+    override suspend fun availability(): RelayAvailability {
+        val gate = CompletableDeferred<RelayAvailability>()
+        parked += gate
+        return withContext(NonCancellable) { gate.await() }
+    }
+
+    fun releaseAll(answer: RelayAvailability) {
+        parked.forEach { it.complete(answer) }
     }
 }

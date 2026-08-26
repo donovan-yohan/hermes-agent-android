@@ -11,6 +11,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -119,6 +121,21 @@ internal class NativeGatewayAuthenticator(
     private val login: GatewayNativeLogin,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
 ) {
+    /**
+     * Serializes load → refresh → save for one process.
+     *
+     * `/auth/native/refresh` hands back a *new* refresh token and retires the
+     * one it was given (hermes-agent @
+     * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+     * `hermes_cli/dashboard_auth/routes.py:1027-1079`). Two callers — the
+     * reconnect path's [ticket] and a REST leg's [refreshAccessToken] — that
+     * POST the same one-time token race each other into a rejection, and their
+     * two [GatewayTokenStore.save] calls race over which rotation survives.
+     * Interactive sign-in deliberately happens *outside* this lock, so a
+     * browser round trip can never park another caller behind it.
+     */
+    private val rotation = Mutex()
+
     /** Stored tokens without triggering a sign-in flow; null when absent. */
     suspend fun tokens(baseUrl: String): GatewayNativeTokens? = store.load(baseUrl)
 
@@ -153,6 +170,11 @@ internal class NativeGatewayAuthenticator(
             ?: throw GatewayAuthException("Hermes rejected the refreshed sign-in. Sign in again.", 401)
     }
 
+    /**
+     * Deliberately outside [rotation]: a person tapping sign out must not wait
+     * on a network refresh. [rotate] re-reads the store before it writes, so a
+     * clear that lands mid-rotation still wins.
+     */
     suspend fun signOut(profile: RemoteGatewayProfile) {
         profile.normalizedBaseUrl?.let { store.clear(it) }
     }
@@ -170,24 +192,55 @@ internal class NativeGatewayAuthenticator(
      */
     suspend fun refreshAccessToken(profile: RemoteGatewayProfile): Boolean {
         val baseUrl = profile.normalizedBaseUrl ?: return false
-        val tokens = store.load(baseUrl) ?: return false
-        val refreshToken = tokens.refreshToken.takeIf(String::isNotBlank) ?: return false
-        val refreshed = api.refresh(baseUrl, refreshToken, tokens.provider) ?: return false
+        val observed = store.load(baseUrl) ?: return false
+        return rotate(baseUrl, observed) != null
+    }
+
+    /**
+     * One rotation of the stored pair, serialized by [rotation].
+     *
+     * [observed] is what the caller saw before it decided a rotation was
+     * needed. Under the lock the store is read again: a caller that arrives
+     * after someone else already rotated past [observed] takes that result
+     * instead of spending a refresh token the Gateway has already retired,
+     * which is both a wasted round trip and a rejection waiting to happen. The
+     * refresh token is what the comparison is on, because it is the one-time
+     * half — the access token only happens to rotate with it.
+     *
+     * The store is read once more after the network call, because [signOut]
+     * deliberately does *not* take this lock: parking a person's sign-out
+     * behind a bounded network refresh would be worse than the window it
+     * closes. Saving into a store that was cleared mid-flight would silently
+     * undo that sign-out and leave a usable credential on disk.
+     *
+     * Null means no rotation is available — nothing stored, nothing to rotate
+     * with, the Gateway refused, or the credential was signed out from under
+     * it. It is never a partial success: the stored tokens are replaced only
+     * when a whole new set arrives.
+     */
+    private suspend fun rotate(
+        baseUrl: String,
+        observed: GatewayNativeTokens,
+    ): GatewayNativeTokens? = rotation.withLock {
+        // An already-cleared store is a deliberate "there is nothing here";
+        // rotating [observed] anyway would resurrect what was just cleared.
+        val current = store.load(baseUrl) ?: return@withLock null
+        if (current.refreshToken != observed.refreshToken) return@withLock current
+        val refreshToken = current.refreshToken.takeIf(String::isNotBlank) ?: return@withLock null
+        val refreshed = api.refresh(baseUrl, refreshToken, current.provider) ?: return@withLock null
+        // Same question again, because the answer can have changed while the
+        // refresh was on the wire.
+        if (store.load(baseUrl) == null) return@withLock null
         store.save(baseUrl, refreshed)
-        return true
+        refreshed
     }
 
     private suspend fun refreshOrSignIn(
         profile: RemoteGatewayProfile,
         tokens: GatewayNativeTokens,
         browser: GatewayBrowserLauncher?,
-    ): GatewayNativeTokens {
-        val refreshed = tokens.refreshToken.takeIf(String::isNotBlank)?.let { refreshToken ->
-            api.refresh(requireNotNull(profile.normalizedBaseUrl), refreshToken, tokens.provider)
-        }
-        return refreshed?.also { store.save(requireNotNull(profile.normalizedBaseUrl), it) }
-            ?: signIn(profile, browser)
-    }
+    ): GatewayNativeTokens =
+        rotate(requireNotNull(profile.normalizedBaseUrl), tokens) ?: signIn(profile, browser)
 
     private suspend fun signIn(
         profile: RemoteGatewayProfile,

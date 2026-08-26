@@ -16,6 +16,16 @@ class GatewayHttpRequest(
     val timeoutMillis: Long,
     val query: Map<String, String> = emptyMap(),
     val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /**
+     * Whether a refusal's own explanation is worth reading back.
+     *
+     * Off by default because a refusal body is only useful to a caller that
+     * acts differently on it, and [GatewayHttpResult.Rejected.envelopeBytes]
+     * transfers ownership: a caller that never classifies a refusal would
+     * otherwise pay an extra bounded read and hold a backend-authored buffer
+     * it never wipes.
+     */
+    val captureEnvelope: Boolean = false,
 )
 
 sealed interface GatewayHttpResult {
@@ -30,8 +40,10 @@ sealed interface GatewayHttpResult {
      * credential lapsed" from "no credential at all", or "the backend is down"
      * from "the backend answered nonsense"; the services that know write it
      * down, so a caller that must act differently reads their answer instead of
-     * guessing. It is empty when the hop wrote no body. Ownership transfers to
-     * the caller, who must wipe it, and nothing inside it may be shown verbatim.
+     * guessing. It is empty when the hop wrote no body, and empty for every
+     * request that did not ask for it via
+     * [GatewayHttpRequest.captureEnvelope]. Ownership transfers to the caller,
+     * who must wipe it, and nothing inside it may be shown verbatim.
      */
     class Rejected(
         val statusCode: Int,
@@ -122,11 +134,16 @@ internal class OkHttpGatewayHttp(
                             in 500..599 -> "The Gateway could not complete that request. Try again."
                             else -> "Hermes refused that Gateway request."
                         },
-                        // Bounded hard: a refusal envelope is a handful of JSON
+                        // Read only for a caller that asked, and bounded hard
+                        // even then: a refusal envelope is a handful of JSON
                         // fields, and anything larger is not one. An oversized
                         // or unreadable body simply yields no envelope, which
                         // callers already have to handle.
-                        envelopeBytes = response.body?.readBounded(MAX_ENVELOPE_BYTES) ?: ByteArray(0),
+                        envelopeBytes = if (request.captureEnvelope) {
+                            response.body?.readBounded(MAX_ENVELOPE_BYTES) ?: ByteArray(0)
+                        } else {
+                            ByteArray(0)
+                        },
                     )
                 }
             }

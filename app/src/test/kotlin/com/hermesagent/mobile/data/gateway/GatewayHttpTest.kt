@@ -119,8 +119,9 @@ class GatewayHttpTest {
             { "Authorization" to "x" },
         )
 
-        val result = transport.execute(GatewayHttpRequest("api/config", "GET", null, 100))
-            as GatewayHttpResult.Rejected
+        val result = transport.execute(
+            GatewayHttpRequest("api/config", "GET", null, 100, captureEnvelope = true),
+        ) as GatewayHttpResult.Rejected
 
         // The caller can classify the refusal...
         assertEquals(envelope, result.envelopeBytes.toString(Charsets.UTF_8))
@@ -141,10 +142,31 @@ class GatewayHttpTest {
             { "Authorization" to "x" },
         )
 
-        val result = transport.execute(GatewayHttpRequest("api/config", "GET", null, 100))
-            as GatewayHttpResult.Rejected
+        val result = transport.execute(
+            GatewayHttpRequest("api/config", "GET", null, 100, captureEnvelope = true),
+        ) as GatewayHttpResult.Rejected
         assertEquals(500, result.statusCode)
         assertTrue(result.envelopeBytes.isEmpty())
+    }
+
+    @Test
+    fun `a caller that does not classify refusals is handed no envelope to wipe`() = runTest {
+        // The default. Every pre-existing REST caller reads only safeMessage,
+        // so a refusal body it never asked for would be an extra read and an
+        // un-wiped backend buffer it has no reason to hold.
+        val transport = OkHttpGatewayHttp(
+            clientResponding { request ->
+                response(request, 401, """{"error":"session_expired","detail":"secret backend detail"}""")
+            },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        val result = transport.execute(GatewayHttpRequest("api/config", "GET", null, 100))
+            as GatewayHttpResult.Rejected
+        assertEquals(401, result.statusCode)
+        assertTrue(result.envelopeBytes.isEmpty())
+        assertFalse(result.safeMessage.contains("secret"))
     }
 }
 

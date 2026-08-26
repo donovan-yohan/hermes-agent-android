@@ -37,9 +37,26 @@ enum class RelayLaneState {
 
 data class RelayChannelsStatus(
     val state: RelayLaneState,
-    /** Lane-provided human explanation; shown beside the state, never alone. */
+    /**
+     * The lane's own explanation of [state], written by the plugin on the host.
+     *
+     * Shown beside the state and never alone, and never raw: a surface reaches
+     * it through [statusDetail], which redacts and bounds it the way every
+     * other backend-authored string on a screen is. The app's own line for a
+     * state comes from [statusMessage] instead, which is why that function
+     * never returns this.
+     */
     val message: String?,
-    /** Server-authored remediation hint for auth-required lanes. */
+    /**
+     * Server-authored remediation hint carried by the forward-compatible
+     * nested lane envelope only; no plugin at the pin sends one, and nothing
+     * renders it yet.
+     *
+     * Parsed rather than dropped so the shape stays covered by
+     * `RelayPluginRepositoryTest` while the Relay surface is still being
+     * built. Whenever a surface does show it, it is server-authored text and
+     * must go through the same redaction [statusDetail] applies to [message].
+     */
     val guidance: String?,
 )
 
@@ -180,7 +197,7 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
     /** Probe the plugin without touching channel data. Cheap enough to poll. */
     override suspend fun availability(): RelayAvailability = withContext(Dispatchers.IO) {
         val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
-        when (val result = transport.execute(relayRequest(CONNECTION_STATUS))) {
+        when (val result = transport.execute(relayRequest(CONNECTION_STATUS, captureEnvelope = true))) {
             is GatewayHttpResult.Rejected ->
                 result.consumeEnvelope { refusalToAvailability(result.statusCode, it) }
 
@@ -203,7 +220,7 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
     suspend fun reauthorize(): RelayAvailability = withContext(Dispatchers.IO) {
         val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
         val empty = ByteArray(0).toRequestBody(null)
-        when (val result = transport.execute(relayRequest(CONNECTION_AUTHORIZE, method = "POST", body = empty))) {
+        when (val result = transport.execute(relayRequest(CONNECTION_AUTHORIZE, method = "POST", body = empty, captureEnvelope = true))) {
             is GatewayHttpResult.Rejected ->
                 result.consumeEnvelope { refusalToAvailability(result.statusCode, it) }
 
@@ -276,7 +293,13 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
             put("clientMessageId", clientMessageId)
         }.toString()
         val body = payload.toRequestBody(JSON_MEDIA_TYPE)
-        when (val result = transport.execute(relayRequest("${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages", method = "POST", body = body))) {
+        val request = relayRequest(
+            "${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages",
+            method = "POST",
+            body = body,
+            captureEnvelope = true,
+        )
+        when (val result = transport.execute(request)) {
             is GatewayHttpResult.Rejected -> {
                 val envelope = result.consumeEnvelope(::parseRelayError)
                 RelayPostResult.Failed(
@@ -501,11 +524,17 @@ private fun validChannelId(raw: String): String? =
 private fun encodeSegment(raw: String): String =
     URLEncoder.encode(raw, Charsets.UTF_8.name()).replace("+", "%20")
 
+/**
+ * [captureEnvelope] is set only by the three callers that actually classify a
+ * refusal with [consumeEnvelope]. The two that answer `null` on any rejection
+ * must not ask for a body they would then drop un-wiped.
+ */
 private fun relayRequest(
     suffix: String,
     method: String = "GET",
     body: RequestBody? = null,
     query: Map<String, String> = emptyMap(),
+    captureEnvelope: Boolean = false,
 ) = GatewayHttpRequest(
     path = "$BASE_PATH/$suffix",
     method = method,
@@ -513,6 +542,7 @@ private fun relayRequest(
     timeoutMillis = TIMEOUT_MILLIS,
     query = query,
     maxResponseBytes = MAX_RESPONSE_BYTES,
+    captureEnvelope = captureEnvelope,
 )
 
 private fun JsonObject.string(name: String): String? =
@@ -543,8 +573,26 @@ private val NO_CREDENTIAL = RelayAvailability.SignInRequired(RelaySignInReason.N
 /** The auth gate's error code for a credential that was presented and lapsed. */
 private const val GATE_SESSION_EXPIRED = "session_expired"
 
-/** Gate reasons meaning a credential existed and lapsed, not that none was sent. */
-private val GATE_LAPSED_REASONS = setOf("invalid_or_expired_session", "refresh_expired")
+/**
+ * Gate reasons meaning a credential existed and lapsed, not that none was sent.
+ *
+ * Only the reasons `_unauth_response` actually puts on the wire belong here:
+ * at hermes-agent @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` those are
+ * `invalid_or_expired_session` (`hermes_cli/dashboard_auth/middleware.py:373`,
+ * `:507`) and `no_cookie` (`:202`, `:388`), and only the first means a
+ * credential was presented. `refresh_expired` (`:565-572`) is an audit-log
+ * reason and never reaches a client, so classifying on it would be inventing a
+ * wire value.
+ *
+ * At the pin this is redundant with the [GATE_SESSION_EXPIRED] check beside it:
+ * `error` is derived from `reason` (`:149-153`), and a relay path is always
+ * under `/api/`, so the two fields cannot disagree. Both are read on purpose —
+ * a gate that later adds a lapsed reason without changing `error`, or narrows
+ * `error` without changing `reason`, should keep classifying rather than
+ * silently fall through to "nothing was presented" and stop spending the
+ * rotation that would fix it.
+ */
+private val GATE_LAPSED_REASONS = setOf("invalid_or_expired_session")
 
 private const val ERROR_AUTH_REQUIRED = "auth_required"
 private const val ERROR_CONFLICT = "conflict"

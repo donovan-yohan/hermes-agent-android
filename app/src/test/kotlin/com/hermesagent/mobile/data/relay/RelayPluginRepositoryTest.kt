@@ -16,6 +16,16 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Every wire fixture here is the shape a pinned source actually produces:
+ * hermes-plugin-relay @ `563a8c846ab997dc965c20080787f46b4f644b29` for the
+ * plugin's own bodies, hermes-agent @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` for the Gateway auth gate's. A
+ * fixture without a citation is a guess about the wire, and a parser tested
+ * against a guess proves nothing — so each one names its `path:line`. The one
+ * exception is the nested lane envelope, which is deliberately a shape no
+ * pinned source produces and says so where it is used.
+ */
 class RelayPluginRepositoryTest {
     @Test
     fun `availability probes the plugin namespace and maps every lane state`() = runTest {
@@ -32,7 +42,10 @@ class RelayPluginRepositoryTest {
         assertEquals("GET", http.requests.single().method)
         assertTrue(http.bodies.single().isEmpty())
 
-        // Every lane state, and the lane's own message, in the pinned shape.
+        // The remaining lane states, and the lane's own message, in the pinned
+        // shape: `relay_proxy.py:629-644` is where all four `status` values and
+        // this `message` come from, and `ConnectionStatus.to_wire()`
+        // (`:508-512`) is what flattens them onto the wire.
         for ((wire, expected) in LANE_STATES) {
             val lane = RelayPluginRepository {
                 RecordingGatewayHttp(SUCCESS_BODY("""{"status":"$wire","message":"Relay is unavailable"}"""))
@@ -125,15 +138,16 @@ class RelayPluginRepositoryTest {
     fun `the refusing service decides the remedy, not the status code`() = runTest {
         // The Gateway's own gate, bearer presented and lapsed. Only this shape
         // may cost a rotation.
+        //
+        // `_unauth_response` writes exactly two reasons for an /api/ route at
+        // the pin — `invalid_or_expired_session` (`middleware.py:373`, `:507`)
+        // and `no_cookie` (`:202`, `:388`) — and derives `error` from the
+        // first of them (`:149-153`). Nothing else reaches a client, so
+        // nothing else may be classified here.
         assertEquals(
             RelayAvailability.SignInRequired(RelaySignInReason.SessionExpired),
             probeRefusal(401, GATE_SESSION_EXPIRED_ENVELOPE),
         )
-        assertEquals(
-            RelayAvailability.SignInRequired(RelaySignInReason.SessionExpired),
-            probeRefusal(401, """{"error":"unauthenticated","reason":"refresh_expired"}"""),
-        )
-
         // Same gate, same status, nothing presented: nothing to rotate.
         assertEquals(
             RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
@@ -142,6 +156,14 @@ class RelayPluginRepositoryTest {
         assertEquals(
             RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
             probeRefusal(401, "not json at all"),
+        )
+        // A reason this build has never seen is not a lapsed credential.
+        // `refresh_expired` is an audit-log reason (`middleware.py:565-572`),
+        // never a wire one; classifying on it would spend a rotation on a
+        // value the Gateway does not send.
+        assertEquals(
+            RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
+            probeRefusal(401, """{"error":"unauthenticated","reason":"refresh_expired"}"""),
         )
 
         // The plugin's own auth_required is the *host's* Relay credential. No
@@ -171,6 +193,8 @@ class RelayPluginRepositoryTest {
 
     @Test
     fun `channel inventory parses projected rows and refuses malformed ones`() = runTest {
+        // The projection `project_channel` emits, with `_project_last_message`
+        // for the preview (`relay_proxy.py:257-279,237-254` at 563a8c8).
         val http = RecordingGatewayHttp(
             SUCCESS_BODY(
                 """{"channels":[
@@ -321,6 +345,9 @@ class RelayPluginRepositoryTest {
 
     @Test
     fun `post parses a minimal acknowledged row`() = runTest {
+        // `project_post` wraps one `project_message` row and nothing else
+        // (`relay_proxy.py:362-364`); every optional key below is one
+        // `project_message` omits when the upstream row lacks it (`:282-339`).
         val result = RelayPluginRepository {
             RecordingGatewayHttp(SUCCESS_BODY("""{"message":{"id":"m","channelId":"c","seq":1,"kind":"k","status":"s","sender":{"kind":"member","id":"u"},"body":{"text":"t","format":"text"},"createdAt":"2026-08-26T00:00:00Z","updatedAt":"2026-08-26T00:00:00Z"}}"""))
         }.post("c", "t", RelayMessageFormat.TEXT, "id-1")
@@ -405,6 +432,33 @@ class RelayPluginRepositoryTest {
     }
 
     @Test
+    fun `only the calls that classify a refusal ask for its envelope`() = runTest {
+        // Asking for an envelope transfers ownership of a backend-authored
+        // buffer the caller then has to wipe. `channels` and `history` answer
+        // null on any refusal without reading one, so they must not be handed
+        // one to drop.
+        val classifying = RecordingGatewayHttp(
+            SUCCESS_BODY("""{"status":"ready"}"""),
+            SUCCESS_BODY("""{"status":"ready"}"""),
+            SUCCESS_BODY("""{"message":$MESSAGE_ROW}"""),
+        )
+        val repository = RelayPluginRepository { classifying }
+        repository.availability()
+        repository.reauthorize()
+        repository.post("team/general", "ahoy", RelayMessageFormat.TEXT, "cmid-1")
+        assertTrue(classifying.requests.all { it.captureEnvelope })
+
+        val silent = RecordingGatewayHttp(
+            SUCCESS_BODY("""{"channels":[]}"""),
+            SUCCESS_BODY("""{"messages":[]}"""),
+        )
+        val quiet = RelayPluginRepository { silent }
+        quiet.channels()
+        quiet.history("team/general")
+        assertTrue(silent.requests.none { it.captureEnvelope })
+    }
+
+    @Test
     fun `reauthorize posts an empty body and reports the lane state it got back`() = runTest {
         val ready = RecordingGatewayHttp(SUCCESS_BODY("""{"status":"ready"}"""))
         val authorized = RelayPluginRepository { ready }.reauthorize()
@@ -442,6 +496,7 @@ class RelayPluginRepositoryTest {
     }
 
     private companion object {
+        /** One `project_message` row (`relay_proxy.py:282-339` at 563a8c8). */
         val MESSAGE_ROW =
             """{"schemaVersion":1,"id":"m-2","channelId":"team/general","seq":8,"kind":"member_message",""" +
                 """"status":"sent","sender":{"kind":"member","id":"u-me","displayName":"Me"},""" +
@@ -449,15 +504,21 @@ class RelayPluginRepositoryTest {
                 """"createdAt":"2026-08-26T01:00:00Z","updatedAt":"2026-08-26T01:00:00Z",""" +
                 """"clientMessageId":"cmid-1"}"""
 
+        /** The same projection with its optional `truncated` key (`:314-317`). */
         const val HISTORY_ROW =
             """{"schemaVersion":1,"id":"m-1","channelId":"team/lobby","seq":7,"kind":"assistant_turn",""" +
                 """"status":"sent","sender":{"kind":"member","id":"u-1","displayName":"Grace"},""" +
                 """"body":{"text":"hello world","format":"markdown"},"threadId":null,"parentMessageId":null,""" +
                 """"createdAt":"2026-08-26T00:30:00Z","updatedAt":"2026-08-26T00:30:00Z","truncated":false}"""
 
+        /** What `project_history` wraps it in (`relay_proxy.py:342-359`). */
         val HISTORY_FIXTURE =
             """{"messages":[$HISTORY_ROW],"hasMore":true,"nextCursor":{"beforeSeq":10,"afterSeq":4}}"""
 
+        /**
+         * The lane states `RelayProxy.status` can report other than `ready`,
+         * which the first assertion of that test covers (`relay_proxy.py:629-644`).
+         */
         val LANE_STATES = listOf(
             "offline" to RelayLaneState.OFFLINE,
             "auth_required" to RelayLaneState.AUTH_REQUIRED,
@@ -483,7 +544,7 @@ private fun refusal(statusCode: Int, envelope: String) = GatewayHttpResult.Rejec
 /**
  * Verbatim from the Gateway auth gate, hermes-agent @
  * f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
- * `hermes_cli/dashboard_auth/middleware.py:145-163` — a bearer that was
+ * `hermes_cli/dashboard_auth/middleware.py:144-163` — a bearer that was
  * presented and did not verify (`:356-373`).
  */
 private const val GATE_SESSION_EXPIRED_ENVELOPE =
@@ -495,7 +556,11 @@ private const val GATE_UNAUTHENTICATED_ENVELOPE =
     """{"error":"unauthenticated","detail":"Unauthorized",""" +
         """"reason":"no_cookie","login_url":"/login"}"""
 
-/** The plugin's structured refusal envelope (`dashboard/plugin_api.py:85-88` at the pin). */
+/**
+ * The plugin's structured refusal envelope, as `_error` writes it
+ * (`dashboard/plugin_api.py:85-89` at 563a8c8). The codes used below are the
+ * ones `_relay_error` maps to (`:92-111`).
+ */
 private fun relayError(code: String, retryable: Boolean): String =
     """{"error":{"code":"$code","message":"Relay rejected the request","retryable":$retryable}}"""
 

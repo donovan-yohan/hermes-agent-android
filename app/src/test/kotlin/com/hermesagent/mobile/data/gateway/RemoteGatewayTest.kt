@@ -998,6 +998,104 @@ class RemoteGatewayTest {
         beforeReconnectCancellationCleanup = beforeReconnectCancellationCleanup,
     )
 
+    @Test
+    fun `two rotations of the same credential spend the one-time refresh token once`() = runTest {
+        // `/auth/native/refresh` retires the refresh token it is given and
+        // returns a new pair (hermes-agent @
+        // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+        // `hermes_cli/dashboard_auth/routes.py:1027-1079`). Two callers that
+        // POST the same one-time token race each other into a rejection, and
+        // race each other's `store.save`. Load, refresh and save are therefore
+        // one critical section.
+        val gate = CompletableDeferred<Unit>()
+        val api = GatedRefreshApi(gate)
+        val store = MemoryTokenStore(VALID_TOKENS)
+        val authenticator = NativeGatewayAuthenticator(api, store, { _, _ -> error("no sign-in here") })
+
+        val first = async { authenticator.refreshAccessToken(PROFILE) }
+        runCurrent()
+        val second = async { authenticator.refreshAccessToken(PROFILE) }
+        runCurrent()
+        assertEquals("a second caller must wait, not re-POST", 1, api.refreshCalls)
+
+        gate.complete(Unit)
+        assertTrue("the rotating caller", first.await())
+        assertTrue("the caller that waited", second.await())
+
+        // Exactly one network rotation, spending exactly the stale token once.
+        assertEquals(1, api.refreshCalls)
+        assertEquals(listOf(VALID_TOKENS.refreshToken), api.presented)
+        // And both callers end up looking at the same rotated credential.
+        assertEquals(ROTATED_TOKENS, store.tokens)
+        assertEquals(ROTATED_TOKENS, authenticator.tokens(requireNotNull(PROFILE.normalizedBaseUrl)))
+    }
+
+    @Test
+    fun `a relay rotation and a reconnect ticket share one rotation rather than racing it`() = runTest {
+        // The two entry points C2 names: `ticket()` on the reconnect path and
+        // `refreshAccessToken()` from a refused REST leg. They must not both
+        // present the same retired token.
+        val gate = CompletableDeferred<Unit>()
+        val api = GatedRefreshApi(gate)
+        val store = MemoryTokenStore(EXPIRED_TOKENS)
+        val authenticator = NativeGatewayAuthenticator(api, store, { _, _ -> error("no sign-in here") })
+
+        val reconnect = async { authenticator.ticket(PROFILE, browser = null) }
+        runCurrent()
+        val relayRotation = async { authenticator.refreshAccessToken(PROFILE) }
+        runCurrent()
+
+        gate.complete(Unit)
+        assertEquals("ticket-1", reconnect.await())
+        assertTrue(relayRotation.await())
+
+        assertEquals(1, api.refreshCalls)
+        assertEquals(listOf(EXPIRED_TOKENS.refreshToken), api.presented)
+        // The ticket is minted with the rotated bearer, never the retired one.
+        assertEquals(listOf(ROTATED_TOKENS.accessToken), api.ticketTokens)
+        assertEquals(ROTATED_TOKENS, store.tokens)
+    }
+
+    @Test
+    fun `a sign-out that lands mid-rotation is not undone by the refresh it raced`() = runTest {
+        // signOut deliberately does not take the rotation lock — a person
+        // tapping sign out must not wait on a network refresh — so the rotation
+        // has to re-check the store before it writes. Otherwise a rotation
+        // already on the wire writes a live credential back over the clear.
+        val gate = CompletableDeferred<Unit>()
+        val api = GatedRefreshApi(gate)
+        val store = MemoryTokenStore(VALID_TOKENS)
+        val authenticator = NativeGatewayAuthenticator(api, store, { _, _ -> error("no sign-in here") })
+
+        val rotating = async { authenticator.refreshAccessToken(PROFILE) }
+        runCurrent()
+        assertEquals("the refresh must already be on the wire", 1, api.refreshCalls)
+
+        authenticator.signOut(PROFILE)
+        gate.complete(Unit)
+
+        assertFalse("a rotation cannot succeed into a store that was cleared", rotating.await())
+        assertEquals(null, store.tokens)
+    }
+
+    @Test
+    fun `a rotation never resurrects a credential that was signed out before it`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val api = GatedRefreshApi(gate)
+        val store = MemoryTokenStore(VALID_TOKENS)
+        val authenticator = NativeGatewayAuthenticator(api, store, { _, _ -> error("no sign-in here") })
+
+        val observed = requireNotNull(authenticator.tokens(requireNotNull(PROFILE.normalizedBaseUrl)))
+        authenticator.signOut(PROFILE)
+
+        assertFalse(authenticator.refreshAccessToken(PROFILE))
+        assertEquals(0, api.refreshCalls)
+        assertEquals(null, store.tokens)
+        // The caller's stale view of the world is not an argument for writing
+        // it back.
+        assertEquals(VALID_TOKENS, observed)
+    }
+
     private fun okhttp3.Request.bodyAsUtf8(): String {
         val buffer = okio.Buffer()
         body?.writeTo(buffer)
@@ -1027,6 +1125,37 @@ class RemoteGatewayTest {
         ): GatewayNativeTokens? {
             this.refreshToken = refreshToken
             return refreshed
+        }
+
+        override suspend fun mintWebSocketTicket(baseUrl: String, accessToken: String): String {
+            ticketTokens += accessToken
+            return "ticket-${ticketTokens.size}"
+        }
+    }
+
+    /**
+     * Counts refresh POSTs and parks the first one, so a second caller has to
+     * decide what to do while a rotation is genuinely in flight.
+     */
+    private class GatedRefreshApi(private val gate: CompletableDeferred<Unit>) : GatewayNativeAuthApi {
+        val presented = mutableListOf<String>()
+        val ticketTokens = mutableListOf<String>()
+        val refreshCalls: Int get() = presented.size
+
+        override suspend fun status(baseUrl: String) =
+            GatewayAuthStatus(authRequired = true, authFlows = setOf("native_pkce"))
+
+        override suspend fun exchange(baseUrl: String, code: String, verifier: String): GatewayNativeTokens =
+            error("a rotation must never fall through to an interactive sign-in")
+
+        override suspend fun refresh(
+            baseUrl: String,
+            refreshToken: String,
+            provider: String,
+        ): GatewayNativeTokens {
+            presented += refreshToken
+            gate.await()
+            return ROTATED_TOKENS
         }
 
         override suspend fun mintWebSocketTicket(baseUrl: String, accessToken: String): String {
@@ -1178,6 +1307,18 @@ class RemoteGatewayTest {
             accessToken = "access-fixture",
             refreshToken = "refresh-fixture",
             expiresAt = 10_000L,
+            provider = "fixture-provider",
+            userId = "fixture-user",
+        )
+
+        /** Already lapsed, so `ticket()` takes its rotation branch. */
+        val EXPIRED_TOKENS = VALID_TOKENS.copy(expiresAt = 0L)
+
+        /** What one successful rotation hands back — including a *new* refresh token. */
+        val ROTATED_TOKENS = GatewayNativeTokens(
+            accessToken = "access-rotated",
+            refreshToken = "refresh-rotated",
+            expiresAt = 20_000L,
             provider = "fixture-provider",
             userId = "fixture-user",
         )

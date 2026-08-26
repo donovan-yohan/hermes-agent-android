@@ -170,8 +170,8 @@ class RelayAuthLegConformanceTest {
     private companion object {
         /**
          * One reachable leg, wired the way `GatewayConnection` wires it:
-         * the remote bearer at `GatewayConnection.kt:488-497`, the SSH-tunneled
-         * loopback session token at `:614-621`.
+         * the remote bearer at `GatewayConnection.kt:521-529`, the SSH-tunneled
+         * loopback session token at `:665-671`.
          */
         class Leg(
             val name: String,
