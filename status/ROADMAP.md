@@ -70,6 +70,10 @@ for the Managed SSH lifecycle.
   plus a per-reply copy control that writes the reply as rendered plain text.
   Tool output, inline diffs and reasoning text are not selectable yet, though
   Desktop selects them; the platform selection toolbar has no device capture.
+  Selection is for settled text: while a turn streams, a selection inside the
+  block the next token rewrites is cleared, and only a selection in the already
+  settled prefix survives. The copy control is the path for a live turn — it
+  works throughout and copies the reply as far as it has arrived.
 - Multiline drafts, history and undo/redo, provider/model selection, the full
   backend reasoning scale through Ultra, fast mode, slash/path/session
   completions, emoji search, and plain-text URL/prompt insertion.

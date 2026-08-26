@@ -330,5 +330,4 @@ private fun CodingReviewUiState.worktreePath(): String = when (this) {
 
 private fun Color.alphaMultiply(multiplier: Float): Color = copy(alpha = alpha * multiplier)
 
-private const val COPY_CONFIRM_MILLIS = 1_500L
 private val REVIEW_SHEET_MAX_HEIGHT = 560.dp

@@ -18,6 +18,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -245,7 +246,7 @@ class TranscriptSelectionTest {
             ?: error("no reply paragraph is on screen")
 
     @Test
-    fun `a streaming delta does not drop a live selection`() {
+    fun `a streaming delta does not drop a selection in the settled prefix`() {
         val settled = "First paragraph of the reply."
         launch(
             listOf(AssistantTurn(id = "$SESSION-a1", markdown = settled, atMillis = NOW, streaming = true)),
@@ -271,6 +272,61 @@ class TranscriptSelectionTest {
         compose.waitForIdle()
 
         assertTrue("a token must not clear the reader's selection", selectionHandles() > 0)
+    }
+
+    /**
+     * Pins today's behaviour, which is a limitation rather than a contract.
+     *
+     * A delta that rewrites the block a selection is anchored in clears that
+     * selection outright — handles go from two to zero on the next token, and
+     * the reader is left holding nothing. Compose re-lays the tail block from a
+     * new string and the anchors do not survive it; nothing here can prevent
+     * that from the app side, so the honest move is to write it down.
+     *
+     * The assertion is deliberately exact so that a Compose upgrade which
+     * starts re-anchoring a rewritten block *fails* this test instead of
+     * quietly improving behaviour the docs still describe as broken. If it
+     * fails that way: relax it, and correct
+     * `docs/parity/transcript-selection-copy.md` ("Streaming"), the roadmap
+     * line, and the PR/limitations copy that all say the selection is lost.
+     */
+    @Test
+    fun `a streaming delta clears a selection inside the block it rewrites`() {
+        val settled = "Settled first paragraph."
+        val partialTail = "The tail is still"
+        launch(
+            listOf(
+                AssistantTurn(
+                    id = "$SESSION-a1",
+                    markdown = "$settled\n\n$partialTail",
+                    atMillis = NOW,
+                    streaming = true,
+                ),
+            ),
+        )
+
+        compose.onNodeWithText(partialTail).performTouchInput { longClick() }
+        compose.waitForIdle()
+        assertTrue("the press must select before the delta lands", selectionHandles() > 0)
+
+        state = state.copy(
+            transcript = listOf(
+                AssistantTurn(
+                    id = "$SESSION-a1",
+                    markdown = "$settled\n\n$partialTail arriving.",
+                    atMillis = NOW,
+                    streaming = true,
+                ),
+            ),
+        )
+        compose.waitForIdle()
+
+        assertEquals(
+            "a delta that rewrites the selected block clears the selection — measured, " +
+                "not desired; see the KDoc before relaxing this",
+            0,
+            selectionHandles(),
+        )
     }
 
     @Test
@@ -346,6 +402,45 @@ class TranscriptSelectionTest {
         )
 
         compose.onNodeWithContentDescription("Copy reply").assertDoesNotExist()
+    }
+
+    /**
+     * The control tracks what is *drawn*, not what the projection yields.
+     *
+     * Assistant prose is rendered without the `@image:` strip the user bubble
+     * applies, so a reply whose only content is a ref line puts that line on
+     * screen as ordinary text. Gating the control on the projection left that
+     * text visible with no way to lift it — the exact gap #48 exists to close.
+     *
+     * There is still nothing to hand over, because #48 asks for refs to be
+     * stripped and the strip is what empties the projection. So the control is
+     * present but *disabled*, and offers no TalkBack action: confirming a
+     * clipboard write that carried no text would be worse than the missing
+     * control it replaces. The words stay long-pressable either way.
+     */
+    @Test
+    fun `a reply that renders only an image ref offers a disabled control`() {
+        launch(
+            listOf(
+                UserTurn(id = "$SESSION-u1", text = "show me", atMillis = NOW),
+                AssistantTurn(id = "$SESSION-a1", markdown = "@image:/staged/shot.png", atMillis = NOW),
+            ),
+        )
+
+        compose.onNodeWithText("@image:/staged/shot.png").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Copy reply")
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assert(
+                SemanticsMatcher("offers no 'Copy reply' accessibility action") { node ->
+                    node.config.getOrNull(SemanticsActions.CustomActions).isNullOrEmpty()
+                },
+            )
+
+        // And the press is inert: nothing is claimed, nothing is written.
+        compose.onNodeWithContentDescription("Copy reply").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Reply copied").assertDoesNotExist()
     }
 
     /**

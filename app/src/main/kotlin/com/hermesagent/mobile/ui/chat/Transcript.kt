@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -426,6 +427,9 @@ private fun FullSizeImageOverlay(
 @Composable
 private fun AssistantProse(turn: AssistantTurn) {
     val blocks = remember(turn.markdown) { parseMarkdown(turn.markdown) }
+    // Whether this turn draws any prose at all. One gate, read twice below, so
+    // the container and the copy control can never disagree about it.
+    val hasProse = blocks.isNotEmpty()
     // Projected from the blocks the renderer already parsed, so a streamed
     // delta costs one CommonMark pass, not two.
     val reply = remember(blocks) { blocks.replyPlainText() }
@@ -454,14 +458,20 @@ private fun AssistantProse(turn: AssistantTurn) {
         // two turns or swallow the scaffolding between them, because a sibling
         // turn is a different container and chrome is in none at all.
         //
-        // Kept mounted while the turn streams. Compose anchors a selection to
-        // text offsets inside the child layouts, so re-laying the settled
-        // prefix out does not drop it; only the tail block the delta rewrites
-        // can lose an anchor.
-        SelectionContainer {
-            Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
-                for (block in blocks) {
-                    MarkdownBlockView(block)
+        // Kept mounted while the turn streams, but that only saves a selection
+        // in the *settled prefix*. A selection anchored inside the tail block a
+        // delta rewrites is cleared outright on the next token — measured, and
+        // pinned by `TranscriptSelectionTest`. Copying a live turn is what the
+        // control below is for.
+        //
+        // Emitted only when there is prose, so an image-only or empty turn does
+        // not spend a turnGap on a zero-height container.
+        if (hasProse) {
+            SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
+                    for (block in blocks) {
+                        MarkdownBlockView(block)
+                    }
                 }
             }
         }
@@ -477,7 +487,11 @@ private fun AssistantProse(turn: AssistantTurn) {
             ErrorState(title = "That turn failed", description = message)
         }
 
-        if (reply.isNotBlank()) {
+        // Gated on what is *drawn*, not on what the projection yields. A reply
+        // whose only content is a standalone `@image:` line still renders that
+        // line as prose, and text on screen with no way to lift it is the bug
+        // this control exists to fix.
+        if (hasProse) {
             ReplyActions(reply)
         }
     }
@@ -513,7 +527,7 @@ private fun ReplyActions(reply: String) {
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
-            delay(REPLY_COPY_CONFIRM_MILLIS)
+            delay(COPY_CONFIRM_MILLIS)
             copied = false
         }
     }
@@ -522,19 +536,29 @@ private fun ReplyActions(reply: String) {
     // already raises a system clipboard notice, and a second one would be the
     // app talking over the platform.
     val label = if (copied) "Reply copied" else "Copy reply"
-    val copy = remember(reply, platformContext) {
+    val canCopy = reply.isNotBlank()
+    // Read through a holder rather than captured, so the lambda itself is
+    // stable across a streamed delta while still copying the reply as it
+    // stands at the moment of the press.
+    val currentReply by rememberUpdatedState(reply)
+    val copy = remember(platformContext) {
         {
             val clipboard = platformContext
                 .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("Hermes reply", reply))
+            clipboard.setPrimaryClip(ClipData.newPlainText("Hermes reply", currentReply))
             copied = true
         }
     }
-    // Remembered because a CustomAccessibilityAction's equality includes its
-    // lambda: rebuilding the list every recomposition would re-invalidate this
-    // node's semantics on every streamed token.
-    val replyActions = remember(copy) {
-        listOf(CustomAccessibilityAction(label = "Copy reply") { copy(); true })
+    // A CustomAccessibilityAction's equality includes its lambda, so a fresh
+    // list would re-invalidate this node's semantics. Keyed on the stable
+    // [copy] above, which is what makes that hold across every streamed token.
+    // [canCopy] flips at most once, on a turn's first visible token.
+    val replyActions = remember(copy, canCopy) {
+        if (canCopy) {
+            listOf(CustomAccessibilityAction(label = "Copy reply") { copy(); true })
+        } else {
+            emptyList()
+        }
     }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -542,6 +566,11 @@ private fun ReplyActions(reply: String) {
             icon = if (copied) HermesIcon.Check else HermesIcon.Copy,
             contentDescription = label,
             onClick = copy,
+            // The control is mounted for every turn that draws prose, but a turn
+            // whose prose projects to nothing has nothing to hand over. Saying
+            // so quietly beats confirming a clipboard write that carried no
+            // text — and the words are still there to long-press.
+            enabled = canCopy,
             tint = if (copied) tokens.taskCompleted else tokens.scaffoldMeta,
             // The same action offered through TalkBack's actions menu. Compose
             // only surfaces custom actions on a node a screen reader can focus,
@@ -1193,5 +1222,11 @@ private fun List<InlineSpan>.annotated(): AnnotatedString {
     }
 }
 
-/** How long the copy control holds its confirmation before settling back. */
-private const val REPLY_COPY_CONFIRM_MILLIS = 1_500L
+/**
+ * How long a copy control holds its confirmation before settling back.
+ *
+ * Shared with [CodingStatusRow]'s worktree-path button: two controls with the
+ * same Copy → Check gesture should settle on the same beat, so they read one
+ * constant rather than two that happen to agree.
+ */
+internal const val COPY_CONFIRM_MILLIS = 1_500L

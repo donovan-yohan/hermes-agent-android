@@ -5,26 +5,35 @@ import com.hermesagent.mobile.data.attachments.ImageRefLines
 /**
  * What "copy this reply" puts on the clipboard.
  *
- * Desktop has no copy control — the browser's own selection is the affordance,
- * so what lands on the clipboard there is the *rendered* text of the message
- * element, not its markdown source (`styles.css:1176-1180` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` makes exactly that subtree
- * selectable). A phone cannot practically drag-select a long reply, so Android
- * adds an explicit action — but it must hand over the same thing the browser
- * would, or the two clients disagree about what a reply *is*.
+ * Desktop has a copy control and it copies markdown **source**. Its hover
+ * action bar mounts `<CopyButton … text={getMessageText} />`
+ * (`assistant-message.tsx:286` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`),
+ * `getMessageText` is `messageContentText(messageRuntime.getState().content)`
+ * (`:135`), and `messageContentText` joins the message's raw text parts
+ * (`thread/content.ts:17-23`). No DOM is read; the markdown arrives on the
+ * clipboard exactly as the model wrote it.
  *
- * So this is a projection of the blocks the transcript already parsed, not of
- * the source string — which also means deciding what to copy costs no second
- * CommonMark pass per streamed token:
+ * Android deliberately copies **rendered plain text** instead, which is what
+ * issue #48 asks for. A phone's paste targets are chat apps, notes and message
+ * composers, not an editor that will re-render the markdown — pasting `**bold**`
+ * and a fence line into a text message hands over syntax the reader has to
+ * decode. Desktop's paste target is usually another editor, so source is right
+ * there and rendered text is right here. The parity ledger records this as a
+ * deviation, not as an equivalence.
+ *
+ * The projection reads the blocks the transcript already parsed, not the source
+ * string, so deciding what to copy costs no second CommonMark pass per streamed
+ * token:
  *
  *  - Emphasis, strong and inline-code markers are gone; only their text is
- *    left, because that is what the reader sees and what a browser copies.
+ *    left, because that is what the reader sees and what a drag-selection in a
+ *    browser hands over.
  *  - Fences hand over their code without the fence line or the language label
  *    (the label is chrome, and [com.hermesagent.mobile.ui.chat] renders it
  *    outside the selectable region for the same reason).
- *  - List markers are *kept*. A browser drops them because the marker is not a
- *    text node; here the whole reply is copied at once and a bullet list that
- *    arrives as unlabelled lines has lost its structure.
+ *  - List markers are *kept*. A browser drag drops them because the marker is
+ *    not a text node; here the whole reply is copied at once and a bullet list
+ *    that arrives as unlabelled lines has lost its structure.
  *  - `@image:` reference lines are stripped where they stand alone, but never
  *    inside a fence — see [copyText].
  *
