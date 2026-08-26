@@ -195,6 +195,11 @@ class SessionCache {
      * Replace an entry by id, or append it when it is new. This is how a
      * streaming turn grows: one entry rewritten in place rather than a new
      * message per delta.
+     *
+     * The replacement is wholesale, so a caller that overwrites a hydrated
+     * entry with a live one drops that row's durable [TranscriptEntry.rowId];
+     * a transcript merge that can carry persisted rows (#68 S25) has to
+     * preserve the address already held when the incoming entry has none.
      */
     fun putEntry(sessionId: String, entry: TranscriptEntry) {
         _state.update { current ->

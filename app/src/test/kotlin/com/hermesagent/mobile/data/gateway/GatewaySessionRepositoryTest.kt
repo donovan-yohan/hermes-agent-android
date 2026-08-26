@@ -298,7 +298,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `history is asked for durable row ids and every persisted turn carries one`() = runTest {
+    fun `hydration keeps the durable row id of every stamped row and sends the forward hedge`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { historyResult = HISTORY }
         val repository = LiveGatewaySessionRepository(
@@ -311,17 +311,19 @@ class GatewaySessionRepositoryTest {
 
         repository.openSession("durable-a")
 
-        // Without the flag the read is unstamped and the one durable address a
-        // client has for a turn is silently stripped
-        // (tui_gateway/methods_session.py:2597-2606 @ f82f2dba).
+        // The pinned Gateway stamps its own read and never looks at this param
+        // (tui_gateway/methods_session.py:2597-2606 @ f82f2dba). The flag is the
+        // hedge for a Gateway that ever makes the stamped read opt-in, and it
+        // costs nothing here because this handler reads only `session_id`.
         assertEquals(JsonPrimitive(true), rpc.call("session.history").params["include_row_ids"])
         val transcript = cache.transcript("durable-a")
         assertEquals(
             listOf(TranscriptRowId(101), TranscriptRowId(102), null),
             transcript.map(TranscriptEntry::rowId),
         )
-        // Upstream projects a tool row before it stamps row_id, so it has no
-        // durable address and must not be handed a fabricated one.
+        // The tool row is persisted too, but upstream's projection returns
+        // before the stamp, so it arrives unstamped and must not be handed a
+        // fabricated address.
         assertNull(transcript.filterIsInstance<ToolActivity>().single().rowId)
     }
 
@@ -351,6 +353,56 @@ class GatewaySessionRepositoryTest {
             listOf("runtime-a-history-0", "runtime-a-history-1", "runtime-a-history-2"),
             transcript.map(TranscriptEntry::id),
         )
+    }
+
+    @Test
+    fun `no durable row id is invented from a rendering key or a non-positive stamp`() {
+        val history = parseHistory(
+            json(
+                """{"messages":[
+                  {"role":"user","text":"hello","id":"77"},
+                  {"role":"user","text":"zero","row_id":0},
+                  {"role":"user","text":"negative","row_id":-5},
+                  {"role":"user","text":"fractional","row_id":12.5}
+                ],"count":4}""",
+            ),
+            runtimeId = "runtime-a",
+            nowMillis = 99,
+        )
+
+        assertEquals(listOf(null, null, null, null), history.map(TranscriptEntry::rowId))
+        // A numeric rendering key is exactly what a fabricated address would
+        // borrow, and a row id of 0 or below is a sentinel, not an address.
+        assertEquals(listOf("77", "0", "-5", "12.5"), history.map(TranscriptEntry::id))
+        assertEquals(
+            listOf("hello", "zero", "negative", "fractional"),
+            history.filterIsInstance<UserTurn>().map(UserTurn::text),
+        )
+    }
+
+    @Test
+    fun `a stamped tool row keeps its address and one assistant row stamps both its entries`() {
+        val history = parseHistory(
+            json(
+                """{"messages":[
+                  {"role":"tool","name":"Read","context":"Read file.txt","row_id":401},
+                  {"role":"assistant","reasoning":"weigh the options","text":"answer","row_id":402}
+                ],"count":2}""",
+            ),
+            runtimeId = "runtime-a",
+            nowMillis = 99,
+        )
+
+        // Upstream returns from its tool projection before the stamp
+        // (server.py:7601-7615, stamp at :7645), so this is null in practice —
+        // read rather than hardcoded, so a Gateway that stamps tool rows keeps
+        // that address.
+        assertEquals(TranscriptRowId(401), history.filterIsInstance<ToolActivity>().single().rowId)
+        // One durable row projects to two entries, which share the one address
+        // while keeping their own rendering keys.
+        assertEquals(TranscriptRowId(402), history.filterIsInstance<ReasoningActivity>().single().rowId)
+        assertEquals(TranscriptRowId(402), history.filterIsInstance<AssistantTurn>().single().rowId)
+        assertEquals(listOf("402-reasoning", "402"), history.drop(1).map(TranscriptEntry::id))
     }
 
     @Test
