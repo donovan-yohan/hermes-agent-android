@@ -3,6 +3,7 @@ package com.hermesagent.mobile.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.appearance.AppearanceScreen
 import com.hermesagent.mobile.ui.chat.ChatScreen
@@ -27,6 +29,8 @@ import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.gateway.GatewayScreen
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
+import com.hermesagent.mobile.ui.relay.RelayScreen
+import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.settings.SettingsScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -36,7 +40,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Chat is home. Settings has two short child surfaces, so a saved destination
  * is sufficient without a navigation graph.
  */
-enum class HermesDestination { Chat, Settings, Appearance, Gateways }
+enum class HermesDestination { Chat, Settings, Appearance, Gateways, Relay }
 
 @Composable
 fun HermesApp(
@@ -48,6 +52,8 @@ fun HermesApp(
     appearanceActions: AppearanceActions,
     gatewayActions: GatewayActions,
     sshActions: SshActions,
+    relayState: RelayUiState,
+    relayActions: RelayActions,
 ) {
     var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
 
@@ -71,6 +77,8 @@ fun HermesApp(
                 SettingsScreen(
                     onOpenAppearance = { destination = HermesDestination.Appearance },
                     onOpenGateways = { destination = HermesDestination.Gateways },
+                    onOpenRelay = { destination = HermesDestination.Relay },
+                    relayAvailable = !relayState.unavailableOnGateway,
                 )
             }
 
@@ -87,20 +95,42 @@ fun HermesApp(
             ) {
                 GatewayScreen(gatewayState, gatewayActions, sshState, sshActions)
             }
+
+            // Relay wears the same overlay chrome as its peers but supplies
+            // its own back meaning: it drills one level deeper, and one header
+            // whose affordance means "the pane you came from" is clearer than
+            // two stacked back arrows.
+            HermesDestination.Relay -> RelayScreen(
+                state = relayState,
+                actions = relayActions,
+                onLeave = onBack,
+                onOpenGateways = { destination = HermesDestination.Gateways },
+            )
         }
     }
 }
 
-/** Route overlays are short tasks: one back affordance, no nested chrome. */
+/**
+ * Route overlays are short tasks: one back affordance, no nested chrome.
+ *
+ * A destination that drills deeper still gets exactly one header — it says so
+ * through [backDescription] and its own `onBack`, rather than forking this
+ * chrome or stacking a second back arrow inside it.
+ */
 @Composable
-private fun OverlayScaffold(
+internal fun OverlayScaffold(
     title: String,
     onBack: () -> Unit,
-    content: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    /** Second header line, for a destination whose title needs qualifying. */
+    subtitle: String? = null,
+    /** What back means here, when it is not simply leaving the destination. */
+    backDescription: String = "Back",
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     Column(
-        Modifier
+        modifier
             .fillMaxSize()
             .background(tokens.chatSurface)
             .navigationBarsPadding(),
@@ -111,15 +141,27 @@ private fun OverlayScaffold(
         ) {
             QuietIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = backDescription,
                 onClick = onBack,
             )
-            Text(
-                text = title,
-                style = HermesTheme.type.screenTitle,
-                color = tokens.textPrimary,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = HermesTheme.type.screenTitle,
+                    color = tokens.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = HermesTheme.type.scaffold,
+                        color = tokens.scaffoldMeta,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
         Hairline()
         content()
@@ -131,5 +173,6 @@ internal fun HermesDestination.backDestination(): HermesDestination = when (this
     HermesDestination.Settings -> HermesDestination.Chat
     HermesDestination.Appearance,
     HermesDestination.Gateways,
+    HermesDestination.Relay,
     -> HermesDestination.Settings
 }

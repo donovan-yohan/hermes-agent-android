@@ -74,6 +74,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Composer completions/status | `apps/desktop/src/app/chat/composer/{completion-drawer,context-menu,contrib,status-stack}/` plus tests | Context actions, all completion providers, contribution gaps and status stack states |
 | Composer model authority | `apps/desktop/src/app/chat/composer/model-pill.tsx:26-173`; `apps/desktop/src/app/session/hooks/use-model-controls.ts:238-286`; `apps/desktop/src/store/session.ts:20-29,616-620` | Catalog/effective state is Gateway truth; a fresh-draft pin is scoped local state, while live deferred model changes remain next-turn intent until `session.info` confirms |
 | Composer completion authority | `apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts:24-153`; `apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts:61-250`; `apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts:16-214`; `apps/desktop/src/app/chat/composer/url-refs.ts:1-103`; `apps/desktop/src/app/chat/composer/path-refs.ts:1-103` | Fence async results by trigger, text, runtime/cwd and generation; serialize URL/path/session references as canonical text before considering rich chips |
+| Relay channels + transcript | `hermes-plugin-relay` @ `563a8c8`: `desktop/plugin.js:23,109-130,481-497,502-517,1073-1083`; `relay_proxy.py:228-320`; `docs/desktop.md` | Backend-owned channel order, the archived name-line annotation, the three-second visible-page poll and its ready-lane gate, and the projected wire shape. Full ledger: [`docs/parity/relay-channels-surface.md`](../parity/relay-channels-surface.md) |
 | Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
 
 Treat lifecycle files as contracts with every process that consumes them, not
@@ -189,6 +190,7 @@ Replace, and say so in the PR:
 | Enter submits | Explicit send tap; Enter inserts a newline (no modifier key on a soft keyboard) |
 | Route overlays as cards | Full-screen destination with a back affordance; system back leaves it |
 | 13px body text | 15sp, with the rest of the scale moved by the same factor |
+| Pane visible → poll | Surface resumed → poll; `LifecycleResumeEffect`, never a bare timer |
 
 Non-negotiables on this side: 48dp touch targets, a `contentDescription` on
 every icon-only control, `imePadding()` where a composer meets the keyboard,
@@ -235,6 +237,34 @@ git diff --check
 Before you call it done, edit **this file**: add the upstream paths that
 mattered, the pitfalls you hit, and delete steps that turned out to be noise.
 A workflow that only grows is a diary, and nobody reads a diary.
+
+A **plugin** surface is a second pin, not a second path under the first. The
+Relay port reads `hermes-plugin-relay` @ `563a8c8` through `git show` only,
+because that checkout carries unreleased work; a `path:line` taken from its
+working tree means nothing. Its backend also fixes no vocabulary for a
+channel's `kind`/`visibility` or a message's `status` — they are required
+strings and nothing more (`relay_proxy.py:265-268,293`) — so those render
+humanised and never remapped through an enum this app invented. Text the plugin
+host wrote is likewise not the app's sentence: the data layer hands it over
+already redacted, collapsed to one line and bounded, and the surface renders it
+*beside* an app-owned line rather than in place of one. A field the pinned
+backend never returns — Relay's `guidance` — is parsed to keep its shape
+covered by tests and rendered nowhere.
+
+Where two transports can answer the same refusal, the copy is the data layer's
+to choose, not the screen's. A Gateway sign-in exists on the native remote leg
+and nowhere else, so the same Relay refusal has to ask for a sign-in on one leg
+and a reconnect on the other. Passing that fact down beside the state, and
+having the surface render whichever sentence it was handed, is what stops each
+new surface from re-deriving it and getting it wrong on the quieter leg.
+
+Two testing pitfalls came out of the same slice. A surface that polls while it
+is visible has a loop with no end, so `advanceUntilIdle` spins the virtual clock
+forever: drive it with explicit `advanceTimeBy(interval)` + `runCurrent()`
+ticks. And that loop must be stopped *inside* the test body — `runTest` drains
+the scheduler during its own teardown, so a live timed task there hangs the test
+after its assertions have already passed, which reads like a mystery rather than
+a leak.
 
 For composer controls, two boundaries are easy to lose: `model.options` and
 `session.info` own effective model/provider/reasoning/fast state, while a new

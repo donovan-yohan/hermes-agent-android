@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
@@ -21,9 +22,12 @@ import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
+import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
+import com.hermesagent.mobile.ui.relay.RelayChannelReader
+import com.hermesagent.mobile.ui.relay.RelayViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +68,24 @@ class MainActivity : ComponentActivity() {
     }
     private val gatewaySettingsViewModel: GatewaySettingsViewModel by viewModels {
         GatewaySettingsViewModel.factory(preferences, app.gatewayConnection)
+    }
+
+    /**
+     * The Relay surface reads through the process-scoped plugin client and the
+     * process-scoped availability controller; it owns neither. The reader is
+     * deliberately the read half only — posting belongs to the composer slice.
+     */
+    private val relayViewModel: RelayViewModel by viewModels {
+        RelayViewModel.factory(
+            availability = app.relayAvailability.state,
+            refreshAvailability = app.relayAvailability::refresh,
+            reader = object : RelayChannelReader {
+                override suspend fun channels() = app.relayRepository.channels()
+
+                override suspend fun history(channelId: String, limit: Int) =
+                    app.relayRepository.history(channelId, limit)
+            },
+        )
     }
     private val gatewayBrowser = GatewayBrowserLauncher { url ->
         withContext(Dispatchers.Main.immediate) {
@@ -184,6 +206,23 @@ class MainActivity : ComponentActivity() {
             val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
+            // Collected from the shell, not from the Relay screen: the Settings
+            // entry point has to be able to say Relay is unavailable on this
+            // Gateway before anyone opens it. Availability probes on connection
+            // edges only, so holding this costs nothing.
+            val relayState by relayViewModel.uiState.collectAsStateWithLifecycle()
+            // Remembered so the instance is stable: rebuilding it every
+            // recomposition would invalidate every per-row click lambda in the
+            // channel list while Relay is open.
+            val relayActions = remember {
+                RelayActions(
+                    onSelectChannel = relayViewModel::selectChannel,
+                    onClearSelection = relayViewModel::clearSelection,
+                    onRetry = relayViewModel::retry,
+                    onResume = relayViewModel::surfaceResumed,
+                    onPause = relayViewModel::surfacePaused,
+                )
+            }
 
             HermesApp(
                 chatState = chatState,
@@ -249,6 +288,8 @@ class MainActivity : ComponentActivity() {
                     onDisconnect = gatewaySettingsViewModel::disconnect,
                     onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
                 ),
+                relayState = relayState,
+                relayActions = relayActions,
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,
                     onRemoteProfileChange = sshViewModel::setRemoteHermesProfile,

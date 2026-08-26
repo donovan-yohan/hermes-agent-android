@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollableDefaults
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +77,7 @@ import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.QuietIconButton
+import com.hermesagent.mobile.ui.common.scrollToTail
 import com.hermesagent.mobile.ui.common.VerticalHairline
 import com.hermesagent.mobile.ui.sessions.SessionList
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -479,35 +479,6 @@ private fun JumpToLatestButton(
         }
     }
 }
-
-/**
- * Scroll to the *bottom* of the transcript, not merely to its last item.
- *
- * A streaming block routinely outgrows the viewport, and `scrollToItem` only
- * puts an item's top edge on screen — which is precisely where the tail
- * disappears. Walking forward until the list reports it cannot scroll any
- * further lands on the growing bottom edge instead. A failed scroll is the
- * terminating condition: it cannot spin if layout cannot make progress, and
- * it does not impose an arbitrary cap on a legitimately long reply.
- */
-private suspend fun LazyListState.scrollToTail() {
-    val lastIndex = layoutInfo.totalItemsCount - 1
-    if (lastIndex < 0) return
-
-    if (firstVisibleItemIndex != lastIndex) scrollToItem(lastIndex)
-    val viewport = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).toFloat()
-    if (viewport <= 0f) return
-
-    while (canScrollForward) {
-        val before = anchor()
-        val consumed = scrollBy(viewport)
-        if (consumed <= 0f || anchor() == before) return
-    }
-}
-
-/** Where the list is parked: the first visible item and how far into it. */
-private fun LazyListState.anchor(): Pair<Int, Int> =
-    firstVisibleItemIndex to firstVisibleItemScrollOffset
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
