@@ -150,6 +150,24 @@ data class RelayHistory(
     val hasMore: Boolean?,
     val nextCursorBeforeSeq: Long?,
     val nextCursorAfterSeq: Long?,
+    /**
+     * Whether Relay says this channel is closed to new messages, as of the
+     * window that just arrived.
+     *
+     * Null at the pinned plugin, which projects neither field:
+     * `project_history` returns `messages`, `hasMore` and `nextCursor` and
+     * nothing else (hermes-plugin-relay @ `563a8c8`,
+     * `relay_proxy.py:342-359`). Desktop reads it from the same response
+     * regardless (`desktop/plugin.js:141`) and gates its composer on it
+     * (`:1087`), so this reads it too rather than porting half of that gate.
+     *
+     * It earns its place because the channel list is the only other source and
+     * that list is not refreshed while a transcript is open: a channel archived
+     * mid-read would otherwise keep accepting posts until someone navigated
+     * back. Until a plugin sends it, the channel row remains the only signal
+     * and this stays null.
+     */
+    val archived: Boolean? = null,
 )
 
 /** Outcome of posting one channel message. */
@@ -462,6 +480,11 @@ private fun parseHistory(bytes: ByteArray): RelayHistory? {
         hasMore = root.bool("hasMore"),
         nextCursorBeforeSeq = cursor?.long("beforeSeq"),
         nextCursorAfterSeq = cursor?.long("afterSeq"),
+        // Both spellings Desktop accepts (`desktop/plugin.js:141`), and only
+        // those two: an absent signal stays absent rather than becoming false,
+        // so "the plugin did not say" never reads as "the channel is open".
+        archived = root.bool("archived")
+            ?: true.takeIf { root.string("status") == ARCHIVED_STATUS },
     )
 }
 
@@ -606,6 +629,7 @@ private const val CONNECTION_STATUS = "connection/status"
 private const val CONNECTION_AUTHORIZE = "connection/authorize"
 private const val CHANNELS = "channels"
 private const val CHANNELS_PREFIX = "channels/"
+private const val ARCHIVED_STATUS = "archived"
 private const val TIMEOUT_MILLIS = 8_000L
 private const val MAX_RESPONSE_BYTES = 1024L * 1024L
 

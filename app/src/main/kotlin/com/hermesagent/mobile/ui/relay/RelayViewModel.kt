@@ -8,6 +8,10 @@ import com.hermesagent.mobile.data.relay.RelayAvailability
 import com.hermesagent.mobile.data.relay.RelayAvailabilityState
 import com.hermesagent.mobile.data.relay.RelayChannel
 import com.hermesagent.mobile.data.relay.RelayHistory
+import com.hermesagent.mobile.data.relay.RelayMessage
+import com.hermesagent.mobile.data.relay.RelayMessageFormat
+import com.hermesagent.mobile.data.relay.RelayPostResult
+import com.hermesagent.mobile.data.relay.TRANSPORT_DOWN_MESSAGE
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -28,16 +32,53 @@ import kotlinx.coroutines.launch
 /**
  * The read half of the Relay plugin client, as this surface needs it.
  *
- * Narrow on purpose: posting is a separate slice, and a seam this small is
- * what lets the whole polling loop run on virtual time. `null` from either
- * call is the repository's fail-closed answer — "nothing usable came back" —
- * never an empty result.
+ * Narrow on purpose: a seam this small is what lets the whole polling loop run
+ * on virtual time. `null` from either call is the repository's fail-closed
+ * answer — "nothing usable came back" — never an empty result.
  */
 internal interface RelayChannelReader {
     suspend fun channels(): List<RelayChannel>?
 
     suspend fun history(channelId: String, limit: Int): RelayHistory?
 }
+
+/**
+ * The write half, kept separate from the read half on purpose: reads are a
+ * poll nobody asked for and may fail silently, while a post is one deliberate
+ * act whose outcome a person is waiting on. Only [RelayPostResult] crosses
+ * this seam, so the retry policy above it never has to read a status code out
+ * of a transport.
+ */
+internal interface RelayPoster {
+    suspend fun post(
+        channelId: String,
+        text: String,
+        format: RelayMessageFormat,
+        clientMessageId: String,
+    ): RelayPostResult
+}
+
+/**
+ * One send, as the retry key sees it: the exact bytes and the exact id they
+ * were first dispatched under. Held together because they are only ever
+ * meaningful together — an id without its text cannot be re-sent safely, and
+ * text without its id is a new message.
+ */
+private data class RelayAttempt(val text: String, val clientMessageId: String)
+
+/** One channel's composer. UI-only, per channel, and never written anywhere. */
+private data class RelaySendState(
+    val draft: String = "",
+    /**
+     * The attempt whose `clientMessageId` the next send may reuse. Non-null
+     * exactly while an answer about where that message ended up is missing.
+     */
+    val attempt: RelayAttempt? = null,
+    val sending: Boolean = false,
+    val outcome: RelaySendOutcome? = null,
+    /** Relay's id for the newest row this device got it to store here. */
+    val lastAcceptedId: String? = null,
+)
 
 /** Relay's data as the surface paints it. Null means "no answer yet", not "empty". */
 private data class RelayDisplay(
@@ -55,6 +96,13 @@ private data class RelayData(
     val selectedChannelId: String? = null,
     val messages: RelayHistory? = null,
     val stale: Boolean = false,
+    /**
+     * Rows Relay acknowledged, per channel, that the polled window has not
+     * caught up with yet. Not a queue and not a draft store: every row in here
+     * has already been stored by Relay and carries Relay's own id and `seq`,
+     * which is exactly what lets the next window reconcile it away.
+     */
+    val acknowledged: Map<String, List<RelayMessage>> = emptyMap(),
 )
 
 /**
@@ -78,22 +126,39 @@ private data class RelayData(
  *    [RelayUiState.stale]. There is no error toast: stale data is still true,
  *    it is only older than this second.
  *
- * Nothing here is persisted. Selection in particular is deliberately not:
- * Desktop restores a stored channel id on mount (`desktop/plugin.js:302-318`),
- * which on a phone would land someone inside a transcript they never chose.
+ * Sending adds a fourth, and it is the only rule here that is not about
+ * reading: **a message is dispatched under one `clientMessageId` until Relay
+ * says where it ended up.** Everything that policy turns on lives in
+ * [relayPostVerdict]; this class only holds the attempt it names and hands
+ * back the same bytes and the same id on a retry.
+ *
+ * Nothing here is persisted — drafts included. Selection in particular is
+ * deliberately not: Desktop restores a stored channel id on mount
+ * (`desktop/plugin.js:302-318`), which on a phone would land someone inside a
+ * transcript they never chose.
  */
 internal class RelayViewModel(
     private val availability: StateFlow<RelayAvailabilityState>,
     private val refreshAvailability: () -> Unit,
     private val reader: RelayChannelReader,
+    private val poster: RelayPoster,
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val locale: () -> Locale = { Locale.getDefault() },
     /** Injected so the poll cadence is driven by the test scheduler, not a clock. */
     private val wait: suspend (Long) -> Unit = { millis -> delay(millis) },
+    /** Injected so a test can name the id it expects a retry to reuse. */
+    private val newClientMessageId: () -> String = ::newRelayClientMessageId,
 ) : ViewModel() {
 
     private val data = MutableStateFlow(RelayData())
+
+    /**
+     * Composer state per channel, deliberately outside [data]: a keystroke must
+     * not re-project a 50-row transcript, and Relay's own data must not be
+     * invalidated by one. Both halves meet in the combine below.
+     */
+    private val sends = MutableStateFlow<Map<String, RelaySendState>>(emptyMap())
     private val resumed = MutableStateFlow(false)
     private var poll: Job? = null
     private var fetch: Job? = null
@@ -106,7 +171,14 @@ internal class RelayViewModel(
      */
     private val display: Flow<RelayDisplay> = data.map(::toDisplay)
 
-    val uiState: StateFlow<RelayUiState> = combine(display, availability) { rows, gateway ->
+    val uiState: StateFlow<RelayUiState> = combine(
+        display,
+        sends,
+        availability,
+    ) { rows, composers, gateway ->
+        // One answer to "may this lane be asked anything", used by the panes
+        // and by the composer alike.
+        val relayReady = gateway.laneIsReady()
         RelayUiState(
             notice = relayNotice(gateway),
             connecting = gateway.awaitingFirstAnswer,
@@ -117,12 +189,40 @@ internal class RelayViewModel(
             selectedChannelArchived = rows.selectedChannelArchived,
             transcript = rows.transcript.orEmpty(),
             transcriptLoaded = rows.transcript != null,
+            composer = composerState(rows, composers[rows.selectedChannelId], gateway, relayReady),
             stale = rows.stale,
             unavailableOnGateway = gateway.availability == RelayAvailability.Missing,
             relayAnswered = gateway.availability is RelayAvailability.Available,
-            relayReady = gateway.laneIsReady(),
+            relayReady = relayReady,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RelayUiState())
+
+    /**
+     * Whether a post is even possible is a fact about three different things —
+     * a channel is open, Relay's lane is ready, and the channel takes writes —
+     * so it is answered in one place rather than three times down the screen.
+     */
+    private fun composerState(
+        rows: RelayDisplay,
+        send: RelaySendState?,
+        gateway: RelayAvailabilityState,
+        relayReady: Boolean,
+    ): RelayComposerUiState {
+        val current = send ?: RelaySendState()
+        val postable = rows.selectedChannelId != null &&
+            relayReady &&
+            !rows.selectedChannelArchived
+        return RelayComposerUiState(
+            draft = current.draft,
+            hint = relayComposerHint(gateway.availability, rows.selectedChannelArchived),
+            // A post already in flight for *this* channel is what closes the
+            // control. Another channel's post is somebody else's business.
+            editable = postable,
+            sending = current.sending,
+            outcome = current.outcome,
+            lastAcceptedId = current.lastAcceptedId,
+        )
+    }
 
     init {
         // Rule 1's other half: the first load rides the same liveness edge the
@@ -212,6 +312,133 @@ internal class RelayViewModel(
     }
 
     /**
+     * The draft for the open channel. Per channel and UI-only: leaving a
+     * channel keeps what was typed there, and nothing about it reaches disk.
+     */
+    fun setDraft(text: String) {
+        val channelId = data.value.selectedChannelId ?: return
+        updateSend(channelId) { send ->
+            send.copy(
+                draft = text,
+                // A receipt is spent by the next keystroke. A decision — retry,
+                // reconnect — is not: it outlives the draft that caused it,
+                // because the message it describes may still be in flight.
+                outcome = send.outcome?.takeIf { it.action != null },
+            )
+        }
+    }
+
+    /**
+     * The send tap.
+     *
+     * Whether this is a first attempt or a retry is not a flag the caller
+     * passes; it is read off the draft. Text that still matches the attempt
+     * waiting for an answer *is* that attempt, so double-tapping send cannot
+     * post twice, while text that has changed is a new message and gets a new
+     * id. Nothing is dispatched for input the server would refuse anyway.
+     */
+    fun sendDraft() {
+        val current = data.value
+        val channelId = current.selectedChannelId
+        val send = channelId?.let(sends.value::get) ?: RelaySendState()
+        val text = send.draft.trim()
+        relayLocalRejection(channelId, text)?.let { rejection ->
+            // Zero requests: this refusal needed no Gateway to answer it.
+            channelId?.let { id -> updateSend(id) { it.copy(outcome = rejection) } }
+            return
+        }
+        if (channelId == null || send.sending) return
+        val reusable = send.attempt?.takeIf { it.text == text }
+        dispatch(channelId, reusable ?: RelayAttempt(text, newClientMessageId()))
+    }
+
+    /**
+     * The retry beside an unconfirmed send. Deliberately re-sends the attempt's
+     * own captured text and id rather than whatever is in the field now: the
+     * message whose fate is unknown is the one that has to be settled.
+     */
+    fun retrySend() {
+        val channelId = data.value.selectedChannelId ?: return
+        val send = sends.value[channelId] ?: return
+        val attempt = send.attempt ?: return
+        if (send.sending) return
+        dispatch(channelId, attempt)
+    }
+
+    /**
+     * One post, under one id.
+     *
+     * Not cancelled by [surfacePaused]: a request already on the wire is not
+     * made un-sent by backgrounding the app, and abandoning it would turn a
+     * decided outcome into an unknown one.
+     */
+    private fun dispatch(channelId: String, attempt: RelayAttempt) {
+        updateSend(channelId) { it.copy(attempt = attempt, sending = true) }
+        viewModelScope.launch {
+            val result = try {
+                poster.post(
+                    channelId = channelId,
+                    text = attempt.text,
+                    // Desktop posts Markdown and offers no format control
+                    // (`desktop/plugin.js:930`); a picker for a choice nobody
+                    // makes is not an adaptation.
+                    format = RelayMessageFormat.MARKDOWN,
+                    clientMessageId = attempt.clientMessageId,
+                )
+            } catch (cancelled: CancellationException) {
+                updateSend(channelId) { it.copy(sending = false) }
+                throw cancelled
+            } catch (_: Throwable) {
+                // A transport that threw says exactly as much about where the
+                // message ended up as a timeout does: nothing. So it is the
+                // same answer, and it keeps the same id.
+                RelayPostResult.Failed(0, TRANSPORT_DOWN_MESSAGE, retryable = true)
+            }
+            settle(channelId, attempt, result)
+        }
+    }
+
+    /** Apply one settled post to the draft, its id, and the transcript. */
+    private fun settle(channelId: String, attempt: RelayAttempt, result: RelayPostResult) {
+        val verdict = relayPostVerdict(result)
+        val stored = (result as? RelayPostResult.Accepted)?.message
+        stored?.let { accepted ->
+            // Paint it now. The row is Relay's own, id and `seq` included, so
+            // the next window replaces it rather than doubling it.
+            data.update { it.acknowledging(channelId, accepted) }
+        }
+        updateSend(channelId) { send ->
+            send.copy(
+                // Tells the transcript that this arrival is the reader's own,
+                // which is the one that outranks having scrolled back.
+                lastAcceptedId = stored?.id ?: send.lastAcceptedId,
+                // Only the text this attempt actually carried is retired. A
+                // draft edited while the post was in flight is a different
+                // message and survives its predecessor's success.
+                draft = if (verdict.clearsDraft && send.draft.trim() == attempt.text) "" else send.draft,
+                // Likewise the id: a newer attempt owns the slot now.
+                attempt = if (verdict.keepsAttempt || send.attempt != attempt) send.attempt else null,
+                sending = false,
+                outcome = verdict.outcome,
+            )
+        }
+        // Accepted or ambiguous, this channel's window may have moved; Desktop
+        // reloads after every settled post for the same reason
+        // (`desktop/plugin.js:949-951`). A post that settled after the surface
+        // left does not get to break rule 2 — the resume edge reloads anyway.
+        if (resumed.value) refreshVisiblePane()
+    }
+
+    private fun updateSend(channelId: String, edit: (RelaySendState) -> RelaySendState) {
+        sends.update { current ->
+            val next = edit(current[channelId] ?: RelaySendState())
+            // A channel with nothing typed, nothing pending and nothing to say
+            // leaves the map rather than accumulating in it.
+            if (next == RelaySendState()) current - channelId else current + (channelId to next)
+        }
+    }
+
+    /**
      * One request for whichever pane is on screen. A lane Relay does not call
      * ready is not asked for data at all — the notice already explains why,
      * and a request that can only fail is not a refresh.
@@ -244,7 +471,32 @@ internal class RelayViewModel(
             markStale()
             return
         }
-        data.update { it.copy(messages = answer, stale = false) }
+        data.update { current ->
+            val pending = current.acknowledged[channelId]
+            // Nothing is waiting on almost every tick, and reconciling nothing
+            // should cost nothing: no id set, no list copy.
+            if (pending.isNullOrEmpty()) return@update current.copy(messages = answer, stale = false)
+            // Reconcile by id, so exactly one copy of an acknowledged row
+            // survives: the window's, as soon as the window has it.
+            val carried = answer.messages.mapTo(HashSet()) { it.id }
+            val waiting = pending.filterNot { it.id in carried }
+            current.copy(
+                messages = answer,
+                stale = false,
+                acknowledged = if (waiting.isEmpty()) {
+                    current.acknowledged - channelId
+                } else {
+                    current.acknowledged + (channelId to waiting)
+                },
+            )
+        }
+    }
+
+    /** Hold one acknowledged row until the poll carries it. Never a duplicate. */
+    private fun RelayData.acknowledging(channelId: String, message: RelayMessage): RelayData {
+        val waiting = acknowledged[channelId].orEmpty()
+        if (waiting.any { it.id == message.id }) return this
+        return copy(acknowledged = acknowledged + (channelId to (waiting + message)))
     }
 
     /**
@@ -269,12 +521,29 @@ internal class RelayViewModel(
         val language = locale()
         val times = RelayTimeLabels(zone(), language, clock())
         val selected = current.channels?.firstOrNull { it.id == current.selectedChannelId }
+        // The window Relay returned, plus any row it acknowledged to this app
+        // that the window has not caught up with. `relayTranscriptRows` orders
+        // by the hub's own `seq`, so an appended row lands where Relay put it
+        // rather than merely at the end.
+        val window = current.messages?.let { history ->
+            val pending = current.acknowledged[current.selectedChannelId]
+            // The common case is nothing to merge, and it must not pay for a
+            // set of 50 ids plus a copy of the window to discover that.
+            if (pending.isNullOrEmpty()) return@let history.messages
+            val carried = history.messages.mapTo(HashSet()) { it.id }
+            history.messages + pending.filterNot { it.id in carried }
+        }
         return RelayDisplay(
             channels = current.channels?.let { relayChannelRows(it, language, times) },
             selectedChannelId = current.selectedChannelId,
             selectedChannelTitle = selected?.title,
-            selectedChannelArchived = selected?.archived == true,
-            transcript = current.messages?.let { relayTranscriptRows(it.messages, language, times) },
+            // Either source is enough, exactly as Desktop treats them
+            // (`desktop/plugin.js:528,1087`). The channel row is a snapshot
+            // from the last channels poll and that poll stops while a
+            // transcript is open, so the window's own answer — when a plugin
+            // sends one — is the fresher of the two.
+            selectedChannelArchived = selected?.archived == true || current.messages?.archived == true,
+            transcript = window?.let { relayTranscriptRows(it, language, times) },
             stale = current.stale,
         )
     }
@@ -287,12 +556,14 @@ internal class RelayViewModel(
             availability: StateFlow<RelayAvailabilityState>,
             refreshAvailability: () -> Unit,
             reader: RelayChannelReader,
+            poster: RelayPoster,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = RelayViewModel(
                 availability = availability,
                 refreshAvailability = refreshAvailability,
                 reader = reader,
+                poster = poster,
             ) as T
         }
     }
