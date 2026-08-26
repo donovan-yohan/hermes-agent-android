@@ -67,9 +67,9 @@ ownership id — that one stays per install, because it namespaces this app's
 remote processes on a host rather than an endpoint. The imported key's display
 name is screen state the store drops. A Remote row's OAuth tokens are the one
 secret with a disk slot: Keystore ciphertext below `noBackupFilesDir`, one file
-per row id, naming the Gateway that minted it. It is refused and erased if that
-row later points elsewhere, and it is zeroed and unlinked when the row is
-removed — addressable by row id alone, so a row whose URL was blanked or
+per row id, naming the Gateway that minted it. It is refused — and kept on
+disk, so a mistyped address is recoverable — if that row later points
+elsewhere, and it is zeroed and unlinked when the row is removed — addressable by row id alone, so a row whose URL was blanked or
 mistyped can still be cleaned up rather than orphaning its credential.
 Source files carry no NUL byte: one is Git's own binary heuristic, and a file
 Git calls binary shows no diff in review, so write the escape.

@@ -87,8 +87,8 @@ internal class KeystoreSecretCipher : SecretCipher {
  * where a credential was for is the worst possible reason to leave it on disk.
  *
  * A stored credential also carries the normalized URL of the host that minted
- * it, and is refused -- and erased -- if that host is not the one now being
- * asked. Naming the file after the row is what makes a row's secret follow the
+ * it, and is refused -- but kept, so a mistyped address is recoverable -- if
+ * that host is not the one now being asked. Naming the file after the row is what makes a row's secret follow the
  * row; binding the blob to its host is what stops a re-addressed row from
  * presenting gateway A's bearer token to gateway B.
  *
