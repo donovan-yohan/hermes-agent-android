@@ -179,10 +179,13 @@ internal fun relayNotice(state: RelayAvailabilityState): RelayNotice? {
             description = "Checking the Relay connection…",
         )
     }
-    // Before the first Connected edge the controller deliberately holds no
-    // availability and no spinner: nothing has been asked yet. That is not an
-    // answer about Relay, so it must not be rendered as one — and it must not
-    // be rendered as a blank screen either.
+    // The controller deliberately holds no availability and no spinner until
+    // the first Connected edge, and for as long as no Gateway is saved at all:
+    // nothing has been asked yet, and on a fresh install there is nothing to
+    // ask. That is not an answer about Relay, so it must not be rendered as one
+    // — and it must not be rendered as a blank screen either. The next step is
+    // the Gateway itself, which is why this is the one device-level state whose
+    // action is not derived from an availability value.
     val availability = state.availability ?: return RelayNotice(
         title = null,
         description = NOT_CONNECTED_MESSAGE,

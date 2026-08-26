@@ -459,15 +459,121 @@ class RelayAvailabilityControllerTest {
         assertFalse(controller.state.value.probing)
     }
 
+    @Test
+    fun `a fresh install with no Gateway saved is never called unreachable`() = runTest {
+        // Exactly the device state issue #80 was found in: nothing saved, the
+        // seeded Disconnected status, and the Relay surface opening — which
+        // calls refresh() through `surfaceResumed`, the step that turned the
+        // seed into an answer nobody had asked for.
+        val probe = ScriptedProbe()
+        val controller = controller(
+            probe,
+            MutableStateFlow(GatewayConnectionState()),
+            configured = MutableStateFlow(false),
+        )
+        advanceUntilIdle()
+        controller.refresh()
+        advanceUntilIdle()
+
+        // No Gateway was reached for, so nothing may claim one was unreachable.
+        assertNull(controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+        assertFalse(controller.state.value.awaitingFirstAnswer)
+        assertNull(controller.state.value.statusMessage())
+        assertEquals(0, probe.calls)
+    }
+
+    @Test
+    fun `a saved Gateway that is down is unreachable, not unconfigured`() = runTest {
+        val controller = controller(
+            ScriptedProbe(),
+            MutableStateFlow(GatewayConnectionState()),
+            configured = MutableStateFlow(true),
+        )
+        advanceUntilIdle()
+        controller.refresh()
+        advanceUntilIdle()
+
+        // There is a Gateway; it did not answer. That is the reconnect state,
+        // and it keeps the retry the fresh-install state must not offer.
+        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+        assertEquals(TRANSPORT_DOWN_MESSAGE, controller.state.value.statusMessage())
+    }
+
+    @Test
+    fun `learning a Gateway is saved is not itself an answer about Relay`() = runTest {
+        // The profile store is asynchronous, so its first answer arrives after
+        // the controller exists. It must not turn the seed into a claim.
+        val configured = MutableStateFlow(false)
+        val controller = controller(
+            ScriptedProbe(),
+            MutableStateFlow(GatewayConnectionState()),
+            configured = configured,
+        )
+        advanceUntilIdle()
+
+        configured.value = true
+        advanceUntilIdle()
+
+        assertNull(controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+    }
+
+    @Test
+    fun `a late profile answer revises the sentence it changes, both ways`() = runTest {
+        val configured = MutableStateFlow(false)
+        val controller = controller(
+            ScriptedProbe(),
+            MutableStateFlow(GatewayConnectionState()),
+            configured = configured,
+        )
+        advanceUntilIdle()
+        controller.refresh()
+        advanceUntilIdle()
+        assertNull(controller.state.value.availability)
+
+        // The store answers late — or a Gateway is added while the surface is
+        // open. The sentence this flag produced is re-derived, not stranded.
+        configured.value = true
+        advanceUntilIdle()
+        assertEquals(RelayAvailability.GatewayUnreachable, controller.state.value.availability)
+
+        // And forgetting it takes the claim back with it: an unreachable
+        // Gateway that no longer exists is not a state anyone can act on.
+        configured.value = false
+        advanceUntilIdle()
+        assertNull(controller.state.value.availability)
+        assertFalse(controller.state.value.probing)
+    }
+
+    @Test
+    fun `a live answer is the Gateway's own and survives a profile edit`() = runTest {
+        val configured = MutableStateFlow(true)
+        val probe = ScriptedProbe(RelayAvailability.Missing)
+        val controller = controller(probe, MutableStateFlow(connected()), configured = configured)
+        advanceUntilIdle()
+        assertEquals(RelayAvailability.Missing, controller.state.value.availability)
+
+        // Editing the saved profile says nothing about the Gateway currently
+        // on the other end of the socket, and must not spend a probe asking.
+        configured.value = false
+        advanceUntilIdle()
+        assertEquals(RelayAvailability.Missing, controller.state.value.availability)
+        assertEquals(1, probe.calls)
+    }
+
     private fun TestScope.controller(
         probe: RelayAvailabilityProbe,
         connection: MutableStateFlow<GatewayConnectionState>,
         refresher: RelayCredentialRefresher = CountingRefresher(rotates = false, hasSignIn = true),
         waits: MutableList<Long> = mutableListOf(),
+        /** Every test that does not say otherwise is about a Gateway that exists. */
+        configured: MutableStateFlow<Boolean> = MutableStateFlow(true),
     ) = RelayAvailabilityController(
         scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()).also(scopes::add),
         probe = probe,
         connection = connection,
+        configured = configured,
         credentials = refresher,
         wait = { millis ->
             waits += millis

@@ -20,9 +20,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
 import com.hermesagent.mobile.data.relay.RelayAvailability
+import com.hermesagent.mobile.data.relay.RelayAvailabilityController
 import com.hermesagent.mobile.data.relay.RelayAvailabilityState
+import com.hermesagent.mobile.data.relay.RelayCredentialRefresher
+import com.hermesagent.mobile.data.relay.TRANSPORT_DOWN_MESSAGE
 import com.hermesagent.mobile.data.relay.RelayChannel
 import com.hermesagent.mobile.data.relay.RelayChannelsStatus
 import com.hermesagent.mobile.data.relay.RelayLaneState
@@ -53,6 +57,14 @@ import com.hermesagent.mobile.ui.relay.relayNotice
 import com.hermesagent.mobile.ui.relay.relayTranscriptRows
 import java.time.ZoneId
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -226,6 +238,37 @@ class RelayJourneyTest {
         compose.onNodeWithText("Open Gateways").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Gateways").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a fresh install with no Gateway offers the Gateways screen, not a dead retry`() {
+        launch(RelayUiState(notice = relayNotice(settledAvailability(gatewaySaved = false))))
+        openRelay()
+
+        compose.onNodeWithText("Connect to a Gateway to open Relay.").assertIsDisplayed()
+        // The state #80 found on the device: a reconnect sentence about a
+        // Gateway that was never configured, over a retry with nothing to ask.
+        assertTrue(displayed(TRANSPORT_DOWN_MESSAGE).isEmpty())
+        assertTrue(displayed("Try again").isEmpty())
+        assertTrue(compose.onAllNodesWithTag(CHANNEL_LIST_TAG).fetchSemanticsNodes().isEmpty())
+
+        compose.onNodeWithText("Open Gateways").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Gateways").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a saved Gateway that is down keeps the reconnect sentence and its retry`() {
+        launch(RelayUiState(notice = relayNotice(settledAvailability(gatewaySaved = true))))
+        openRelay()
+
+        compose.onNodeWithText(TRANSPORT_DOWN_MESSAGE).assertIsDisplayed()
+        // There is a Gateway and it is already the right one, so the next step
+        // is asking it again rather than going back to set one up.
+        assertTrue(displayed("Open Gateways").isEmpty())
+
+        compose.onNodeWithText("Try again").performClick()
+        assertEquals(1, retries)
     }
 
     @Test
@@ -507,6 +550,44 @@ class RelayJourneyTest {
         // The notice sends the person to Gateways; a composer under it would be
         // offering to send through a connection that does not exist.
         assertTrue(compose.onAllNodesWithTag(COMPOSER_FIELD_TAG).fetchSemanticsNodes().isEmpty())
+    }
+
+    /**
+     * The state the real controller settles on for a Gateway that is not
+     * connected, rather than one this test typed out.
+     *
+     * #80 reached a device because every notice journey started from a
+     * hand-built [RelayAvailabilityState]: the copy was right and the mapping
+     * that produces it was not. Driving the controller is what binds these two
+     * journeys to the code the phone runs.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun settledAvailability(gatewaySaved: Boolean): RelayAvailabilityState {
+        lateinit var settled: RelayAvailabilityState
+        runTest {
+            val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+            val controller = RelayAvailabilityController(
+                scope = scope,
+                probe = { error("a Gateway that is not connected is never probed") },
+                // The status a cold start actually seeds, saved or not.
+                connection = MutableStateFlow(GatewayConnectionState()),
+                configured = MutableStateFlow(gatewaySaved),
+                credentials = object : RelayCredentialRefresher {
+                    override suspend fun refreshOnce() = false
+                    override suspend fun signInAvailable() = false
+                },
+            )
+            try {
+                advanceUntilIdle()
+                // What opening the surface does, through `surfaceResumed`.
+                controller.refresh()
+                advanceUntilIdle()
+                settled = controller.state.value
+            } finally {
+                scope.cancel()
+            }
+        }
+        return settled
     }
 
     /** Read something further up, the way a person does it. */

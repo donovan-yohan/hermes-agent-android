@@ -99,6 +99,10 @@ class HermesApplication : Application() {
             scope = appScope,
             probe = relayRepository,
             connection = gatewayConnection.state,
+            configured = com.hermesagent.mobile.data.gateway.gatewayConfigured(
+                profiles = preferences,
+                hosts = preferences,
+            ),
             credentials = object : com.hermesagent.mobile.data.relay.RelayCredentialRefresher {
                 override suspend fun refreshOnce(): Boolean = gatewayConnection.refreshCredential()
                 override suspend fun signInAvailable(): Boolean = gatewayConnection.signInAvailable()
