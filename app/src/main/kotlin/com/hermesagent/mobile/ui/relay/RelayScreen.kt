@@ -2,6 +2,7 @@ package com.hermesagent.mobile.ui.relay
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,11 +11,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,19 +27,26 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.RelayActions
+import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
+import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.common.scrollToTail
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -52,8 +63,9 @@ import kotlinx.coroutines.flow.first
  * out through a single header affordance — the same shape every other route
  * overlay in this app uses.
  *
- * Read-only by construction: there is no composer here, and nothing this
- * screen shows is written anywhere.
+ * A transcript is the only pane with a composer under it, because a channel is
+ * the only thing here anyone can write to. Nothing this screen holds — draft
+ * included — is written anywhere but Relay.
  */
 @Composable
 fun RelayScreen(
@@ -91,6 +103,7 @@ fun RelayScreen(
         if (state.showsContent) {
             if (inTranscript) {
                 TranscriptPane(state, actions, Modifier.weight(1f))
+                RelayComposer(state.composer, actions, onOpenGateways)
             } else {
                 ChannelsPane(state, actions, Modifier.weight(1f))
             }
@@ -331,6 +344,7 @@ private fun TranscriptPane(state: RelayUiState, actions: RelayActions, modifier:
         RelayPanePhase.Content -> {
             val listState = rememberLazyListState()
             val transcript = rememberUpdatedState(state.transcript)
+            val ownSend = rememberUpdatedState(state.composer.lastAcceptedId)
             // Newest content is at the bottom, so opening a channel lands
             // there and growth keeps following — but only for a reader who is
             // still at the bottom. This is ChatScreen's rule, and the reason
@@ -340,6 +354,11 @@ private fun TranscriptPane(state: RelayUiState, actions: RelayActions, modifier:
             // reaching the bottom again re-arms it. `scrollToTail` lands on
             // the bottom *edge*, because `scrollToItem` alone would put the
             // newest row's top edge on screen and hide a long message's tail.
+            //
+            // One arrival outranks all of that: your own. A message you just
+            // sent is one you asked for, so it takes you to itself however far
+            // back you had read — which is also the only way an optimistically
+            // painted row is any use to the person who caused it.
             //
             // Following is a plain local: nothing outside this loop reads it,
             // and it resets with the effect when the channel changes.
@@ -352,19 +371,29 @@ private fun TranscriptPane(state: RelayUiState, actions: RelayActions, modifier:
 
                 listState.scrollToTail()
                 var following = true
+                var seenOwnSend = ownSend.value
 
                 snapshotFlow {
-                    Triple(
-                        transcript.value,
-                        listState.canScrollForward,
-                        listState.isScrollInProgress && listState.lastScrolledBackward,
+                    TranscriptFollow(
+                        transcript = transcript.value,
+                        ownSend = ownSend.value,
+                        canScrollForward = listState.canScrollForward,
+                        scrolledBackward = listState.isScrollInProgress &&
+                            listState.lastScrolledBackward,
                     )
-                }.collect { (_, canScrollForward, scrolledBackward) ->
-                    if (!canScrollForward) {
+                }.collect { current ->
+                    val ownArrival = current.ownSend != seenOwnSend
+                    if (ownArrival) {
+                        seenOwnSend = current.ownSend
+                        following = true
+                    }
+                    if (!current.canScrollForward) {
                         following = true
                         return@collect
                     }
-                    if (scrolledBackward) following = false
+                    // A send re-arms for this emission even mid-fling: the tap
+                    // that caused it is newer than the scroll that disarmed it.
+                    if (current.scrolledBackward && !ownArrival) following = false
                     if (following) listState.scrollToTail()
                 }
             }
@@ -378,6 +407,20 @@ private fun TranscriptPane(state: RelayUiState, actions: RelayActions, modifier:
         }
     }
 }
+
+/**
+ * What the transcript's follow loop watches.
+ *
+ * A named shape rather than a tuple: at four values, positional destructuring
+ * stops saying which boolean is which, and one of them now inverts the rule the
+ * other three express.
+ */
+private data class TranscriptFollow(
+    val transcript: List<RelayTranscriptRow>,
+    val ownSend: String?,
+    val canScrollForward: Boolean,
+    val scrolledBackward: Boolean,
+)
 
 /**
  * Flat prose under an uppercase attribution label, divided by a hairline —
@@ -461,13 +504,176 @@ private fun RetryState(
     }
 }
 
+/**
+ * Write one message to the open channel.
+ *
+ * Desktop's composer is a form under the transcript, and this keeps that
+ * position, that order, and that flat treatment (hermes-plugin-relay @
+ * `563a8c8`, `desktop/plugin.js:1180-1222`). Three things are adapted for the
+ * phone, and each is a rule from the port workflow's table rather than a
+ * preference:
+ *
+ * - Desktop sends on Cmd/Ctrl+Enter. A soft keyboard has no modifier, so the
+ *   tap beside the field is the only way to send and Enter inserts a newline.
+ *   There is deliberately no key handling here at all — that *is* the feature.
+ * - `imePadding` lifts the composer over the keyboard. The scaffold already
+ *   consumed the navigation-bar inset, so this adds the keyboard's own height
+ *   and not that inset a second time.
+ * - The send control is a 48dp target, and the outcome beside it is a polite
+ *   live region so the answer is spoken, not only drawn.
+ */
+@Composable
+private fun RelayComposer(
+    composer: RelayComposerUiState,
+    actions: RelayActions,
+    onOpenGateways: () -> Unit,
+) {
+    val tokens = HermesTheme.tokens
+    Hairline()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tokens.chatSurface)
+            .imePadding()
+            .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        composer.outcome?.let { SendOutcomeRow(it, actions.onRetrySend, onOpenGateways) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(16.dp))
+                .background(tokens.cardSurface, RoundedCornerShape(16.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BasicTextField(
+                value = composer.draft,
+                onValueChange = actions.onDraftChange,
+                enabled = composer.editable,
+                textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+                cursorBrush = SolidColor(tokens.composerRing),
+                // `ImeAction.Default` and no key handler: the return key is a
+                // return key. Sending is the control to the right of it.
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Default,
+                ),
+                maxLines = COMPOSER_MAX_LINES,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = HermesTheme.spacing.touchTarget)
+                    .testTag(COMPOSER_FIELD_TAG)
+                    .semantics { contentDescription = COMPOSER_LABEL },
+                decorationBox = { inner ->
+                    CenteredTextFieldContent(
+                        // A closed composer shows no invitation. The line below
+                        // it already says why, and Desktop's own placeholder
+                        // (`desktop/plugin.js:1209`) would otherwise repeat that
+                        // sentence a second time, eight dp away and again to a
+                        // screen reader.
+                        isEmpty = composer.draft.isEmpty() && composer.editable,
+                        contentTag = COMPOSER_TEXT_TAG,
+                        horizontalPadding = 6.dp,
+                        placeholder = {
+                            Text(
+                                text = composer.hint,
+                                style = HermesTheme.type.body,
+                                color = tokens.textTertiary,
+                            )
+                        },
+                        innerTextField = inner,
+                    )
+                },
+            )
+            PrimaryButton(
+                label = if (composer.sending) SENDING_LABEL else SEND_LABEL,
+                onClick = actions.onSend,
+                enabled = composer.canSend,
+                modifier = Modifier
+                    .testTag(SEND_TAG)
+                    // Spoken as an action rather than as the word on the
+                    // control: "Send" alone is what, not what it does.
+                    .semantics {
+                        contentDescription =
+                            if (composer.sending) SENDING_DESCRIPTION else SEND_DESCRIPTION
+                    },
+            )
+        }
+        Text(
+            text = composer.statusLine,
+            style = HermesTheme.type.scaffold,
+            color = tokens.textTertiary,
+        )
+    }
+}
+
+/**
+ * What happened to the last send, and the one thing that can be done about it.
+ *
+ * The sentence is a polite live region: a send is a deliberate act whose answer
+ * arrives after the person has stopped looking at the button, and it settles
+ * exactly once, so it announces exactly once. The action stays a node of its
+ * own — merging it into the sentence would cost it its role and its target.
+ */
+@Composable
+private fun SendOutcomeRow(
+    outcome: RelaySendOutcome,
+    onRetrySend: () -> Unit,
+    onOpenGateways: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag(SEND_OUTCOME_TAG),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = outcome.message,
+            style = HermesTheme.type.caption,
+            color = HermesTheme.tokens.textSecondary,
+            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        when (outcome.action) {
+            RelaySendAction.Retry -> TextButton(
+                label = RETRY_SEND_LABEL,
+                onClick = onRetrySend,
+                modifier = Modifier.testTag(RETRY_SEND_TAG),
+            )
+
+            RelaySendAction.OpenGateways -> TextButton(
+                label = OPEN_GATEWAYS_LABEL,
+                onClick = onOpenGateways,
+                modifier = Modifier.testTag(SEND_GATEWAYS_TAG),
+            )
+
+            null -> Unit
+        }
+    }
+}
+
 private const val RELAY_TITLE = "Relay channels"
 private const val ARCHIVED_NOTE = "Archived. Relay still returns its previous messages."
 private const val STALE_MESSAGE = "Showing the last answer Relay returned."
+private const val COMPOSER_LABEL = "Relay message"
+private const val COMPOSER_MAX_LINES = 5
+private const val SEND_LABEL = "Send"
+private const val SENDING_LABEL = "Sending…"
+private const val SEND_DESCRIPTION = "Send message"
+private const val SENDING_DESCRIPTION = "Sending message"
+/** Distinct from the notice block's "Try again": that reconnects, this re-sends. */
+private const val RETRY_SEND_LABEL = "Retry send"
+private const val OPEN_GATEWAYS_LABEL = "Open Gateways"
 internal const val CHANNEL_LIST_TAG = "Relay channel list"
 internal const val TRANSCRIPT_TAG = "Relay transcript"
 internal const val NOTICE_TAG = "Relay notice"
 internal const val STALE_TAG = "Relay stale"
+internal const val COMPOSER_FIELD_TAG = "Relay composer field"
+internal const val COMPOSER_TEXT_TAG = "Relay composer text"
+internal const val SEND_TAG = "Relay send"
+internal const val SEND_OUTCOME_TAG = "Relay send outcome"
+internal const val RETRY_SEND_TAG = "Relay retry send"
+internal const val SEND_GATEWAYS_TAG = "Relay send gateways"
 
 // ── Previews ──────────────────────────────────────────────────────────────
 // Phone light and dark, both panes. Fixtures only: no host, channel or person
@@ -527,6 +733,11 @@ private fun previewTranscript() = RelayUiState(
         ),
     ),
     transcriptLoaded = true,
+    composer = RelayComposerUiState(
+        draft = "Re-running the gate now.",
+        hint = WRITE_HINT,
+        editable = true,
+    ),
     relayAnswered = true,
     relayReady = true,
 )

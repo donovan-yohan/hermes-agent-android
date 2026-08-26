@@ -287,6 +287,34 @@ class RelayPluginRepositoryTest {
     }
 
     @Test
+    fun `an archived window is read when a plugin sends one and stays absent when it does not`() =
+        runTest {
+            // The pinned proxy projects neither spelling (hermes-plugin-relay @
+            // `563a8c8`, `relay_proxy.py:342-359`), so the fixture answers null
+            // and the channel row stays the only signal.
+            val silent = RelayPluginRepository { RecordingGatewayHttp(SUCCESS_BODY(HISTORY_FIXTURE)) }
+            assertNull(silent.history("team/lobby")?.archived)
+
+            // Both spellings Desktop accepts (`desktop/plugin.js:141`).
+            val flagged = RelayPluginRepository {
+                RecordingGatewayHttp(SUCCESS_BODY("""{"messages":[],"archived":true}"""))
+            }
+            assertEquals(true, flagged.history("c")?.archived)
+
+            val byStatus = RelayPluginRepository {
+                RecordingGatewayHttp(SUCCESS_BODY("""{"messages":[],"status":"archived"}"""))
+            }
+            assertEquals(true, byStatus.history("c")?.archived)
+
+            // An open channel is still an absent signal, never a false: "the
+            // plugin did not say" must not read as "the channel is open".
+            val open = RelayPluginRepository {
+                RecordingGatewayHttp(SUCCESS_BODY("""{"messages":[],"status":"active"}"""))
+            }
+            assertNull(open.history("c")?.archived)
+        }
+
+    @Test
     fun `history without transport returns nothing instead of throwing`() = runTest {
         assertNull(RelayPluginRepository { null }.history("c"))
         assertNull(
