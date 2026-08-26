@@ -43,6 +43,23 @@ interface SessionDraftStore {
         toDurableId: String,
         sourceText: String? = null,
     ): String?
+
+    /**
+     * Drop every draft, because the endpoint they were typed against is gone.
+     *
+     * A draft is keyed by durable session id and nothing else, and two gateways
+     * can hand out the same one — so text typed against gateway A's `s-123`
+     * would otherwise prefill gateway B's `s-123`. Leaving text in one composer
+     * that was written in another is worse than losing it.
+     *
+     * The callers are exactly the three endpoint *transitions*: picking another
+     * saved connection, re-addressing the active one through the connections
+     * editor's discrete Save, and removing the connection this device is on.
+     * The Gateways route form is deliberately **not** one of them: it persists
+     * on every keystroke, so it cannot tell a finished address from a half-typed
+     * one, and wiping someone's drafts per character is not a teardown.
+     */
+    suspend fun clear()
 }
 
 /**
@@ -74,6 +91,21 @@ class AndroidSessionDraftStore(context: Context) : SessionDraftStore {
             // The corruption handler repairs reads; a racing failed mutation remains non-fatal.
         } catch (_: IOException) {
             // Draft persistence is best-effort; the ViewModel retains the in-memory source.
+        }
+    }
+
+    override suspend fun clear() {
+        try {
+            mutationMutex.withLock {
+                dataStore.edit { prefs -> prefs.remove(DRAFTS_KEY) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: CorruptionException) {
+            // Reads are repaired by the corruption handler; a racing failed
+            // mutation is non-fatal, and the next read is empty either way.
+        } catch (_: IOException) {
+            // Best effort, like every other mutation here.
         }
     }
 
@@ -119,6 +151,10 @@ internal class TransientSessionDraftStore : SessionDraftStore {
                 trimToStorageLimitAndEncode()
             }
         }
+    }
+
+    override suspend fun clear() {
+        mutationMutex.withLock { state.value = linkedMapOf() }
     }
 
     override suspend fun migrateIfDestinationEmpty(

@@ -24,6 +24,10 @@ private val REDACTIONS: List<Pair<Regex, String>> = listOf(
     Regex("(password[\"']?\\s*[:=]\\s*[\"']?)([^\\s\"',]+)", RegexOption.IGNORE_CASE) to "$1<redacted>",
     // SSH target with a non-numeric segment where a port belongs.
     Regex("(\\S+@[^\\s:]+):(?!\\d+\\b)[^\\s:]+") to "$1:<redacted>",
+    // URL userinfo: `https://user:pass@host` puts a credential in a field this
+    // app renders and a screen reader speaks out loud. The scheme and the host
+    // are kept, because they are what the sentence is about.
+    Regex("([A-Za-z][A-Za-z0-9+.-]*://)[^/?#\\s@]+@") to "$1<redacted>@",
 )
 
 fun redact(text: String?): String {

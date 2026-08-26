@@ -1729,6 +1729,8 @@ class ChatViewModelTest {
     }
 
     private class DelayedDraftStore : SessionDraftStore {
+        override suspend fun clear() = Unit
+
         private val restored = MutableSharedFlow<LinkedHashMap<String, String>>(extraBufferCapacity = 1)
         override val drafts: Flow<LinkedHashMap<String, String>> = restored
 
@@ -1746,6 +1748,8 @@ class ChatViewModelTest {
     }
 
     private class GatedMigrationDraftStore : SessionDraftStore {
+        override suspend fun clear() = Unit
+
         override val drafts = MutableStateFlow(linkedMapOf<String, String>())
         val migrationStarted = CompletableDeferred<Unit>()
         val releaseMigration = CompletableDeferred<Unit>()
@@ -1767,6 +1771,8 @@ class ChatViewModelTest {
     }
 
     private class FailingDraftStore : SessionDraftStore {
+        override suspend fun clear() = Unit
+
         override val drafts = MutableStateFlow(linkedMapOf<String, String>())
 
         override suspend fun replace(durableSessionId: String, text: String): Unit = error("fixture write failure")

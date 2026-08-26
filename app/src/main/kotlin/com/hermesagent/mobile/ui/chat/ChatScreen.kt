@@ -107,12 +107,14 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     /** Injectable only for layout tests; production uses the device navigation bars. */
     wideRailInsets: WindowInsets = WindowInsets.navigationBars,
+    /** Rail chrome above the session header — the connection switcher. */
+    sidebarHeader: @Composable () -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, wideRailInsets)
+            WideLayout(state, actions, onOpenSettings, wideRailInsets, sidebarHeader)
         } else {
-            CompactLayout(state, actions, onOpenSettings)
+            CompactLayout(state, actions, onOpenSettings, sidebarHeader)
         }
     }
 }
@@ -123,7 +125,12 @@ private val RAIL_WIDTH: Dp = 300.dp
 private const val WIDE_RAIL_TAG = "Wide sessions rail"
 
 @Composable
-private fun CompactLayout(state: ChatUiState, actions: ChatActions, onOpenSettings: () -> Unit) {
+private fun CompactLayout(
+    state: ChatUiState,
+    actions: ChatActions,
+    onOpenSettings: () -> Unit,
+    sidebarHeader: @Composable () -> Unit,
+) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
@@ -140,6 +147,7 @@ private fun CompactLayout(state: ChatUiState, actions: ChatActions, onOpenSettin
                 SessionsPane(
                     state = state,
                     actions = actions,
+                    header = sidebarHeader,
                     modifier = Modifier.statusBarsPadding(),
                     onSelectSession = { id ->
                         actions.onSelectSession(id)
@@ -176,6 +184,7 @@ private fun WideLayout(
     actions: ChatActions,
     onOpenSettings: () -> Unit,
     railInsets: WindowInsets,
+    sidebarHeader: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         // The rail owns its bottom edge in the wide layout. Keep its surface
@@ -184,6 +193,7 @@ private fun WideLayout(
         SessionsPane(
             state,
             actions,
+            sidebarHeader,
             Modifier
                 .width(RAIL_WIDTH)
                 .fillMaxHeight()
@@ -211,6 +221,7 @@ private fun WideLayout(
 private fun SessionsPane(
     state: ChatUiState,
     actions: ChatActions,
+    header: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
     onSelectSession: (String) -> Unit = actions.onSelectSession,
     onCreateSession: () -> Unit = actions.onCreateSession,
@@ -233,6 +244,7 @@ private fun SessionsPane(
         onSelect = onSelectSession,
         onCreate = onCreateSession,
         modifier = modifier,
+        header = header,
     )
 }
 

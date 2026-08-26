@@ -32,6 +32,10 @@ enum class HermesIcon(val glyph: String) {
     Add("\uEA60"),
     Edit("\uEA73"),
     File("\uEA7B"),
+    /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `f82f2dba`). */
+    Globe("\uEB01"),
+    Trash("\uEA81"),
+    SettingsGear("\uEB51"),
     Search("\uEA6D"),
     Clock("\uEA82"),
     Terminal("\uEA85"),

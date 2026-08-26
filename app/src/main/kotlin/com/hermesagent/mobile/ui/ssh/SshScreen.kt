@@ -71,6 +71,8 @@ fun SshScreen(
     state: SshUiState,
     actions: SshActions,
     modifier: Modifier = Modifier,
+    /** Page content that belongs below this form — the Gateways page's connections registry. */
+    footer: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     val inset = HermesTheme.spacing.pageInset
@@ -208,6 +210,7 @@ fun SshScreen(
 
         GatewaySection(state, actions)
         DiagnosticSection(state = state, onProbe = actions.onProbe, onCancel = actions.onCancelProbe)
+        footer()
     }
 }
 

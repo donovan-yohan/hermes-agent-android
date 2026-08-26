@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.common.LabelledField
@@ -34,6 +36,8 @@ fun GatewayScreen(
     sshState: SshUiState,
     sshActions: SshActions,
     modifier: Modifier = Modifier,
+    connectionsState: ConnectionsUiState = ConnectionsUiState(),
+    connectionsActions: ConnectionsActions = ConnectionsActions(),
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
@@ -61,9 +65,27 @@ fun GatewayScreen(
             )
         }
         Box(Modifier.weight(1f)) {
+            // Desktop puts the registry at the foot of this same page, below the
+            // window connection controls (`gateway-settings.tsx:1499-1502` @
+            // `f82f2dba`). On a phone the page is one scroll per route, so the
+            // section travels into whichever route is showing rather than
+            // becoming a second, separately-scrolling band.
+            val registry: @Composable ColumnScope.() -> Unit = {
+                ConnectionsSection(connectionsState, connectionsActions)
+            }
             when (state.mode) {
-                GatewayConnectionMode.Remote -> RemoteGatewayScreen(state, gatewayActions)
-                GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions)
+                GatewayConnectionMode.Remote -> RemoteGatewayScreen(
+                    state = state,
+                    actions = gatewayActions,
+                    // The registry's own save path rejects a duplicate outright
+                    // (`connections-registry.tsx:120-168` @ `f82f2dba`). This
+                    // form autosaves while someone is still typing, so the same
+                    // rule surfaces as a warning beside the field instead.
+                    duplicateOf = connectionsState.duplicateRemoteLabel(state.remote.baseUrl),
+                    footer = registry,
+                )
+
+                GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions, footer = registry)
             }
         }
     }
@@ -73,6 +95,8 @@ fun GatewayScreen(
 private fun RemoteGatewayScreen(
     state: GatewaySettingsUiState,
     actions: GatewayActions,
+    duplicateOf: String?,
+    footer: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     val connection = state.connection
@@ -101,6 +125,13 @@ private fun RemoteGatewayScreen(
         )
         state.remoteUrlError?.let { error ->
             Text(error, style = HermesTheme.type.caption, color = tokens.destructive)
+        }
+        duplicateOf?.let { label ->
+            Text(
+                ConnectionsCopy.duplicateUrl(label),
+                style = HermesTheme.type.caption,
+                color = tokens.destructive,
+            )
         }
         LabelledField(
             label = "Sign-in provider (optional)",
@@ -152,5 +183,7 @@ private fun RemoteGatewayScreen(
             style = HermesTheme.type.caption,
             color = tokens.textTertiary,
         )
+
+        footer()
     }
 }

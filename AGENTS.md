@@ -13,6 +13,7 @@ Phase 2 ships both connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../ui/` | Compose surfaces: `chat/`, `sessions/`, `appearance/`, `ssh/`, `common/` primitives | Changing what the app looks like or does |
 | `app/src/main/kotlin/.../data/session/` | `SessionCache` (backend-authoritative), model, calendar grouping | Anything about sessions or transcripts |
 | `app/src/main/kotlin/.../data/ssh/` | sshj transport/opener/probe, destination parser, TOFU policy, redaction | SSH, destinations, host keys, secrets |
+| `app/src/main/kotlin/.../data/connections/` | Saved connections registry, dedupe/display rules, the connection switch | Adding, editing, removing or switching a saved Gateway |
 | `app/src/main/kotlin/.../data/gateway/` | Remote lifecycle, HTTP/JSON-RPC connection, live session repository, network monitor | Gateway startup, ownership, forwarding, sessions, live turns |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
@@ -58,9 +59,20 @@ enforces it offline; the parity script diffs a live upstream checkout.
 **Secrets policy.** Passwords, passphrases and private keys are in-memory only
 and are zeroed after use, and the whole screen's material is wiped when the
 Gateways surface leaves — before `FLAG_SECURE` is cleared, because the
-ViewModel outlives the screen. Only host, port, username, optional remote
-profile, auth method, accepted fingerprint, and a random per-install ownership
-id reach disk; the imported key's display name is screen state the store drops.
+ViewModel outlives the screen. Per saved connection, only a random local row
+id, a label, the route, the Gateway URL and optional sign-in provider, and the
+SSH host, port, username, optional remote profile, auth method and accepted
+fingerprint reach disk, plus which row is active and a random per-install
+ownership id — that one stays per install, because it namespaces this app's
+remote processes on a host rather than an endpoint. The imported key's display
+name is screen state the store drops. A Remote row's OAuth tokens are the one
+secret with a disk slot: Keystore ciphertext below `noBackupFilesDir`, one file
+per row id, naming the Gateway that minted it. It is refused — and kept on
+disk, so a mistyped address is recoverable — if that row later points
+elsewhere, and it is zeroed and unlinked when the row is removed — addressable by row id alone, so a row whose URL was blanked or
+mistyped can still be cleaned up rather than orphaning its credential.
+Source files carry no NUL byte: one is Git's own binary heuristic, and a file
+Git calls binary shows no diff in review, so write the escape.
 Everything user-visible goes through `redact()`. No credential, host name or fingerprint belongs in this repo, in a
 test, or in a screenshot. There is no accept-all host-key verifier and a changed
 host key has no accept path.
@@ -75,6 +87,12 @@ consume Tailscale's client-side `known_hosts`. The auth method is persisted by
 enum *name*, so entries may be reordered; an unrecognised name falls back to
 Password, never to a keyless method.
 
+**Connections are a list, and the active row is the app's one connection.**
+`connections.v1.*` holds the saved rows and which one is active; every
+single-connection reader is a projection of that row, so a connection edit has
+one writer and no second copy. The pre-registry `host.single.*` /
+`gateway.single.*` keys were migrated into row one, not overloaded.
+
 **The SSH destination is one field.** `user@host`, port 22 implicit,
 `user@[ipv6]:port` supported. `parseSshDestination` refuses rather than guesses,
 only a value that parses reaches the profile, and the parsed host/port/username
@@ -85,7 +103,9 @@ or port drops the accepted fingerprint; changing only the username keeps it.
 cache of live Gateway truth: partial refreshes layer, rows leave only through
 an explicit tombstone, and a no-op upsert preserves reference identity. UI-only
 state (draft, search, drawer) never
-goes in there.
+goes in there. Changing endpoint is the one wholesale clear, because the next
+backend is a different machine that can recycle the same durable ids: the
+connection switch calls `resetForEndpointSwitch()`, and nothing else may.
 
 **Foreground isolation.** A running turn writes to the session that started it.
 Switching sessions never cancels it and never paints into the session now on

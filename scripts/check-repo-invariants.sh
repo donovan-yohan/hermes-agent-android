@@ -102,7 +102,22 @@ if ! python3 scripts/check-ci-workflow.py; then
   problem "Android exact-head GitHub Actions contract is invalid."
 fi
 
-# ── 9. Production must never fall back to Phase 1 demo data ──────────────────
+# ── 9. Kotlin sources must contain no NUL, so their diffs stay reviewable ────
+# A NUL byte is Git's own binary heuristic: one is enough for Git to classify a
+# source file as binary, and it then shows no diff on a pull request and
+# `git diff --check` skips it, so a change to the most security-sensitive file
+# in the tree can land unread. Write the escape instead.
+binary_kotlin="$(git ls-files -z 'app/src/**/*.kt' 'app/src/*.kt' \
+  | xargs -0 -r perl -ne 'if (/\x00/) { print "$ARGV\n"; close ARGV; }' 2>/dev/null || true)"
+if [[ -n "$binary_kotlin" ]]; then
+  problem "Kotlin sources contain a NUL byte, so Git treats them as binary:"
+  printf '%s\n' "$binary_kotlin" | sed 's/^/        /'
+  note "fix: write it as a Kotlin escape (the slot separator is the one we hit) so the diff stays readable."
+else
+  ok "no tracked Kotlin source contains a NUL, so every diff is reviewable"
+fi
+
+# ── 10. Production must never fall back to Phase 1 demo data ─────────────────
 if grep -R -nE 'data\.demo|DemoSessions|DemoTurnEngine' app/src/main/kotlin >/dev/null 2>&1; then
   problem "production source still references the Phase 1 demo session/turn path."
   note "fix: route production startup, sessions and turns through the live Gateway repository."

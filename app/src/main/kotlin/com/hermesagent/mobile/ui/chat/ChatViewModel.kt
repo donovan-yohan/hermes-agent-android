@@ -512,7 +512,18 @@ internal class ChatViewModel(
 
     private fun bindComposerScope(scope: ComposerControlsScope) {
         if (composerScope == scope) return
+        // Any change to this scope is a change of session set, not just a change
+        // of address. The scope's second half is the SSH *remote Hermes
+        // profile*, and two profiles on one host are two different Hermes homes
+        // with two different session histories — comparing only the address
+        // would leave one install's sessions painted under the other's. A
+        // provider change on a Remote row costs a reload it did not strictly
+        // need; showing another install's conversations costs more.
+        //
+        // The first bind is not a change: there was no endpoint to leave.
+        val endpointChanged = composerScope != null
         composerScope = scope
+        if (endpointChanged) leaveEndpoint()
         queueScopeReady.value = false
         queueEdit.value = null
         queueEditText.value = ""
@@ -545,6 +556,26 @@ internal class ChatViewModel(
             }
         }
         refreshComposer(activeSessionId.value)
+    }
+
+    /**
+     * Forget the endpoint-scoped view state this surface owns.
+     *
+     * Only UI-only state lives here: which session is open, the search text,
+     * a project drill-in, and a stale notice. Cached sessions and transcripts
+     * are the cache's to clear, and the connection switch clears them; the
+     * unread markers go with them because they are a field on those rows.
+     */
+    private fun leaveEndpoint() {
+        navigationGeneration += 1
+        invalidateCompletionState()
+        choseInitialSession = false
+        activeSessionId.value = null
+        selectedProjectId.value = null
+        projectLoadingId.value = null
+        query.value = ""
+        notice.value = null
+        previousStatuses = emptyMap()
     }
 
     private fun invalidateComposerRuntimeState() {

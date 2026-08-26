@@ -371,6 +371,8 @@ fun PrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /** The one filled action's colour. Destructive confirmations own the exception. */
+    container: Color = HermesTheme.tokens.accent,
 ) {
     val tokens = HermesTheme.tokens
     Box(
@@ -378,7 +380,7 @@ fun PrimaryButton(
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .widthIn(min = HermesTheme.spacing.touchTarget)
             .background(
-                if (enabled) tokens.accent else tokens.accent.copy(alpha = 0.3f),
+                if (enabled) container else container.copy(alpha = 0.3f),
                 RoundedCornerShape(8.dp),
             )
             .clickable(enabled = enabled, onClick = onClick)

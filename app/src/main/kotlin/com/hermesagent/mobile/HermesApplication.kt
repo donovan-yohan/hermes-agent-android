@@ -8,6 +8,8 @@ import com.hermesagent.mobile.data.composer.ComposerQueueScope
 import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
 import com.hermesagent.mobile.data.composer.ProfileSwitchingComposerQueueStore
 import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
+import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
+import com.hermesagent.mobile.data.connections.ConnectionSwitchController
 import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -28,9 +30,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -75,6 +81,16 @@ class HermesApplication : Application() {
         )
     }
     internal val gatewayHttp: com.hermesagent.mobile.data.gateway.GatewayHttp? get() = gatewayConnection.gatewayHttp.value
+
+    /** The one place a connection switch is performed; see its own doc for the order. */
+    internal val connectionSwitch: ConnectionSwitchController by lazy {
+        ConnectionSwitchController(
+            store = preferences,
+            gateway = gatewayConnection,
+            cache = cache,
+            drafts = draftStore,
+        )
+    }
 
     internal val voiceRepository: com.hermesagent.mobile.data.voice.GatewayVoiceRepository by lazy {
         com.hermesagent.mobile.data.voice.GatewayVoiceRepository { gatewayHttp }
@@ -165,12 +181,49 @@ class HermesApplication : Application() {
             },
         )
         appScope.launch {
-            restoreSavedRemoteGateway(preferences, gatewayConnection)
+            followActiveConnection(
+                connections = preferences,
+                profiles = preferences,
+                connection = gatewayConnection,
+                routeGeneration = connectionSwitch.routeGeneration,
+            )
         }
     }
 }
 
-/** Restores only a valid saved Remote Gateway; interactive sign-in remains user initiated. */
+/**
+ * Restores the *active* saved connection's Remote Gateway, and re-arms when the
+ * active connection changes.
+ *
+ * Switching connections is the only event that re-dials on its own; editing a
+ * URL is not, because the person doing the editing has not finished typing.
+ * That is why this keys on the active row's id, plus the explicit re-arm the
+ * switch controller raises once a re-address is persisted — never on the route
+ * values themselves, which change on every keystroke.
+ */
+internal suspend fun followActiveConnection(
+    connections: ConnectionRegistryStore,
+    profiles: RemoteGatewayProfileStore,
+    connection: GatewayConnectionController,
+    routeGeneration: Flow<Long> = flowOf(0L),
+) {
+    combine(
+        connections.connectionRegistry.map { it.active?.id },
+        routeGeneration,
+    ) { activeId, generation -> activeId to generation }
+        .distinctUntilChanged()
+        .collectLatest { restoreSavedRemoteGateway(profiles, connection) }
+}
+
+/**
+ * Restores only a valid saved Remote Gateway; interactive sign-in remains user initiated.
+ *
+ * It stops at the first persisted route edit and leaves the teardown to
+ * whoever made that edit — the Gateways form disconnects in a `finally` after
+ * every save, and a connection switch disconnects before it moves the active
+ * marker. One owner for the teardown means a re-arm cannot disconnect the
+ * connection the re-arm just opened.
+ */
 internal suspend fun restoreSavedRemoteGateway(
     profiles: RemoteGatewayProfileStore,
     connection: GatewayConnectionController,
@@ -193,6 +246,5 @@ internal suspend fun restoreSavedRemoteGateway(
         } finally {
             restore.cancelAndJoin()
         }
-        connection.disconnect()
     }
 }

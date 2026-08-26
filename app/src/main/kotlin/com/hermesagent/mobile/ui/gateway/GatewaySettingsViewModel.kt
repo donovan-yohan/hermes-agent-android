@@ -37,6 +37,13 @@ data class GatewaySettingsUiState(
 internal class GatewaySettingsViewModel(
     private val store: RemoteGatewayProfileStore,
     private val gateway: GatewayConnectionController,
+    /**
+     * What a saved route change costs: the live connection, and the sessions
+     * that came from where it used to point. Two gateways can hand out the same
+     * durable id, so the previous one's rows go rather than being merged into
+     * whatever the next one reports.
+     */
+    private val leaveEndpoint: suspend () -> Unit = { gateway.disconnect() },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GatewaySettingsUiState())
     val uiState: StateFlow<GatewaySettingsUiState> = _uiState.asStateFlow()
@@ -63,7 +70,7 @@ internal class GatewaySettingsViewModel(
             try {
                 store.saveGatewayConnectionMode(mode)
             } finally {
-                gateway.disconnect()
+                leaveEndpoint()
             }
         }
     }
@@ -82,16 +89,23 @@ internal class GatewaySettingsViewModel(
         }
     }
 
+    /**
+     * Both of these put the live connection down, so both go through
+     * [leaveEndpoint] rather than reaching for the connection directly: it is
+     * what serializes a teardown against an in-flight connection switch, and a
+     * disconnect that lands after a switch has opened its socket would close
+     * the wrong one.
+     */
     fun disconnect() {
         cancelConnectionAttempt()
-        viewModelScope.launch { gateway.disconnect() }
+        viewModelScope.launch { leaveEndpoint() }
     }
 
     fun forgetSignIn() {
         val profile = _uiState.value.remote
         cancelConnectionAttempt()
         viewModelScope.launch {
-            gateway.disconnect()
+            leaveEndpoint()
             gateway.forgetRemoteAuthentication(profile)
         }
     }
@@ -105,7 +119,7 @@ internal class GatewaySettingsViewModel(
             try {
                 store.saveRemoteGatewayProfile(updated)
             } finally {
-                gateway.disconnect()
+                leaveEndpoint()
             }
         }
     }
@@ -124,10 +138,11 @@ internal class GatewaySettingsViewModel(
         fun factory(
             store: RemoteGatewayProfileStore,
             gateway: GatewayConnectionController,
+            leaveEndpoint: suspend () -> Unit = { gateway.disconnect() },
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                GatewaySettingsViewModel(store, gateway) as T
+                GatewaySettingsViewModel(store, gateway, leaveEndpoint) as T
         }
     }
 }

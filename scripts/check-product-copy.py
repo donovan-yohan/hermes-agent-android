@@ -25,6 +25,7 @@ WORDS = re.compile(r"[\w]+(?:[-'][\w]+)*", re.UNICODE)
 # Keep the list explicit: scanning every data/protocol/test literal would turn
 # this focused product-copy gate into a source-code prose-length gate.
 RENDERED_DATA_SOURCES = (
+    "app/src/main/kotlin/com/hermesagent/mobile/data/connections/ConnectionRegistry.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayConnection.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayRestClient.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayRpc.kt",

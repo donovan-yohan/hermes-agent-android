@@ -275,7 +275,11 @@ class RemoteGatewayTest {
         valid.mode.value = GatewayConnectionMode.Ssh
         runCurrent()
         restore.join()
-        assertEquals(1, connection.disconnects)
+        // Restoring never tears anything down. Whoever changed the saved route
+        // owns that: the Gateways form and the connection switcher both leave
+        // the old endpoint before the route moves, and a re-arm that also
+        // disconnected could kill the connection it had just opened.
+        assertEquals(0, connection.disconnects)
     }
 
     @Test
@@ -290,7 +294,7 @@ class RemoteGatewayTest {
 
         restore.join()
         assertTrue(connection.restoreCancelled)
-        assertEquals(1, connection.disconnects)
+        assertEquals("teardown belongs to whoever changed the route", 0, connection.disconnects)
     }
 
     @Test
@@ -1029,7 +1033,7 @@ class RemoteGatewayTest {
         assertEquals(listOf(VALID_TOKENS.refreshToken), api.presented)
         // And both callers end up looking at the same rotated credential.
         assertEquals(ROTATED_TOKENS, store.tokens)
-        assertEquals(ROTATED_TOKENS, authenticator.tokens(requireNotNull(PROFILE.normalizedBaseUrl)))
+        assertEquals(ROTATED_TOKENS, authenticator.tokens(PROFILE))
     }
 
     @Test
@@ -1121,7 +1125,7 @@ class RemoteGatewayTest {
         val store = MemoryTokenStore(VALID_TOKENS)
         val authenticator = NativeGatewayAuthenticator(api, store, { _, _ -> error("no sign-in here") })
 
-        val observed = requireNotNull(authenticator.tokens(requireNotNull(PROFILE.normalizedBaseUrl)))
+        val observed = requireNotNull(authenticator.tokens(PROFILE))
         authenticator.signOut(PROFILE)
 
         assertFalse(authenticator.refreshAccessToken(PROFILE))
@@ -1201,11 +1205,11 @@ class RemoteGatewayTest {
     }
 
     private class MemoryTokenStore(var tokens: GatewayNativeTokens?) : GatewayTokenStore {
-        override suspend fun load(baseUrl: String): GatewayNativeTokens? = tokens
-        override suspend fun save(baseUrl: String, tokens: GatewayNativeTokens) {
+        override suspend fun load(slot: GatewaySecretSlot): GatewayNativeTokens? = tokens
+        override suspend fun save(slot: GatewaySecretSlot, tokens: GatewayNativeTokens) {
             this.tokens = tokens
         }
-        override suspend fun clear(baseUrl: String) {
+        override suspend fun clear(slot: GatewaySecretSlot) {
             tokens = null
         }
     }

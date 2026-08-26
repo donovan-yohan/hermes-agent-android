@@ -40,11 +40,38 @@ enum class GatewayConnectionMode {
 data class RemoteGatewayProfile(
     val baseUrl: String = "",
     val provider: String = "",
+    /**
+     * Which saved connection's Keystore slot holds this Gateway's sign-in.
+     *
+     * A local, random row id — not an endpoint, an account, or anything the
+     * Gateway is told. Blank means "no registry row supplied one", which the
+     * token store reads as the pre-registry, URL-derived slot so an install
+     * that upgrades is not silently signed out.
+     */
+    val secretSlotId: String = "",
 ) {
     val normalizedBaseUrl: String?
         get() = normalizeRemoteGatewayUrl(baseUrl)
 
     val isValid: Boolean get() = normalizedBaseUrl != null
+
+    /** The one secret slot this profile may read or write; null when the URL is unusable. */
+    internal val secretSlot: GatewaySecretSlot?
+        get() = normalizedBaseUrl?.let { GatewaySecretSlot(secretSlotId, it) }
+
+    /**
+     * The slot to erase, which must be reachable even when [secretSlot] is not.
+     *
+     * A Remote row whose URL was blanked or mistyped still owns a file, and
+     * "we cannot parse where this credential was for" is the worst possible
+     * reason to leave a credential on disk. Null only when there is nothing
+     * addressable at all — no row and no usable URL.
+     */
+    internal val eraseSlot: GatewaySecretSlot?
+        get() = when {
+            secretSlotId.isNotBlank() -> GatewaySecretSlot(secretSlotId, normalizedBaseUrl)
+            else -> normalizedBaseUrl?.let { GatewaySecretSlot("", it) }
+        }
 }
 
 /** Persisted remote route settings. Tokens deliberately live behind [GatewayTokenStore]. */
@@ -84,10 +111,41 @@ internal data class GatewayNativeTokens(
             "expiresAt=$expiresAt, provider=$provider, userId=<redacted>)"
 }
 
+/**
+ * Where one saved connection's Gateway sign-in is kept.
+ *
+ * [connectionId] is the registry row, and it is what the slot is named after,
+ * so removing a connection removes exactly that connection's credential and
+ * nothing else. [normalizedBaseUrl] is carried alongside rather than as the
+ * key: it still identifies the pre-registry slot an upgrading install has on
+ * disk, and it is what the token store adopts once, into the row's slot.
+ */
+internal data class GatewaySecretSlot(
+    val connectionId: String,
+    /**
+     * The Gateway this slot's credential is for. Null when the slot is only
+     * being *addressed* — erasing a row whose URL was blanked or mistyped still
+     * has to reach that row's file, and a row id is enough to name it. Reading
+     * or writing a credential always requires it.
+     */
+    val normalizedBaseUrl: String?,
+) {
+    init {
+        require(connectionId.isNotBlank() || !normalizedBaseUrl.isNullOrBlank()) {
+            "A secret slot needs a connection id, a Gateway URL, or both."
+        }
+    }
+
+    companion object {
+        /** Address a row's slot by id alone, for erasure. */
+        fun forRow(connectionId: String): GatewaySecretSlot = GatewaySecretSlot(connectionId, null)
+    }
+}
+
 internal interface GatewayTokenStore {
-    suspend fun load(baseUrl: String): GatewayNativeTokens?
-    suspend fun save(baseUrl: String, tokens: GatewayNativeTokens)
-    suspend fun clear(baseUrl: String)
+    suspend fun load(slot: GatewaySecretSlot): GatewayNativeTokens?
+    suspend fun save(slot: GatewaySecretSlot, tokens: GatewayNativeTokens)
+    suspend fun clear(slot: GatewaySecretSlot)
 }
 
 internal class GatewayAuthException(
@@ -140,11 +198,16 @@ internal class NativeGatewayAuthenticator(
     private val rotation = Mutex()
 
     /** Stored tokens without triggering a sign-in flow; null when absent. */
-    suspend fun tokens(baseUrl: String): GatewayNativeTokens? = store.load(baseUrl)
+    suspend fun tokens(profile: RemoteGatewayProfile): GatewayNativeTokens? =
+        profile.secretSlot?.let { store.load(it) }
 
     suspend fun ticket(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): String {
         val baseUrl = profile.normalizedBaseUrl
             ?: throw GatewayAuthException("Enter a valid HTTPS Gateway URL.")
+        // A readable/writable slot always has this URL; `secretSlot` is null
+        // only when `normalizedBaseUrl` is, which the line above already threw
+        // on.
+        val slot = requireNotNull(profile.secretSlot)
         val status = api.status(baseUrl)
         if (!status.authRequired) {
             throw GatewayAuthException(
@@ -157,7 +220,7 @@ internal class NativeGatewayAuthenticator(
             )
         }
 
-        var tokens = store.load(baseUrl)
+        var tokens = store.load(slot)
         if (tokens == null) {
             tokens = signIn(profile.copy(baseUrl = baseUrl), browser)
         } else if (tokens.needsRefresh(nowSeconds())) {
@@ -180,7 +243,7 @@ internal class NativeGatewayAuthenticator(
      * and so does whatever the person signs in as next.
      */
     suspend fun signOut(profile: RemoteGatewayProfile) {
-        profile.normalizedBaseUrl?.let { store.clear(it) }
+        profile.eraseSlot?.let { store.clear(it) }
     }
 
     /**
@@ -195,9 +258,9 @@ internal class NativeGatewayAuthenticator(
      * arrives.
      */
     suspend fun refreshAccessToken(profile: RemoteGatewayProfile): Boolean {
-        val baseUrl = profile.normalizedBaseUrl ?: return false
-        val observed = store.load(baseUrl) ?: return false
-        return rotate(baseUrl, observed) != null
+        val slot = profile.secretSlot ?: return false
+        val observed = store.load(slot) ?: return false
+        return rotate(slot, observed) != null
     }
 
     /**
@@ -230,20 +293,22 @@ internal class NativeGatewayAuthenticator(
      * replaced only when a whole new set arrives.
      */
     private suspend fun rotate(
-        baseUrl: String,
+        slot: GatewaySecretSlot,
         observed: GatewayNativeTokens,
     ): GatewayNativeTokens? = rotation.withLock {
         // An already-cleared store is a deliberate "there is nothing here";
         // rotating [observed] anyway would resurrect what was just cleared.
-        val current = store.load(baseUrl) ?: return@withLock null
+        val current = store.load(slot) ?: return@withLock null
         if (current.refreshToken != observed.refreshToken) return@withLock current
         val refreshToken = current.refreshToken.takeIf(String::isNotBlank) ?: return@withLock null
-        val refreshed = api.refresh(baseUrl, refreshToken, current.provider) ?: return@withLock null
+        // A slot that reached a rotation was built from a usable URL.
+        val refreshed = api.refresh(requireNotNull(slot.normalizedBaseUrl), refreshToken, current.provider)
+            ?: return@withLock null
         // Same question again, because the answer can have changed while the
         // refresh was on the wire — and it is the same question: not "is
         // anything stored" but "is this still the credential I am rotating".
-        if (store.load(baseUrl)?.refreshToken != refreshToken) return@withLock null
-        store.save(baseUrl, refreshed)
+        if (store.load(slot)?.refreshToken != refreshToken) return@withLock null
+        store.save(slot, refreshed)
         refreshed
     }
 
@@ -252,7 +317,7 @@ internal class NativeGatewayAuthenticator(
         tokens: GatewayNativeTokens,
         browser: GatewayBrowserLauncher?,
     ): GatewayNativeTokens =
-        rotate(requireNotNull(profile.normalizedBaseUrl), tokens) ?: signIn(profile, browser)
+        rotate(requireNotNull(profile.secretSlot), tokens) ?: signIn(profile, browser)
 
     private suspend fun signIn(
         profile: RemoteGatewayProfile,
@@ -261,7 +326,7 @@ internal class NativeGatewayAuthenticator(
         profile,
         browser ?: throw GatewayAuthException("Sign in to this Gateway before reconnecting.", 401),
     ).also { tokens ->
-        store.save(requireNotNull(profile.normalizedBaseUrl), tokens)
+        store.save(requireNotNull(profile.secretSlot), tokens)
     }
 
     private fun GatewayNativeTokens.needsRefresh(now: Long): Boolean =
@@ -506,7 +571,7 @@ internal class RemoteGatewayConnector(
 ) {
     /** Bearer token for the connection-owned audio HTTP leg; null when absent. */
     suspend fun accessToken(profile: RemoteGatewayProfile): String? =
-        profile.normalizedBaseUrl?.let { authenticator.tokens(it)?.accessToken }
+        authenticator.tokens(profile)?.accessToken
 
     /** Rotate that bearer once, non-interactively, for a refused REST leg. */
     suspend fun refreshAccessToken(profile: RemoteGatewayProfile): Boolean =

@@ -126,6 +126,20 @@ class SessionCache {
         }
     }
 
+    /**
+     * Drop everything, because the next backend is a different machine.
+     *
+     * This is the one wholesale clear, and it is not a weaker tombstone: it is
+     * what Desktop's `wipeSessionListsForGatewaySwitch` does on the same event
+     * (`apps/desktop/src/store/gateway-switch.ts:47-96` @ `f82f2dba`). Two
+     * gateways can recycle the same durable id, and painting one machine's
+     * conversation under another's row is worse than an empty list — so a
+     * switch clears rather than merges, and only a switch may call this.
+     */
+    internal fun resetForEndpointSwitch() {
+        _state.update { current -> if (current == SessionCacheState()) current else SessionCacheState() }
+    }
+
     /** A new Gateway generation must not paint the previous profile's project catalog. */
     fun clearProjects() {
         _state.update { current ->

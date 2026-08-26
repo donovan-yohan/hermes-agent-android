@@ -20,11 +20,13 @@ import com.hermesagent.mobile.data.ssh.KeyImportProblem
 import com.hermesagent.mobile.data.ssh.readKeyDocument
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
+import com.hermesagent.mobile.ui.gateway.ConnectionsViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.relay.RelayChannelReader
 import com.hermesagent.mobile.data.relay.RelayMessageFormat
@@ -69,7 +71,26 @@ class MainActivity : ComponentActivity() {
         SshViewModel.factory(preferences, app.gatewayConnection)
     }
     private val gatewaySettingsViewModel: GatewaySettingsViewModel by viewModels {
-        GatewaySettingsViewModel.factory(preferences, app.gatewayConnection)
+        GatewaySettingsViewModel.factory(
+            store = preferences,
+            gateway = app.gatewayConnection,
+            // Saving a different address is leaving an endpoint, so it tears
+            // down through the same path a connection switch uses.
+            leaveEndpoint = app.connectionSwitch::leaveCurrentEndpoint,
+        )
+    }
+
+    /**
+     * The saved-connections registry. Switching is the process-scoped
+     * controller's job, not this ViewModel's: a re-home outlives the screen
+     * that asked for it.
+     */
+    private val connectionsViewModel: ConnectionsViewModel by viewModels {
+        ConnectionsViewModel.factory(
+            store = preferences,
+            gateway = app.gatewayConnection,
+            switch = app.connectionSwitch,
+        )
     }
 
     /**
@@ -222,6 +243,24 @@ class MainActivity : ComponentActivity() {
             // Gateway before anyone opens it. Availability probes on connection
             // edges only, so holding this costs nothing.
             val relayState by relayViewModel.uiState.collectAsStateWithLifecycle()
+            val connectionsState by connectionsViewModel.uiState.collectAsStateWithLifecycle()
+            val connectionsActions = remember {
+                ConnectionsActions(
+                    onSelect = connectionsViewModel::select,
+                    onBeginAdd = connectionsViewModel::beginAdd,
+                    onBeginEdit = connectionsViewModel::beginEdit,
+                    onCancelEditor = connectionsViewModel::cancelEditor,
+                    onEditKind = connectionsViewModel::editKind,
+                    onEditLabel = connectionsViewModel::editLabel,
+                    onEditUrl = connectionsViewModel::editUrl,
+                    onEditProvider = connectionsViewModel::editProvider,
+                    onEditDestination = connectionsViewModel::editDestination,
+                    onSaveEditor = connectionsViewModel::saveEditor,
+                    onRequestRemove = connectionsViewModel::requestRemove,
+                    onCancelRemove = connectionsViewModel::cancelRemove,
+                    onConfirmRemove = connectionsViewModel::confirmRemove,
+                )
+            }
             // Remembered so the instance is stable: rebuilding it every
             // recomposition would invalidate every per-row click lambda in the
             // channel list while Relay is open.
@@ -304,6 +343,8 @@ class MainActivity : ComponentActivity() {
                 ),
                 relayState = relayState,
                 relayActions = relayActions,
+                connectionsState = connectionsState,
+                connectionsActions = connectionsActions,
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,
                     onRemoteProfileChange = sshViewModel::setRemoteHermesProfile,
