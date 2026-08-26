@@ -278,7 +278,7 @@ private fun RelayPostResult.Failed.toVerdict(): RelayPostVerdict = when (statusC
 private fun RelayPostResult.Failed.refusedBodyMessage(): String = when (code) {
     // Both size gates mean the same thing to a person holding a long message.
     ERROR_REQUEST_TOO_LARGE, ERROR_TEXT_TOO_LARGE -> LARGE_TEXT_MESSAGE
-    // `invalid_text` is precisely "absent or blank" (`:184-185`), which is the
+    // `invalid_text` is precisely "absent or blank" (`:185-186`), which is the
     // sentence the composer already uses for it before dispatching.
     ERROR_INVALID_TEXT -> EMPTY_TEXT_MESSAGE
     ERROR_INVALID_FORMAT -> UNSUPPORTED_FORMAT_MESSAGE

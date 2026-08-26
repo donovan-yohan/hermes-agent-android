@@ -716,22 +716,22 @@ internal const val ERROR_RELAY_FAILED = "relay_error"
 /** 413 from the whole-body gate, before any field is read (`:126-136`). */
 internal const val ERROR_REQUEST_TOO_LARGE = "request_too_large"
 
-/** 413 from the text field's own bound (`:186-187`). */
+/** 413 from the text field's own bound (`:187-188`). */
 internal const val ERROR_TEXT_TOO_LARGE = "text_too_large"
 
-/** 400 for text that is absent or blank (`:184-185`). */
+/** 400 for text that is absent or blank (`:185-186`). */
 internal const val ERROR_INVALID_TEXT = "invalid_text"
 
-/** 400 for a format outside `{markdown, text}` (`:188-189`). */
+/** 400 for a format outside `{markdown, text}` (`:189-190`). */
 internal const val ERROR_INVALID_FORMAT = "invalid_format"
 
 /** 400 for a channel id that is empty or over its bound (`:153-156`). */
 internal const val ERROR_INVALID_CHANNEL = "invalid_channel"
 
-/** 400 for a missing or non-string retry id (`:190-193`). */
+/** 400 for a missing or non-string retry id (`:191-194`). */
 internal const val ERROR_INVALID_CLIENT_MESSAGE_ID = "invalid_client_message_id"
 
-/** 413 for a retry id over its bound (`:194-197`). */
+/** 413 for a retry id over its bound (`:195-198`). */
 internal const val ERROR_CLIENT_MESSAGE_ID_TOO_LARGE = "client_message_id_too_large"
 
 private const val PLUGIN_ID = "hermes-plugin-relay"
