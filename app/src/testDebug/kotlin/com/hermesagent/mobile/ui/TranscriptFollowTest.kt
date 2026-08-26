@@ -15,6 +15,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.ToolActivity
+import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.chat.ChatScreen
@@ -125,6 +127,62 @@ class TranscriptFollowTest {
             .performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Paragraph 80 of the reply.").assertIsDisplayed()
+    }
+
+    /**
+     * A terminal row whose output is still arriving, as the tail of the turn.
+     *
+     * Desktop parks stdout in its own 80 px box that tails only while the reader
+     * is already at the bottom (`components/chat/terminal-output.tsx:14,45-52` @
+     * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). Android has no second
+     * scroller — the transcript's own follow discipline is that rule — so these
+     * two cases are what prove the rule still holds when the thing growing is a
+     * tool payload rather than prose.
+     */
+    private fun runningCommand(lines: Int): List<TranscriptEntry> = listOf(
+        UserTurn(id = "$SESSION-u1", text = "run the build", atMillis = NOW),
+        ToolActivity(
+            id = "$SESSION-t1",
+            label = "terminal",
+            detail = "",
+            state = ToolState.Running,
+            toolName = "terminal",
+            argsText = """{"command":"./gradlew check"}""",
+            resultText = """{"stdout":"${(1..lines).joinToString("\\n") { "build line $it" }}"}""",
+            startedAtMillis = NOW,
+        ),
+    )
+
+    @Test
+    fun `growing tool output follows the tail for a reader who is already there`() {
+        launch(runningCommand(lines = 4))
+        compose.onNodeWithContentDescription("Tool Running ./gradlew check, running").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("build line 4", substring = true).assertIsDisplayed()
+
+        state = chatState(runningCommand(lines = 60), streaming = true)
+        compose.waitForIdle()
+        compose.onNodeWithText("build line 60", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun `growing tool output never yanks a reader who has scrolled up`() {
+        launch(runningCommand(lines = 60))
+        compose.onNodeWithContentDescription("Tool Running ./gradlew check, running").performClick()
+        compose.waitForIdle()
+
+        // Back to the head of the command's output, which is what a reader does
+        // when they want to know why the build started failing.
+        compose.onNodeWithContentDescription("Tool Running ./gradlew check, running").performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Scroll to bottom").assertIsDisplayed()
+
+        state = chatState(runningCommand(lines = 140), streaming = true)
+        compose.waitForIdle()
+
+        // Still at the head of the output, not dragged to the newest build line.
+        compose.onNodeWithContentDescription("Tool Running ./gradlew check, running").assertIsDisplayed()
+        compose.onNodeWithText("New activity").assertIsDisplayed()
     }
 
     @Test

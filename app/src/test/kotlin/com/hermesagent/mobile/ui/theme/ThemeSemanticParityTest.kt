@@ -206,6 +206,132 @@ class ThemeSemanticParityTest {
     }
 
     @Test
+    fun `the ansi ladder derives from desktop's named colour set in each mode`() {
+        // Desktop maps ANSI to fixed Tailwind classes (`lib/ansi.ts:144-164` @
+        // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732). Android cannot: those are a
+        // CSS framework's palette tuned against one surface, and this app paints
+        // tool output on a per-preset `widgetSurface`. So the ladder is derived
+        // from Desktop's *own* named colours — `--ui-red`, `--ui-yellow`,
+        // `--ui-green`, `--ui-cyan`, `--ui-blue`, `--ui-purple`
+        // (`styles.css:196-202`, `:root.dark:528-530`), which cover exactly the
+        // six hues ANSI names — using the diff-foreground knob Desktop already
+        // uses to turn one of those seeds into legible ink
+        // (`styles.css:224,227`, `:root.dark:531-532`). `bright` is that knob
+        // applied a second time: intensity is prominence against the page, so a
+        // bright hue goes darker still on a light page and lighter still on a
+        // dark one.
+        //
+        // Values below are re-walked by hand from those seeds, never read back
+        // from this app. `docs/parity/tool-output-fidelity.md` carries the rule
+        // and what it costs.
+        val light = mapOf(
+            "red" to ("#ff91203c" to "#ff66162a"),
+            "green" to ("#ff166147" to "#ff0f4432"),
+            "yellow" to ("#ff865d23" to "#ff5e4119"),
+            "blue" to ("#ff003ab1" to "#ff00297c"),
+            "magenta" to ("#ff6f6895" to "#ff4e4968"),
+            "cyan" to ("#ff355962" to "#ff253e45"),
+        )
+        val dark = mapOf(
+            "red" to ("#fff09bab" to "#fff6c1cb"),
+            "green" to ("#ff96c7b2" to "#ffbedccf"),
+            "yellow" to ("#ffd8b380" to "#ffe7d0b0"),
+            "blue" to ("#ff6194fe" to "#ff9dbdfe"),
+            "magenta" to ("#ffc3bde5" to "#ffdad6ef"),
+            "cyan" to ("#ffa6c1c8" to "#ffc8d9dd"),
+        )
+
+        for ((isDark, expected) in listOf(false to light, true to dark)) {
+            for (preset in BuiltinThemes.ALL) {
+                val ansi = HermesTokens.from(preset.paletteFor(isDark), isDark).ansi
+                val where = "${preset.name}/${if (isDark) "dark" else "light"}"
+                val actual = mapOf(
+                    "red" to (ansi.red.argb() to ansi.brightRed.argb()),
+                    "green" to (ansi.green.argb() to ansi.brightGreen.argb()),
+                    "yellow" to (ansi.yellow.argb() to ansi.brightYellow.argb()),
+                    "blue" to (ansi.blue.argb() to ansi.brightBlue.argb()),
+                    "magenta" to (ansi.magenta.argb() to ansi.brightMagenta.argb()),
+                    "cyan" to (ansi.cyan.argb() to ansi.brightCyan.argb()),
+                )
+
+                // Fixed per mode, like inline code and the diff palette: a build
+                // log must read the same in all eleven skins.
+                assertEquals("$where: the six hues are fixed per mode", expected, actual)
+            }
+        }
+    }
+
+    @Test
+    fun `ansi green and red are the theme's green and red, not a second opinion`() {
+        // The whole reason the ladder is derived rather than transcribed: the
+        // seeds are already in the theme. If these ever diverge, a terminal's
+        // green and an inline diff's green have quietly become two colours.
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                assertEquals("$where: ansi green", tokens.diffAddedForeground.argb(), tokens.ansi.green.argb())
+                assertEquals("$where: ansi red", tokens.diffRemovedForeground.argb(), tokens.ansi.red.argb())
+            }
+        }
+    }
+
+    @Test
+    fun `the four ansi neutrals are the text ladder, never pure black or white`() {
+        // ansi.ts:145-147 — Desktop refuses to paint `#000`/`#fff` because they
+        // vanish into the surface. Android's answer is the text ladder itself,
+        // which is the one part of the ladder that tracks the preset.
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                assertEquals("$where: ansi black", tokens.textTertiary.argb(), tokens.ansi.black.argb())
+                assertEquals("$where: ansi bright black", tokens.textQuaternary.argb(), tokens.ansi.brightBlack.argb())
+                assertEquals("$where: ansi white", tokens.textSecondary.argb(), tokens.ansi.white.argb())
+                assertEquals("$where: ansi bright white", tokens.textPrimary.argb(), tokens.ansi.brightWhite.argb())
+
+                assertNotEquals("$where: ansi white must not be pure white", Color.White.argb(), tokens.ansi.white.argb())
+                assertNotEquals("$where: ansi black must not be pure black", Color.Black.argb(), tokens.ansi.black.argb())
+            }
+        }
+    }
+
+    @Test
+    fun `every ansi ink is distinct and readable on the tool surface`() {
+        // Sixteen colours that collapse into each other are worse than none:
+        // the point of painting them is that a reader can tell an error line
+        // from a warning line at a glance.
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+                val inks = tokens.ansi.all()
+
+                assertEquals("$where: two ansi inks resolved to the same colour", 16, inks.map { it.second.argb() }.toSet().size)
+
+                for ((name, ink) in inks) {
+                    val ratio = contrastRatio(ink, tokens.widgetSurface)
+                    assertTrue(
+                        "$where: ansi `$name` is ${"%.2f".format(ratio)}:1 on the tool surface " +
+                            "(${ink.toHex()} on ${tokens.widgetSurface.toHex()})",
+                        ratio >= 3.0f,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun HermesAnsiInk.all(): List<Pair<String, Color>> = listOf(
+        "black" to black, "red" to red, "green" to green, "yellow" to yellow,
+        "blue" to blue, "magenta" to magenta, "cyan" to cyan, "white" to white,
+        "brightBlack" to brightBlack, "brightRed" to brightRed, "brightGreen" to brightGreen,
+        "brightYellow" to brightYellow, "brightBlue" to brightBlue, "brightMagenta" to brightMagenta,
+        "brightCyan" to brightCyan, "brightWhite" to brightWhite,
+    )
+
+    @Test
     fun `running outline uses the desktop bright stop in each rendered mode`() {
         // styles.css:1011-1040,1129-1144 @
         // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: `.arc-row` keeps

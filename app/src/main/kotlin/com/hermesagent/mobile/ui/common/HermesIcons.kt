@@ -40,6 +40,21 @@ enum class HermesIcon(val glyph: String) {
     Clock("\uEA82"),
     Terminal("\uEA85"),
     Error("\uEA87"),
+    Warning("\uEA6C"),
+    // The tool-tone glyph set (`components/ui/tool-icon.tsx` @ the pinned SHA).
+    // Desktop draws these as filled Phosphor paths keyed by Codicon names and
+    // falls back to the Codicon font for anything it has no path for; here the
+    // font is the whole set. `brain` is the one name Codicon 0.0.45 does not
+    // ship, so a memory row takes [Database] — the nearest "this was stored"
+    // glyph in the same family, recorded in docs/parity/tool-output-fidelity.md.
+    Eye("\uEA70"),
+    FileMedia("\uEAEA"),
+    Files("\uEAF0"),
+    Globe("\uEB01"),
+    Question("\uEB32"),
+    Tools("\uEB6D"),
+    Watch("\uEB7C"),
+    Database("\uEACE"),
     SymbolMethod("\uEA8C"),
     Check("\uEAB2"),
     Checklist("\uEAB3"),

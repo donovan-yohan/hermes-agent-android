@@ -104,6 +104,8 @@ data class HermesTokens(
     /** Desktop task completion glyph, separate from the unread-session dot. */
     val taskCompleted: Color,
     val destructive: Color,
+    /** The sixteen ANSI foregrounds terminal-shaped tool output paints with. */
+    val ansi: HermesAnsiInk,
 ) {
     companion object {
         // Tailwind amber-500 / emerald-500, the two literals Desktop's status
@@ -156,6 +158,27 @@ data class HermesTokens(
             fun diffTint(seed: Color) = mixPremultiplied(seed, 12f, Color.Transparent)
             fun diffInk(seed: Color) =
                 if (dark) mixPremultiplied(seed, 62f, Color.White) else mixPremultiplied(seed, 70f, Color.Black)
+
+            // styles.css:196-202 and `:root.dark:528-530` @ the same SHA — the
+            // rest of Desktop's named colour set. Only red, green and cyan get
+            // a dark override; yellow, blue and purple are one value per app.
+            val uiYellow = Color(0xFFC08532)
+            val uiBlue = Color(0xFF0053FD)
+            val uiCyan = if (dark) Color(0xFF6F9BA6) else Color(0xFF4C7F8C)
+            val uiPurple = Color(0xFF9E94D5)
+
+            // An ANSI hue's *normal* rung is Desktop's diff-foreground rung for
+            // that seed: the same knob, doing the same job — take a saturated
+            // brand colour and make it legible ink on this mode's page.
+            //
+            // `bright` is the intensified rung, and intensity on a terminal
+            // means "stands out more against the page". So it is the same seed
+            // taken one further step in the same direction, with the same knob:
+            // darker still on a light page, lighter still on a dark one. The
+            // undiluted seed was the obvious alternative and is wrong — a light
+            // seed like `--ui-purple` on a light page is 2.65:1, which the
+            // legibility floor in `ThemeSemanticParityTest` rejects.
+            fun ansiBright(seed: Color) = diffInk(diffInk(seed))
 
             return HermesTokens(
                 textPrimary = base.withAlpha(0.94f),
@@ -222,10 +245,33 @@ data class HermesTokens(
                 // coding-row.tsx:319-324 @ the same pinned SHA.
                 gitUntracked = Amber500,
                 // styles.css:202 + pr-tag.tsx:10-14 @ the pinned SHA.
-                pullRequestMerged = Color(0xFF9E94D5),
+                pullRequestMerged = uiPurple,
                 // status-row.tsx:20-23 @ the pinned SHA — emerald-500/80.
                 taskCompleted = Emerald500.copy(alpha = 0.8f),
                 destructive = palette.destructive,
+                ansi = HermesAnsiInk(
+                    // Desktop paints ANSI black and white as greys, never as
+                    // `#000`/`#fff`, because the pure ends vanish into the tool
+                    // surface (`ansi.ts:145-147`). The text ladder already *is*
+                    // that grey ramp, so the four neutral rungs read it and are
+                    // the only ANSI inks that track the preset.
+                    black = base.withAlpha(0.54f),
+                    brightBlack = base.withAlpha(0.36f),
+                    white = base.withAlpha(0.74f),
+                    brightWhite = base.withAlpha(0.94f),
+                    red = diffInk(diffRemoved),
+                    brightRed = ansiBright(diffRemoved),
+                    green = diffInk(diffAdded),
+                    brightGreen = ansiBright(diffAdded),
+                    yellow = diffInk(uiYellow),
+                    brightYellow = ansiBright(uiYellow),
+                    blue = diffInk(uiBlue),
+                    brightBlue = ansiBright(uiBlue),
+                    magenta = diffInk(uiPurple),
+                    brightMagenta = ansiBright(uiPurple),
+                    cyan = diffInk(uiCyan),
+                    brightCyan = ansiBright(uiCyan),
+                ),
             )
         }
     }
@@ -277,3 +323,46 @@ private data class ModeKnobs(
         fun of(dark: Boolean): ModeKnobs = if (dark) Dark else Light
     }
 }
+
+/**
+ * The sixteen ANSI foregrounds, resolved for one mode.
+ *
+ * Desktop maps the ANSI palette to fixed Tailwind classes
+ * (`apps/desktop/src/lib/ansi.ts:144-164` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) — `red-700 dark:red-300` and so
+ * on, with a note that they are "tuned for legibility against the muted
+ * bg-(--ui-bg-tertiary) surface" and that pure `#000`/`#fff` are avoided
+ * because they disappear into it.
+ *
+ * Android cannot take that ladder literally. Those are thirty-two colours from
+ * a CSS framework's palette, tuned against Desktop's single surface; this app
+ * paints tool output on `widgetSurface`, which is derived per preset, and
+ * `AGENTS.md` is explicit that a component reads meaning rather than a colour.
+ * So the ladder is *derived* instead, and derived from Desktop's own named
+ * colour set — `--ui-red`, `--ui-yellow`, `--ui-green`, `--ui-cyan`,
+ * `--ui-blue`, `--ui-purple` (`styles.css:196-202`, `:root.dark:528-530`) —
+ * which happens to cover exactly the six hues ANSI names. The rule, and what it
+ * costs, is in `docs/parity/tool-output-fidelity.md`.
+ *
+ * Like the diff palette and inline code, the six hues are fixed per mode, so
+ * terminal output reads the same in every skin; only the four neutral rungs
+ * follow the preset's foreground.
+ */
+data class HermesAnsiInk(
+    val black: Color,
+    val red: Color,
+    val green: Color,
+    val yellow: Color,
+    val blue: Color,
+    val magenta: Color,
+    val cyan: Color,
+    val white: Color,
+    val brightBlack: Color,
+    val brightRed: Color,
+    val brightGreen: Color,
+    val brightYellow: Color,
+    val brightBlue: Color,
+    val brightMagenta: Color,
+    val brightCyan: Color,
+    val brightWhite: Color,
+)
