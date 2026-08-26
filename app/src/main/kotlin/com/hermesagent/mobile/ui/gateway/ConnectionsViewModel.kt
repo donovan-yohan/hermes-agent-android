@@ -10,6 +10,7 @@ import com.hermesagent.mobile.data.connections.ConnectionSwitchController
 import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.connections.findDuplicateConnection
 import com.hermesagent.mobile.data.connections.newConnectionId
+import com.hermesagent.mobile.data.connections.normalizeGatewayUrl
 import com.hermesagent.mobile.data.connections.sortConnectionsForDisplay
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
@@ -64,6 +65,19 @@ data class ConnectionsUiState(
     val switchable: Boolean get() = connections.size > 1
 
     val canRemove: Boolean get() = connections.size > 1
+
+    /**
+     * The label of another saved Remote row already pointing at [baseUrl], or
+     * null. Desktop's dedupe key exactly (`normalizeGatewayUrl`), asked from
+     * the route form above the list, which has no discrete save to refuse.
+     */
+    fun duplicateRemoteLabel(baseUrl: String): String? {
+        val key = normalizeGatewayUrl(baseUrl)
+        if (key.isEmpty()) return null
+        return connections
+            .firstOrNull { it.id != activeId && it.kind == ConnectionKind.Remote && normalizeGatewayUrl(it.remote.baseUrl) == key }
+            ?.label
+    }
 }
 
 internal class ConnectionsViewModel(
@@ -172,6 +186,14 @@ internal class ConnectionsViewModel(
             remote = RemoteGatewayProfile(baseUrl = editor.url.trim(), provider = editor.provider.trim()),
             host = host,
         )
+        // A Remote row whose URL cannot be addressed is refused rather than
+        // saved: an unaddressable row is one whose sign-in nothing can reach,
+        // and it is exactly how a credential ends up orphaned on disk. The same
+        // check rejects a URL carrying userinfo, which normalization refuses.
+        if (candidate.kind == ConnectionKind.Remote && !candidate.remote.isValid) {
+            _uiState.update { it.copy(editor = editor.copy(error = ConnectionsCopy.INVALID_URL)) }
+            return
+        }
         findDuplicateConnection(candidate, _uiState.value.connections)?.let { clash ->
             val message = when (editor.kind) {
                 ConnectionKind.Remote -> ConnectionsCopy.duplicateUrl(clash.label)
@@ -181,14 +203,34 @@ internal class ConnectionsViewModel(
             return
         }
         val readdressed = candidate.id == _uiState.value.activeId &&
-            (existing == null || existing.kind != candidate.kind || existing.remote != candidate.remote || existing.host != candidate.host)
+            (
+                existing == null ||
+                    existing.kind != candidate.kind ||
+                    existing.remote != candidate.remote ||
+                    existing.host != candidate.host
+                )
+        // A stored sign-in belongs to the host that minted it. When a row stops
+        // pointing at that host — a new URL, or a change of kind — its
+        // credential is erased here rather than left for the load path to
+        // refuse later. The refusal is still the guarantee; this is the tidy-up.
+        val abandonedCredential = existing
+            ?.takeIf { it.kind == ConnectionKind.Remote }
+            ?.takeIf {
+                candidate.kind != ConnectionKind.Remote ||
+                    it.remote.normalizedBaseUrl != candidate.remote.normalizedBaseUrl
+            }
         _uiState.update { it.copy(editor = null) }
         viewModelScope.launch {
+            abandonedCredential?.let { gateway.forgetRemoteAuthentication(it.remoteProfile) }
             // Renaming the connection you are on changes nothing about where it
-            // points. Re-addressing it points somewhere else, and the sessions
-            // on screen belong to where it pointed before.
-            if (readdressed) switch.leaveCurrentEndpoint()
-            store.saveConnection(candidate)
+            // points. Re-addressing it points somewhere else, so it leaves the
+            // old address and comes up on the new one under a pending state,
+            // rather than being left disconnected with no way back.
+            if (readdressed) {
+                switch.readdressActive { store.saveConnection(candidate) }
+            } else {
+                store.saveConnection(candidate)
+            }
         }
     }
 

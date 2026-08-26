@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.prefs
 
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -40,7 +41,8 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class HermesPreferencesTest {
 
-    private val preferences = HermesPreferences(ApplicationProvider.getApplicationContext())
+    private val context: android.content.Context = ApplicationProvider.getApplicationContext()
+    private val preferences = HermesPreferences(context)
 
     @Test
     fun `the saved profile round-trips every field the screen says is saved`() = runBlocking {
@@ -161,6 +163,38 @@ class HermesPreferencesTest {
         assertEquals(ConnectionKind.Remote, row.kind)
         assertEquals(row.id, migrated[ACTIVE_CONNECTION_ID])
         assertEquals("", row.remote.baseUrl)
+    }
+
+    @Test
+    fun `a registry document this build cannot read is never written over`() = runBlocking {
+        val newer = """{"version":"2","connections":[{"id":"kept","label":"Written by a newer build"}]}"""
+        assertFalse("this build cannot read it", ConnectionRegistryCodec.isWritable(newer))
+        assertTrue("an absent document is a fresh install", ConnectionRegistryCodec.isWritable(null))
+        assertTrue(ConnectionRegistryCodec.isWritable("""{"version":"1","connections":[]}"""))
+        assertFalse("and neither is a document that does not parse", ConnectionRegistryCodec.isWritable("{"))
+    }
+
+    @Test
+    fun `an unreadable registry refuses every write rather than reseeding over it`() = runBlocking {
+        val newer = """{"version":"2","connections":[{"id":"kept","label":"Written by a newer build"}]}"""
+        context.hermesDataStore.edit { prefs -> prefs[CONNECTIONS] = newer }
+        try {
+            // Reading it honestly shows nothing: this build does not understand
+            // the document. Writing would make a downgrade permanent.
+            assertTrue(preferences.connectionRegistry.first().connections.isEmpty())
+
+            preferences.saveConnection(SavedConnection("new-row", "Alpha", ConnectionKind.Remote))
+            preferences.saveHostProfile(HostProfile("test-host", 22, "test-user"))
+            preferences.setActiveConnection("new-row")
+
+            assertEquals(
+                "the newer build's document is exactly as it left it",
+                newer,
+                context.hermesDataStore.data.first()[CONNECTIONS],
+            )
+        } finally {
+            context.hermesDataStore.edit { prefs -> prefs.remove(CONNECTIONS) }
+        }
     }
 
     @Test

@@ -34,10 +34,11 @@ that SHA.
 |---|---|---|
 | Saved connections and which is active | `HermesPreferences` (`connections.v1.saved`, `connections.v1.activeId`) | Client-local authority. No Gateway contract exists for it; it is never sent anywhere. |
 | The active row's endpoint fields | The same rows | `hostProfile`, `remoteGatewayProfile` and `gatewayConnectionMode` are **projections** of the active row, so there is one copy and nothing can drift. |
-| A Remote row's sign-in | `AndroidGatewayTokenStore`, one Keystore-encrypted file per row id, under `noBackupFilesDir` | Never in preferences, never in a row, never in a log. Removing a row erases exactly its file. |
+| A Remote row's sign-in | `AndroidGatewayTokenStore`, one Keystore-encrypted file per row id, under `noBackupFilesDir` | Never in preferences, never in a row, never in a log. The blob also names the Gateway that minted it, and is refused and erased if the row now points elsewhere. Erasure is addressable by row id alone, so a row whose URL was blanked or mistyped can still be cleaned up. |
 | An SSH row's password/passphrase/key | Nowhere | Unchanged: in-memory for one attempt, zeroed after. There is no per-row SSH secret because there is no SSH secret on disk at all. |
-| Sessions and transcripts | `SessionCache` | Merge, never clobber — except a connection switch, which clears wholesale because the next backend is a different machine. |
-| Which session is open, search text, project drill-in | `ChatViewModel` | UI-only. Dropped when the endpoint identity changes. |
+| Sessions and transcripts | `SessionCache` | Merge, never clobber — except a connection switch, which clears wholesale because the next backend is a different machine. `resetForEndpointSwitch()` is `internal` and only `ConnectionSwitchController` calls it. |
+| Which session is open, search text, project drill-in | `ChatViewModel` | UI-only. Dropped whenever the composer scope changes — address *or* profile, since two SSH remote profiles on one host are two Hermes homes with two session histories. |
+| Private draft text | `SessionDraftStore` | Keyed by durable session id only, and two gateways can recycle one. Leaving an endpoint clears every draft rather than letting one machine's text prefill another's composer. |
 | Editor form state, search text, sheet open | `ConnectionsViewModel` / `rememberSaveable` | UI-only. Never persisted. |
 
 ## Mobile adaptation ledger
@@ -57,6 +58,15 @@ that SHA.
 | Kind is fixed once created (`connections-registry.tsx:649-654`) | Same in the list editor. The route control at the top of Gateways still changes the **active** row's kind | That control predates this slice and is the active connection's own form; both endpoint slots persist per row, so nothing is lost by flipping it. |
 | Registry may be empty (`empty: 'No connections registered yet.'`) | Always at least one row; removing the last is refused | Android has exactly one active connection and no "disconnected from everything" state to fall back to. The empty state is still implemented and reachable in tests. |
 
+### Minor drift, recorded rather than argued
+
+| Desktop | Android | Note |
+|---|---|---|
+| Unread markers survive a source switch — the transient paint layer is wiped but `session-unread.ts` keeps durable per-session watermarks that repaint (`gateway-switch.ts:70-76`) | Unread is a field on the cached row, and the cache is cleared, so unread state goes with it | Android has no durable unread store to survive the wipe. A session that was unread on gateway A is not marked unread when you come back. |
+| No-results text carries `role="status"` (`connection-switcher.tsx:216-221`) | Plain `Text` | Not yet given a live-region role; the sheet's list is the thing being searched and the count change is visible. |
+| A separator sits between the search field and the radio group (`connection-switcher.tsx:202`) | No separator | The sheet's padding already separates them; the hairline sits below the list instead, before `Manage gateways…`. |
+| The searchable list is capped at `h-48` and scrolls (`connection-switcher.tsx:208`) | Capped at 320dp | Same intent, phone-scaled; the cap is a `LazyColumn` `heightIn(max = …)` rather than a fixed height. |
+
 ## Deviations that are not Desktop's to have
 
 - **Per-connection Keystore slot.** Desktop keeps secrets in the OS keyring
@@ -72,6 +82,13 @@ that SHA.
   among per-row fields; it is not one. It namespaces this app's remote processes
   on a host and one install has exactly one, so moving it per row would change
   what the SSH ownership lock means.
+- **A downgrade is refused, not overwritten.** The stored registry document is
+  versioned. A build that cannot read it shows an empty registry *and refuses
+  every write*, because answering "no connections" is that build's ignorance
+  rather than the truth, and reseeding over it would make the downgrade
+  permanent. The consequence, stated plainly: after installing an older build,
+  saved connections are invisible and unmodifiable until a build that
+  understands the document runs again.
 - **Managed SSH is not dialled by a switch.** Its credential is built in the UI
   and dies with the connection, so there is nothing to restore without asking.
   Selecting an SSH row lands disconnected on that row, and Gateways is where the
@@ -90,12 +107,29 @@ that SHA.
   with every field intact and the legacy keys removed; the single-connection
   readers are projections of the active row; an edit writes the active row
   rather than a second copy.
-- `GatewayTokenSlotTest` — two rows never share a slot, removing one erases only
-  its own credential (and zeroes the bytes before unlinking, proven through a
-  hard link), and the pre-registry file is adopted exactly once.
+- `GatewayTokenSlotTest` — two rows never share a slot; removing one erases only
+  its own credential and zeroes the bytes before unlinking (proven through a
+  hard link to the same inode); a row whose URL was blanked is still erasable by
+  its id alone; the pre-registry file is adopted exactly once *and rebound* to
+  the host it came from; a credential whose row now points at another gateway is
+  refused and erased; a row-named blob naming no host is refused rather than
+  trusted; the row's file name is pinned to
+  `SHA-256("connection" + U+0000 + id)`; and end to end, a re-addressed row
+  presents no bearer minted for the gateway it left — `ticket()` asks for a
+  sign-in instead.
 - `ChatEndpointSwitchTest` — a changed endpoint drops the open session, the
   search and the project drill-in, then lands on the new endpoint's most
-  recently active session; a profile change on the same endpoint does not.
+  recently active session; two SSH remote profiles on one host are treated as
+  two session histories; and the first bind tears nothing down at startup.
+- `ConnectionsViewModelTest` — delete erases the credential and then removes the
+  row (including a row whose URL is blank), the last row cannot be removed, an
+  unaddressable Remote URL is refused with product copy, a duplicate URL is
+  refused inline, re-addressing the active row tears the old endpoint down and
+  erases the credential it abandoned, and renaming it tears nothing down.
+- `SecretRedactionTest` — URL userinfo never reaches a screen or a screen
+  reader, and an ordinary URL is left alone.
+- `HermesPreferencesTest` — a registry document this build cannot read is never
+  written over.
 - `ConnectionsJourneyTest`, `ConnectionSwitcherJourneyTest` — the rendered
   list with its `Current` marker and redacted summary, the empty state, the
   add/edit flows (including the kind picker disappearing on edit), the

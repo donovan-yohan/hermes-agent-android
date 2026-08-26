@@ -101,21 +101,46 @@ class ChatEndpointSwitchTest {
     }
 
     @Test
-    fun `a profile change on the same endpoint keeps the session on screen`() = runTest(dispatcher) {
+    fun `two SSH profiles on one host are two session histories, and switching resets`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        // Same box, same port, same user — a different remote Hermes profile.
+        // That is a different `~/.hermes` home with its own sessions, so
+        // comparing only the address would leave one install's conversations
+        // painted under the other's.
+        val store = MutableScopeStore(ComposerControlsScope("ssh:demo-user@demo-host:22", "default"))
+        val subject = ChatViewModel(cache, FixtureRepository(), composerControlsStore = store)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+        cache.upsertSession(session("default-profile-session", lastActiveAtMillis = 10L))
+        advanceUntilIdle()
+        assertEquals("default-profile-session", subject.uiState.value.activeSession?.id)
+
+        store.scope.value = ComposerControlsScope("ssh:demo-user@demo-host:22", "review")
+        advanceUntilIdle()
+
+        assertNull(
+            "the other profile's session is not this profile's",
+            subject.uiState.value.activeSession,
+        )
+
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(session("review-profile-session", lastActiveAtMillis = 20L))
+        advanceUntilIdle()
+
+        assertEquals("review-profile-session", subject.uiState.value.activeSession?.id)
+    }
+
+    @Test
+    fun `the first bind is not a change, so nothing is torn down at startup`() = runTest(dispatcher) {
         val cache = SessionCache()
         val store = MutableScopeStore(ComposerControlsScope("remote:https://alpha.test", "default"))
         val subject = ChatViewModel(cache, FixtureRepository(), composerControlsStore = store)
         backgroundScope.launch { subject.uiState.collect { } }
-        advanceUntilIdle()
         cache.upsertSession(session("alpha-session", lastActiveAtMillis = 10L))
-        advanceUntilIdle()
-        assertEquals("alpha-session", subject.uiState.value.activeSession?.id)
-
-        store.scope.value = ComposerControlsScope("remote:https://alpha.test", "review")
         advanceUntilIdle()
 
         assertEquals(
-            "the same machine's session is still the one you were reading",
+            "there was no endpoint to leave",
             "alpha-session",
             subject.uiState.value.activeSession?.id,
         )

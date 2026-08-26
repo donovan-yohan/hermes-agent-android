@@ -55,9 +55,23 @@ data class RemoteGatewayProfile(
 
     val isValid: Boolean get() = normalizedBaseUrl != null
 
-    /** The one secret slot this profile is allowed to read or write; null when the URL is unusable. */
+    /** The one secret slot this profile may read or write; null when the URL is unusable. */
     internal val secretSlot: GatewaySecretSlot?
         get() = normalizedBaseUrl?.let { GatewaySecretSlot(secretSlotId, it) }
+
+    /**
+     * The slot to erase, which must be reachable even when [secretSlot] is not.
+     *
+     * A Remote row whose URL was blanked or mistyped still owns a file, and
+     * "we cannot parse where this credential was for" is the worst possible
+     * reason to leave a credential on disk. Null only when there is nothing
+     * addressable at all — no row and no usable URL.
+     */
+    internal val eraseSlot: GatewaySecretSlot?
+        get() = when {
+            secretSlotId.isNotBlank() -> GatewaySecretSlot(secretSlotId, normalizedBaseUrl)
+            else -> normalizedBaseUrl?.let { GatewaySecretSlot("", it) }
+        }
 }
 
 /** Persisted remote route settings. Tokens deliberately live behind [GatewayTokenStore]. */
@@ -108,10 +122,23 @@ internal data class GatewayNativeTokens(
  */
 internal data class GatewaySecretSlot(
     val connectionId: String,
-    val normalizedBaseUrl: String,
+    /**
+     * The Gateway this slot's credential is for. Null when the slot is only
+     * being *addressed* — erasing a row whose URL was blanked or mistyped still
+     * has to reach that row's file, and a row id is enough to name it. Reading
+     * or writing a credential always requires it.
+     */
+    val normalizedBaseUrl: String?,
 ) {
     init {
-        require(normalizedBaseUrl.isNotBlank()) { "A secret slot needs a normalized Gateway URL." }
+        require(connectionId.isNotBlank() || !normalizedBaseUrl.isNullOrBlank()) {
+            "A secret slot needs a connection id, a Gateway URL, or both."
+        }
+    }
+
+    companion object {
+        /** Address a row's slot by id alone, for erasure. */
+        fun forRow(connectionId: String): GatewaySecretSlot = GatewaySecretSlot(connectionId, null)
     }
 }
 
@@ -175,9 +202,12 @@ internal class NativeGatewayAuthenticator(
         profile.secretSlot?.let { store.load(it) }
 
     suspend fun ticket(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): String {
-        val slot = profile.secretSlot
+        val baseUrl = profile.normalizedBaseUrl
             ?: throw GatewayAuthException("Enter a valid HTTPS Gateway URL.")
-        val baseUrl = slot.normalizedBaseUrl
+        // A readable/writable slot always has this URL; `secretSlot` is null
+        // only when `normalizedBaseUrl` is, which the line above already threw
+        // on.
+        val slot = requireNotNull(profile.secretSlot)
         val status = api.status(baseUrl)
         if (!status.authRequired) {
             throw GatewayAuthException(
@@ -213,7 +243,7 @@ internal class NativeGatewayAuthenticator(
      * and so does whatever the person signs in as next.
      */
     suspend fun signOut(profile: RemoteGatewayProfile) {
-        profile.secretSlot?.let { store.clear(it) }
+        profile.eraseSlot?.let { store.clear(it) }
     }
 
     /**
@@ -271,7 +301,8 @@ internal class NativeGatewayAuthenticator(
         val current = store.load(slot) ?: return@withLock null
         if (current.refreshToken != observed.refreshToken) return@withLock current
         val refreshToken = current.refreshToken.takeIf(String::isNotBlank) ?: return@withLock null
-        val refreshed = api.refresh(slot.normalizedBaseUrl, refreshToken, current.provider)
+        // A slot that reached a rotation was built from a usable URL.
+        val refreshed = api.refresh(requireNotNull(slot.normalizedBaseUrl), refreshToken, current.provider)
             ?: return@withLock null
         // Same question again, because the answer can have changed while the
         // refresh was on the wire — and it is the same question: not "is

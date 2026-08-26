@@ -136,7 +136,7 @@ class SessionCache {
      * conversation under another's row is worse than an empty list — so a
      * switch clears rather than merges, and only a switch may call this.
      */
-    fun resetForEndpointSwitch() {
+    internal fun resetForEndpointSwitch() {
         _state.update { current -> if (current == SessionCacheState()) current else SessionCacheState() }
     }
 

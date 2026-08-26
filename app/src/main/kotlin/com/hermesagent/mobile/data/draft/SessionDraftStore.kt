@@ -43,6 +43,17 @@ interface SessionDraftStore {
         toDurableId: String,
         sourceText: String? = null,
     ): String?
+
+    /**
+     * Drop every draft, because the endpoint they were typed against is gone.
+     *
+     * A draft is keyed by durable session id and nothing else, and two gateways
+     * can hand out the same one — so text typed against gateway A's `s-123`
+     * would otherwise prefill gateway B's `s-123`. Only a connection switch
+     * calls this; leaving text in one composer that was written in another is
+     * worse than losing it.
+     */
+    suspend fun clear()
 }
 
 /**
@@ -74,6 +85,21 @@ class AndroidSessionDraftStore(context: Context) : SessionDraftStore {
             // The corruption handler repairs reads; a racing failed mutation remains non-fatal.
         } catch (_: IOException) {
             // Draft persistence is best-effort; the ViewModel retains the in-memory source.
+        }
+    }
+
+    override suspend fun clear() {
+        try {
+            mutationMutex.withLock {
+                dataStore.edit { prefs -> prefs.remove(DRAFTS_KEY) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: CorruptionException) {
+            // Reads are repaired by the corruption handler; a racing failed
+            // mutation is non-fatal, and the next read is empty either way.
+        } catch (_: IOException) {
+            // Best effort, like every other mutation here.
         }
     }
 
@@ -119,6 +145,10 @@ internal class TransientSessionDraftStore : SessionDraftStore {
                 trimToStorageLimitAndEncode()
             }
         }
+    }
+
+    override suspend fun clear() {
+        mutationMutex.withLock { state.value = linkedMapOf() }
     }
 
     override suspend fun migrateIfDestinationEmpty(

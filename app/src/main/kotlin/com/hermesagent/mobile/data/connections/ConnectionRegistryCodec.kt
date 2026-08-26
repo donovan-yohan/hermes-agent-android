@@ -64,6 +64,22 @@ internal object ConnectionRegistryCodec {
         return rows.mapNotNull { element -> (element as? JsonObject)?.let(::decodeRow) }
     }
 
+    /**
+     * Whether this build may write over what is already stored.
+     *
+     * An absent document is writable — that is a fresh install. A document this
+     * build cannot read is **not**: it belongs to a newer build, and
+     * [decode] answering "no rows" is this build's ignorance, not the truth.
+     * Writing a fresh document over it would turn a downgrade into permanent
+     * data loss, so every write is refused instead and the surface shows an
+     * empty registry until a build that understands the document runs again.
+     */
+    fun isWritable(raw: String?): Boolean {
+        if (raw.isNullOrBlank()) return true
+        val root = runCatching { json.parseToJsonElement(raw) as JsonObject }.getOrNull() ?: return false
+        return root.text("version") == VERSION
+    }
+
     private fun decodeRow(row: JsonObject): SavedConnection? {
         val id = row.text("id")?.takeIf(String::isNotBlank) ?: return null
         val label = row.text("label")?.takeIf(String::isNotBlank) ?: return null

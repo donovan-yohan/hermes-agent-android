@@ -117,6 +117,15 @@ internal fun ConnectionsSection(
             }
         }
 
+        if (state.loaded && !state.canRemove && ordered.isNotEmpty()) {
+            // A control that cannot be used says why, beside itself.
+            Text(
+                ConnectionsCopy.LAST_CONNECTION_HINT,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+            )
+        }
+
         val editor = state.editor
         if (editor == null) {
             // Desktop's outline button carries a Plus glyph before its label
@@ -197,7 +206,12 @@ private fun ConnectionRow(
                 )
                 HermesIconButton(
                     icon = HermesIcon.Trash,
-                    contentDescription = "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}",
+                    contentDescription = if (canRemove) {
+                        "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}"
+                    } else {
+                        "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}. " +
+                            ConnectionsCopy.LAST_CONNECTION_HINT
+                    },
                     onClick = onRemove,
                     enabled = canRemove,
                 )

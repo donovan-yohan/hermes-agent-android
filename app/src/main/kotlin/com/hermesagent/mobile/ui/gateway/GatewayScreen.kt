@@ -74,7 +74,17 @@ fun GatewayScreen(
                 ConnectionsSection(connectionsState, connectionsActions)
             }
             when (state.mode) {
-                GatewayConnectionMode.Remote -> RemoteGatewayScreen(state, gatewayActions, registry)
+                GatewayConnectionMode.Remote -> RemoteGatewayScreen(
+                    state = state,
+                    actions = gatewayActions,
+                    // The registry's own save path rejects a duplicate outright
+                    // (`connections-registry.tsx:120-168` @ `f82f2dba`). This
+                    // form autosaves while someone is still typing, so the same
+                    // rule surfaces as a warning beside the field instead.
+                    duplicateOf = connectionsState.duplicateRemoteLabel(state.remote.baseUrl),
+                    footer = registry,
+                )
+
                 GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions, footer = registry)
             }
         }
@@ -85,6 +95,7 @@ fun GatewayScreen(
 private fun RemoteGatewayScreen(
     state: GatewaySettingsUiState,
     actions: GatewayActions,
+    duplicateOf: String?,
     footer: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -114,6 +125,13 @@ private fun RemoteGatewayScreen(
         )
         state.remoteUrlError?.let { error ->
             Text(error, style = HermesTheme.type.caption, color = tokens.destructive)
+        }
+        duplicateOf?.let { label ->
+            Text(
+                ConnectionsCopy.duplicateUrl(label),
+                style = HermesTheme.type.caption,
+                color = tokens.destructive,
+            )
         }
         LabelledField(
             label = "Sign-in provider (optional)",

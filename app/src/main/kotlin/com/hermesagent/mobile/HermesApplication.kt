@@ -33,7 +33,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -86,6 +88,7 @@ class HermesApplication : Application() {
             store = preferences,
             gateway = gatewayConnection,
             cache = cache,
+            drafts = draftStore,
         )
     }
 
@@ -174,7 +177,12 @@ class HermesApplication : Application() {
             },
         )
         appScope.launch {
-            followActiveConnection(preferences, preferences, gatewayConnection)
+            followActiveConnection(
+                connections = preferences,
+                profiles = preferences,
+                connection = gatewayConnection,
+                routeGeneration = connectionSwitch.routeGeneration,
+            )
         }
     }
 }
@@ -185,15 +193,20 @@ class HermesApplication : Application() {
  *
  * Switching connections is the only event that re-dials on its own; editing a
  * URL is not, because the person doing the editing has not finished typing.
- * That is why this keys on the active row's id rather than on the route values.
+ * That is why this keys on the active row's id, plus the explicit re-arm the
+ * switch controller raises once a re-address is persisted — never on the route
+ * values themselves, which change on every keystroke.
  */
 internal suspend fun followActiveConnection(
     connections: ConnectionRegistryStore,
     profiles: RemoteGatewayProfileStore,
     connection: GatewayConnectionController,
+    routeGeneration: Flow<Long> = flowOf(0L),
 ) {
-    connections.connectionRegistry
-        .map { it.active?.id }
+    combine(
+        connections.connectionRegistry.map { it.active?.id },
+        routeGeneration,
+    ) { activeId, generation -> activeId to generation }
         .distinctUntilChanged()
         .collectLatest { restoreSavedRemoteGateway(profiles, connection) }
 }

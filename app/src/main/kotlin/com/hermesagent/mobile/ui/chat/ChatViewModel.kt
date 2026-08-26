@@ -512,13 +512,17 @@ internal class ChatViewModel(
 
     private fun bindComposerScope(scope: ComposerControlsScope) {
         if (composerScope == scope) return
-        val endpointChanged = composerScope?.connectionIdentity?.let { it != scope.connectionIdentity } == true
+        // Any change to this scope is a change of session set, not just a change
+        // of address. The scope's second half is the SSH *remote Hermes
+        // profile*, and two profiles on one host are two different Hermes homes
+        // with two different session histories — comparing only the address
+        // would leave one install's sessions painted under the other's. A
+        // provider change on a Remote row costs a reload it did not strictly
+        // need; showing another install's conversations costs more.
+        //
+        // The first bind is not a change: there was no endpoint to leave.
+        val endpointChanged = composerScope != null
         composerScope = scope
-        // A different endpoint is a different machine. What was on screen
-        // belonged to the one we left, and two gateways can hand out the same
-        // durable id, so the selection is dropped rather than re-pointed and
-        // this surface lands on the new endpoint's own most recent session as
-        // soon as its list arrives.
         if (endpointChanged) leaveEndpoint()
         queueScopeReady.value = false
         queueEdit.value = null

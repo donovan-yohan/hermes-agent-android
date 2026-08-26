@@ -28,7 +28,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -175,7 +178,6 @@ private fun ConnectionSwitcherSheet(
                         ConnectionRadioRow(
                             connection = connection,
                             selected = connection.id == state.activeId,
-                            pending = connection.id == state.pendingId,
                             onSelect = { onSelect(connection.id) },
                         )
                     }
@@ -206,12 +208,16 @@ private fun ConnectionSwitcherSheet(
 /**
  * One `DropdownMenuRadioItem`: the kind glyph, the label, the non-secret
  * endpoint beneath it, and a check on the connection this device is on.
+ *
+ * Desktop reports the pending switch on the trigger and nowhere else
+ * (`connection-switcher.tsx:133,272`), and picking a row closes this sheet, so
+ * no row is ever on screen while its switch is in flight. There is deliberately
+ * no per-row pending affordance to go stale.
  */
 @Composable
 private fun ConnectionRadioRow(
     connection: SavedConnection,
     selected: Boolean,
-    pending: Boolean,
     onSelect: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -224,11 +230,14 @@ private fun ConnectionRadioRow(
                 RoundedCornerShape(6.dp),
             )
             .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
-            .semantics {
+            // One spoken label for the whole row. Without this the glyph, the
+            // label and the endpoint line are announced again after it.
+            .clearAndSetSemantics {
+                this.selected = selected
+                role = Role.RadioButton
                 contentDescription = buildString {
                     append(connection.label)
                     connection.endpoint?.let { append(". ${redact(it)}") }
-                    if (pending) append(". $CONNECTING")
                 }
             }
             .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -254,9 +263,7 @@ private fun ConnectionRadioRow(
                 )
             }
         }
-        if (pending) {
-            Text(CONNECTING, style = HermesTheme.type.scaffold, color = tokens.textTertiary)
-        } else if (selected) {
+        if (selected) {
             HermesIconGlyph(HermesIcon.Check, color = tokens.accent)
         }
     }

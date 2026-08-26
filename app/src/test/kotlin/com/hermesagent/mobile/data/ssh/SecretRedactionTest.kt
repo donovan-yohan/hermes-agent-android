@@ -112,4 +112,21 @@ class SecretRedactionTest {
     private companion object {
         const val NUL = '\u0000'
     }
+
+    @Test
+    fun `URL userinfo never reaches a screen or a screen reader`() {
+        val redacted = redact("Could not reach https://demo-user:hunter2@gateway.test/hermes")
+
+        assertFalse("a password in a URL is still a password", redacted.contains("hunter2"))
+        assertFalse(redacted.contains("demo-user"))
+        assertTrue("the host is what the sentence is about", redacted.contains("gateway.test/hermes"))
+        assertTrue(redacted.contains("<redacted>"))
+    }
+
+    @Test
+    fun `an ordinary URL is left alone`() {
+        val untouched = "Connect to https://gateway.test/hermes to continue."
+
+        assertEquals(untouched, redact(untouched))
+    }
 }

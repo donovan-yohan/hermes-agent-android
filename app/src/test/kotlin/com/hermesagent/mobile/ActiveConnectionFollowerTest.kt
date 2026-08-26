@@ -69,6 +69,35 @@ class ActiveConnectionFollowerTest {
     }
 
     @Test
+    fun `an explicit re-arm re-dials a row whose id did not move`() = runTest {
+        val store = MemoryStore(ROWS, activeId = "one")
+        val connection = RecordingConnection()
+        val rearm = MutableStateFlow(0L)
+
+        val follower = backgroundScope.launch { followActiveConnection(store, store, connection, rearm) }
+        runCurrent()
+        assertEquals(1, connection.restored.size)
+
+        // Re-addressing the active row: the id is unchanged, so only the
+        // explicit signal can tell the follower there is somewhere new to dial.
+        store.registry.value = ConnectionRegistry(
+            listOf(ROWS.first().copy(remote = RemoteGatewayProfile("https://renamed.test")), ROWS[1]),
+            activeId = "one",
+        )
+        runCurrent()
+        assertEquals("a persisted edit alone must not re-dial", 1, connection.restored.size)
+
+        rearm.value += 1
+        runCurrent()
+
+        assertEquals(
+            listOf("https://alpha.test", "https://renamed.test"),
+            connection.restored.map(RemoteGatewayProfile::baseUrl),
+        )
+        follower.cancel()
+    }
+
+    @Test
     fun `a managed SSH row is not dialled, because its credential dies with the connection`() = runTest {
         val rows = listOf(
             ROWS.first(),

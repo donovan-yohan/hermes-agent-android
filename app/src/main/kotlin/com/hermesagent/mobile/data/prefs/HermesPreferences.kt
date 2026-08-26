@@ -36,7 +36,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.security.SecureRandom
 
-private val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(
+internal val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "hermes",
     produceMigrations = { listOf(DropImportedKeyName, AdoptConnectionRegistry) },
 )
@@ -379,11 +379,21 @@ class HermesPreferences(private val context: Context) :
         activeId = prefs[ACTIVE_CONNECTION_ID],
     )
 
-    /** One atomic decode → mutate → encode, so the rows and the active marker never disagree. */
+    /**
+     * One atomic decode → mutate → encode, so the rows and the active marker
+     * never disagree.
+     *
+     * A stored document this build cannot read is left exactly as it is. It
+     * belongs to a newer build; reading it as "no connections" is this build's
+     * ignorance, and writing a fresh document over it would make a downgrade
+     * permanent. Refusing the write is the only answer that keeps the newer
+     * build's data recoverable.
+     */
     private suspend fun editRegistry(
         transform: (rows: List<SavedConnection>, activeId: String?) -> Pair<List<SavedConnection>, String?>,
     ) {
         context.hermesDataStore.edit { prefs ->
+            if (!ConnectionRegistryCodec.isWritable(prefs[CONNECTIONS])) return@edit
             val registry = registryOf(prefs)
             val (rows, activeId) = transform(registry.connections, registry.activeId)
             prefs[CONNECTIONS] = ConnectionRegistryCodec.encode(rows)

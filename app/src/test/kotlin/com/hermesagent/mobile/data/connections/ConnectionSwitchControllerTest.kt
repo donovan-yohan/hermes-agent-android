@@ -6,6 +6,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
+import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -153,6 +154,82 @@ class ConnectionSwitchControllerTest {
         assertTrue("the address you left owns those sessions", cache.state.value.sessions.isEmpty())
         assertEquals("and you are still on the same row", "one", store.connectionRegistry.first().activeId)
         assertFalse(store.setActiveObserved)
+    }
+
+
+    @Test
+    fun `leaving an endpoint drops the drafts that were typed against it`() = runTest {
+        val gateway = RecordingGateway()
+        val drafts = TransientSessionDraftStore()
+        drafts.replace("session-1", "half a sentence")
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        gateway.settleOnConnect()
+
+        ConnectionSwitchController(store, gateway, SessionCache(), drafts).select("two")
+        advanceUntilIdle()
+
+        assertTrue(
+            "a draft keyed by a durable id another gateway can recycle must not follow you",
+            drafts.drafts.first().isEmpty(),
+        )
+    }
+
+    @Test
+    fun `a teardown that arrives mid-switch waits, instead of killing what the switch just opened`() = runTest {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, SessionCache())
+
+        val switch = launch { controller.select("two") }
+        runCurrent()
+        assertEquals("the switch is mid-flight, waiting to settle", listOf("disconnect"), gateway.calls)
+
+        // A removal racing the switch. It must not disconnect anything yet.
+        val teardown = launch { controller.leaveCurrentEndpoint() }
+        runCurrent()
+        assertEquals("still exactly the switch's own teardown", listOf("disconnect"), gateway.calls)
+
+        gateway.publish(GatewayConnectionStatus.Connected)
+        switch.join()
+        teardown.join()
+
+        assertEquals(listOf("disconnect", "disconnect"), gateway.calls)
+    }
+
+    @Test
+    fun `re-addressing the active row leaves it, saves, and re-arms the route follower`() = runTest {
+        val gateway = RecordingGateway()
+        val cache = SessionCache().withFixtureSession()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, cache)
+        val generationBefore = controller.routeGeneration.value
+        var savedWhilePending: String? = null
+
+        val readdress = launch {
+            controller.readdressActive {
+                savedWhilePending = controller.pendingConnectionId.value
+                store.saveConnection(
+                    TWO_ROWS.first().copy(remote = RemoteGatewayProfile("https://renamed.test")),
+                )
+            }
+        }
+        runCurrent()
+        gateway.publish(GatewayConnectionStatus.Connected)
+        readdress.join()
+
+        assertEquals("the row being re-addressed is the pending one", "one", savedWhilePending)
+        assertEquals("it left the old address first", listOf("disconnect"), gateway.calls)
+        assertTrue("and the old address's sessions went with it", cache.state.value.sessions.isEmpty())
+        assertEquals(
+            "https://renamed.test",
+            store.connectionRegistry.first().connections.first { it.id == "one" }.remote.baseUrl,
+        )
+        assertTrue(
+            "the follower is told to re-dial a row whose id did not move",
+            controller.routeGeneration.value > generationBefore,
+        )
+        assertNull(controller.pendingConnectionId.value)
+        assertEquals("and it is still the row you were on", "one", store.connectionRegistry.first().activeId)
     }
 
     @Test

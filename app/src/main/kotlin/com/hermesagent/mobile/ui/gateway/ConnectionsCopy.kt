@@ -62,6 +62,14 @@ internal object ConnectionsCopy {
     /** `en.ts:745`. */
     const val SSH_HOST_TITLE = "SSH host"
 
+    /**
+     * Desktop has no equivalent: its main process accepts any string and fails
+     * later. This app refuses a URL it cannot address, because an unreachable
+     * row is one whose sign-in nothing can erase. Same sentence the route form
+     * above the list already uses.
+     */
+    const val INVALID_URL = "Enter an HTTPS Gateway URL."
+
     /** `en.ts:760`. */
     const val SAVE = "Save connection"
 
@@ -70,6 +78,12 @@ internal object ConnectionsCopy {
 
     /** `en.ts:763`. */
     const val EMPTY = "No connections registered yet."
+
+    /**
+     * Desktop can hold an empty registry and offers no such rule. This app is
+     * always configured for exactly one connection, so the last row cannot go.
+     */
+    const val LAST_CONNECTION_HINT = "Add another gateway before removing this one."
 
     /** `en.ts:1772`. */
     const val MANAGE_GATEWAYS = "Manage gateways…"
