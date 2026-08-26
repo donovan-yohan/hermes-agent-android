@@ -249,7 +249,7 @@ private fun SessionsPane(
         onCreate = onCreateSession,
         modifier = modifier,
         profileRail = state.profileRail,
-        projectsInProfileScope = state.projectsInProfileScope,
+        projectScope = state.projectScope,
         profileRailActions = remember(actions, onManageProfiles) {
             ProfileRailActions(
                 onSelectProfile = actions.onSelectProfile,

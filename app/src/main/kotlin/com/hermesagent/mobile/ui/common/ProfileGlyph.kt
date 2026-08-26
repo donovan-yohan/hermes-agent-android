@@ -41,7 +41,12 @@ fun ProfileGlyph(
     profile: HermesProfile,
     modifier: Modifier = Modifier,
     size: Dp = 16.dp,
-    /** The active profile pops to full opacity with a colour ring (`profile-switcher.tsx:677,696-703`). */
+    /**
+     * The rail square's own active treatment: a 30% tint behind a colour ring
+     * rather than the resting 22% (`profile-switcher.tsx:677,702`). The shared
+     * glyph on a session row, a roster line or the picker has no such variant
+     * upstream, so those call sites leave it alone.
+     */
     active: Boolean = false,
     contentDescription: String? = null,
 ) {
@@ -51,12 +56,16 @@ fun ProfileGlyph(
     } else {
         Modifier.semantics { this.contentDescription = contentDescription }
     }
-    val argb = resolveProfileColorArgb(profile)
-    if (profile.isDefault || argb == null) {
+    // The `home` face belongs to the default profile alone
+    // (`profile-glyph.tsx:21-27`). Any other profile carries its initial, even
+    // when it resolves to no identity colour — that case tints against
+    // `--ui-text-quaternary` rather than falling back to the default's face
+    // (`profile-glyph.tsx:37`).
+    if (profile.isDefault) {
         Box(modifier.then(semantics).size(size), contentAlignment = Alignment.Center) {
             HermesIconGlyph(
                 icon = HermesIcon.Home,
-                color = if (active) tokens.textSecondary else tokens.textQuaternary,
+                color = tokens.textQuaternary,
                 // Through density, so a raised font scale cannot push the mark
                 // out of a square that is fixed in dp.
                 size = with(LocalDensity.current) { (size * 0.75f).toSp() },
@@ -64,7 +73,13 @@ fun ProfileGlyph(
         }
         return
     }
-    val hue = Color(argb)
+    val argb = resolveProfileColorArgb(profile)
+    val hue = argb?.let(::Color) ?: tokens.textQuaternary
+    // Desktop leaves a colourless initial to inherit its container's ink
+    // (`profile-glyph.tsx:37`, `color: color ?? undefined`). Compose has no such
+    // inheritance, so it takes the nearest readable token instead of the faint
+    // one its own tint is mixed from.
+    val ink = if (argb == null) tokens.textSecondary else hue
     val fill = mixPremultiplied(hue, if (active) 30f else 22f, Color.Transparent)
     Box(
         modifier
@@ -75,9 +90,12 @@ fun ProfileGlyph(
         contentAlignment = Alignment.Center,
     ) {
         val initialSize = with(LocalDensity.current) { (size * 0.5f).toSp() }
+        // Full-strength ink. Desktop dims the whole rail square, not its
+        // initial (`profile-switcher.tsx:696-703`), and the shared glyph on a
+        // row or a roster line is never dimmed at all.
         Text(
             text = profileInitial(profile.name),
-            color = hue.copy(alpha = if (active) 1f else 0.75f),
+            color = ink,
             fontSize = initialSize,
             lineHeight = initialSize,
             fontWeight = FontWeight.SemiBold,

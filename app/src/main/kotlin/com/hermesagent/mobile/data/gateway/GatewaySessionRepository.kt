@@ -468,6 +468,8 @@ internal class LiveGatewaySessionRepository(
         val profiles = synchronized(stateLock) { profileRouting }.listProfiles.distinct().ifEmpty { listOf(null) }
         var firstFailure: Throwable? = null
         var answered = false
+        // Ids the launch-profile leg answered with, in this refresh only.
+        val launchRowIds = mutableSetOf<String>()
         for (profile in profiles) {
             val result = try {
                 connection.client.request(
@@ -489,14 +491,29 @@ internal class LiveGatewaySessionRepository(
                 continue
             }
             answered = true
+            val parsed = parseSessionList(result, clock())
             // `session.list`'s compact rows carry no owning profile at the pin
             // (`methods_session.py:204-214`), so a row listed out of a named
             // profile's own state.db is stamped with the profile that was
             // asked for. The launch-profile leg is left unstamped, which is
             // the `default` bucket by the same rule Desktop filters with
             // (`app/chat/sidebar/profile-scope.ts:12`).
-            val rows = parseSessionList(result, clock()).map { row ->
-                if (profile == null) row else row.copy(remoteProfile = profile)
+            //
+            // A profile the Gateway cannot resolve is not an error there:
+            // `_profile_home` answers None and `_profile_db` hands back the
+            // launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so
+            // the named leg can return the launch profile's own rows. Rows the
+            // launch leg already answered with are therefore left alone — the
+            // fan-out asks for it first (`sessionListProfiles`), and stamping
+            // them would move them under an owner that does not exist and no
+            // later refresh would take it back.
+            val rows = if (profile == null) {
+                parsed.mapTo(launchRowIds, SessionSummary::id)
+                parsed
+            } else {
+                parsed.map { row ->
+                    if (row.id in launchRowIds) row else row.copy(remoteProfile = profile)
+                }
             }
             synchronized(stateLock) {
                 ensureCurrent(connection)

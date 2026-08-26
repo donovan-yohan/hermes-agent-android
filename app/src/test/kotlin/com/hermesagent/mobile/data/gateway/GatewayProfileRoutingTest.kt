@@ -12,6 +12,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -37,9 +39,16 @@ class GatewayProfileRoutingTest {
 
         repository.refreshSessions()
 
+        // The whole request object, not just the absent `profile`: an install
+        // that never touches the rail must send byte-for-byte what it sent
+        // before this feature existed.
+        val preFeatureRequest = buildJsonObject {
+            put("limit", JsonPrimitive(100))
+            put("include_hidden", JsonPrimitive(false))
+        }
         val listed = rpc.calls.filter { it.first == "session.list" }
         assertTrue(listed.isNotEmpty())
-        assertTrue(listed.all { it.second["profile"] == null })
+        assertTrue(listed.all { it.second == preFeatureRequest })
     }
 
     @Test
@@ -106,6 +115,47 @@ class GatewayProfileRoutingTest {
         repository.refreshSessions()
 
         assertEquals("lab", cache.session("known-row")?.remoteProfile)
+    }
+
+    @Test
+    fun `a profile the Gateway cannot resolve does not steal the launch profile's rows`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        // `_profile_home` answers None for an unresolvable profile and
+        // `_profile_db` hands back the launch handle
+        // (`tui_gateway/server.py:1476-1491,1519-1533`), so the named leg
+        // returns exactly the launch profile's rows rather than failing.
+        rpc.sessionListByProfile = mapOf(
+            null to listOf("launch-row"),
+            "gone" to listOf("launch-row"),
+        )
+        val repository = repository(cache, rpc, backgroundScope)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(listProfiles = listOf(null, "gone")))
+
+        repository.refreshSessions()
+
+        assertNull(cache.session("launch-row")?.remoteProfile)
+    }
+
+    @Test
+    fun `a genuinely separate profile's rows are still stamped`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        rpc.sessionListByProfile = mapOf(
+            null to listOf("launch-row"),
+            "work" to listOf("launch-row", "work-row"),
+        )
+        val repository = repository(cache, rpc, backgroundScope)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(listProfiles = listOf(null, "work")))
+
+        repository.refreshSessions()
+
+        // Only the row the launch leg already claimed is spared; a row that is
+        // genuinely that profile's still gets its owner.
+        assertNull(cache.session("launch-row")?.remoteProfile)
+        assertEquals("work", cache.session("work-row")?.remoteProfile)
     }
 
     @Test

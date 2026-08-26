@@ -182,6 +182,30 @@ data class BackgroundPendingInput(
     val kind: PendingInputKind,
 )
 
+/**
+ * How the project catalog relates to the profile scope on screen.
+ *
+ * `projects.tree` and `projects.project_sessions` take no `profile` and resolve
+ * through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`), so the catalog is always one
+ * profile's. Desktop never has to say so: its backend is per profile.
+ */
+enum class ProjectProfileScope {
+    /** The sidebar is in the profile the catalog came from. Nothing to say. */
+    Own,
+
+    /** Every profile is in view, but only one profile's projects exist. */
+    Unified,
+
+    /** Another profile is in view, whose projects this Gateway cannot list. */
+    Other,
+
+    ;
+
+    /** Whether the catalog may be browsed at all in this scope. */
+    val showsCatalog: Boolean get() = this != Other
+}
+
 data class ChatUiState(
     val voice: VoiceUiState = VoiceUiState.Idle,
     val sessionRows: List<SessionListRow> = emptyList(),
@@ -190,8 +214,8 @@ data class ChatUiState(
     val sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
     /** The foot rail: this Gateway's profiles and the scope the sidebar is in. */
     val profileRail: ProfileRailState = ProfileRailState(),
-    /** False while the sidebar is scoped to a profile the project catalog is not. */
-    val projectsInProfileScope: Boolean = true,
+    /** How the project catalog relates to the profile scope the sidebar is in. */
+    val projectScope: ProjectProfileScope = ProjectProfileScope.Own,
     /** The read-only roster behind "Manage profiles…". */
     val profiles: ProfilesUiState = ProfilesUiState(),
     val selectedProject: ProjectSummary? = null,
@@ -368,9 +392,13 @@ internal class ChatViewModel(
         // belongs to the launch profile. A named scope must not browse it as if
         // it were that profile's.
         val profileScopeState = navigation.sidebarView.profileScope
-        val projectsInScope = profileScopeState.isAll || profileScopeState.isDefault
+        val projectScope = when {
+            profileScopeState.isDefault -> ProjectProfileScope.Own
+            profileScopeState.isAll -> ProjectProfileScope.Unified
+            else -> ProjectProfileScope.Other
+        }
         val selectedProject = navigation.projectId
-            ?.takeIf { projectsInScope }
+            ?.takeIf { projectScope.showsCatalog }
             ?.let(cacheState.projects.projects::get)
         // The sidebar shows one profile at a time; the unified view shows every
         // profile's rows (`apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`).
@@ -382,7 +410,7 @@ internal class ChatViewModel(
                 ?: cacheState.sessions.values.toList(),
             navigation.sidebarView.profileScope.key,
         )
-        val projects = if (selectedProject == null && projectsInScope) {
+        val projects = if (selectedProject == null && projectScope.showsCatalog) {
             sortProjectsForOverview(
                 cacheState.projects.projects.values,
                 cacheState.projects.activeProjectId,
@@ -453,7 +481,7 @@ internal class ChatViewModel(
                 scope = navigation.sidebarView.profileScope,
                 loaded = navigation.sidebarView.roster.loaded,
             ),
-            projectsInProfileScope = projectsInScope,
+            projectScope = projectScope,
             profiles = ProfilesUiState(
                 profiles = navigation.sidebarView.roster.profiles,
                 loaded = navigation.sidebarView.roster.loaded,

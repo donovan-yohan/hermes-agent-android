@@ -45,7 +45,13 @@ popping in its own colour as the "where am I" cue. The `home`/`layers`/`ellipsis
 codicons at their Desktop glyph sizes and code points. The 16px `ProfileGlyph`
 and the 20px rail square, their `rounded-[3px]` corners, their
 `color-mix(in srgb, colour 22%, transparent)` fill (30% and a 1.5px ring when
-active), and their uppercase initial. The deterministic hue — same 32-bit
+active), and their uppercase initial. The rail square's resting `opacity-55`
+over the *whole* mark — tint, ring and initial together — popping to full
+strength for the active profile (`profile-switcher.tsx:696-698`), while the same
+glyph on a session row, a roster line or the picker is never dimmed at all. The
+`home` face belonging to the default profile alone: a profile that resolves to
+no identity colour still carries its initial, tinted against
+`--ui-text-quaternary` (`profile-glyph.tsx:21-41`). The deterministic hue — same 32-bit
 rolling hash, same `hsl(h 68% 58%)` — so a profile is the same colour on both
 clients. The default profile having no colour of its own. The toggle and the
 squares staying hidden until a second profile exists, while Manage is always
@@ -71,9 +77,10 @@ including the Default badge living on the detail rather than the row.
 | Roster count in `PanelHeader` subtitle | The overlay header's subtitle | Same place, one header |
 | Per-profile Electron backend pool (`store/profile.ts:303`) | The `profile` parameter on the session RPCs | Electron-only; the parameter is the portable equivalent |
 | Cross-profile union via `GET /api/profiles/sessions?profile=all` | A bounded `session.list` fan-out: the launch profile plus each named profile | The JSON-RPC lane has no twin for that REST route. Rows land in the backend-authoritative cache, which merges and never drops |
-| Session rows carry `profile` (`/api/profiles/sessions`) | Rows out of a named profile's leg are stamped with the profile that was asked for | `session.list`'s compact rows carry no profile at the pin (`methods_session.py:204-214`). The launch-profile leg is left unstamped, which is the `default` bucket by the filter's own rule (`profile-scope.ts:12`); a profile a `session.info` event named authoritatively is never taken away by a later listing |
-| Per-profile project catalog (its backend resolves `projects.tree` under that profile's home) | The project catalog is the launch profile's, and the Project grouping says so outside that scope | `projects.tree` and `projects.project_sessions` take no `profile` and resolve through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135`). Browsing another profile's projects under a named scope would list rows that cannot be in it |
+| Session rows carry `profile` (`/api/profiles/sessions`) | Rows out of a named profile's leg are stamped with the profile that was asked for, except any row the launch leg already answered with | `session.list`'s compact rows carry no profile at the pin (`methods_session.py:204-214`). The launch-profile leg is left unstamped, which is the `default` bucket by the filter's own rule (`profile-scope.ts:12`); a profile a `session.info` event named authoritatively is never taken away by a later listing. A profile the Gateway cannot resolve is not an error there — `_profile_home` answers None and `_profile_db` hands back the launch handle (`server.py:1476-1491,1519-1533`) — so the named leg can return the launch profile's own rows, and the fan-out asks the launch profile first precisely so those rows can be left alone |
+| Per-profile project catalog (its backend resolves `projects.tree` under that profile's home) | The catalog is the launch profile's, and the Project grouping says so in every scope that is not it: the unified view keeps the catalog under that line, a named scope hides it and names the way back | `projects.tree` and `projects.project_sessions` take no `profile` and resolve through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135`). Silently showing one profile's projects while every profile is in view reads as "these are all of them", and showing them under another profile's scope reads as that profile's |
 | Roster is `$profiles`, a renderer atom | `ProfileRosterCache`, with the same epoch guard | Same invariant, this app's authority model |
+| `plug` pill beside Manage deep-linking to the Gateways page while only one connection exists (`profile-switcher.tsx:334-341`) | Not ported | Gateway identity is a separate surface here: PR #76 owns the connections registry and its switcher at the sidebar head. A second route to it from the foot would give this app two answers to "where do I change Gateway" |
 | — | One `profiles.list` answer replaces the roster; a failed one keeps the last good | `profiles.list` enumerates every profile and emits every field of each row (`methods_profiles.py:194-246`), so layering fields could only resurrect a model, colour or display name the host cleared. The "merge, never clobber" rule is carried by the failure path and the epoch guard, which is where it is actually load-bearing |
 
 ## Deviation ledger
@@ -111,6 +118,13 @@ answer a rail has nothing to switch between and nothing to manage. Once one
 `profiles.list` has answered the rail stays — including across a reconnect, and
 including an empty roster, because it is the only way out of a profile scope and
 the only route to the roster. Only losing the Gateway outright drops it.
+
+A scope that is not the Gateway's own profile keeps the rail whether or not the
+roster ever answers. The scope is persisted and `profiles.list` is a slow-lane
+call an older or refusing Gateway may never answer; a sidebar scoped to a
+profile with no control to leave it is a trap Desktop cannot have, because its
+rail only exists inside a connected app. With no roster to name the default
+profile's label, that one control is named canonically — `Switch to default`.
 
 **Leaving a profile leaves the project drill-in too.**
 Desktop's project catalog is per-profile because `projects.tree` resolves through
@@ -161,6 +175,13 @@ Not deviations — things this slice does not ship, stated rather than hidden.
 - **Profile-scoped projects.** The project catalog stays the launch profile's;
   see the adaptation table. The Project grouping states that outside the default
   scope rather than listing another profile's projects.
+- **`Select a profile to view its details.`** (`i18n/en.ts:1779`). Desktop
+  renders it only when `selected` is null while the roster has rows
+  (`app/profiles/index.tsx:156-160`), and its own selection resolves to
+  `profiles.find(…) ?? profiles[0] ?? null` (`:74-80`) — so on a roster with
+  rows it cannot be null, and on an empty roster the `No profiles yet.` branch
+  answers first (`:109-119`). The string is unreachable upstream, and this port
+  does not invent a state to reach it.
 - **Rendered visual capture.** See below.
 
 ## Visual capture
