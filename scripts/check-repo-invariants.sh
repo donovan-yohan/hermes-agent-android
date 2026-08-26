@@ -110,4 +110,39 @@ else
   ok "production startup has no demo session or turn source"
 fi
 
+# ── 10. Inline diffs read the diff tokens, not lookalike status colours ──────
+# ThemeSemanticParityTest proves the diff tokens hold Desktop's values; only a
+# source check can prove the diff *panel* is the thing reading them, and reading
+# them the right way round. The panel shipped tinting with `statusUnread` (the
+# unread-session dot) and `destructive` (the destructive-action red) — a
+# different semantic that merely happened to be green and red, and that moves
+# with the palette. Desktop derives every diff surface from `--ui-green` /
+# `--ui-red` instead (`styles.css:222-227` @
+# f82f2dbabd9e66b714f2b4f8a40447fe0c13e732).
+transcript="app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt"
+panel="$(sed -n '/fun InlineDiffPanel(/,/^}$/p' "$transcript" 2>/dev/null || true)"
+
+# Presence is not enough: a transposed pair would still mention all four names,
+# so each marker must be paired with its own tint and its own ink.
+unpaired=""
+for pair in "+:Added" "-:Removed"; do
+  for role in Background Foreground; do
+    token="diff${pair#*:}$role"
+    grep -qF "startsWith(\"${pair%%:*}\") -> tokens.$token" <<<"$panel" || unpaired="$unpaired $token"
+  done
+done
+
+if [[ -z "$panel" ]]; then
+  problem "InlineDiffPanel was not found in $transcript; the diff-token invariant lost its subject."
+  note "fix: keep the panel here, or move this check to wherever inline diffs are painted now."
+elif grep -qE 'tokens\.(statusUnread|destructive)' <<<"$panel"; then
+  problem "InlineDiffPanel tints a diff line with statusUnread or destructive."
+  note "fix: read tokens.diffAdded/diffRemoved and their derived Background/Foreground tokens."
+elif [[ -n "$unpaired" ]]; then
+  problem "InlineDiffPanel does not pair each diff marker with its own tint and ink:$unpaired."
+  note "fix: a '+' line takes diffAddedBackground behind diffAddedForeground; a '-' line takes the remove pair."
+else
+  ok "inline diffs read the diff tokens, each marker paired with its own tint and ink"
+fi
+
 exit $fail

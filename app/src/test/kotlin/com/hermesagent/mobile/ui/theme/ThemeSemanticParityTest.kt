@@ -2,6 +2,7 @@ package com.hermesagent.mobile.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.roundToInt
@@ -88,6 +89,22 @@ class ThemeSemanticParityTest {
         Expected("cyberpunk", true, "#ff030b04", "#ff000600", "#ff0e140f", "#ff0c120d", "#ff0c150d", "#ff004800", "#12ffffff", "#e0ffffff"),
     )
 
+    /** The six `--ui-diff-*` values, which are fixed per mode rather than per preset. */
+    private data class DiffPalette(
+        val dark: Boolean,
+        val addBorder: String,
+        val addBackground: String,
+        val addForeground: String,
+        val removeBorder: String,
+        val removeBackground: String,
+        val removeForeground: String,
+    )
+
+    private val diffPalettes = listOf(
+        DiffPalette(false, "#ff1f8a65", "#1f1f8a65", "#ff166147", "#ffcf2d56", "#1fcf2d56", "#ff91203c"),
+        DiffPalette(true, "#ff55a583", "#1f55a583", "#ff96c7b2", "#ffe75e78", "#1fe75e78", "#fff09bab"),
+    )
+
     @Test
     fun `the table covers every builtin in both modes`() {
         assertEquals(
@@ -141,6 +158,48 @@ class ThemeSemanticParityTest {
                     "${preset.name}/${if (dark) "dark" else "light"}: --ui-selection-background",
                     expected,
                     HermesTokens.from(preset.paletteFor(dark), dark).selectionBackground.argb(),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `the diff palette derives from desktop's green and red in each mode`() {
+        // styles.css:196-199,222-227 and `:root.dark:528-532` @
+        // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — byte-identical at upstream
+        // HEAD, checked 2026-08-26. Desktop names no diff colour of its own: the
+        // border IS `--ui-green`/`--ui-red`, the background is that seed at 12%,
+        // and the foreground mixes the seed toward the page (70% toward #000 in
+        // light, 62% toward #fff in dark). Both seeds are fixed per mode, so —
+        // like inline code — a diff must read identically in every skin.
+        for (row in diffPalettes) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(row.dark), row.dark)
+                val where = "${preset.name}/${if (row.dark) "dark" else "light"}"
+
+                assertEquals("$where: --ui-diff-add-border", row.addBorder, tokens.diffAdded.argb())
+                assertEquals("$where: --ui-diff-add-background", row.addBackground, tokens.diffAddedBackground.argb())
+                assertEquals("$where: --ui-diff-add-foreground", row.addForeground, tokens.diffAddedForeground.argb())
+                assertEquals("$where: --ui-diff-remove-border", row.removeBorder, tokens.diffRemoved.argb())
+                assertEquals("$where: --ui-diff-remove-background", row.removeBackground, tokens.diffRemovedBackground.argb())
+                assertEquals("$where: --ui-diff-remove-foreground", row.removeForeground, tokens.diffRemovedForeground.argb())
+
+                // `InlineDiffPanel` shipped reading `statusUnread` (the
+                // unread-session dot) and `destructive` (the destructive-action
+                // red) — a different semantic that merely happened to be green
+                // and red, and that moves with the palette. Asserting the
+                // *inequality* makes a silent revert to them a red test rather
+                // than a subtle drift. Which tokens the panel actually reads is
+                // check 10 in `scripts/check-repo-invariants.sh`.
+                assertNotEquals(
+                    "$where: an added line must not borrow the unread-session dot",
+                    tokens.statusUnread.argb(),
+                    tokens.diffAdded.argb(),
+                )
+                assertNotEquals(
+                    "$where: a removed line must not borrow the destructive-action red",
+                    tokens.destructive.argb(),
+                    tokens.diffRemoved.argb(),
                 )
             }
         }
