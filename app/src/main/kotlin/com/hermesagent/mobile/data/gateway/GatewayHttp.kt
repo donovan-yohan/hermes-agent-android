@@ -84,15 +84,15 @@ internal class OkHttpGatewayHttp(
 ) : GatewayHttp {
     override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
         val endpoint = resolveEndpoint()
-            ?: return GatewayHttpResult.Rejected(0, "Reconnect to the Gateway and try again.")
+            ?: return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
         val authorization = resolveAuthorization()
-            ?: return GatewayHttpResult.Rejected(0, "Reconnect to the Gateway and try again.")
+            ?: return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
         val url = (endpoint.trimEnd('/') + "/" + request.path.trimStart('/'))
             .toHttpUrlOrNull()
             ?.newBuilder()
             ?.apply { request.query.forEach(::addQueryParameter) }
             ?.build()
-            ?: return GatewayHttpResult.Rejected(0, "Hermes could not form that Gateway request.")
+            ?: return GatewayHttpResult.Rejected(0, MALFORMED_REQUEST_MESSAGE)
         val scoped = http.newBuilder()
             .callTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)
             .readTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)
@@ -103,11 +103,26 @@ internal class OkHttpGatewayHttp(
                 .header(authorization.first, authorization.second)
             when (request.method.uppercase()) {
                 "POST" -> request.body?.let(builder::post)
-                    ?: return GatewayHttpResult.Rejected(0, "Hermes got an incomplete Gateway request.")
+                    ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
                 "GET" -> builder.get()
                 "PUT" -> request.body?.let(builder::put)
-                    ?: return GatewayHttpResult.Rejected(0, "Hermes got an incomplete Gateway request.")
-                else -> return GatewayHttpResult.Rejected(0, "Hermes got an unsupported Gateway request.")
+                    ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
+                "PATCH" -> request.body?.let(builder::patch)
+                    ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
+                // Destructive, and body-less like GET. The routes that delete
+                // scope themselves in the query (hermes-agent @
+                // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+                // hermes_cli/web_routers/sessions.py:657-658), so a body on a
+                // DELETE means a caller believes it is sending scope the
+                // Gateway would ignore — and a delete that runs under a scope
+                // its caller did not intend is the one mistake this transport
+                // must refuse rather than forward.
+                "DELETE" -> if (request.body != null) {
+                    return GatewayHttpResult.Rejected(0, UNSUPPORTED_MESSAGE)
+                } else {
+                    builder.delete(null)
+                }
+                else -> return GatewayHttpResult.Rejected(0, UNSUPPORTED_MESSAGE)
             }
             scoped.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
@@ -167,7 +182,22 @@ private fun okhttp3.ResponseBody.readBounded(maxBytes: Long): ByteArray? {
     }
 }
 
-private const val DEFAULT_MAX_RESPONSE_BYTES = 24L * 1024L * 1024L
+/**
+ * The largest body this transport will read for a request that names no bound
+ * of its own. Also the ceiling a caller that sizes its own bound should stay
+ * under: asking for more than this is asking for a read that never happens.
+ */
+internal const val DEFAULT_MAX_RESPONSE_BYTES = 24L * 1024L * 1024L
+
+/**
+ * The transport's refusal vocabulary. Named rather than typed at each site so
+ * a second caller of this transport says the same sentence for the same
+ * condition, and so drift is a compile error instead of a stale comment.
+ */
+internal const val RECONNECT_MESSAGE = "Reconnect to the Gateway and try again."
+internal const val MALFORMED_REQUEST_MESSAGE = "Hermes could not form that Gateway request."
+private const val INCOMPLETE_MESSAGE = "Hermes got an incomplete Gateway request."
+private const val UNSUPPORTED_MESSAGE = "Hermes got an unsupported Gateway request."
 
 /** A refusal envelope is a handful of JSON fields; anything larger is not one. */
 private const val MAX_ENVELOPE_BYTES = 8L * 1024L

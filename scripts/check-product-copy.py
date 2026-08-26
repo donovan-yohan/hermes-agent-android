@@ -26,6 +26,7 @@ WORDS = re.compile(r"[\w]+(?:[-'][\w]+)*", re.UNICODE)
 # this focused product-copy gate into a source-code prose-length gate.
 RENDERED_DATA_SOURCES = (
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayConnection.kt",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayRestClient.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayRpc.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteLifecycle.kt",
