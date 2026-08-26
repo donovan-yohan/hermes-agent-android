@@ -11,6 +11,12 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.connections.ConnectionKind
+import com.hermesagent.mobile.data.connections.ConnectionRegistry
+import com.hermesagent.mobile.data.connections.ConnectionRegistryCodec
+import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
+import com.hermesagent.mobile.data.connections.SavedConnection
+import com.hermesagent.mobile.data.connections.newConnectionId
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
@@ -32,11 +38,34 @@ import java.security.SecureRandom
 
 private val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "hermes",
-    produceMigrations = { listOf(DropImportedKeyName) },
+    produceMigrations = { listOf(DropImportedKeyName, AdoptConnectionRegistry) },
 )
 
 /** The key an earlier build wrote the imported key's display name under. */
 private val LEGACY_IMPORTED_KEY_NAME = stringPreferencesKey("host.single.importedKeyName")
+
+/**
+ * The single-connection keys this store used before it kept a registry.
+ *
+ * They are named here, once, because exactly one thing is allowed to read them
+ * — [AdoptConnectionRegistry], which moves them into row one and removes them.
+ * Nothing else may resurrect a second copy of a connection.
+ */
+private val LEGACY_HOST = stringPreferencesKey("host.single.host")
+private val LEGACY_PORT = intPreferencesKey("host.single.port")
+private val LEGACY_USERNAME = stringPreferencesKey("host.single.username")
+private val LEGACY_REMOTE_HERMES_PROFILE = stringPreferencesKey("host.single.remoteHermesProfile")
+private val LEGACY_AUTH_METHOD = stringPreferencesKey("host.single.authMethod")
+private val LEGACY_ACCEPTED_FINGERPRINT = stringPreferencesKey("host.single.acceptedFingerprint")
+private val LEGACY_CONNECTION_MODE = stringPreferencesKey("gateway.single.connectionMode")
+private val LEGACY_REMOTE_GATEWAY_URL = stringPreferencesKey("gateway.single.remote.url")
+private val LEGACY_REMOTE_GATEWAY_PROVIDER = stringPreferencesKey("gateway.single.remote.provider")
+
+internal val CONNECTIONS = stringPreferencesKey("connections.v1.saved")
+internal val ACTIVE_CONNECTION_ID = stringPreferencesKey("connections.v1.activeId")
+
+/** What an unnamed connection is called until someone renames it. */
+internal const val DEFAULT_CONNECTION_LABEL = "Gateway"
 
 /**
  * Removes a display name an earlier build left behind.
@@ -63,14 +92,82 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
 }
 
 /**
+ * Turns the one connection an earlier build saved into row one of the registry,
+ * active, with nothing dropped.
+ *
+ * Every field the single-connection keys held — host, port, username, remote
+ * Hermes profile, auth method, accepted fingerprint, Gateway URL, sign-in
+ * provider, and which route was selected — becomes that row's, so an install
+ * that upgrades stays connected to the same place with the same trust. The
+ * legacy keys are then removed in the same edit: two copies of a connection is
+ * two answers to "where am I connected", and the second one is always the
+ * stale one.
+ *
+ * A device with nothing saved gets the same shape rather than an empty
+ * registry, so the rest of the app never has to ask whether a connection
+ * exists — only whether it has been filled in. The per-install Gateway
+ * ownership id deliberately does *not* move: it namespaces this app's remote
+ * processes on a host, not an endpoint, and one install has exactly one.
+ *
+ * Written as a [DataMigration] for the same reason as [DropImportedKeyName]:
+ * it is the one hook that runs before the first read, exactly once.
+ */
+internal object AdoptConnectionRegistry : DataMigration<Preferences> {
+
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean = !currentData.contains(CONNECTIONS)
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        val mode = currentData[LEGACY_CONNECTION_MODE]
+            ?.let { stored -> GatewayConnectionMode.entries.firstOrNull { it.name == stored } }
+            ?: GatewayConnectionMode.Remote
+        val row = SavedConnection(
+            id = newConnectionId(),
+            label = DEFAULT_CONNECTION_LABEL,
+            kind = ConnectionKind.of(mode),
+            remote = RemoteGatewayProfile(
+                baseUrl = currentData[LEGACY_REMOTE_GATEWAY_URL].orEmpty(),
+                provider = currentData[LEGACY_REMOTE_GATEWAY_PROVIDER].orEmpty(),
+            ),
+            host = HostProfile(
+                host = currentData[LEGACY_HOST] ?: HostProfile().host,
+                port = currentData[LEGACY_PORT] ?: HostProfile().port,
+                username = currentData[LEGACY_USERNAME] ?: HostProfile().username,
+                remoteHermesProfile = currentData[LEGACY_REMOTE_HERMES_PROFILE]
+                    ?: HostProfile().remoteHermesProfile,
+                authMethod = currentData[LEGACY_AUTH_METHOD]
+                    ?.let { stored -> AuthMethod.entries.firstOrNull { it.name == stored } ?: AuthMethod.Password }
+                    ?: HostProfile().authMethod,
+                acceptedFingerprint = currentData[LEGACY_ACCEPTED_FINGERPRINT],
+            ),
+        )
+        return currentData.toMutablePreferences().apply {
+            this[CONNECTIONS] = ConnectionRegistryCodec.encode(listOf(row))
+            this[ACTIVE_CONNECTION_ID] = row.id
+            remove(LEGACY_HOST)
+            remove(LEGACY_PORT)
+            remove(LEGACY_USERNAME)
+            remove(LEGACY_REMOTE_HERMES_PROFILE)
+            remove(LEGACY_AUTH_METHOD)
+            remove(LEGACY_ACCEPTED_FINGERPRINT)
+            remove(LEGACY_CONNECTION_MODE)
+            remove(LEGACY_REMOTE_GATEWAY_URL)
+            remove(LEGACY_REMOTE_GATEWAY_PROVIDER)
+        }
+    }
+
+    override suspend fun cleanUp() = Unit
+}
+
+/**
  * Everything this connection/appearance preference store puts on disk.
  *
  * The list is short by design, and every entry is non-secret:
  * - the chosen theme and light/dark mode;
  * - the session sidebar's grouping mode;
- * - the selected Gateway route and the Remote Gateway's non-secret URL/provider;
- * - SSH host, port, username, remote Hermes profile, auth *method*, and the
- *   accepted host-key fingerprint;
+ * - the saved connections, each one a random local id, a label, a route, the
+ *   Remote Gateway's non-secret URL/provider, and the SSH host, port, username,
+ *   remote Hermes profile, auth *method* and accepted host-key fingerprint;
+ * - which saved connection is active;
  * - one random per-install Gateway ownership id.
  * - scoped, manual new-draft composer model/provider/reasoning/fast choices.
  *
@@ -86,14 +183,21 @@ internal object DropImportedKeyName : DataMigration<Preferences> {
  * which is built in the UI, handed to one SSH attempt, and cleared.
  *
  * Keys carry their scope, per `apps/desktop/AGENTS.md` ("Persisted state must
- * declare its scope in its own key"). This slice has exactly one host profile, so
- * the scope is `host.single.*`; when profiles become a list the key becomes
- * `host.<id>.*` and the single-profile keys are migrated, not overloaded.
+ * declare its scope in its own key"). Connections are now a list, so the scope
+ * is `connections.v1.*`: one versioned document of saved rows plus the id of
+ * the active one. The single-connection `host.single.*` / `gateway.single.*`
+ * keys they replace were **migrated, not overloaded** — see
+ * [AdoptConnectionRegistry] — and nothing reads them any more.
+ *
+ * A registry row holds only the same non-secret fields. A Remote row's sign-in
+ * is not one of them: it lives in that row's own Keystore-encrypted slot,
+ * named after the row id, and removing the row erases it.
  */
 class HermesPreferences(private val context: Context) :
     HostProfileStore,
     GatewayInstallStore,
     RemoteGatewayProfileStore,
+    ConnectionRegistryStore,
     SidebarViewStore,
     ComposerControlsStore {
 
@@ -117,29 +221,23 @@ class HermesPreferences(private val context: Context) :
      * always wins; [toAuthMethod] is what handles a value this build does not
      * know.
      */
-    override val hostProfile: Flow<HostProfile> = context.hermesDataStore.data.map { prefs ->
-        HostProfile(
-            host = prefs[HOST] ?: FRESH.host,
-            port = prefs[PORT] ?: FRESH.port,
-            username = prefs[USERNAME] ?: FRESH.username,
-            remoteHermesProfile = prefs[REMOTE_HERMES_PROFILE] ?: FRESH.remoteHermesProfile,
-            authMethod = prefs[AUTH_METHOD]?.toAuthMethod() ?: FRESH.authMethod,
-            acceptedFingerprint = prefs[ACCEPTED_FINGERPRINT],
-        )
-    }
+    /**
+     * The saved set and which row this device is on.
+     *
+     * Every single-connection reader below is a projection of this registry's
+     * *active* row, so there is exactly one answer to "where is this app
+     * connected" and no second copy that can drift out of date.
+     */
+    override val connectionRegistry: Flow<ConnectionRegistry> =
+        context.hermesDataStore.data.map(::registryOf)
 
-    override val remoteGatewayProfile: Flow<RemoteGatewayProfile> = context.hermesDataStore.data.map { prefs ->
-        RemoteGatewayProfile(
-            baseUrl = prefs[REMOTE_GATEWAY_URL].orEmpty(),
-            provider = prefs[REMOTE_GATEWAY_PROVIDER].orEmpty(),
-        )
-    }
+    override val hostProfile: Flow<HostProfile> = connectionRegistry.map { it.active?.host ?: FRESH }
 
-    override val gatewayConnectionMode: Flow<GatewayConnectionMode> = context.hermesDataStore.data.map { prefs ->
-        prefs[GATEWAY_CONNECTION_MODE]
-            ?.let { stored -> GatewayConnectionMode.entries.firstOrNull { it.name == stored } }
-            ?: GatewayConnectionMode.Remote
-    }
+    override val remoteGatewayProfile: Flow<RemoteGatewayProfile> =
+        connectionRegistry.map { it.active?.remoteProfile ?: RemoteGatewayProfile() }
+
+    override val gatewayConnectionMode: Flow<GatewayConnectionMode> =
+        connectionRegistry.map { it.active?.kind?.mode ?: GatewayConnectionMode.Remote }
 
     /**
      * One authoritative scope for sticky new-draft controls. It follows the
@@ -163,29 +261,58 @@ class HermesPreferences(private val context: Context) :
      * that is screen state rather than saved state is dropped here.
      */
     override suspend fun saveHostProfile(profile: HostProfile) {
-        context.hermesDataStore.edit { prefs ->
-            prefs[HOST] = profile.host
-            prefs[PORT] = profile.port
-            prefs[USERNAME] = profile.username
-            if (profile.remoteHermesProfile.isBlank()) prefs.remove(REMOTE_HERMES_PROFILE)
-            else prefs[REMOTE_HERMES_PROFILE] = profile.remoteHermesProfile
-            prefs[AUTH_METHOD] = profile.authMethod.name
-            profile.acceptedFingerprint?.let { prefs[ACCEPTED_FINGERPRINT] = it }
-                ?: prefs.remove(ACCEPTED_FINGERPRINT)
-        }
+        editActiveConnection { active -> active.copy(host = profile) }
     }
 
+    /**
+     * The caller cannot choose which Keystore slot it writes to: the active
+     * row's own id is stamped back in, so a profile that travelled through the
+     * UI can never point a sign-in at another connection's slot.
+     */
     override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
-        context.hermesDataStore.edit { prefs ->
-            if (profile.baseUrl.isBlank()) prefs.remove(REMOTE_GATEWAY_URL)
-            else prefs[REMOTE_GATEWAY_URL] = profile.baseUrl
-            if (profile.provider.isBlank()) prefs.remove(REMOTE_GATEWAY_PROVIDER)
-            else prefs[REMOTE_GATEWAY_PROVIDER] = profile.provider
+        editActiveConnection { active ->
+            active.copy(remote = RemoteGatewayProfile(baseUrl = profile.baseUrl, provider = profile.provider))
         }
     }
 
     override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) {
-        context.hermesDataStore.edit { prefs -> prefs[GATEWAY_CONNECTION_MODE] = mode.name }
+        editActiveConnection { active -> active.copy(kind = ConnectionKind.of(mode)) }
+    }
+
+    /** Inserts a new row or replaces one by id. Which row is active is a separate decision. */
+    override suspend fun saveConnection(connection: SavedConnection) {
+        editRegistry { rows, activeId ->
+            val index = rows.indexOfFirst { it.id == connection.id }
+            val next = if (index >= 0) {
+                rows.toMutableList().also { it[index] = connection }
+            } else {
+                rows + connection
+            }
+            next to (activeId ?: connection.id)
+        }
+    }
+
+    /**
+     * Removes a row, moving the active marker to the first survivor when the
+     * removed row was the active one. Removing the last row is refused: this
+     * app is always configured for exactly one connection, and an empty
+     * registry would only be re-seeded on the next write.
+     */
+    override suspend fun removeConnection(id: String) {
+        editRegistry { rows, activeId ->
+            val next = rows.filterNot { it.id == id }
+            if (next.isEmpty()) {
+                rows to activeId
+            } else {
+                next to (activeId?.takeIf { it != id } ?: next.first().id)
+            }
+        }
+    }
+
+    override suspend fun setActiveConnection(id: String) {
+        editRegistry { rows, activeId ->
+            rows to (if (rows.any { it.id == id }) id else activeId)
+        }
     }
 
     /**
@@ -220,22 +347,68 @@ class HermesPreferences(private val context: Context) :
         return requireNotNull(resolved)
     }
 
+    /**
+     * The composer's scope follows the *active* row's endpoint and profile, so
+     * a saved model pick or a parked queue can never cross a gateway boundary.
+     * The identity strings are deliberately unchanged from the
+     * single-connection build: an install that upgrades keeps the queue and the
+     * preferences it already had.
+     */
     private fun composerScope(prefs: Preferences): ComposerControlsScope {
-        val mode = prefs[GATEWAY_CONNECTION_MODE]
-            ?.let { raw -> GatewayConnectionMode.entries.firstOrNull { it.name == raw } }
-            ?: GatewayConnectionMode.Remote
-        return when (mode) {
-            GatewayConnectionMode.Remote -> ComposerControlsScope(
-                connectionIdentity = "remote:" + RemoteGatewayProfile(
-                    baseUrl = prefs[REMOTE_GATEWAY_URL].orEmpty(),
-                ).normalizedBaseUrl.orEmpty().ifBlank { "unconfigured" },
-                profileIdentity = prefs[REMOTE_GATEWAY_PROVIDER].orEmpty().trim().lowercase().ifBlank { "default" },
+        val active = registryOf(prefs).active ?: return ComposerControlsScope(
+            connectionIdentity = "remote:unconfigured",
+            profileIdentity = "default",
+        )
+        return when (active.kind) {
+            ConnectionKind.Remote -> ComposerControlsScope(
+                connectionIdentity = "remote:" +
+                    active.remote.normalizedBaseUrl.orEmpty().ifBlank { "unconfigured" },
+                profileIdentity = active.remote.provider.trim().lowercase().ifBlank { "default" },
             )
-            GatewayConnectionMode.Ssh -> ComposerControlsScope(
-                connectionIdentity = "ssh:" + prefs[USERNAME].orEmpty().trim() + "@" +
-                    prefs[HOST].orEmpty().trim().lowercase() + ":" + (prefs[PORT] ?: FRESH.port),
-                profileIdentity = prefs[REMOTE_HERMES_PROFILE].orEmpty().trim().ifBlank { "default" },
+
+            ConnectionKind.Ssh -> ComposerControlsScope(
+                connectionIdentity = "ssh:" + active.host.username.trim() + "@" +
+                    active.host.host.trim().lowercase() + ":" + active.host.port,
+                profileIdentity = active.host.remoteHermesProfile.trim().ifBlank { "default" },
             )
+        }
+    }
+
+    private fun registryOf(prefs: Preferences): ConnectionRegistry = ConnectionRegistry(
+        connections = ConnectionRegistryCodec.decode(prefs[CONNECTIONS]),
+        activeId = prefs[ACTIVE_CONNECTION_ID],
+    )
+
+    /** One atomic decode → mutate → encode, so the rows and the active marker never disagree. */
+    private suspend fun editRegistry(
+        transform: (rows: List<SavedConnection>, activeId: String?) -> Pair<List<SavedConnection>, String?>,
+    ) {
+        context.hermesDataStore.edit { prefs ->
+            val registry = registryOf(prefs)
+            val (rows, activeId) = transform(registry.connections, registry.activeId)
+            prefs[CONNECTIONS] = ConnectionRegistryCodec.encode(rows)
+            val resolved = activeId?.takeIf { id -> rows.any { it.id == id } } ?: rows.firstOrNull()?.id
+            if (resolved == null) prefs.remove(ACTIVE_CONNECTION_ID) else prefs[ACTIVE_CONNECTION_ID] = resolved
+        }
+    }
+
+    /**
+     * Edits whichever row this device is on, seeding row one when a store has
+     * somehow reached a write with no rows at all. The connection form always
+     * has a row to write to, and it is always the one the app is using.
+     */
+    private suspend fun editActiveConnection(transform: (SavedConnection) -> SavedConnection) {
+        editRegistry { rows, activeId ->
+            if (rows.isEmpty()) {
+                val seeded = transform(
+                    SavedConnection(newConnectionId(), DEFAULT_CONNECTION_LABEL, ConnectionKind.Remote),
+                )
+                listOf(seeded) to seeded.id
+            } else {
+                val index = rows.indexOfFirst { it.id == activeId }.takeIf { it >= 0 } ?: 0
+                val updated = rows.toMutableList().also { it[index] = transform(it[index]).copy(id = it[index].id) }
+                updated to updated[index].id
+            }
         }
     }
 
@@ -246,28 +419,10 @@ class HermesPreferences(private val context: Context) :
         val THEME_NAME = stringPreferencesKey("appearance.theme")
         val THEME_MODE = stringPreferencesKey("appearance.mode")
         val SIDEBAR_GROUPING = stringPreferencesKey("sidebar.grouping")
-        val HOST = stringPreferencesKey("host.single.host")
-        val PORT = intPreferencesKey("host.single.port")
-        val USERNAME = stringPreferencesKey("host.single.username")
-        val REMOTE_HERMES_PROFILE = stringPreferencesKey("host.single.remoteHermesProfile")
-        val AUTH_METHOD = stringPreferencesKey("host.single.authMethod")
-        val ACCEPTED_FINGERPRINT = stringPreferencesKey("host.single.acceptedFingerprint")
         val GATEWAY_OWNERSHIP_ID = stringPreferencesKey("gateway.install.ownershipId")
-        val GATEWAY_CONNECTION_MODE = stringPreferencesKey("gateway.single.connectionMode")
-        val REMOTE_GATEWAY_URL = stringPreferencesKey("gateway.single.remote.url")
-        val REMOTE_GATEWAY_PROVIDER = stringPreferencesKey("gateway.single.remote.provider")
 
         fun String.toThemeMode(): HermesThemeMode =
             HermesThemeMode.entries.firstOrNull { it.name == this } ?: HermesThemeMode.System
-
-        /**
-         * Persisted by name, so entries can be reordered or added without
-         * rewriting an existing install's choice. A name this build does not
-         * recognise falls back to Password rather than to the fresh default:
-         * quietly moving someone onto a keyless method is the one wrong answer.
-         */
-        fun String.toAuthMethod(): AuthMethod =
-            AuthMethod.entries.firstOrNull { it.name == this } ?: AuthMethod.Password
 
         fun String.isOwnershipId(): Boolean =
             length == 32 && all { it in "0123456789abcdef" }

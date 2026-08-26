@@ -103,6 +103,12 @@ fun SessionList(
     onSelect: (String) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Rail chrome above the section header — the connection switcher. A slot
+     * rather than a parameter block so this list keeps knowing only about
+     * sessions.
+     */
+    header: @Composable () -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project && selectedProject == null
@@ -113,6 +119,7 @@ fun SessionList(
     val searchIsVisible = searchVisible || query.isNotBlank()
 
     Column(modifier.fillMaxSize().background(tokens.sidebarSurface)) {
+        header()
         Row(
             modifier = Modifier
                 .fillMaxWidth()

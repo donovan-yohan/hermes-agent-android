@@ -107,6 +107,28 @@ class GatewayActions(
     val onForgetSignIn: () -> Unit = {},
 )
 
+/**
+ * The saved-connections registry and the session-rail switcher.
+ *
+ * Navigation is deliberately absent for the same reason [RelayActions] omits
+ * it: the shell decides where "Manage gateways…" goes, not the rail.
+ */
+class ConnectionsActions(
+    val onSelect: (String) -> Unit = {},
+    val onBeginAdd: () -> Unit = {},
+    val onBeginEdit: (String) -> Unit = {},
+    val onCancelEditor: () -> Unit = {},
+    val onEditKind: (com.hermesagent.mobile.data.connections.ConnectionKind) -> Unit = {},
+    val onEditLabel: (String) -> Unit = {},
+    val onEditUrl: (String) -> Unit = {},
+    val onEditProvider: (String) -> Unit = {},
+    val onEditDestination: (String) -> Unit = {},
+    val onSaveEditor: () -> Unit = {},
+    val onRequestRemove: (String) -> Unit = {},
+    val onCancelRemove: () -> Unit = {},
+    val onConfirmRemove: () -> Unit = {},
+)
+
 class SshActions(
     val onDestinationChange: (String) -> Unit = {},
     val onRemoteProfileChange: (String) -> Unit = {},

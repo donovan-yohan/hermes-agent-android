@@ -512,7 +512,14 @@ internal class ChatViewModel(
 
     private fun bindComposerScope(scope: ComposerControlsScope) {
         if (composerScope == scope) return
+        val endpointChanged = composerScope?.connectionIdentity?.let { it != scope.connectionIdentity } == true
         composerScope = scope
+        // A different endpoint is a different machine. What was on screen
+        // belonged to the one we left, and two gateways can hand out the same
+        // durable id, so the selection is dropped rather than re-pointed and
+        // this surface lands on the new endpoint's own most recent session as
+        // soon as its list arrives.
+        if (endpointChanged) leaveEndpoint()
         queueScopeReady.value = false
         queueEdit.value = null
         queueEditText.value = ""
@@ -545,6 +552,26 @@ internal class ChatViewModel(
             }
         }
         refreshComposer(activeSessionId.value)
+    }
+
+    /**
+     * Forget the endpoint-scoped view state this surface owns.
+     *
+     * Only UI-only state lives here: which session is open, the search text,
+     * a project drill-in, and a stale notice. Cached sessions and transcripts
+     * are the cache's to clear, and the connection switch clears them; the
+     * unread markers go with them because they are a field on those rows.
+     */
+    private fun leaveEndpoint() {
+        navigationGeneration += 1
+        invalidateCompletionState()
+        choseInitialSession = false
+        activeSessionId.value = null
+        selectedProjectId.value = null
+        projectLoadingId.value = null
+        query.value = ""
+        notice.value = null
+        previousStatuses = emptyMap()
     }
 
     private fun invalidateComposerRuntimeState() {

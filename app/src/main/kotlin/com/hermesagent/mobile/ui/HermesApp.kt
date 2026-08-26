@@ -27,10 +27,12 @@ import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.QuietIconButton
+import com.hermesagent.mobile.ui.gateway.ConnectionsUiState
 import com.hermesagent.mobile.ui.gateway.GatewayScreen
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.relay.RelayScreen
 import com.hermesagent.mobile.ui.relay.RelayUiState
+import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
 import com.hermesagent.mobile.ui.settings.SettingsScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -54,6 +56,8 @@ fun HermesApp(
     sshActions: SshActions,
     relayState: RelayUiState,
     relayActions: RelayActions,
+    connectionsState: ConnectionsUiState = ConnectionsUiState(),
+    connectionsActions: ConnectionsActions = ConnectionsActions(),
 ) {
     var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
 
@@ -68,6 +72,13 @@ fun HermesApp(
                 state = chatState,
                 actions = chatActions,
                 onOpenSettings = { destination = HermesDestination.Settings },
+                sidebarHeader = {
+                    ConnectionSwitcherBar(
+                        state = connectionsState,
+                        actions = connectionsActions,
+                        onManage = { destination = HermesDestination.Gateways },
+                    )
+                },
             )
 
             HermesDestination.Settings -> OverlayScaffold(
@@ -93,7 +104,14 @@ fun HermesApp(
                 title = "Gateways",
                 onBack = onBack,
             ) {
-                GatewayScreen(gatewayState, gatewayActions, sshState, sshActions)
+                GatewayScreen(
+                    state = gatewayState,
+                    gatewayActions = gatewayActions,
+                    sshState = sshState,
+                    sshActions = sshActions,
+                    connectionsState = connectionsState,
+                    connectionsActions = connectionsActions,
+                )
             }
 
             // Relay wears the same overlay chrome as its peers but supplies

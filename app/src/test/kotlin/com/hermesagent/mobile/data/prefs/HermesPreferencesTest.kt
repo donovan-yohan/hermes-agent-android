@@ -1,11 +1,15 @@
 package com.hermesagent.mobile.data.prefs
 
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.connections.ConnectionKind
+import com.hermesagent.mobile.data.connections.ConnectionRegistryCodec
+import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
@@ -62,7 +66,13 @@ class HermesPreferencesTest {
         preferences.saveRemoteGatewayProfile(remote)
         preferences.saveGatewayConnectionMode(GatewayConnectionMode.Ssh)
 
-        assertEquals(remote, preferences.remoteGatewayProfile.first())
+        val loaded = preferences.remoteGatewayProfile.first()
+        assertEquals(remote.baseUrl, loaded.baseUrl)
+        assertEquals(remote.provider, loaded.provider)
+        // The slot is the active row's id, and it is the store's answer rather
+        // than the caller's: a profile that travelled through the UI must not
+        // be able to name another connection's Keystore entry.
+        assertEquals(preferences.connectionRegistry.first().active?.id, loaded.secretSlotId)
         assertEquals(GatewayConnectionMode.Ssh, preferences.gatewayConnectionMode.first())
     }
 
@@ -96,6 +106,140 @@ class HermesPreferencesTest {
         val stored = preferencesOf(HOST to "test-host")
 
         assertFalse(DropImportedKeyName.shouldMigrate(stored))
+    }
+
+    @Test
+    fun `the one connection an earlier build saved becomes row one, active, with nothing dropped`() = runBlocking {
+        val stored = preferencesOf(
+            stringPreferencesKey("gateway.single.connectionMode") to "Ssh",
+            HOST to "test-host",
+            intPreferencesKey("host.single.port") to 2222,
+            stringPreferencesKey("host.single.username") to "test-user",
+            stringPreferencesKey("host.single.remoteHermesProfile") to "test-profile",
+            stringPreferencesKey("host.single.authMethod") to "PrivateKey",
+            stringPreferencesKey("host.single.acceptedFingerprint") to FINGERPRINT,
+            stringPreferencesKey("gateway.single.remote.url") to "https://gateway.example/hermes",
+            stringPreferencesKey("gateway.single.remote.provider") to "fixture-provider",
+        )
+
+        assertTrue("a store with no registry is exactly what has to trigger this", AdoptConnectionRegistry.shouldMigrate(stored))
+        val migrated = AdoptConnectionRegistry.migrate(stored)
+
+        val rows = ConnectionRegistryCodec.decode(migrated[CONNECTIONS])
+        val row = rows.single()
+        assertEquals("the row is the active one", row.id, migrated[ACTIVE_CONNECTION_ID])
+        assertEquals(ConnectionKind.Ssh, row.kind)
+        assertEquals("test-host", row.host.host)
+        assertEquals(2222, row.host.port)
+        assertEquals("test-user", row.host.username)
+        assertEquals("test-profile", row.host.remoteHermesProfile)
+        assertEquals(AuthMethod.PrivateKey, row.host.authMethod)
+        assertEquals("trust survives the move, or the next connect is a surprise", FINGERPRINT, row.host.acceptedFingerprint)
+        assertEquals("https://gateway.example/hermes", row.remote.baseUrl)
+        assertEquals("fixture-provider", row.remote.provider)
+    }
+
+    @Test
+    fun `the single-connection keys are gone once they are row one`() = runBlocking {
+        val stored = preferencesOf(
+            HOST to "test-host",
+            stringPreferencesKey("gateway.single.remote.url") to "https://gateway.example/hermes",
+        )
+
+        val migrated = AdoptConnectionRegistry.migrate(stored)
+
+        assertNull("two copies of a connection is one copy too many", migrated[HOST])
+        assertNull(migrated[stringPreferencesKey("gateway.single.remote.url")])
+        assertFalse("and the migration does not run twice", AdoptConnectionRegistry.shouldMigrate(migrated))
+    }
+
+    @Test
+    fun `a device with nothing saved still gets one row rather than an empty registry`() = runBlocking {
+        val migrated = AdoptConnectionRegistry.migrate(preferencesOf())
+
+        val row = ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single()
+        assertEquals(ConnectionKind.Remote, row.kind)
+        assertEquals(row.id, migrated[ACTIVE_CONNECTION_ID])
+        assertEquals("", row.remote.baseUrl)
+    }
+
+    @Test
+    fun `the single-connection readers are projections of the active row`() = runBlocking {
+        val remote = SavedConnection(
+            id = "fixture-remote",
+            label = "Alpha",
+            kind = ConnectionKind.Remote,
+            remote = RemoteGatewayProfile("https://gateway-a.example/hermes", "alpha"),
+        )
+        val ssh = SavedConnection(
+            id = "fixture-ssh",
+            label = "Beta",
+            kind = ConnectionKind.Ssh,
+            host = HostProfile("test-host", 2222, "test-user", authMethod = AuthMethod.Password),
+        )
+        try {
+            preferences.saveConnection(remote)
+            preferences.saveConnection(ssh)
+            preferences.setActiveConnection(remote.id)
+
+            assertEquals(GatewayConnectionMode.Remote, preferences.gatewayConnectionMode.first())
+            assertEquals("https://gateway-a.example/hermes", preferences.remoteGatewayProfile.first().baseUrl)
+            assertEquals(
+                "the sign-in slot follows the row, never the URL",
+                remote.id,
+                preferences.remoteGatewayProfile.first().secretSlotId,
+            )
+
+            preferences.setActiveConnection(ssh.id)
+
+            assertEquals(GatewayConnectionMode.Ssh, preferences.gatewayConnectionMode.first())
+            assertEquals("test-host", preferences.hostProfile.first().host)
+            assertEquals(2222, preferences.hostProfile.first().port)
+        } finally {
+            preferences.removeConnection(ssh.id)
+            preferences.removeConnection(remote.id)
+        }
+    }
+
+    @Test
+    fun `editing the connection form writes the active row rather than a second copy`() = runBlocking {
+        val first = SavedConnection("fixture-a", "Alpha", ConnectionKind.Remote)
+        val second = SavedConnection("fixture-b", "Beta", ConnectionKind.Remote)
+        try {
+            preferences.saveConnection(first)
+            preferences.saveConnection(second)
+            preferences.setActiveConnection(second.id)
+
+            preferences.saveRemoteGatewayProfile(RemoteGatewayProfile("https://gateway-b.example", "beta"))
+
+            val rows = preferences.connectionRegistry.first().connections
+            assertEquals("https://gateway-b.example", rows.first { it.id == second.id }.remote.baseUrl)
+            assertEquals("the row nobody edited is untouched", "", rows.first { it.id == first.id }.remote.baseUrl)
+            assertEquals("no third row appears", 2, rows.count { it.id == first.id || it.id == second.id })
+        } finally {
+            preferences.removeConnection(second.id)
+            preferences.removeConnection(first.id)
+        }
+    }
+
+    @Test
+    fun `removing the active row moves the marker instead of leaving it dangling`() = runBlocking {
+        val first = SavedConnection("fixture-a", "Alpha", ConnectionKind.Remote)
+        val second = SavedConnection("fixture-b", "Beta", ConnectionKind.Remote)
+        try {
+            preferences.saveConnection(first)
+            preferences.saveConnection(second)
+            preferences.setActiveConnection(second.id)
+
+            preferences.removeConnection(second.id)
+
+            val registry = preferences.connectionRegistry.first()
+            assertFalse(registry.connections.any { it.id == second.id })
+            assertEquals(registry.connections.first().id, registry.active?.id)
+        } finally {
+            preferences.removeConnection(second.id)
+            preferences.removeConnection(first.id)
+        }
     }
 
     @Test
