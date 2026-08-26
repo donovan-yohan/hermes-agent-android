@@ -86,8 +86,9 @@ class AnsiTest {
 
     @Test
     fun `skips 256-colour trailing args without painting or leaking them`() {
-        val segments = parseAnsi("${esc}[38;5;208morange${esc}[0m")
-        assertEquals(listOf(AnsiSegment("orange")), segments)
+        // The index is deliberately `31`: if the parser stopped consuming the
+        // `5;n` arguments, that `31` would paint the run red and this fails.
+        assertEquals(listOf(AnsiSegment("orange")), parseAnsi("${esc}[38;5;31morange${esc}[0m"))
     }
 
     @Test
@@ -139,18 +140,11 @@ class AnsiTest {
         )
     }
 
-    @Test
-    fun `strips every sequence when asked for plain text`() {
-        assertEquals("error ok", stripAnsi("${esc}[31merror${esc}[0m ok"))
-        assertEquals("plain", stripAnsi("plain"))
-    }
-
     // ── Hostile input: total and bounded ─────────────────────────────────────
 
     @Test
     fun `a truncated escape at the very end is dropped, not printed`() {
         assertEquals(listOf(AnsiSegment("tail")), parseAnsi("tail$esc"))
-        assertEquals("tail", stripAnsi("tail$esc"))
     }
 
     @Test
@@ -180,11 +174,10 @@ class AnsiTest {
     @Test
     fun `an absurdly long parameter run is consumed rather than parsed`() {
         val params = "1;".repeat(100_000)
-        val text = "${esc}[${params}31mplain"
-        val segments = parseAnsi(text)
-        // Consumed as one sequence: the text survives, the digits do not, and
-        // the style is left alone rather than half-applied.
-        assertEquals("plain", segments.joinToString("") { it.text })
+        val segments = parseAnsi("${esc}[${params}31mplain")
+        // The whole segment, not just its text: without the cap those params
+        // parse and the run comes back bold red.
+        assertEquals(listOf(AnsiSegment("plain")), segments)
     }
 
     @Test
@@ -198,15 +191,21 @@ class AnsiTest {
 
     @Test
     fun `a megabyte of hostile bytes terminates quickly and renders everything`() {
-        val chunk = "${esc}[31m$esc$esc[${esc}]0;x${esc}[38;2;1;2;3mline\n"
+        val chunk = "${esc}[31m$esc$esc[${esc}]0;x${esc}[38;2;1;2;3mline\n"
         val input = buildString { while (length < 1_000_000) append(chunk) }
 
+        val chunks = input.length / chunk.length
         var segments: List<AnsiSegment> = emptyList()
         val millis = measureTimeMillis { segments = parseAnsi(input) }
 
         assertTrue("parse of ${input.length} chars took ${millis}ms", millis < 5_000)
-        assertTrue("output must not be empty", segments.isNotEmpty())
-        assertTrue("the visible text must survive", segments.any { it.text.contains("line") })
+        // Exactly what the fixture spells: one red run holding every line, with
+        // nothing dropped and nothing leaked. `isNotEmpty` would have passed on
+        // a parser that threw away 99% of the payload.
+        assertEquals("one coalesced run, saw ${segments.map { it.text.length }}", 1, segments.size)
+        assertEquals(AnsiColor.Red, segments.single().color)
+        assertEquals("every line must survive", chunks * "line\n".length, segments.single().text.length)
+        assertEquals("line\n".repeat(chunks), segments.single().text)
     }
 
     @Test
@@ -228,7 +227,7 @@ class AnsiTest {
     }
 
     @Test
-    fun `stripAnsi and parseAnsi agree on every hostile fixture`() {
+    fun `no escape byte survives any hostile fixture`() {
         val fixtures = listOf(
             "",
             "plain",
@@ -238,13 +237,67 @@ class AnsiTest {
             "before$esc]0;title\u0007after",
             "${esc}[1;31mfoo${esc}[mbar",
             "a${esc}Pdcs payload${esc}\\b",
+            "$esc$esc$esc[",
         )
         for (fixture in fixtures) {
-            assertEquals(
-                "stripAnsi must equal the concatenated segments for <${fixture.replace(esc, "ESC")}>",
-                parseAnsi(fixture).joinToString("") { it.text },
-                stripAnsi(fixture),
+            val text = parseAnsi(fixture).joinToString("") { it.text }
+            assertFalse(
+                "an escape byte reached the rendered text for <${fixture.replace(esc, "ESC")}>",
+                text.contains(esc),
             )
         }
+    }
+
+    @Test
+    fun `a device-control string is swallowed up to its terminator`() {
+        assertEquals(listOf(AnsiSegment("ab")), parseAnsi("a${esc}Pdcs payload${esc}\\b"))
+    }
+
+    @Test
+    fun `a bare escape aborts an OSC payload and still introduces what follows`() {
+        // The aborting escape is handed back unconsumed, so the sequence it was
+        // actually starting still gets to run.
+        assertEquals(
+            listOf(AnsiSegment("a"), AnsiSegment("red", color = AnsiColor.Red)),
+            parseAnsi("a${esc}]0;title${esc}[31mred"),
+        )
+    }
+
+    @Test
+    fun `a background selector consumes its arguments instead of restyling the run`() {
+        // Upstream has no `48` arm, so `5` then `1` reads as bold-on and
+        // `2;0;0;255` reads as a full reset. Neither may happen here.
+        assertEquals(
+            listOf(AnsiSegment("still bold red", bold = true, color = AnsiColor.Red)),
+            parseAnsi("${esc}[1;31m${esc}[48;5;1mstill bold red"),
+        )
+        assertEquals(
+            listOf(AnsiSegment("still bold red", bold = true, color = AnsiColor.Red)),
+            parseAnsi("${esc}[1;31m${esc}[48;2;0;0;255mstill bold red"),
+        )
+    }
+
+    @Test
+    fun `merging a long run stays linear rather than quadratic`() {
+        // Every escape here leaves the style unchanged, so every flush merges
+        // into the open run — the shape that used to re-copy the whole run each
+        // time. Doubling the input must roughly double the time, not quadruple
+        // it; the ratio is checked loosely because this is a wall-clock probe,
+        // and a quadratic parser lands near 4x, not near 2x.
+        fun input(bytes: Int) = buildString {
+            while (length < bytes) append("${esc}[31m").append("x".repeat(64))
+        }
+
+        val small = input(1_000_000)
+        val large = input(2_000_000)
+        parseAnsi(small)
+
+        val smallMillis = maxOf(1L, measureTimeMillis { parseAnsi(small) })
+        val largeMillis = measureTimeMillis { parseAnsi(large) }
+
+        assertTrue(
+            "1 MB took ${smallMillis}ms and 2 MB took ${largeMillis}ms — that is super-linear",
+            largeMillis < smallMillis * 3,
+        )
     }
 }

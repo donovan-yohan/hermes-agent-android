@@ -27,6 +27,9 @@ package com.hermesagent.mobile.data.markdown
  *  - Segment count is capped ([MAX_SEGMENTS]). Past the cap the remaining text
  *    still renders — it just stops changing style — so a hostile input that
  *    toggles colour every character cannot turn N bytes into N objects.
+ *  - A `48` (background) selector consumes its arguments. Upstream lets them
+ *    fall through to the code table, where `ESC[48;5;1m` turns the rest of the
+ *    line bold and `ESC[48;2;0;0;255m` resets it outright.
  *
  * Callers clamp before parsing (see `clampForDisplay`), so the UI path never
  * hands this more than a bounded slice. The fuzz fixtures feed it megabytes
@@ -86,6 +89,20 @@ data class AnsiSegment(
     val color: AnsiColor? = null,
 )
 
+/**
+ * A run still being built.
+ *
+ * The text accumulates into a [StringBuilder] rather than into an immutable
+ * [AnsiSegment] that gets rebuilt on every flush. That is the difference
+ * between linear and quadratic: escape-dense output flushes once per escape,
+ * and re-copying the whole run each time made a 1 MB payload cost gigabytes of
+ * copying — with the [MAX_SEGMENTS] cap making it *worse*, because past the cap
+ * every flush merges.
+ */
+private class OpenSegment(val bold: Boolean, val color: AnsiColor?) {
+    val text = StringBuilder()
+}
+
 /** `ansi.ts:33-50` — SGR code to colour, normal (30-37) and bright (90-97). */
 private val ForegroundByCode: Map<Int, AnsiColor> = mapOf(
     30 to AnsiColor.Black,
@@ -118,20 +135,22 @@ fun hasAnsiCodes(input: String): Boolean = input.contains(CSI)
 fun parseAnsi(input: String): List<AnsiSegment> {
     if (input.isEmpty()) return emptyList()
 
-    val segments = ArrayList<AnsiSegment>()
+    val segments = ArrayList<OpenSegment>()
     val pending = StringBuilder()
     var bold = false
     var color: AnsiColor? = null
 
     // `ansi.ts:75-89` — a run that matches the previous run's style extends it
     // rather than starting a new one, so `ESC[31ma ESC[31mb` is one segment.
+    // Appending into the open run costs the length of what is appended, so the
+    // total across every flush is the length of the input.
     fun flush() {
         if (pending.isEmpty()) return
         val last = segments.lastOrNull()
         if (last != null && (segments.size >= MAX_SEGMENTS || (last.bold == bold && last.color == color))) {
-            segments[segments.size - 1] = last.copy(text = last.text + pending)
+            last.text.append(pending)
         } else {
-            segments.add(AnsiSegment(text = pending.toString(), bold = bold, color = color))
+            segments.add(OpenSegment(bold, color).apply { text.append(pending) })
         }
         pending.setLength(0)
     }
@@ -157,15 +176,13 @@ fun parseAnsi(input: String): List<AnsiSegment> {
 
             next == '[' -> {
                 val scan = scanControlSequence(input, i + 2)
-                if (scan.final == 'm') {
-                    val params = input.substring(i + 2, scan.paramsEnd)
-                    if (params.length <= MAX_SGR_PARAM_CHARS) {
-                        val state = applySgr(params, bold, color)
-                        bold = state.bold
-                        color = state.color
-                    }
-                    // An absurdly long parameter run is not a style anyone
-                    // meant. It was consumed by the scan; the style stands.
+                // Length first, substring second: a megabyte of digits is not a
+                // style anyone meant, and materialising it only to discard it
+                // would be the one allocation this scanner does not bound.
+                if (scan.final == 'm' && scan.paramsEnd - (i + 2) <= MAX_SGR_PARAM_CHARS) {
+                    val state = applySgr(input.substring(i + 2, scan.paramsEnd), bold, color)
+                    bold = state.bold
+                    color = state.color
                 }
                 i = scan.next
             }
@@ -185,19 +202,7 @@ fun parseAnsi(input: String): List<AnsiSegment> {
     }
 
     flush()
-    return segments
-}
-
-/**
- * Remove every escape sequence, returning plain text.
- *
- * `ansi.ts:177-186`. Used where output is rendered as text rather than styled
- * runs — a spoken transcript, a collapsed preview — because the ESC byte itself
- * is invisible and only its `[1;31m` payload would survive.
- */
-fun stripAnsi(input: String): String {
-    if (input.isEmpty() || !input.contains(ESC)) return input
-    return parseAnsi(input).joinToString(separator = "") { it.text }
+    return segments.map { AnsiSegment(text = it.text.toString(), bold = it.bold, color = it.color) }
 }
 
 /** Where a control sequence ended, and what its final byte was. */
@@ -255,10 +260,11 @@ private class SgrState(val bold: Boolean, val color: AnsiColor?)
  * Apply one SGR parameter string to the running style (`ansi.ts:101-131`).
  *
  * Codes honoured: `0` full reset, `1` bold, `22` bold off, `39` default
- * foreground, `30-37`/`90-97` foreground. `38` consumes its 256-colour
- * (`5;n`) or truecolour (`2;r;g;b`) arguments so they cannot surface as text.
- * Backgrounds (`40-47`, `100-107`) and unhandled effects leave the style alone,
- * exactly as upstream: an unknown code must not silently reset the run.
+ * foreground, `30-37`/`90-97` foreground. `38` and `48` consume their
+ * 256-colour (`5;n`) or truecolour (`2;r;g;b`) arguments so those cannot be
+ * mistaken for codes of their own. Plain backgrounds (`40-47`, `100-107`) and
+ * unhandled effects leave the style alone, exactly as upstream: an unknown code
+ * must not silently reset the run.
  */
 private fun applySgr(params: String, boldIn: Boolean, colorIn: AnsiColor?): SgrState {
     var bold = boldIn
@@ -281,7 +287,13 @@ private fun applySgr(params: String, boldIn: Boolean, colorIn: AnsiColor?): SgrS
             1 -> bold = true
             22 -> bold = false
             39 -> color = null
-            38 -> when (codes.getOrNull(i + 1)) {
+            // 256-colour and truecolour selectors. `48` is a *background*,
+            // which is not painted — but its arguments still have to be
+            // consumed, or `ESC[48;5;1m` reads as `1` (bold on) and
+            // `ESC[48;2;0;0;255m` reads as `0` (full reset) mid-line. Upstream
+            // has no `48` arm and does corrupt the run this way; on a phone
+            // that shows up as a build log that suddenly goes bold and grey.
+            38, 48 -> when (codes.getOrNull(i + 1)) {
                 5 -> i += 2
                 2 -> i += 4
             }

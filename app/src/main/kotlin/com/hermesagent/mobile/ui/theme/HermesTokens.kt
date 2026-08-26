@@ -99,6 +99,13 @@ data class HermesTokens(
     val diffRemovedForeground: Color,
     /** Desktop's amber untracked-only working-tree count. */
     val gitUntracked: Color,
+    /**
+     * Desktop's amber "this needs a second look, but nothing broke" ink: the
+     * recovered-tool glyph (`fallback.tsx:200`) and a non-zero process exit
+     * (`fallback.tsx:736`). Distinct from [destructive], which claims failure,
+     * and from [statusNeedsInput], which claims the turn is blocked on you.
+     */
+    val statusWarning: Color,
     /** Desktop's fixed `--ui-purple` for merged pull requests. */
     val pullRequestMerged: Color,
     /** Desktop task completion glyph, separate from the unread-session dot. */
@@ -180,11 +187,18 @@ data class HermesTokens(
             // legibility floor in `ThemeSemanticParityTest` rejects.
             fun ansiBright(seed: Color) = diffInk(diffInk(seed))
 
+            // Named once, because the ANSI neutrals below are defined as being
+            // this ladder rather than as four literals that happen to agree.
+            val textPrimary = base.withAlpha(0.94f)
+            val textSecondary = base.withAlpha(0.74f)
+            val textTertiary = base.withAlpha(0.54f)
+            val textQuaternary = base.withAlpha(0.36f)
+
             return HermesTokens(
-                textPrimary = base.withAlpha(0.94f),
-                textSecondary = base.withAlpha(0.74f),
-                textTertiary = base.withAlpha(0.54f),
-                textQuaternary = base.withAlpha(0.36f),
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                textTertiary = textTertiary,
+                textQuaternary = textQuaternary,
                 scaffoldText = base.withAlpha(0.64f),
                 scaffoldMeta = base.withAlpha(0.44f),
                 strokePrimary = stroke(24f, 0.10f),
@@ -244,6 +258,8 @@ data class HermesTokens(
                 diffRemovedForeground = diffInk(diffRemoved),
                 // coding-row.tsx:319-324 @ the same pinned SHA.
                 gitUntracked = Amber500,
+                // fallback.tsx:200,736 @ the same pinned SHA — amber-600/400.
+                statusWarning = Amber500,
                 // styles.css:202 + pr-tag.tsx:10-14 @ the pinned SHA.
                 pullRequestMerged = uiPurple,
                 // status-row.tsx:20-23 @ the pinned SHA — emerald-500/80.
@@ -255,10 +271,10 @@ data class HermesTokens(
                     // surface (`ansi.ts:145-147`). The text ladder already *is*
                     // that grey ramp, so the four neutral rungs read it and are
                     // the only ANSI inks that track the preset.
-                    black = base.withAlpha(0.54f),
-                    brightBlack = base.withAlpha(0.36f),
-                    white = base.withAlpha(0.74f),
-                    brightWhite = base.withAlpha(0.94f),
+                    black = textTertiary,
+                    brightBlack = textQuaternary,
+                    white = textSecondary,
+                    brightWhite = textPrimary,
                     red = diffInk(diffRemoved),
                     brightRed = ansiBright(diffRemoved),
                     green = diffInk(diffAdded),

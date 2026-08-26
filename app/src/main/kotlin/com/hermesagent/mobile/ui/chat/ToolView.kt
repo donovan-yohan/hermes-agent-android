@@ -5,6 +5,7 @@ import com.hermesagent.mobile.data.session.ToolState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -30,19 +31,18 @@ import kotlin.math.roundToInt
  * missing the field simply yields nothing. Tool output is untrusted input.
  *
  * Fields Desktop has that this slice deliberately does not carry —
- * `imageUrl`, `previewTarget`, `titleAction` — are the explicit non-goals of
- * issue #71 (no inline images, no artifact detection) plus the title grammar
- * Android already owns. `docs/parity/tool-output-fidelity.md` holds the ledger.
+ * `imageUrl`, `previewTarget`, `titleAction`, `tone` — are the explicit
+ * non-goals of issue #71 (no inline images, no artifact detection), the title
+ * grammar Android already owns, and one field no renderer reads on either side.
+ * `docs/parity/tool-output-fidelity.md` holds the ledger.
  */
 internal data class ToolView(
-    val tone: ToolTone,
     val icon: ToolIconName?,
     val status: ToolStatus,
     val countLabel: String?,
     val durationLabel: String?,
     val detail: String,
     val detailLabel: String,
-    val inlineDiff: String?,
     /**
      * Set for tools whose output naturally contains ANSI escape codes
      * (`terminal` / `execute_code`) so the renderer runs them through the
@@ -70,9 +70,6 @@ internal data class ToolView(
     /** The row's Copy action. Its text is the UNCLAMPED payload. */
     val copy: ToolCopyAction?,
 )
-
-/** `types.ts:1` — what kind of thing the tool touched. */
-internal enum class ToolTone { Agent, Browser, Default, File, Image, Terminal, Web }
 
 /**
  * The tool-tone icon set (`components/ui/tool-icon.tsx` @ the pinned SHA,
@@ -150,23 +147,37 @@ internal const val MAX_TOOL_RENDER_LINES = 200
  * is one truncation sentence rather than two.
  */
 internal fun clampForDisplay(value: String): String {
-    val lineCut = value.nthNewlineIndex(MAX_TOOL_RENDER_LINES)
-    val cut = minOf(MAX_TOOL_RENDER_CHARS, lineCut)
-    if (value.length <= cut) return value
-
+    val cut = minOf(MAX_TOOL_RENDER_CHARS, value.nthNewlineEnd(MAX_TOOL_RENDER_LINES))
     val omitted = value.length - cut
+    // A notice longer than what it replaces is worse than the overrun: an
+    // output of exactly 200 lines would otherwise gain sixty characters to
+    // announce that it lost one.
+    if (omitted <= MIN_WORTH_TRUNCATING) return value
+
     val count = String.format(Locale.US, "%,d", omitted)
     return value.take(cut) + "\n\n… $count more characters truncated — use Copy for the full output."
 }
 
-/** Index *of* the [count]th newline, or the whole length if there are fewer. */
-private fun String.nthNewlineIndex(count: Int): Int {
+/** Roughly the length of the notice itself. Below this, truncating is a loss. */
+private const val MIN_WORTH_TRUNCATING = 64
+
+/**
+ * Index just past the [count]th newline, or the whole length if there are fewer.
+ *
+ * Past the newline rather than at it, so a payload of exactly [count] lines is
+ * returned whole instead of losing its last newline to a "1 more characters
+ * truncated" notice. The scan gives up at [MAX_TOOL_RENDER_CHARS] because the
+ * caller takes the smaller of the two cuts anyway — there is no reason to walk
+ * 10 MB to decide a 20 KB slice.
+ */
+private fun String.nthNewlineEnd(count: Int): Int {
     var seen = 0
     var i = 0
-    while (i < length) {
+    val limit = minOf(length, MAX_TOOL_RENDER_CHARS)
+    while (i < limit) {
         if (this[i] == '\n') {
             seen += 1
-            if (seen == count) return i
+            if (seen == count) return i + 1
         }
         i += 1
     }
@@ -221,14 +232,12 @@ internal fun ToolActivity.toolView(): ToolView {
     val searchQuery = query.ifEmpty { null }
 
     return ToolView(
-        tone = meta.tone,
         icon = meta.icon,
         status = status,
         countLabel = resultCount(name, result, resultText, detail, status),
-        durationLabel = durationLabel(),
+        durationLabel = durationLabel(status),
         detail = detail,
         detailLabel = if (error.isNotEmpty()) "Error details" else detailLabel(name),
-        inlineDiff = inlineDiff,
         rendersAnsi = rendersAnsi,
         searchQuery = searchQuery,
         searchHits = hits,
@@ -238,13 +247,13 @@ internal fun ToolActivity.toolView(): ToolView {
         terminalExitCode = terminalExitCode,
         // Built from the same locals rather than from the finished view: the
         // text Copy hands over is the payload *before* `clampForDisplay`.
-        copy = copyAction(name, args, inlineDiff, detail, paintedStdout, paintedStderr, hits, searchQuery),
+        copy = copyAction(name, args, detail, paintedStdout, paintedStderr, hits, searchQuery),
     )
 }
 
 // ── Tone, icon and status ────────────────────────────────────────────────────
 
-private class ToolMeta(val tone: ToolTone, val icon: ToolIconName?)
+private class ToolMeta(val icon: ToolIconName?)
 
 /**
  * `index.ts:142-214` (`TOOL_META`) and `:233-236` (`PREFIX_META`).
@@ -257,47 +266,54 @@ private class ToolMeta(val tone: ToolTone, val icon: ToolIconName?)
 private fun toolMeta(name: String, hasInlineDiff: Boolean): ToolMeta {
     ExactToolMeta[name]?.let { return it }
 
-    if (name.startsWith("browser_")) return ToolMeta(ToolTone.Browser, ToolIconName.Globe)
-    if (name.startsWith("web_")) return ToolMeta(ToolTone.Web, ToolIconName.Globe)
+    if (name.startsWith("browser_") || name.startsWith("web_")) return ToolMeta(ToolIconName.Globe)
 
     return when {
         hasInlineDiff || name.contains("patch") || name.contains("edit") || name.contains("write_file") ->
-            ToolMeta(ToolTone.File, ToolIconName.Edit)
+            ToolMeta(ToolIconName.Edit)
         name.isTerminal() || name.isCodeExecution() || name.contains("command") ->
-            ToolMeta(ToolTone.Terminal, ToolIconName.Terminal)
-        name.contains("search") -> ToolMeta(ToolTone.Web, ToolIconName.Search)
-        name.contains("browser") -> ToolMeta(ToolTone.Browser, ToolIconName.Globe)
-        name.contains("web") -> ToolMeta(ToolTone.Web, ToolIconName.Globe)
-        name.contains("read") || name.contains("file") -> ToolMeta(ToolTone.File, ToolIconName.File)
-        name.contains("memory") -> ToolMeta(ToolTone.Agent, ToolIconName.Brain)
-        else -> ToolMeta(ToolTone.Default, null)
+            ToolMeta(ToolIconName.Terminal)
+        name.contains("search") -> ToolMeta(ToolIconName.Search)
+        name.contains("browser") -> ToolMeta(ToolIconName.Globe)
+        name.contains("web") -> ToolMeta(ToolIconName.Globe)
+        name.contains("read") || name.contains("file") -> ToolMeta(ToolIconName.File)
+        name.contains("memory") -> ToolMeta(ToolIconName.Brain)
+        else -> ToolMeta(null)
     }
 }
 
+/**
+ * `TOOL_META` transcribed (`index.ts:142-214`).
+ *
+ * Most of these rows are also what the prefix rule and the substring heuristic
+ * below would produce; the table is kept whole anyway, because it is the
+ * executable record of what Desktop's table says, and a drift upstream should
+ * surface as a failing row rather than as a heuristic that happens to agree.
+ */
 private val ExactToolMeta: Map<String, ToolMeta> = mapOf(
-    "browser_click" to ToolMeta(ToolTone.Browser, ToolIconName.Globe),
-    "browser_fill" to ToolMeta(ToolTone.Browser, ToolIconName.Globe),
-    "browser_navigate" to ToolMeta(ToolTone.Browser, ToolIconName.Globe),
-    "browser_snapshot" to ToolMeta(ToolTone.Browser, ToolIconName.Globe),
-    "browser_take_screenshot" to ToolMeta(ToolTone.Browser, ToolIconName.FileMedia),
-    "browser_type" to ToolMeta(ToolTone.Browser, ToolIconName.Globe),
-    "clarify" to ToolMeta(ToolTone.Agent, ToolIconName.Question),
-    "cronjob" to ToolMeta(ToolTone.Agent, ToolIconName.Watch),
-    "edit_file" to ToolMeta(ToolTone.File, ToolIconName.Edit),
-    "execute_code" to ToolMeta(ToolTone.Terminal, ToolIconName.Terminal),
-    "image_generate" to ToolMeta(ToolTone.Image, ToolIconName.FileMedia),
-    "list_files" to ToolMeta(ToolTone.File, ToolIconName.Files),
-    "memory" to ToolMeta(ToolTone.Agent, ToolIconName.Brain),
-    "patch" to ToolMeta(ToolTone.File, ToolIconName.Edit),
-    "read_file" to ToolMeta(ToolTone.File, ToolIconName.File),
-    "search_files" to ToolMeta(ToolTone.File, ToolIconName.Search),
-    "session_search_recall" to ToolMeta(ToolTone.Agent, ToolIconName.Search),
-    "terminal" to ToolMeta(ToolTone.Terminal, ToolIconName.Terminal),
-    "todo" to ToolMeta(ToolTone.Agent, ToolIconName.Tools),
-    "vision_analyze" to ToolMeta(ToolTone.Image, ToolIconName.Eye),
-    "web_extract" to ToolMeta(ToolTone.Web, ToolIconName.Globe),
-    "web_search" to ToolMeta(ToolTone.Web, ToolIconName.Search),
-    "write_file" to ToolMeta(ToolTone.File, ToolIconName.Edit),
+    "browser_click" to ToolMeta(ToolIconName.Globe),
+    "browser_fill" to ToolMeta(ToolIconName.Globe),
+    "browser_navigate" to ToolMeta(ToolIconName.Globe),
+    "browser_snapshot" to ToolMeta(ToolIconName.Globe),
+    "browser_take_screenshot" to ToolMeta(ToolIconName.FileMedia),
+    "browser_type" to ToolMeta(ToolIconName.Globe),
+    "clarify" to ToolMeta(ToolIconName.Question),
+    "cronjob" to ToolMeta(ToolIconName.Watch),
+    "edit_file" to ToolMeta(ToolIconName.Edit),
+    "execute_code" to ToolMeta(ToolIconName.Terminal),
+    "image_generate" to ToolMeta(ToolIconName.FileMedia),
+    "list_files" to ToolMeta(ToolIconName.Files),
+    "memory" to ToolMeta(ToolIconName.Brain),
+    "patch" to ToolMeta(ToolIconName.Edit),
+    "read_file" to ToolMeta(ToolIconName.File),
+    "search_files" to ToolMeta(ToolIconName.Search),
+    "session_search_recall" to ToolMeta(ToolIconName.Search),
+    "terminal" to ToolMeta(ToolIconName.Terminal),
+    "todo" to ToolMeta(ToolIconName.Tools),
+    "vision_analyze" to ToolMeta(ToolIconName.Eye),
+    "web_extract" to ToolMeta(ToolIconName.Globe),
+    "web_search" to ToolMeta(ToolIconName.Search),
+    "write_file" to ToolMeta(ToolIconName.Edit),
 )
 
 /**
@@ -363,11 +379,11 @@ private fun String.rendersAnsi(): Boolean = isTerminal() || isCodeExecution()
  * terminal-only. `execute_code` shares the ANSI and stream rules but has no
  * shell transcript, so it must not grow one here.
  */
-private fun String.isTerminal(): Boolean = this == "terminal" || contains("terminal")
+private fun String.isTerminal(): Boolean = contains("terminal")
 
 private fun String.isCodeExecution(): Boolean = contains("exec") || contains("shell")
 
-private fun String.isWebSearch(): Boolean = this == "web_search" || (contains("web") && contains("search"))
+private fun String.isWebSearch(): Boolean = contains("web") && contains("search")
 
 /** `index.ts:1066-1076` — only two tools name their detail block. */
 private fun detailLabel(name: String): String = when {
@@ -448,8 +464,8 @@ private fun ToolActivity.fallbackDetailText(args: JsonObject, result: JsonObject
  * (`GatewaySessionRepository.kt:2319-2322`), so this reads it from there rather
  * than parsing the same number twice.
  */
-private fun ToolActivity.durationLabel(): String? {
-    if (state == ToolState.Running || elapsedSeconds <= 0.0) return null
+private fun ToolActivity.durationLabel(status: ToolStatus): String? {
+    if (status == ToolStatus.Running || elapsedSeconds <= 0.0) return null
     return elapsedSeconds.durationLabel()
 }
 
@@ -542,9 +558,11 @@ private fun resultCount(
 
     result.countFromRecord(fallbackNoun)?.let { return normalizeForTool(name, it) }
 
+    // index.ts:535-543 — only a record can be counted by field; an unwrapped
+    // array is already handled by the web-search arm above.
     val payload = result.unwrapToolPayload()
     if (payload !== result) {
-        payload.countFromRecord(fallbackNoun)?.let { return normalizeForTool(name, it) }
+        (payload as? JsonObject)?.countFromRecord(fallbackNoun)?.let { return normalizeForTool(name, it) }
     }
 
     val summary = result.firstStringField("summary", "message", "detail").ifEmpty { detail }
@@ -659,7 +677,7 @@ private val ResultListKeys = listOf(
 )
 
 /** How deep [collectResultItems] will chase a nested payload. Untrusted JSON. */
-private const val MAX_RESULT_DEPTH = 6
+private const val MAX_RESULT_DEPTH = 5
 
 /** `index.ts:610-647`. */
 private fun JsonElement?.collectResultItems(depth: Int = 0): List<JsonElement> {
@@ -717,7 +735,6 @@ private fun JsonObject.searchResults(fallback: String?, limit: Int = 6): List<Se
 private fun copyAction(
     name: String,
     args: JsonObject,
-    inlineDiff: String?,
     detail: String,
     stdout: String?,
     stderr: String?,
@@ -743,8 +760,6 @@ private fun copyAction(
         }
         searchQuery?.let { return copyQuery(it) }
     }
-
-    inlineDiff?.takeIf { it.isNotBlank() }?.let { return copyFile(it) }
 
     if (name.contains("read_file")) {
         if (substantial) return copyFile(output)
@@ -787,10 +802,17 @@ private fun JsonObject.numericField(key: String): Int? {
     return if (n.isFinite()) n.roundToInt() else null
 }
 
-/** `format.ts:85-97`. */
-private fun JsonObject.unwrapToolPayload(): JsonObject {
+/**
+ * `format.ts:85-97` — the first envelope key holding anything at all.
+ *
+ * Returns [JsonElement], not [JsonObject]: upstream unwraps any non-null value,
+ * so `{"data": [ … ]}` reaches `collectResultItems`' array arm. Narrowing this
+ * to objects silently dropped every hit and every count from that envelope.
+ */
+private fun JsonObject.unwrapToolPayload(): JsonElement {
     for (key in listOf("data", "result", "output", "response", "payload")) {
-        (this[key] as? JsonObject)?.let { return it }
+        val payload = this[key]
+        if (payload != null && payload !is JsonNull) return payload
     }
     return this
 }

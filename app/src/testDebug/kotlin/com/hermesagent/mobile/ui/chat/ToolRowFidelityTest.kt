@@ -195,6 +195,25 @@ class ToolRowFidelityTest {
         compose.onNodeWithText("1 failed", substring = true).assertIsDisplayed()
     }
 
+    @Test
+    fun `a failed command still shows the output it produced`() {
+        // Upstream's error branch short-circuits the streams. It must not here:
+        // a failed command is the row where its output matters most, and Copy
+        // would otherwise hand over text the screen refused to paint.
+        launch(
+            tool(
+                state = ToolState.Failed,
+                args = """{"command":"./gradlew check"}""",
+                result = """{"stdout":"42 tests","stderr":"AssertionError at line 9","exit_code":1}""",
+            ),
+        )
+        expand("Tool Ran ./gradlew check, error")
+
+        compose.onNodeWithText("42 tests", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("AssertionError at line 9", substring = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Exit code 1").assertIsDisplayed()
+    }
+
     // ── Clamp and copy ───────────────────────────────────────────────────────
 
     @Test
@@ -222,6 +241,27 @@ class ToolRowFidelityTest {
         )
         assertTrue("copy must not carry the truncation notice", !copied.contains("more characters truncated"))
         assertTrue("copy must be longer than the painted slice", copied.length > MAX_TOOL_RENDER_CHARS)
+    }
+
+    @Test
+    fun `the copy confirmation survives a streamed delta`() {
+        // The tap handler used to capture a state instance keyed on the payload
+        // text, so the first delta orphaned it: the clipboard filled and the
+        // control never confirmed.
+        launch(tool(args = """{"command":"tail -f log"}""", result = """{"stdout":"first chunk of output"}"""))
+        expand("Tool Ran tail -f log, done")
+
+        state = state.copy(
+            transcript = state.transcript.dropLast(1) +
+                tool(args = """{"command":"tail -f log"}""", result = """{"stdout":"first chunk of output, then more"}"""),
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Copy output").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Output copied").assertIsDisplayed()
+        assertEquals("first chunk of output, then more", clipboardText)
     }
 
     @Test

@@ -737,11 +737,16 @@ private fun ToolPayload(view: ToolView) {
         TerminalTranscript(view.terminalCommand, view.terminalExitCode)
         if (view.searchHits.isNotEmpty()) SearchHits(view.searchQuery, view.searchHits)
 
-        when {
-            // fallback.tsx:636-653 — an error speaks in the destructive ink.
-            view.status == ToolStatus.Error && view.detail.isNotBlank() ->
-                PayloadSection(view.detailLabel, view.detail, view.rendersAnsi, tokens.destructive)
+        // fallback.tsx:636-653 — an error speaks in the destructive ink. Unlike
+        // upstream, which lets the error branch short-circuit the streams, the
+        // streams still paint below it: a failed command is the one row where
+        // its output matters most, and Copy would otherwise hand over text the
+        // screen refused to show.
+        if (view.status == ToolStatus.Error && view.detail.isNotBlank()) {
+            PayloadSection(view.detailLabel, view.detail, view.rendersAnsi, tokens.destructive)
+        }
 
+        when {
             // fallback.tsx:654-689 — the split-stream form. stderr is
             // deliberately quiet rather than destructive: npm progress and git
             // hints live there, and painting them red would cry wolf on a
@@ -762,7 +767,7 @@ private fun ToolPayload(view: ToolView) {
                 }
             }
 
-            view.detail.isNotBlank() ->
+            view.status != ToolStatus.Error && view.detail.isNotBlank() ->
                 PayloadSection(view.detailLabel, view.detail, view.rendersAnsi, tokens.textSecondary)
         }
     }
@@ -795,6 +800,10 @@ private fun TerminalTranscript(command: String?, exitCode: Int?) {
                 },
                 style = HermesTheme.type.code,
                 color = tokens.textSecondary,
+                // Every other block is clamped; a command that arrived as a
+                // whole script must not push the output off the screen.
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
                 // Named rather than cleared: the `$` is decoration and must not
                 // be spoken, but the command text still has to be findable.
                 modifier = Modifier
@@ -810,7 +819,7 @@ private fun TerminalTranscript(command: String?, exitCode: Int?) {
                 // Desktop: emerald on a clean exit, amber otherwise — never
                 // destructive, because a non-zero exit is routine (grep finds
                 // nothing, diff finds differences).
-                color = if (code == 0) tokens.diffAdded else tokens.gitUntracked,
+                color = if (code == 0) tokens.taskCompleted else tokens.statusWarning,
                 modifier = Modifier
                     .background(tokens.cardSurface, RoundedCornerShape(3.dp))
                     .padding(horizontal = 5.dp, vertical = 2.dp)
@@ -886,6 +895,10 @@ private fun SectionLabel(label: String) {
         text = label.uppercase(Locale.US),
         style = HermesTheme.type.sectionLabel,
         color = HermesTheme.tokens.textQuaternary,
+        // Desktop upper-cases in CSS, which leaves the DOM text alone. Compose
+        // has to change the string, so the spoken form is restored here rather
+        // than letting a screen reader spell "stderr" out letter by letter.
+        modifier = Modifier.semantics { contentDescription = label },
     )
 }
 
@@ -917,7 +930,11 @@ private fun PayloadText(text: String, rendersAnsi: Boolean, color: Color) {
 private fun ToolCopyControl(action: ToolCopyAction) {
     val tokens = HermesTheme.tokens
     val platformContext = LocalContext.current
-    var copied by remember(action.text) { mutableStateOf(false) }
+    // Not keyed on the payload: a streamed delta rewrites `action.text`, and a
+    // keyed state would hand the remembered tap handler an orphan to write to —
+    // the clipboard would still fill, but the confirmation would never appear.
+    // The timer below is what ends it, as it does for the reply control.
+    var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
             delay(COPY_CONFIRM_MILLIS)
@@ -983,7 +1000,9 @@ private fun HermesAnsiInk.inkFor(color: AnsiColor): Color = when (color) {
 
 private fun ToolView.hasPayload(): Boolean =
     terminalCommand != null || terminalExitCode != null || searchHits.isNotEmpty() ||
-        stdout != null || stderr != null || detail.isNotBlank()
+        stdout != null || stderr != null || detail.isNotBlank() ||
+        // A row with nothing to paint but a path to copy is still worth opening.
+        copy != null
 
 /**
  * Which glyph leads the row (`ToolGlyph` / `leadingStatus`, `fallback.tsx:212-254`).
@@ -1027,7 +1046,7 @@ private fun ToolStatus.glyphColor(): Color {
     return when (this) {
         ToolStatus.Running -> tokens.accent
         ToolStatus.Success -> tokens.scaffoldText
-        ToolStatus.Warning -> tokens.gitUntracked
+        ToolStatus.Warning -> tokens.statusWarning
         ToolStatus.Error -> tokens.destructive
         ToolStatus.Stopped -> tokens.textQuaternary
     }

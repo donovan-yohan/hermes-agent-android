@@ -133,44 +133,42 @@ class ToolViewTest {
     // ── Tone, icon and status ────────────────────────────────────────────────
 
     @Test
-    fun `the tone and icon table matches desktop's TOOL_META`() {
-        // index.ts:142-214, entry for entry.
+    fun `the icon table matches desktop's TOOL_META`() {
+        // index.ts:142-214, entry for entry. Desktop's table also carries a
+        // `tone`, which no renderer reads on either side, so only the icon half
+        // is projected — see the field map in docs/parity/tool-output-fidelity.md.
         val expected = mapOf(
-            "browser_click" to (ToolTone.Browser to ToolIconName.Globe),
-            "browser_take_screenshot" to (ToolTone.Browser to ToolIconName.FileMedia),
-            "clarify" to (ToolTone.Agent to ToolIconName.Question),
-            "cronjob" to (ToolTone.Agent to ToolIconName.Watch),
-            "edit_file" to (ToolTone.File to ToolIconName.Edit),
-            "execute_code" to (ToolTone.Terminal to ToolIconName.Terminal),
-            "image_generate" to (ToolTone.Image to ToolIconName.FileMedia),
-            "list_files" to (ToolTone.File to ToolIconName.Files),
-            "memory" to (ToolTone.Agent to ToolIconName.Brain),
-            "patch" to (ToolTone.File to ToolIconName.Edit),
-            "read_file" to (ToolTone.File to ToolIconName.File),
-            "search_files" to (ToolTone.File to ToolIconName.Search),
-            "session_search_recall" to (ToolTone.Agent to ToolIconName.Search),
-            "terminal" to (ToolTone.Terminal to ToolIconName.Terminal),
-            "todo" to (ToolTone.Agent to ToolIconName.Tools),
-            "vision_analyze" to (ToolTone.Image to ToolIconName.Eye),
-            "web_extract" to (ToolTone.Web to ToolIconName.Globe),
-            "web_search" to (ToolTone.Web to ToolIconName.Search),
-            "write_file" to (ToolTone.File to ToolIconName.Edit),
+            "browser_click" to ToolIconName.Globe,
+            "browser_take_screenshot" to ToolIconName.FileMedia,
+            "clarify" to ToolIconName.Question,
+            "cronjob" to ToolIconName.Watch,
+            "edit_file" to ToolIconName.Edit,
+            "execute_code" to ToolIconName.Terminal,
+            "image_generate" to ToolIconName.FileMedia,
+            "list_files" to ToolIconName.Files,
+            "memory" to ToolIconName.Brain,
+            "patch" to ToolIconName.Edit,
+            "read_file" to ToolIconName.File,
+            "search_files" to ToolIconName.Search,
+            "session_search_recall" to ToolIconName.Search,
+            "terminal" to ToolIconName.Terminal,
+            "todo" to ToolIconName.Tools,
+            "vision_analyze" to ToolIconName.Eye,
+            "web_extract" to ToolIconName.Globe,
+            "web_search" to ToolIconName.Search,
+            "write_file" to ToolIconName.Edit,
         )
 
-        for ((name, toneAndIcon) in expected) {
-            val view = activity(name).toolView()
-            assertEquals("$name tone", toneAndIcon.first, view.tone)
-            assertEquals("$name icon", toneAndIcon.second, view.icon)
+        for ((name, icon) in expected) {
+            assertEquals("$name icon", icon, activity(name).toolView().icon)
         }
     }
 
     @Test
     fun `an unknown tool falls back through desktop's prefix rule`() {
         // index.ts:233-236.
-        assertEquals(ToolTone.Browser, activity("browser_unheard_of").toolView().tone)
         assertEquals(ToolIconName.Globe, activity("browser_unheard_of").toolView().icon)
-        assertEquals(ToolTone.Web, activity("web_unheard_of").toolView().tone)
-        assertEquals(ToolTone.Default, activity("something_else").toolView().tone)
+        assertEquals(ToolIconName.Globe, activity("web_unheard_of").toolView().icon)
         assertNull(activity("something_else").toolView().icon)
     }
 
@@ -298,11 +296,17 @@ class ToolViewTest {
     }
 
     @Test
-    fun `a file edit copies the diff`() {
-        val view = activity("patch", args = """{"path":"a.kt"}""", inlineDiff = "+added\n-removed").toolView()
+    fun `a wrapped array payload still yields its hits and its count`() {
+        // format.ts:85-97 unwraps any payload, not only an object. Narrowing it
+        // to objects lost every hit inside a `{"data": [ … ]}` envelope.
+        val view = activity(
+            "web_search",
+            args = """{"query":"q"}""",
+            result = """{"data":[{"title":"t","url":"https://example.test/a","snippet":"s"}]}""",
+        ).toolView()
 
-        assertEquals("Copy file", view.copy?.label)
-        assertEquals("+added\n-removed", view.copy?.text)
+        assertEquals(1, view.searchHits.size)
+        assertEquals("1 result", view.countLabel)
     }
 
     @Test
@@ -328,12 +332,30 @@ class ToolViewTest {
 
     @Test
     fun `the line cap bites before the character cap on a tall thin log`() {
-        val value = (1..MAX_TOOL_RENDER_LINES * 2).joinToString("\n") { "line $it" }
+        val value = (1..MAX_TOOL_RENDER_LINES * 2).joinToString("") { "line $it\n" }
         val clamped = clampForDisplay(value)
 
-        assertEquals(MAX_TOOL_RENDER_LINES, clamped.substringBefore("\n\n…").lines().size)
+        val kept = clamped.substringBefore("\n\n…")
+        assertTrue("the last kept line must be complete", kept.endsWith("line $MAX_TOOL_RENDER_LINES\n"))
+        assertTrue("the line after the cap must be gone", !kept.contains("line ${MAX_TOOL_RENDER_LINES + 1}"))
         assertTrue(clamped.contains("more characters truncated"))
         assertTrue("the cut must be well inside the character cap", value.length < MAX_TOOL_RENDER_CHARS)
+    }
+
+    @Test
+    fun `a payload of exactly the line cap is left whole`() {
+        // The cut lands past the last newline, so a complete 200-line log does
+        // not gain a notice announcing that it lost that newline.
+        val value = (1..MAX_TOOL_RENDER_LINES).joinToString("") { "line $it\n" }
+
+        assertEquals(value, clampForDisplay(value))
+    }
+
+    @Test
+    fun `a truncation smaller than its own notice is not worth announcing`() {
+        val value = "x".repeat(MAX_TOOL_RENDER_CHARS + 8)
+
+        assertEquals(value, clampForDisplay(value))
     }
 
     // ── Tolerant reads ───────────────────────────────────────────────────────
