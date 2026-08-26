@@ -27,6 +27,8 @@ import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.relay.RelayChannelReader
+import com.hermesagent.mobile.data.relay.RelayMessageFormat
+import com.hermesagent.mobile.ui.relay.RelayPoster
 import com.hermesagent.mobile.ui.relay.RelayViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -71,9 +73,10 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * The Relay surface reads through the process-scoped plugin client and the
-     * process-scoped availability controller; it owns neither. The reader is
-     * deliberately the read half only — posting belongs to the composer slice.
+     * The Relay surface reads and posts through the process-scoped plugin
+     * client and the process-scoped availability controller; it owns neither.
+     * Both seams stay this thin on purpose: the surface's whole retry policy is
+     * expressed against one result type, never against a transport.
      */
     private val relayViewModel: RelayViewModel by viewModels {
         RelayViewModel.factory(
@@ -84,6 +87,14 @@ class MainActivity : ComponentActivity() {
 
                 override suspend fun history(channelId: String, limit: Int) =
                     app.relayRepository.history(channelId, limit)
+            },
+            poster = object : RelayPoster {
+                override suspend fun post(
+                    channelId: String,
+                    text: String,
+                    format: RelayMessageFormat,
+                    clientMessageId: String,
+                ) = app.relayRepository.post(channelId, text, format, clientMessageId)
             },
         )
     }
@@ -219,6 +230,9 @@ class MainActivity : ComponentActivity() {
                     onSelectChannel = relayViewModel::selectChannel,
                     onClearSelection = relayViewModel::clearSelection,
                     onRetry = relayViewModel::retry,
+                    onDraftChange = relayViewModel::setDraft,
+                    onSend = relayViewModel::sendDraft,
+                    onRetrySend = relayViewModel::retrySend,
                     onResume = relayViewModel::surfaceResumed,
                     onPause = relayViewModel::surfacePaused,
                 )

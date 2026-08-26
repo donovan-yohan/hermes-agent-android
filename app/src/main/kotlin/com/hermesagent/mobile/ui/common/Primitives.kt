@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -356,10 +357,13 @@ fun <T> SegmentedControl(
 /**
  * Primary action. Flat fill, small radius, no shadow.
  *
- * The height floor is the Android touch target, not a visual choice: caption
- * type plus the padding this design wants lands around 42dp, which is under the
- * platform minimum. Padding stays as the *visual* rhythm; the floor only ever
- * makes the box taller.
+ * Both floors are the Android touch target, not a visual choice: caption type
+ * plus the padding this design wants lands around 42dp tall, and a short label
+ * like "Send" lands around 36dp wide — both under the platform minimum, and a
+ * control that clears one floor and not the other is not a touch target. Every
+ * caller so far was wide enough only by accident, through `fillMaxWidth()` or a
+ * long label. Padding stays as the *visual* rhythm; the floors only ever make
+ * the box bigger.
  */
 @Composable
 fun PrimaryButton(
@@ -372,6 +376,7 @@ fun PrimaryButton(
     Box(
         modifier = modifier
             .heightIn(min = HermesTheme.spacing.touchTarget)
+            .widthIn(min = HermesTheme.spacing.touchTarget)
             .background(
                 if (enabled) tokens.accent else tokens.accent.copy(alpha = 0.3f),
                 RoundedCornerShape(8.dp),

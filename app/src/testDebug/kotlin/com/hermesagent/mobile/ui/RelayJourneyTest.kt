@@ -36,13 +36,16 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.relay.CHANNEL_LIST_TAG
+import com.hermesagent.mobile.ui.relay.COMPOSER_FIELD_TAG
 import com.hermesagent.mobile.ui.relay.NOTICE_TAG
 import com.hermesagent.mobile.ui.relay.RelayChannelRow
+import com.hermesagent.mobile.ui.relay.RelayComposerUiState
 import com.hermesagent.mobile.ui.relay.RelayScreen
 import com.hermesagent.mobile.ui.relay.RelaySenderKind
 import com.hermesagent.mobile.ui.relay.RelayTimeLabels
 import com.hermesagent.mobile.ui.relay.RelayTranscriptRow
 import com.hermesagent.mobile.ui.relay.RelayUiState
+import com.hermesagent.mobile.ui.relay.SEND_TAG
 import com.hermesagent.mobile.ui.relay.STALE_TAG
 import com.hermesagent.mobile.ui.relay.TRANSCRIPT_TAG
 import com.hermesagent.mobile.ui.relay.relayChannelRows
@@ -464,6 +467,46 @@ class RelayJourneyTest {
 
         compose.onNodeWithText("Connecting to Relay").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithTag(CHANNEL_LIST_TAG).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `the composer belongs to a transcript and never to the channel list`() {
+        launch(channelsState())
+        openRelay()
+
+        // Nothing to write to yet: a channel list is a place to pick, not to type.
+        assertTrue(compose.onAllNodesWithTag(COMPOSER_FIELD_TAG).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithTag(SEND_TAG).fetchSemanticsNodes().isEmpty())
+
+        compose.onNodeWithTag("Relay channel c1").performClick()
+        compose.onNodeWithTag(COMPOSER_FIELD_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(SEND_TAG).assertHeightIsAtLeast(HermesSpacing().touchTarget)
+
+        // Back out and it is gone again with the transcript it belonged to.
+        compose.onNodeWithContentDescription("Back to channels").performClick()
+        assertTrue(compose.onAllNodesWithTag(SEND_TAG).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `a state that can never produce a channel shows no composer to type into`() {
+        launch(
+            RelayUiState(
+                notice = relayNotice(
+                    RelayAvailabilityState(
+                        RelayAvailability.SignInRequired(RelaySignInReason.NoCredential),
+                        signInAvailable = true,
+                    ),
+                ),
+                selectedChannelId = "c1",
+                selectedChannelTitle = "product",
+                composer = RelayComposerUiState(editable = true),
+            ),
+        )
+        openRelay()
+
+        // The notice sends the person to Gateways; a composer under it would be
+        // offering to send through a connection that does not exist.
+        assertTrue(compose.onAllNodesWithTag(COMPOSER_FIELD_TAG).fetchSemanticsNodes().isEmpty())
     }
 
     /** Read something further up, the way a person does it. */

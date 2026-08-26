@@ -114,6 +114,11 @@ data class RelayUiState(
     val transcript: List<RelayTranscriptRow> = emptyList(),
     val transcriptLoaded: Boolean = false,
     /**
+     * The composer under the selected channel's transcript. Rendered only
+     * there, so it is only ever meaningful when [showingTranscript] is true.
+     */
+    val composer: RelayComposerUiState = RelayComposerUiState(),
+    /**
      * The last refresh of the visible pane came back unusable and the previous
      * answer is still on screen. Quiet by design — the data is still true, it
      * is just older than this second.
