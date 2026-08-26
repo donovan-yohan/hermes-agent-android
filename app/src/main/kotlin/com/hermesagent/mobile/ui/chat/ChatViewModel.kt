@@ -534,6 +534,27 @@ internal class ChatViewModel(
             val restored = profileScopeStore.profileScope.first()
             if (profileScopeGeneration == restoreGeneration) profileScope.value = restored
         }
+        // A persisted scope can name a profile this Gateway does not have — it
+        // was deleted or renamed on the host, or the scope came from another
+        // Gateway entirely. The Gateway does not refuse that name: an
+        // unresolvable profile falls back to the launch handle
+        // (`tui_gateway/server.py:1476-1491,1519-1533`), so a named scope would
+        // quietly list the launch profile's rows and stamp them with an owner
+        // that does not exist. Once the roster has actually answered, a scope
+        // it does not contain goes back to the Gateway's own profile.
+        viewModelScope.launch {
+            combine(profileScope, profileRepository.roster) { scope, roster -> scope to roster }
+                .collect { (scope, roster) ->
+                    if (!roster.loaded) return@collect
+                    val active = normalizeProfileKey(scope.activeProfile)
+                    if (active == DEFAULT_PROFILE) return@collect
+                    if (roster.profiles.any { it.key == active }) return@collect
+                    // The unified view is kept: only the profile new work
+                    // targets is stale, not the choice to browse everything.
+                    applyProfileScope(scope.copy(activeProfile = DEFAULT_PROFILE))
+                    notice.value = "That profile is no longer available."
+                }
+        }
         // The repository only ever learns the scope as the `profile` parameter
         // its session RPCs carry. Re-listing after a scope change is what makes
         // a newly visible profile's rows arrive; the cache keeps the rest.

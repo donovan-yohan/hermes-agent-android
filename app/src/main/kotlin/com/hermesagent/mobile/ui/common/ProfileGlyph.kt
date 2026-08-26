@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -75,11 +76,11 @@ fun ProfileGlyph(
     }
     val argb = resolveProfileColorArgb(profile)
     val hue = argb?.let(::Color) ?: tokens.textQuaternary
-    // Desktop leaves a colourless initial to inherit its container's ink
-    // (`profile-glyph.tsx:37`, `color: color ?? undefined`). Compose has no such
-    // inheritance, so it takes the nearest readable token instead of the faint
-    // one its own tint is mixed from.
-    val ink = if (argb == null) tokens.textSecondary else hue
+    // `color: color ?? undefined` (`profile-glyph.tsx:37`,
+    // `profile-switcher.tsx:704`): a profile with an identity colour writes its
+    // initial in it, and a colourless one leaves the initial to inherit its
+    // container's ink. `LocalContentColor` is that inheritance here.
+    val ink = argb?.let(::Color) ?: LocalContentColor.current
     val fill = mixPremultiplied(hue, if (active) 30f else 22f, Color.Transparent)
     Box(
         modifier
@@ -91,7 +92,7 @@ fun ProfileGlyph(
     ) {
         val initialSize = with(LocalDensity.current) { (size * 0.5f).toSp() }
         // Full-strength ink. Desktop dims the whole rail square, not its
-        // initial (`profile-switcher.tsx:696-703`), and the shared glyph on a
+        // initial (`profile-switcher.tsx:696-697`), and the shared glyph on a
         // row or a roster line is never dimmed at all.
         Text(
             text = profileInitial(profile.name),

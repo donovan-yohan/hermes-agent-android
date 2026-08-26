@@ -159,6 +159,26 @@ class GatewayProfileRoutingTest {
     }
 
     @Test
+    fun `a failed launch leg stops the fan-out stamping anything`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        // Without the launch leg's answer there is no way to tell the Gateway's
+        // fallback rows from a profile's own, so nothing is stamped: an
+        // unstamped row reads as the launch profile's and the next refresh
+        // fixes it, while a wrong owner survives every later merge.
+        rpc.failListForProfile = null
+        rpc.failLaunchLeg = true
+        rpc.sessionListByProfile = mapOf("work" to listOf("ambiguous-row"))
+        val repository = repository(cache, rpc, backgroundScope)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(listProfiles = listOf(null, "work")))
+
+        repository.refreshSessions()
+
+        assertNull(cache.session("ambiguous-row")?.remoteProfile)
+    }
+
+    @Test
     fun `one profile refusing does not discard the profiles that answered`() = runTest {
         val cache = SessionCache()
         val rpc = FakeProfileRpc()
@@ -247,12 +267,16 @@ class GatewayProfileRoutingTest {
         /** Requested `profile` (null = omitted) to the rows it answers with. */
         var sessionListByProfile: Map<String?, List<String>> = emptyMap()
         var failListForProfile: String? = null
+        var failLaunchLeg = false
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += method to params
             val profile = (params["profile"] as? JsonPrimitive)?.content
             return when (method) {
                 "session.list" -> {
+                    if (profile == null && failLaunchLeg) {
+                        throw GatewayRpcException("the launch profile is unavailable")
+                    }
                     if (profile != null && profile == failListForProfile) {
                         throw GatewayRpcException("this profile is unavailable")
                     }
