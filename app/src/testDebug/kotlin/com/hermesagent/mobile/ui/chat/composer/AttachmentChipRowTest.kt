@@ -4,12 +4,14 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import com.hermesagent.mobile.data.attachments.AttachmentKind
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,6 +54,12 @@ class AttachmentChipRowTest {
             "Check the session, then remove and attach again if needed.",
             substring = true,
         ).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Remove shot.png").assertIsDisplayed()
+        val remove = compose.onNodeWithContentDescription("Remove shot.png").assertIsDisplayed()
+            .fetchSemanticsNode().boundsInWindow
+        val viewport = compose.onRoot().fetchSemanticsNode().boundsInWindow
+        assertTrue(
+            "Remove action $remove is clipped outside the $viewport viewport",
+            remove.left >= viewport.left && remove.right <= viewport.right,
+        )
     }
 }

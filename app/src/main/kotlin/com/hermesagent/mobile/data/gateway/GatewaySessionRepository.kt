@@ -283,6 +283,10 @@ internal class LiveGatewaySessionRepository(
     private val projectMutex = Mutex()
     /** One stage-plus-submit sequence per durable session; keyed, not global. */
     private val submitMutexes = KeyedMutex<String>()
+    /** Orders only final prompt dispatch against Stop; staging never delays the emergency control. */
+    private val turnDispatchMutexes = KeyedMutex<String>()
+    /** Stop invalidates submit transactions that have not reached their final dispatch. */
+    private val interruptEpochByDurableId = mutableMapOf<String, Long>()
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
     private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
@@ -774,13 +778,25 @@ internal class LiveGatewaySessionRepository(
         attachments: List<OutgoingAttachment>,
     ): GatewaySubmitOutcome {
         if (attachments.isEmpty()) return submit(durableId, text, queued)
+        val interruptEpoch = submitInterruptEpoch(durableId)
         // The per-session lock must cover staging AND submit: the Gateway's
         // attached_images slot is session-global, so a concurrent text drain
         // that submitted between our last stage and prompt.submit would claim
         // the staged images for the wrong prompt.
         return submitMutexes.withLock(durableId) {
-            submitAttachmentsLocked(durableId, text, queued, attachments)
+            submitAttachmentsLocked(durableId, text, queued, attachments, interruptEpoch)
         }
+    }
+
+    private fun submitInterruptEpoch(durableId: String): Long = synchronized(stateLock) {
+        interruptEpochByDurableId[durableId] ?: 0L
+    }
+
+    private fun requireUninterruptedSubmit(durableId: String, expectedEpoch: Long) {
+        val interrupted = synchronized(stateLock) {
+            (interruptEpochByDurableId[durableId] ?: 0L) != expectedEpoch
+        }
+        if (interrupted) throw GatewayRpcException("The message was not sent because the turn was stopped.")
     }
 
     /** Called only while [submitMutexes] owns this durable session. */
@@ -789,6 +805,7 @@ internal class LiveGatewaySessionRepository(
         text: String,
         queued: Boolean,
         attachments: List<OutgoingAttachment>,
+        interruptEpoch: Long,
     ): GatewaySubmitOutcome {
         val binding = try {
             ensureRuntime(durableId)
@@ -820,6 +837,7 @@ internal class LiveGatewaySessionRepository(
         }
 
         for (attachment in attachments) {
+            requireUninterruptedSubmit(durableId, interruptEpoch)
             val result = stageOne(binding, connection, attachment)
             when (result) {
                 is GatewayStageOutcome.Staged -> {
@@ -888,6 +906,7 @@ internal class LiveGatewaySessionRepository(
                 optimisticText,
                 queued,
                 gatewayQueueMergeable = attachments.none { it is OutgoingAttachment.Image },
+                interruptEpoch = interruptEpoch,
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
@@ -988,18 +1007,22 @@ internal class LiveGatewaySessionRepository(
         wireText: String,
         optimisticText: String,
         queued: Boolean,
-    ): GatewaySubmitOutcome = submitMutexes.withLock(durableId) {
-        require(wireText.isNotEmpty())
-        val binding = ensureRuntime(durableId)
-        val connection = connectionSnapshot()
-        submitInternalLocked(
-            binding,
-            connection,
-            wireText,
-            optimisticText,
-            queued,
-            gatewayQueueMergeable = true,
-        )
+    ): GatewaySubmitOutcome {
+        val interruptEpoch = submitInterruptEpoch(durableId)
+        return submitMutexes.withLock(durableId) {
+            require(wireText.isNotEmpty())
+            val binding = ensureRuntime(durableId)
+            val connection = connectionSnapshot()
+            submitInternalLocked(
+                binding,
+                connection,
+                wireText,
+                optimisticText,
+                queued,
+                gatewayQueueMergeable = true,
+                interruptEpoch = interruptEpoch,
+            )
+        }
     }
 
     private suspend fun submitInternalLocked(
@@ -1009,6 +1032,7 @@ internal class LiveGatewaySessionRepository(
         optimisticText: String,
         queued: Boolean,
         gatewayQueueMergeable: Boolean,
+        interruptEpoch: Long,
     ): GatewaySubmitOutcome {
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
@@ -1057,39 +1081,42 @@ internal class LiveGatewaySessionRepository(
         }
 
         try {
-            requestPromptSubmit(connection, binding.runtimeId, wireText, queued)
-            synchronized(stateLock) {
-                ensureCurrent(connection)
-                if (optimistic == null) {
-                    // Strip only @image: lines; a @file: ref is real prompt
-                    // content and must stay readable in the queue row.
-                    val displayText = optimisticText
-                        .lineSequence()
-                        .filterNot { line -> line.startsWith("@image:") }
-                        .joinToString("\n")
-                        .trim()
-                    updateComposerStatus(binding.durableId, binding.runtimeId) { status ->
-                        val occurrenceId = "gateway-queued-${sequence.incrementAndGet()}"
-                        val head = status.gatewayQueuedPrompts.firstOrNull()
-                        // Gateway merges text only while the queue is a single
-                        // text envelope. Once another envelope exists, every
-                        // later arrival remains separate.
-                        val joinsOnlyEnvelope = gatewayQueueMergeable &&
-                            head?.gatewayBatchMergeable == true &&
-                            status.gatewayQueuedPrompts.all { it.gatewayBatchId == head.gatewayBatchId }
-                        status.copy(
-                            gatewayQueuedPrompts = status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(
-                                id = occurrenceId,
-                                text = displayText,
-                                gatewayBatchId = if (joinsOnlyEnvelope) head.gatewayBatchId else occurrenceId,
-                                gatewayBatchMergeable = gatewayQueueMergeable,
-                            ),
-                        )
+            return turnDispatchMutexes.withLock(binding.durableId) {
+                requireUninterruptedSubmit(binding.durableId, interruptEpoch)
+                requestPromptSubmit(connection, binding.runtimeId, wireText, queued)
+                synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    if (optimistic == null) {
+                        // Strip only @image: lines; a @file: ref is real prompt
+                        // content and must stay readable in the queue row.
+                        val displayText = optimisticText
+                            .lineSequence()
+                            .filterNot { line -> line.startsWith("@image:") }
+                            .joinToString("\n")
+                            .trim()
+                        updateComposerStatus(binding.durableId, binding.runtimeId) { status ->
+                            val occurrenceId = "gateway-queued-${sequence.incrementAndGet()}"
+                            val head = status.gatewayQueuedPrompts.firstOrNull()
+                            // Gateway merges text only while the queue is a single
+                            // text envelope. Once another envelope exists, every
+                            // later arrival remains separate.
+                            val joinsOnlyEnvelope = gatewayQueueMergeable &&
+                                head?.gatewayBatchMergeable == true &&
+                                status.gatewayQueuedPrompts.all { it.gatewayBatchId == head.gatewayBatchId }
+                            status.copy(
+                                gatewayQueuedPrompts = status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(
+                                    id = occurrenceId,
+                                    text = displayText,
+                                    gatewayBatchId = if (joinsOnlyEnvelope) head.gatewayBatchId else occurrenceId,
+                                    gatewayBatchMergeable = gatewayQueueMergeable,
+                                ),
+                            )
+                        }
                     }
+                    ephemeralSessions.remove(binding.durableId)
                 }
-                ephemeralSessions.remove(binding.durableId)
+                GatewaySubmitOutcome.Accepted
             }
-            return GatewaySubmitOutcome.Accepted
         } catch (failure: Throwable) {
             val ambiguous = failure is CancellationException || failure.isAmbiguousGatewayMutation()
             if (optimistic != null) {
@@ -1287,6 +1314,7 @@ internal class LiveGatewaySessionRepository(
             if (runtimeId !in activeRuntimeIds) {
                 return GatewayInterruptOutcome.NotActive
             }
+            interruptEpochByDurableId[durableId] = (interruptEpochByDurableId[durableId] ?: 0L) + 1L
             SessionBinding(durableId, runtimeId)
         }
         val connection = try {
@@ -1294,17 +1322,19 @@ internal class LiveGatewaySessionRepository(
         } catch (failure: Throwable) {
             return interruptPreflightFailureOutcome(failure)
         }
-        return try {
-            val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
-                .asObject("session.interrupt")
-            val interrupted = result.string("status") == "interrupted"
-            synchronized(stateLock) {
-                ensureCurrent(connection)
-                if (interrupted) clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
+        return turnDispatchMutexes.withLock(durableId) {
+            try {
+                val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
+                    .asObject("session.interrupt")
+                val interrupted = result.string("status") == "interrupted"
+                synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    if (interrupted) clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
+                }
+                if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
+            } catch (failure: Throwable) {
+                interruptFailureOutcome(failure)
             }
-            if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
-        } catch (failure: Throwable) {
-            interruptFailureOutcome(failure)
         }
     }
 
@@ -2765,15 +2795,25 @@ internal class LiveGatewaySessionRepository(
             else -> {
                 val headText = projection.queuedUser
                 if (headText != null) {
-                    val matchingOccurrenceStart = local.indices.firstOrNull { index ->
-                        val candidate = local[index]
-                        local
-                            .drop(index)
-                            .takeWhile { it.gatewayBatchId == candidate.gatewayBatchId }
-                            .joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text) == headText
-                    }
-                    if (matchingOccurrenceStart != null) {
-                        local.drop(matchingOccurrenceStart)
+                    val match = local.matchGatewayQueueHead(headText)
+                    if (match != null) {
+                        val retained = local.drop(match.localStart)
+                        val batchId = retained.first().gatewayBatchId
+                        fun foreignOccurrence(text: String): ComposerGatewayQueuedPrompt {
+                            val occurrenceId = "gateway-queued-${sequence.incrementAndGet()}"
+                            return ComposerGatewayQueuedPrompt(
+                                id = occurrenceId,
+                                text = text,
+                                gatewayBatchId = batchId,
+                                gatewayBatchMergeable = true,
+                            )
+                        }
+                        buildList {
+                            match.foreignPrefix?.let { add(foreignOccurrence(it)) }
+                            addAll(retained.take(match.batchSize))
+                            match.foreignSuffix?.let { add(foreignOccurrence(it)) }
+                            addAll(retained.drop(match.batchSize))
+                        }
                     } else {
                         val occurrenceId = "gateway-queued-${sequence.incrementAndGet()}"
                         listOf(
@@ -3408,6 +3448,36 @@ private data class LiveSessionProjection(
     val busy: Boolean
         get() = running == true || inflight?.streaming == true || status in RESUMED_BUSY_STATUSES
 }
+
+private data class GatewayQueueHeadMatch(
+    val localStart: Int,
+    val batchSize: Int,
+    val foreignPrefix: String? = null,
+    val foreignSuffix: String? = null,
+)
+
+private fun List<ComposerGatewayQueuedPrompt>.matchGatewayQueueHead(headText: String): GatewayQueueHeadMatch? =
+    indices.firstNotNullOfOrNull { index ->
+        val candidate = this[index]
+        val batch = drop(index).takeWhile { it.gatewayBatchId == candidate.gatewayBatchId }
+        val batchText = batch.joinToString("\n\n", transform = ComposerGatewayQueuedPrompt::text)
+        when {
+            batchText == headText -> GatewayQueueHeadMatch(index, batch.size)
+            batch.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable) &&
+                headText.startsWith("$batchText\n\n") -> GatewayQueueHeadMatch(
+                localStart = index,
+                batchSize = batch.size,
+                foreignSuffix = headText.removePrefix("$batchText\n\n"),
+            )
+            batch.all(ComposerGatewayQueuedPrompt::gatewayBatchMergeable) &&
+                headText.endsWith("\n\n$batchText") -> GatewayQueueHeadMatch(
+                localStart = index,
+                batchSize = batch.size,
+                foreignPrefix = headText.removeSuffix("\n\n$batchText"),
+            )
+            else -> null
+        }
+    }
 
 private val EMPTY_LIVE_SESSION_PROJECTION = LiveSessionProjection(
     running = null,

@@ -1306,6 +1306,49 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `authoritative foreign text around the local head preserves its occurrence`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        repository.submit("durable-a", "ours", queued = true)
+        val accepted = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.single()
+
+        rpc.activateResult = RESUME_RUNNING.dropLast(1) +
+            ",\"queued\":{\"user\":\"theirs\\n\\nours\"}}"
+        repository.openSession("durable-a")
+        val prefixed = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+
+        assertEquals(listOf("theirs", "ours"), prefixed.map { it.text })
+        assertEquals(accepted, prefixed.last())
+        assertEquals(prefixed.first().gatewayBatchId, prefixed.last().gatewayBatchId)
+
+        rpc.activateResult = RESUME_RUNNING.dropLast(1) +
+            ",\"queued\":{\"user\":\"theirs\\n\\nours\\n\\nlater\"}}"
+        repository.openSession("durable-a")
+        val reconciled = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+        assertEquals(listOf("theirs", "ours", "later"), reconciled.map { it.text })
+        assertEquals(accepted, reconciled[1])
+        assertEquals(1, reconciled.map { it.gatewayBatchId }.toSet().size)
+
+        repository.openSession("durable-a")
+        assertEquals(reconciled, cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts)
+
+        rpc.emit("message.complete", "runtime-a", """{"text":"first done"}""")
+        runCurrent()
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+    }
+
+    @Test
     fun `attachment staging and queued submit are one same-session transaction`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { imageAttachResponse = CompletableDeferred() }
@@ -1341,6 +1384,97 @@ class GatewaySessionRepositoryTest {
             listOf("first turn", "attachment turn", "text drain"),
             rpc.calls.filter { it.method == "prompt.submit" }.map { it.params.string("text") },
         )
+    }
+
+    @Test
+    fun `stop cancels an attachment that is still staging without waiting for the upload`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { imageAttachResponse = CompletableDeferred() }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+
+        val attachmentSubmit = async {
+            runCatching {
+                repository.submit(
+                    "durable-a",
+                    "attachment turn",
+                    queued = true,
+                    attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+                )
+            }
+        }
+        runCurrent()
+        val interrupt = async { repository.requestInterrupt("durable-a") }
+        runCurrent()
+
+        // Stop remains an emergency control: it completes while the upload is
+        // still waiting, and invalidates the not-yet-dispatched prompt.
+        assertEquals(GatewayInterruptOutcome.Interrupted, interrupt.await())
+        assertEquals(1, rpc.calls.count { it.method == "session.interrupt" })
+        rpc.imageAttachResponse?.complete(
+            json("""{"attached":true,"path":"/gw/img.png","text":"[User attached image: img.png]"}"""),
+        )
+
+        val failure = attachmentSubmit.await().exceptionOrNull() as GatewayRpcException
+        assertFalse(failure.requestMayHaveBeenAccepted)
+        assertEquals(
+            listOf("prompt.submit", "image.attach_bytes", "session.interrupt", "image.detach"),
+            rpc.calls
+                .filter {
+                    it.method in setOf("prompt.submit", "image.attach_bytes", "session.interrupt", "image.detach")
+                }
+                .map(RpcCall::method),
+        )
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `stop orders after an attachment prompt that is already on the wire`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "first turn")
+        rpc.promptResponse = CompletableDeferred()
+
+        val attachmentSubmit = async {
+            repository.submit(
+                "durable-a",
+                "attachment turn",
+                queued = true,
+                attachments = listOf(OutgoingAttachment.Image("shot.png", "AAAA")),
+            )
+        }
+        runCurrent()
+        val interrupt = async { repository.requestInterrupt("durable-a") }
+        runCurrent()
+
+        assertEquals(0, rpc.calls.count { it.method == "session.interrupt" })
+        rpc.promptResponse?.complete(json("{}"))
+
+        assertEquals(GatewaySubmitOutcome.Accepted, attachmentSubmit.await())
+        assertEquals(GatewayInterruptOutcome.Interrupted, interrupt.await())
+        assertEquals(
+            listOf("image.attach_bytes", "prompt.submit", "session.interrupt"),
+            rpc.calls
+                .dropWhile { it.method != "image.attach_bytes" }
+                .filter { it.method in setOf("image.attach_bytes", "prompt.submit", "session.interrupt") }
+                .map(RpcCall::method),
+        )
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
     }
 
     @Test
