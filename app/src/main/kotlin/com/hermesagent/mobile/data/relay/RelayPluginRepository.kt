@@ -4,6 +4,7 @@ import com.hermesagent.mobile.data.gateway.GatewayHttp
 import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
 import com.hermesagent.mobile.data.gateway.GatewayHttpResult
 import com.hermesagent.mobile.data.gateway.consumeBody
+import com.hermesagent.mobile.data.gateway.consumeEnvelope
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -60,7 +61,12 @@ sealed interface RelayAvailability {
     /** The plugin responded, but not in the pinned v1 shape. */
     data object Incompatible : RelayAvailability
 
-    /** No usable authenticated route reached the Gateway. */
+    /**
+     * No usable answer came back: either no authenticated route reached the
+     * Gateway at all, or the hop was refused with nothing that identifies who
+     * refused it or why. Deliberately the residual state — a refusal the
+     * plugin explains is classified from its own envelope instead.
+     */
     data object GatewayUnreachable : RelayAvailability
 }
 
@@ -114,16 +120,32 @@ data class RelayHistory(
 
 /** Outcome of posting one channel message. */
 sealed interface RelayPostResult {
-    /** Relay accepted the post; [message] is the acknowledged row when returned. */
-    data class Accepted(val message: RelayMessage?) : RelayPostResult
+    /**
+     * Relay accepted the post and acknowledged the stored row. A 200 without a
+     * usable row is a contract violation, not an acceptance, so this is never
+     * an acceptance without a message.
+     */
+    data class Accepted(val message: RelayMessage) : RelayPostResult
 
     /**
      * Not accepted. [statusCode] mirrors the failing hop (0 = could not reach
      * the Gateway; 409 = Relay conflict, never retry with the same id); null
      * means a 200 response violated the pinned contract.
+     *
+     * [retryable] is Relay's own classification, never this client's guess: it
+     * is true only when the plugin's refusal envelope says the same request may
+     * be sent again. Re-posting always reuses the original `clientMessageId`,
+     * so a retry Relay has already accepted stays exactly-once.
      */
-    data class Failed(val statusCode: Int?, val safeMessage: String) : RelayPostResult
+    data class Failed(
+        val statusCode: Int?,
+        val safeMessage: String,
+        val retryable: Boolean = false,
+    ) : RelayPostResult
 }
+
+/** The plugin's structured refusal classification. */
+internal data class RelayErrorEnvelope(val code: String, val retryable: Boolean)
 
 /**
  * Typed client for the hermes-plugin-relay backend the Gateway mounts at
@@ -142,26 +164,33 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) {
     suspend fun availability(): RelayAvailability = withContext(Dispatchers.IO) {
         val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
         when (val result = transport.execute(relayRequest(CONNECTION_STATUS))) {
-            is GatewayHttpResult.Rejected -> when (result.statusCode) {
-                404 -> RelayAvailability.Missing
-                401, 403 -> RelayAvailability.SignInRequired
-                else -> RelayAvailability.GatewayUnreachable
-            }
+            is GatewayHttpResult.Rejected ->
+                result.consumeEnvelope { refusalToAvailability(result.statusCode, it) }
 
             is GatewayHttpResult.Success -> result.consumeBody(::parseAvailability)
         }
     }
 
     /**
-     * Redeem the server-held grant (if any). Sends a deliberately empty body:
-     * the endpoint rejects any content so a client cannot smuggle scope.
+     * Redeem the server-held grant (if any) and report the lane state that came
+     * back: the endpoint answers the same flat envelope as `/connection/status`.
+     * Sends a deliberately empty body — the endpoint rejects any content so a
+     * client cannot smuggle scope.
+     *
+     * A grant is redeemable exactly once, so this is one deliberate action and
+     * never a retry loop. Reporting the real lane state rather than a bare
+     * success flag is what lets a caller tell "authorized and ready" from
+     * "still needs authorization on the host" from "the Gateway was not
+     * reachable at all" — three outcomes with three different next steps.
      */
-    suspend fun reauthorize(): Boolean = withContext(Dispatchers.IO) {
-        val transport = http() ?: return@withContext false
+    suspend fun reauthorize(): RelayAvailability = withContext(Dispatchers.IO) {
+        val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
         val empty = ByteArray(0).toRequestBody(null)
         when (val result = transport.execute(relayRequest(CONNECTION_AUTHORIZE, method = "POST", body = empty))) {
-            is GatewayHttpResult.Rejected -> false
-            is GatewayHttpResult.Success -> result.consumeBody(::parseAuthorize)
+            is GatewayHttpResult.Rejected ->
+                result.consumeEnvelope { refusalToAvailability(result.statusCode, it) }
+
+            is GatewayHttpResult.Success -> result.consumeBody(::parseAvailability)
         }
     }
 
@@ -206,15 +235,22 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) {
     ): RelayPostResult = withContext(Dispatchers.IO) {
         val safeChannel = validChannelId(channelId)
             ?: return@withContext RelayPostResult.Failed(400, PICK_CHANNEL_MESSAGE)
+        // These mirror the server's own bounds *and* the status it answers with
+        // (`dashboard/plugin_api.py:174-198` at the pin): a size refusal is 413
+        // there, so refusing locally under 400 would teach a caller a different
+        // contract than the wire's.
         when {
             text.isBlank() ->
                 return@withContext RelayPostResult.Failed(400, EMPTY_TEXT_MESSAGE)
 
             text.toByteArray(Charsets.UTF_8).size > MAX_TEXT_BYTES ->
-                return@withContext RelayPostResult.Failed(400, LARGE_TEXT_MESSAGE)
+                return@withContext RelayPostResult.Failed(413, LARGE_TEXT_MESSAGE)
         }
-        if (clientMessageId.isBlank() || clientMessageId.toByteArray(Charsets.UTF_8).size > MAX_ID_BYTES) {
+        if (clientMessageId.isBlank()) {
             return@withContext RelayPostResult.Failed(400, RETRY_ID_MESSAGE)
+        }
+        if (clientMessageId.toByteArray(Charsets.UTF_8).size > MAX_ID_BYTES) {
+            return@withContext RelayPostResult.Failed(413, RETRY_ID_MESSAGE)
         }
         val transport = http() ?: return@withContext RelayPostResult.Failed(0, TRANSPORT_DOWN_MESSAGE)
         val payload = buildJsonObject {
@@ -224,8 +260,19 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) {
         }.toString()
         val body = payload.toRequestBody(JSON_MEDIA_TYPE)
         when (val result = transport.execute(relayRequest("${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages", method = "POST", body = body))) {
-            is GatewayHttpResult.Rejected ->
-                RelayPostResult.Failed(result.statusCode, result.safeMessage)
+            is GatewayHttpResult.Rejected -> {
+                val envelope = result.consumeEnvelope(::parseRelayError)
+                RelayPostResult.Failed(
+                    result.statusCode,
+                    result.safeMessage,
+                    // A conflict is exactly-once *working*; re-sending it is
+                    // the one retry the contract forbids, whatever the
+                    // envelope's own flag says.
+                    retryable = envelope != null &&
+                        envelope.retryable &&
+                        envelope.code != ERROR_CONFLICT,
+                )
+            }
 
             is GatewayHttpResult.Success -> result.consumeBody(::parsePost)
         }
@@ -236,21 +283,67 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) {
 // Parsing — every helper is fail-closed on the pinned projection shape.
 // ---------------------------------------------------------------------------
 
+/**
+ * The pinned lane envelope is flat — `{"status": …, "message"?: …}` straight
+ * from `ConnectionStatus.to_wire()` (hermes-plugin-relay @
+ * `563a8c846ab997dc965c20080787f46b4f644b29`, `relay_proxy.py:508-512`),
+ * returned unwrapped by both `/connection/status` and `/connection/authorize`
+ * (`dashboard/plugin_api.py:216-218,220-238`).
+ *
+ * A later plugin may nest that same object under `channels` beside other
+ * lanes, so the nested shape is accepted as a forward-compatible fallback and
+ * an optional `guidance` hint is read wherever it appears. Neither exists at
+ * the pin. A body that is neither shape fails closed rather than rendering a
+ * guess.
+ */
 private fun parseAvailability(bytes: ByteArray): RelayAvailability {
     val root = parseObject(bytes) ?: return RelayAvailability.Incompatible
-    val channels = root.obj("channels") ?: return RelayAvailability.Incompatible
-    val state = channels.string("status")?.toLaneState() ?: return RelayAvailability.Incompatible
+    val lane = if (root.containsKey("status")) root else root.obj("channels")
+    val state = lane?.string("status")?.toLaneState() ?: return RelayAvailability.Incompatible
     return RelayAvailability.Available(
         RelayChannelsStatus(
             state = state,
-            message = channels.string("message"),
-            guidance = channels.string("guidance"),
+            message = lane.string("message"),
+            guidance = lane.string("guidance"),
         ),
     )
 }
 
-private fun parseAuthorize(bytes: ByteArray): Boolean =
-    parseObject(bytes)?.string("status") == "ready"
+/**
+ * Read a refusal the way its author wrote it.
+ *
+ * The plugin's own refusals carry `{"error":{"code","message","retryable"}}`
+ * (`dashboard/plugin_api.py:85-88` at the pin). When that envelope is present
+ * the plugin is mounted, enabled and talking whatever it is refusing — which
+ * leaves the runtime gate's envelope-less 404 as the only honest "not on this
+ * Gateway". Only the classification is used; no text is carried out.
+ */
+private fun refusalToAvailability(statusCode: Int, envelope: ByteArray): RelayAvailability {
+    parseRelayError(envelope)?.let { error ->
+        return when (error.code) {
+            ERROR_AUTH_REQUIRED -> RelayAvailability.SignInRequired
+            ERROR_RELAY_UNAVAILABLE -> lane(RelayLaneState.OFFLINE)
+            ERROR_RELAY_INVALID_RESPONSE, ERROR_RELAY_FAILED -> lane(RelayLaneState.ERROR)
+            // A resource-shaped refusal cannot describe a connection probe.
+            else -> RelayAvailability.Incompatible
+        }
+    }
+    return when (statusCode) {
+        404 -> RelayAvailability.Missing
+        401, 403 -> RelayAvailability.SignInRequired
+        else -> RelayAvailability.GatewayUnreachable
+    }
+}
+
+private fun lane(state: RelayLaneState) =
+    RelayAvailability.Available(RelayChannelsStatus(state, message = null, guidance = null))
+
+/** The plugin's structured refusal; null when the body is not one. */
+private fun parseRelayError(bytes: ByteArray): RelayErrorEnvelope? {
+    val error = parseObject(bytes)?.obj("error") ?: return null
+    val code = error.string("code") ?: return null
+    return RelayErrorEnvelope(code, error.bool("retryable") ?: false)
+}
 
 private fun parseChannels(bytes: ByteArray): List<RelayChannel>? {
     val rows = parseObject(bytes)?.array("channels") ?: return null
@@ -265,7 +358,10 @@ private fun parseChannels(bytes: ByteArray): List<RelayChannel>? {
 private fun parseChannel(row: JsonObject): RelayChannel? {
     val id = row.string("id") ?: return null
     val title = row.string("title") ?: return null
-    val last = row.obj("lastMessage")
+    // A malformed preview poisons the row, not just the preview: a channel
+    // whose last message cannot be trusted must not be rendered as one that
+    // simply has no messages.
+    val last = row.obj("lastMessage")?.let { parseLastMessage(it) ?: return null }
     return RelayChannel(
         id = id,
         title = title,
@@ -275,7 +371,7 @@ private fun parseChannel(row: JsonObject): RelayChannel? {
         latestSeq = row.long("latestSeq"),
         messageCount = row.long("messageCount"),
         threadCount = row.long("threadCount"),
-        lastMessage = last?.let(::parseLastMessage),
+        lastMessage = last,
     )
 }
 
@@ -398,8 +494,17 @@ private val CONTRACT_VIOLATION = RelayPostResult.Failed(null, UNUSABLE_RESPONSE_
 // Mirrors relay_proxy.py bounds at the plugin source of truth; the server
 // remains authoritative and re-validates everything.
 internal const val MAX_HISTORY_LIMIT = 50
-private const val MAX_TEXT_BYTES = 64 * 1024
-private const val MAX_ID_BYTES = 512
+internal const val MAX_TEXT_BYTES = 64 * 1024
+internal const val MAX_ID_BYTES = 512
+
+// Refusal codes the plugin writes into its error envelope
+// (`dashboard/plugin_api.py:92-113` at the pin). Codes this build does not
+// know stay unclassified rather than being folded into a neighbour.
+private const val ERROR_AUTH_REQUIRED = "auth_required"
+private const val ERROR_CONFLICT = "conflict"
+private const val ERROR_RELAY_UNAVAILABLE = "relay_unavailable"
+private const val ERROR_RELAY_INVALID_RESPONSE = "relay_invalid_response"
+private const val ERROR_RELAY_FAILED = "relay_error"
 
 private const val PLUGIN_ID = "hermes-plugin-relay"
 private const val BASE_PATH = "api/plugins/$PLUGIN_ID"
