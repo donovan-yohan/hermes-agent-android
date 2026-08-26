@@ -130,6 +130,15 @@ data class RelayUiState(
      * shape this build cannot read, or a connection that has not happened yet.
      */
     val relayAnswered: Boolean = false,
+    /**
+     * Relay's lane is one the surface actually polls. Strictly narrower than
+     * [relayAnswered], which is true for all four lane states: a lane that
+     * answered `auth_required`, `offline` or `error` is never asked for data
+     * (`RelayViewModel.refreshVisiblePane`), so only this may put a pane into
+     * its loading phase. Keying that on [relayAnswered] left a cold start on
+     * any of those three lanes claiming to load forever with no request out.
+     */
+    val relayReady: Boolean = false,
 ) {
     val showingTranscript: Boolean get() = selectedChannelId != null
 
@@ -253,6 +262,15 @@ internal fun RelayAvailabilityState.laneIsReady(): Boolean =
  * Desktop applies no sort or filter of its own (`desktop/plugin.js:109-130`),
  * and neither does this: the hub owns channel order, and an archived channel
  * stays in place with an annotation rather than being hidden.
+ *
+ * The one thing it does enforce is that a row id appears once. `id` is the
+ * hub's primary key and the list's Compose key, so a repeat is the same
+ * channel twice rather than two channels — and a repeated key is not a
+ * degraded list but an `IllegalArgumentException` out of `LazyColumn`. The
+ * first occurrence wins, which keeps backend order intact. Dropping the
+ * duplicate rather than refusing the payload is deliberate: this is a
+ * read-only surface, and hiding every honest channel beside one repeated row
+ * would be the larger lie.
  */
 internal fun relayChannelRows(
     channels: List<RelayChannel>,
@@ -282,7 +300,7 @@ internal fun relayChannelRows(
             preview,
         ),
     )
-}
+}.distinctBy { it.id }
 
 /**
  * The newest-first window Relay returns, rendered oldest to newest.
@@ -290,6 +308,11 @@ internal fun relayChannelRows(
  * `seq` is the hub's own monotonic order and is required on every projected
  * row (`relay_proxy.py:292-305`), so ordering by it is deterministic whichever
  * direction the window arrived in.
+ *
+ * Message ids are deduplicated after ordering, for the same reason and on the
+ * same rule as [relayChannelRows]: one row per id, first in render order wins,
+ * so a repeated id cannot crash a keyed `LazyColumn` and cannot move a row
+ * that is already on screen.
  */
 internal fun relayTranscriptRows(
     messages: List<RelayMessage>,
@@ -317,7 +340,7 @@ internal fun relayTranscriptRows(
             if (truncated) "Truncated by Relay" else null,
         ),
     )
-}
+}.distinctBy { it.id }
 
 /**
  * Relay stamps every row with an ISO-8601 instant. Desktop renders that string

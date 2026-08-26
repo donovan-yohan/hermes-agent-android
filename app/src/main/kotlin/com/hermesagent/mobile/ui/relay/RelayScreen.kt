@@ -8,21 +8,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,7 +27,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -40,11 +36,12 @@ import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
-import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.common.scrollToTail
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import kotlinx.coroutines.flow.first
 
 /**
  * The Relay workspace: channels, then one channel's transcript.
@@ -174,13 +171,19 @@ internal enum class RelayPanePhase { Retry, Loading, Silent, Empty, Content }
 internal fun relayPanePhase(
     loaded: Boolean,
     stale: Boolean,
-    relayAnswered: Boolean,
+    relayReady: Boolean,
     isEmpty: Boolean,
 ): RelayPanePhase = when {
     !loaded && stale -> RelayPanePhase.Retry
-    !loaded && relayAnswered -> RelayPanePhase.Loading
-    // Nothing was ever answered and nothing is being asked. The notice above
-    // already says why; a spinner under it would only lie.
+    // Loading means a request is out. Only a ready lane is ever asked, so a
+    // cold start on an offline, unauthorized or errored lane lands on Silent
+    // below with the notice as the whole story — never on a spinner that no
+    // request will ever resolve.
+    !loaded && relayReady -> RelayPanePhase.Loading
+    // Nothing has loaded and nothing is being asked — because Relay has not
+    // answered at all, or because it answered with a lane this surface never
+    // polls. The notice above already says which; a spinner under it would
+    // only lie.
     !loaded -> RelayPanePhase.Silent
     isEmpty -> RelayPanePhase.Empty
     else -> RelayPanePhase.Content
@@ -192,7 +195,7 @@ private fun ChannelsPane(state: RelayUiState, actions: RelayActions, modifier: M
         relayPanePhase(
             loaded = state.channelsLoaded,
             stale = state.stale,
-            relayAnswered = state.relayAnswered,
+            relayReady = state.relayReady,
             isEmpty = state.channels.isEmpty(),
         )
     ) {
@@ -214,7 +217,7 @@ private fun ChannelsPane(state: RelayUiState, actions: RelayActions, modifier: M
 
         RelayPanePhase.Empty -> EmptyState(
             title = "No Relay channels yet",
-            // Desktop's own wording (`desktop/plugin.js:461`).
+            // Desktop's own wording (`desktop/plugin.js:467`).
             description = "Connect or authorize Relay, then retry to load the channels available to you.",
             modifier = modifier,
         )
@@ -224,9 +227,7 @@ private fun ChannelsPane(state: RelayUiState, actions: RelayActions, modifier: M
             contentPadding = PaddingValues(bottom = 12.dp),
         ) {
             items(items = state.channels, key = { it.id }) { row ->
-                ChannelRow(row, selected = row.id == state.selectedChannelId) {
-                    actions.onSelectChannel(row.id)
-                }
+                ChannelRow(row) { actions.onSelectChannel(row.id) }
             }
         }
     }
@@ -236,11 +237,17 @@ private fun ChannelsPane(state: RelayUiState, actions: RelayActions, modifier: M
  * Flat row, no card, no per-row outline — the session list's grammar, because
  * a channel is the same kind of thing to pick.
  *
+ * No selected treatment: Desktop keeps the list beside the transcript, so a
+ * highlighted row tells its reader which pane they are looking at. Here the
+ * transcript replaces the list, so a row can never be both selected and
+ * visible — a fill and a `selected` semantics flag nobody can ever perceive
+ * would only lie to TalkBack.
+ *
  * Desktop annotates an archived channel on the name line rather than hiding or
  * re-sorting it (`desktop/plugin.js:492`); the suffix arrives already applied.
  */
 @Composable
-private fun ChannelRow(row: RelayChannelRow, selected: Boolean, onClick: () -> Unit) {
+private fun ChannelRow(row: RelayChannelRow, onClick: () -> Unit) {
     val tokens = HermesTheme.tokens
     Row(
         modifier = Modifier
@@ -248,10 +255,8 @@ private fun ChannelRow(row: RelayChannelRow, selected: Boolean, onClick: () -> U
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .clickable(onClick = onClick)
             .testTag("Relay channel ${row.id}")
-            .background(if (selected) tokens.sessionRowActiveSurface else Color.Transparent)
             .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp)
             .semantics {
-                this.selected = selected
                 role = Role.Button
                 contentDescription = row.description
             },
@@ -297,7 +302,7 @@ private fun TranscriptPane(state: RelayUiState, actions: RelayActions, modifier:
         relayPanePhase(
             loaded = state.transcriptLoaded,
             stale = state.stale,
-            relayAnswered = state.relayAnswered,
+            relayReady = state.relayReady,
             isEmpty = state.transcript.isEmpty(),
         )
     ) {
@@ -325,11 +330,43 @@ private fun TranscriptPane(state: RelayUiState, actions: RelayActions, modifier:
 
         RelayPanePhase.Content -> {
             val listState = rememberLazyListState()
-            // Newest content is at the bottom, so the transcript opens on it.
-            // Keyed on the newest row rather than on a scroll position, so
-            // nothing here depends on an animation having run.
-            LaunchedEffect(state.selectedChannelId, state.transcript.lastOrNull()?.id) {
-                listState.scrollToItem(state.transcript.lastIndex)
+            val transcript = rememberUpdatedState(state.transcript)
+            // Newest content is at the bottom, so opening a channel lands
+            // there and growth keeps following — but only for a reader who is
+            // still at the bottom. This is ChatScreen's rule, and the reason
+            // it is a rule rather than an unconditional scroll: a poll every
+            // three seconds that yanks someone back mid-message is worse than
+            // a transcript that waits. A backward scroll disarms following;
+            // reaching the bottom again re-arms it. `scrollToTail` lands on
+            // the bottom *edge*, because `scrollToItem` alone would put the
+            // newest row's top edge on screen and hide a long message's tail.
+            //
+            // Following is a plain local: nothing outside this loop reads it,
+            // and it resets with the effect when the channel changes.
+            LaunchedEffect(listState, state.selectedChannelId) {
+                snapshotFlow {
+                    listState.layoutInfo.totalItemsCount > 0 &&
+                        listState.layoutInfo.viewportEndOffset >
+                        listState.layoutInfo.viewportStartOffset
+                }.first { ready -> ready }
+
+                listState.scrollToTail()
+                var following = true
+
+                snapshotFlow {
+                    Triple(
+                        transcript.value,
+                        listState.canScrollForward,
+                        listState.isScrollInProgress && listState.lastScrolledBackward,
+                    )
+                }.collect { (_, canScrollForward, scrolledBackward) ->
+                    if (!canScrollForward) {
+                        following = true
+                        return@collect
+                    }
+                    if (scrolledBackward) following = false
+                    if (following) listState.scrollToTail()
+                }
             }
             LazyColumn(
                 modifier = modifier.fillMaxWidth().testTag(TRANSCRIPT_TAG),
@@ -459,6 +496,7 @@ private fun previewChannels() = RelayUiState(
     ),
     channelsLoaded = true,
     relayAnswered = true,
+    relayReady = true,
 )
 
 private fun previewTranscript() = RelayUiState(
@@ -490,6 +528,7 @@ private fun previewTranscript() = RelayUiState(
     ),
     transcriptLoaded = true,
     relayAnswered = true,
+    relayReady = true,
 )
 
 @Composable

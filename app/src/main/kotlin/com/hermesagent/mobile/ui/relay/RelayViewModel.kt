@@ -68,9 +68,11 @@ private data class RelayData(
  *    `desktop/plugin.js:23,1073-1083`). Both of its panes are on screen at
  *    once; a phone shows one, so the same single tick refreshes whichever pane
  *    the person is actually looking at. One request per tick either way.
- * 2. **A hidden surface polls nothing.** The loop exists only between
- *    [surfaceResumed] and [surfacePaused], so backgrounding the app ends it
- *    rather than leaving a timer running against a Gateway nobody is watching.
+ * 2. **A hidden surface polls nothing, and neither does a lane nobody
+ *    asks.** The loop exists only while the surface is between
+ *    [surfaceResumed] and [surfacePaused] *and* the lane is ready, so neither
+ *    backgrounding the app nor an offline lane leaves a timer running against
+ *    a Gateway nobody is asking anything of.
  * 3. **A failed refresh never blanks the screen.** The repository is
  *    fail-closed, so an unusable answer keeps the last good one and raises
  *    [RelayUiState.stale]. There is no error toast: stale data is still true,
@@ -118,6 +120,7 @@ internal class RelayViewModel(
             stale = rows.stale,
             unavailableOnGateway = gateway.availability == RelayAvailability.Missing,
             relayAnswered = gateway.availability is RelayAvailability.Available,
+            relayReady = gateway.laneIsReady(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RelayUiState())
 
@@ -129,26 +132,30 @@ internal class RelayViewModel(
         viewModelScope.launch {
             combine(resumed, availability) { visible, gateway -> visible && gateway.laneIsReady() }
                 .distinctUntilChanged()
-                .collect { readable -> if (readable) refreshVisiblePane() }
+                .collect { readable -> if (readable) refreshVisiblePane() else stopTick() }
         }
     }
 
     /**
      * The surface is on screen. Re-probe availability through the controller's
-     * own entry point, and start the tick. The first load is not issued here:
-     * it rides the liveness edge above, so a surface opened before the Gateway
-     * has answered still paints the moment it does.
+     * own entry point. Neither the first load nor the tick is started here:
+     * both ride the liveness edge above, so a surface opened before the
+     * Gateway has answered still paints the moment it does — and a lane
+     * nothing is ever asked of never wakes a coroutine every three seconds
+     * only to refuse itself.
      */
     fun surfaceResumed() {
         resumed.value = true
         refreshAvailability()
-        restartTick()
     }
 
     /**
      * The cadence means "three seconds since the last look", so anything that
      * looks now restarts it. Without that, a tap taken just before a scheduled
      * tick is followed almost immediately by a second identical request.
+     *
+     * Only ever reached from a look that actually happened, so the tick exists
+     * exactly while the surface is visible *and* the lane is ready.
      */
     private fun restartTick() {
         poll?.cancel()
@@ -162,11 +169,15 @@ internal class RelayViewModel(
         }
     }
 
+    private fun stopTick() {
+        poll?.cancel()
+        poll = null
+    }
+
     /** The surface is gone. Nothing may keep asking the Gateway on its behalf. */
     fun surfacePaused() {
         resumed.value = false
-        poll?.cancel()
-        poll = null
+        stopTick()
         fetch?.cancel()
         fetch = null
     }

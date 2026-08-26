@@ -55,7 +55,7 @@ fun SettingsScreen(
             label = "Relay channels",
             description = if (relayAvailable) {
                 // Desktop's own launcher wording (hermes-plugin-relay @
-                // `563a8c8`, `desktop/plugin.js:376`).
+                // `563a8c8`, `desktop/plugin.js:377`).
                 "Channels, transcripts, and messaging live in their own workspace."
             } else {
                 RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE

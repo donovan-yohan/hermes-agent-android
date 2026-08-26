@@ -291,26 +291,67 @@ class RelayViewStateTest {
         // Both panes ask this the same way, so the decision is asserted once.
         assertEquals(
             RelayPanePhase.Retry,
-            relayPanePhase(loaded = false, stale = true, relayAnswered = true, isEmpty = true),
+            relayPanePhase(loaded = false, stale = true, relayReady = true, isEmpty = true),
         )
         assertEquals(
             RelayPanePhase.Loading,
-            relayPanePhase(loaded = false, stale = false, relayAnswered = true, isEmpty = true),
+            relayPanePhase(loaded = false, stale = false, relayReady = true, isEmpty = true),
         )
-        // Nothing answered and nothing being asked: the notice is the screen.
+        // Nothing loaded and nothing being asked: the notice is the screen.
+        // The lane may well have answered — `offline`, `auth_required` and
+        // `error` all did — but none of them is polled, so none of them may
+        // put a spinner on screen that no request will ever resolve.
         assertEquals(
             RelayPanePhase.Silent,
-            relayPanePhase(loaded = false, stale = false, relayAnswered = false, isEmpty = true),
+            relayPanePhase(loaded = false, stale = false, relayReady = false, isEmpty = true),
         )
         assertEquals(
             RelayPanePhase.Empty,
-            relayPanePhase(loaded = true, stale = false, relayAnswered = true, isEmpty = true),
+            relayPanePhase(loaded = true, stale = false, relayReady = true, isEmpty = true),
         )
         // A stale answer is still an answer: the rows stay.
         assertEquals(
             RelayPanePhase.Content,
-            relayPanePhase(loaded = true, stale = true, relayAnswered = true, isEmpty = false),
+            relayPanePhase(loaded = true, stale = true, relayReady = true, isEmpty = false),
         )
+        // And a lane that stopped being ready keeps the rows it already has.
+        assertEquals(
+            RelayPanePhase.Content,
+            relayPanePhase(loaded = true, stale = true, relayReady = false, isEmpty = false),
+        )
+    }
+
+    @Test
+    fun `a repeated channel id projects one row, in the place the first held`() {
+        // `id` is the hub's primary key and the list's Compose key: a repeat is
+        // the same channel twice, and a repeated key crashes a keyed LazyColumn.
+        val rows = relayChannelRows(
+            listOf(
+                channel("dup", title = "first"),
+                channel("other", title = "other"),
+                channel("dup", title = "second"),
+            ),
+            LOCALE,
+            times(),
+        )
+
+        assertEquals(listOf("dup", "other"), rows.map { it.id })
+        // First occurrence wins, so backend order is left exactly as it was.
+        assertEquals("first", rows.first().title)
+    }
+
+    @Test
+    fun `a repeated message id projects one row, after seq ordering`() {
+        val rows = relayTranscriptRows(
+            listOf(message("dup", seq = 3), message("m1", seq = 1), message("dup", seq = 2)),
+            LOCALE,
+            times(),
+        )
+
+        // Ordering runs first, so the surviving row is the first in *render*
+        // order and cannot move under a reader between two polls.
+        assertEquals(listOf("m1", "dup"), rows.map { it.id })
+        assertEquals("message 2", rows.last().text)
     }
 
     private companion object {

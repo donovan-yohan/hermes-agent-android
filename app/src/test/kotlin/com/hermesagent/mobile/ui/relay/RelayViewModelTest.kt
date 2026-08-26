@@ -42,6 +42,9 @@ class RelayViewModelTest {
     private val reader = RecordingReader()
     private var refreshes = 0
 
+    /** Every wakeup of the poll loop, so "does not tick" is observed, not assumed. */
+    private var waits = 0
+
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
 
@@ -245,6 +248,56 @@ class RelayViewModelTest {
     }
 
     @Test
+    fun `a lane nothing is asked of never starts the three-second tick`() = relayTest { viewModel ->
+        availability.value = RelayAvailabilityState(lane(RelayLaneState.AUTH_REQUIRED))
+        viewModel.surfaceResumed()
+        tick(5)
+
+        // Not one wakeup in fifteen seconds. The tick is started by a look that
+        // actually happened, and this lane is never looked at.
+        assertEquals(0, waits)
+        assertEquals(0, reader.channelCalls)
+
+        becomeReady()
+        settle()
+        assertEquals(1, reader.channelCalls)
+        assertEquals(1, waits)
+
+        // And it stops again the moment the lane stops being ready.
+        availability.value = RelayAvailabilityState(lane(RelayLaneState.OFFLINE))
+        tick(5)
+        assertEquals(1, waits)
+        assertEquals(1, reader.channelCalls)
+    }
+
+    @Test
+    fun `only a ready lane reports the surface as one with a request out`() = relayTest { viewModel ->
+        viewModel.surfaceResumed()
+        settle()
+
+        for (laneState in listOf(
+            RelayLaneState.AUTH_REQUIRED,
+            RelayLaneState.OFFLINE,
+            RelayLaneState.ERROR,
+        )) {
+            availability.value = RelayAvailabilityState(lane(laneState))
+            settle()
+            val state = viewModel.uiState.value
+            // A lane state *is* an answer from Relay, so `relayAnswered` is
+            // true for all three — which is exactly why the surface may not
+            // key a spinner on it. Nothing was asked, and nothing loaded.
+            assertTrue("$laneState answered", state.relayAnswered)
+            assertFalse("$laneState is not polled", state.relayReady)
+            assertFalse("$laneState never loaded", state.channelsLoaded)
+        }
+
+        becomeReady()
+        settle()
+        assertTrue(viewModel.uiState.value.relayReady)
+        assertTrue(viewModel.uiState.value.channelsLoaded)
+    }
+
+    @Test
     fun `a Gateway without the plugin says so at the entry point`() = relayTest { viewModel ->
         availability.value = RelayAvailabilityState(RelayAvailability.Missing)
         viewModel.surfaceResumed()
@@ -252,6 +305,7 @@ class RelayViewModelTest {
 
         assertTrue(viewModel.uiState.value.unavailableOnGateway)
         assertFalse(viewModel.uiState.value.relayAnswered)
+        assertFalse(viewModel.uiState.value.relayReady)
         assertFalse(viewModel.uiState.value.showsContent)
         assertEquals(0, reader.channelCalls)
     }
@@ -274,7 +328,10 @@ class RelayViewModelTest {
             clock = { NOW },
             zone = { ZoneId.of("UTC") },
             locale = { Locale.UK },
-            wait = { millis -> delay(millis) },
+            wait = { millis ->
+                waits++
+                delay(millis)
+            },
         )
         backgroundScope.launch { viewModel.uiState.collect { } }
         runCurrent()

@@ -17,11 +17,17 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
 import com.hermesagent.mobile.data.relay.RelayAvailability
 import com.hermesagent.mobile.data.relay.RelayAvailabilityState
+import com.hermesagent.mobile.data.relay.RelayChannel
 import com.hermesagent.mobile.data.relay.RelayChannelsStatus
 import com.hermesagent.mobile.data.relay.RelayLaneState
+import com.hermesagent.mobile.data.relay.RelayMessage
+import com.hermesagent.mobile.data.relay.RelayMessageFormat
 import com.hermesagent.mobile.data.relay.RelaySignInReason
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -34,11 +40,16 @@ import com.hermesagent.mobile.ui.relay.NOTICE_TAG
 import com.hermesagent.mobile.ui.relay.RelayChannelRow
 import com.hermesagent.mobile.ui.relay.RelayScreen
 import com.hermesagent.mobile.ui.relay.RelaySenderKind
+import com.hermesagent.mobile.ui.relay.RelayTimeLabels
 import com.hermesagent.mobile.ui.relay.RelayTranscriptRow
 import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.relay.STALE_TAG
 import com.hermesagent.mobile.ui.relay.TRANSCRIPT_TAG
+import com.hermesagent.mobile.ui.relay.relayChannelRows
 import com.hermesagent.mobile.ui.relay.relayNotice
+import com.hermesagent.mobile.ui.relay.relayTranscriptRows
+import java.time.ZoneId
+import java.util.Locale
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -63,6 +74,7 @@ class RelayJourneyTest {
     val compose = createComposeRule()
 
     private lateinit var backDispatcher: OnBackPressedDispatcher
+    private var screenState by mutableStateOf(RelayUiState())
     private var resumes = 0
     private var pauses = 0
     private var retries = 0
@@ -229,6 +241,152 @@ class RelayJourneyTest {
     }
 
     @Test
+    fun `a cold start on an offline lane shows the state, never a spinner`() =
+        assertColdStartIsSilent(RelayLaneState.OFFLINE, "Relay is offline")
+
+    @Test
+    fun `a cold start on an unauthorized lane shows the state, never a spinner`() =
+        assertColdStartIsSilent(RelayLaneState.AUTH_REQUIRED, "Authorization required")
+
+    @Test
+    fun `a cold start on an errored lane shows the state, never a spinner`() =
+        assertColdStartIsSilent(RelayLaneState.ERROR, "Relay needs attention")
+
+    /**
+     * Relay answered, so `relayAnswered` is true — but the ViewModel polls only
+     * a ready lane, so nothing has been asked and nothing ever will be until
+     * the lane changes. A "Loading channels…" pane here is a spinner with no
+     * request behind it, and it never resolves.
+     */
+    private fun assertColdStartIsSilent(laneState: RelayLaneState, headline: String) {
+        launch(
+            RelayUiState(
+                relayAnswered = true,
+                relayReady = false,
+                notice = relayNotice(
+                    RelayAvailabilityState(
+                        RelayAvailability.Available(
+                            RelayChannelsStatus(laneState, LANE_DETAIL, guidance = null),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        openRelay()
+
+        compose.onNodeWithTag(NOTICE_TAG).assertIsDisplayed()
+        compose.onNodeWithText(headline).assertIsDisplayed()
+        // Relay's own words sit beside this app's sentence, never instead of it.
+        compose.onNodeWithText(LANE_DETAIL).assertIsDisplayed()
+
+        assertTrue(
+            compose.onAllNodesWithText("Loading channels…").fetchSemanticsNodes().isEmpty(),
+        )
+        assertTrue(compose.onAllNodesWithTag(CHANNEL_LIST_TAG).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `a duplicate row id from the wire renders instead of crashing the list`() {
+        // A repeated id is a hub contract breach, but a keyed LazyColumn turns
+        // it into an IllegalArgumentException, so the projections drop it.
+        val times = RelayTimeLabels(ZoneId.of("UTC"), Locale.UK, NOW)
+        val channels = relayChannelRows(
+            listOf(wireChannel("dup", "product"), wireChannel("dup", "product again")),
+            Locale.UK,
+            times,
+        )
+        val transcript = relayTranscriptRows(
+            listOf(wireMessage("dup", seq = 1), wireMessage("dup", seq = 2)),
+            Locale.UK,
+            times,
+        )
+        assertEquals(1, channels.size)
+        assertEquals(1, transcript.size)
+
+        launchScreen(
+            RelayUiState(
+                channels = channels,
+                channelsLoaded = true,
+                relayAnswered = true,
+                relayReady = true,
+            ),
+        )
+        compose.onNodeWithTag(CHANNEL_LIST_TAG).assertIsDisplayed()
+        compose.onNodeWithText("product").assertIsDisplayed()
+
+        screenState = transcriptState(transcript)
+        compose.waitForIdle()
+        compose.onNodeWithTag(TRANSCRIPT_TAG).assertIsDisplayed()
+        compose.onNodeWithText("message 1").assertIsDisplayed()
+    }
+
+    // ── Tail follow ────────────────────────────────────────────────────────
+    // The rule is ChatScreen's, adopted here because a three-second poll that
+    // yanks a reader to the bottom is worse than a transcript that waits.
+
+    @Test
+    fun `opening a channel lands on the newest message, not the top of the window`() {
+        launchScreen(transcriptState(longTranscript(40)))
+
+        compose.onNodeWithText("Message 40 of the window.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a poll that returns more follows a reader who is still at the tail`() {
+        launchScreen(transcriptState(longTranscript(40)))
+        compose.onNodeWithText("Message 40 of the window.").assertIsDisplayed()
+
+        screenState = transcriptState(longTranscript(60))
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Message 60 of the window.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a poll that returns more does not yank a reader who scrolled back`() {
+        launchScreen(transcriptState(longTranscript(40)))
+        compose.onNodeWithText("Message 40 of the window.").assertIsDisplayed()
+
+        // A real backward gesture is what disarms following — a programmatic
+        // jump is not the reader deciding to read something further up.
+        scrollBack()
+        assertTrue(displayed("Message 40 of the window.").isEmpty())
+
+        screenState = transcriptState(longTranscript(60))
+        compose.waitForIdle()
+
+        // Three seconds later Relay returned twenty more rows. The reader did
+        // not move: neither the old tail nor the new one is on screen.
+        assertTrue(displayed("Message 40 of the window.").isEmpty())
+        assertTrue(displayed("Message 60 of the window.").isEmpty())
+
+        // Reaching the bottom again re-arms following, so the next window does
+        // land on screen. Scrolling up is deliberate; so is coming back.
+        compose.onNodeWithTag(TRANSCRIPT_TAG).performScrollToIndex(59)
+        compose.waitForIdle()
+
+        screenState = transcriptState(longTranscript(80))
+        compose.waitForIdle()
+        compose.onNodeWithText("Message 80 of the window.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `switching channels opens the new transcript at its own newest message`() {
+        launchScreen(transcriptState(longTranscript(40)))
+        scrollBack()
+        assertTrue(displayed("Message 40 of the window.").isEmpty())
+
+        // A different channel is not a reading position to preserve.
+        screenState = transcriptState(longTranscript(30)).copy(
+            selectedChannelId = "c2",
+            selectedChannelTitle = "launch-notes",
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Message 30 of the window.").assertIsDisplayed()
+    }
+
+    @Test
     fun `a lapsed credential offers the app's own sign-in path instead of a list`() {
         launch(
             channelsState().copy(
@@ -279,6 +437,7 @@ class RelayJourneyTest {
         launch(
             RelayUiState(
                 relayAnswered = true,
+                relayReady = true,
                 channelsLoaded = false,
                 stale = true,
             ),
@@ -306,6 +465,44 @@ class RelayJourneyTest {
         compose.onNodeWithText("Connecting to Relay").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithTag(CHANNEL_LIST_TAG).fetchSemanticsNodes().isEmpty())
     }
+
+    /** Read something further up, the way a person does it. */
+    private fun scrollBack() {
+        compose.onNodeWithTag(TRANSCRIPT_TAG).performTouchInput { swipeDown() }
+        compose.waitForIdle()
+    }
+
+    /**
+     * A lazy list composes only what is on screen, so "not in the tree" is how
+     * "not on screen" is asserted for a row the reader has scrolled away from.
+     */
+    private fun displayed(text: String) =
+        compose.onAllNodesWithText(text).fetchSemanticsNodes()
+
+    /** The Relay surface on its own, for the journeys that push state at it. */
+    private fun launchScreen(initial: RelayUiState) {
+        screenState = initial
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                RelayScreen(
+                    state = screenState,
+                    actions = RelayActions(),
+                    onLeave = {},
+                    onOpenGateways = {},
+                )
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    private fun transcriptState(rows: List<RelayTranscriptRow>) = RelayUiState(
+        selectedChannelId = "c1",
+        selectedChannelTitle = "product",
+        transcript = rows,
+        transcriptLoaded = true,
+        relayAnswered = true,
+        relayReady = true,
+    )
 
     private fun openRelay() {
         compose.onNodeWithContentDescription("Open settings").performClick()
@@ -367,6 +564,57 @@ class RelayJourneyTest {
     private companion object {
         const val RELAY_ROW = "settings-row-relay channels"
 
+        /** A lane sentence Relay wrote, with nothing in it to redact. */
+        const val LANE_DETAIL = "The hub closed the link."
+
+        /** 2026-08-26T12:00:00Z. Fixed, because these rows carry timestamps. */
+        const val NOW = 1_787_745_600_000L
+
+        /** Long enough to overflow a phone viewport several times over. */
+        fun longTranscript(count: Int) = (1..count).map { index ->
+            RelayTranscriptRow(
+                id = "m$index",
+                attribution = "Ada",
+                senderKind = RelaySenderKind.Human,
+                text = "Message $index of the window.",
+                timestamp = "09:14",
+                status = "Delivered",
+                truncated = false,
+                description = "Ada. 09:14. Message $index of the window. Delivered.",
+            )
+        }
+
+        fun wireChannel(id: String, title: String) = RelayChannel(
+            id = id,
+            title = title,
+            kind = null,
+            visibility = null,
+            archived = false,
+            latestSeq = null,
+            messageCount = null,
+            threadCount = null,
+            lastMessage = null,
+        )
+
+        fun wireMessage(id: String, seq: Long) = RelayMessage(
+            id = id,
+            channelId = "c1",
+            seq = seq,
+            kind = "message",
+            status = "delivered",
+            senderKind = "human",
+            senderId = "s-$id",
+            senderDisplayName = null,
+            text = "message $seq",
+            format = RelayMessageFormat.TEXT,
+            threadId = null,
+            parentMessageId = null,
+            createdAt = "2026-08-26T09:14:00Z",
+            updatedAt = "2026-08-26T09:14:00Z",
+            truncated = null,
+            clientMessageId = null,
+        )
+
         val TRANSCRIPT = listOf(
             RelayTranscriptRow(
                 id = "m1",
@@ -413,6 +661,7 @@ class RelayJourneyTest {
             ),
             channelsLoaded = true,
             relayAnswered = true,
+            relayReady = true,
         )
     }
 }
