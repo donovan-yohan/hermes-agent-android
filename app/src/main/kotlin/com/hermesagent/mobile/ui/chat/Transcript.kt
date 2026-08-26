@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,6 +56,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -124,12 +126,10 @@ fun Transcript(
     imageLoader: GatewayImageLoader? = null,
 ) {
     val spacing = HermesTheme.spacing
-    val hasRunningActivity = entries.any {
-        (it is ReasoningActivity && it.state == ToolState.Running) ||
-            (it is ToolActivity && it.state == ToolState.Running)
-    }
-    val turnIsWorking = isWorking || entries.any { it is AssistantTurn && it.streaming }
-    val showTurnProgress = turnIsWorking && !hasRunningActivity
+    // Progress has exactly one owner: the live transcript tail. A running tool
+    // or reasoning row is related activity, not a substitute for the Gateway's
+    // current status text.
+    val showTurnProgress = isWorking || entries.any { it is AssistantTurn && it.streaming }
 
     if (entries.isEmpty() && !showTurnProgress) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -163,9 +163,65 @@ fun Transcript(
     }
 }
 
+/** The one user-turn bubble shape, shared by the transcript and the pinned prompt. */
+private val UserBubbleShape = RoundedCornerShape(14.dp)
+
+/**
+ * The user-turn bubble grammar in one place: the `--dt-user-bubble` fill, its
+ * hairline, the 14dp radius and the 12/9 inset, spoken as a single merged node.
+ *
+ * Both the transcript's [UserBubble] and the pinned current prompt render
+ * through this, so the two can never drift apart.
+ */
+@Composable
+internal fun UserTurnBubble(
+    body: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    onClick: (() -> Unit)? = null,
+    onClickLabel: String? = null,
+    onTextLayout: (TextLayoutResult) -> Unit = {},
+    overlay: @Composable BoxScope.() -> Unit = {},
+) {
+    val tokens = HermesTheme.tokens
+    val label = contentDescription
+    Box(
+        modifier
+            .background(tokens.userBubble, UserBubbleShape)
+            .border(1.dp, tokens.userBubbleBorder, UserBubbleShape)
+            .then(
+                if (onClick == null) {
+                    Modifier
+                } else {
+                    Modifier.clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+                },
+            )
+            // Keep the bubble as one accessible message. Merging removes the
+            // duplicate readable Text child while preserving any descendant
+            // actions the bubble carries (the pinned prompt's return tap).
+            .semantics(mergeDescendants = true) { this.contentDescription = label }
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+    ) {
+        // The parent retains its accessible label and its actions; only this
+        // visual leaf is silent so TalkBack does not read the message twice
+        // through the merged subtree.
+        Text(
+            body,
+            style = HermesTheme.type.body,
+            color = tokens.textPrimary,
+            maxLines = maxLines,
+            overflow = overflow,
+            onTextLayout = onTextLayout,
+            modifier = Modifier.clearAndSetSemantics {},
+        )
+        overlay()
+    }
+}
+
 @Composable
 private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?) {
-    val tokens = HermesTheme.tokens
     // Persisted user turns carry trailing `@image:<path>` lines (the
     // gateway's persist-time rewrite); render them as thumbnails instead of
     // placeholder prose, exactly like Desktop's extractImageRefs.
@@ -178,29 +234,11 @@ private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?) {
         // Desktop parity: no body text, no bubble — the thumbnail stands alone.
         if (bodyText.isNotBlank()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Box(
-                    Modifier
-                        .widthIn(max = 320.dp)
-                        .background(tokens.userBubble, RoundedCornerShape(14.dp))
-                        .border(1.dp, tokens.userBubbleBorder, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 12.dp, vertical = 9.dp)
-                        // Keep the bubble as one accessible message. Merging removes
-                        // the duplicate readable Text child while preserving any
-                        // descendant actions if the bubble gains one later.
-                        .semantics(mergeDescendants = true) {
-                            contentDescription = "You said: $bodyText"
-                        },
-                ) {
-                    // The parent retains its accessible label and any future actions;
-                    // only this visual leaf is silent so TalkBack does not read the
-                    // message twice through the merged subtree.
-                    Text(
-                        bodyText,
-                        style = HermesTheme.type.body,
-                        color = tokens.textPrimary,
-                        modifier = Modifier.clearAndSetSemantics {},
-                    )
-                }
+                UserTurnBubble(
+                    body = bodyText,
+                    contentDescription = "You said: $bodyText",
+                    modifier = Modifier.widthIn(max = 320.dp),
+                )
             }
         }
         imageRefs.forEach { ref ->

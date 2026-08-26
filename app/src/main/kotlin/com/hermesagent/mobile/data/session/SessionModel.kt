@@ -75,7 +75,7 @@ data class SessionSummary(
     val activityStartedAtMillis: Long? = null,
 )
 
-/** A transient backend progress notice; one value per session, never a transcript row. */
+/** A transient backend notice rendered at the live turn tail, never stored as transcript content. */
 data class SessionProgress(
     val kind: String,
     val text: String,
@@ -92,9 +92,25 @@ data class ComposerStatusState(
     val subagents: List<ComposerSubagentStatus> = emptyList(),
     val backgroundProcesses: List<ComposerBackgroundProcess> = emptyList(),
     val previewArtifacts: List<ComposerPreviewArtifact> = emptyList(),
-    val genericProgress: SessionProgress? = null,
+    /** Accepted for a later turn; retained across reconnect, but never persisted locally. */
+    val gatewayQueuedPrompts: List<ComposerGatewayQueuedPrompt> = emptyList(),
     val isCompacting: Boolean = false,
 )
+
+data class ComposerGatewayQueuedPrompt(
+    val id: String,
+    val text: String,
+    /** Local identity for the inferred server envelope containing this occurrence. */
+    val gatewayBatchId: String = id,
+    /** Whether another text-only occurrence may still merge into this envelope. */
+    val gatewayBatchMergeable: Boolean = false,
+)
+
+/** Keep only accepted Gateway queue rows; null when no queue remains visible. */
+internal fun ComposerStatusState?.retainingGatewayQueue(): ComposerStatusState? =
+    this?.gatewayQueuedPrompts
+        ?.takeIf(List<ComposerGatewayQueuedPrompt>::isNotEmpty)
+        ?.let { ComposerStatusState(gatewayQueuedPrompts = it) }
 
 enum class ComposerGoalState { Active, Waiting, Paused, Done, None, Unknown }
 

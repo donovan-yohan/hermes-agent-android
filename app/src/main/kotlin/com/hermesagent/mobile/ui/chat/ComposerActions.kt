@@ -11,54 +11,52 @@ enum class ComposerPrimaryAction { None, Send, Redirect, Stop, SendNext, Queue }
 
 data class ComposerActionState(
     val primary: ComposerPrimaryAction,
-    val showQueueSecondary: Boolean,
+    val showQueueSecondary: Boolean = false,
+    val showStopSecondary: Boolean = false,
 )
 
 /**
  * One deliberate action decision for the composer. It is UI-neutral so unit
- * tests can prove a busy turn never falls back from redirect to steer/submit.
+ * tests can prove that the selected session and payload choose one safe route.
  */
 internal fun composerActionState(
     connected: Boolean,
     busyKind: ComposerBusyKind,
     hasText: Boolean,
+    hasAttachments: Boolean,
     canSend: Boolean,
     redirectEligible: Boolean,
     queueCount: Int,
 ): ComposerActionState {
-    if (!connected) return ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
+    if (!connected) return ComposerActionState(ComposerPrimaryAction.None)
     return when (busyKind) {
         ComposerBusyKind.Idle -> when {
-            canSend -> ComposerActionState(ComposerPrimaryAction.Send, showQueueSecondary = false)
-            queueCount > 0 -> ComposerActionState(ComposerPrimaryAction.SendNext, showQueueSecondary = false)
-            else -> ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
+            canSend -> ComposerActionState(ComposerPrimaryAction.Send)
+            queueCount > 0 -> ComposerActionState(ComposerPrimaryAction.SendNext)
+            else -> ComposerActionState(ComposerPrimaryAction.None)
         }
 
         ComposerBusyKind.Streaming -> {
-            // Desktop parity: while a turn is live, the primary control is
-            // steer for any composer text; when the text is not yet steer
-            // eligible, steer falls back to queueing locally so a message
-            // is never lost. With no text the primary stays stop — sending
-            // the next queued entry is never a substitute for the safety
-            // control, and queue entries drain on turn settle.
-            ComposerActionState(
-                primary = if (hasText) ComposerPrimaryAction.Redirect else ComposerPrimaryAction.Stop,
-                showQueueSecondary = hasText,
-            )
-        }
-
-        // A required response has its own Gateway route. Ordinary composer
-        // text is retained safely as a queue entry; it must not interrupt it.
-        ComposerBusyKind.NeedsInput -> when {
-            hasText -> ComposerActionState(ComposerPrimaryAction.Queue, showQueueSecondary = false)
-            else -> ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
-        }
-
-        ComposerBusyKind.Background ->
-            if (hasText) {
-                ComposerActionState(ComposerPrimaryAction.Queue, showQueueSecondary = false)
-            } else {
-                ComposerActionState(ComposerPrimaryAction.None, showQueueSecondary = false)
+            // Attachments cannot ride a redirect into a live tool result. The
+            // Gateway queues the whole payload for the next turn instead.
+            when {
+                hasAttachments -> ComposerActionState(
+                    ComposerPrimaryAction.Queue,
+                    showStopSecondary = true,
+                )
+                hasText -> ComposerActionState(ComposerPrimaryAction.Redirect, showQueueSecondary = true)
+                else -> ComposerActionState(ComposerPrimaryAction.Stop)
             }
+        }
+
+        // A required response has its own Gateway route, and a background turn
+        // owns its session's foreground. Ordinary composer text is retained
+        // safely as a queue entry either way; it must not interrupt them.
+        ComposerBusyKind.NeedsInput,
+        ComposerBusyKind.Background,
+        -> when {
+            hasText || hasAttachments -> ComposerActionState(ComposerPrimaryAction.Queue)
+            else -> ComposerActionState(ComposerPrimaryAction.None)
+        }
     }
 }

@@ -25,6 +25,16 @@ class ComposerContractTest {
         )
         assertTrue(actionState(ComposerBusyKind.Streaming, hasText = true).showQueueSecondary)
         assertEquals(
+            ComposerPrimaryAction.Queue,
+            actionState(ComposerBusyKind.Streaming, hasText = true, hasAttachments = true).primary,
+        )
+        assertTrue(actionState(ComposerBusyKind.Streaming, hasText = true, hasAttachments = true).showStopSecondary)
+        assertEquals(
+            ComposerPrimaryAction.Queue,
+            actionState(ComposerBusyKind.Streaming, hasText = false, hasAttachments = true).primary,
+        )
+        assertTrue(actionState(ComposerBusyKind.Streaming, hasText = false, hasAttachments = true).showStopSecondary)
+        assertEquals(
             ComposerPrimaryAction.Stop,
             actionState(ComposerBusyKind.Streaming, hasText = false, canSend = true).primary,
         )
@@ -64,6 +74,7 @@ class ComposerContractTest {
                 connected = false,
                 busyKind = ComposerBusyKind.Idle,
                 hasText = true,
+                hasAttachments = false,
                 canSend = true,
                 redirectEligible = true,
                 queueCount = 0,
@@ -256,6 +267,7 @@ class ComposerContractTest {
     private fun actionState(
         busyKind: ComposerBusyKind,
         hasText: Boolean,
+        hasAttachments: Boolean = false,
         canSend: Boolean = hasText,
         redirectEligible: Boolean = true,
         queueCount: Int = 0,
@@ -263,6 +275,7 @@ class ComposerContractTest {
         connected = true,
         busyKind = busyKind,
         hasText = hasText,
+        hasAttachments = hasAttachments,
         canSend = canSend,
         redirectEligible = redirectEligible,
         queueCount = queueCount,

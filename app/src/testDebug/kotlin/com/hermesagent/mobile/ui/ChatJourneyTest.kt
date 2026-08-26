@@ -21,6 +21,7 @@ import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.composer.ComposerQueueController
 import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
 import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
@@ -307,6 +308,29 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Send message").assertIsEnabled().performClick()
         compose.waitForIdle()
         assertEquals(listOf("live-a" to ""), repository.submitted)
+        assertTrue(repository.submittedAttachments.single().second.single() is OutgoingAttachment.Image)
+        assertEquals(listOf("live-a" to false), repository.queuedSubmissions)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `busy screenshot primary queues the whole payload instead of redirecting text`() {
+        launch()
+        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = Dispatchers.Unconfined
+        viewModel.openAttachmentStream = { RED_PNG_4X4.inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot.png", "shot.png", "image/png")
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("inspect this")
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Stop generating").assertIsEnabled()
+        compose.onNodeWithContentDescription("Queue message").assertIsEnabled().performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf("live-a" to "inspect this"), repository.submitted)
+        assertEquals(listOf("live-a" to true), repository.queuedSubmissions)
+        assertTrue(repository.submittedAttachments.single().second.single() is OutgoingAttachment.Image)
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
         assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
     }
 
@@ -600,6 +624,8 @@ class ChatJourneyTest {
         val projectSessions = mutableMapOf<String, List<SessionSummary>>()
         var projectOpenResponse: CompletableDeferred<Unit>? = null
         val submitted = mutableListOf<Pair<String, String>>()
+        val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
+        val queuedSubmissions = mutableListOf<Pair<String, Boolean>>()
 
         override suspend fun refreshSessions() = Unit
         override suspend fun openProject(projectId: String) {
@@ -627,8 +653,18 @@ class ChatJourneyTest {
             return "created-live"
         }
 
-        override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome {
+        override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome =
+            submit(durableId, text, queued = false, attachments = emptyList())
+
+        override suspend fun submit(
+            durableId: String,
+            text: String,
+            queued: Boolean,
+            attachments: List<OutgoingAttachment>,
+        ): GatewaySubmitOutcome {
             submitted += durableId to text
+            queuedSubmissions += durableId to queued
+            if (attachments.isNotEmpty()) submittedAttachments += durableId to attachments
             cache.appendEntry(durableId, UserTurn("submitted", text, NOW))
             return GatewaySubmitOutcome.Accepted
         }

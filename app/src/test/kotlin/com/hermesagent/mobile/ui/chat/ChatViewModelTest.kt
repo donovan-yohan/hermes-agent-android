@@ -29,6 +29,8 @@ import com.hermesagent.mobile.data.prefs.ComposerControlsScope
 import com.hermesagent.mobile.data.prefs.ComposerControlsStore
 import com.hermesagent.mobile.data.prefs.NewDraftComposerPreference
 import com.hermesagent.mobile.data.prefs.TransientComposerControlsStore
+import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
+import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
@@ -906,7 +908,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `active gateway progress reaches the existing composer status surface`() = runTest(dispatcher) {
+    fun `active gateway progress remains available to the transcript projection`() = runTest(dispatcher) {
         collectState()
         runCurrent()
         cache.upsertSession(
@@ -917,7 +919,7 @@ class ChatViewModelTest {
         )
         runCurrent()
 
-        assertEquals("Summarizing context…", viewModel.uiState.value.liveStatusText)
+        assertEquals("Summarizing context…", viewModel.uiState.value.activeSession?.progress?.text)
     }
 
     @Test
@@ -1247,6 +1249,173 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `busy primary queues attachment bytes with text instead of redirecting text alone`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect this")
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertTrue(repository.redirects.isEmpty())
+        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
+        assertEquals("session-a" to "inspect this", repository.submitted.single())
+        assertTrue(repository.submittedAttachments.single().second.single() is OutgoingAttachment.GenericFile)
+        assertEquals("", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `busy attachment has one in-flight owner across repeated Queue taps`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect once")
+        repository.submitGate = CompletableDeferred()
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+        assertEquals(1, repository.submitAttempts)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Staging)
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+        assertEquals(1, repository.submitAttempts)
+
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("session-a" to true), repository.queuedSubmissions)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `accepted submit clears only its claimed chips and keeps later additions`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "first bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/first", "first.bin", null)
+        viewModel.setDraft("send first")
+        repository.submitGate = CompletableDeferred()
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        viewModel.openAttachmentStream = { "second bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/second", "second.bin", null)
+        runCurrent()
+        assertEquals(2, viewModel.uiState.value.composer.runtime.attachments.size)
+
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+
+        val remaining = viewModel.uiState.value.composer.runtime.attachments
+        assertEquals(1, remaining.size)
+        assertEquals("second.bin", remaining.single().displayName)
+        assertEquals(1, repository.submittedAttachments.size)
+    }
+
+    @Test
+    fun `definite attachment rejection restores the draft and ready chip for retry`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect this")
+        repository.failSubmit = true
+        runCurrent()
+
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals("inspect this", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
+        assertEquals(
+            "The message was not sent. Reconnect to the Gateway and try again.",
+            viewModel.uiState.value.notice,
+        )
+
+        repository.failSubmit = false
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(2, repository.submitAttempts)
+        assertEquals("", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `accepted text keeps the warning for a refused attachment chip`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { null }
+        viewModel.addAttachmentFromGrant("content://fixture/unreadable", "unreadable.bin", null)
+        runCurrent()
+        val refused = viewModel.uiState.value.composer.runtime.attachments.single().stage as AttachmentStage.Refused
+        viewModel.setDraft("send the healthy text")
+
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(listOf("session-a" to "send the healthy text"), repository.submitted)
+        assertEquals(refused.safeMessage, viewModel.uiState.value.notice)
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Refused)
+    }
+
+    @Test
+    fun `ambiguous busy attachment restores the caption for review without clobbering a newer draft`() =
+        runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "screenshot bytes".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/shot", "shot.bin", null)
+        viewModel.setDraft("inspect this")
+        repository.submitOutcome = GatewaySubmitOutcome.Ambiguous
+        repository.submitGate = CompletableDeferred()
+        runCurrent()
+
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Staging)
+
+        // The user starts a new thought while the ambiguous result is pending.
+        viewModel.setDraft("newer thought")
+        repository.submitGate?.complete(Unit)
+        runCurrent()
+
+        assertTrue(repository.redirects.isEmpty())
+        assertEquals(1, repository.submitAttempts)
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.ReviewRequired)
+        assertEquals("newer thought", viewModel.uiState.value.draft)
+        val reviewChip = viewModel.uiState.value.composer.runtime.attachments.single().stage as AttachmentStage.ReviewRequired
+        assertEquals("inspect this", reviewChip.submittedText)
+
+        // The review-required chip blocks any automatic re-send of the
+        // possibly accepted payload.
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+
+        assertEquals(1, repository.submitAttempts)
+    }
+
+    @Test
     fun `ambiguous redirect is visible but cannot auto retry`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -1282,6 +1451,32 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals("NeedsInput must not send a second interrupt", listOf("session-a"), repository.interrupted)
+    }
+
+    @Test
+    fun `stop reports discarded Gateway queue after interrupt clears its projection`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val current = requireNotNull(cache.session("session-a"))
+        cache.upsertSession(
+            current.copy(
+                status = SessionStatus.Working,
+                composerStatus = ComposerStatusState(
+                    gatewayQueuedPrompts = listOf(ComposerGatewayQueuedPrompt("queued-1", "after this")),
+                ),
+            ),
+        )
+        repository.clearGatewayQueueOnInterrupt = true
+        runCurrent()
+
+        viewModel.stop()
+        runCurrent()
+
+        assertTrue(cache.session("session-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+        assertEquals(
+            "Stopped. Any queued next-turn messages were discarded with the turn.",
+            viewModel.uiState.value.notice,
+        )
     }
 
     @Test
@@ -1352,6 +1547,7 @@ class ChatViewModelTest {
         var createdWorkspace: String? = null
         var failSubmit = false
         var submitGate: CompletableDeferred<Unit>? = null
+        var submitAttempts = 0
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
         var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
         val redirects = mutableListOf<Pair<String, String>>()
@@ -1372,6 +1568,7 @@ class ChatViewModelTest {
         var pathGate: CompletableDeferred<Unit>? = null
         var lastPathDurableId: String? = null
         val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
+        val queuedSubmissions = mutableListOf<Pair<String, Boolean>>()
         var lastPathCwd: String? = null
         private var slashCalls = 0
 
@@ -1491,8 +1688,10 @@ class ChatViewModelTest {
             queued: Boolean,
             attachments: List<OutgoingAttachment>,
         ): GatewaySubmitOutcome {
+            submitAttempts += 1
             submitGate?.await()
             if (failSubmit) error("fixture failure")
+            queuedSubmissions += durableId to queued
             if (attachments.isNotEmpty()) submittedAttachments += durableId to attachments
             submitted += durableId to text
             cache.session(durableId)?.let { cache.upsertSession(it.copy(status = SessionStatus.Working)) }
@@ -1509,9 +1708,19 @@ class ChatViewModelTest {
         }
 
         var interruptOutcome: GatewayInterruptOutcome? = null
+        var clearGatewayQueueOnInterrupt = false
 
         override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
             interrupted += durableId
+            if (clearGatewayQueueOnInterrupt) {
+                cache.session(durableId)?.let { session ->
+                    cache.upsertSession(
+                        session.copy(
+                            composerStatus = session.composerStatus?.copy(gatewayQueuedPrompts = emptyList()),
+                        ),
+                    )
+                }
+            }
             return interruptOutcome ?: when (cache.session(durableId)?.status) {
                 SessionStatus.NeedsInput -> GatewayInterruptOutcome.NeedsInput
                 else -> GatewayInterruptOutcome.Interrupted
@@ -1713,9 +1922,10 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `failed attachment submit keeps drafts retryable and surfaces the refusal`() = runTest(dispatcher) {
+    fun `ambiguous attachment submit keeps the caption and blocks automatic retry`() = runTest(dispatcher) {
         collectState()
         runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
         viewModel.openAttachmentStream = { "hello gateway".toByteArray().inputStream() }
         viewModel.attachmentReadDispatcher = dispatcher
         viewModel.addAttachmentFromGrant("content://fixture/g", "notes.txt", "text/plain")
@@ -1724,12 +1934,22 @@ class ChatViewModelTest {
 
         viewModel.setDraft("with a file")
         runCurrent()
-        viewModel.submit()
+        viewModel.performComposerPrimaryAction()
         runCurrent()
 
         val chips = viewModel.uiState.value.composer.runtime.attachments
         assertEquals(1, chips.size)
-        assertTrue(chips.single().stage is AttachmentStage.Ready)
+        assertTrue(chips.single().stage is AttachmentStage.ReviewRequired)
+        // The editor stays clear (the send was accepted into the wire), but the
+        // chip itself carries the exact caption for review.
         assertTrue(viewModel.uiState.value.notice!!.contains("may have been sent"))
+        val chip = chips.single().stage as AttachmentStage.ReviewRequired
+        assertEquals("with a file", chip.submittedText)
+
+        // A review-required chip blocks any automatic re-send of the possibly
+        // accepted payload.
+        viewModel.performComposerPrimaryAction()
+        runCurrent()
+        assertEquals(1, repository.submitAttempts)
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
 import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ComposerGoalStatus
 import com.hermesagent.mobile.data.session.ComposerStatusState
@@ -74,5 +75,33 @@ class ComposerStatusStackVisibilityTest {
         setContent(ComposerStatusState(goal = ComposerGoalStatus("No active goal.", ComposerGoalState.None)))
         compose.onAllNodesWithContentDescription("Composer status").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("Goal, collapse").assertCountEquals(0)
+    }
+
+    @Test
+    fun `Gateway-owned queued prompt stays visible without entering the durable queue`() {
+        setContent(
+            ComposerStatusState(
+                gatewayQueuedPrompts = listOf(
+                    ComposerGatewayQueuedPrompt("queued-1", "inspect this screenshot"),
+                ),
+            ),
+        )
+
+        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithText("inspect this screenshot").assertIsDisplayed()
+    }
+
+    @Test
+    fun `file reference text renders readably in the Gateway queue group`() {
+        setContent(
+            ComposerStatusState(
+                gatewayQueuedPrompts = listOf(
+                    ComposerGatewayQueuedPrompt("queued-2", "@file:`notes.txt` check this"),
+                ),
+            ),
+        )
+
+        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithText("@file:`notes.txt` check this").assertIsDisplayed()
     }
 }
