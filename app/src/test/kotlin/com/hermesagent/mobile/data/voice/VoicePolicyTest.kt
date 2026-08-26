@@ -3,6 +3,11 @@ package com.hermesagent.mobile.data.voice
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -10,7 +15,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoicePolicyTest {
+    private companion object {
+        const val STOP_NOTICE = """Say "stop" to end the voice chat."""
+    }
+
     private fun config(raw: String): JsonObject = Json.parseToJsonElement(raw).jsonObject
+
+    private fun noticeFor(raw: String): String? =
+        VoicePolicy.stopNoticeFor(VoicePolicy.stopPhrasesFromConfig(config(raw)))
 
     @Test
     fun `wire budget accounts for base64 expansion`() {
@@ -194,19 +206,40 @@ class VoicePolicyTest {
     }
 
     @Test
-    fun `a scalar stop_phrases value follows the Desktop typeof guard`() {
-        // Desktop: a bare string becomes a one-entry list, anything else disables.
+    fun `malformed stop_phrases falls back to the embedded default`() {
+        // tools/voice_mode.py:1270-1291: a scalar, null or object never reaches
+        // the list branch, so the loader returns the default rather than
+        // silently disabling spoken stop.
+        for (raw in listOf("true", "7", "null", """{"first":"stop"}""")) {
+            assertEquals(
+                raw,
+                VoicePolicy.DEFAULT_STOP_PHRASES,
+                VoicePolicy.stopPhrasesFromConfig(config("""{"voice":{"stop_phrases":$raw}}""")),
+            )
+        }
+    }
+
+    @Test
+    fun `a bare string stop_phrases is coerced like the backend loader`() {
         assertEquals(
             listOf("that will do"),
             VoicePolicy.stopPhrasesFromConfig(config("""{"voice":{"stop_phrases":"that will do"}}""")),
         )
+        // A blank string survives coercion but not the blank filter, so it
+        // disables — the backend's str().strip() falsy check.
         assertEquals(
             emptyList<String>(),
-            VoicePolicy.stopPhrasesFromConfig(config("""{"voice":{"stop_phrases":true}}""")),
+            VoicePolicy.stopPhrasesFromConfig(config("""{"voice":{"stop_phrases":"   "}}""")),
         )
+    }
+
+    @Test
+    fun `a list whose entries are all non-phrases disables like the backend loader`() {
+        // A list IS the list branch, so what survives filtering is authoritative
+        // even when nothing survives — unlike a malformed scalar.
         assertEquals(
             emptyList<String>(),
-            VoicePolicy.stopPhrasesFromConfig(config("""{"voice":{"stop_phrases":null}}""")),
+            VoicePolicy.stopPhrasesFromConfig(config("""{"voice":{"stop_phrases":[{},[],null]}}""")),
         )
     }
 
@@ -214,23 +247,96 @@ class VoicePolicyTest {
 
     @Test
     fun `the start notice names the first configured phrase verbatim`() {
-        assertEquals("""Say "stop" to end the voice chat.""", VoicePolicy.stopNotice("stop"))
+        assertEquals(STOP_NOTICE, VoicePolicy.stopNotice("stop"))
         assertEquals(
             """Say "that will do" to end the voice chat.""",
             VoicePolicy.stopNoticeFor(listOf("that will do", "end voice")),
         )
     }
 
+    // ── Desktop store/voice-prefs.test.ts:10-38, ported test-for-test ─────
+
+    @Test
+    fun `defaults to stop when the key is absent - backend default applies`() {
+        assertEquals(STOP_NOTICE, noticeFor("""{"voice":{}}"""))
+        assertEquals(STOP_NOTICE, VoicePolicy.stopNoticeFor(VoicePolicy.stopPhrasesFromConfig(null)))
+    }
+
+    @Test
+    fun `uses the first configured phrase so a custom phrase renders correctly`() {
+        assertEquals(
+            """Say "goodbye hermes" to end the voice chat.""",
+            noticeFor("""{"voice":{"stop_phrases":["goodbye hermes","stop"]}}"""),
+        )
+    }
+
+    @Test
+    fun `coerces a bare string like the backend does`() {
+        assertEquals(
+            """Say "halt" to end the voice chat.""",
+            noticeFor("""{"voice":{"stop_phrases":"halt"}}"""),
+        )
+    }
+
+    @Test
+    fun `null phrase when stop phrases are disabled - no notice is shown`() {
+        assertNull(noticeFor("""{"voice":{"stop_phrases":[]}}"""))
+    }
+
+    @Test
+    fun `malformed entries are skipped - all-blank list disables`() {
+        assertNull(noticeFor("""{"voice":{"stop_phrases":["  ",""]}}"""))
+    }
+
+    @Test
+    fun `a conversation that starts before the phrase list resolves keeps its notice`() {
+        var phrases = emptyList<String>()
+        val notice = VoiceStartNotice { phrases }
+
+        // Config has not landed yet: no notice, and the one announcement is
+        // not spent on it.
+        assertNull(notice.onConversationStarted())
+
+        phrases = VoicePolicy.DEFAULT_STOP_PHRASES
+        assertEquals(STOP_NOTICE, notice.onConversationStarted())
+        assertNull(notice.onConversationStarted())
+    }
+
+    @Test
+    fun `only one concurrent start announces the notice`() {
+        val threads = 8
+        val pool = Executors.newFixedThreadPool(threads)
+        try {
+            repeat(25) {
+                val notice = VoiceStartNotice { VoicePolicy.DEFAULT_STOP_PHRASES }
+                val start = CyclicBarrier(threads)
+                val announced = AtomicInteger(0)
+                val done = CountDownLatch(threads)
+                repeat(threads) {
+                    pool.execute {
+                        start.await()
+                        if (notice.onConversationStarted() != null) announced.incrementAndGet()
+                        done.countDown()
+                    }
+                }
+                assertTrue(done.await(5, TimeUnit.SECONDS))
+                assertEquals(1, announced.get())
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
     @Test
     fun `the start notice is produced exactly once per conversation`() {
         val notice = VoiceStartNotice { VoicePolicy.DEFAULT_STOP_PHRASES }
 
-        assertEquals("""Say "stop" to end the voice chat.""", notice.onConversationStarted())
+        assertEquals(STOP_NOTICE, notice.onConversationStarted())
         assertNull("a re-armed listen cycle must not re-announce", notice.onConversationStarted())
         assertNull(notice.onConversationStarted())
 
         notice.onConversationEnded()
-        assertEquals("""Say "stop" to end the voice chat.""", notice.onConversationStarted())
+        assertEquals(STOP_NOTICE, notice.onConversationStarted())
         assertNull(notice.onConversationStarted())
     }
 }

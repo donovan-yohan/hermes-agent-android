@@ -21,11 +21,26 @@ internal const val CODE_BLOCK_SUMMARY = " code block omitted "
 /** What a bare URL is read as. User-audible copy — keep verbatim. */
 internal const val URL_SUMMARY = " link "
 
+/**
+ * JavaScript's `\s`, spelled out: TAB, LF, VT, FF, CR, SP, plus NBSP, the Zs
+ * block, LS, PS and the BOM. Java's own `\s` is ASCII-only, so a reply
+ * containing a non-breaking space would keep its markup and swallow the word
+ * after a URL. `Pattern.UNICODE_CHARACTER_CLASS` is not this set either — it
+ * adds U+0085 and omits U+FEFF — so the class is written out rather than
+ * flagged. Shared with the stop-phrase normaliser: this describes a platform
+ * gap, not a rule owned by either Desktop module.
+ */
+internal const val JS_WHITESPACE =
+    """\t\n\x0B\f\r \x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}"""
+
 private val EMOJI_RE =
     Regex("""(?:[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}]|[\x{FE0F}\x{200D}]|[\x{E0020}-\x{E007F}])+""")
 
-// JavaScript's `$` outside multiline mode is end-of-input, which is Java's `\z`
-// (Java's own `$` would also match before a trailing newline).
+// JavaScript's `$` outside multiline mode is end-of-input; Java's `$` would also
+// match before a trailing newline, so `\z` is the exact equivalent. Defensive
+// rather than load-bearing: `normalizeLineBreaks` runs first and leaves no
+// newline for this regex to see. Kept exact so the equivalence survives any
+// future reordering.
 private val FENCED_CODE_RE = Regex("""```[\s\S]*?(?:```|\z)""")
 private val INLINE_CODE_RE = Regex("""`([^`]+)`""")
 private val MARKDOWN_LINK_RE = Regex("""\[([^\]]+)\]\(([^)]+)\)""")
@@ -56,13 +71,13 @@ private val THINKING_VERBS = listOf(
 
 private val THINKING_PREFIX_RE =
     Regex(
-        """^\s*(?:\([^)\n]{1,48}\)\s*)?(?:""" +
+        "^[$JS_WHITESPACE]*(?:\\([^)\\n]{1,48}\\)[$JS_WHITESPACE]*)?(?:" +
             THINKING_VERBS.joinToString("|") +
-            """)\.\.\.\s*""",
+            ")\\.\\.\\.[$JS_WHITESPACE]*",
         RegexOption.IGNORE_CASE,
     )
 
-private val URL_RE = Regex("""\bhttps?://\S+""", RegexOption.IGNORE_CASE)
+private val URL_RE = Regex("\\bhttps?://[^$JS_WHITESPACE]+", RegexOption.IGNORE_CASE)
 
 // Desktop tests the whole cell against /^:?-{3,}:?$/; `matches` anchors for us.
 private val MARKDOWN_TABLE_DELIMITER_CELL_RE = Regex(""":?-{3,}:?""")
@@ -70,10 +85,10 @@ private val MARKDOWN_TABLE_DELIMITER_CELL_RE = Regex(""":?-{3,}:?""")
 private val CARRIAGE_RETURN_RE = Regex("""\r\n?""")
 private val HYPHENATED_LINE_BREAK_RE = Regex("""(\p{L})-\n(\p{L})""")
 private val LEADING_INDENTATION_RE = Regex("""^[ \t]*""")
-private val HEADING_MARKER_RE = Regex("""^#{1,6}\s+""", RegexOption.MULTILINE)
+private val HEADING_MARKER_RE = Regex("^#{1,6}[$JS_WHITESPACE]+", RegexOption.MULTILINE)
 private val MARKDOWN_PUNCTUATION_RE = Regex("""[*_~>#]""")
-private val LIST_MARKER_RE = Regex("""^\s*[-+*]\s+""", RegexOption.MULTILINE)
-private val WHITESPACE_RUN_RE = Regex("""\s+""")
+private val LIST_MARKER_RE = Regex("^[$JS_WHITESPACE]*[-+*][$JS_WHITESPACE]+", RegexOption.MULTILINE)
+private val WHITESPACE_RUN_RE = Regex("[$JS_WHITESPACE]+")
 
 private class MarkdownTableRow(
     val blockquoteDepth: Int,

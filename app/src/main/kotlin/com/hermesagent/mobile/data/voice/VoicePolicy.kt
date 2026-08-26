@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Named policy for the Android voice stack: the numeric conversation
@@ -77,7 +78,11 @@ object VoicePolicy {
         listOf("hey hermes", "hey hermes,", "hermes", "hermes,", "ok", "okay", "hey")
 
     private val UTTERANCE_PUNCTUATION_RE = Regex("""[.,!?;:…]+""")
-    private val WHITESPACE_RUN_RE = Regex("""\s+""")
+
+    // Desktop's normalize() collapses JavaScript's \s; Java's is ASCII-only, so
+    // reuse the spelled-out class rather than let a non-breaking space in an
+    // STT transcript defeat the match.
+    private val WHITESPACE_RUN_RE = Regex("[$JS_WHITESPACE]+")
 
     fun wireBudgetBytes(rawBytes: Int): Int =
         (rawBytes / WIRE_EXPANSION_DENOMINATOR) * WIRE_EXPANSION_NUMERATOR + 4096
@@ -141,19 +146,24 @@ object VoicePolicy {
 
     /**
      * Reads `voice.stop_phrases` out of a `GET /api/config` record, the same key
-     * and shape Desktop reads. A null record (failed read), a missing `voice`
-     * section or a missing key all fall back to [DEFAULT_STOP_PHRASES]; an
-     * explicit empty list, or a scalar that is not a phrase, disables stop
-     * phrases. List entries are stringified like Desktop's `String(entry)`,
-     * but a bare non-string value is rejected like Desktop's `typeof` guard.
+     * Desktop reads, resolved the way the backend loader
+     * `tools/voice_mode.py:1270-1291` resolves it: a failed read, a missing
+     * `voice` section, a missing key, or a malformed value (a non-string
+     * scalar, `null`, or an object) all fall back to [DEFAULT_STOP_PHRASES]
+     * rather than silently killing spoken stop. Only a list disables the
+     * feature, and only by being empty once blank entries are dropped.
+     *
+     * A bare string is coerced to a one-entry list, as the backend does. List
+     * entries that are not primitives are dropped, which converges with the
+     * backend's `isinstance(p, (str, int, float))` filter; Desktop instead
+     * stringifies them through `String(entry)`.
      */
     fun stopPhrasesFromConfig(config: JsonObject?): List<String> {
         val raw = (config?.get("voice") as? JsonObject)?.get("stop_phrases")
         val configured = when {
-            raw == null -> null
             raw is JsonArray -> raw.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             raw is JsonPrimitive && raw.isString -> listOf(raw.content)
-            else -> emptyList()
+            else -> null
         }
         return stopPhrasesOrDefault(configured)
     }
@@ -177,24 +187,27 @@ object VoicePolicy {
  * announces how to end it exactly once, however many times the loop re-arms
  * inside it. [onConversationEnded] re-arms the notice for the next conversation.
  *
- * Not thread-safe by design — it is owned by the single conversation controller
- * that starts and ends the conversation.
+ * The flag flips only when a notice is actually produced, so a conversation
+ * that starts before the Gateway config resolves — or while stop phrases are
+ * disabled — does not silently spend its one announcement. The flip is a CAS
+ * because the controller's entry point (`beginCycle`) is not a suspend
+ * function and carries no lock of its own.
  */
 class VoiceStartNotice(private val stopPhrases: () -> List<String>) {
-    private var announced = false
+    private val announced = AtomicBoolean(false)
 
     /**
      * The notice for a conversation starting now, or null when this
      * conversation already announced it or stop phrases are disabled.
      */
     fun onConversationStarted(): String? {
-        if (announced) return null
-        announced = true
-        return VoicePolicy.stopNoticeFor(stopPhrases())
+        if (announced.get()) return null
+        val notice = VoicePolicy.stopNoticeFor(stopPhrases()) ?: return null
+        return if (announced.compareAndSet(false, true)) notice else null
     }
 
     /** Re-arms the notice so the next conversation announces itself again. */
     fun onConversationEnded() {
-        announced = false
+        announced.set(false)
     }
 }

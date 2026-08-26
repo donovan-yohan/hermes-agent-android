@@ -236,6 +236,28 @@ class SpeechTextTest {
     }
 
     @Test
+    fun `a non-breaking space does not swallow the word after a URL`() {
+        // Java's \S is ASCII-only, so an unspelled \S+ would eat the NBSP and
+        // the word behind it. JavaScript's \s covers NBSP; so must ours.
+        assertEquals(
+            "See link and more.",
+            sanitizeTextForSpeech("See https://example.com\u00A0and more."),
+        )
+        assertEquals(
+            "See link and more.",
+            sanitizeTextForSpeech("See https://example.com and more."),
+        )
+    }
+
+    @Test
+    fun `collapses Unicode whitespace runs like JavaScript does`() {
+        assertEquals(
+            "One two three.",
+            sanitizeTextForSpeech("\u00A0One\u2003two\u3000three.\u00A0"),
+        )
+    }
+
+    @Test
     fun `drops a leading thinking prefix - derived from THINKING_PREFIX_RE`() {
         assertEquals(
             "the tests already cover this.",
