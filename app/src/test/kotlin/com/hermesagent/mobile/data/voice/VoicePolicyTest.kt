@@ -63,6 +63,15 @@ class VoicePolicyTest {
     }
 
     @Test
+    fun `a stop split by Unicode whitespace still ends the conversation`() {
+        // Speech-to-text emits NBSP and other Unicode spaces; Desktop's
+        // normalize collapses JavaScript's \s, which Java's \s does not cover.
+        assertTrue(VoicePolicy.isStopUtterance("stop\u00A0listening", VoicePolicy.DEFAULT_STOP_PHRASES))
+        assertTrue(VoicePolicy.isStopUtterance("hey\u00A0hermes\u00A0stop", VoicePolicy.DEFAULT_STOP_PHRASES))
+        assertTrue(VoicePolicy.isStopUtterance("\uFEFFstop\u3000it", VoicePolicy.DEFAULT_STOP_PHRASES))
+    }
+
+    @Test
     fun `a stop addressed to Hermes ends the conversation`() {
         assertTrue(VoicePolicy.isStopUtterance("hey hermes, stop", VoicePolicy.DEFAULT_STOP_PHRASES))
     }
