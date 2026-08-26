@@ -102,23 +102,19 @@ if ! python3 scripts/check-ci-workflow.py; then
   problem "Android exact-head GitHub Actions contract is invalid."
 fi
 
-# ── 9. Kotlin sources must stay text, so their diffs stay reviewable ─────────
-# A single raw control byte makes Git classify a source file as binary: it then
-# shows no diff on a pull request, `git diff --check` skips it, and a change to
-# the most security-sensitive file in the tree can land unread. Write escapes.
+# ── 9. Kotlin sources must contain no NUL, so their diffs stay reviewable ────
+# A NUL byte is Git's own binary heuristic: one is enough for Git to classify a
+# source file as binary, and it then shows no diff on a pull request and
+# `git diff --check` skips it, so a change to the most security-sensitive file
+# in the tree can land unread. Write the escape instead.
 binary_kotlin="$(git ls-files -z 'app/src/**/*.kt' 'app/src/*.kt' \
-  | xargs -0 -r grep -lIsvE '' 2>/dev/null || true)"
-if [[ -z "$binary_kotlin" ]]; then
-  # `grep -I` treats a file containing NUL as binary and `-l` then lists it.
-  binary_kotlin="$(git ls-files -z 'app/src/**/*.kt' 'app/src/*.kt' \
-    | xargs -0 -r perl -ne 'if (/\x00/) { print "$ARGV\n"; close ARGV; }' 2>/dev/null || true)"
-fi
+  | xargs -0 -r perl -ne 'if (/\x00/) { print "$ARGV\n"; close ARGV; }' 2>/dev/null || true)"
 if [[ -n "$binary_kotlin" ]]; then
-  problem "Kotlin sources contain a raw control byte, so Git treats them as binary:"
+  problem "Kotlin sources contain a NUL byte, so Git treats them as binary:"
   printf '%s\n' "$binary_kotlin" | sed 's/^/        /'
-  note "fix: write the byte as a Kotlin escape (for example the NUL separator) so the diff stays readable."
+  note "fix: write it as a Kotlin escape (the slot separator is the one we hit) so the diff stays readable."
 else
-  ok "every tracked Kotlin source is text, so every diff is reviewable"
+  ok "no tracked Kotlin source contains a NUL, so every diff is reviewable"
 fi
 
 # ── 10. Production must never fall back to Phase 1 demo data ─────────────────

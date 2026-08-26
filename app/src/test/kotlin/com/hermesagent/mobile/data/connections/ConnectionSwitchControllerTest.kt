@@ -175,6 +175,55 @@ class ConnectionSwitchControllerTest {
     }
 
     @Test
+    fun `editing the route form does not drop drafts`() = runTest {
+        val gateway = RecordingGateway()
+        val drafts = TransientSessionDraftStore()
+        drafts.replace("session-1", "half a sentence")
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, SessionCache(), drafts)
+
+        // The Gateways route form persists on every keystroke and calls this
+        // after each one. It cannot tell a finished address from a half-typed
+        // one, so it must not be allowed to destroy anything that has no other
+        // copy. The connection and the cache both repopulate; draft text does
+        // not.
+        repeat(3) { controller.leaveCurrentEndpoint() }
+        advanceUntilIdle()
+
+        assertEquals("half a sentence", drafts.drafts.first()["session-1"])
+        assertEquals("and it is still a real teardown", 3, gateway.calls.count { it == "disconnect" })
+    }
+
+    @Test
+    fun `abandoning the endpoint, as removing the active row does, drops its drafts`() = runTest {
+        val gateway = RecordingGateway()
+        val drafts = TransientSessionDraftStore()
+        drafts.replace("session-1", "half a sentence")
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+
+        ConnectionSwitchController(store, gateway, SessionCache(), drafts).abandonCurrentEndpoint()
+        advanceUntilIdle()
+
+        assertTrue(drafts.drafts.first().isEmpty())
+    }
+
+    @Test
+    fun `re-addressing the active row drops the drafts written against the old address`() = runTest {
+        val gateway = RecordingGateway()
+        val drafts = TransientSessionDraftStore()
+        drafts.replace("session-1", "half a sentence")
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        gateway.settleOnConnect()
+
+        ConnectionSwitchController(store, gateway, SessionCache(), drafts).readdressActive {
+            store.saveConnection(TWO_ROWS.first().copy(remote = RemoteGatewayProfile("https://renamed.test")))
+        }
+        advanceUntilIdle()
+
+        assertTrue(drafts.drafts.first().isEmpty())
+    }
+
+    @Test
     fun `a teardown that arrives mid-switch waits, instead of killing what the switch just opened`() = runTest {
         val gateway = RecordingGateway()
         val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")

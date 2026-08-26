@@ -55,6 +55,8 @@ data class ConnectionsUiState(
     val editor: ConnectionEditorState? = null,
     val removeTarget: SavedConnection? = null,
     val loaded: Boolean = false,
+    /** False when the stored registry belongs to a build this one cannot read. */
+    val writable: Boolean = true,
 ) {
     /** One stable order for both the settings list and the session-rail sheet. */
     val ordered: List<SavedConnection> get() = sortConnectionsForDisplay(connections)
@@ -103,6 +105,11 @@ internal class ConnectionsViewModel(
         }
         viewModelScope.launch {
             switch.pendingConnectionId.collect { id -> _uiState.update { it.copy(pendingId = id) } }
+        }
+        viewModelScope.launch {
+            store.connectionRegistryWritable.collect { writable ->
+                _uiState.update { it.copy(writable = writable) }
+            }
         }
     }
 
@@ -163,6 +170,13 @@ internal class ConnectionsViewModel(
     fun saveEditor() {
         val editor = _uiState.value.editor ?: return
         if (!editor.canSave) return
+        // A store that cannot be written says so here, with the editor still
+        // open and the typing still in it. Closing the editor over a write that
+        // never happened is the one outcome that looks like success.
+        if (!_uiState.value.writable) {
+            _uiState.update { it.copy(editor = editor.copy(error = ConnectionsCopy.REGISTRY_LOCKED)) }
+            return
+        }
         val existing = _uiState.value.connections.firstOrNull { it.id == editor.id }
         val host = when (editor.kind) {
             ConnectionKind.Ssh -> {
@@ -256,13 +270,13 @@ internal class ConnectionsViewModel(
     fun confirmRemove() {
         val target = _uiState.value.removeTarget ?: return
         val state = _uiState.value
-        if (!state.canRemove) {
+        if (!state.writable || !state.canRemove) {
             _uiState.update { it.copy(removeTarget = null) }
             return
         }
         _uiState.update { it.copy(removeTarget = null) }
         viewModelScope.launch {
-            if (state.activeId == target.id) switch.leaveCurrentEndpoint()
+            if (state.activeId == target.id) switch.abandonCurrentEndpoint()
             if (target.kind == ConnectionKind.Remote) {
                 gateway.forgetRemoteAuthentication(target.remoteProfile)
             }

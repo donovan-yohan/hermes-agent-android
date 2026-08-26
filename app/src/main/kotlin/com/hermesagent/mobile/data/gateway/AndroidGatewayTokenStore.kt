@@ -114,6 +114,9 @@ internal class AndroidGatewayTokenStore(
         var plaintext: ByteArray? = null
         val stored = try {
             if (encoded.size <= HEADER_BYTES || encoded[0] != FORMAT_VERSION) {
+                // `file`, not `slotFile(slot)`: when adoption's rename failed
+                // this read came from the pre-registry file, and that is the
+                // unusable one to remove.
                 erase(file)
                 return@withContext null
             }
@@ -129,6 +132,12 @@ internal class AndroidGatewayTokenStore(
             plaintext?.fill(0)
         } ?: return@withContext null
 
+        // Refusal is the guarantee, and refusal alone. Reading is not the place
+        // to destroy anything: a mistyped URL is a read against the wrong host,
+        // and erasing there would spend the credential for the *correct* one on
+        // a typo. The credential stays sealed and unusable until the row points
+        // at its minting host again, or until something deliberate — removing
+        // the row, or re-addressing it through the editor — erases it.
         when (stored.boundUrl) {
             // The pre-registry file was named after its Gateway URL, so the
             // file this was just adopted from *is* the binding. Rewrite it
@@ -138,9 +147,8 @@ internal class AndroidGatewayTokenStore(
                 save(slot, stored.tokens)
                 stored.tokens
             } else {
-                // A row-named blob with no host recorded cannot be proved to
-                // belong to the host now asking. Refuse it, and erase it.
-                erase(slotFile(slot))
+                // A row-named blob naming no host cannot be proved to belong to
+                // whoever is asking, so it is returned to nobody.
                 null
             }
 
@@ -149,10 +157,7 @@ internal class AndroidGatewayTokenStore(
             // Minted by another Gateway. The credential is that Gateway's, this
             // row now points elsewhere, and presenting it here would hand one
             // host's bearer token to another.
-            else -> {
-                erase(slotFile(slot))
-                null
-            }
+            else -> null
         }
     }
 

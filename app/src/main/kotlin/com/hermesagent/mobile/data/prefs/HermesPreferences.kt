@@ -231,6 +231,9 @@ class HermesPreferences(private val context: Context) :
     override val connectionRegistry: Flow<ConnectionRegistry> =
         context.hermesDataStore.data.map(::registryOf)
 
+    override val connectionRegistryWritable: Flow<Boolean> =
+        context.hermesDataStore.data.map { prefs -> ConnectionRegistryCodec.isWritable(prefs[CONNECTIONS]) }
+
     override val hostProfile: Flow<HostProfile> = connectionRegistry.map { it.active?.host ?: FRESH }
 
     override val remoteGatewayProfile: Flow<RemoteGatewayProfile> =

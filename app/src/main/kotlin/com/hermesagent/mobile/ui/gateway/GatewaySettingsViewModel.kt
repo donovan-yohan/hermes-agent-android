@@ -89,16 +89,23 @@ internal class GatewaySettingsViewModel(
         }
     }
 
+    /**
+     * Both of these put the live connection down, so both go through
+     * [leaveEndpoint] rather than reaching for the connection directly: it is
+     * what serializes a teardown against an in-flight connection switch, and a
+     * disconnect that lands after a switch has opened its socket would close
+     * the wrong one.
+     */
     fun disconnect() {
         cancelConnectionAttempt()
-        viewModelScope.launch { gateway.disconnect() }
+        viewModelScope.launch { leaveEndpoint() }
     }
 
     fun forgetSignIn() {
         val profile = _uiState.value.remote
         cancelConnectionAttempt()
         viewModelScope.launch {
-            gateway.disconnect()
+            leaveEndpoint()
             gateway.forgetRemoteAuthentication(profile)
         }
     }

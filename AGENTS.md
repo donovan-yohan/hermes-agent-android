@@ -71,8 +71,8 @@ per row id, naming the Gateway that minted it. It is refused and erased if that
 row later points elsewhere, and it is zeroed and unlinked when the row is
 removed — addressable by row id alone, so a row whose URL was blanked or
 mistyped can still be cleaned up rather than orphaning its credential.
-Source files stay text: a raw control byte makes Git call a file binary and its
-diff stops reaching review, so write the escape.
+Source files carry no NUL byte: one is Git's own binary heuristic, and a file
+Git calls binary shows no diff in review, so write the escape.
 Everything user-visible goes through `redact()`. No credential, host name or fingerprint belongs in this repo, in a
 test, or in a screenshot. There is no accept-all host-key verifier and a changed
 host key has no accept path.

@@ -49,9 +49,15 @@ interface SessionDraftStore {
      *
      * A draft is keyed by durable session id and nothing else, and two gateways
      * can hand out the same one — so text typed against gateway A's `s-123`
-     * would otherwise prefill gateway B's `s-123`. Only a connection switch
-     * calls this; leaving text in one composer that was written in another is
-     * worse than losing it.
+     * would otherwise prefill gateway B's `s-123`. Leaving text in one composer
+     * that was written in another is worse than losing it.
+     *
+     * The callers are exactly the three endpoint *transitions*: picking another
+     * saved connection, re-addressing the active one through the connections
+     * editor's discrete Save, and removing the connection this device is on.
+     * The Gateways route form is deliberately **not** one of them: it persists
+     * on every keystroke, so it cannot tell a finished address from a half-typed
+     * one, and wiping someone's drafts per character is not a teardown.
      */
     suspend fun clear()
 }

@@ -248,6 +248,53 @@ class ConnectionsViewModelTest {
     }
 
     @Test
+    fun `a registry this build may not write says so instead of appearing to save`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+        // What a downgrade looks like: the stored document belongs to a newer
+        // build, so it is left untouched and every write is refused.
+        store.writable.value = false
+        advanceUntilIdle()
+
+        subject.beginEdit("one")
+        subject.editLabel("Renamed")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        val editor = subject.uiState.value.editor
+        assertNotNull("closing over a write that never happened looks like success", editor)
+        assertEquals(ConnectionsCopy.REGISTRY_LOCKED, editor?.error)
+        assertEquals("Renamed", editor?.label)
+        assertEquals(
+            "and nothing was written",
+            "Alpha",
+            store.connectionRegistry.value.connections.first { it.id == "one" }.label,
+        )
+        assertEquals(false, subject.uiState.value.writable)
+    }
+
+    @Test
+    fun `a registry this build may not write refuses a removal too`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+        store.writable.value = false
+        advanceUntilIdle()
+
+        subject.requestRemove("two")
+        subject.confirmRemove()
+        advanceUntilIdle()
+
+        assertEquals(2, store.connectionRegistry.value.connections.size)
+        assertEquals(emptyList<RemoteGatewayProfile>(), gateway.forgotten)
+    }
+
+    @Test
     fun `renaming the active row does not tear anything down`() = runTest(dispatcher) {
         val one = SavedConnection(
             id = "one",
@@ -279,6 +326,12 @@ class ConnectionsViewModelTest {
             store.connectionRegistry.first().connections.first { it.id == "one" }.label,
         )
     }
+
+    /** Two ordinary Remote rows; no real host, user or URL anywhere. */
+    private fun twoRows() = listOf(
+        SavedConnection("one", "Alpha", ConnectionKind.Remote, RemoteGatewayProfile("https://alpha.test")),
+        SavedConnection("two", "Beta", ConnectionKind.Remote, RemoteGatewayProfile("https://beta.test")),
+    )
 
     private fun buildSubject(store: MemoryRegistryStore, gateway: RecordingGateway): ConnectionsViewModel {
         val switch = ConnectionSwitchController(store, gateway, SessionCache(), settleTimeoutMillis = 50L)
@@ -322,6 +375,10 @@ class ConnectionsViewModelTest {
     ) : ConnectionRegistryStore {
         private val registry = MutableStateFlow(ConnectionRegistry(rows, activeId))
         override val connectionRegistry: StateFlow<ConnectionRegistry> = registry.asStateFlow()
+
+        /** False stands in for a stored document written by a newer build. */
+        val writable = MutableStateFlow(true)
+        override val connectionRegistryWritable: StateFlow<Boolean> = writable.asStateFlow()
 
         /** Fired at the start of [removeConnection], before the row is gone, for ordering assertions. */
         var onRemoveConnection: ((String) -> Unit)? = null

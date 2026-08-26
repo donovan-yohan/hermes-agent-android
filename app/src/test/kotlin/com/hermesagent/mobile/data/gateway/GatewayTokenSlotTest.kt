@@ -135,30 +135,30 @@ class GatewayTokenSlotTest {
     }
 
     @Test
-    fun `a credential is refused, and erased, when its row now points at another gateway`() = runBlocking {
-        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
-        store.save(SLOT_A, tokens("alpha"))
+    fun `a credential is refused when its row points at another gateway, and kept for the one that minted it`() =
+        runBlocking {
+            val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+            store.save(SLOT_A, tokens("alpha"))
 
-        // The same row, re-addressed. The stored credential was minted by
-        // alpha; presenting it to beta would hand one host's bearer token to
-        // another.
-        val readdressed = GatewaySecretSlot("connection-a", "https://beta.test")
+            // The same row, pointed somewhere else. The stored credential was
+            // minted by alpha; presenting it to beta would hand one host's
+            // bearer token to another.
+            val readdressed = GatewaySecretSlot("connection-a", "https://beta.test")
 
-        assertNull(store.load(readdressed))
-        assertTrue("and the abandoned credential does not linger", blobs().isEmpty())
-        assertNull("nor does it come back for the original address", store.load(SLOT_A))
-    }
+            assertNull("beta is not who this belongs to", store.load(readdressed))
 
-    @Test
-    fun `a row-named credential that names no host is refused rather than trusted`() = runBlocking {
-        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
-        // A blob under a row's name with no host recorded cannot be proved to
-        // belong to whoever is asking, so it is not returned to anyone.
-        writeUnboundBlob(AndroidGatewayTokenStore.slotDigestInput("connection-a"))
-
-        assertNull(store.load(SLOT_A))
-        assertTrue(blobs().isEmpty())
-    }
+            // Refusal is the guarantee, and refusal is *all* a read does. A
+            // mistyped URL is exactly this read, and erasing here would spend
+            // the credential for the correct host on a typo. Erasing is left to
+            // the deliberate paths: removing the row, or re-addressing it
+            // through the editor.
+            assertEquals("the sealed credential is still on disk", 1, blobs().size)
+            assertEquals(
+                "and it works again the moment the row points home",
+                "alpha-access",
+                store.load(SLOT_A)?.accessToken,
+            )
+        }
 
     @Test
     fun `an upgrading install adopts its pre-registry sign-in exactly once`() = runBlocking {
@@ -190,7 +190,6 @@ class GatewayTokenSlotTest {
         blobs().single().writeBytes(byteArrayOf(9, 9, 9))
 
         assertNull(store.load(SLOT_A))
-        assertTrue(blobs().isEmpty())
     }
 
     /** A pre-binding blob written straight under a row's name, as no released build makes. */
@@ -240,16 +239,29 @@ class GatewayTokenSlotTest {
     }
 
     @Test
-    fun `a row that goes back to its own gateway is not resurrected from a stale blob`() = runBlocking {
+    fun `a row that goes away and comes back recovers, because a typo is not a deletion`() = runBlocking {
         val store = AndroidGatewayTokenStore(context, ReversibleCipher())
         store.save(SLOT_A, tokens("alpha"))
 
-        // Away and back. The mismatch on the way out erased it, so returning
-        // means signing in again rather than reusing a credential that spent
-        // time pointing somewhere else.
+        // Someone mistypes the URL, something reads, and they fix it. The
+        // credential was never usable for the wrong host and never handed over;
+        // it was also never destroyed, so fixing the typo is enough.
         assertNull(store.load(GatewaySecretSlot("connection-a", "https://beta.test")))
 
+        assertEquals("alpha-access", store.load(SLOT_A)?.accessToken)
+    }
+
+    @Test
+    fun `a row-named credential naming no host stays refused rather than being deleted on read`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+        writeUnboundBlob(AndroidGatewayTokenStore.slotDigestInput("connection-a"))
+
         assertNull(store.load(SLOT_A))
+        assertEquals("reading is not the place to destroy anything", 1, blobs().size)
+
+        // Removing the row is. That path is deliberate and reaches it by id.
+        store.clear(GatewaySecretSlot.forRow("connection-a"))
+        assertTrue(blobs().isEmpty())
     }
 
     /** Records which host each access token was presented to. */

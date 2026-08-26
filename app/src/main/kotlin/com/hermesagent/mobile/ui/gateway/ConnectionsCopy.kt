@@ -85,6 +85,14 @@ internal object ConnectionsCopy {
      */
     const val LAST_CONNECTION_HINT = "Add another gateway before removing this one."
 
+    /**
+     * Desktop has no equivalent: its registry lives in the main process and is
+     * never read by an older renderer. This app can be downgraded, and the
+     * saved document is left untouched rather than overwritten, so the surface
+     * has to say why nothing can be changed.
+     */
+    const val REGISTRY_LOCKED = "Saved gateways can’t be changed on this version. Update the app."
+
     /** `en.ts:1772`. */
     const val MANAGE_GATEWAYS = "Manage gateways…"
 

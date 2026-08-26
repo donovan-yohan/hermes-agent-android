@@ -34,11 +34,11 @@ that SHA.
 |---|---|---|
 | Saved connections and which is active | `HermesPreferences` (`connections.v1.saved`, `connections.v1.activeId`) | Client-local authority. No Gateway contract exists for it; it is never sent anywhere. |
 | The active row's endpoint fields | The same rows | `hostProfile`, `remoteGatewayProfile` and `gatewayConnectionMode` are **projections** of the active row, so there is one copy and nothing can drift. |
-| A Remote row's sign-in | `AndroidGatewayTokenStore`, one Keystore-encrypted file per row id, under `noBackupFilesDir` | Never in preferences, never in a row, never in a log. The blob also names the Gateway that minted it, and is refused and erased if the row now points elsewhere. Erasure is addressable by row id alone, so a row whose URL was blanked or mistyped can still be cleaned up. |
+| A Remote row's sign-in | `AndroidGatewayTokenStore`, one Keystore-encrypted file per row id, under `noBackupFilesDir` | Never in preferences, never in a row, never in a log. The blob names the Gateway that minted it and is **refused** for any other — refusal is the guarantee, and a read never erases, so a mistyped URL is recoverable. Erasing is deliberate: removing the row, or re-addressing it through the editor. Erasure is addressable by row id alone, so a row whose URL was blanked can still be cleaned up. |
 | An SSH row's password/passphrase/key | Nowhere | Unchanged: in-memory for one attempt, zeroed after. There is no per-row SSH secret because there is no SSH secret on disk at all. |
 | Sessions and transcripts | `SessionCache` | Merge, never clobber — except a connection switch, which clears wholesale because the next backend is a different machine. `resetForEndpointSwitch()` is `internal` and only `ConnectionSwitchController` calls it. |
 | Which session is open, search text, project drill-in | `ChatViewModel` | UI-only. Dropped whenever the composer scope changes — address *or* profile, since two SSH remote profiles on one host are two Hermes homes with two session histories. |
-| Private draft text | `SessionDraftStore` | Keyed by durable session id only, and two gateways can recycle one. Leaving an endpoint clears every draft rather than letting one machine's text prefill another's composer. |
+| Private draft text | `SessionDraftStore` | Keyed by durable session id only, and two gateways can recycle one. Cleared on a real endpoint *transition* — picking another connection, re-addressing the active one through the editor's discrete Save, or removing the connection this device is on — and never by the Gateways route form, which persists per keystroke and cannot tell a finished address from a half-typed one. |
 | Editor form state, search text, sheet open | `ConnectionsViewModel` / `rememberSaveable` | UI-only. Never persisted. |
 
 ## Mobile adaptation ledger
@@ -88,7 +88,10 @@ that SHA.
   rather than the truth, and reseeding over it would make the downgrade
   permanent. The consequence, stated plainly: after installing an older build,
   saved connections are invisible and unmodifiable until a build that
-  understands the document runs again.
+  understands the document runs again — and the Connections section says so, in
+  one line, rather than letting a save appear to succeed. The same refusal
+  covers a document that cannot be parsed at all, which is the corrupt case:
+  nothing is overwritten, and nothing can be saved, until it is replaced.
 - **Managed SSH is not dialled by a switch.** Its credential is built in the UI
   and dies with the connection, so there is nothing to restore without asking.
   Selecting an SSH row lands disconnected on that row, and Gateways is where the
@@ -111,9 +114,10 @@ that SHA.
   its own credential and zeroes the bytes before unlinking (proven through a
   hard link to the same inode); a row whose URL was blanked is still erasable by
   its id alone; the pre-registry file is adopted exactly once *and rebound* to
-  the host it came from; a credential whose row now points at another gateway is
-  refused and erased; a row-named blob naming no host is refused rather than
-  trusted; the row's file name is pinned to
+  the host it came from; a credential whose row points at another gateway is
+  refused **and left on disk**, so fixing a typo restores it; a row-named blob
+  naming no host is refused on read and removed only by the deliberate path;
+  the row's file name is pinned to
   `SHA-256("connection" + U+0000 + id)`; and end to end, a re-addressed row
   presents no bearer minted for the gateway it left — `ticket()` asks for a
   sign-in instead.
@@ -125,7 +129,9 @@ that SHA.
   row (including a row whose URL is blank), the last row cannot be removed, an
   unaddressable Remote URL is refused with product copy, a duplicate URL is
   refused inline, re-addressing the active row tears the old endpoint down and
-  erases the credential it abandoned, and renaming it tears nothing down.
+  erases the credential it abandoned, renaming it tears nothing down, and a
+  registry this build may not write refuses both a save and a removal in place
+  rather than appearing to succeed.
 - `SecretRedactionTest` — URL userinfo never reaches a screen or a screen
   reader, and an ordinary URL is left alone.
 - `HermesPreferencesTest` — a registry document this build cannot read is never

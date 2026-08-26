@@ -80,6 +80,17 @@ internal fun ConnectionsSection(
         Text(ConnectionsCopy.INTRO, style = HermesTheme.type.caption, color = tokens.textTertiary)
         Text(ConnectionsCopy.STAGED_NOTE, style = HermesTheme.type.caption, color = tokens.textTertiary)
 
+        if (state.loaded && !state.writable) {
+            // The saved document belongs to a newer build and is deliberately
+            // left untouched. Saying so beside the list is the difference
+            // between "nothing happened" and "nothing was allowed to happen".
+            Text(
+                ConnectionsCopy.REGISTRY_LOCKED,
+                style = HermesTheme.type.caption,
+                color = tokens.destructive,
+            )
+        }
+
         if (searchable) {
             SearchField(
                 value = searchQuery,

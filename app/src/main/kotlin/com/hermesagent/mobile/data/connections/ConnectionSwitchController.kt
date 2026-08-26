@@ -81,7 +81,7 @@ internal class ConnectionSwitchController(
 
             pending.value = target.id
             try {
-                leaveLocked()
+                leaveLocked(dropDrafts = true)
                 store.setActiveConnection(target.id)
                 awaitSettle(target)
             } finally {
@@ -102,7 +102,7 @@ internal class ConnectionSwitchController(
         switching.withLock {
             pending.value = store.connectionRegistry.first().active?.id
             try {
-                leaveLocked()
+                leaveLocked(dropDrafts = true)
                 save()
                 rearm.value += 1
                 awaitSettle(store.connectionRegistry.first().active)
@@ -113,21 +113,43 @@ internal class ConnectionSwitchController(
     }
 
     /**
-     * Steps 1 and 2 on their own, for a caller that changes where this device
-     * is pointed without going through [select] or [readdressActive] — most of
-     * all, removing the row it is on.
+     * Put the live connection down and forget what the Gateway told us, without
+     * discarding anything the person wrote.
+     *
+     * This is the *editing* teardown. The Gateways route form has no discrete
+     * save — it persists on every keystroke — so it cannot tell a finished
+     * address from a half-typed one, and it calls this after each. Everything
+     * dropped here repopulates from the next connection; draft text does not,
+     * which is why draft text is not dropped here.
+     */
+    suspend fun leaveCurrentEndpoint() {
+        switching.withLock { leaveLocked(dropDrafts = false) }
+    }
+
+    /**
+     * The stronger form, for when the endpoint is not coming back: the row this
+     * device is on is being removed.
      *
      * It takes the same lock, so a removal that arrives mid-switch waits rather
      * than tearing down the connection that switch had just opened.
      */
-    suspend fun leaveCurrentEndpoint() {
-        switching.withLock { leaveLocked() }
+    suspend fun abandonCurrentEndpoint() {
+        switching.withLock { leaveLocked(dropDrafts = true) }
     }
 
-    private suspend fun leaveLocked() {
+    /**
+     * [dropDrafts] separates a *transition* from an *edit*.
+     *
+     * Sessions, transcripts and the project catalog are the Gateway's to
+     * re-send, so clearing them costs a refresh. Private draft text has no
+     * other copy, so it is dropped only where the endpoint genuinely changed —
+     * a switch, a re-address through the list editor's discrete Save, or the
+     * active row being removed — and never for a keystroke.
+     */
+    private suspend fun leaveLocked(dropDrafts: Boolean) {
         gateway.disconnect()
         cache.resetForEndpointSwitch()
-        drafts.clear()
+        if (dropDrafts) drafts.clear()
     }
 
     private suspend fun awaitSettle(target: SavedConnection?) {

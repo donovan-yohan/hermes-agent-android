@@ -6,6 +6,7 @@ import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import java.text.Normalizer
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Which endpoint shape a saved connection is.
@@ -105,6 +106,14 @@ data class ConnectionRegistry(
  */
 interface ConnectionRegistryStore {
     val connectionRegistry: Flow<ConnectionRegistry>
+
+    /**
+     * False when what is stored was written by a build this one cannot read, or
+     * cannot be parsed at all. Every write is refused while it is false — see
+     * [com.hermesagent.mobile.data.connections.ConnectionRegistryCodec.isWritable]
+     * — so the surface has to say so rather than appear to save and not.
+     */
+    val connectionRegistryWritable: Flow<Boolean> get() = flowOf(true)
 
     /** Inserts a new row or replaces an existing one by id. Never changes which row is active. */
     suspend fun saveConnection(connection: SavedConnection)
