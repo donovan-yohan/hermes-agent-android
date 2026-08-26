@@ -76,6 +76,13 @@ private data class RelaySendState(
     val attempt: RelayAttempt? = null,
     val sending: Boolean = false,
     val outcome: RelaySendOutcome? = null,
+    /**
+     * The `clientMessageId` of an attempt Relay answered with a conflict, held
+     * only until a window carries the row it named. Not a retry key — that one
+     * is spent — but the single fact that lets the poll retire a warning
+     * instead of leaving it standing over a message that is plainly there.
+     */
+    val awaitingArrival: String? = null,
     /** Relay's id for the newest row this device got it to store here. */
     val lastAcceptedId: String? = null,
 )
@@ -338,16 +345,19 @@ internal class RelayViewModel(
      * id. Nothing is dispatched for input the server would refuse anyway.
      */
     fun sendDraft() {
-        val current = data.value
-        val channelId = current.selectedChannelId
+        val channelId = data.value.selectedChannelId
         val send = channelId?.let(sends.value::get) ?: RelaySendState()
+        // A post already on the wire for this channel owns the composer. That
+        // is asked first: a second tap during a send is not a new message, and
+        // it must not get to replace the outcome of the one in flight either.
+        if (send.sending) return
         val text = send.draft.trim()
         relayLocalRejection(channelId, text)?.let { rejection ->
             // Zero requests: this refusal needed no Gateway to answer it.
             channelId?.let { id -> updateSend(id) { it.copy(outcome = rejection) } }
             return
         }
-        if (channelId == null || send.sending) return
+        if (channelId == null) return
         val reusable = send.attempt?.takeIf { it.text == text }
         dispatch(channelId, reusable ?: RelayAttempt(text, newClientMessageId()))
     }
@@ -408,6 +418,10 @@ internal class RelayViewModel(
             data.update { it.acknowledging(channelId, accepted) }
         }
         updateSend(channelId) { send ->
+            // One question, asked once and spelled once: is the post that just
+            // settled still the one this composer is holding? A newer attempt
+            // owns the slot otherwise, and nothing here may touch it.
+            val stillCurrent = send.attempt == attempt
             send.copy(
                 // Tells the transcript that this arrival is the reader's own,
                 // which is the one that outranks having scrolled back.
@@ -415,11 +429,15 @@ internal class RelayViewModel(
                 // Only the text this attempt actually carried is retired. A
                 // draft edited while the post was in flight is a different
                 // message and survives its predecessor's success.
-                draft = if (verdict.clearsDraft && send.draft.trim() == attempt.text) "" else send.draft,
-                // Likewise the id: a newer attempt owns the slot now.
-                attempt = if (verdict.keepsAttempt || send.attempt != attempt) send.attempt else null,
+                draft = if (verdict.clearsDraft && stillCurrent && send.draft.trim() == attempt.text) {
+                    ""
+                } else {
+                    send.draft
+                },
+                attempt = if (verdict.keepsAttempt || !stillCurrent) send.attempt else null,
                 sending = false,
                 outcome = verdict.outcome,
+                awaitingArrival = attempt.clientMessageId.takeIf { verdict.watchesForArrival },
             )
         }
         // Accepted or ambiguous, this channel's window may have moved; Desktop
@@ -471,6 +489,7 @@ internal class RelayViewModel(
             markStale()
             return
         }
+        retireSettledConflict(channelId, answer.messages)
         data.update { current ->
             val pending = current.acknowledged[channelId]
             // Nothing is waiting on almost every tick, and reconciling nothing
@@ -489,6 +508,28 @@ internal class RelayViewModel(
                     current.acknowledged + (channelId to waiting)
                 },
             )
+        }
+    }
+
+    /**
+     * Retire a conflict the window has now answered.
+     *
+     * A conflict says Relay is already holding a message under this attempt's
+     * id, and the composer says so as a failure because at that moment the app
+     * cannot see the thing being claimed. The next window can: a row carrying
+     * that `clientMessageId` is the claim proved, and a warning about a message
+     * the person is now looking at is only noise. The draft is deliberately
+     * left alone — a poll never deletes what someone typed.
+     *
+     * Costs nothing on the ticks that matter: no conflict outstanding, no scan.
+     */
+    private fun retireSettledConflict(channelId: String, window: List<RelayMessage>) {
+        val awaited = sends.value[channelId]?.awaitingArrival ?: return
+        if (window.none { it.clientMessageId == awaited }) return
+        updateSend(channelId) { send ->
+            // Only if it is still the same claim: anything the person has done
+            // since owns the slot.
+            if (send.awaitingArrival != awaited) send else send.copy(outcome = null, awaitingArrival = null)
         }
     }
 

@@ -3,7 +3,7 @@ package com.hermesagent.mobile.ui.relay
 import com.hermesagent.mobile.data.relay.EMPTY_TEXT_MESSAGE
 import com.hermesagent.mobile.data.relay.LARGE_TEXT_MESSAGE
 import com.hermesagent.mobile.data.relay.MAX_HISTORY_LIMIT
-import com.hermesagent.mobile.data.relay.MAX_TEXT_BYTES
+import com.hermesagent.mobile.data.relay.MAX_REQUEST_BODY_BYTES
 import com.hermesagent.mobile.data.relay.RelayAvailability
 import com.hermesagent.mobile.data.relay.RelayAvailabilityState
 import com.hermesagent.mobile.data.relay.RelayChannel
@@ -465,7 +465,7 @@ class RelayViewModelTest {
         }
 
     @Test
-    fun `a conflict clears the draft, offers no retry, and burns the id`() = relayTest { viewModel ->
+    fun `a conflict keeps the draft, offers no retry, and burns the id`() = relayTest { viewModel ->
         poster.answer = { RelayPostResult.Failed(409, "conflict") }
         openTranscript(viewModel)
         viewModel.setDraft("ship it")
@@ -475,19 +475,50 @@ class RelayViewModelTest {
         val composer = viewModel.uiState.value.composer
         assertEquals(CONFLICT_MESSAGE, composer.outcome?.message)
         assertNull(composer.outcome?.action)
-        assertEquals("", composer.draft)
+        // The send was refused, so the field still holds what was typed. An
+        // emptied composer would be a delivery receipt for a message this
+        // device never got Relay to take.
+        assertEquals("ship it", composer.draft)
 
         // A retry cannot be asked for, and asking anyway posts nothing.
         viewModel.retrySend()
         settle()
         assertEquals(1, poster.posts.size)
 
+        // Sending the same text again is deliberate, and it is a new message
+        // under a new id — the old one is spent.
         poster.answer = { null }
-        viewModel.setDraft("ship it")
         viewModel.sendDraft()
         settle()
         assertEquals("id-2", poster.posts[1].clientMessageId)
+        assertEquals("ship it", poster.posts[1].text)
     }
+
+    @Test
+    fun `a window carrying the conflicted id retires the warning it raised`() =
+        relayTest { viewModel ->
+            poster.answer = { RelayPostResult.Failed(409, "conflict") }
+            openTranscript(viewModel)
+            viewModel.setDraft("ship it")
+            viewModel.sendDraft()
+            settle()
+            assertEquals(CONFLICT_MESSAGE, viewModel.uiState.value.composer.outcome?.message)
+
+            // Somebody else's row proves nothing about this attempt.
+            reader.extraMessages = listOf(RecordingReader.message("general", 9))
+            tick()
+            assertEquals(CONFLICT_MESSAGE, viewModel.uiState.value.composer.outcome?.message)
+
+            // The row Relay said it was already holding. Now the person can see
+            // the thing the warning was about, so the warning goes quiet — and
+            // the draft it left in the field is still theirs to keep or clear.
+            reader.extraMessages = listOf(
+                RecordingReader.message("general", 10).copy(clientMessageId = "id-1"),
+            )
+            tick()
+            assertNull(viewModel.uiState.value.composer.outcome)
+            assertEquals("ship it", viewModel.uiState.value.composer.draft)
+        }
 
     @Test
     fun `a refused body burns the id but keeps the draft to be edited`() = relayTest { viewModel ->
@@ -555,7 +586,9 @@ class RelayViewModelTest {
     fun `text over the server's byte bound is refused without a request`() = relayTest { viewModel ->
         openTranscript(viewModel)
 
-        viewModel.setDraft("a".repeat(MAX_TEXT_BYTES + 1))
+        // At exactly the plugin's text bound the *request* is already over its
+        // own bound, so this is refused here rather than on the wire.
+        viewModel.setDraft("a".repeat(MAX_REQUEST_BODY_BYTES))
         viewModel.sendDraft()
         settle()
 

@@ -418,6 +418,16 @@ class RelayPluginRepositoryTest {
         val outage = postRefusal(503, relayError("relay_unavailable", retryable = true))
         assertEquals(503, outage.statusCode)
         assertTrue(outage.retryable)
+        // The plugin's own name for what it refused travels with the result:
+        // the transport writes one sentence for every status it has no remedy
+        // for, so the code is the only thing left that can tell them apart.
+        assertEquals(ERROR_RELAY_UNAVAILABLE, outage.code)
+        assertEquals(ERROR_REQUEST_TOO_LARGE, postRefusal(413, relayError(ERROR_REQUEST_TOO_LARGE, false)).code)
+        assertEquals(ERROR_AUTH_REQUIRED, postRefusal(401, relayError(ERROR_AUTH_REQUIRED, false)).code)
+        // A refusal with no envelope, or one this build cannot parse, carries
+        // no code rather than a guessed one.
+        assertNull(postRefusal(500, "").code)
+        assertNull(postRefusal(400, "not json").code)
 
         // A conflict is exactly-once working. Re-sending it is the one retry the
         // contract forbids, whatever the envelope's own flag claims.
@@ -433,30 +443,70 @@ class RelayPluginRepositoryTest {
         val http = RecordingGatewayHttp()
         val repository = RelayPluginRepository { http }
 
-        // Each local refusal mirrors the status the server answers with for the
-        // same input (`dashboard/plugin_api.py:174-198` at 563a8c8), so a
-        // caller learns one contract rather than two.
-        assertEquals(400, repository.post("", "hi", RelayMessageFormat.TEXT, "id").failure().statusCode)
+        // Each local refusal mirrors the status *and the code* the server
+        // answers with for the same input (`dashboard/plugin_api.py:126-198`
+        // at 563a8c8), so a caller learns one contract rather than two.
+        val channel = repository.post("", "hi", RelayMessageFormat.TEXT, "id").failure()
+        assertEquals(400, channel.statusCode)
+        assertEquals(ERROR_INVALID_CHANNEL, channel.code)
         assertEquals(400, repository.post(" ", "hi", RelayMessageFormat.TEXT, "id").failure().statusCode)
-        assertEquals(400, repository.post("c", " ", RelayMessageFormat.TEXT, "id").failure().statusCode)
+
+        val blank = repository.post("c", " ", RelayMessageFormat.TEXT, "id").failure()
+        assertEquals(400, blank.statusCode)
+        assertEquals(ERROR_INVALID_TEXT, blank.code)
+
+        val noId = repository.post("c", "hi", RelayMessageFormat.TEXT, "").failure()
+        assertEquals(400, noId.statusCode)
+        assertEquals(ERROR_INVALID_CLIENT_MESSAGE_ID, noId.code)
+
+        val longId = repository
+            .post("c", "hi", RelayMessageFormat.TEXT, "x".repeat(MAX_CLIENT_MESSAGE_ID_BYTES + 1))
+            .failure()
+        assertEquals(413, longId.statusCode)
+        assertEquals(ERROR_CLIENT_MESSAGE_ID_TOO_LARGE, longId.code)
+        assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
+    fun `the local size gate is the encoded body the plugin actually measures`() = runTest {
+        val http = RecordingGatewayHttp()
+        val repository = RelayPluginRepository { http }
+
+        // The plugin reads the whole request under one 64 KiB cap before it
+        // looks at any field (`_read_request_body`, `plugin_api.py:25,121-136`
+        // at 563a8c8, called ahead of `_post_body`). A text at exactly that
+        // size is an over-budget *request*: 88 bytes of framing carry it past.
+        val atTextBound = "x".repeat(MAX_REQUEST_BODY_BYTES)
         assertEquals(
-            413,
-            repository.post("c", "x".repeat(MAX_TEXT_BYTES + 1), RelayMessageFormat.TEXT, "id")
-                .failure().statusCode,
+            65_624,
+            relayPostBody(atTextBound, RelayMessageFormat.MARKDOWN, "0".repeat(36))
+                .toByteArray(Charsets.UTF_8).size,
         )
-        assertEquals(400, repository.post("c", "hi", RelayMessageFormat.TEXT, "").failure().statusCode)
-        assertEquals(
-            413,
-            repository.post("c", "hi", RelayMessageFormat.TEXT, "x".repeat(513)).failure().statusCode,
-        )
+        val refused = repository.post("c", atTextBound, RelayMessageFormat.MARKDOWN, "0".repeat(36)).failure()
+        assertEquals(413, refused.statusCode)
+        assertEquals(ERROR_REQUEST_TOO_LARGE, refused.code)
+        assertEquals(LARGE_TEXT_MESSAGE, refused.safeMessage)
+        // Zero requests: a body this client already knows is too large never
+        // costs a round trip, and never even resolves a transport.
+        assertTrue(http.requests.isEmpty())
+        assertTrue(RelayPluginRepository { null }.post("c", atTextBound, RelayMessageFormat.MARKDOWN, "0".repeat(36))
+            .failure().statusCode == 413)
+
+        // Escaping counts, because it counts on the wire: a message of quotes
+        // is one byte each typed and two each encoded.
+        val dense = "\"".repeat(40_000)
+        assertTrue(dense.toByteArray(Charsets.UTF_8).size < MAX_REQUEST_BODY_BYTES)
+        assertEquals(413, repository.post("c", dense, RelayMessageFormat.MARKDOWN, "0".repeat(36)).failure().statusCode)
         assertTrue(http.requests.isEmpty())
 
-        // Exactly at the server bound is allowed through — and must actually
+        // A body at exactly the bound is allowed through — and must actually
         // reach the transport, or this asserts nothing.
         val edgeHttp = RecordingGatewayHttp(GatewayHttpResult.Rejected(500, "down"))
+        val largest = "x".repeat(MAX_REQUEST_BODY_BYTES - 88)
         RelayPluginRepository { edgeHttp }
-            .post("c", "x".repeat(MAX_TEXT_BYTES), RelayMessageFormat.TEXT, "ok-id")
+            .post("c", largest, RelayMessageFormat.MARKDOWN, "0".repeat(36))
         assertEquals(1, edgeHttp.requests.size)
+        assertEquals(MAX_REQUEST_BODY_BYTES, edgeHttp.bodies.single().toByteArray(Charsets.UTF_8).size)
     }
 
     @Test

@@ -188,11 +188,21 @@ sealed interface RelayPostResult {
      * is true only when the plugin's refusal envelope says the same request may
      * be sent again. Re-posting always reuses the original `clientMessageId`,
      * so a retry Relay has already accepted stays exactly-once.
+     *
+     * [code] is the plugin's own name for what it refused
+     * (`dashboard/plugin_api.py:85-88` at the pin), carried out because
+     * [safeMessage] cannot say it: the transport writes one generic sentence
+     * for every status it has no remedy for, so "the text is too large" and
+     * "the format is unknown" arrive at the composer wearing the same words. A
+     * refusal this client made itself carries the same vocabulary, so one
+     * mapping serves both and a local rejection and its wire twin cannot drift
+     * apart. Null when nothing classified the refusal.
      */
     data class Failed(
         val statusCode: Int?,
         val safeMessage: String,
         val retryable: Boolean = false,
+        val code: String? = null,
     ) : RelayPostResult
 }
 
@@ -276,8 +286,9 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
 
     /**
      * Post one message. Retries must pass byte-identical [clientMessageId] —
-     * Relay's exactly-once contract keys on it. Locally invalid input fails
-     * with 400 before any network call, mirroring the server's own bounds.
+     * Relay's exactly-once contract keys on it. Locally invalid input is
+     * refused before any network call, under the same status and the same
+     * code the wire would have answered with.
      */
     suspend fun post(
         channelId: String,
@@ -286,31 +297,47 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
         clientMessageId: String,
     ): RelayPostResult = withContext(Dispatchers.IO) {
         val safeChannel = validChannelId(channelId)
-            ?: return@withContext RelayPostResult.Failed(400, PICK_CHANNEL_MESSAGE)
-        // These mirror the server's own bounds *and* the status it answers with
-        // (`dashboard/plugin_api.py:174-198` at the pin): a size refusal is 413
-        // there, so refusing locally under 400 would teach a caller a different
-        // contract than the wire's.
-        when {
-            text.isBlank() ->
-                return@withContext RelayPostResult.Failed(400, EMPTY_TEXT_MESSAGE)
-
-            text.toByteArray(Charsets.UTF_8).size > MAX_TEXT_BYTES ->
-                return@withContext RelayPostResult.Failed(413, LARGE_TEXT_MESSAGE)
+            ?: return@withContext RelayPostResult.Failed(
+                400,
+                PICK_CHANNEL_MESSAGE,
+                code = ERROR_INVALID_CHANNEL,
+            )
+        // These mirror the server's own bounds *and* the status and code it
+        // answers with (`dashboard/plugin_api.py:121-136,174-198` at the pin):
+        // a size refusal is 413 there, so refusing locally under 400 would
+        // teach a caller a different contract than the wire's.
+        if (text.isBlank()) {
+            return@withContext RelayPostResult.Failed(400, EMPTY_TEXT_MESSAGE, code = ERROR_INVALID_TEXT)
         }
         if (clientMessageId.isBlank()) {
-            return@withContext RelayPostResult.Failed(400, RETRY_ID_MESSAGE)
+            return@withContext RelayPostResult.Failed(
+                400,
+                RETRY_ID_MESSAGE,
+                code = ERROR_INVALID_CLIENT_MESSAGE_ID,
+            )
         }
-        if (clientMessageId.toByteArray(Charsets.UTF_8).size > MAX_ID_BYTES) {
-            return@withContext RelayPostResult.Failed(413, RETRY_ID_MESSAGE)
+        if (clientMessageId.toByteArray(Charsets.UTF_8).size > MAX_CLIENT_MESSAGE_ID_BYTES) {
+            return@withContext RelayPostResult.Failed(
+                413,
+                RETRY_ID_MESSAGE,
+                code = ERROR_CLIENT_MESSAGE_ID_TOO_LARGE,
+            )
+        }
+        // The size gate is on the *encoded body*, because that is the one the
+        // plugin actually applies. Encoded once and then sent: the bytes that
+        // were measured are the bytes that go on the wire, and a body this
+        // client already knows is too large costs no request — this runs before
+        // the transport is even resolved.
+        val encoded = relayPostBody(text, format, clientMessageId).toByteArray(Charsets.UTF_8)
+        if (relayPostBodyTooLarge(encoded)) {
+            return@withContext RelayPostResult.Failed(
+                413,
+                LARGE_TEXT_MESSAGE,
+                code = ERROR_REQUEST_TOO_LARGE,
+            )
         }
         val transport = http() ?: return@withContext RelayPostResult.Failed(0, TRANSPORT_DOWN_MESSAGE)
-        val payload = buildJsonObject {
-            put("text", text)
-            put("format", format.wire)
-            put("clientMessageId", clientMessageId)
-        }.toString()
-        val body = payload.toRequestBody(JSON_MEDIA_TYPE)
+        val body = encoded.toRequestBody(JSON_MEDIA_TYPE)
         val request = relayRequest(
             "${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages",
             method = "POST",
@@ -329,6 +356,11 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
                     retryable = envelope != null &&
                         envelope.retryable &&
                         envelope.code != ERROR_CONFLICT,
+                    // Only the plugin's own classification, never any text it
+                    // wrote: the code is a fixed vocabulary this build maps to
+                    // its own sentence, and a code it does not know changes
+                    // nothing.
+                    code = envelope?.code,
                 )
             }
 
@@ -538,7 +570,40 @@ private fun messageFormatFromWire(wire: String): RelayMessageFormat? = when (wir
 
 /** Non-blank and within the server's byte bound; ids are refused, not mangled. */
 private fun validChannelId(raw: String): String? =
-    raw.takeIf { it.isNotBlank() && it.toByteArray(Charsets.UTF_8).size <= MAX_ID_BYTES }
+    raw.takeIf { it.isNotBlank() && it.toByteArray(Charsets.UTF_8).size <= MAX_CHANNEL_ID_BYTES }
+
+/**
+ * The exact bytes one post puts on the wire.
+ *
+ * Extracted so the size gate and the request are the same string: a bound
+ * checked against anything other than what is actually sent is a bound on a
+ * different message. The three keys and their order are the frozen body
+ * `_post_body` demands (`dashboard/plugin_api.py:174-181` at the pin).
+ */
+internal fun relayPostBody(
+    text: String,
+    format: RelayMessageFormat,
+    clientMessageId: String,
+): String = buildJsonObject {
+    put("text", text)
+    put("format", format.wire)
+    put("clientMessageId", clientMessageId)
+}.toString()
+
+/**
+ * Whether an encoded body is past the plugin's whole-request gate.
+ *
+ * Takes the finished bytes rather than the parts so there is one comparison in
+ * the app, not one per caller: the composer asks this before it dispatches and
+ * [post] asks it again about the very bytes it is about to send. The [String]
+ * overload is for the caller that has no reason to keep the encoding; [post]
+ * does, and hands the same array to the request body.
+ */
+internal fun relayPostBodyTooLarge(encoded: ByteArray): Boolean =
+    encoded.size > MAX_REQUEST_BODY_BYTES
+
+internal fun relayPostBodyTooLarge(payload: String): Boolean =
+    relayPostBodyTooLarge(payload.toByteArray(Charsets.UTF_8))
 
 /**
  * Percent-encode one path segment. `+`-for-space is a form/query convention;
@@ -584,8 +649,26 @@ private val CONTRACT_VIOLATION = RelayPostResult.Failed(null, UNUSABLE_RESPONSE_
 // Mirrors relay_proxy.py bounds at the plugin source of truth; the server
 // remains authoritative and re-validates everything.
 internal const val MAX_HISTORY_LIMIT = 50
-internal const val MAX_TEXT_BYTES = 64 * 1024
-internal const val MAX_ID_BYTES = 512
+
+/**
+ * The bound one post is actually held to: the *whole encoded request body*.
+ *
+ * The plugin reads every request under `MAX_DESKTOP_REQUEST_BYTES` and refuses
+ * a longer one with 413 `request_too_large` before it has looked at a single
+ * field (hermes-plugin-relay @ `563a8c8`, `dashboard/plugin_api.py:25,121-136`,
+ * called ahead of `_post_body` at `:174-198`). Its text bound
+ * (`MAX_MESSAGE_TEXT_BYTES`, `relay_proxy.py:28`) is the same 64 KiB, and JSON
+ * framing plus escaping is never zero bytes, so the body gate always binds
+ * first — a text at exactly the text bound is already a 65,624-byte body. One
+ * bound is therefore both bounds, and it is this one.
+ */
+internal const val MAX_REQUEST_BODY_BYTES = 64 * 1024
+
+/** `MAX_CHANNEL_ID_BYTES` (`relay_proxy.py:30`); over it is 400 `invalid_channel`. */
+internal const val MAX_CHANNEL_ID_BYTES = 512
+
+/** `MAX_CLIENT_MESSAGE_ID_BYTES` (`relay_proxy.py:29`); over it is 413. */
+internal const val MAX_CLIENT_MESSAGE_ID_BYTES = 512
 
 // Refusal codes the plugin writes into its error envelope
 // (`dashboard/plugin_api.py:92-113` at the pin). Codes this build does not
@@ -617,11 +700,39 @@ private const val GATE_SESSION_EXPIRED = "session_expired"
  */
 private val GATE_LAPSED_REASONS = setOf("invalid_or_expired_session")
 
-private const val ERROR_AUTH_REQUIRED = "auth_required"
-private const val ERROR_CONFLICT = "conflict"
-private const val ERROR_RELAY_UNAVAILABLE = "relay_unavailable"
-private const val ERROR_RELAY_INVALID_RESPONSE = "relay_invalid_response"
-private const val ERROR_RELAY_FAILED = "relay_error"
+/**
+ * The plugin's refusal vocabulary, as `dashboard/plugin_api.py` writes it at
+ * the pin: `_error` for the lane classifications (`:92-111`) and
+ * `RequestValidationError` for the body ones (`:126-198`). Internal rather
+ * than file-private because the composer maps the same codes to the sentence a
+ * person reads, and two copies of a wire vocabulary is how they drift.
+ */
+internal const val ERROR_AUTH_REQUIRED = "auth_required"
+internal const val ERROR_CONFLICT = "conflict"
+internal const val ERROR_RELAY_UNAVAILABLE = "relay_unavailable"
+internal const val ERROR_RELAY_INVALID_RESPONSE = "relay_invalid_response"
+internal const val ERROR_RELAY_FAILED = "relay_error"
+
+/** 413 from the whole-body gate, before any field is read (`:126-136`). */
+internal const val ERROR_REQUEST_TOO_LARGE = "request_too_large"
+
+/** 413 from the text field's own bound (`:186-187`). */
+internal const val ERROR_TEXT_TOO_LARGE = "text_too_large"
+
+/** 400 for text that is absent or blank (`:184-185`). */
+internal const val ERROR_INVALID_TEXT = "invalid_text"
+
+/** 400 for a format outside `{markdown, text}` (`:188-189`). */
+internal const val ERROR_INVALID_FORMAT = "invalid_format"
+
+/** 400 for a channel id that is empty or over its bound (`:153-156`). */
+internal const val ERROR_INVALID_CHANNEL = "invalid_channel"
+
+/** 400 for a missing or non-string retry id (`:190-193`). */
+internal const val ERROR_INVALID_CLIENT_MESSAGE_ID = "invalid_client_message_id"
+
+/** 413 for a retry id over its bound (`:194-197`). */
+internal const val ERROR_CLIENT_MESSAGE_ID_TOO_LARGE = "client_message_id_too_large"
 
 private const val PLUGIN_ID = "hermes-plugin-relay"
 private const val BASE_PATH = "api/plugins/$PLUGIN_ID"
@@ -638,6 +749,8 @@ private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 internal const val PICK_CHANNEL_MESSAGE = "Pick a channel before sending."
 internal const val EMPTY_TEXT_MESSAGE = "Type a message before sending."
 internal const val LARGE_TEXT_MESSAGE = "That message is too large to send."
+internal const val UNSUPPORTED_FORMAT_MESSAGE =
+    "Relay would not accept this message's format. Update Relay on the Gateway host, then send it again."
 internal const val RETRY_ID_MESSAGE = "Hermes could not prepare that message. Try again."
 internal const val TRANSPORT_DOWN_MESSAGE = "Reconnect to the Gateway and try again."
 internal const val UNUSABLE_RESPONSE_MESSAGE = "The Relay workspace returned an unusable response. Try again."

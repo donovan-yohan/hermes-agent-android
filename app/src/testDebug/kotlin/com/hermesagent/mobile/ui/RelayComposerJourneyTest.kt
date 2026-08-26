@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -25,6 +26,7 @@ import com.hermesagent.mobile.data.relay.RelayLaneState
 import com.hermesagent.mobile.data.relay.RelayMessage
 import com.hermesagent.mobile.data.relay.RelayMessageFormat
 import com.hermesagent.mobile.data.relay.RelayPostResult
+import com.hermesagent.mobile.ui.relay.AUTH_HINT
 import com.hermesagent.mobile.ui.relay.COMPOSER_FIELD_TAG
 import com.hermesagent.mobile.ui.relay.CONFLICT_MESSAGE
 import com.hermesagent.mobile.ui.relay.RelayChannelReader
@@ -128,7 +130,7 @@ class RelayComposerJourneyTest {
     }
 
     @Test
-    fun `a conflict says so, offers no retry, and the next message gets a new id`() {
+    fun `a conflict keeps the draft, offers no retry, and the next message gets a new id`() {
         poster.answer = { RelayPostResult.Failed(409, "conflict") }
         launch()
         openChannel()
@@ -140,14 +142,35 @@ class RelayComposerJourneyTest {
         compose.onNodeWithText(CONFLICT_MESSAGE).assertIsDisplayed()
         // The one retry the contract forbids is not offered.
         assertTrue(compose.onAllNodesWithTag(RETRY_SEND_TAG).fetchSemanticsNodes().isEmpty())
+        // The refused message is still in the field, ready to be sent again on
+        // purpose — nothing here says it was delivered.
+        compose.onNodeWithText("parity is green").assertIsDisplayed()
 
         poster.answer = { null }
-        compose.onNodeWithTag(COMPOSER_FIELD_TAG).performTextInput("parity is green")
         compose.onNodeWithTag(SEND_TAG).performClick()
         compose.waitForIdle()
 
         assertEquals(2, poster.posts.size)
+        assertEquals(poster.posts[0].text, poster.posts[1].text)
         assertNotEquals(poster.posts[0].clientMessageId, poster.posts[1].clientMessageId)
+    }
+
+    @Test
+    fun `the host's own Relay credential is not a reconnect this device can offer`() {
+        poster.answer = {
+            RelayPostResult.Failed(401, "refused", code = "auth_required")
+        }
+        launch()
+        openChannel()
+
+        compose.onNodeWithTag(COMPOSER_FIELD_TAG).performTextInput("parity is green")
+        compose.onNodeWithTag(SEND_TAG).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText(AUTH_HINT).assertIsDisplayed()
+        // Reconnecting this device would re-authenticate something that was
+        // never the problem, so the action is not offered at all.
+        assertTrue(compose.onAllNodesWithTag(SEND_GATEWAYS_TAG).fetchSemanticsNodes().isEmpty())
     }
 
     @Test
@@ -203,7 +226,10 @@ class RelayComposerJourneyTest {
         launch()
         openChannel()
 
+        // Both dimensions: a control 48dp tall and 20dp wide is not a 48dp
+        // target, and a height-only assertion cannot tell the two apart.
         compose.onNodeWithTag(SEND_TAG).assertHeightIsAtLeast(HermesSpacing().touchTarget)
+        compose.onNodeWithTag(SEND_TAG).assertWidthIsAtLeast(HermesSpacing().touchTarget)
         compose.onNodeWithContentDescription("Send message").assertIsDisplayed()
         compose.onNodeWithContentDescription("Relay message").assertIsDisplayed()
     }
