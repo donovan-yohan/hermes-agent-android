@@ -19,7 +19,7 @@ checkout's drift from the pin does not reach any value on this page.
 | Background | `apps/desktop/src/styles.css:223,226` — `color-mix(in srgb, seed 12%, transparent)` | `HermesTokens.diffAddedBackground` / `diffRemovedBackground` via `mixPremultiplied(seed, 12f, Color.Transparent)` |
 | Foreground | `apps/desktop/src/styles.css:224,227` (light, 70% toward `#000`), `:531-532` (dark, 62% toward `#fff`) | `HermesTokens.diffAddedForeground` / `diffRemovedForeground` via `mixPremultiplied` on the same knobs |
 | Application | `apps/desktop/src/components/chat/diff-lines.tsx:41-51` — `DIFF_KIND_TINT` paints border + background, `DIFF_KIND_TEXT` paints the ink on the colour-only renderer | `InlineDiffPanel` in `ui/chat/Transcript.kt` — colour-only, so both apply |
-| Context line | `diff-lines.tsx:44,49` — transparent border, no tint, inherits `DIFF_BOX_CLASS`'s `--ui-text-secondary` (`:66`) | `Color.Transparent` behind `tokens.textSecondary` |
+| Context line | `diff-lines.tsx:43,49` — transparent border, no tint, inherits `DIFF_BOX_CLASS`'s `--ui-text-secondary` (`:66`) | `Color.Transparent` behind `tokens.textSecondary` |
 
 ## Resolved values
 
@@ -41,7 +41,7 @@ Compose's 8-bit sRGB channels, `#aarrggbb`:
 `InlineDiffPanel` tinted added lines with `statusUnread` and removed lines with
 `destructive`. Those are a different semantic that merely happened to be green
 and red: `statusUnread` is the fixed emerald-500 unread-session dot
-(`session-status-dot.tsx:33,64`), and `destructive` is the palette's
+(`session-status-dot.tsx:63-65`), and `destructive` is the palette's
 destructive-action colour, which moves per preset. So an inline diff ignored the
 theme's green in every skin, and its "removed" red tracked whatever red the
 palette used for destructive buttons.

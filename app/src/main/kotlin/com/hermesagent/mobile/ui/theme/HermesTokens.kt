@@ -107,7 +107,7 @@ data class HermesTokens(
 ) {
     companion object {
         // Tailwind amber-500 / emerald-500, the two literals Desktop's status
-        // dot uses across every skin (session-status-dot.tsx:33,64).
+        // dot uses across every skin (session-status-dot.tsx:63-65).
         private val Amber500 = Color(0xFFF59E0B)
         private val Emerald500 = Color(0xFF10B981)
 
@@ -142,7 +142,7 @@ data class HermesTokens(
                 knobs.neutralCard,
             )
 
-            // styles.css:196-199,528-530 @
+            // styles.css:196-199,528-529 @
             // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — `--ui-green` /
             // `--ui-red` are fixed per mode, so a diff reads the same in every
             // skin. They are also the diff *border* seeds (`:222,225`).
