@@ -575,12 +575,13 @@ private fun SessionRow(
                 )
                 .padding(
                     start = HermesTheme.spacing.pageInset - 4.dp,
-                    // The overlaid actions control is one touch target wide
-                    // with its glyph centred, so row content clears it at the
-                    // control's centre line plus the row's usual end gutter.
-                    // Derived, so resizing the control cannot silently let a
-                    // title or profile tag run under the mark.
-                    end = HermesTheme.spacing.touchTarget / 2 + 8.dp,
+                    // The overlaid actions control is one whole touch target
+                    // wide and sits on top of the row, so anything the row
+                    // draws inside that band is unreachable: a tap there opens
+                    // the menu instead of the session. Reserve the control's
+                    // full width, not the distance to its glyph — the glyph is
+                    // centred but the hit box is not.
+                    end = HermesTheme.spacing.touchTarget,
                     top = 8.dp,
                     bottom = 8.dp,
                 )

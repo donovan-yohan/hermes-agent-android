@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
+import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
 import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.delay

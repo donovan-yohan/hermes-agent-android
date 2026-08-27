@@ -2,6 +2,7 @@ package com.hermesagent.mobile.ui.sessions
 
 import com.hermesagent.mobile.ui.common.HermesIcon
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
@@ -127,6 +128,11 @@ class SessionActionsMenuTest {
             "folder" to (HermesIcon.Folder to 0xEA83),
             "archive" to (HermesIcon.Archive to 0xEA98),
             "trash" to (HermesIcon.Trash to 0xEA81),
+            // Not Desktop's — Desktop's copy failure draws lucide `X`
+            // (copy-button.tsx:9,142). Android has one glyph family, so the
+            // failure state uses codicon `close`, the same pair-mate this app
+            // already uses wherever a lucide X appears upstream.
+            "close" to (HermesIcon.Close to 0xEA76),
         )
 
         expected.forEach { (codicon, mapping) ->
@@ -156,14 +162,44 @@ class SessionActionsMenuTest {
     @Test
     fun `the copy verb confirms in place rather than raising a notice`() {
         val idle = sessionActionItems("s-1").single()
-        val done = sessionActionItems("s-1", idCopied = true).single()
+        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied).single()
 
         assertEquals("Copy ID", idle.label)
         assertEquals(HermesIcon.Copy, idle.icon)
-        assertEquals("Session ID copied", done.label)
+        // Desktop's CopyButton swaps in t.common.copied verbatim
+        // (copy-button.tsx:147-148; en.ts:21).
+        assertEquals("Copied", done.label)
         assertEquals(HermesIcon.Check, done.icon)
         // The confirmation must not move the item out of its slot.
         assertEquals(idle.group, done.group)
+    }
+
+    @Test
+    fun `a refused clip says so in the item's own slot`() {
+        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed).single()
+
+        // en.ts:2166, the message Desktop attaches to this exact item
+        // (session-actions-menu.tsx:482).
+        assertEquals("Could not copy session ID", failed.label)
+        // Desktop's error icon is an X (copy-button.tsx:142).
+        assertEquals(HermesIcon.Close, failed.icon)
+        assertEquals(SessionActionsGroup.Identity, failed.group)
+        // Desktop tints nothing on failure — the row is given `text-current`
+        // and no variant (session-actions-menu.tsx:483). Destructive-red is
+        // Delete's alone, and a transient failure must not borrow it.
+        assertFalse(failed.destructive)
+    }
+
+    @Test
+    fun `every copy state stays one item in the identity slot`() {
+        // Whatever the clipboard did, the menu keeps its shape: the item must
+        // not appear twice, vanish, or move group under a confirmation.
+        SessionIdCopyStatus.entries.forEach { status ->
+            val items = sessionActionItems("s-1", status)
+            assertEquals(status.name, 1, items.size)
+            assertEquals(status.name, SessionActionsGroup.Identity, items.single().group)
+            assertEquals(status.name, emptyList<SessionActionItem>(), sessionActionItems("", status))
+        }
     }
 
     /** Split a plan back into its groups on the separators. */

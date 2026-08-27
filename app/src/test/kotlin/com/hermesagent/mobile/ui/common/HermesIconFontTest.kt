@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -30,6 +31,48 @@ class HermesIconFontTest {
             val codePoint = icon.glyph.single().code
             assertTrue(
                 "${icon.name} (U+%04X) is not in the shipped codicon font".format(codePoint),
+                codePoint in mapped,
+            )
+        }
+    }
+
+    /**
+     * The negative control the check above needs to mean anything.
+     *
+     * Every assertion up there is `codePoint in mapped`, so a reader that
+     * over-reported — one that spanned the segment list instead of walking it,
+     * or ran a segment one code point long — would pass the whole suite while
+     * proving nothing. These three are absent from Codicons 0.0.45 by
+     * construction, and each catches a different way of being wrong:
+     *
+     * - `A` is not in the private use area at all.
+     * - `U+EA5F` is the code point directly below `add` (`U+EA60`), the font's
+     *   lowest glyph — the low edge of the whole cmap.
+     * - `U+EB0A` is a hole *between* two mapped segments (`…EB09`, `EB0B…`), so
+     *   a reader that treats the cmap as one span rather than ten is caught
+     *   even though the point is well inside the font's range.
+     */
+    @Test
+    fun `the cmap reader reports a code point the font does not map as absent`() {
+        val mapped = shippedCodiconCodePoints()
+
+        listOf(0x41, UNMAPPED_BELOW_FIRST_GLYPH, UNMAPPED_BETWEEN_SEGMENTS).forEach { codePoint ->
+            assertFalse(
+                "U+%04X is not in Codicons 0.0.45, so the cmap reader is over-reporting"
+                    .format(codePoint),
+                codePoint in mapped,
+            )
+        }
+
+        // …and the reader is not simply under-reporting either: each hole is
+        // one code point wide, and both neighbours are real glyphs.
+        listOf(
+            UNMAPPED_BELOW_FIRST_GLYPH + 1,
+            UNMAPPED_BETWEEN_SEGMENTS - 1,
+            UNMAPPED_BETWEEN_SEGMENTS + 1,
+        ).forEach { codePoint ->
+            assertTrue(
+                "U+%04X is a real glyph, so the cmap reader is under-reporting".format(codePoint),
                 codePoint in mapped,
             )
         }
@@ -109,5 +152,11 @@ class HermesIconFontTest {
 
         /** Format 4's mandatory terminating segment. */
         const val LAST_SEGMENT = 0xFFFF
+
+        /** The gap directly below `add` (`U+EA60`), this font's lowest glyph. */
+        const val UNMAPPED_BELOW_FIRST_GLYPH = 0xEA5F
+
+        /** The one-point hole between the `U+EB0B` and `…EB09` segments. */
+        const val UNMAPPED_BETWEEN_SEGMENTS = 0xEB0A
     }
 }

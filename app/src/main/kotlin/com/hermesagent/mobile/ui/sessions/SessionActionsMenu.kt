@@ -13,25 +13,29 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
+import com.hermesagent.mobile.ui.common.ClipboardWriter
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
-import com.hermesagent.mobile.ui.common.copyToClipboard
+import com.hermesagent.mobile.ui.common.rememberClipboardWriter
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import kotlinx.coroutines.delay
 
 /**
  * The per-session actions menu, ported from Desktop's `SessionActionsMenu`
@@ -58,12 +62,31 @@ private const val COPY_ID = "Copy ID"
 
 /**
  * The copy confirmation. Desktop's `CopyButton` swaps the item's own icon and
- * label rather than raising a notice (`components/ui/copy-button.tsx:87-102`),
- * which is also this app's established clipboard grammar (`Transcript.kt`,
- * `CodingStatusRow.kt`): Android 13+ already raises a system clipboard notice
- * and a second one would be the app talking over the platform.
+ * label rather than raising a notice, and the label it swaps in is
+ * `t.common.copied` (`components/ui/copy-button.tsx:147-148`; `i18n/en.ts:21`)
+ * — the same word, verbatim. Confirming in place is also this app's established
+ * clipboard grammar (`Transcript.kt`, `CodingStatusRow.kt`): Android 13+ already
+ * raises a system clipboard notice and a second one would be the app talking
+ * over the platform.
  */
-private const val COPY_ID_DONE = "Session ID copied"
+private const val COPY_ID_DONE = "Copied"
+
+/**
+ * The copy failure. Desktop splits this across two surfaces a phone does not
+ * have: the item's own label becomes `t.common.failed` while the specific
+ * message rides its tooltip and `aria-label` (`copy-button.tsx:149-151,161-164`)
+ * and a desktop notification (`session-actions-menu.tsx:482,486`). Touch has no
+ * hover and this build has no notification centre, so the one slot on screen
+ * carries the specific message rather than the bare word — `copyIdFailed`
+ * verbatim (`i18n/en.ts:2166`).
+ */
+private const val COPY_ID_FAILED = "Could not copy session ID"
+
+/**
+ * The clip's own description, which Android 13+ shows in the system clipboard
+ * notice. User-visible product copy, not a debug tag.
+ */
+private const val SESSION_ID_CLIP_LABEL = "Session ID"
 
 /**
  * Desktop's fixed menu group order: open, identity, work, tab, danger
@@ -86,6 +109,21 @@ enum class SessionActionsGroup {
 
     /** Put it away or destroy it. Delete stays last and destructive-red. */
     Danger,
+}
+
+/**
+ * What the Copy ID row is currently saying — Desktop's `CopyStatus`
+ * (`copy-button.tsx:14`) with the same three states and the same transitions.
+ */
+enum class SessionIdCopyStatus {
+    /** Offering to copy. */
+    Idle,
+
+    /** The clip was accepted. */
+    Copied,
+
+    /** The clipboard refused it. */
+    Failed,
 }
 
 /**
@@ -138,12 +176,35 @@ fun sessionActionsMenuPlan(items: List<SessionActionItem>): List<SessionMenuNode
  * Deliberately short: a permanently disabled Rename would be the menu lying
  * about what the app can do. Rename (S14) and Delete (S15) append themselves
  * here, and [SessionActionsGroup] puts them in Desktop's slots.
+ *
+ * Desktop disables its whole menu for a session with no id
+ * (`disabled={!sessionId}`, `session-actions-menu.tsx:471,481`); with nothing
+ * left to disable this returns nothing, and [SessionActionsControl] renders no
+ * control at all rather than a bordered empty popup.
  */
-fun sessionActionItems(sessionId: String, idCopied: Boolean = false): List<SessionActionItem> =
-    if (sessionId.isBlank()) emptyList() else listOf(if (idCopied) CopyIdCopied else CopyId)
+fun sessionActionItems(
+    sessionId: String,
+    copyStatus: SessionIdCopyStatus = SessionIdCopyStatus.Idle,
+): List<SessionActionItem> {
+    if (!hasSessionActions(sessionId)) return emptyList()
+    return listOf(
+        when (copyStatus) {
+            SessionIdCopyStatus.Idle -> CopyId
+            SessionIdCopyStatus.Copied -> CopyIdCopied
+            SessionIdCopyStatus.Failed -> CopyIdFailed
+        },
+    )
+}
 
 /**
- * The Copy ID row and its confirmed form. Declared once and matched by value
+ * Whether this build can do anything at all with [sessionId] — the one rule
+ * [sessionActionItems] applies, named so the control can ask it without
+ * building a list it would only measure and throw away.
+ */
+internal fun hasSessionActions(sessionId: String): Boolean = sessionId.isNotBlank()
+
+/**
+ * The Copy ID row and its two settled forms. Declared once and matched by value
  * below rather than dispatching on the rendered string: product copy is
  * reviewed and edited (`docs/workflows/review-product-copy.md`), and a label
  * that a `when` branch no longer recognises would silently stop working.
@@ -154,6 +215,16 @@ private val CopyIdCopied =
     SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Check, COPY_ID_DONE)
 
 /**
+ * Desktop's failure state swaps the icon to an `X` and changes nothing else
+ * (`copy-button.tsx:142`); its ink stays the menu item's own, because the only
+ * class the row is given is `text-current` (`session-actions-menu.tsx:483`). So
+ * this is deliberately **not** `destructive` — that variant is Delete's, and
+ * reddening a transient failure here would make the two read alike.
+ */
+private val CopyIdFailed =
+    SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Close, COPY_ID_FAILED)
+
+/**
  * The 48dp overflow control and the menu it opens.
  *
  * A tap is the only path in: long-press stays with the platform so it cannot
@@ -161,14 +232,37 @@ private val CopyIdCopied =
  * (`session-row-gesture.ts:27,33`) have no touch equivalent at all.
  */
 @Composable
-fun SessionActionsControl(
+internal fun SessionActionsControl(
     sessionId: String,
     modifier: Modifier = Modifier,
     tint: Color = HermesTheme.tokens.textTertiary,
+    writeClipboard: ClipboardWriter = rememberClipboardWriter(),
 ) {
+    // A menu with nothing in it is chrome that lies about the app. This asks the
+    // rule `sessionActionItems` itself applies, so the control and its contents
+    // can never disagree about whether there is anything to open.
+    if (!hasSessionActions(sessionId)) return
+
     var expanded by remember(sessionId) { mutableStateOf(false) }
-    var idCopied by remember(sessionId) { mutableStateOf(false) }
-    val context = LocalContext.current
+    var copyStatus by remember(sessionId) { mutableStateOf(SessionIdCopyStatus.Idle) }
+    // Bumped on every press so a repeat press restarts the reset below, exactly
+    // as Desktop clears its pending timeout before setting a new one
+    // (`copy-button.tsx:115-123,128-136`).
+    var copyPress by remember(sessionId) { mutableIntStateOf(0) }
+
+    // Desktop settles both the copied and the failed state back to idle after
+    // `COPIED_RESET_MS` (`copy-button.tsx:120-123,133-136`); the constant this
+    // app's other two clipboard controls already share is the same 1.5s.
+    //
+    // Guarded rather than launched-and-ignored: this composable runs once per
+    // session row, and nearly every row is never tapped, so an idle row should
+    // not be paying for a coroutine that has nothing to wait for.
+    if (copyStatus != SessionIdCopyStatus.Idle) {
+        LaunchedEffect(copyPress) {
+            delay(COPY_CONFIRM_MILLIS)
+            copyStatus = SessionIdCopyStatus.Idle
+        }
+    }
 
     Box(modifier) {
         HermesIconButton(
@@ -182,19 +276,28 @@ fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, idCopied) },
+            items = { sessionActionItems(sessionId, copyStatus) },
             onDismiss = {
                 expanded = false
-                idCopied = false
+                copyStatus = SessionIdCopyStatus.Idle
             },
             onSelect = { item ->
                 when (item) {
                     // Desktop's copy item keeps the menu open so its own
                     // confirmation is visible (`copy-button.tsx:94-97`).
-                    CopyId, CopyIdCopied -> {
-                        copyToClipboard(context, "Session ID", sessionId)
-                        idCopied = true
+                    CopyId, CopyIdCopied, CopyIdFailed -> {
+                        copyPress++
+                        copyStatus = if (writeClipboard.write(SESSION_ID_CLIP_LABEL, sessionId)) {
+                            SessionIdCopyStatus.Copied
+                        } else {
+                            SessionIdCopyStatus.Failed
+                        }
                     }
+
+                    // S14's Rename and S15's Delete must arrive with a branch
+                    // here. Falling through would render a live-looking row
+                    // that does nothing, which is worse than not shipping it.
+                    else -> error("unhandled session action: ${item.label}")
                 }
             },
         )
@@ -206,7 +309,7 @@ fun SessionActionsControl(
  * `HermesTheme.tokens`, never Material's surface, elevation or type defaults.
  */
 @Composable
-private fun SessionActionsMenu(
+internal fun SessionActionsMenu(
     expanded: Boolean,
     items: () -> List<SessionActionItem>,
     onDismiss: () -> Unit,

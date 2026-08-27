@@ -96,6 +96,7 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.ScaffoldRow
+import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
 import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlin.math.roundToInt
@@ -1223,12 +1224,3 @@ private fun List<InlineSpan>.annotated(): AnnotatedString {
         }
     }
 }
-
-/**
- * How long a copy control holds its confirmation before settling back.
- *
- * Shared with [CodingStatusRow]'s worktree-path button: two controls with the
- * same Copy → Check gesture should settle on the same beat, so they read one
- * constant rather than two that happen to agree.
- */
-internal const val COPY_CONFIRM_MILLIS = 1_500L
