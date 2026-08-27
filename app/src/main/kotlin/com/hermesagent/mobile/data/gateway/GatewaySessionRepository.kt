@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
@@ -100,6 +101,16 @@ interface GatewaySessionRepository {
     suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
         error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
+
+    /** How far the session list has read, and whether there is more. */
+    val sessionPaging: StateFlow<SessionListPaging> get() = NO_SESSION_PAGING
+
+    /**
+     * Read the next page of the session list, layering it over what is already
+     * cached. A no-op when nothing more is known to exist — including on a
+     * Gateway whose list contract has no offset at all.
+     */
+    suspend fun loadMoreSessions() = Unit
     /**
      * The profile scope new work and the session list belong to. UI-only
      * authority pushed down, never Gateway truth; the repository only turns it
@@ -237,7 +248,111 @@ data class SessionRehome(
     val newDurableId: String,
 )
 
-private enum class GatewayOptionalCapability { Redirect, Steer, Processes, Goals, Attachments }
+/**
+ * How far through the backend's session list this connection has read.
+ *
+ * Paging is explicit here for the same reason it is on Desktop: the list foot
+ * carries a control the user presses (`load-more-row.tsx:15` @ `f82f2dba`),
+ * never a scroll that quietly asks for more. So this describes a button, and
+ * the three things a button needs to know — whether pressing it would do
+ * anything, whether a press is in flight, and how many rows are still out
+ * there.
+ *
+ * @param total what the backend says exists in scope, summed across the profile
+ *   legs of one refresh (`{"total": N}`, `sessions.py:159`). Null when any leg
+ *   could not say — an older Gateway on the RPC fallback never does — because a
+ *   partial sum presented as a total is a wrong number and the pager's label
+ *   would render it.
+ * @param remaining rows in scope that no page has asked for yet — what Desktop
+ *   puts in `Load {n}` (`load-more-row.tsx:15`). Counted from the paging
+ *   *windows* consumed, not from rows received, because a page can repeat rows:
+ *   the route back-fills pinned conversations into every page that would
+ *   otherwise drop them (`sessions.py:139`). Null exactly when [total] is.
+ * @param canLoadMore whether any leg has rows past the pages already read.
+ * @param loading whether a page request is in flight right now.
+ */
+data class SessionListPaging(
+    val total: Long? = null,
+    val remaining: Long? = null,
+    val canLoadMore: Boolean = false,
+    val loading: Boolean = false,
+)
+
+private enum class GatewayOptionalCapability {
+    Redirect,
+    Steer,
+    Processes,
+    Goals,
+    Attachments,
+
+    /**
+     * `GET /api/sessions`. A 404 on a route with no path parameters can mean
+     * nothing except that this backend lacks it, which is a capability rather
+     * than a failure — Desktop remembers it the same way instead of re-probing
+     * a known-dead endpoint once per refresh
+     * (`apps/desktop/src/hermes.ts:609-616,639-642` @ `f82f2dba`). Only a 404
+     * sets it: a timeout, a 5xx or a refused connection is a blip, and letting
+     * one blip permanently demote a Gateway to the older contract would cost
+     * the user pin, archive and unread for the rest of the session.
+     */
+    SessionListRest,
+}
+
+/** Why the session list is being read, and therefore what happens to its cursors. */
+private enum class SessionPageRead {
+    /** An explicit refresh or a new connection: page one, pager back to one page deep. */
+    Refresh,
+
+    /** A backend event moved the rows: page one, every leg keeps the depth it reached. */
+    Rescan,
+
+    /** `Load more`: the next page of every leg that has one. */
+    More,
+}
+
+/** Where one profile leg's paging stands. Meaningless across a connection change. */
+private data class SessionPageCursor(
+    /** Where this leg's next page starts: the window consumed, not the rows kept. */
+    val nextOffset: Int,
+    val total: Long?,
+    val exhausted: Boolean,
+)
+
+/**
+ * This freshly-read page-one cursor, carrying forward how deep [loaded] had
+ * already read.
+ *
+ * A rescan re-reads page one for its rows; it is not the reader going back to
+ * the top. The fresh page is the authority on the one thing that moves — the
+ * scope's `total` — while how many rows have been paid for is the loaded
+ * cursor's to say. Taking the deeper offset is also what keeps the arithmetic
+ * honest when a row is created or retired between reads: `remaining` is
+ * `total` minus what was consumed, and re-reading page one consumes nothing
+ * new.
+ *
+ * `exhausted` follows the offset that survives. A fresh full page one proves
+ * nothing about the tail; only the retained offset against the fresh total can
+ * say, and when the contract reports no total at all (the `session.list`
+ * fallback) the loaded answer stands.
+ *
+ * A leg with no [loaded] cursor has never answered before, so the fresh page is
+ * all there is to know about it.
+ */
+private fun SessionPageCursor.keepingDepthOf(loaded: SessionPageCursor?): SessionPageCursor =
+    if (loaded == null || loaded.nextOffset <= nextOffset) {
+        this
+    } else {
+        copy(
+            nextOffset = loaded.nextOffset,
+            exhausted = total?.let { loaded.nextOffset >= it } ?: loaded.exhausted,
+        )
+    }
+
+/** One leg's answer: the rows it returned and where that leaves its cursor. */
+private data class SessionLegPage(
+    val rows: List<SessionSummary>,
+    val cursor: SessionPageCursor,
+)
 
 /** Result of staging one attachment payload to the Gateway. */
 sealed interface GatewayStageOutcome {
@@ -281,6 +396,13 @@ internal class LiveGatewaySessionRepository(
     private val scope: CoroutineScope,
     imageLoaderFlow: StateFlow<GatewayImageLoader?> = NO_IMAGE_LOADER,
     private val stopDispatchWaitMillis: Long = STOP_DISPATCH_WAIT_MILLIS,
+    /**
+     * The connection's authenticated REST transport, borrowed per call. Null
+     * means this connection has no REST leg at all, which is not the same as a
+     * Gateway that refuses the route: nothing is remembered about a backend
+     * that was never asked.
+     */
+    private val http: () -> GatewayHttp? = { null },
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
@@ -288,7 +410,15 @@ internal class LiveGatewaySessionRepository(
         connection: GatewayConnectionManager,
         scope: CoroutineScope,
         clock: () -> Long = System::currentTimeMillis,
-    ) : this(cache, connection.state, connection.client, scope, connection.imageLoader, clock = clock)
+    ) : this(
+        cache,
+        connection.state,
+        connection.client,
+        scope,
+        connection.imageLoader,
+        http = { connection.gatewayHttp.value },
+        clock = clock,
+    )
 
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
     override val imageLoader: StateFlow<GatewayImageLoader?> = imageLoaderFlow
@@ -336,6 +466,14 @@ internal class LiveGatewaySessionRepository(
      * becomes a `profile` parameter on a session RPC.
      */
     private var profileRouting = ProfileRouting()
+
+    /** Session REST routes over the connection-owned transport; holds no credential. */
+    private val rest = GatewayRestClient(http)
+
+    /** Per profile leg, how far this connection's list has read. Cleared with it. */
+    private val sessionPageCursors = mutableMapOf<String?, SessionPageCursor>()
+    private val sessionPagingFlow = MutableStateFlow(SessionListPaging())
+    override val sessionPaging: StateFlow<SessionListPaging> = sessionPagingFlow.asStateFlow()
 
     /** Latest server-reported git branch per durable session, connection-scoped. */
     private val branchByDurableId = mutableMapOf<String, String>()
@@ -399,6 +537,10 @@ internal class LiveGatewaySessionRepository(
                     branchByDurableId.clear()
                     worktreeByDurableId.clear()
                     unsupportedCapabilities.clear()
+                    // Offsets are facts about one backend's rows, cleared with
+                    // that backend's capabilities just above.
+                    sessionPageCursors.clear()
+                    sessionPagingFlow.value = SessionListPaging()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
                     activeRuntimeIds.clear()
@@ -464,9 +606,53 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) { profileRouting = routing }
     }
 
-    override suspend fun refreshSessions() = refreshMutex.withLock {
+    override suspend fun refreshSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.Refresh) }
+
+    override suspend fun loadMoreSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.More) }
+
+    /**
+     * Re-read page one because something on the backend changed, without
+     * telling the list it has only one page again.
+     *
+     * A turn finishing is news about rows, not about how far the reader has
+     * scrolled. [SessionPageRead.Refresh] is what a person asking for a refresh
+     * means; a terminal event is not that, and running one on every completed
+     * turn would drop the offsets already paid for.
+     */
+    private suspend fun rescanSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.Rescan) }
+
+    /**
+     * One pass of the session list over every profile leg in scope.
+     *
+     * The three reads differ only in which offset each leg asks for and what
+     * happens to the offsets already loaded:
+     *
+     * - [SessionPageRead.Refresh] — an explicit refresh, or a new connection.
+     *   Page one of every leg, and the pager starts over: the rows already on
+     *   screen stay (the cache layers), but the list is back to one page deep.
+     * - [SessionPageRead.Rescan] — a backend event says the rows moved. Page
+     *   one of every leg, and every cursor keeps the depth it had reached, so
+     *   `remaining` and `Load more` still describe the list the reader is
+     *   actually looking at.
+     * - [SessionPageRead.More] — only the legs with somewhere further to go.
+     *
+     * All three layer; none replaces.
+     */
+    private suspend fun readSessionPages(mode: SessionPageRead) {
         val connection = connectionSnapshot()
-        val profiles = synchronized(stateLock) { profileRouting }.listProfiles.distinct().ifEmpty { listOf(null) }
+        val profiles = synchronized(stateLock) {
+            val inScope = profileRouting.listProfiles.distinct().ifEmpty { listOf(null) }
+            when (mode) {
+                SessionPageRead.Refresh -> sessionPageCursors.clear()
+                // A rescan keeps its cursors instead of rebuilding them, so a
+                // leg that has left the scope has to be dropped by name — its
+                // offsets are no longer part of any total this list can show.
+                SessionPageRead.Rescan -> sessionPageCursors.keys.retainAll(inScope.toSet())
+                SessionPageRead.More -> Unit
+            }
+            sessionPagingFlow.value = sessionPagingFlow.value.copy(loading = true)
+            inScope
+        }
         var firstFailure: Throwable? = null
         var answered = false
         // Ids the launch-profile leg answered with, in this refresh only, and
@@ -474,65 +660,258 @@ internal class LiveGatewaySessionRepository(
         val launchRowIds = mutableSetOf<String>()
         val launchLegRequested = profiles.any { it == null }
         var launchLegAnswered = false
-        for (profile in profiles) {
-            val result = try {
-                connection.client.request(
-                    "session.list",
-                    buildJsonObject {
-                        put("limit", JsonPrimitive(100))
-                        put("include_hidden", JsonPrimitive(false))
-                        profile?.let { put("profile", JsonPrimitive(it)) }
-                    },
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Throwable) {
-                // The unified view is a fan-out. One profile refusing must not
-                // discard the profiles that answered, so the failure is only
-                // raised when nothing answered at all — which is exactly the
-                // single-profile scope's existing behaviour.
-                if (firstFailure == null) firstFailure = failure
-                continue
-            }
-            answered = true
-            val parsed = parseSessionList(result, clock())
-            // `session.list`'s compact rows carry no owning profile at the pin
-            // (`methods_session.py:204-214`), so a row listed out of a named
-            // profile's own state.db is stamped with the profile that was
-            // asked for. The launch-profile leg is left unstamped, which is
-            // the `default` bucket by the same rule Desktop filters with
-            // (`app/chat/sidebar/profile-scope.ts:12`).
-            //
-            // A profile the Gateway cannot resolve is not an error there:
-            // `_profile_home` answers None and `_profile_db` hands back the
-            // launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so
-            // the named leg can return the launch profile's own rows. Rows the
-            // launch leg already answered with are therefore left alone — the
-            // fan-out asks for it first (`sessionListProfiles`), and stamping
-            // them would move them under an owner that does not exist and no
-            // later refresh would take it back.
-            val rows = if (profile == null) {
-                launchLegAnswered = true
-                parsed.mapTo(launchRowIds, SessionSummary::id)
-                parsed
-            } else if (launchLegRequested && !launchLegAnswered) {
-                // The leg that would have told us which rows are the launch
-                // profile's failed. Without it there is no way to tell a
-                // fallback answer from a real one, so nothing is stamped:
-                // an unstamped row reads as the launch profile's, which is
-                // recoverable, while a wrong owner is not.
-                parsed
-            } else {
-                parsed.map { row ->
-                    if (row.id in launchRowIds) row else row.copy(remoteProfile = profile)
+        try {
+            for (profile in profiles) {
+                // A leg with no cursor has never answered, and a leg past its end
+                // has nothing to add; neither is a failure, so neither is asked.
+                val offset = when (mode) {
+                    SessionPageRead.Refresh, SessionPageRead.Rescan -> 0
+                    SessionPageRead.More -> synchronized(stateLock) {
+                        sessionPageCursors[profile]?.takeIf { !it.exhausted }?.nextOffset
+                    }
+                } ?: continue
+                val leg = try {
+                    readSessionLeg(connection, profile, offset)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    // The unified view is a fan-out. One profile refusing must not
+                    // discard the profiles that answered, so the failure is only
+                    // raised when nothing answered at all — which is exactly the
+                    // single-profile scope's existing behaviour.
+                    if (firstFailure == null) firstFailure = failure
+                    continue
+                }
+                answered = true
+                val parsed = leg.rows
+                // `session.list`'s compact rows carry no owning profile at the pin
+                // (`methods_session.py:204-214`), so a row listed out of a named
+                // profile's own state.db is stamped with the profile that was
+                // asked for. The launch-profile leg is left unstamped, which is
+                // the `default` bucket by the same rule Desktop filters with
+                // (`app/chat/sidebar/profile-scope.ts:12`).
+                //
+                // A profile the Gateway cannot resolve is not an error there:
+                // `_profile_home` answers None and `_profile_db` hands back the
+                // launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so
+                // the named leg can return the launch profile's own rows. Rows the
+                // launch leg already answered with are therefore left alone — the
+                // fan-out asks for it first (`sessionListProfiles`), and stamping
+                // them would move them under an owner that does not exist and no
+                // later refresh would take it back.
+                val rows = if (profile == null) {
+                    launchLegAnswered = true
+                    parsed.mapTo(launchRowIds, SessionSummary::id)
+                    // And the stamp the REST route put on them comes off.
+                    //
+                    // That route stamps *every* row with a profile even when
+                    // the request named none: `row_profile = profile_name or
+                    // _cron_default_profile()`, written onto each row as
+                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:146,152`
+                    // @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). That
+                    // fallback resolves the Gateway process's *own* active
+                    // profile, and answers `"default"` only when that profile
+                    // is literally `default` or `custom` — otherwise the
+                    // launch profile's real name
+                    // (`hermes_cli/web_server.py:12438-12455`).
+                    //
+                    // So on a Gateway launched under a named profile the
+                    // unscoped leg's rows come back stamped with that name,
+                    // and `filterSessionsByProfileScope` (`ProfileScope.kt:88`)
+                    // would drop every one of them from the `default` scope a
+                    // fresh install carries — an empty list on a backend with
+                    // sessions. The RPC lane never had that: `session.list`
+                    // reports no profile at all, and unstamped *is* the default
+                    // bucket by the rule Desktop filters with
+                    // (`app/chat/sidebar/profile-scope.ts:12`).
+                    //
+                    // Both contracts have to put the same rows in the same
+                    // bucket, so the stamp is dropped rather than trusted. It
+                    // is not a fact about the row: this leg asked for no
+                    // profile, so what came back is the Gateway describing
+                    // itself. A named leg is the opposite case — there the
+                    // stamp is the canonicalised name that was *asked for*
+                    // (`sessions.py:95-97`), which is the truth for that scope
+                    // and is kept.
+                    parsed.map { it.copy(remoteProfile = null) }
+                } else if (launchLegRequested && !launchLegAnswered) {
+                    // The leg that would have told us which rows are the launch
+                    // profile's failed. Without it there is no way to tell a
+                    // fallback answer from a real one, so nothing is stamped:
+                    // an unstamped row reads as the launch profile's, which is
+                    // recoverable, while a wrong owner is not.
+                    parsed
+                } else {
+                    parsed.map { row ->
+                        // A row that already names its own owner keeps it. On
+                        // the REST route that is always the canonicalised name
+                        // this leg asked for — `profile_name` is resolved from
+                        // the query value and an unknown one is a `404`, never
+                        // a fallback (`sessions.py:95-97,146` via
+                        // `web_server.py:12464-12470`) — so the stamp and the
+                        // parameter agree and this is a no-op there. It is the
+                        // RPC lane that answers out of the launch handle when a
+                        // profile will not resolve, and its compact rows carry
+                        // no profile, which is what the `launchRowIds` guard is
+                        // for.
+                        if (row.id in launchRowIds || row.remoteProfile != null) {
+                            row
+                        } else {
+                            row.copy(remoteProfile = profile)
+                        }
+                    }
+                }
+                synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    sessionPageCursors[profile] = when (mode) {
+                        // `More` replaces too: its own page is the deeper one,
+                        // and a leg that fell back to `session.list` mid-read
+                        // reports a terminal cursor that must not be overridden.
+                        SessionPageRead.Refresh, SessionPageRead.More -> leg.cursor
+                        SessionPageRead.Rescan -> leg.cursor.keepingDepthOf(sessionPageCursors[profile])
+                    }
+                    // Aliasing runs before the merge so the merge finds the row it
+                    // is layering over under the id this page actually named.
+                    cache.upsertSessions(rows.map { mergeListedSession(alignLineage(it)) })
                 }
             }
-            synchronized(stateLock) {
-                ensureCurrent(connection)
-                cache.upsertSessions(rows.map(::mergeListedSession))
+            if (!answered) firstFailure?.let { throw it }
+        } finally {
+            publishSessionPaging()
+        }
+    }
+
+    /**
+     * One page from one profile leg, preferring the REST contract and falling
+     * back to the `session.list` RPC for a Gateway that does not serve it.
+     *
+     * The fallback is reached one way only: a `404`, which on a route with no
+     * path parameters can mean nothing except that this backend lacks it. Every
+     * other refusal is raised — a 5xx or a dead connection is a condition to
+     * report, not evidence about what the backend can do, and quietly serving
+     * the older contract on a blip would hide a real outage behind a list that
+     * silently lost its pin, archive and unread fields.
+     */
+    private suspend fun readSessionLeg(
+        connection: ConnectionSnapshot,
+        profile: String?,
+        offset: Int,
+    ): SessionLegPage {
+        val restUsable = http() != null &&
+            !isCapabilityUnsupported(GatewayOptionalCapability.SessionListRest, connection)
+        if (restUsable) {
+            val result = rest.listSessions(
+                limit = SESSION_PAGE_SIZE,
+                offset = offset,
+                // The route's own default, not Desktop's `1`. Desktop asks for
+                // 1 because its sidebar hard-replaces and a chat mid-first-
+                // response would vanish (`store/session.ts:379-386` @ the pin);
+                // this cache layers and never evicts, so the reason does not
+                // transfer — and asking for 1 here would hide a just-created
+                // session that the RPC contract shows today.
+                minMessages = 0,
+                archived = GatewaySessionArchivedFilter.Exclude,
+                order = GatewaySessionOrder.Recent,
+                profile = profile,
+            )
+            when (result) {
+                is GatewayRestResult.Success -> {
+                    val page = result.value
+                    val rows = page.rows.map { row -> parseRestSession(row, clock()) }
+                    // Advance by the window the route used, never by the rows it
+                    // returned. A page can carry *more* rows than its limit: the
+                    // route back-fills pinned conversations that the LIMIT/OFFSET
+                    // window left out (`include_pinned=True`, `sessions.py:139`,
+                    // implemented at `hermes_state.py:8711-8718`). Counting those
+                    // extras into the next offset would step past rows that were
+                    // never read, and they would simply never appear.
+                    val window = page.limit?.toInt()?.takeIf { it in 1..MAX_SESSION_PAGE }
+                        ?: SESSION_PAGE_SIZE
+                    val consumed = offset + window
+                    return SessionLegPage(
+                        rows = rows,
+                        cursor = SessionPageCursor(
+                            nextOffset = consumed,
+                            total = page.total,
+                            // The route always counts the scope it just paged
+                            // (`session_count`, `sessions.py:141`), so the total
+                            // is the authority on where the list ends. A short
+                            // page is only the fallback answer for a backend
+                            // that somehow did not say.
+                            exhausted = page.total?.let { consumed >= it } ?: (rows.size < window),
+                        ),
+                    )
+                }
+
+                is GatewayRestResult.Failed -> if (result.statusCode == HTTP_NOT_FOUND) {
+                    markCapabilityUnsupported(GatewayOptionalCapability.SessionListRest, connection)
+                } else {
+                    throw GatewayRpcException(result.safeMessage)
+                }
             }
         }
-        if (!answered) firstFailure?.let { throw it }
+        // The older contract has no offset and no total: one call returns what
+        // it returns. Reporting that as exhausted is the honest answer — there
+        // is no second page to ask for, so `Load more` must not offer one.
+        val result = connection.client.request(
+            "session.list",
+            buildJsonObject {
+                put("limit", JsonPrimitive(100))
+                put("include_hidden", JsonPrimitive(false))
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            },
+        )
+        val rows = parseSessionList(result, clock())
+        return SessionLegPage(
+            rows = rows,
+            cursor = SessionPageCursor(nextOffset = rows.size, total = null, exhausted = true),
+        )
+    }
+
+    private fun publishSessionPaging() {
+        sessionPagingFlow.value = synchronized(stateLock) {
+            val cursors = sessionPageCursors.values.toList()
+            // Only when every leg said. One leg's count presented as the whole
+            // scope's total is a wrong number on a visible label.
+            val total = cursors.map(SessionPageCursor::total)
+                .takeIf { totals -> totals.isNotEmpty() && totals.all { it != null } }
+                ?.filterNotNull()
+                ?.sum()
+            SessionListPaging(
+                total = total,
+                remaining = total?.let { (it - cursors.sumOf(SessionPageCursor::nextOffset)).coerceAtLeast(0) },
+                canLoadMore = cursors.any { !it.exhausted },
+                loading = false,
+            )
+        }
+    }
+
+    /**
+     * Move a conversation the cache still files under its compression-lineage
+     * root onto the live tip this page named.
+     *
+     * The list projects a compression chain forward to its latest continuation
+     * and reports the original root separately (`hermes_state.py:9002-9011` @
+     * `f82f2dba`), so the same conversation can arrive under a different id than
+     * the one an earlier refresh or resume filed it under. Two rows for one
+     * conversation is the failure this prevents.
+     *
+     * Navigation identity does not change: [SessionCache.rehomeSession]
+     * publishes the root → tip alias, and a screen already holding the root id
+     * resolves through it (`ui/chat/ChatViewModel.kt:387`). Nothing is bound to
+     * a runtime here — this is a list, not a resume, and no turn is running
+     * under either id by virtue of having been listed.
+     */
+    private fun alignLineage(row: SessionSummary): SessionSummary {
+        val rootId = row.lineageRootId?.takeIf { it.isNotBlank() && it != row.id } ?: return row
+        if (cache.session(row.id) != null) return row
+        val existing = cache.session(rootId) ?: return row
+        cache.rehomeSession(rootId, existing.copy(id = row.id), cache.transcript(rootId))
+        if (ephemeralSessions.remove(rootId)) ephemeralSessions += row.id
+        branchByDurableId.remove(rootId)?.let { branchByDurableId[row.id] = it }
+        worktreeByDurableId.remove(rootId)?.let { worktreeByDurableId[row.id] = it }
+        rehomeEvents.tryEmit(SessionRehome(rootId, row.id))
+        return row
     }
 
     /**
@@ -556,6 +935,23 @@ internal class LiveGatewaySessionRepository(
                 remoteProfile = row.remoteProfile ?: existing.remoteProfile,
                 gitBranch = branchByDurableId[row.id] ?: row.gitBranch ?: existing.gitBranch,
                 worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath ?: existing.worktreePath,
+                // The same rule the profile follows, for the same reason: a
+                // contract that cannot say must not take away what a contract
+                // that could say already told us. A Gateway that *does* report
+                // these sends a real `false`, which lands here as `false` and
+                // overwrites — only a genuinely absent field preserves. That is
+                // what keeps a mixed refresh (REST leg plus RPC fallback leg)
+                // from silently unpinning half the list.
+                archived = row.archived ?: existing.archived,
+                pinned = row.pinned ?: existing.pinned,
+                unread = row.unread ?: existing.unread,
+                model = row.model ?: existing.model,
+                toolCallCount = row.toolCallCount ?: existing.toolCallCount,
+                inputTokens = row.inputTokens ?: existing.inputTokens,
+                outputTokens = row.outputTokens ?: existing.outputTokens,
+                actualCostUsd = row.actualCostUsd ?: existing.actualCostUsd,
+                estimatedCostUsd = row.estimatedCostUsd ?: existing.estimatedCostUsd,
+                lineageRootId = row.lineageRootId ?: existing.lineageRootId,
             )
         } ?: row.copy(
             gitBranch = branchByDurableId[row.id] ?: row.gitBranch,
@@ -3044,7 +3440,10 @@ internal class LiveGatewaySessionRepository(
                     }
                 }
                 if (!shouldRun) return@launch
-                runCatching { refreshSessions() }
+                // A rescan, not a refresh: a turn finishing is news about the
+                // rows, and re-reading page one must not tell a reader who has
+                // paged down that the list is one page long again.
+                runCatching { rescanSessions() }
                 if (cache.state.value.projects.available != false) runCatching { refreshProjects() }
             }
         }
@@ -3407,6 +3806,61 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
     )
 }
 
+/**
+ * One row of `GET /api/sessions` (hermes-agent @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ *
+ * The keys are the `sessions` table's own columns as
+ * `SessionDB.list_sessions_rich` projects them
+ * (`hermes_state_portability.py:33-43`, chain projection at
+ * `hermes_state.py:9002-9020`), plus what the route stamps on top:
+ * `profile`/`is_default_profile`, and `archived`/`pinned` coerced from SQLite's
+ * 0/1 into real JSON booleans (`hermes_cli/web_routers/sessions.py:145-156`).
+ * `unread` is derived per surfaced conversation from the read watermark
+ * (`hermes_state.py:9019-9020`).
+ *
+ * Every field this contract adds is optional here. A Gateway predating a column
+ * omits it, and the answer to "was this archived?" on such a backend is *not
+ * known*, not "no" — writing a `false` or a `0` in that gap would put a control
+ * on screen that cannot work, which is precisely what the pin/archive/unread
+ * affordances must avoid until a backend says they are real.
+ */
+internal fun parseRestSession(root: JsonObject, nowMillis: Long): SessionSummary {
+    // The id is read strictly here and tolerantly in [parseSession]: this one
+    // becomes a cache key and can move a whole conversation under
+    // `alignLineage`, so a number wearing an id is refused rather than coerced.
+    // Loosening the RPC path to match is a separate contract's decision.
+    val id = root.jsonString("id")
+        ?: throw GatewayRpcException("Hermes returned a session without a durable id.")
+    // The columns both contracts share are one parser's job, not two. Title,
+    // preview, activity, count, source, profile, branch and cwd read identically
+    // off either shape — the profile included, which this route stamps on every
+    // row even when the request named none (`sessions.py:146,152`). Whether that
+    // stamp is a fact about the *row* is not this parser's call to make: it is
+    // the row's owner on a named leg and the Gateway describing itself on an
+    // unscoped one, and `readSessionPages` is where that is decided. What
+    // follows is only what this contract adds.
+    return parseSession(root, nowMillis, authoritativeId = id).copy(
+        archived = root.boolean("archived"),
+        pinned = root.boolean("pinned"),
+        unread = root.boolean("unread"),
+        // Strict, like the id above and for the same reason — the surrounding
+        // columns are read leniently by design: `model` is a label this app
+        // shows verbatim, so a number wearing a model name is refused rather
+        // than coerced into `"42"`.
+        model = root.jsonString("model")?.trim()?.takeIf(String::isNotEmpty),
+        toolCallCount = root.primitive("tool_call_count")?.toIntOrNull(),
+        inputTokens = root.primitive("input_tokens")?.toLongOrNull(),
+        outputTokens = root.primitive("output_tokens")?.toLongOrNull(),
+        // Both are real `0.0` on subscription auth that never quotes a price
+        // (`apps/desktop/src/types/hermes.ts:493-498` @ the pin), so a zero
+        // here is data and only an absent key is unknown.
+        actualCostUsd = root.primitive("actual_cost_usd")?.toDoubleOrNull(),
+        estimatedCostUsd = root.primitive("estimated_cost_usd")?.toDoubleOrNull(),
+        lineageRootId = root.jsonString("_lineage_root_id")?.takeIf(String::isNotBlank),
+    )
+}
+
 private fun JsonElement.asObject(method: String): JsonObject = this as? JsonObject
     ?: throw GatewayRpcException("Hermes returned malformed data for $method.")
 
@@ -3496,7 +3950,7 @@ private fun JsonObject.sessionGitBranch(): String? =
 private fun JsonObject.sessionWorktreePath(): String? =
     string("cwd")?.takeIf { it.isNotBlank() && it.length <= MAX_SESSION_CWD }
 
-private fun JsonObject.jsonString(name: String): String? =
+internal fun JsonObject.jsonString(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
 private fun JsonObject.canonicalDurableId(): String? =
@@ -3914,7 +4368,11 @@ private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<
 
 private fun JsonObject.primitive(name: String): String? = (this[name] as? JsonPrimitive)?.content
 
-private fun JsonObject.boolean(name: String): Boolean? = (this[name] as? JsonPrimitive)
+/**
+ * A JSON *boolean* field. A quoted `"true"` is not one — the wire says what it
+ * means, and coercing a string here would let a backend's typo become a flag.
+ */
+internal fun JsonObject.boolean(name: String): Boolean? = (this[name] as? JsonPrimitive)
     ?.takeUnless { it.isString }
     ?.booleanOrNull
 
@@ -3961,6 +4419,19 @@ private const val PRE_START_FALSE_SETTLE_GRACE_MILLIS = 15_000L
 private const val STOP_DISPATCH_WAIT_MILLIS = 2_000L
 private const val IMAGE_ONLY_PROMPT = "What do you see in this image?"
 private val NO_IMAGE_LOADER: MutableStateFlow<GatewayImageLoader?> = MutableStateFlow(null)
+internal val NO_SESSION_PAGING: StateFlow<SessionListPaging> = MutableStateFlow(SessionListPaging())
+
+/**
+ * One page of the session list, matching Desktop's own sidebar page
+ * (`SIDEBAR_SESSIONS_PAGE_SIZE = 50`, `apps/desktop/src/store/layout.ts:25` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) and well inside the route's
+ * `le=100` cap. The `session.list` fallback keeps its own historical `limit`
+ * of 100 — that call has no second page, so shrinking it would lose rows.
+ */
+private const val SESSION_PAGE_SIZE = 50
+
+/** The one status that means "this backend does not have that route". */
+private const val HTTP_NOT_FOUND = 404
 private val STATUS_WHITESPACE = Regex("\\s+")
 private val KNOWN_STATUS_UPDATE_KINDS = setOf("compacting", "compacted", "process", "goal", "progress", "thinking")
 private val NO_GOAL_STATUS = Regex("^(?:No active goal|No goal (?:set|to resume)|✓ Goal cleared)\\b.*", RegexOption.IGNORE_CASE)

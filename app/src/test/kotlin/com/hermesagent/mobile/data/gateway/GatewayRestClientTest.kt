@@ -33,8 +33,8 @@ class GatewayRestClientTest {
         // what the route returns (hermes_cli/web_routers/sessions.py:159).
         val http = RecordingGatewayHttp(
             success(
-                """{"sessions":[{"session_id":"a1","title":"Ship it","archived":false,"pinned":true},""" +
-                    """{"session_id":"b2","title":"Later","archived":true,"pinned":false}],""" +
+                """{"sessions":[{"id":"a1","title":"Ship it","archived":false,"pinned":true},""" +
+                    """{"id":"b2","title":"Later","archived":true,"pinned":false}],""" +
                     """"total":42,"limit":20,"offset":20}""",
             ),
         )
@@ -42,6 +42,7 @@ class GatewayRestClientTest {
         val page = GatewayRestClient { http }.listSessions(
             limit = 20,
             offset = 20,
+            minMessages = 1,
             archived = GatewaySessionArchivedFilter.Include,
             order = GatewaySessionOrder.Recent,
             profile = "work",
@@ -55,6 +56,9 @@ class GatewayRestClientTest {
             mapOf(
                 "limit" to "20",
                 "offset" to "20",
+                // `sessions.py:60,108`; Desktop's sidebar always asks for 1
+                // (`apps/desktop/src/hermes.ts:501,514`).
+                "min_messages" to "1",
                 "archived" to "include",
                 "order" to "recent",
                 "profile" to "work",
@@ -69,21 +73,39 @@ class GatewayRestClientTest {
         assertEquals(1024L * 1024L, request.maxResponseBytes)
 
         assertEquals(2, page.rows.size)
-        assertEquals("a1", page.rows.first().string("session_id"))
+        assertEquals("a1", page.rows.first().string("id"))
         assertEquals(42L, page.total)
         assertEquals(20L, page.limit)
         assertEquals(20L, page.offset)
     }
 
     @Test
-    fun `an unscoped list asks for no profile at all`() = runTest {
+    fun `an unscoped list asks for no profile at all and defaults to Desktop's own page`() = runTest {
         val http = RecordingGatewayHttp(success("""{"sessions":[],"total":0,"limit":20,"offset":0}"""))
 
         GatewayRestClient { http }.listSessions().valueOrFail()
 
+        val query = http.requests.single().query
         // Omitted, not empty: the route reads a blank `profile` as a name.
-        assertFalse(http.requests.single().query.containsKey("profile"))
-        assertEquals("20", http.requests.single().query["limit"])
+        assertFalse(query.containsKey("profile"))
+        assertEquals("20", query["limit"])
+        // Desktop's default, not the route's. `created` (`sessions.py:62`)
+        // buries a long conversation the moment it auto-compresses onto a new
+        // id; `recent` orders by activity across the chain, which is what
+        // Desktop's own listSessions asks for (`hermes.ts:504`).
+        assertEquals("recent", query["order"])
+        // The route's own default for the filter Desktop overrides per surface.
+        assertEquals("0", query["min_messages"])
+        assertEquals("exclude", query["archived"])
+    }
+
+    @Test
+    fun `refuses a negative message floor rather than letting the route clamp it`() = runTest {
+        val http = RecordingGatewayHttp()
+
+        GatewayRestClient { http }.listSessions(minMessages = -1).assertMalformed()
+
+        assertEquals(0, http.requests.size)
     }
 
     @Test
@@ -118,8 +140,11 @@ class GatewayRestClientTest {
             ),
             request.query,
         )
-        // Sized to the 250 messages asked for, not to a flat worst case.
-        assertEquals(250L * 64L * 1024L, request.maxResponseBytes)
+        // Sized to the 250 messages asked for, not to a flat worst case — and
+        // 250 rows each able to carry a ceiling-sized `read_file` result runs
+        // past what the transport reads at all, so it lands on that ceiling
+        // (`GatewayHttp.kt` DEFAULT_MAX_RESPONSE_BYTES) rather than above it.
+        assertEquals(DEFAULT_MAX_RESPONSE_BYTES, request.maxResponseBytes)
 
         assertEquals("a1b2c3d4", page.sessionId)
         assertEquals(1, page.messages.size)
@@ -408,6 +433,88 @@ class GatewayRestClientTest {
     }
 
     @Test
+    fun `a one-message page can hold the largest row the host will emit`() = runTest {
+        // The widest single tool result the pinned host produces is a
+        // `read_file` at `file_read_max_chars` = 100,000 characters
+        // (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65`).
+        // Characters are not bytes — four per character in UTF-8, six under
+        // JSON escaping — so a bound sized to the character count refuses a
+        // legitimate page *after* the host has already run the query.
+        val ceilingRow = """{"role":"tool","name":"read_file","content":"${"y".repeat(READ_FILE_MAX_CHARS.toInt())}"}"""
+        val body = """{"session_id":"a1b2","messages":[$ceilingRow],"pagination":{"limit":1,"offset":0,"order":"latest"}}"""
+        val http = RecordingGatewayHttp(success(body))
+
+        val page = GatewayRestClient { http }.sessionMessages("a1b2", limit = 1).valueOrFail()
+
+        assertEquals(1, page.messages.size)
+        val bound = http.requests.single().maxResponseBytes
+        // The floor is a whole row, and it is *derived*, not fitted: the host's
+        // own character cap times the worst a character can cost on the wire.
+        // Asserting the product rather than a number someone chose is what
+        // keeps the two honest — a host that raises `file_read_max_chars` moves
+        // this bound with it instead of quietly outgrowing it.
+        assertEquals(READ_FILE_MAX_CHARS * MAX_BYTES_PER_CHAR, bound)
+        // Which lands at ~586 KiB, above the 512 KiB those 100,000 characters
+        // already need before JSON escaping is counted at all — and above this
+        // body, measured.
+        assertTrue(bound >= 512L * 1024L)
+        assertTrue(bound >= body.toByteArray(Charsets.UTF_8).size.toLong())
+
+        // The per-page ceiling stays bounded — limit × per-row — until the
+        // transport's own default takes over. At 24 MiB over ~586 KiB a row
+        // that happens from the 42nd: 41 is the largest page still sized to
+        // what it asked for, and every larger one, `MAX_MESSAGE_PAGE` included,
+        // shares that single ceiling.
+        suspend fun boundFor(limit: Int): Long {
+            val probe = RecordingGatewayHttp(success("""{"session_id":"a1b2","messages":[]}"""))
+            GatewayRestClient { probe }.sessionMessages("a1b2", limit = limit).valueOrFail()
+            return probe.requests.single().maxResponseBytes
+        }
+        assertEquals(41L * bound, boundFor(41))
+        assertEquals(DEFAULT_MAX_RESPONSE_BYTES, boundFor(42))
+    }
+
+    @Test
+    fun `reads a string field as a string, never as a coerced number`() = runTest {
+        // The shared accessor in this package (`GatewayRpc.kt:310`) hands back
+        // any primitive's content, so `42` would arrive as `"42"` — and for
+        // `session_id` that is an id this client would then put in a URL path.
+        val numericId = GatewayRestClient {
+            RecordingGatewayHttp(success("""{"session_id":7,"messages":[]}"""))
+        }.sessionMessages("a1b2") as GatewayRestResult.Failed
+        assertNull(numericId.statusCode)
+        assertEquals(UNUSABLE_RESPONSE_MESSAGE, numericId.safeMessage)
+
+        val numericTitle = GatewayRestClient {
+            RecordingGatewayHttp(success("""{"ok":true,"title":42}"""))
+        }.updateSession("a1b2", title = "x") as GatewayRestResult.Failed
+        assertNull(numericTitle.statusCode)
+
+        // The success gate gets the same treatment: a quoted "true" is not one.
+        val quotedOk = GatewayRestClient {
+            RecordingGatewayHttp(success("""{"ok":"true","already_absent":false}"""))
+        }.deleteSession("a1b2") as GatewayRestResult.Failed
+        assertNull(quotedOk.statusCode)
+    }
+
+    @Test
+    fun `an empty title is a rename that clears, not a request that asks for nothing`() = runTest {
+        // The route stores what it is given and echoes the stored title back,
+        // empty string included (`sessions.py:711-716,723`). An empty string is
+        // a value; only *no* field at all is "nothing to update" (`:701-710`).
+        val http = RecordingGatewayHttp(success("""{"ok":true,"title":""}"""))
+
+        val update = GatewayRestClient { http }.updateSession("a1b2", title = "").valueOrFail()
+
+        assertEquals("""{"title":""}""", http.bodies.single())
+        assertEquals("", update.title)
+        // Nothing else was asked for, so nothing else is reported.
+        assertNull(update.archived)
+        assertNull(update.pinned)
+        assertNull(update.unread)
+    }
+
+    @Test
     fun `speaks the routes over the real transport, path and query included`() = runTest {
         var captured: Request? = null
         val transport = OkHttpGatewayHttp(
@@ -427,6 +534,11 @@ class GatewayRestClientTest {
         assertNull(captured?.body)
     }
 }
+
+// `READ_FILE_MAX_CHARS` and `MAX_BYTES_PER_CHAR` are the client's own
+// (`GatewayRestClient.kt`), deliberately not restated here: the bound under
+// test is their product, and a second copy of either would let the two drift
+// apart while the assertion stayed green.
 
 private fun <T> GatewayRestResult<T>.valueOrFail(): T = when (this) {
     is GatewayRestResult.Success -> value
