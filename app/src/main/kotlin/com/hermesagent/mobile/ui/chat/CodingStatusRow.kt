@@ -1,8 +1,5 @@
 package com.hermesagent.mobile.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
+import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
+import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.delay
 
@@ -133,8 +132,7 @@ internal fun CodingStatusRow(
                 contentDescription = if (copied) "Repository path copied" else "Copy repository path",
                 onClick = {
                     val copy = copyPath ?: { raw: String ->
-                        val clipboard = platformContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Repository path", raw))
+                        copyToClipboard(platformContext, "Repository path", raw)
                     }
                     copy(status.worktreePath)
                     copied = true

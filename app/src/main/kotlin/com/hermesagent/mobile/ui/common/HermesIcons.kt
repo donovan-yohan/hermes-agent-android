@@ -64,6 +64,22 @@ enum class HermesIcon(val glyph: String) {
     Home("\uEB06"),
     Layers("\uEBD2"),
     Ellipsis("\uEA7C"),
+
+    // The per-session actions menu's glyph vocabulary, fixed by Desktop at
+    // `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:292,304,317,
+    // 345,357,435,444` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. Rename
+    // (`edit`) and Delete (`trash`) already have entries above. Every code
+    // point here is asserted against the shipped font by `HermesIconFontTest`.
+    Pin("\uEB2B"),
+    /** Closed envelope: the session is unread. Codicon has no `mail-unread`. */
+    Mail("\uEB1C"),
+    /** Open envelope: the session is read. */
+    MailRead("\uEB1B"),
+    /** Desktop's fork glyph — this font has no `git-fork`, only `repo-forked`. */
+    RepoForked("\uEA63"),
+    CloudDownload("\uEAC2"),
+    Folder("\uEA83"),
+    Archive("\uEA98"),
 }
 
 private val CodiconFont = FontFamily(Font(R.font.codicon))

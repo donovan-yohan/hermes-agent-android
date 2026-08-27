@@ -80,6 +80,7 @@ import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.common.scrollToTail
 import com.hermesagent.mobile.ui.common.VerticalHairline
 import com.hermesagent.mobile.ui.sessions.ProfileRailActions
+import com.hermesagent.mobile.ui.sessions.SessionActionsControl
 import com.hermesagent.mobile.ui.sessions.SessionList
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -173,6 +174,7 @@ private fun CompactLayout(
             ChatTopBar(
                 title = state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
+                sessionId = state.activeSession?.id,
                 onOpenSessions = {
                     actions.onRefreshNavigation()
                     scope.launch { drawerState.open() }
@@ -218,6 +220,7 @@ private fun WideLayout(
             ChatTopBar(
                 title = state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
+                sessionId = state.activeSession?.id,
                 onOpenSessions = null,
                 onOpenSettings = onOpenSettings,
             )
@@ -642,6 +645,8 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
 private fun ChatTopBar(
     title: String,
     subtitle: String,
+    /** The open session, so the header offers the same menu its row does. */
+    sessionId: String?,
     onOpenSessions: (() -> Unit)?,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -679,6 +684,11 @@ private fun ChatTopBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            // The open session's actions, identical to its sidebar row's:
+            // both read the one item list in `sessionActionItems`.
+            if (sessionId != null) {
+                SessionActionsControl(sessionId = sessionId, tint = tokens.textSecondary)
             }
             QuietIconButton(
                 icon = Icons.Filled.Settings,
