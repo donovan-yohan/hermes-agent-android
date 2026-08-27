@@ -100,6 +100,20 @@ fun rendersDark(background: Color, requestedDark: Boolean): Boolean {
 /** Same colour at a different alpha. Used for the text/hairline ladders. */
 fun Color.withAlpha(alpha: Float): Color = copy(alpha = alpha.coerceIn(0f, 1f))
 
+/**
+ * Composite a translucent colour over an opaque backdrop — source-over, the
+ * blend the renderer performs.
+ *
+ * Most inks in this file are alpha washes of the palette foreground, so their
+ * bare value is not what the screen shows. Any legibility claim about such a
+ * token has to be made about `ink.over(surface)`, not about `ink`.
+ */
+fun Color.over(backdrop: Color): Color = Color(
+    red = red * alpha + backdrop.red * (1f - alpha),
+    green = green * alpha + backdrop.green * (1f - alpha),
+    blue = blue * alpha + backdrop.blue * (1f - alpha),
+)
+
 /** `#rrggbb` for diagnostics and test failure messages. Alpha is dropped. */
 fun Color.toHex(): String {
     fun channel(value: Float) = (value * 255f).roundToInt().coerceIn(0, 255).toString(16).padStart(2, '0')

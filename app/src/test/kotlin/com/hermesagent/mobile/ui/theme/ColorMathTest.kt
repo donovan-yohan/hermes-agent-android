@@ -108,11 +108,4 @@ class ColorMathTest {
         )
         assertEquals(listOf(0.94f, 0.74f, 0.64f, 0.54f, 0.44f, 0.36f), alphas.map { "%.2f".format(it).toFloat() })
     }
-
-    /** Composite a translucent colour over an opaque backdrop. */
-    private fun Color.over(backdrop: Color): Color = Color(
-        red = red * alpha + backdrop.red * (1 - alpha),
-        green = green * alpha + backdrop.green * (1 - alpha),
-        blue = blue * alpha + backdrop.blue * (1 - alpha),
-    )
 }

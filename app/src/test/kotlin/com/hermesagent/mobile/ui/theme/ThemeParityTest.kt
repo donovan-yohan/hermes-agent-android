@@ -87,16 +87,15 @@ class ThemeParityTest {
 
     @Test
     fun `every preset resolves a complete token set in both modes`() {
-        val tokenFields = HermesTokens::class.memberProperties.filter { it.returnType.classifier == Color::class }
-        assertTrue("token contract went empty — the reflection check is broken", tokenFields.isNotEmpty())
-
         for (preset in BuiltinThemes.ALL) {
             for (dark in listOf(false, true)) {
                 val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
-                for (field in tokenFields) {
-                    val value = field.get(tokens) as Color
+                val inks = tokens.everyInk()
+                assertTrue("token contract went empty — the reflection check is broken", inks.isNotEmpty())
+
+                for ((name, value) in inks) {
                     assertTrue(
-                        "${preset.name} (${if (dark) "dark" else "light"}): token `${field.name}` is " +
+                        "${preset.name} (${if (dark) "dark" else "light"}): token `$name` is " +
                             "fully transparent, which means it resolved from a missing fallback.",
                         value.alpha > 0f,
                     )
@@ -104,6 +103,41 @@ class ThemeParityTest {
             }
         }
     }
+
+    @Test
+    fun `the reflection walk reaches tokens that live in a nested group`() {
+        // A token group added as its own data class must not silently opt out of
+        // the completeness check above — which is exactly what a flat
+        // `returnType == Color` filter would let it do.
+        val names = HermesTokens.from(BuiltinThemes.Nous.paletteFor(dark = true), dark = true)
+            .everyInk()
+            .map { it.first }
+
+        assertTrue("the flat tokens must still be walked", names.contains("accent"))
+        assertTrue("nested groups must be walked too, saw $names", names.contains("ansi.brightRed"))
+    }
+
+    /**
+     * Every colour a component can reach through [HermesTokens], flattened.
+     *
+     * Walks one level into token *groups* — a data class whose properties are
+     * all colours — so grouping tokens for readability never costs them their
+     * coverage here.
+     */
+    private fun HermesTokens.everyInk(): List<Pair<String, Color>> =
+        HermesTokens::class.memberProperties.flatMap { field ->
+            when (val value = field.get(this)) {
+                is Color -> listOf(field.name to value)
+                else -> value?.let { group ->
+                    group::class.memberProperties
+                        .mapNotNull { nested ->
+                            @Suppress("UNCHECKED_CAST")
+                            val read = nested as kotlin.reflect.KProperty1<Any, *>
+                            (read.get(group) as? Color)?.let { "${field.name}.${nested.name}" to it }
+                        }
+                }.orEmpty()
+            }
+        }
 
     @Test
     fun `optional palette fields always resolve through a fallback, never to nothing`() {

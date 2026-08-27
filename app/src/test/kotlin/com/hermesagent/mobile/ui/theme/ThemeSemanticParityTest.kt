@@ -5,7 +5,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * The **value** half of theme parity: does every semantic surface resolve to the
@@ -206,6 +208,221 @@ class ThemeSemanticParityTest {
     }
 
     @Test
+    fun `the ansi ladder derives from desktop's named colour set in each mode`() {
+        // Desktop maps ANSI to fixed Tailwind classes (`lib/ansi.ts:144-164` @
+        // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732). Android cannot: those are a
+        // CSS framework's palette tuned against one surface, and this app paints
+        // tool output on a per-preset `widgetSurface`. So the ladder is derived
+        // from Desktop's *own* named colours — `--ui-red`, `--ui-yellow`,
+        // `--ui-green`, `--ui-cyan`, `--ui-blue`, `--ui-purple`
+        // (`styles.css:196-202`, `:root.dark:528-530`), which cover exactly the
+        // six hues ANSI names — using the diff-foreground knob Desktop already
+        // uses to turn one of those seeds into legible ink
+        // (`styles.css:224,227`, `:root.dark:531-532`). `bright` follows
+        // Desktop's own direction: across those same six hues
+        // (`lib/ansi.ts:149-154` against their bright rungs at `:157-162`)
+        // Desktop steps the bright rung one Tailwind step *lighter* in both
+        // modes (`red-700 → rose-600` at `:149`/`:157`, `emerald-300 →
+        // emerald-200` at `:150`/`:158`) and never a step darker, so here it is
+        // an 18 % mix toward white in both modes. The neutrals are not on that
+        // ladder — `:156` steps bright-black darker in dark — and are read off
+        // Desktop's fixed greys instead. The size is what the floor
+        // below allows: 18 % is the largest uniform step that keeps every rung
+        // at 3.0:1 as painted.
+        //
+        // Values below are re-walked by hand from those seeds, never read back
+        // from this app. `docs/parity/tool-output-fidelity.md` carries the rule
+        // and what it costs.
+        val light = mapOf(
+            "red" to ("#ff91203c" to "#ffa5485f"),
+            "green" to ("#ff166147" to "#ff407d68"),
+            "yellow" to ("#ff865d23" to "#ff9c7a4b"),
+            "blue" to ("#ff003ab1" to "#ff2e5dbf"),
+            "magenta" to ("#ff6f6895" to "#ff8983a8"),
+            "cyan" to ("#ff355962" to "#ff59777e"),
+        )
+        val dark = mapOf(
+            "red" to ("#fff09bab" to "#fff3adba"),
+            "green" to ("#ff96c7b2" to "#ffa9d1c0"),
+            "yellow" to ("#ffd8b380" to "#ffdfc197"),
+            "blue" to ("#ff6194fe" to "#ff7da7fe"),
+            "magenta" to ("#ffc3bde5" to "#ffcec9ea"),
+            "cyan" to ("#ffa6c1c8" to "#ffb6ccd2"),
+        )
+
+        for ((isDark, expected) in listOf(false to light, true to dark)) {
+            for (preset in BuiltinThemes.ALL) {
+                val ansi = HermesTokens.from(preset.paletteFor(isDark), isDark).ansi
+                val where = "${preset.name}/${if (isDark) "dark" else "light"}"
+                val actual = mapOf(
+                    "red" to (ansi.red.argb() to ansi.brightRed.argb()),
+                    "green" to (ansi.green.argb() to ansi.brightGreen.argb()),
+                    "yellow" to (ansi.yellow.argb() to ansi.brightYellow.argb()),
+                    "blue" to (ansi.blue.argb() to ansi.brightBlue.argb()),
+                    "magenta" to (ansi.magenta.argb() to ansi.brightMagenta.argb()),
+                    "cyan" to (ansi.cyan.argb() to ansi.brightCyan.argb()),
+                )
+
+                // Fixed per mode, like inline code and the diff palette: a build
+                // log must read the same in all eleven skins.
+                assertEquals("$where: the six hues are fixed per mode", expected, actual)
+            }
+        }
+    }
+
+    @Test
+    fun `ansi green and red are the theme's green and red, not a second opinion`() {
+        // The whole reason the ladder is derived rather than transcribed: the
+        // seeds are already in the theme. If these ever diverge, a terminal's
+        // green and an inline diff's green have quietly become two colours.
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                assertEquals("$where: ansi green", tokens.diffAddedForeground.argb(), tokens.ansi.green.argb())
+                assertEquals("$where: ansi red", tokens.diffRemovedForeground.argb(), tokens.ansi.red.argb())
+            }
+        }
+    }
+
+    @Test
+    fun `the four ansi neutrals are desktop's zinc rungs, never pure black or white`() {
+        // `lib/ansi.ts:145-147` — Desktop refuses to paint `#000`/`#fff`
+        // because they "disappear into the surface", and paints zinc greys
+        // instead: 700 / 600 / 500 / 500 in light, 100 / 200 / 300 / 400 in
+        // dark (`:148,155,156,163`). Those are fixed for every theme.
+        //
+        // Android has no Tailwind zinc, so the four rungs are plain greys at
+        // zinc's lightness — dark takes zinc's four stops, light is an even
+        // ramp anchored on zinc-700 and zinc-600 whose last two stops fall
+        // either side of the zinc-500 Desktop ties the two bright rungs at.
+        //
+        // The text ladder is deliberately *not* used: its lower rungs are
+        // alpha washes and, composited onto the tool surface, the quaternary
+        // rung is 1.65:1 in the weakest preset — see the floor below.
+        val expected = mapOf(
+            false to mapOf(
+                "black" to "#ff424242", "white" to "#ff555555",
+                "brightWhite" to "#ff686868", "brightBlack" to "#ff7b7b7b",
+            ),
+            true to mapOf(
+                "brightWhite" to "#fff4f4f4", "white" to "#ffe5e5e5",
+                "black" to "#ffd5d5d5", "brightBlack" to "#ffa2a2a2",
+            ),
+        )
+
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                assertEquals(
+                    "$where: the four ansi neutrals are fixed per mode",
+                    expected.getValue(dark),
+                    mapOf(
+                        "black" to tokens.ansi.black.argb(),
+                        "white" to tokens.ansi.white.argb(),
+                        "brightWhite" to tokens.ansi.brightWhite.argb(),
+                        "brightBlack" to tokens.ansi.brightBlack.argb(),
+                    ),
+                )
+
+                assertNotEquals("$where: ansi white must not be pure white", Color.White.argb(), tokens.ansi.white.argb())
+                assertNotEquals("$where: ansi black must not be pure black", Color.Black.argb(), tokens.ansi.black.argb())
+
+                // Desktop's ordering, per mode: bright-black is the quietest
+                // rung in both, and the bold rung is never fainter than it.
+                assertTrue(
+                    "$where: bright-black must stay the quietest neutral",
+                    contrastRatio(tokens.ansi.brightBlack, tokens.widgetSurface) <=
+                        contrastRatio(tokens.ansi.brightWhite, tokens.widgetSurface),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `every ansi ink is distinct and readable as painted on the tool surface`() {
+        // Sixteen colours that collapse into each other are worse than none:
+        // the point of painting them is that a reader can tell an error line
+        // from a warning line at a glance.
+        //
+        // Both claims are made about the ink **as painted**. An ANSI ink can be
+        // translucent, and a translucent ink's bare value is not what the
+        // screen shows — measuring it un-composited is how a 1.65:1 rung once
+        // passed a 3.0:1 floor. `over(widgetSurface)` is the blend the renderer
+        // performs, and it is the only surface ANSI ink is ever painted on.
+        //
+        // Distinctness is perceptual, not exact-argb: two inks a hair apart in
+        // argb are one colour to a reader. dE76 >= 3.0 is comfortably past the
+        // ~2.3 just-noticeable threshold; the tightest pair today is 4.66
+        // (dark `cyan` against `brightCyan`, the smallest bright step there is).
+        val illegible = mutableListOf<String>()
+        val collapsed = mutableListOf<String>()
+        val translucent = mutableListOf<String>()
+
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+                val surface = tokens.widgetSurface
+                val painted = tokens.ansi.all().map { (name, ink) -> name to ink.over(surface) }
+
+                // The invariant that keeps the floor honest rather than merely
+                // careful: an opaque ink is its own composite, so no rung can
+                // measure one colour here and paint another. Reintroduce a
+                // translucent rung and this is where it is named.
+                for ((name, ink) in tokens.ansi.all()) {
+                    if (ink.alpha != 1f) {
+                        translucent += "$where `$name` alpha ${"%.2f".format(ink.alpha)}"
+                    }
+                }
+
+                for ((name, ink) in painted) {
+                    val ratio = contrastRatio(ink, surface)
+                    if (ratio < 3.0f) {
+                        illegible += "$where `$name` ${"%.2f".format(ratio)}:1 " +
+                            "(${ink.toHex()} on ${surface.toHex()})"
+                    }
+                }
+
+                for (i in painted.indices) {
+                    for (j in i + 1 until painted.size) {
+                        val distance = deltaE76(painted[i].second, painted[j].second)
+                        if (distance < 3.0) {
+                            collapsed += "$where `${painted[i].first}`/`${painted[j].first}` " +
+                                "dE ${"%.2f".format(distance)}"
+                        }
+                    }
+                }
+            }
+        }
+
+        assertTrue(
+            "ansi inks below the 3.0:1 legibility floor as painted:\n" + illegible.joinToString("\n"),
+            illegible.isEmpty(),
+        )
+        assertTrue(
+            "ansi inks a reader cannot tell apart (dE76 < 3.0):\n" + collapsed.joinToString("\n"),
+            collapsed.isEmpty(),
+        )
+        assertTrue(
+            "ansi inks that are not their own composite, so the floor above " +
+                "would be measuring a colour the screen never shows:\n" + translucent.joinToString("\n"),
+            translucent.isEmpty(),
+        )
+    }
+
+    private fun HermesAnsiInk.all(): List<Pair<String, Color>> = listOf(
+        "black" to black, "red" to red, "green" to green, "yellow" to yellow,
+        "blue" to blue, "magenta" to magenta, "cyan" to cyan, "white" to white,
+        "brightBlack" to brightBlack, "brightRed" to brightRed, "brightGreen" to brightGreen,
+        "brightYellow" to brightYellow, "brightBlue" to brightBlue, "brightMagenta" to brightMagenta,
+        "brightCyan" to brightCyan, "brightWhite" to brightWhite,
+    )
+
+    @Test
     fun `running outline uses the desktop bright stop in each rendered mode`() {
         // styles.css:1011-1040,1129-1144 @
         // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: `.arc-row` keeps
@@ -364,6 +581,10 @@ class ThemeSemanticParityTest {
     fun `text stays legible on every derived surface`() {
         // A floor, not a WCAG certification — but it now covers the surfaces the
         // derivation actually changed, not just the chat backdrop.
+        //
+        // `textPrimary` is an alpha wash of the palette foreground, so the ratio
+        // has to be measured on the composite the renderer produces, not on the
+        // token's bare value.
         for (preset in BuiltinThemes.ALL) {
             for (dark in listOf(false, true)) {
                 val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
@@ -375,10 +596,11 @@ class ThemeSemanticParityTest {
                     "widget surface" to tokens.widgetSurface,
                     "sidebar surface" to tokens.sidebarSurface,
                 )) {
-                    val ratio = contrastRatio(tokens.textPrimary, surface)
+                    val painted = tokens.textPrimary.over(surface)
+                    val ratio = contrastRatio(painted, surface)
                     assertTrue(
                         "$where: primary text on the $label is ${"%.2f".format(ratio)}:1 " +
-                            "(${tokens.textPrimary.toHex()} on ${surface.toHex()})",
+                            "(${painted.toHex()} on ${surface.toHex()})",
                         ratio >= 4.0f,
                     )
                 }
@@ -408,6 +630,39 @@ class ThemeSemanticParityTest {
             "userBubbleBorder" to palette.userBubbleBorder,
         ).mapValues { (_, color) -> color?.argb() }
         assertEquals(expected, actual)
+    }
+
+    /**
+     * CIE76 colour difference in Lab. Crude next to CIEDE2000, but it is the
+     * standard "can a reader tell these apart" yardstick and ~2.3 is the
+     * just-noticeable difference, which is the only number this test needs.
+     *
+     * Both arguments must already be composited: Lab has no alpha.
+     */
+    private fun deltaE76(first: Color, second: Color): Double {
+        fun lab(color: Color): Triple<Double, Double, Double> {
+            fun linear(channel: Float): Double {
+                val value = channel.toDouble()
+                return if (value <= 0.04045) value / 12.92 else ((value + 0.055) / 1.055).pow(2.4)
+            }
+
+            val r = linear(color.red)
+            val g = linear(color.green)
+            val b = linear(color.blue)
+            // sRGB -> XYZ (D65), normalised by the D65 white point.
+            val x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+            val y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            val z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+            fun f(t: Double) = if (t > 0.008856) t.pow(1.0 / 3.0) else 7.787 * t + 16.0 / 116.0
+            val fx = f(x)
+            val fy = f(y)
+            val fz = f(z)
+            return Triple(116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+        }
+
+        val (l1, a1, b1) = lab(first)
+        val (l2, a2, b2) = lab(second)
+        return sqrt((l1 - l2).pow(2) + (a1 - a2).pow(2) + (b1 - b2).pow(2))
     }
 
     /** `#aarrggbb`, so an alpha-bearing token is compared on all four channels. */
