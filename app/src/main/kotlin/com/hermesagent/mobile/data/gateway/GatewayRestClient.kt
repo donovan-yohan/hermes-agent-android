@@ -553,26 +553,50 @@ private const val ACK_MAX_RESPONSE_BYTES = 64L * 1024L
  * the query has already run, which is the worst of both — the cost is paid and
  * the data is thrown away. The ceiling is the transport's own default: past
  * that, the read never happens anyway.
+ *
+ * So the bound is `limit` × [BYTES_PER_MESSAGE], and it stops growing once that
+ * product passes [DEFAULT_MAX_RESPONSE_BYTES] — at 24 MiB over ~586 KiB a row,
+ * from the 42nd row on. A page of 41 is the largest still sized to what it
+ * asked for; every larger page, [MAX_MESSAGE_PAGE] included, shares that one
+ * ceiling. That is the intended shape: the per-row worst case is what a *page*
+ * of one has to survive, not what 500 of them are allowed to cost together.
  */
 private fun messagesResponseBound(limit: Int?): Long =
     ((limit ?: MAX_MESSAGE_PAGE).toLong() * BYTES_PER_MESSAGE)
         .coerceIn(BYTES_PER_MESSAGE, DEFAULT_MAX_RESPONSE_BYTES)
 
 /**
- * One message row at the largest the pinned host will emit.
+ * The widest single tool result the pinned host will emit, in **characters**.
  *
- * Sized from the widest tool result, not the narrowest: `read_file` returns up
- * to `file_read_max_chars` = 100,000 **characters** per call
- * (`hermes_cli/config_defaults.py:566-569`, `tools/file_tools.py:65` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`), which is twice
- * `tool_output.max_bytes`, the 50,000-char terminal cap (`:617,625`) this bound
- * used to be derived from. Characters are not bytes: those 100,000 can be four
- * UTF-8 bytes each, and JSON escaping can spend six per character on control
- * runs, so the row this must hold is a multiple of its character count. 256 KiB
- * covers the realistic worst case with headroom and still costs nothing when
- * the row is small — the bound caps a read, it does not reserve memory.
+ * `read_file` returns up to `file_read_max_chars` = 100,000 characters per call
+ * (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) — twice `tool_output.max_bytes`,
+ * the 50,000-char terminal cap this bound used to be derived from. The value is
+ * host-configurable (`file_tools.py:63,82`), so it is the number to move when a
+ * host raises its cap, and everything below moves with it.
  */
-private const val BYTES_PER_MESSAGE = 256L * 1024L
+internal const val READ_FILE_MAX_CHARS = 100_000L
+
+/**
+ * Bytes one of those characters can cost on the wire, worst case.
+ *
+ * Characters are not bytes twice over: a UTF-8 astral character is four, and
+ * JSON escaping spends six (`\uXXXX`) on a control character. A tool result can
+ * be entirely either, so the bound takes the larger — six.
+ */
+internal const val MAX_BYTES_PER_CHAR = 6L
+
+/**
+ * One message row at the largest the pinned host will emit: ~586 KiB.
+ *
+ * Derived, not fitted. [READ_FILE_MAX_CHARS] is what the host will put in a row
+ * and [MAX_BYTES_PER_CHAR] is what the wire will charge for it; the product is
+ * the row a one-message page must be able to carry. Reading a number off that
+ * multiplication is the point — a bound guessed at instead would go quietly
+ * wrong the moment either input moved. It costs nothing when the row is small:
+ * the bound caps a read, it does not reserve memory.
+ */
+private const val BYTES_PER_MESSAGE = READ_FILE_MAX_CHARS * MAX_BYTES_PER_CHAR
 
 private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 

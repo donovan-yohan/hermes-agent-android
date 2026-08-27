@@ -298,6 +298,18 @@ private enum class GatewayOptionalCapability {
     SessionListRest,
 }
 
+/** Why the session list is being read, and therefore what happens to its cursors. */
+private enum class SessionPageRead {
+    /** An explicit refresh or a new connection: page one, pager back to one page deep. */
+    Refresh,
+
+    /** A backend event moved the rows: page one, every leg keeps the depth it reached. */
+    Rescan,
+
+    /** `Load more`: the next page of every leg that has one. */
+    More,
+}
+
 /** Where one profile leg's paging stands. Meaningless across a connection change. */
 private data class SessionPageCursor(
     /** Where this leg's next page starts: the window consumed, not the rows kept. */
@@ -305,6 +317,36 @@ private data class SessionPageCursor(
     val total: Long?,
     val exhausted: Boolean,
 )
+
+/**
+ * This freshly-read page-one cursor, carrying forward how deep [loaded] had
+ * already read.
+ *
+ * A rescan re-reads page one for its rows; it is not the reader going back to
+ * the top. The fresh page is the authority on the one thing that moves — the
+ * scope's `total` — while how many rows have been paid for is the loaded
+ * cursor's to say. Taking the deeper offset is also what keeps the arithmetic
+ * honest when a row is created or retired between reads: `remaining` is
+ * `total` minus what was consumed, and re-reading page one consumes nothing
+ * new.
+ *
+ * `exhausted` follows the offset that survives. A fresh full page one proves
+ * nothing about the tail; only the retained offset against the fresh total can
+ * say, and when the contract reports no total at all (the `session.list`
+ * fallback) the loaded answer stands.
+ *
+ * A leg with no [loaded] cursor has never answered before, so the fresh page is
+ * all there is to know about it.
+ */
+private fun SessionPageCursor.keepingDepthOf(loaded: SessionPageCursor?): SessionPageCursor =
+    if (loaded == null || loaded.nextOffset <= nextOffset) {
+        this
+    } else {
+        copy(
+            nextOffset = loaded.nextOffset,
+            exhausted = total?.let { loaded.nextOffset >= it } ?: loaded.exhausted,
+        )
+    }
 
 /** One leg's answer: the rows it returned and where that leaves its cursor. */
 private data class SessionLegPage(
@@ -564,25 +606,53 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) { profileRouting = routing }
     }
 
-    override suspend fun refreshSessions() = refreshMutex.withLock { readSessionPages(fromStart = true) }
+    override suspend fun refreshSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.Refresh) }
 
-    override suspend fun loadMoreSessions() = refreshMutex.withLock { readSessionPages(fromStart = false) }
+    override suspend fun loadMoreSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.More) }
+
+    /**
+     * Re-read page one because something on the backend changed, without
+     * telling the list it has only one page again.
+     *
+     * A turn finishing is news about rows, not about how far the reader has
+     * scrolled. [SessionPageRead.Refresh] is what a person asking for a refresh
+     * means; a terminal event is not that, and running one on every completed
+     * turn would drop the offsets already paid for.
+     */
+    private suspend fun rescanSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.Rescan) }
 
     /**
      * One pass of the session list over every profile leg in scope.
      *
-     * [fromStart] separates the two things a list can be asked for: a refresh
-     * re-reads page zero of every leg, while `Load more` reads only the legs
-     * that have somewhere further to go. Both layer — neither replaces — so the
-     * only difference between them is which offset each leg asks for.
+     * The three reads differ only in which offset each leg asks for and what
+     * happens to the offsets already loaded:
+     *
+     * - [SessionPageRead.Refresh] — an explicit refresh, or a new connection.
+     *   Page one of every leg, and the pager starts over: the rows already on
+     *   screen stay (the cache layers), but the list is back to one page deep.
+     * - [SessionPageRead.Rescan] — a backend event says the rows moved. Page
+     *   one of every leg, and every cursor keeps the depth it had reached, so
+     *   `remaining` and `Load more` still describe the list the reader is
+     *   actually looking at.
+     * - [SessionPageRead.More] — only the legs with somewhere further to go.
+     *
+     * All three layer; none replaces.
      */
-    private suspend fun readSessionPages(fromStart: Boolean) {
+    private suspend fun readSessionPages(mode: SessionPageRead) {
         val connection = connectionSnapshot()
         val profiles = synchronized(stateLock) {
-            if (fromStart) sessionPageCursors.clear()
+            val inScope = profileRouting.listProfiles.distinct().ifEmpty { listOf(null) }
+            when (mode) {
+                SessionPageRead.Refresh -> sessionPageCursors.clear()
+                // A rescan keeps its cursors instead of rebuilding them, so a
+                // leg that has left the scope has to be dropped by name — its
+                // offsets are no longer part of any total this list can show.
+                SessionPageRead.Rescan -> sessionPageCursors.keys.retainAll(inScope.toSet())
+                SessionPageRead.More -> Unit
+            }
             sessionPagingFlow.value = sessionPagingFlow.value.copy(loading = true)
-            profileRouting
-        }.listProfiles.distinct().ifEmpty { listOf(null) }
+            inScope
+        }
         var firstFailure: Throwable? = null
         var answered = false
         // Ids the launch-profile leg answered with, in this refresh only, and
@@ -594,8 +664,11 @@ internal class LiveGatewaySessionRepository(
             for (profile in profiles) {
                 // A leg with no cursor has never answered, and a leg past its end
                 // has nothing to add; neither is a failure, so neither is asked.
-                val offset = synchronized(stateLock) {
-                    if (fromStart) 0 else sessionPageCursors[profile]?.takeIf { !it.exhausted }?.nextOffset
+                val offset = when (mode) {
+                    SessionPageRead.Refresh, SessionPageRead.Rescan -> 0
+                    SessionPageRead.More -> synchronized(stateLock) {
+                        sessionPageCursors[profile]?.takeIf { !it.exhausted }?.nextOffset
+                    }
                 } ?: continue
                 val leg = try {
                     readSessionLeg(connection, profile, offset)
@@ -629,7 +702,38 @@ internal class LiveGatewaySessionRepository(
                 val rows = if (profile == null) {
                     launchLegAnswered = true
                     parsed.mapTo(launchRowIds, SessionSummary::id)
-                    parsed
+                    // And the stamp the REST route put on them comes off.
+                    //
+                    // That route stamps *every* row with a profile even when
+                    // the request named none: `row_profile = profile_name or
+                    // _cron_default_profile()`, written onto each row as
+                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:146,152`
+                    // @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). That
+                    // fallback resolves the Gateway process's *own* active
+                    // profile, and answers `"default"` only when that profile
+                    // is literally `default` or `custom` — otherwise the
+                    // launch profile's real name
+                    // (`hermes_cli/web_server.py:12438-12455`).
+                    //
+                    // So on a Gateway launched under a named profile the
+                    // unscoped leg's rows come back stamped with that name,
+                    // and `filterSessionsByProfileScope` (`ProfileScope.kt:88`)
+                    // would drop every one of them from the `default` scope a
+                    // fresh install carries — an empty list on a backend with
+                    // sessions. The RPC lane never had that: `session.list`
+                    // reports no profile at all, and unstamped *is* the default
+                    // bucket by the rule Desktop filters with
+                    // (`app/chat/sidebar/profile-scope.ts:12`).
+                    //
+                    // Both contracts have to put the same rows in the same
+                    // bucket, so the stamp is dropped rather than trusted. It
+                    // is not a fact about the row: this leg asked for no
+                    // profile, so what came back is the Gateway describing
+                    // itself. A named leg is the opposite case — there the
+                    // stamp is the canonicalised name that was *asked for*
+                    // (`sessions.py:95-97`), which is the truth for that scope
+                    // and is kept.
+                    parsed.map { it.copy(remoteProfile = null) }
                 } else if (launchLegRequested && !launchLegAnswered) {
                     // The leg that would have told us which rows are the launch
                     // profile's failed. Without it there is no way to tell a
@@ -639,14 +743,17 @@ internal class LiveGatewaySessionRepository(
                     parsed
                 } else {
                     parsed.map { row ->
-                        // A row that already names its own owner keeps it. The
-                        // REST route stamps every row with the profile that
-                        // actually served it (`sessions.py:145-150`), which is
-                        // the launch profile's real name when the requested one
-                        // could not be resolved — exactly the case the
-                        // launch-leg guard above exists for, answered by the
-                        // backend instead of inferred. `session.list`'s compact
-                        // rows carry no profile, so this changes nothing there.
+                        // A row that already names its own owner keeps it. On
+                        // the REST route that is always the canonicalised name
+                        // this leg asked for — `profile_name` is resolved from
+                        // the query value and an unknown one is a `404`, never
+                        // a fallback (`sessions.py:95-97,146` via
+                        // `web_server.py:12464-12470`) — so the stamp and the
+                        // parameter agree and this is a no-op there. It is the
+                        // RPC lane that answers out of the launch handle when a
+                        // profile will not resolve, and its compact rows carry
+                        // no profile, which is what the `launchRowIds` guard is
+                        // for.
                         if (row.id in launchRowIds || row.remoteProfile != null) {
                             row
                         } else {
@@ -656,7 +763,13 @@ internal class LiveGatewaySessionRepository(
                 }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
-                    sessionPageCursors[profile] = leg.cursor
+                    sessionPageCursors[profile] = when (mode) {
+                        // `More` replaces too: its own page is the deeper one,
+                        // and a leg that fell back to `session.list` mid-read
+                        // reports a terminal cursor that must not be overridden.
+                        SessionPageRead.Refresh, SessionPageRead.More -> leg.cursor
+                        SessionPageRead.Rescan -> leg.cursor.keepingDepthOf(sessionPageCursors[profile])
+                    }
                     // Aliasing runs before the merge so the merge finds the row it
                     // is layering over under the id this page actually named.
                     cache.upsertSessions(rows.map { mergeListedSession(alignLineage(it)) })
@@ -3327,7 +3440,10 @@ internal class LiveGatewaySessionRepository(
                     }
                 }
                 if (!shouldRun) return@launch
-                runCatching { refreshSessions() }
+                // A rescan, not a refresh: a turn finishing is news about the
+                // rows, and re-reading page one must not tell a reader who has
+                // paged down that the list is one page long again.
+                runCatching { rescanSessions() }
                 if (cache.state.value.projects.available != false) runCatching { refreshProjects() }
             }
         }
@@ -3718,15 +3834,21 @@ internal fun parseRestSession(root: JsonObject, nowMillis: Long): SessionSummary
         ?: throw GatewayRpcException("Hermes returned a session without a durable id.")
     // The columns both contracts share are one parser's job, not two. Title,
     // preview, activity, count, source, profile, branch and cwd read identically
-    // off either shape — including the profile, which the route stamps on every
-    // row even when the request named none (`sessions.py:145-150`), so unlike
-    // the RPC path this never needs the caller's own scope filled in behind it.
-    // What follows is only what this contract adds.
+    // off either shape — the profile included, which this route stamps on every
+    // row even when the request named none (`sessions.py:146,152`). Whether that
+    // stamp is a fact about the *row* is not this parser's call to make: it is
+    // the row's owner on a named leg and the Gateway describing itself on an
+    // unscoped one, and `readSessionPages` is where that is decided. What
+    // follows is only what this contract adds.
     return parseSession(root, nowMillis, authoritativeId = id).copy(
         archived = root.boolean("archived"),
         pinned = root.boolean("pinned"),
         unread = root.boolean("unread"),
-        model = root.string("model")?.trim()?.takeIf(String::isNotEmpty),
+        // Strict, like the id above and for the same reason — the surrounding
+        // columns are read leniently by design: `model` is a label this app
+        // shows verbatim, so a number wearing a model name is refused rather
+        // than coerced into `"42"`.
+        model = root.jsonString("model")?.trim()?.takeIf(String::isNotEmpty),
         toolCallCount = root.primitive("tool_call_count")?.toIntOrNull(),
         inputTokens = root.primitive("input_tokens")?.toLongOrNull(),
         outputTokens = root.primitive("output_tokens")?.toLongOrNull(),

@@ -436,22 +436,42 @@ class GatewayRestClientTest {
     fun `a one-message page can hold the largest row the host will emit`() = runTest {
         // The widest single tool result the pinned host produces is a
         // `read_file` at `file_read_max_chars` = 100,000 characters
-        // (`hermes_cli/config_defaults.py:566-569`, `tools/file_tools.py:65`).
+        // (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65`).
         // Characters are not bytes — four per character in UTF-8, six under
         // JSON escaping — so a bound sized to the character count refuses a
         // legitimate page *after* the host has already run the query.
-        val ceilingRow = """{"role":"tool","name":"read_file","content":"${"y".repeat(READ_FILE_MAX_CHARS)}"}"""
+        val ceilingRow = """{"role":"tool","name":"read_file","content":"${"y".repeat(READ_FILE_MAX_CHARS.toInt())}"}"""
         val body = """{"session_id":"a1b2","messages":[$ceilingRow],"pagination":{"limit":1,"offset":0,"order":"latest"}}"""
         val http = RecordingGatewayHttp(success(body))
 
         val page = GatewayRestClient { http }.sessionMessages("a1b2", limit = 1).valueOrFail()
 
         assertEquals(1, page.messages.size)
-        // The floor is a whole row, not an ack: a single-message page must be
-        // able to carry a ceiling-sized one with room for the JSON around it.
         val bound = http.requests.single().maxResponseBytes
+        // The floor is a whole row, and it is *derived*, not fitted: the host's
+        // own character cap times the worst a character can cost on the wire.
+        // Asserting the product rather than a number someone chose is what
+        // keeps the two honest — a host that raises `file_read_max_chars` moves
+        // this bound with it instead of quietly outgrowing it.
+        assertEquals(READ_FILE_MAX_CHARS * MAX_BYTES_PER_CHAR, bound)
+        // Which lands at ~586 KiB, above the 512 KiB those 100,000 characters
+        // already need before JSON escaping is counted at all — and above this
+        // body, measured.
+        assertTrue(bound >= 512L * 1024L)
         assertTrue(bound >= body.toByteArray(Charsets.UTF_8).size.toLong())
-        assertTrue(bound >= READ_FILE_MAX_CHARS.toLong() * 2)
+
+        // The per-page ceiling stays bounded — limit × per-row — until the
+        // transport's own default takes over. At 24 MiB over ~586 KiB a row
+        // that happens from the 42nd: 41 is the largest page still sized to
+        // what it asked for, and every larger one, `MAX_MESSAGE_PAGE` included,
+        // shares that single ceiling.
+        suspend fun boundFor(limit: Int): Long {
+            val probe = RecordingGatewayHttp(success("""{"session_id":"a1b2","messages":[]}"""))
+            GatewayRestClient { probe }.sessionMessages("a1b2", limit = limit).valueOrFail()
+            return probe.requests.single().maxResponseBytes
+        }
+        assertEquals(41L * bound, boundFor(41))
+        assertEquals(DEFAULT_MAX_RESPONSE_BYTES, boundFor(42))
     }
 
     @Test
@@ -515,13 +535,10 @@ class GatewayRestClientTest {
     }
 }
 
-/**
- * `file_read_max_chars` at hermes-agent @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
- * (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65`) — the widest
- * single tool result a transcript row can carry.
- */
-private const val READ_FILE_MAX_CHARS = 100_000
+// `READ_FILE_MAX_CHARS` and `MAX_BYTES_PER_CHAR` are the client's own
+// (`GatewayRestClient.kt`), deliberately not restated here: the bound under
+// test is their product, and a second copy of either would let the two drift
+// apart while the assertion stayed green.
 
 private fun <T> GatewayRestResult<T>.valueOrFail(): T = when (this) {
     is GatewayRestResult.Success -> value
