@@ -21,7 +21,8 @@ adb shell svc power stayon true >/dev/null 2>&1 || say "stay-awake was refused; 
 
 # 2. The soft keyboard. The AVD reports a hardware keyboard, which suppresses
 #    the soft one unless this setting says otherwise.
-adb shell settings put secure show_ime_with_hard_keyboard 1
+adb shell settings put secure show_ime_with_hard_keyboard 1 >/dev/null 2>&1 ||
+  say "the soft-keyboard setting was refused; continuing"
 
 # 3. A bound input method. `InputMethodManager.isActive` stays false until one
 #    is bound, and which one a system image enables by default is not a

@@ -48,11 +48,23 @@ class PlatformAccessibilityTest {
         // surface is known to own beats waiting for a count, because a count
         // that is one short cannot tell "not published yet" from "published,
         // and something is missing".
+        //
+        // That node also says which window this composition is in, and every
+        // later read is scoped to it. Otherwise the sweep is package-wide: the
+        // Activities the other classes in this run launched are the same
+        // package, and a window the bridge has not finished dropping publishes
+        // its own controls into a screen this test never rendered. The walk
+        // reads the focused window first, so the id taken here is this rule's
+        // own Activity whenever it holds focus, which is the precondition every
+        // other assertion in this lane already depends on.
+        var settingsWindowId: Int? = null
         try {
             compose.waitUntil(DeviceLane.PLATFORM_TIMEOUT_MILLIS) {
                 invalidatePublishedNodes(compose.activity)
-                automation.publishedNodes(context.packageName)
-                    .any { it.speakableText() == DeviceLane.OPEN_SETTINGS }
+                settingsWindowId = automation.publishedNodes(context.packageName)
+                    .firstOrNull { it.speakableText() == DeviceLane.OPEN_SETTINGS }
+                    ?.windowId
+                settingsWindowId != null
             }
         } catch (timeout: ComposeTimeoutException) {
             val published = automation.publishedNodes(context.packageName)
@@ -63,8 +75,11 @@ class PlatformAccessibilityTest {
                     published.mapNotNull { it.speakableText() }.joinToString(),
             )
         }
+        val windowUnderTest = checkNotNull(settingsWindowId) {
+            "the settings control was published without a window id"
+        }
 
-        val reachable = automation.reachableNodes(context.packageName)
+        val reachable = automation.reachableNodes(context.packageName, windowUnderTest)
         assertTrue(
             "the platform tree published ${reachable.size} reachable actions, announcing " +
                 "${reachable.mapNotNull { it.speakableText() }}; expected at least the chat " +
@@ -86,20 +101,35 @@ class PlatformAccessibilityTest {
         }
         assertTrue(
             "actions the platform reports below ${DeviceLane.TOUCH_TARGET_DP} dp: " +
-                undersized.joinToString { "${it.identify()} ${it.screenBounds()}" },
+                undersized.joinToString { it.identify() },
             undersized.isEmpty(),
         )
     }
 
     private fun UiAutomation.reachableNodes(
         packageName: String,
+        windowId: Int,
     ): List<AccessibilityNodeInfo> =
-        publishedNodes(packageName).filter { it.isClickable && it.isVisibleToUser && it.isEnabled }
+        publishedNodes(packageName, windowId)
+            .filter { it.isClickable && it.isVisibleToUser && it.isEnabled }
 
     private fun AccessibilityNodeInfo.screenBounds(): Rect = Rect().also(::getBoundsInScreen)
 
-    private fun AccessibilityNodeInfo.identify(): String =
-        speakableText() ?: viewIdResourceName ?: className?.toString() ?: "unnamed node"
+    /**
+     * Everything a failure needs to place a node without a rerun.
+     *
+     * A class name on its own says a node is unlabelled and nothing else — not
+     * which window it came from, not where on the screen it is, not which view
+     * it is if it is a view at all. Those three are what separate "this screen
+     * has a real gap" from "this is somebody else's window", so the failure
+     * message carries them rather than leaving them for the next cycle.
+     */
+    private fun AccessibilityNodeInfo.identify(): String = buildString {
+        append(speakableText() ?: className?.toString() ?: "unnamed node")
+        viewIdResourceName?.let { append(" id=$it") }
+        append(" window=$windowId ")
+        append(screenBounds().toShortString())
+    }
 
     private companion object {
         /**

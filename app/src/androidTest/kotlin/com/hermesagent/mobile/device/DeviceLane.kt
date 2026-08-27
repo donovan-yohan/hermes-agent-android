@@ -220,13 +220,28 @@ internal fun invalidatePublishedNodes(activity: Activity) = onMain {
 }
 
 /**
- * Every node the platform bridge publishes for [packageName], deduplicated.
+ * Every node the platform bridge publishes for [packageName], deduplicated, and
+ * — when [windowId] is given — only from that one window.
  *
  * Both the focused window and every window the bridge can see are walked: the
  * two overlap in the ordinary case, and the overlap is what stops a slow window
- * transition from being read as an empty app.
+ * transition from being read as an empty app. The focused window is walked
+ * first and the result keeps insertion order, so the first node a caller
+ * matches comes from the foreground window whenever it holds focus.
+ *
+ * That breadth is exactly why [windowId] exists. A package name cannot tell the
+ * window under test from a window another class in this same run left behind —
+ * every Activity in this lane is this package, so a leftover reads as extra
+ * content on the screen being asserted about. A caller that has identified its
+ * own window, by taking [AccessibilityNodeInfo.getWindowId] off a node it knows
+ * belongs to it, passes that id here and sees nothing else. A window left
+ * behind is a different window, so the id keeps it out however late the bridge
+ * is to drop it.
  */
-internal fun UiAutomation.publishedNodes(packageName: String): List<AccessibilityNodeInfo> = offMain {
+internal fun UiAutomation.publishedNodes(
+    packageName: String,
+    windowId: Int? = null,
+): List<AccessibilityNodeInfo> = offMain {
     runCatching {
         waitForIdle(DeviceLane.BRIDGE_QUIET_MILLIS, DeviceLane.BRIDGE_IDLE_TIMEOUT_MILLIS)
     }
@@ -235,26 +250,36 @@ internal fun UiAutomation.publishedNodes(packageName: String): List<Accessibilit
         runCatching { windows }.getOrDefault(emptyList()).forEach { window ->
             window.root?.let(::add)
         }
-    }
+    }.filter { windowId == null || it.windowId == windowId }
     val found = LinkedHashSet<AccessibilityNodeInfo>()
     val visited = HashSet<AccessibilityNodeInfo>()
-    roots.forEach { collectNodes(it, packageName, found, visited) }
+    roots.forEach { collectNodes(it, packageName, windowId, found, visited) }
     found.toList()
 }
 
 private fun collectNodes(
     node: AccessibilityNodeInfo,
     packageName: String,
+    windowId: Int?,
     into: MutableSet<AccessibilityNodeInfo>,
     visited: MutableSet<AccessibilityNodeInfo>,
 ) {
     // A node identifies itself by window and source id, so this both dedupes
     // the overlap between window roots and bounds the walk.
     if (!visited.add(node)) return
-    if (node.packageName == packageName) into += node
+    // The roots were filtered by window before the walk, and below an ordinary
+    // root every child is in that same window — so this second check reads as
+    // redundant. It is not. An embedded hierarchy crosses the boundary: a child
+    // handed over by SurfaceControlViewHost carries its own window's id, and
+    // the moment one of those appears under this surface the root filter alone
+    // lets exactly the stray back in that the scope exists to keep out. One
+    // comparison per node is the whole cost of not depending on that.
+    if (node.packageName == packageName && (windowId == null || node.windowId == windowId)) {
+        into += node
+    }
     for (index in 0 until node.childCount) {
         val child = node.getChild(index) ?: continue
-        collectNodes(child, packageName, into, visited)
+        collectNodes(child, packageName, windowId, into, visited)
     }
 }
 
