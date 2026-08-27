@@ -109,6 +109,10 @@ class SessionCache {
                         activityStartedAtMillis = existing.activityStartedAtMillis,
                         gitBranch = row.gitBranch ?: existing.gitBranch,
                         worktreePath = row.worktreePath ?: existing.worktreePath,
+                        // Project membership rows carry no owning profile, so a
+                        // drill-in must not move a row out of the profile scope
+                        // it was listed in.
+                        remoteProfile = row.remoteProfile ?: existing.remoteProfile,
                     )
                 }
             }

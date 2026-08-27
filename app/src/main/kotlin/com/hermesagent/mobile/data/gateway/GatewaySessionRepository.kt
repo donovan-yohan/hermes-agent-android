@@ -16,6 +16,7 @@ import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.attachments.ImageRefLines
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
+import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
@@ -69,6 +70,24 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 
+/**
+ * How this connection's session RPCs are scoped to a Hermes profile.
+ *
+ * `session.create` (`tui_gateway/methods_session.py:42`), `session.list`
+ * (`:163`) and `session.resume` (`:324`) all accept a `profile` parameter at
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`; a blank or absent one resolves to
+ * the profile the Gateway launched with (`tui_gateway/server.py:1519-1533`).
+ *
+ * @param activeProfile what a new chat is created in; null keeps the Gateway's own.
+ * @param listProfiles which `profile` values one refresh must cover. One entry
+ *   for a single-profile scope, and the launch profile plus every named profile
+ *   for the unified view — there is no server-side union on this transport.
+ */
+data class ProfileRouting(
+    val activeProfile: String? = null,
+    val listProfiles: List<String?> = listOf(null),
+)
+
 interface GatewaySessionRepository {
     val connectionState: StateFlow<GatewayConnectionState>
     /** Connection-owned loader for attached-image bytes; null while disconnected. */
@@ -81,6 +100,12 @@ interface GatewaySessionRepository {
     suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
         error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
+    /**
+     * The profile scope new work and the session list belong to. UI-only
+     * authority pushed down, never Gateway truth; the repository only turns it
+     * into the `profile` parameter the session RPCs accept.
+     */
+    fun setProfileRouting(routing: ProfileRouting) = Unit
     suspend fun refreshProjects() = Unit
     suspend fun openProject(projectId: String) = Unit
     suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
@@ -305,6 +330,13 @@ internal class LiveGatewaySessionRepository(
     /** A completed turn consumes its accepted head envelope at the next message.start. */
     private val queuedPromptDrainReadyBatchIdsByRuntime = mutableMapOf<String, String>()
 
+    /**
+     * The profile scope the sidebar is in. App state, not connection state: it
+     * survives a reconnect because the user's choice does, and it only ever
+     * becomes a `profile` parameter on a session RPC.
+     */
+    private var profileRouting = ProfileRouting()
+
     /** Latest server-reported git branch per durable session, connection-scoped. */
     private val branchByDurableId = mutableMapOf<String, String>()
     /** Latest server-reported session cwd; never inferred from local state. */
@@ -428,37 +460,107 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    override fun setProfileRouting(routing: ProfileRouting) {
+        synchronized(stateLock) { profileRouting = routing }
+    }
+
     override suspend fun refreshSessions() = refreshMutex.withLock {
         val connection = connectionSnapshot()
-        val result = connection.client.request(
-            "session.list",
-            buildJsonObject {
-                put("limit", JsonPrimitive(100))
-                put("include_hidden", JsonPrimitive(false))
-            },
-        )
-        val rows = parseSessionList(result, clock())
-        synchronized(stateLock) {
-            ensureCurrent(connection)
-            cache.upsertSessions(
-                rows.map { row ->
-                    cache.session(row.id)?.let { existing ->
-                        row.copy(
-                            status = existing.status,
-                            progress = existing.progress,
-                            composerStatus = existing.composerStatus,
-                            activityStartedAtMillis = existing.activityStartedAtMillis,
-                            gitBranch = branchByDurableId[row.id] ?: row.gitBranch ?: existing.gitBranch,
-                            worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath ?: existing.worktreePath,
-                        )
-                    } ?: row.copy(
-                        gitBranch = branchByDurableId[row.id] ?: row.gitBranch,
-                        worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath,
-                    )
-                },
-            )
+        val profiles = synchronized(stateLock) { profileRouting }.listProfiles.distinct().ifEmpty { listOf(null) }
+        var firstFailure: Throwable? = null
+        var answered = false
+        // Ids the launch-profile leg answered with, in this refresh only, and
+        // whether it answered at all.
+        val launchRowIds = mutableSetOf<String>()
+        val launchLegRequested = profiles.any { it == null }
+        var launchLegAnswered = false
+        for (profile in profiles) {
+            val result = try {
+                connection.client.request(
+                    "session.list",
+                    buildJsonObject {
+                        put("limit", JsonPrimitive(100))
+                        put("include_hidden", JsonPrimitive(false))
+                        profile?.let { put("profile", JsonPrimitive(it)) }
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                // The unified view is a fan-out. One profile refusing must not
+                // discard the profiles that answered, so the failure is only
+                // raised when nothing answered at all — which is exactly the
+                // single-profile scope's existing behaviour.
+                if (firstFailure == null) firstFailure = failure
+                continue
+            }
+            answered = true
+            val parsed = parseSessionList(result, clock())
+            // `session.list`'s compact rows carry no owning profile at the pin
+            // (`methods_session.py:204-214`), so a row listed out of a named
+            // profile's own state.db is stamped with the profile that was
+            // asked for. The launch-profile leg is left unstamped, which is
+            // the `default` bucket by the same rule Desktop filters with
+            // (`app/chat/sidebar/profile-scope.ts:12`).
+            //
+            // A profile the Gateway cannot resolve is not an error there:
+            // `_profile_home` answers None and `_profile_db` hands back the
+            // launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so
+            // the named leg can return the launch profile's own rows. Rows the
+            // launch leg already answered with are therefore left alone — the
+            // fan-out asks for it first (`sessionListProfiles`), and stamping
+            // them would move them under an owner that does not exist and no
+            // later refresh would take it back.
+            val rows = if (profile == null) {
+                launchLegAnswered = true
+                parsed.mapTo(launchRowIds, SessionSummary::id)
+                parsed
+            } else if (launchLegRequested && !launchLegAnswered) {
+                // The leg that would have told us which rows are the launch
+                // profile's failed. Without it there is no way to tell a
+                // fallback answer from a real one, so nothing is stamped:
+                // an unstamped row reads as the launch profile's, which is
+                // recoverable, while a wrong owner is not.
+                parsed
+            } else {
+                parsed.map { row ->
+                    if (row.id in launchRowIds) row else row.copy(remoteProfile = profile)
+                }
+            }
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.upsertSessions(rows.map(::mergeListedSession))
+            }
         }
+        if (!answered) firstFailure?.let { throw it }
     }
+
+    /**
+     * The `profile` parameter for acting on one known row: its own owner, or
+     * null for the Gateway's own profile and for a row nothing is known about.
+     */
+    private fun owningProfileParam(durableId: String): String? =
+        cache.session(durableId)?.remoteProfile?.trim()
+            ?.takeIf { it.isNotEmpty() && it != DEFAULT_PROFILE }
+
+    /** Layer one listed row over what the cache already knows about it. */
+    private fun mergeListedSession(row: SessionSummary): SessionSummary =
+        cache.session(row.id)?.let { existing ->
+            row.copy(
+                status = existing.status,
+                progress = existing.progress,
+                composerStatus = existing.composerStatus,
+                activityStartedAtMillis = existing.activityStartedAtMillis,
+                // A `session.info` event names a row's profile authoritatively;
+                // a later list that cannot say must not take it away.
+                remoteProfile = row.remoteProfile ?: existing.remoteProfile,
+                gitBranch = branchByDurableId[row.id] ?: row.gitBranch ?: existing.gitBranch,
+                worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath ?: existing.worktreePath,
+            )
+        } ?: row.copy(
+            gitBranch = branchByDurableId[row.id] ?: row.gitBranch,
+            worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath,
+        )
 
     override suspend fun refreshProjects() {
         val rehydrate = projectMutex.withLock {
@@ -570,8 +672,18 @@ internal class LiveGatewaySessionRepository(
             runtimeId = knownRuntime
             canonicalId = synchronized(stateLock) { identities.durableFor(runtimeId) } ?: durableId
         } else {
-            liveSnapshot = connection.client.request("session.resume", objectParams("session_id", durableId))
-                .asObject("session.resume")
+            // Resume in the profile that owns the row, not the scope the
+            // sidebar happens to be in — the unified view lists other
+            // profiles' sessions and opening one must reach its state.db
+            // (`methods_session.py:322-325`).
+            val owningProfile = synchronized(stateLock) { owningProfileParam(durableId) }
+            liveSnapshot = connection.client.request(
+                "session.resume",
+                buildJsonObject {
+                    put("session_id", JsonPrimitive(durableId))
+                    owningProfile?.let { put("profile", JsonPrimitive(it)) }
+                },
+            ).asObject("session.resume")
             runtimeId = liveSnapshot.string("session_id")
                 ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
             canonicalId = liveSnapshot.canonicalDurableId() ?: durableId
@@ -648,6 +760,10 @@ internal class LiveGatewaySessionRepository(
             "session.create",
             buildJsonObject {
                 put("source", JsonPrimitive("desktop"))
+                // The new chat belongs to the profile the rail is scoped to
+                // (`methods_session.py:38-43`); omitted means the launch profile.
+                synchronized(stateLock) { profileRouting }.activeProfile
+                    ?.let { put("profile", JsonPrimitive(it)) }
                 workspacePath?.trim()?.takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
                 overrides?.selection?.takeIf { it.isSpecified }?.let { selection ->
                     put("model", JsonPrimitive(selection.model.trim()))

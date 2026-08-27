@@ -51,9 +51,24 @@ data class ComposerQueueScope(val stableProfileId: String) {
     internal fun storageFileName(): String = "composer_queue_${stableProfileId.sha256()}.preferences_pb"
 
     companion object {
-        /** Connection and profile are both stable persisted identities, never runtime session IDs. */
-        fun forConnectionProfile(connectionIdentity: String, profileIdentity: String): ComposerQueueScope =
-            ComposerQueueScope("$connectionIdentity\u0000$profileIdentity")
+        /**
+         * Connection, endpoint profile and Hermes profile are all stable
+         * persisted identities, never runtime session IDs.
+         *
+         * [hermesProfile] is the profile scope the rail is in. It is appended
+         * only when a named profile is active, so an install that has never
+         * used the rail keeps the queue it already has, and text parked under
+         * one Hermes profile can never be presented under another.
+         */
+        fun forConnectionProfile(
+            connectionIdentity: String,
+            profileIdentity: String,
+            hermesProfile: String? = null,
+        ): ComposerQueueScope {
+            val base = "$connectionIdentity\u0000$profileIdentity"
+            val hermes = hermesProfile?.trim().orEmpty()
+            return ComposerQueueScope(if (hermes.isEmpty()) base else "$base\u0000hermes:$hermes")
+        }
     }
 }
 

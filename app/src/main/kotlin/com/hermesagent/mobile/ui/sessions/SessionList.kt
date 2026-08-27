@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +58,8 @@ import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.label
+import com.hermesagent.mobile.data.profiles.HermesProfile
+import com.hermesagent.mobile.ui.chat.ProjectProfileScope
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.DitherMark
 import com.hermesagent.mobile.ui.common.HermesIcon
@@ -64,6 +67,7 @@ import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.PrimaryButton
+import com.hermesagent.mobile.ui.common.ProfileTag
 import com.hermesagent.mobile.ui.common.SearchField
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.StatusDot
@@ -109,6 +113,11 @@ fun SessionList(
      * sessions.
      */
     header: @Composable () -> Unit = {},
+    /** The foot rail's profiles and scope; empty means no Gateway has answered. */
+    profileRail: ProfileRailState = ProfileRailState(),
+    profileRailActions: ProfileRailActions = ProfileRailActions(),
+    /** How the project catalog relates to the profile scope the sidebar is in. */
+    projectScope: ProjectProfileScope = ProjectProfileScope.Own,
 ) {
     val tokens = HermesTheme.tokens
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project && selectedProject == null
@@ -198,6 +207,23 @@ fun SessionList(
                 color = tokens.textTertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
+        } else if (sidebarGrouping == SidebarGrouping.Project && projectScope != ProjectProfileScope.Own) {
+            // The catalog is one profile's either way; only the next action
+            // differs between browsing everything and standing in another
+            // profile, where there is nothing here to browse.
+            Text(
+                text = when (projectScope) {
+                    ProjectProfileScope.Unified ->
+                        "Projects come from one profile on this Gateway, not from every profile in view."
+                    else ->
+                        "Projects come from one profile on this Gateway. Switch to the default profile to browse them."
+                },
+                style = HermesTheme.type.scaffoldMeta,
+                color = tokens.textTertiary,
+                modifier = Modifier
+                    .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp)
+                    .testTag(PROJECT_PROFILE_SCOPE_NOTE),
+            )
         } else if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == false) {
             Text(
                 text = "Project views aren’t available on this Gateway.",
@@ -208,6 +234,8 @@ fun SessionList(
         }
 
         when {
+            showingProjectOverview && !projectScope.showsCatalog -> Spacer(Modifier.weight(1f))
+
             showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
                 title = if (query.isBlank()) "No projects" else "Nothing matches",
                 description = when {
@@ -215,6 +243,7 @@ fun SessionList(
                     canCreate -> "Create a project with the + above."
                     else -> "No projects were returned by this Gateway."
                 },
+                modifier = Modifier.weight(1f),
             )
 
             showingProjectOverview -> LazyColumn(
@@ -234,6 +263,7 @@ fun SessionList(
             projectLoading -> EmptyState(
                 title = "Opening project…",
                 description = "Hermes is loading this project’s session history.",
+                modifier = Modifier.weight(1f),
             )
 
             rows.isEmpty() -> EmptyState(
@@ -246,6 +276,7 @@ fun SessionList(
                     canCreate -> "Start one with the + above."
                     else -> "Connect to a Gateway to start a session."
                 },
+                modifier = Modifier.weight(1f),
             )
 
             else -> {
@@ -268,12 +299,22 @@ fun SessionList(
                                 session = row.session,
                                 active = row.session.id == activeSessionId,
                                 onClick = { onSelect(row.session.id) },
+                                // A single-profile scope already says which
+                                // profile every row belongs to, so the tag only
+                                // earns its place in the unified view.
+                                owner = if (profileRail.scope.isAll) {
+                                    profileRail.owner(row.session.remoteProfile)
+                                } else {
+                                    null
+                                },
                             )
                         }
                     }
                 }
             }
         }
+
+        ProfileRail(state = profileRail, actions = profileRailActions)
     }
 
     if (projectCreateVisible) {
@@ -496,6 +537,9 @@ private fun ProjectRow(
     }
 }
 
+/** The one line that says the project catalog belongs to a single profile. */
+internal const val PROJECT_PROFILE_SCOPE_NOTE = "Project profile scope note"
+
 private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.Divider -> "divider-${bucket.name}"
     is SessionListRow.Row -> session.id
@@ -506,6 +550,8 @@ private fun SessionRow(
     session: SessionSummary,
     active: Boolean,
     onClick: () -> Unit,
+    /** The owning profile's chip, or null when the scope already names it. */
+    owner: HermesProfile? = null,
 ) {
     val tokens = HermesTheme.tokens
     val dot = session.status.dot(tokens)
@@ -570,6 +616,8 @@ private fun SessionRow(
                     )
                 }
             }
+
+            if (owner != null) ProfileTag(profile = owner)
         }
 
         if (session.status.showsRunningOutline()) {
