@@ -18,6 +18,7 @@ Phase 2 ships both connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../data/profiles/` | Hermes profile roster, identity colour, active scope, session-RPC routing | Which profile the sidebar is in, or what a session RPC is scoped to |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
+| `app/src/androidTest/kotlin/` | The instrumented emulator lane: real display density, the platform accessibility tree, a real input-method binding, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
 | `status/` | Current shipping status, limitations, and roadmap direction | Checking what works now or remains deferred |
 | `docs/workflows/` | Durable port + theme-sync checklists | Before porting a Desktop surface or syncing themes |
 | `docs/adr/` | Decisions with consequences | Before changing the SSH seam |
@@ -36,6 +37,8 @@ export ANDROID_HOME=/opt/android-sdk        # JDK 17; platform 36, build-tools 3
 ./gradlew assembleDebug                     # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:testDebugUnitTest --tests '*ThemeParityTest*'   # one test class
 ./gradlew :app:lintDebug
+./gradlew :app:assembleDebugAndroidTest    # compile and package the instrumented lane
+./gradlew :app:connectedDebugAndroidTest   # run it on an attached device or emulator
 ./scripts/check-repo-invariants.sh          # symlink, ignore rules, theme pin
 python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
   --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" # live upstream diff
@@ -133,6 +136,26 @@ never real delays. A `combine` + `WhileSubscribed` state flow needs a live
 collector *and* a `runCurrent()` before you assert. Compose journeys go in
 `src/testDebug/`. Fixed clock, fixed timezone, fixed locale for anything
 calendar-shaped.
+
+**The instrumented lane earns its cost or does not exist.** `src/androidTest/`
+takes only what Robolectric structurally cannot prove, and only what the lane is
+actually green on: the real display density, the chat chrome's arrival in the
+platform `AccessibilityNodeInfo` tree, a real input method binding to the
+composer, a real orientation change, and a real Activity destroy/recreate. Font
+scale is not among them — the CI emulator runs at 1.0, and a device-wide change
+would move what every other test on the lane can see. Neither is the keyboard's
+own window: whether a headless emulator draws one depends on the system image
+and the AVD, so `imePadding` stays on the physical device matrix. Neither is
+auditing the labels and touch sizes of what that accessibility tree publishes:
+the sweep populates from nodes a screen reader never visits and never reads
+`hintText`, so that claim is
+[#91](https://github.com/donovan-yohan/hermes-agent-android/issues/91) and not
+yet this lane's. A test that would pass identically under Robolectric belongs in
+`src/testDebug/`. Nothing there reaches a Gateway or names a host — a repo
+invariant refuses a URL, an SSH destination, an address, a fingerprint or key
+material in those sources. Backtick method names are unavailable: D8 rejects
+identifiers with spaces below minSdk 30. The lane is not physical acceptance,
+and neither the workflow nor the ROADMAP may imply it is.
 
 ## Scoped guides
 

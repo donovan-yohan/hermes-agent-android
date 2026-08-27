@@ -65,6 +65,9 @@ android {
     }
 
     testOptions {
+        // Emulator animations make Compose's idling non-deterministic; the
+        // instrumented lane asserts layout and semantics, never a transition.
+        animationsDisabled = true
         unitTests {
             isIncludeAndroidResources = true
             // Deliberately NOT isReturnDefaultValues: it stubs every method on
@@ -101,6 +104,11 @@ android {
 // lint plus the repo invariants.
 tasks.named("check") {
     dependsOn(rootProject.tasks.named("verifyRepoInvariants"))
+    // The instrumented lane runs on a CI emulator, which is far away from the
+    // edit that broke it. Assembling it here fails on the cheap gate instead —
+    // and dexing is where a rule like "no method names with spaces below
+    // minSdk 30" actually bites.
+    dependsOn("assembleDebugAndroidTest")
 }
 
 kotlin {
@@ -155,6 +163,12 @@ dependencies {
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
 
+    // The instrumented lane in `src/androidTest/` only asserts what an emulator
+    // can honestly prove — real density, the platform accessibility tree, a real
+    // IME, a real orientation change, and a real Activity recreate. It is not a
+    // substitute for the physical device matrix.
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(platform(libs.compose.bom))
