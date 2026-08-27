@@ -125,7 +125,7 @@ else
   ok "production startup has no demo session or turn source"
 fi
 
-# ── 10. Inline diffs read the diff tokens, not lookalike status colours ──────
+# ── 11. Inline diffs read the diff tokens, not lookalike status colours ──────
 # ThemeSemanticParityTest proves the diff tokens hold Desktop's values; only a
 # source check can prove the diff *panel* is the thing reading them, and reading
 # them the right way round. The panel shipped tinting with `statusUnread` (the
@@ -161,24 +161,35 @@ else
 fi
 
 
-# ── 11. The instrumented emulator lane stays offline ─────────────────────────
+# ── 12. The instrumented emulator lane stays offline ─────────────────────────
 # S38's contract is that no test in `app/src/androidTest/` needs a real Gateway,
 # a credential, or a host name. A URL literal or a PEM header is the shape that
 # breaks it: the moment one appears, the lane has stopped being reproducible on
 # any runner and has started depending on somebody's machine.
+#
+# A URL is not the only shape a leak takes, and the others are the ones a
+# reviewer skims past: an SSH destination (`user@host`), a literal address, and
+# an accepted host-key fingerprint are each enough to name somebody's machine
+# without a scheme in front of them.
 lane="app/src/androidTest"
 if [[ ! -d "$lane" ]]; then
   problem "$lane is missing; the instrumented lane is what CI's emulator job runs."
 else
   lane_targets="$(
-    grep -rInE -e 'https?://[A-Za-z0-9]' -e '-----BEGIN' "$lane" 2>/dev/null || true
+    grep -rInE \
+      -e 'https?://[A-Za-z0-9]' \
+      -e '-----BEGIN' \
+      -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}' \
+      -e '(^|[^0-9.])([0-9]{1,3}\.){3}[0-9]{1,3}([^0-9.]|$)' \
+      -e 'SHA256:[A-Za-z0-9+/=]{10,}' \
+      "$lane" 2>/dev/null || true
   )"
   if [[ -n "$lane_targets" ]]; then
-    problem "the instrumented lane names a network target or key material:"
+    problem "the instrumented lane names a network target, an account or key material:"
     note "$(echo "$lane_targets" | head -5)"
     note "fix: construct the state locally; the lane must run with no Gateway reachable."
   else
-    ok "the instrumented lane names no Gateway, host or key material"
+    ok "the instrumented lane names no Gateway, host, account or key material"
   fi
 fi
 

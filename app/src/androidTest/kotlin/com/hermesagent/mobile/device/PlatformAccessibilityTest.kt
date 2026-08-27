@@ -1,12 +1,15 @@
 package com.hermesagent.mobile.device
 
+import android.app.UiAutomation
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,19 +42,34 @@ class PlatformAccessibilityTest {
         compose.setContent { HermesAppUnderTest() }
         compose.waitForIdle()
 
-        // The bridge publishes on its own schedule once accessibility turns on,
-        // so wait for a node this surface is known to own rather than guessing.
-        compose.waitUntil(DeviceLane.PLATFORM_TIMEOUT_MILLIS) {
-            automation.publishedNodes(context.packageName)
-                .any { it.speakableText() == DeviceLane.OPEN_SETTINGS }
+        // The bridge publishes on its own schedule, and it has to be prompted:
+        // see `invalidatePublishedNodes` for why Compose itself will not send
+        // the notification that keeps a read fresh. Waiting for a node this
+        // surface is known to own beats waiting for a count, because a count
+        // that is one short cannot tell "not published yet" from "published,
+        // and something is missing".
+        try {
+            compose.waitUntil(DeviceLane.PLATFORM_TIMEOUT_MILLIS) {
+                invalidatePublishedNodes(compose.activity)
+                automation.publishedNodes(context.packageName)
+                    .any { it.speakableText() == DeviceLane.OPEN_SETTINGS }
+            }
+        } catch (timeout: ComposeTimeoutException) {
+            val published = automation.publishedNodes(context.packageName)
+            fail(
+                "the chat top bar's settings control never reached the platform tree for " +
+                    "${context.packageName} (${timeout.message}); the tree held " +
+                    "${published.size} nodes, announcing: " +
+                    published.mapNotNull { it.speakableText() }.joinToString(),
+            )
         }
 
-        val reachable = automation.publishedNodes(context.packageName)
-            .filter { it.isClickable && it.isVisibleToUser && it.isEnabled }
+        val reachable = automation.reachableNodes(context.packageName)
         assertTrue(
-            "the platform tree published ${reachable.size} reachable actions; " +
-                "expected at least the chat top bar and the composer",
-            reachable.size >= 4,
+            "the platform tree published ${reachable.size} reachable actions, announcing " +
+                "${reachable.mapNotNull { it.speakableText() }}; expected at least the chat " +
+                "top bar and the composer",
+            reachable.size >= EXPECTED_ACTIONS,
         )
 
         val unlabelled = reachable.filter { it.speakableText() == null }
@@ -73,8 +91,22 @@ class PlatformAccessibilityTest {
         )
     }
 
+    private fun UiAutomation.reachableNodes(
+        packageName: String,
+    ): List<AccessibilityNodeInfo> =
+        publishedNodes(packageName).filter { it.isClickable && it.isVisibleToUser && it.isEnabled }
+
     private fun AccessibilityNodeInfo.screenBounds(): Rect = Rect().also(::getBoundsInScreen)
 
     private fun AccessibilityNodeInfo.identify(): String =
         speakableText() ?: viewIdResourceName ?: className?.toString() ?: "unnamed node"
+
+    private companion object {
+        /**
+         * Two top-bar controls, the editor and the add control are unconditional
+         * on this surface, so a sweep that finds fewer than four has found a
+         * tree that is not this screen rather than a screen without actions.
+         */
+        const val EXPECTED_ACTIONS = 4
+    }
 }

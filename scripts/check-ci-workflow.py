@@ -20,6 +20,22 @@ WORKFLOW = Path(".github/workflows/android-exact-head.yml")
 BUILD_FILE = Path("app/build.gradle.kts")
 ROLLING_KEYSTORE_ENV = "HERMES_ROLLING_DEBUG_KEYSTORE_PATH"
 ANDROID_TEST_SOURCES = Path("app/src/androidTest/kotlin")
+EMULATOR_PREPARATION = Path("scripts/prepare-ci-emulator.sh")
+# Every claim the lane is allowed to make, named. A count alone would let a
+# deleted claim be replaced by an unrelated new test and still add up, so the
+# contract is which classes exist, and removing one is an edit here.
+LANE_CLAIMS = (
+    "ActivityRecreateTest",
+    "ComposerImeTest",
+    "OrientationTest",
+    "PlatformAccessibilityTest",
+    "TouchTargetTest",
+)
+# GitHub owns the `actions` organisation; everything else is somebody else's
+# code running in a workflow whose sibling job holds the rolling keystore.
+FIRST_PARTY_ACTION_OWNER = "actions"
+ACTION_USE = re.compile(r"uses:\s*([A-Za-z0-9._-]+)/([A-Za-z0-9._/-]+)@(\S+)")
+COMMIT_PIN = re.compile(r"^[0-9a-f]{40}$")
 # The lane's honesty is part of its contract, so it is asserted rather than
 # left to a reviewer to notice going missing.
 INSTRUMENTED_BOUNDARY = (
@@ -33,7 +49,7 @@ INSTRUMENTED_MATRIX = (
 # test asserts the landscape window really crosses it. A different profile
 # would turn that assertion vacuous, so the device is part of the contract.
 INSTRUMENTED_DEVICE = (
-    "reactivecircus/android-emulator-runner@v2",
+    "reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d",
     "api-level: 34",
     "target: google_apis",
     "arch: x86_64",
@@ -49,7 +65,7 @@ REQUIRED = (
     "actions/setup-java@v4",
     'java-version: "17"',
     "cache: gradle",
-    "android-actions/setup-android@v3",
+    "android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407",
     "packages:",
     "platform-tools",
     "platforms;android-36",
@@ -88,6 +104,9 @@ BUILD_REQUIRED = (
     # nothing unless the source set and its test runtime are still wired up.
     'getByName("androidTest").kotlin.srcDir("src/androidTest/kotlin")',
     "androidTestImplementation(libs.compose.ui.test.junit4)",
+    # `createAndroidComposeRule` launches an Activity that only exists in the
+    # debug manifest; without this the lane compiles and then fails to launch.
+    "debugImplementation(libs.compose.ui.test.manifest)",
     'testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"',
     # `check` compiles and dexes the lane so a broken one fails locally rather
     # than an emulator job away.
@@ -217,17 +236,58 @@ def main() -> int:
     if "needs: instrumented" in effective:
         failures.append("no job may gate on the instrumented lane; it is evidence, not a build step")
 
+    for owner, repo, ref in ACTION_USE.findall(effective):
+        if owner == FIRST_PARTY_ACTION_OWNER:
+            continue
+        if not COMMIT_PIN.match(ref):
+            failures.append(
+                f"third-party action {owner}/{repo} is used at '{ref}'; "
+                "pin it to a full commit SHA with a version comment"
+            )
+
+    avd_cache = _indented_block(effective, "      - name: Cache the emulator image and AVD")
+    if avd_cache and "restore-keys:" not in avd_cache:
+        failures.append(
+            "the AVD cache needs restore-keys; a run that ends red saves nothing, "
+            "so a red lane would never warm the cache it depends on"
+        )
+
     instrumented_upload = _indented_block(
         effective, "      - name: Upload instrumented lane evidence"
     )
     if instrumented_upload and "if: always()" not in instrumented_upload:
         failures.append("a failing instrumented run is exactly when its results are needed")
+    if instrumented_upload and "github.event.pull_request.head.sha" not in instrumented_upload:
+        failures.append(
+            "instrumented evidence must be named after the head commit that ran; "
+            "github.sha alone is the merge commit on a pull request"
+        )
 
     lane_tests = sorted(ANDROID_TEST_SOURCES.rglob("*Test.kt")) if ANDROID_TEST_SOURCES.is_dir() else []
     if not lane_tests:
         failures.append(
             f"{ANDROID_TEST_SOURCES} holds no *Test.kt; "
             "the emulator job would pass by running nothing"
+        )
+    present_claims = {path.stem for path in lane_tests}
+    for claim in LANE_CLAIMS:
+        if claim not in present_claims:
+            failures.append(
+                f"the instrumented lane no longer holds {claim}; "
+                "dropping a claim is a deliberate edit to LANE_CLAIMS, not a silent one"
+            )
+    for extra in sorted(present_claims - set(LANE_CLAIMS)):
+        failures.append(
+            f"{extra} is in the instrumented lane but not in LANE_CLAIMS; "
+            "say what the emulator proves that Robolectric cannot, then add it"
+        )
+
+    if not EMULATOR_PREPARATION.is_file():
+        failures.append(f"{EMULATOR_PREPARATION} is missing; the lane's IME claim depends on it")
+    elif str(EMULATOR_PREPARATION) not in effective:
+        failures.append(
+            f"the instrumented lane must run {EMULATOR_PREPARATION}; "
+            "an unfocused window with no bound input method fails ComposerImeTest"
         )
 
     ordered = (

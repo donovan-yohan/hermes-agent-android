@@ -1,49 +1,61 @@
-package com.hermesagent.mobile.device
+package com.hermesagent.mobile.ui
 
-import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.compose.ui.test.performScrollTo
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
-import com.hermesagent.mobile.ui.GatewayActions
-import com.hermesagent.mobile.ui.SshActions
+import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.GatewayScreen
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
+import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
- * Every connection state says which one it is, on a real display.
+ * Every connection state says which one it is, and offers one action.
  *
- * Robolectric already proves the strings are wired to the states. What it
- * cannot prove is that they survive contact with a device: real density, the
- * device's own font scale, real status and navigation insets, and a real window
- * that clips. `assertIsDisplayed` is the load-bearing part — it fails when the
- * copy is laid out but pushed off the real window, which is the failure a
- * synthetic window cannot produce.
+ * A connection state is a value the surface reads, so the sweep is a Compose
+ * question rather than a device one: no density, insets or platform service is
+ * involved in whether the right sentence is wired to the right state.
  *
  * Nothing here reaches a Gateway. Each state is constructed locally and no host
  * name, URL or credential appears in the fixture.
  */
-@RunWith(AndroidJUnit4::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ConnectionStateCopyTest {
 
     @get:Rule
-    val compose = createAndroidComposeRule<ComponentActivity>()
+    val compose = createComposeRule()
 
     @Test
-    fun everyConnectionStateNamesItselfInTheChatChrome() {
+    fun `every connection state names itself in the chat chrome`() {
         var status by mutableStateOf(GatewayConnectionStatus.Disconnected)
-        compose.setContent { HermesAppUnderTest(chatStateFor(status)) }
+        compose.setContent {
+            HermesApp(
+                chatState = ChatUiState(connection = GatewayConnectionState(status)),
+                gatewayState = GatewaySettingsUiState(),
+                sshState = SshUiState(),
+                appearance = AppearanceSelection(),
+                chatActions = ChatActions(),
+                appearanceActions = AppearanceActions(),
+                gatewayActions = GatewayActions(),
+                sshActions = SshActions(),
+                relayState = RelayUiState(),
+                relayActions = RelayActions(),
+            )
+        }
 
         for (candidate in GatewayConnectionStatus.entries) {
             status = candidate
@@ -53,7 +65,7 @@ class ConnectionStateCopyTest {
     }
 
     @Test
-    fun everyConnectionStateOffersOneGatewayActionOnTheRealDisplay() {
+    fun `every connection state offers one Gateway action`() {
         var connection by mutableStateOf(GatewayConnectionState())
         compose.setContent {
             HermesTheme(AppearanceSelection()) {
@@ -68,24 +80,24 @@ class ConnectionStateCopyTest {
 
         connection = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
         compose.waitForIdle()
-        compose.onNodeWithText(SIGN_IN).assertIsDisplayed()
+        compose.onNodeWithText(SIGN_IN).performScrollTo().assertIsDisplayed()
 
         connection = GatewayConnectionState(GatewayConnectionStatus.Connecting)
         compose.waitForIdle()
-        compose.onNodeWithText(CONNECTING).assertIsDisplayed()
-        compose.onNodeWithText(CANCEL).assertIsDisplayed()
+        compose.onNodeWithText(CONNECTING).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(CANCEL).performScrollTo().assertIsDisplayed()
 
         connection = GatewayConnectionState(GatewayConnectionStatus.Connected)
         compose.waitForIdle()
-        compose.onNodeWithText(DISCONNECT).assertIsDisplayed()
-        compose.onNodeWithText(FORGET).assertIsDisplayed()
+        compose.onNodeWithText(DISCONNECT).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(FORGET).performScrollTo().assertIsDisplayed()
 
         // A Gateway that stopped talking explains itself and still offers the
         // one safe next action, rather than leaving the surface actionless.
         connection = GatewayConnectionState(GatewayConnectionStatus.NeedsAttention, ENDED)
         compose.waitForIdle()
-        compose.onNodeWithText(ENDED).assertIsDisplayed()
-        compose.onNodeWithText(SIGN_IN).assertIsDisplayed()
+        compose.onNodeWithText(ENDED).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(SIGN_IN).performScrollTo().assertIsDisplayed()
     }
 
     private companion object {

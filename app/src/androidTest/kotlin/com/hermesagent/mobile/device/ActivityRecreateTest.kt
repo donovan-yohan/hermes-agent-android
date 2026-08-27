@@ -23,9 +23,10 @@ import org.junit.runner.RunWith
  * `MainActivity`, so the whole production composition root is under test rather
  * than a stand-in.
  *
- * It is still not a system-initiated process kill. See [RestoreTest] for the
- * saved-state-only half, and the physical device matrix (issue #72, S39) for
- * the real thing.
+ * It is still not a system-initiated process kill. The saved-state-only half —
+ * a composition rebuilt from `rememberSaveable` alone — needs no device and
+ * lives in `src/testDebug/` as `SavedStateRestoreTest`; the real thing stays on
+ * the physical device matrix (issue #72, S39).
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)

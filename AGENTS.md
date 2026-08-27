@@ -18,7 +18,7 @@ Phase 2 ships both connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../data/profiles/` | Hermes profile roster, identity colour, active scope, session-RPC routing | Which profile the sidebar is in, or what a session RPC is scoped to |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
-| `app/src/androidTest/kotlin/` | The instrumented emulator lane: real density, platform accessibility tree, real IME, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
+| `app/src/androidTest/kotlin/` | The instrumented emulator lane: real display density, the platform accessibility tree, a real input-method binding, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
 | `status/` | Current shipping status, limitations, and roadmap direction | Checking what works now or remains deferred |
 | `docs/workflows/` | Durable port + theme-sync checklists | Before porting a Desktop surface or syncing themes |
 | `docs/adr/` | Decisions with consequences | Before changing the SSH seam |
@@ -138,15 +138,20 @@ collector *and* a `runCurrent()` before you assert. Compose journeys go in
 calendar-shaped.
 
 **The instrumented lane earns its cost or does not exist.** `src/androidTest/`
-takes only what Robolectric structurally cannot prove: real density and font
-scale, the platform `AccessibilityNodeInfo` tree, a real IME raising real
-`WindowInsets.ime`, a real orientation change, and a real Activity
-destroy/recreate. A test that would pass identically under Robolectric belongs
-in `src/testDebug/`. Nothing there reaches a Gateway or names a host — a repo
-invariant refuses a URL or key material in those sources. Backtick method names
-are unavailable: D8 rejects identifiers with spaces below minSdk 30. The lane is
-not physical acceptance, and neither the workflow nor the ROADMAP may imply it
-is.
+takes only what Robolectric structurally cannot prove, and only what the lane is
+actually green on: the real display density, the platform
+`AccessibilityNodeInfo` tree, a real input method binding to the composer, a
+real orientation change, and a real Activity destroy/recreate. Font scale is not
+among them — the CI emulator runs at 1.0, and a device-wide change would move
+what every other test on the lane can see. Neither is the keyboard's own window:
+whether a headless emulator draws one depends on the system image and the AVD,
+so `imePadding` stays on the physical device matrix. A test that would pass
+identically under Robolectric belongs in `src/testDebug/`. Nothing there reaches
+a Gateway or names a host — a repo invariant refuses a URL, an SSH destination,
+an address, a fingerprint or key material in those sources. Backtick method
+names are unavailable: D8 rejects identifiers with spaces below minSdk 30. The
+lane is not physical acceptance, and neither the workflow nor the ROADMAP may
+imply it is.
 
 ## Scoped guides
 

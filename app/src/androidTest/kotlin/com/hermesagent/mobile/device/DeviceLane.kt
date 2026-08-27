@@ -4,12 +4,10 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.UiAutomation
 import android.os.Looper
+import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.runtime.Composable
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
@@ -34,18 +32,21 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
  * cheap and it is where surface behaviour belongs.
  *
  * This lane exists only for the claims Robolectric cannot make, and each test
- * here says which one it is: a real display and font scale, a real
+ * here says which one it is: a real display density, a real
  * `AccessibilityNodeInfo` tree produced by the platform bridge, a real input
- * method raising real `WindowInsets.ime`, a real orientation change through the
- * real `Configuration`, and a real Activity destroy/recreate through real
+ * method binding to the composer, a real orientation change through the real
+ * `Configuration`, and a real Activity destroy/recreate through real
  * saved-instance-state parceling. A test that would pass identically under
  * Robolectric does not belong here.
  *
  * **This lane does not substitute for physical acceptance.** An emulator has no
  * browser hand-off to complete PKCE against, no radio, no network handoff, no
  * TalkBack, and no media stack worth trusting. Those stay on the physical
- * device matrix (issue #72, S39). `ActivityScenario.recreate()` is a real
- * destroy/recreate with real saved-state parceling; it is *not* a
+ * device matrix (issue #72, S39). Neither does it prove the keyboard's own
+ * window: whether a headless CI emulator draws an IME window at all depends on
+ * the system image's input method and the AVD's hardware keyboard, so the
+ * `imePadding` claim stays on that matrix too. `ActivityScenario.recreate()` is
+ * a real destroy/recreate with real saved-state parceling; it is *not* a
  * system-initiated process kill, and this lane never claims it is.
  *
  * No test here reaches a Gateway, and none of them names a host, a credential,
@@ -55,8 +56,14 @@ internal object DeviceLane {
     /** The Android touch-target floor the app promises. Matches `HermesSpacing.touchTarget`. */
     const val TOUCH_TARGET_DP: Int = 48
 
-    /** Long enough for a real IME window to animate in on a cold emulator. */
+    /** Long enough for the real platform to settle on a cold emulator. */
     const val PLATFORM_TIMEOUT_MILLIS: Long = 15_000
+
+    /** How long the accessibility bridge must be quiet before a read is taken. */
+    const val BRIDGE_QUIET_MILLIS: Long = 200
+
+    /** How long to wait for that quiet window before reading anyway. */
+    const val BRIDGE_IDLE_TIMEOUT_MILLIS: Long = 2_000
 
     /** One physical pixel of rounding slack between dp arithmetic and layout. */
     const val TOLERANCE_PX: Float = 1f
@@ -102,7 +109,7 @@ internal fun HermesAppUnderTest(
 /**
  * Runs [block] on the main thread and returns its value.
  *
- * Window insets, the input method manager and `findFocus` are all main-thread
+ * Window focus, the input method manager and `findFocus` are all main-thread
  * reads. Compose's `waitUntil` does not promise which thread evaluates its
  * condition, so this works from either one rather than assuming.
  */
@@ -113,56 +120,65 @@ internal fun <T> onMain(block: () -> T): T {
     return checkNotNull(captured) { "the main thread did not run the block" }.getOrThrow()
 }
 
-/** True when the real input method window is up, as the real window insets report it. */
-internal fun imeIsVisible(activity: Activity): Boolean = onMain {
-    val root = activity.window.decorView
-    ViewCompat.getRootWindowInsets(root)?.isVisible(WindowInsetsCompat.Type.ime()) == true
-}
-
-/** How far the real input method window intrudes from the bottom of the real window, in px. */
-internal fun imeInsetBottomPx(activity: Activity): Int = onMain {
-    val root = activity.window.decorView
-    ViewCompat.getRootWindowInsets(root)
-        ?.getInsets(WindowInsetsCompat.Type.ime())
-        ?.bottom
-        ?: 0
-}
-
-/** The real window's height in px, which is what an IME inset is measured against. */
-internal fun windowHeightPx(activity: Activity): Int = onMain { activity.window.decorView.height }
-
 /**
- * Asks the platform for the soft keyboard through both public routes.
+ * Runs [block] anywhere except the main thread and returns its value.
  *
- * The insets controller is the modern one; `showSoftInput` is what still works
- * when the emulator image's IME is slow to become the active method. Neither
- * fabricates the keyboard — if no input method is installed, both no-op and the
- * caller's wait fails, which is the honest outcome.
+ * The mirror image of [onMain], and it exists for one specific reason. Reading
+ * an `AccessibilityNodeInfo` is a blocking round trip: the client hands the
+ * request to the interrogated window's `AccessibilityInteractionController`,
+ * which services it on that window's own UI thread, and the caller then blocks
+ * until the answer arrives. Here the interrogated window belongs to this same
+ * process, so making that call *from* the UI thread asks the one thread that
+ * can answer to sit waiting for itself. Compose's `waitUntil` evaluates its
+ * condition on the instrumentation thread today, but nothing in its contract
+ * says it must, so the guard is written down rather than assumed.
  */
-internal fun requestIme(activity: Activity) {
-    onMain {
-        val decor = activity.window.decorView
-        val focused = decor.findFocus() ?: decor
-        WindowCompat.getInsetsController(activity.window, focused)
-            .show(WindowInsetsCompat.Type.ime())
-        activity.getSystemService(InputMethodManager::class.java)?.showSoftInput(focused, 0)
-    }
+internal fun <T> offMain(block: () -> T): T {
+    if (Looper.myLooper() != Looper.getMainLooper()) return block()
+    var captured: Result<T>? = null
+    val worker = Thread({ captured = runCatching(block) }, "device-lane-off-main")
+    worker.start()
+    worker.join()
+    return checkNotNull(captured) { "the worker thread did not run the block" }.getOrThrow()
 }
+
+/** True once the real window manager has given this Activity's window input focus. */
+internal fun hasWindowFocus(activity: Activity): Boolean = onMain { activity.hasWindowFocus() }
 
 /** True when the platform input method holds a live connection to this window. */
 internal fun imeHasActiveConnection(activity: Activity): Boolean = onMain {
-    val decor = activity.window.decorView
-    val focused = decor.findFocus() ?: return@onMain false
+    val focused = activity.window.decorView.findFocus() ?: return@onMain false
     activity.getSystemService(InputMethodManager::class.java)?.isActive(focused) == true
+}
+
+/**
+ * What the input method actually bound to, phrased for a failure message.
+ *
+ * A bare `waitUntil` timeout says only that something never happened. This says
+ * which of the three preconditions was missing, which is the difference between
+ * a diagnosable CI failure and another round trip.
+ */
+internal fun describeImeBinding(activity: Activity): String = onMain {
+    val focused = activity.window.decorView.findFocus()
+    val manager = activity.getSystemService(InputMethodManager::class.java)
+    "windowFocus=${activity.hasWindowFocus()}, " +
+        "focusedView=${focused?.javaClass?.simpleName ?: "none"}, " +
+        "acceptingText=${manager?.isAcceptingText}, " +
+        "servedByInputMethod=${focused?.let { manager?.isActive(it) }}"
 }
 
 /**
  * Turns on the real platform accessibility bridge for this process.
  *
- * `UiAutomation` registers as an accessibility service, which is what makes
- * `AndroidComposeView` publish its semantics as real `AccessibilityNodeInfo`
- * nodes. Without a service registered, Compose's node provider stays dormant
- * and a walk of the tree would pass by finding nothing.
+ * `UiAutomation` registers as an accessibility service, which is what makes the
+ * platform ask `AndroidComposeView` for its semantics as real
+ * `AccessibilityNodeInfo` nodes at all.
+ *
+ * `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` is not decoration: `rootInActiveWindow`
+ * resolves whichever window currently holds input focus, so on a cold emulator
+ * a read taken while the app's window is still settling would quietly be a read
+ * of the launcher. With the window list available, [publishedNodes] can look
+ * past whichever window happens to be active rather than depending on it.
  */
 internal fun accessibilityBridge(): UiAutomation {
     val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -170,29 +186,75 @@ internal fun accessibilityBridge(): UiAutomation {
     if (info != null) {
         info.flags = info.flags or
             AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-            AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         automation.serviceInfo = info
     }
     return automation
 }
 
-/** Every node the platform bridge publishes for [packageName], root first. */
-internal fun UiAutomation.publishedNodes(packageName: String): List<AccessibilityNodeInfo> {
-    val root = rootInActiveWindow ?: return emptyList()
-    val found = mutableListOf<AccessibilityNodeInfo>()
-    collectNodes(root, packageName, found)
-    return found
+/**
+ * Tells the accessibility layer that this window's subtree changed.
+ *
+ * Compose will not, and that is the whole reason this exists.
+ * `AndroidComposeViewAccessibilityDelegateCompat.sendEvent` returns early
+ * whenever `AccessibilityManager.getEnabledAccessibilityServiceList()` is
+ * empty, and a `UiAutomation` bound for a test never appears in that list — it
+ * is registered through `registerUiTestAutomationService`, not as an enabled
+ * service. So Compose emits no `TYPE_WINDOW_CONTENT_CHANGED`, the client-side
+ * accessibility cache is never told to drop the snapshot it took before
+ * `setContent` ran, and every later read can be answered from that stale copy.
+ *
+ * The node provider itself stays live, so a genuinely fresh query returns real
+ * nodes. Sending the subtree-changed notification from the decor view — which
+ * has no Compose delegate in front of it, so the suppression above does not
+ * apply — is what makes the next query fresh.
+ */
+internal fun invalidatePublishedNodes(activity: Activity) = onMain {
+    val decor = activity.window.decorView
+    decor.parent?.notifySubtreeAccessibilityStateChanged(
+        decor,
+        decor,
+        AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE,
+    )
+}
+
+/**
+ * Every node the platform bridge publishes for [packageName], deduplicated.
+ *
+ * Both the focused window and every window the bridge can see are walked: the
+ * two overlap in the ordinary case, and the overlap is what stops a slow window
+ * transition from being read as an empty app.
+ */
+internal fun UiAutomation.publishedNodes(packageName: String): List<AccessibilityNodeInfo> = offMain {
+    runCatching {
+        waitForIdle(DeviceLane.BRIDGE_QUIET_MILLIS, DeviceLane.BRIDGE_IDLE_TIMEOUT_MILLIS)
+    }
+    val roots = buildList {
+        rootInActiveWindow?.let(::add)
+        runCatching { windows }.getOrDefault(emptyList()).forEach { window ->
+            window.root?.let(::add)
+        }
+    }
+    val found = LinkedHashSet<AccessibilityNodeInfo>()
+    val visited = HashSet<AccessibilityNodeInfo>()
+    roots.forEach { collectNodes(it, packageName, found, visited) }
+    found.toList()
 }
 
 private fun collectNodes(
     node: AccessibilityNodeInfo,
     packageName: String,
-    into: MutableList<AccessibilityNodeInfo>,
+    into: MutableSet<AccessibilityNodeInfo>,
+    visited: MutableSet<AccessibilityNodeInfo>,
 ) {
+    // A node identifies itself by window and source id, so this both dedupes
+    // the overlap between window roots and bounds the walk.
+    if (!visited.add(node)) return
     if (node.packageName == packageName) into += node
     for (index in 0 until node.childCount) {
         val child = node.getChild(index) ?: continue
-        collectNodes(child, packageName, into)
+        collectNodes(child, packageName, into, visited)
     }
 }
 

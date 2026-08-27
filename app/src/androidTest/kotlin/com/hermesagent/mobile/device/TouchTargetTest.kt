@@ -18,10 +18,16 @@ import org.junit.runner.RunWith
  * Every action a finger can reach is at least 48 dp, measured on the device.
  *
  * Robolectric measures against a density it was told to use. This measures
- * against the display the app is actually running on, at the device's own font
- * scale, and it reads `touchBoundsInRoot` rather than the drawn box — the touch
- * bounds are what the gesture system hit-tests, and they are where Compose's
- * minimum-interactive expansion shows up or fails to.
+ * against the display the app is actually running on, and it reads
+ * `touchBoundsInRoot` rather than the drawn box — the touch bounds are what the
+ * gesture system hit-tests, and they are where Compose's minimum-interactive
+ * expansion shows up or fails to.
+ *
+ * The device's own font scale is not part of the claim: the CI emulator runs at
+ * 1.0, the same as Robolectric, so a non-default scale would have to be set for
+ * the whole device and would silently change what every other test on this lane
+ * can see on screen. Touch floors under an enlarged font stay on the physical
+ * device matrix (issue #72, S39).
  *
  * The sweep is deliberately unnamed: a control added later is covered without
  * anyone remembering to add it here.
@@ -72,9 +78,13 @@ class TouchTargetTest {
             val bounds = compose.onNodeWithContentDescription(description)
                 .fetchSemanticsNode()
                 .touchBoundsInRoot
+            // Both axes, like the sweep above: a control that is tall enough and
+            // too narrow is just as unreachable as one that is too short.
             assertTrue(
-                "$description is ${bounds.height} px tall, below the $floorPx px floor",
-                bounds.height + DeviceLane.TOLERANCE_PX >= floorPx,
+                "$description is ${bounds.width} x ${bounds.height} px, " +
+                    "below the $floorPx px floor",
+                bounds.height + DeviceLane.TOLERANCE_PX >= floorPx &&
+                    bounds.width + DeviceLane.TOLERANCE_PX >= floorPx,
             )
         }
     }
