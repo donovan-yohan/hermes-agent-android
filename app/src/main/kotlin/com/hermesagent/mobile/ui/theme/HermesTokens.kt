@@ -179,13 +179,19 @@ data class HermesTokens(
             // brand colour and make it legible ink on this mode's page.
             //
             // `bright` follows Desktop's direction rather than an intuition
-            // about what "bright" ought to mean. `lib/ansi.ts:149-163` @
-            // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 steps the bright rung
-            // one Tailwind step *lighter* in both modes — `red-700 → rose-600`
-            // (`:149` → `:157`) in light, `emerald-300 → emerald-200`
-            // (`:150` → `:158`) in dark — and never a step
-            // darker. Android has no Tailwind ladder, so "one step" is a mix
-            // toward white, the same direction in both modes.
+            // about what "bright" ought to mean. For the six hues this serves
+            // — `lib/ansi.ts:149-154` against their bright rungs at `:157-162`
+            // @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — Desktop steps the
+            // bright rung one Tailwind step *lighter* in both modes, never a
+            // step darker: `red-700 → rose-600` (`:149` → `:157`) in light,
+            // `emerald-300 → emerald-200` (`:150` → `:158`) in dark. Android
+            // has no Tailwind ladder, so "one step" is a mix toward white, the
+            // same direction in both modes.
+            //
+            // Only the hues. The four neutral rungs are not derived here and do
+            // not follow that rule — `:156` steps bright-black *darker* in dark
+            // mode (`zinc-300 → zinc-400`) — so they are read straight off
+            // Desktop's fixed greys below (`:148,155,156,163`).
             //
             // 18 % is the largest uniform step that keeps every rung above the
             // 3.0:1 as-painted floor `ThemeSemanticParityTest` asserts: the

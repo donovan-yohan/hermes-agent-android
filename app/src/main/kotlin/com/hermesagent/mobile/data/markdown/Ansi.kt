@@ -90,6 +90,19 @@ data class AnsiSegment(
 )
 
 /**
+ * The text copying one parse did, in characters.
+ *
+ * Shared by every run of that parse, and incremented by the one method that can
+ * write into a run — so this is the parser's whole copying cost rather than a
+ * sample of it, and a run that gets rebuilt and thrown away is still counted.
+ * [parseAnsiCounted] hands it to the fixtures, which is how the linearity of
+ * the merge path below is asserted as a number instead of a stopwatch reading.
+ */
+private class CopyCount {
+    var characters = 0L
+}
+
+/**
  * A run still being built.
  *
  * The text accumulates into a [StringBuilder] rather than into an immutable
@@ -98,9 +111,19 @@ data class AnsiSegment(
  * and re-copying the whole run each time made a 1 MB payload cost gigabytes of
  * copying — with the [MAX_SEGMENTS] cap making it *worse*, because past the cap
  * every flush merges.
+ *
+ * The builder is private and [append] is the only way in, so that difference
+ * cannot be reintroduced without [copies] recording it.
  */
-private class OpenSegment(val bold: Boolean, val color: AnsiColor?) {
-    val text = StringBuilder()
+private class OpenSegment(val bold: Boolean, val color: AnsiColor?, private val copies: CopyCount) {
+    private val builder = StringBuilder()
+
+    fun append(chars: CharSequence) {
+        builder.append(chars)
+        copies.characters += chars.length
+    }
+
+    fun finish(): AnsiSegment = AnsiSegment(text = builder.toString(), bold = bold, color = color)
 }
 
 /** `ansi.ts:33-50` — SGR code to colour, normal (30-37) and bright (90-97). */
@@ -131,10 +154,28 @@ private val ForegroundByCode: Map<Int, AnsiColor> = mapOf(
  */
 fun hasAnsiCodes(input: String): Boolean = input.contains(CSI)
 
-/** Parse [input] into styled runs. Total: every input returns, none throws. */
-fun parseAnsi(input: String): List<AnsiSegment> {
-    if (input.isEmpty()) return emptyList()
+/** [parseAnsi]'s runs, plus the characters it copied to build them. */
+internal class AnsiParse(val segments: List<AnsiSegment>, val charactersCopied: Long)
 
+/**
+ * [parseAnsi], with the copying counted.
+ *
+ * Exists for the fixtures. Escape-dense output flushes once per escape, and the
+ * merge path has to extend the open run rather than rebuild it; the difference
+ * between those is asymptotic, and the only honest way to assert an asymptote
+ * on a shared CI runner is to count work rather than to time it. Every
+ * character written into a run passes through [OpenSegment.append], so
+ * [AnsiParse.charactersCopied] is exactly that work: the input's printable
+ * length when the run is extended, its square when the run is rebuilt.
+ *
+ * [parseAnsi] goes through here rather than around it, so the counted path is
+ * the shipped path. It costs one `Long` add per flush and two small objects per
+ * parse, against a parse that already walks every byte.
+ */
+internal fun parseAnsiCounted(input: String): AnsiParse {
+    if (input.isEmpty()) return AnsiParse(emptyList(), 0L)
+
+    val copies = CopyCount()
     val segments = ArrayList<OpenSegment>()
     val pending = StringBuilder()
     var bold = false
@@ -148,9 +189,9 @@ fun parseAnsi(input: String): List<AnsiSegment> {
         if (pending.isEmpty()) return
         val last = segments.lastOrNull()
         if (last != null && (segments.size >= MAX_SEGMENTS || (last.bold == bold && last.color == color))) {
-            last.text.append(pending)
+            last.append(pending)
         } else {
-            segments.add(OpenSegment(bold, color).apply { text.append(pending) })
+            segments.add(OpenSegment(bold, color, copies).apply { append(pending) })
         }
         pending.setLength(0)
     }
@@ -202,8 +243,11 @@ fun parseAnsi(input: String): List<AnsiSegment> {
     }
 
     flush()
-    return segments.map { AnsiSegment(text = it.text.toString(), bold = it.bold, color = it.color) }
+    return AnsiParse(segments.map { it.finish() }, copies.characters)
 }
+
+/** Parse [input] into styled runs. Total: every input returns, none throws. */
+fun parseAnsi(input: String): List<AnsiSegment> = parseAnsiCounted(input).segments
 
 /** Where a control sequence ended, and what its final byte was. */
 private class ControlSequence(val paramsEnd: Int, val next: Int, val final: Char?)

@@ -219,10 +219,14 @@ class ThemeSemanticParityTest {
         // six hues ANSI names — using the diff-foreground knob Desktop already
         // uses to turn one of those seeds into legible ink
         // (`styles.css:224,227`, `:root.dark:531-532`). `bright` follows
-        // Desktop's own direction: `lib/ansi.ts:149-163` steps the bright rung
-        // one Tailwind step *lighter* in both modes (`red-700 → rose-600`
-        // at `:149`/`:157`, `emerald-300 → emerald-200` at `:150`/`:158`) and never a step darker, so here it is
-        // an 18 % mix toward white in both modes. The size is what the floor
+        // Desktop's own direction: across those same six hues
+        // (`lib/ansi.ts:149-154` against their bright rungs at `:157-162`)
+        // Desktop steps the bright rung one Tailwind step *lighter* in both
+        // modes (`red-700 → rose-600` at `:149`/`:157`, `emerald-300 →
+        // emerald-200` at `:150`/`:158`) and never a step darker, so here it is
+        // an 18 % mix toward white in both modes. The neutrals are not on that
+        // ladder — `:156` steps bright-black darker in dark — and are read off
+        // Desktop's fixed greys instead. The size is what the floor
         // below allows: 18 % is the largest uniform step that keeps every rung
         // at 3.0:1 as painted.
         //

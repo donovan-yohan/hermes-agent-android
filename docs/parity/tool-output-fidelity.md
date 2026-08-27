@@ -122,7 +122,7 @@ is unused here:
 | Rung | Rule | Provenance of the rule |
 |---|---|---|
 | normal hue | the `--ui-<hue>` seed mixed toward the mode's contrast pole: 70 % seed + `#000` in light, 62 % seed + `#fff` in dark | Desktop's own diff-foreground knob, `styles.css:224,227` / `:root.dark:531-532` |
-| bright hue | that normal rung mixed 18 % toward `#fff`, in **both** modes | Desktop's direction: `lib/ansi.ts:149-163` steps bright one Tailwind step *lighter* in both modes (`red-700 → rose-600`, `:149` → `:157`; `emerald-300 → emerald-200`, `:150` → `:158`) and never a step darker. The size is what the floor allows — see below |
+| bright hue | that normal rung mixed 18 % toward `#fff`, in **both** modes | Desktop's direction across these six hues: `lib/ansi.ts:149-154` against their bright rungs at `:157-162` steps bright one Tailwind step *lighter* in both modes (`red-700 → rose-600`, `:149` → `:157`; `emerald-300 → emerald-200`, `:150` → `:158`) and never a step darker. The neutrals sit outside that rule — `:156` steps bright-black darker in dark — and take the row below. The size is what the floor allows — see below |
 | the four neutrals | plain greys at Tailwind zinc's lightness, fixed per mode | `lib/ansi.ts:145-147,148,155,156,163`: Desktop refuses `#000`/`#fff` and paints zinc 700 / 600 / 500 / 500 in light, 100 / 200 / 300 / 400 in dark — greys that do not track the theme |
 
 **The bright rung follows Desktop, not an intuition.** An earlier draft read

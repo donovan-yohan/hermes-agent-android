@@ -289,26 +289,51 @@ class AnsiTest {
     }
 
     @Test
-    fun `merging a long run stays linear rather than quadratic`() {
+    fun `merging a long run copies each character once rather than the whole run`() {
         // Every escape here leaves the style unchanged, so every flush merges
-        // into the open run — the shape that used to re-copy the whole run each
-        // time. Doubling the input must roughly double the time, not quadruple
-        // it; the ratio is checked loosely because this is a wall-clock probe,
-        // and a quadratic parser lands near 4x, not near 2x.
-        fun input(bytes: Int) = buildString {
-            while (length < bytes) append("${esc}[31m").append("x".repeat(64))
+        // into the open run — the shape that used to rebuild the run and
+        // re-copy everything already in it. That difference is asymptotic, and
+        // a wall-clock ratio cannot see an asymptote: it sees whatever else the
+        // runner was doing. So the parser counts the characters it writes into
+        // runs, and this asserts the count.
+        val runLength = 64
+        val repeats = 14_500
+        fun input(escapes: Int) = buildString {
+            repeat(escapes) { append("${esc}[31m").append("x".repeat(runLength)) }
         }
 
-        val small = input(1_000_000)
-        val large = input(2_000_000)
-        parseAnsi(small)
+        val small = input(repeats) // ~1 MB, one escape per 64 characters.
+        val large = input(repeats * 2) // ~2 MB of the same shape.
 
-        val smallMillis = maxOf(1L, measureTimeMillis { parseAnsi(small) })
-        val largeMillis = measureTimeMillis { parseAnsi(large) }
+        val smallParse = parseAnsiCounted(small)
+        val largeParse = parseAnsiCounted(large)
 
+        // The whole payload is one style, so every flush after the first merges
+        // — this exercises the merge path rather than a run of fresh segments.
+        assertEquals("the fixture must merge, not accumulate segments", 1, smallParse.segments.size)
+        assertEquals("the fixture must merge, not accumulate segments", 1, largeParse.segments.size)
+
+        assertEquals(
+            "each printable character must be copied into its run exactly once",
+            (repeats.toLong() * runLength),
+            smallParse.charactersCopied,
+        )
+        assertEquals(
+            "doubling the payload must double the copying",
+            smallParse.charactersCopied * 2,
+            largeParse.charactersCopied,
+        )
+
+        // What the rebuilt-run shape would cost at this size: the run is
+        // re-copied once per escape, so the total is the triangular number of
+        // run lengths — about 6.7e9 characters against 928,000 here, some
+        // 7,200x apart. Asserted so the fixture cannot shrink to a size where
+        // the two shapes stop being distinguishable.
+        val rebuildCost = runLength.toLong() * repeats * (repeats + 1) / 2
         assertTrue(
-            "1 MB took ${smallMillis}ms and 2 MB took ${largeMillis}ms — that is super-linear",
-            largeMillis < smallMillis * 3,
+            "extending costs ${smallParse.charactersCopied} and rebuilding costs $rebuildCost — " +
+                "the fixture no longer separates the two shapes",
+            rebuildCost > smallParse.charactersCopied * 1_000,
         )
     }
 }
