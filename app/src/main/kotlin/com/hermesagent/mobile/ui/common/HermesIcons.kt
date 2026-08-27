@@ -50,7 +50,6 @@ enum class HermesIcon(val glyph: String) {
     Eye("\uEA70"),
     FileMedia("\uEAEA"),
     Files("\uEAF0"),
-    Globe("\uEB01"),
     Question("\uEB32"),
     Tools("\uEB6D"),
     Watch("\uEB7C"),

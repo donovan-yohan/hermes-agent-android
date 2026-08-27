@@ -91,7 +91,8 @@ for the Managed SSH lifecycle.
   `$` prompt line, and the process exit code. Web-search results render as
   structured hits under the query that produced them. The painted output is
   clamped so a chatty build log cannot flood the transcript, and the per-row
-  copy control hands over the uncapped output. No syntax highlighting, no
+  copy control hands over the whole payload the backend sent, which the gateway
+  itself caps at 32 KB. No syntax highlighting, no
   inline image results, and no artifact detection.
 - Long-press text selection scoped to one turn's prose and to user bubbles,
   plus a per-reply copy control that writes the reply as rendered plain text.

@@ -60,7 +60,7 @@ throwing. Tool output is untrusted input.
 | `imageUrl` | `toolImageUrl` | **Not ported** — inline image results are an explicit non-goal of #71 |
 | `previewTarget` | `toolPreviewTarget` | **Not ported** — artifact detection is an explicit non-goal of #71 |
 | — | `toolCopyPayload(part, view)` (`fallback.tsx:599-609`) | Carried on the view as `copy: ToolCopyAction?`, so the row's control and its label come from the same projection. The `isFileEditTool` branch is dropped with `inlineDiff`, and Copy for a diff is S35's |
-| — | `stripAnsi` (`ansi.ts:177-186`) | **Not ported.** Nothing here renders escape-bearing output as plain text, and an unused export with no caller is a claim the next reader would trust |
+| — | `stripAnsi` (`ansi.ts:177-186`) | **Not ported here.** Every surface this slice owns paints escapes as colour rather than as text. One surface it does *not* own still needs the strip: `InlineDiffPanel` (`Transcript.kt:1071,1079`) renders `inlineDiff` raw, where upstream strips SGR first (`fallback-model/index.ts:781-789`). That is S34's, and it is listed under Deferred |
 
 ### Icons
 
@@ -76,7 +76,7 @@ declares (`@vscode/codicons` 0.0.45), so the outline is the whole set.
 | `file` | `U+EA7B` | `HermesIcon.File` (already present) |
 | `file-media` | `U+EAEA` | `HermesIcon.FileMedia` (added) |
 | `files` | `U+EAF0` | `HermesIcon.Files` (added) |
-| `globe` | `U+EB01` | `HermesIcon.Globe` (added) |
+| `globe` | `U+EB01` | `HermesIcon.Globe` (already present) |
 | `question` | `U+EB32` | `HermesIcon.Question` (added) |
 | `search` | `U+EA6D` | `HermesIcon.Search` (already present) |
 | `terminal` | `U+EA85` | `HermesIcon.Terminal` (already present) |
@@ -89,11 +89,11 @@ declares (`@vscode/codicons` 0.0.45), so the outline is the whole set.
 | Desktop behaviour | Why it cannot come across unchanged | Android |
 |---|---|---|
 | Each payload sits in a `max-h-16`/`max-h-20` box that scrolls internally and tails when already near the bottom (`terminal-output.tsx:14,45-58`) | A nested vertical scroller inside a `LazyColumn` competes with the transcript's own drag on touch, and it is the exact gesture ambiguity #56 already deferred once | The block renders inline, clamped by lines and characters; the near-the-bottom tail rule is the transcript's existing follow discipline (`ChatScreen.kt:250-303`), which arms at the bottom and disarms on a backward scroll. No second scroll effect was added |
-| `clampForDisplay` caps at 20,000 characters | A phone has less room and less memory than a window | Same 20,000-character cap, plus a 200-line cap; whichever bites first, with Desktop's truncation sentence. The cut lands *past* the last kept newline, and a truncation smaller than the notice itself is not announced — otherwise a complete 200-line log would gain sixty characters to say it lost one |
+| `clampForDisplay` caps at 20,000 characters | A phone has less room and less memory than a window | Same 20,000-character cap, plus a 200-line cap; whichever bites first, with Desktop's truncation sentence. The cut lands *past* the last kept newline, and a truncation smaller than the notice itself is not announced — otherwise a complete 200-line log would gain sixty characters to say it lost one. "Use Copy for the full output" means the full output *this app was given*: `GatewaySessionRepository` already caps every tool payload at `MAX_TOOL_PAYLOAD` = 32,768 characters on the way in, so Copy hands over at most 32 KB and the clipboard-size question never arises |
 | Copy appears on hover, absolutely positioned over the payload | A phone has no hover | Always mounted, right-aligned above the payload, in the scaffold-meta ink, 48 dp target — the precedent `ReplyActions` and `CodingStatusRow` already set |
 | Long lines wrap (`whitespace-pre-wrap wrap-anywhere`) in the tool card | A 360 dp column turns a wrapped log line into a wall | Horizontal scroll per payload block, which is the grammar `ToolPayload` already used and what S35's gesture work is scoped against |
 | Search hit titles are `PrettyLink`s that open externally | Opening an external browser from a transcript is a new surface with its own consent question | Title, URL and snippet render as quiet structured text; the link affordance is deferred (see below) |
-| A status glyph pre-empts the tool icon; success is silent (`fallback.tsx:212-254`) | — | Same rule: error and warning take the alert glyph, success keeps the tool glyph |
+| A status glyph pre-empts the tool icon; success is silent (`fallback.tsx:212-254`) | — | Same rule: error and warning pre-empt, success keeps the tool glyph. Which glyph and which ink differ — see D10 |
 | Running shows a `GlyphSpinner` in place of the tool icon (`fallback.tsx:184-192`) | The Android disclosure row has no spinner slot, and issue #71 says to extend that row, not replace it | The tool glyph tinted with the accent, beside the live elapsed timer, which already says "running". `stopped`, which Desktop has no concept of, likewise keeps the tool glyph in the quietest ink |
 | Status glyphs are aria-labelled Running / Error / Recovered / Done | Android's row is one merged semantics node with a sentence | The same four words, lower-cased into `"Tool <title>, <state>"`, plus `stopped` |
 | Section labels are `uppercase` CSS (`fallback.tsx:92`) | — | `HermesTheme.type.sectionLabel` already matches the size, weight and 0.08 em tracking; the label text is upper-cased at the call site |
@@ -122,33 +122,70 @@ is unused here:
 | Rung | Rule | Provenance of the rule |
 |---|---|---|
 | normal hue | the `--ui-<hue>` seed mixed toward the mode's contrast pole: 70 % seed + `#000` in light, 62 % seed + `#fff` in dark | Desktop's own diff-foreground knob, `styles.css:224,227` / `:root.dark:531-532` |
-| bright hue | that same knob applied a second time | Intensity on a terminal is prominence against the page, so bright goes darker still on a light page and lighter still on a dark one |
-| `black` / `bright-black` | `textTertiary` / `textQuaternary` | `ansi.ts:145-147` refuses pure `#000`; the text ladder is already that grey ramp |
-| `white` / `bright-white` | `textSecondary` / `textPrimary` | same |
+| bright hue | that normal rung mixed 18 % toward `#fff`, in **both** modes | Desktop's direction: `lib/ansi.ts:149-163` steps bright one Tailwind step *lighter* in both modes (`red-700 → rose-600`, `:149` → `:157`; `emerald-300 → emerald-200`, `:150` → `:158`) and never a step darker. The size is what the floor allows — see below |
+| the four neutrals | plain greys at Tailwind zinc's lightness, fixed per mode | `lib/ansi.ts:145-147,148,155,156,163`: Desktop refuses `#000`/`#fff` and paints zinc 700 / 600 / 500 / 500 in light, 100 / 200 / 300 / 400 in dark — greys that do not track the theme |
 
-Consequences, stated plainly: the six hues are *fixed per mode*, exactly as
-Desktop's are and as the diff palette and inline code already are, so a build
-log reads the same in all eleven presets; the four neutrals are the only ANSI
-inks that follow the preset. ANSI green and ANSI red come out identical to
+**The bright rung follows Desktop, not an intuition.** An earlier draft read
+`bright` as "more prominent" and applied the diff-foreground knob a second time,
+which goes *darker* on a light page. Desktop does the opposite: every one of its
+six bright hues is the same lightness or one Tailwind step lighter than its
+normal rung, in both modes. Android now does the same thing with one knob and
+one direction.
+
+The step size is not free — Android has no Tailwind ladder to step along — so
+the legibility floor arbitrates it. 18 % toward white is the largest uniform
+step that keeps all sixteen rungs at 3.0:1 as painted; solarized light's
+`bright-magenta` is the binding pair at 3.17:1. That also disposes of the
+obvious simpler rule, bright = the undiluted seed (Desktop's diff *border*
+rung): `--ui-purple` is `#9e94d5`, 2.65:1 on a light tool surface.
+
+**The neutrals are greys, not the text ladder.** The first draft read the four
+neutrals off the app's text ladder, which is the one part of the ladder that
+tracked the preset. That was wrong twice. Desktop's neutrals are zinc, fixed for
+every theme — they do not track its page either. And the lower text rungs are
+alpha washes: composited onto `widgetSurface`, `textQuaternary` is 1.65:1 in the
+weakest preset, so `bright-black` — the ink `git` hints and `npm` progress land
+in — was below the floor in all 22 preset/mode pairs and `black` in 3. The
+floor did not catch it because it was measuring the un-painted colour; that is
+fixed too, and every ANSI ink is now opaque, which is asserted.
+
+Dark takes zinc's four stops. Light is an even ramp anchored on zinc-700 and
+zinc-600 whose last two stops fall either side of the single zinc-500 Desktop
+ties `bright-black` and `bright-white` at; Android has to keep the sixteen
+distinct, and the tie is broken so the bold rung is never the fainter of the two.
+`bright-black` stays the quietest neutral in both modes, as Desktop has it.
+
+Consequences, stated plainly: all sixteen inks are now *fixed per mode*, exactly
+as Desktop's are and as the diff palette and inline code already are, so a build
+log reads the same in all eleven presets. Nothing in the ANSI ladder follows the
+preset any more. ANSI green and ANSI red come out identical to
 `diffAddedForeground` / `diffRemovedForeground`, which is asserted rather than
 incidental — a terminal's green and an inline diff's green must not become two
 colours.
-
-The obvious simpler rule — bright = the undiluted seed, which is Desktop's diff
-*border* rung — was tried and rejected: `--ui-purple` is `#9e94d5`, which is
-2.65:1 on a light tool surface. The legibility floor in
-`ThemeSemanticParityTest` caught it.
 
 Resolved values, `#aarrggbb`:
 
 | Hue | Light normal | Light bright | Dark normal | Dark bright |
 |---|---|---|---|---|
-| red | `#ff91203c` | `#ff66162a` | `#fff09bab` | `#fff6c1cb` |
-| green | `#ff166147` | `#ff0f4432` | `#ff96c7b2` | `#ffbedccf` |
-| yellow | `#ff865d23` | `#ff5e4119` | `#ffd8b380` | `#ffe7d0b0` |
-| blue | `#ff003ab1` | `#ff00297c` | `#ff6194fe` | `#ff9dbdfe` |
-| magenta | `#ff6f6895` | `#ff4e4968` | `#ffc3bde5` | `#ffdad6ef` |
-| cyan | `#ff355962` | `#ff253e45` | `#ffa6c1c8` | `#ffc8d9dd` |
+| red | `#ff91203c` | `#ffa5485f` | `#fff09bab` | `#fff3adba` |
+| green | `#ff166147` | `#ff407d68` | `#ff96c7b2` | `#ffa9d1c0` |
+| yellow | `#ff865d23` | `#ff9c7a4b` | `#ffd8b380` | `#ffdfc197` |
+| blue | `#ff003ab1` | `#ff2e5dbf` | `#ff6194fe` | `#ff7da7fe` |
+| magenta | `#ff6f6895` | `#ff8983a8` | `#ffc3bde5` | `#ffcec9ea` |
+| cyan | `#ff355962` | `#ff59777e` | `#ffa6c1c8` | `#ffb6ccd2` |
+
+| Neutral | Desktop rung | Light | Dark |
+|---|---|---|---|
+| `black` | zinc-700 / zinc-300 | `#ff424242` | `#ffd5d5d5` |
+| `white` | zinc-600 / zinc-200 | `#ff555555` | `#ffe5e5e5` |
+| `bright-white` | zinc-500 / zinc-100 | `#ff686868` | `#fff4f4f4` |
+| `bright-black` | zinc-500 / zinc-400 | `#ff7b7b7b` | `#ffa2a2a2` |
+
+As painted on `widgetSurface`, across all eleven presets in both modes: the
+weakest rung is `bright-magenta` at 3.17:1 (solarized light), `black` bottoms out
+at 8.91:1 and `bright-black` at 3.75:1 (both solarized light), and the closest
+two inks a reader has to tell apart are dark `cyan` and `bright-cyan` at
+dE76 4.66 — the smallest bright step there is.
 
 No preset was touched: `BuiltinThemes.ALL` is unchanged, registry order
 included. The sixteen inks are a mode-level derivation in `HermesTokens.from`,
@@ -175,9 +212,13 @@ Desktop matches escapes with two global regexes, so `ESC [ 3 1` with no final
 byte matches nothing and `[31` survives into the rendered text (the ESC itself
 is invisible). On a streaming transcript the tail of a delta looks like that
 routinely, and printing it is precisely the literal garbage this slice exists to
-remove. The Android parser consumes the malformed run and paints nothing. It
-consumes only what it scanned, so a cut-off sequence never swallows the log
-behind it. A bare `ESC` inside an OSC payload aborts that payload and is handed
+remove. The Android parser consumes the malformed run and paints none of it as
+text. "Consumes" is literal: it consumes only what it scanned, so a cut-off
+sequence never swallows the log behind it, and the bytes past the scan are
+ordinary text. `ESC[3<U+D800>1mx` is the case that shows the difference: the
+lone surrogate is not a parameter, intermediate or final byte, so the scan stops
+on it and everything from it onward — the surrogate, `1`, `m`, `x` — is ordinary
+text. Nothing of the *escape* is painted; the tail of the line survives. A bare `ESC` inside an OSC payload aborts that payload and is handed
 back, the way a terminal behaves.
 
 **D3 — `memory` rows take a database glyph, not a brain.**
@@ -228,6 +269,33 @@ Rendered as title, URL and snippet in quiet structured text. Desktop's
 `PrettyLink` opens an external browser; adding that from a transcript row is its
 own surface and is not in this slice's acceptance.
 
+**D10 — Error and warning differ by glyph, not only by tint.**
+Desktop paints both with the same `AlertCircle`, separated only by colour —
+`text-destructive` for error, amber-600/400 for warning (`fallback.tsx:194-202`).
+Android gives them two Codicons, `error` (`U+EA87`) and `warning` (`U+EA6C`),
+each in the matching ink. Colour alone is not a safe carrier on a phone: the
+glyph is 14 sp, it is often the only difference between "this failed" and "this
+recovered", and an eleven-preset theme registry cannot promise the two tints
+stay far apart on every page. The spoken labels are Desktop's either way.
+
+**D11 — A finished tool's glyph is one rung louder than Desktop's.**
+Desktop's success is silent — `leadingStatus` returns nothing (`fallback.tsx:247-253`),
+so the tool's own icon shows in `--ui-text-tertiary` (`:234-235`). Android
+keeps the tool glyph too, but tints it `scaffoldText` rather than `textTertiary`,
+because every other glyph in this transcript row already sits at that weight and
+matching Desktop here would make the finished row's icon quieter than the text
+beside it. The section labels above payload blocks *are* `textTertiary`, which is
+where `fallback.tsx:92` actually applies.
+
+**D12 — The display line cap counts newlines, not terminal lines.**
+`clampForDisplay`'s 200-line cap splits on `\n`. Carriage-return progress output
+— `npm`, `pip`, a `curl` progress bar — rewrites one screen line over and over
+without ever emitting a newline, so the whole run is one "line" to the cap and
+only the 20,000-character cap bites. That is the same shape upstream has, which
+counts characters only; nothing regresses, but the cap is not a promise about
+what a terminal would have shown. Collapsing `\r` runs to their final state is
+terminal emulation, and this slice does not emulate a terminal.
+
 ## Executable evidence
 
 | Claim | Test |
@@ -246,10 +314,12 @@ own surface and is not in this slice's acceptance.
 | The copy confirmation survives a streamed delta | `ToolRowFidelityTest.the copy confirmation survives a streamed delta` |
 | The Copy control meets the 48 dp floor and names what it copies | `ToolRowFidelityTest` |
 | Tail-follow still only follows a reader who is already at the bottom | `TranscriptFollowTest` — two cases with a *growing tool payload* as the tail |
-| The ANSI ladder is the documented derivation, in both modes, for every preset | `ThemeSemanticParityTest` — the value table, the diff-token identity, the neutral ladder, distinctness, and a 3.0:1 floor on `widgetSurface` |
+| The ANSI ladder is the documented derivation, in both modes, for every preset | `ThemeSemanticParityTest` — the hue value table, the diff-token identity, and the four fixed neutral rungs |
+| Every ANSI ink is legible **as painted**, and no two are one colour to a reader | `ThemeSemanticParityTest.every ansi ink is distinct and readable as painted on the tool surface` — a 3.0:1 floor on `ink.over(widgetSurface)`, a dE76 3.0 floor between all 120 pairs, and an opacity check so no future rung can measure one colour and paint another. Iterates all eleven presets × both modes and names every failing (preset, mode, rung, ratio) |
+| A malformed CSI gives back the bytes it did not scan | `AnsiTest.a malformed csi gives the bytes it did not scan back as text` — D2's `ESC[3<U+D800>1mx` |
 | Every ANSI ink resolves for every preset in both modes | `ThemeParityTest` — the completeness walk now reaches nested token groups, with a case asserting it does |
 
-Mutation-checked twice.
+Mutation-checked four times.
 
 Reinstating the quadratic merge — rebuilding the open run's text on every flush
 instead of appending to it — turns
@@ -261,7 +331,17 @@ describes — turns
 `AnsiTest.a megabyte of hostile bytes terminates quickly and renders everything`
 red, because one malformed CSI then swallows every line behind it.
 
-Both restored; the suite is green again.
+Reverting the legibility floor to `contrastRatio(ink, widgetSurface)` — the
+un-composited form — while putting `brightBlack` back to `textQuaternary` turns
+`ThemeSemanticParityTest.every ansi ink is distinct and readable as painted on
+the tool surface` **green** on the legibility assertion. That is the bug: the
+floor was measuring a colour the screen never shows.
+
+Restoring the composite with the same `brightBlack` reds it with the numbers
+this rewrite exists to remove — `nous/light 2.17:1`, `everforest/light 1.65:1`,
+ten light presets named — and the opacity check names the translucent rung.
+
+All four restored; the suite is green again.
 
 No device capture is claimed here. Everything on this page is decided offline
 and asserted by the tests above; the gesture arbitration that needs a physical
@@ -274,6 +354,7 @@ device is S35's, not this slice's.
 | Windowed diff rendering, `+/-` gutters and `@@` headers stripped, the 2 px gutter accent | Its own slice | #71 S34 |
 | Long-press selection of tool payloads, and the select / horizontal-scroll / collapse-tap arbitration | Needs real-device evidence | #71 S35 |
 | A Copy control on an inline diff | `InlineDiffPanel` owns that surface and S35 is where its affordances land | #71 S35 |
+| `stripAnsi` for `InlineDiffPanel` | `inlineDiff` is rendered raw here while upstream strips SGR first (`fallback-model/index.ts:781-789`); the diff surface is S34's, and the strip belongs with it | #71 S34 |
 | `dynamicTitle` / `toolSubtitle` / `titleAction` | D8 | Not scheduled |
 | Inline image results (`imageUrl`) and artifact preview targets (`previewTarget`) | Explicit non-goals of #71 | Not scheduled |
 | Syntax highlighting | Explicit non-goal of #71: a size and cold-start decision of its own | Not scheduled |

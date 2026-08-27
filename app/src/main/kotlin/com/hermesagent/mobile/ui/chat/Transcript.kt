@@ -851,6 +851,8 @@ private fun SearchHits(query: String?, hits: List<SearchResultRow>) {
                         style = HermesTheme.type.caption,
                         color = tokens.textSecondary,
                         fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     if (hit.url.isNotEmpty() && hit.title.isNotEmpty()) {
                         Text(
@@ -894,7 +896,9 @@ private fun SectionLabel(label: String) {
     Text(
         text = label.uppercase(Locale.US),
         style = HermesTheme.type.sectionLabel,
-        color = HermesTheme.tokens.textQuaternary,
+        // `fallback.tsx:92` is `--ui-text-tertiary`, which is also the ink
+        // `CodeFenceView` already uses for the same kind of label.
+        color = HermesTheme.tokens.textTertiary,
         // Desktop upper-cases in CSS, which leaves the DOM text alone. Compose
         // has to change the string, so the spoken form is restored here rather
         // than letting a screen reader spell "stderr" out letter by letter.

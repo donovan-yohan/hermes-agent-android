@@ -190,6 +190,17 @@ class AnsiTest {
     }
 
     @Test
+    fun `a malformed csi gives the bytes it did not scan back as text`() {
+        // D2 in docs/parity/tool-output-fidelity.md: the parser consumes only
+        // what it scanned. A lone surrogate is neither a parameter, an
+        // intermediate nor a final byte, so the scan stops on it and the rest of
+        // the line survives as text rather than being swallowed with the escape.
+        val text = parseAnsi("${esc}[3\uD8001mx").joinToString("") { it.text }
+
+        assertEquals("\uD800" + "1mx", text)
+    }
+
+    @Test
     fun `a megabyte of hostile bytes terminates quickly and renders everything`() {
         val chunk = "${esc}[31m$esc$esc[${esc}]0;x${esc}[38;2;1;2;3mline\n"
         val input = buildString { while (length < 1_000_000) append(chunk) }

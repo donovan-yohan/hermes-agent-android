@@ -178,17 +178,24 @@ data class HermesTokens(
             // that seed: the same knob, doing the same job — take a saturated
             // brand colour and make it legible ink on this mode's page.
             //
-            // `bright` is the intensified rung, and intensity on a terminal
-            // means "stands out more against the page". So it is the same seed
-            // taken one further step in the same direction, with the same knob:
-            // darker still on a light page, lighter still on a dark one. The
-            // undiluted seed was the obvious alternative and is wrong — a light
-            // seed like `--ui-purple` on a light page is 2.65:1, which the
-            // legibility floor in `ThemeSemanticParityTest` rejects.
-            fun ansiBright(seed: Color) = diffInk(diffInk(seed))
+            // `bright` follows Desktop's direction rather than an intuition
+            // about what "bright" ought to mean. `lib/ansi.ts:149-163` @
+            // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 steps the bright rung
+            // one Tailwind step *lighter* in both modes — `red-700 → rose-600`
+            // (`:149` → `:157`) in light, `emerald-300 → emerald-200`
+            // (`:150` → `:158`) in dark — and never a step
+            // darker. Android has no Tailwind ladder, so "one step" is a mix
+            // toward white, the same direction in both modes.
+            //
+            // 18 % is the largest uniform step that keeps every rung above the
+            // 3.0:1 as-painted floor `ThemeSemanticParityTest` asserts: the
+            // floor arbitrates the size, and solarized light's bright magenta
+            // is the binding pair at 3.17:1. Going further reads as Desktop's
+            // washed-out bright rung and then falls through the floor; the
+            // undiluted seed — the diff *border* rung — is 2.65:1 on a light
+            // page and was rejected for the same reason.
+            fun ansiBright(seed: Color) = mixPremultiplied(diffInk(seed), 82f, Color.White)
 
-            // Named once, because the ANSI neutrals below are defined as being
-            // this ladder rather than as four literals that happen to agree.
             val textPrimary = base.withAlpha(0.94f)
             val textSecondary = base.withAlpha(0.74f)
             val textTertiary = base.withAlpha(0.54f)
@@ -266,15 +273,29 @@ data class HermesTokens(
                 taskCompleted = Emerald500.copy(alpha = 0.8f),
                 destructive = palette.destructive,
                 ansi = HermesAnsiInk(
-                    // Desktop paints ANSI black and white as greys, never as
-                    // `#000`/`#fff`, because the pure ends vanish into the tool
-                    // surface (`ansi.ts:145-147`). The text ladder already *is*
-                    // that grey ramp, so the four neutral rungs read it and are
-                    // the only ANSI inks that track the preset.
-                    black = textTertiary,
-                    brightBlack = textQuaternary,
-                    white = textSecondary,
-                    brightWhite = textPrimary,
+                    // Desktop paints the four ANSI neutrals as greys, never as
+                    // `#000`/`#fff`, because the pure ends "disappear into the
+                    // surface" (`lib/ansi.ts:145-147`). The greys are zinc:
+                    // 700 / 600 / 500 / 500 in light and 100 / 200 / 300 / 400
+                    // in dark (`lib/ansi.ts:148,155,156,163`), fixed for
+                    // every theme — Desktop's neutrals do not track the page.
+                    //
+                    // Android has no Tailwind zinc, so the same four rungs are
+                    // plain greys at zinc's lightness. Dark takes zinc's four
+                    // stops directly. Light is an even ramp anchored on zinc-700
+                    // and zinc-600 whose last two stops fall either side of the
+                    // single zinc-500 Desktop ties bright-black and bright-white
+                    // at; the sixteen inks have to stay distinct here, and the
+                    // tie is broken so the bold rung is never the fainter one.
+                    //
+                    // The text ladder is *not* usable for this: its lower rungs
+                    // are alpha washes, and as painted on `widgetSurface` the
+                    // quaternary rung is 1.65:1 in the weakest preset. See the
+                    // legibility floor in `ThemeSemanticParityTest`.
+                    black = if (dark) Color(0xFFD5D5D5) else Color(0xFF424242),
+                    white = if (dark) Color(0xFFE5E5E5) else Color(0xFF555555),
+                    brightWhite = if (dark) Color(0xFFF4F4F4) else Color(0xFF686868),
+                    brightBlack = if (dark) Color(0xFFA2A2A2) else Color(0xFF7B7B7B),
                     red = diffInk(diffRemoved),
                     brightRed = ansiBright(diffRemoved),
                     green = diffInk(diffAdded),
