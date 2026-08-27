@@ -61,6 +61,7 @@ import com.hermesagent.mobile.data.session.label
 import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.chat.ProjectProfileScope
 import com.hermesagent.mobile.ui.common.EmptyState
+import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.DitherMark
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
@@ -373,7 +374,7 @@ private fun SidebarViewMenu(
                 onClick = { onGroupingChange(SidebarGrouping.Project) },
             )
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(tokens.strokeTertiary))
+        Hairline()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -572,7 +573,17 @@ private fun SessionRow(
                     color = if (active) tokens.sessionRowActiveSurface else tokens.sidebarSurface,
                     shape = SessionRowShape,
                 )
-                .padding(start = HermesTheme.spacing.pageInset - 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = HermesTheme.spacing.pageInset - 4.dp,
+                    // The overlaid actions control is one touch target wide
+                    // with its glyph centred, so row content clears it at the
+                    // control's centre line plus the row's usual end gutter.
+                    // Derived, so resizing the control cannot silently let a
+                    // title or profile tag run under the mark.
+                    end = HermesTheme.spacing.touchTarget / 2 + 8.dp,
+                    top = 8.dp,
+                    bottom = 8.dp,
+                )
                 .semantics {
                     selected = active
                     contentDescription = "${session.title}. ${dot.description}"
@@ -623,6 +634,17 @@ private fun SessionRow(
         if (session.status.showsRunningOutline()) {
             RunningSessionOutline(Modifier.matchParentSize())
         }
+
+        // An overlay, exactly as Desktop pins its kebab (`absolute right-0`,
+        // `session-row.tsx:320`): the 48dp target then cannot grow the row or
+        // reflow it. Desktop swaps its trailing row meta out for the kebab on
+        // hover; touch has no hover, so the row reserves the space instead and
+        // the mark is always visible. It is its own semantics node, so the row
+        // above keeps the one authoritative spoken label it already owns.
+        SessionActionsControl(
+            sessionId = session.id,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
     }
 }
 

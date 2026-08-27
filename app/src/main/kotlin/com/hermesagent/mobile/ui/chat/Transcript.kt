@@ -1,8 +1,5 @@
 package com.hermesagent.mobile.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -99,6 +96,7 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.ScaffoldRow
+import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -544,9 +542,7 @@ private fun ReplyActions(reply: String) {
     val currentReply by rememberUpdatedState(reply)
     val copy = remember(platformContext) {
         {
-            val clipboard = platformContext
-                .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("Hermes reply", currentReply))
+            copyToClipboard(platformContext, "Hermes reply", currentReply)
             copied = true
         }
     }
