@@ -58,9 +58,15 @@ enum class GatewayMessageOrder(val wire: String) {
  * [Failed.statusCode] mirrors the failing hop the way the rest of this app
  * already spells it:
  *
- * - `0` — no authenticated route reached the Gateway at all.
+ * - `0` — no authenticated route reached the Gateway at all: no transport, no
+ *   endpoint, no credential, or a connection that never completed. Nothing ran
+ *   on the host, which is what makes a *deliberate* second attempt safe even
+ *   for a destructive verb.
  * - a real HTTP code — the Gateway's own answer, or the status this client
- *   mirrors when it refuses locally what that route would have refused.
+ *   mirrors when it refuses locally what that route would have refused. A 2xx
+ *   here means the route answered and the answer overran the bound this call
+ *   asked for; the request did reach the host and did whatever it does
+ *   (`GatewayHttp.kt` [GatewayHttpResult.Rejected]).
  * - `null` — there is no status to report: either nothing was sent, or a 2xx
  *   answer did not match the pinned contract. [Failed.safeMessage] tells those
  *   two apart.
@@ -186,6 +192,22 @@ class GatewayRestClient(private val http: () -> GatewayHttp?) {
      * indistinguishable from an empty list at every surface that would call
      * this.
      *
+     * [minMessages] drops conversations with fewer than N persisted messages
+     * (`:60,108`). Desktop's sidebar always asks for `1`, because a hard
+     * replace of its in-memory list would otherwise make a chat that is
+     * mid-first-response vanish the moment any other chat finishes
+     * (`apps/desktop/src/hermes.ts:501-517`, reasoned at
+     * `apps/desktop/src/store/session.ts:379-386`). The default here is the
+     * route's own `0` rather than Desktop's `1`: what a caller should ask for
+     * depends on whether its list can evict, and that is the caller's fact to
+     * know, not this client's to assume.
+     *
+     * `order` defaults to `recent` because that is what Desktop's own
+     * `listSessions` defaults to (`hermes.ts:504`), not what the route defaults
+     * to (`created`, `:62`). A sidebar ordered by creation buries a
+     * long-running conversation the moment it auto-compresses onto a fresh id;
+     * `recent` orders by activity across the compression chain (`:77-80`).
+     *
      * Note for callers: this GET is not read-only on the host. Auto-archive
      * runs on this path (`:99-102`) and can retire rows nobody touched, so a
      * row that stops appearing is not evidence that it was deleted.
@@ -193,12 +215,18 @@ class GatewayRestClient(private val http: () -> GatewayHttp?) {
     suspend fun listSessions(
         limit: Int = DEFAULT_SESSION_PAGE,
         offset: Int = 0,
+        minMessages: Int = 0,
         archived: GatewaySessionArchivedFilter = GatewaySessionArchivedFilter.Exclude,
-        order: GatewaySessionOrder = GatewaySessionOrder.Created,
+        order: GatewaySessionOrder = GatewaySessionOrder.Recent,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionPage> {
         if (limit !in 1..MAX_SESSION_PAGE) return malformed()
         if (offset < 0) return malformed()
+        // The route clamps a negative `min_messages` to 0 itself (`:108`).
+        // Refusing instead keeps the same rule this client applies to `limit`
+        // and `offset`: a caller's broken arithmetic must not silently read a
+        // page it did not ask for.
+        if (minMessages < 0) return malformed()
         val scope = scopeQuery(profile) ?: return malformed()
         return send(
             path = SESSIONS_PATH,
@@ -206,6 +234,7 @@ class GatewayRestClient(private val http: () -> GatewayHttp?) {
             query = buildMap {
                 put("limit", limit.toString())
                 put("offset", offset.toString())
+                put("min_messages", minMessages.toString())
                 put("archived", archived.wire)
                 put("order", order.wire)
                 putAll(scope)
@@ -431,7 +460,7 @@ private fun parseSessionPage(bytes: ByteArray): GatewaySessionPage? {
 
 private fun parseMessagePage(bytes: ByteArray): GatewaySessionMessagePage? {
     val root = parseObject(bytes) ?: return null
-    val sessionId = root.string("session_id") ?: return null
+    val sessionId = root.jsonString("session_id") ?: return null
     val messages = root.objectArray("messages") ?: return null
     val pagination = root.child("pagination")
     return GatewaySessionMessagePage(
@@ -439,36 +468,34 @@ private fun parseMessagePage(bytes: ByteArray): GatewaySessionMessagePage? {
         messages = messages,
         limit = pagination?.number("limit"),
         offset = pagination?.number("offset"),
-        order = pagination?.string("order"),
+        order = pagination?.jsonString("order"),
     )
 }
 
 private fun parseSessionUpdate(bytes: ByteArray): GatewaySessionUpdate? {
     val root = parseObject(bytes) ?: return null
-    if (root.flag("ok") != true) return null
+    if (root.boolean("ok") != true) return null
     return GatewaySessionUpdate(
         // The route always echoes the stored title, empty string included
         // (`sessions.py:723` @ the pin); an answer without it is not that
         // route's answer.
-        title = root.string("title") ?: return null,
-        archived = root.flag("archived"),
-        pinned = root.flag("pinned"),
-        unread = root.flag("unread"),
+        title = root.jsonString("title") ?: return null,
+        archived = root.boolean("archived"),
+        pinned = root.boolean("pinned"),
+        unread = root.boolean("unread"),
     )
 }
 
 private fun parseSessionDeletion(bytes: ByteArray): GatewaySessionDeletion? {
     val root = parseObject(bytes) ?: return null
-    if (root.flag("ok") != true) return null
-    return GatewaySessionDeletion(alreadyAbsent = root.flag("already_absent") == true)
+    if (root.boolean("ok") != true) return null
+    return GatewaySessionDeletion(alreadyAbsent = root.boolean("already_absent") == true)
 }
 
 private fun parseObject(bytes: ByteArray): JsonObject? =
     runCatching { Json.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
 
 private fun JsonObject.number(name: String): Long? = (this[name] as? JsonPrimitive)?.longOrNull
-
-private fun JsonObject.flag(name: String): Boolean? = (this[name] as? JsonPrimitive)?.booleanOrNull
 
 private fun JsonObject.child(name: String): JsonObject? = this[name] as? JsonObject
 
@@ -490,7 +517,7 @@ private fun JsonObject.objectArray(name: String): List<JsonObject>? {
 private const val SESSIONS_PATH = "api/sessions"
 
 /** The route's own page cap; an unbounded limit is a query it refuses. */
-private const val MAX_SESSION_PAGE = 100
+internal const val MAX_SESSION_PAGE = 100
 private const val DEFAULT_SESSION_PAGE = 20
 
 /** The transcript route truncates to 500 rows itself (`sessions.py:630`). */
@@ -515,20 +542,37 @@ private const val LIST_MAX_RESPONSE_BYTES = 1024L * 1024L
 private const val ACK_MAX_RESPONSE_BYTES = 64L * 1024L
 
 /**
- * A transcript page cannot take a flat bound: one message can carry a tool
- * block truncated at 50,000 characters (`hermes_cli/config_defaults.py:624-627`
- * @ the pin), so 500 of them is tens of megabytes while fifty is a few. Sizing
+ * A transcript page cannot take a flat bound: one message can carry a whole
+ * tool result, so 500 of them is tens of megabytes while fifty is a few. Sizing
  * the bound to the page the caller asked for is what keeps a legitimate page
  * from being refused after the host has already paid for it, without standing
- * ready to hold a page nobody asked for. The ceiling is the transport's own
- * default: past that, the read never happens anyway.
+ * ready to hold a page nobody asked for.
+ *
+ * The floor is one whole row, not an ack: a bound that cannot hold the largest
+ * single message the host will emit refuses a legitimate one-message page after
+ * the query has already run, which is the worst of both — the cost is paid and
+ * the data is thrown away. The ceiling is the transport's own default: past
+ * that, the read never happens anyway.
  */
 private fun messagesResponseBound(limit: Int?): Long =
     ((limit ?: MAX_MESSAGE_PAGE).toLong() * BYTES_PER_MESSAGE)
-        .coerceIn(ACK_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES)
+        .coerceIn(BYTES_PER_MESSAGE, DEFAULT_MAX_RESPONSE_BYTES)
 
-/** One tool block at its truncation ceiling, plus room for the row around it. */
-private const val BYTES_PER_MESSAGE = 64L * 1024L
+/**
+ * One message row at the largest the pinned host will emit.
+ *
+ * Sized from the widest tool result, not the narrowest: `read_file` returns up
+ * to `file_read_max_chars` = 100,000 **characters** per call
+ * (`hermes_cli/config_defaults.py:566-569`, `tools/file_tools.py:65` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`), which is twice
+ * `tool_output.max_bytes`, the 50,000-char terminal cap (`:617,625`) this bound
+ * used to be derived from. Characters are not bytes: those 100,000 can be four
+ * UTF-8 bytes each, and JSON escaping can spend six per character on control
+ * runs, so the row this must hold is a multiple of its character count. 256 KiB
+ * covers the realistic worst case with headroom and still costs nothing when
+ * the row is small — the bound caps a read, it does not reserve memory.
+ */
+private const val BYTES_PER_MESSAGE = 256L * 1024L
 
 private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 

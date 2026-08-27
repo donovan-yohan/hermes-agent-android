@@ -35,6 +35,17 @@ sealed interface GatewayHttpResult {
     /**
      * A refused hop. [safeMessage] remains the only thing a surface may show.
      *
+     * [statusCode] is `0` for exactly one condition: no HTTP exchange happened
+     * at all — no endpoint, no credential, a URL that would not build, a verb
+     * this transport does not serve, or a connection that never completed.
+     * Every hop that did reach the Gateway reports the status the Gateway
+     * answered with, *including* a 2xx whose body then overran the caller's
+     * bound. A caller must be able to tell "the route does not exist here"
+     * (404, a capability to remember) from "the request never left" (0, a
+     * connection to fix) from "it answered, and the answer was too big for what
+     * I asked" (2xx with the oversize sentence) — one shared code for the last
+     * two would make a page too large for its bound look like a dead link.
+     *
      * [envelopeBytes] is the refusing service's own structured explanation,
      * read under a tight bound. A status code alone cannot tell "this
      * credential lapsed" from "no credential at all", or "the backend is down"
@@ -52,7 +63,20 @@ sealed interface GatewayHttpResult {
     ) : GatewayHttpResult
 }
 
-/** Consume transferred response ownership and wipe the mutable byte buffer. */
+/**
+ * Consume transferred response ownership and wipe the mutable byte buffer.
+ *
+ * Be precise about what this does and does not clear. It zeroes *this* array —
+ * the one array a caller decoded and could otherwise keep. It does not reach
+ * the okio segments the body was streamed through on the way here:
+ * `Buffer.readByteArray` copies out and returns its segments to okio's
+ * `SegmentPool`, which recycles them without zeroing, so a copy of the response
+ * can survive in pooled memory until something else overwrites it. That is a
+ * property of the HTTP stack, not something this call can fix; the honest claim
+ * is "the decoded buffer does not outlive the call", not "the bytes are gone
+ * from the process". Redaction, not erasure, is what keeps a token or a
+ * fingerprint out of anything a surface can read.
+ */
 internal inline fun <T> GatewayHttpResult.Success.consumeBody(block: (ByteArray) -> T): T =
     try {
         block(bodyBytes)
@@ -132,13 +156,12 @@ internal class OkHttpGatewayHttp(
                     } else if (request.maxResponseBytes <= 0 ||
                         body.contentLength() > request.maxResponseBytes
                     ) {
-                        GatewayHttpResult.Rejected(0, "The Gateway returned too much data for this request.")
+                        // The Gateway answered; this hop is not a dead route or
+                        // a broken connection, so it does not report `0`.
+                        GatewayHttpResult.Rejected(response.code, OVERSIZE_MESSAGE)
                     } else {
                         val bytes = body.readBounded(request.maxResponseBytes)
-                            ?: return GatewayHttpResult.Rejected(
-                                0,
-                                "The Gateway returned too much data for this request.",
-                            )
+                            ?: return GatewayHttpResult.Rejected(response.code, OVERSIZE_MESSAGE)
                         GatewayHttpResult.Success(response.code, bytes)
                     }
                 } else {
@@ -198,6 +221,7 @@ internal const val RECONNECT_MESSAGE = "Reconnect to the Gateway and try again."
 internal const val MALFORMED_REQUEST_MESSAGE = "Hermes could not form that Gateway request."
 private const val INCOMPLETE_MESSAGE = "Hermes got an incomplete Gateway request."
 private const val UNSUPPORTED_MESSAGE = "Hermes got an unsupported Gateway request."
+internal const val OVERSIZE_MESSAGE = "The Gateway returned too much data for this request."
 
 /** A refusal envelope is a handful of JSON fields; anything larger is not one. */
 private const val MAX_ENVELOPE_BYTES = 8L * 1024L

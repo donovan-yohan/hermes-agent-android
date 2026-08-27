@@ -73,6 +73,68 @@ data class SessionSummary(
     val composerStatus: ComposerStatusState? = null,
     /** Client-observed start of the current live turn, used only for its visible timer. */
     val activityStartedAtMillis: Long? = null,
+    /**
+     * Durable server-side soft-archive flag (`sessions.archived`, exposed as a
+     * real JSON boolean at hermes-agent @ `f82f2dba`,
+     * `hermes_cli/web_routers/sessions.py:154`).
+     *
+     * Null is not `false`: it means this Gateway's list contract never said.
+     * The `session.list` RPC an older Gateway answers carries no such column
+     * (`tui_gateway/methods_session.py:204-214`), and a surface that read a
+     * silent contract as "not archived" would draw an affordance that does
+     * nothing. Absent, so the affordance can stay absent.
+     */
+    val archived: Boolean? = null,
+    /**
+     * Durable server-side pin (`sessions.pinned`, `sessions.py:155`). The list
+     * route back-fills pinned rows past its own LIMIT
+     * (`hermes_state.py:8711-8718`), so on a Gateway that reports it, a pinned
+     * conversation is present in every page. Null means "no opinion" — see
+     * [archived].
+     */
+    val pinned: Boolean? = null,
+    /**
+     * Backend read watermark: `last_read_at` against `last_active`, derived per
+     * surfaced conversation (`hermes_state.py:9019-9020`, `session_unread` at
+     * `:8455`).
+     *
+     * Deliberately not [SessionStatus.Unread]. That status is this client's
+     * foreground-isolation dot — a turn *this app* started finished while the
+     * user was looking at another session — and it is connection-scoped. This
+     * is durable, cross-client server truth about whether the conversation has
+     * been read anywhere. Null means the Gateway does not report it.
+     */
+    val unread: Boolean? = null,
+    /** Model the row's live tip last ran on (`sessions.model`); null when unreported. */
+    val model: String? = null,
+    /**
+     * Tool calls counted on the conversation. Null rather than `0` when the
+     * contract does not carry the column, because Desktop's metadata line drops
+     * an absent field and renders `0` as nothing either way
+     * (`apps/desktop/src/app/chat/sidebar/session-row-details.ts:24-31` @ the
+     * pin) — a zero invented here would be indistinguishable from a real one.
+     */
+    val toolCallCount: Int? = null,
+    /** Prompt tokens billed to the conversation; null when unreported. */
+    val inputTokens: Long? = null,
+    /** Completion tokens billed to the conversation; null when unreported. */
+    val outputTokens: Long? = null,
+    /**
+     * Spend straight off the `sessions` row: `actual` when the provider quoted
+     * a price, `estimated` from Hermes' own pricing table. Both are genuinely
+     * `0.0` on subscription auth that never quotes one, which is why they are
+     * carried separately and why null (unreported) is not folded into zero.
+     */
+    val actualCostUsd: Double? = null,
+    val estimatedCostUsd: Double? = null,
+    /**
+     * Original root id of a compression chain when [id] is a projected
+     * continuation tip (`hermes_state.py:9011`). Stable across compressions, so
+     * it is the durable id a pin is stored against — and the id an earlier
+     * refresh may have filed this conversation under. Never navigation
+     * identity: [id] is.
+     */
+    val lineageRootId: String? = null,
 )
 
 /** A transient backend notice rendered at the live turn tail, never stored as transcript content. */

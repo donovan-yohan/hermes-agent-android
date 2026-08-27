@@ -55,11 +55,34 @@ class GatewayHttpTest {
         )
 
         val valid = OkHttpGatewayHttp(never, { "https://gateway.example" }, { "Authorization" to "x" })
+
+        // Two different refusals that a bare `is Rejected` would conflate.
+        //
         // A verb this transport does not serve stays refused: widening the set
         // to DELETE and PATCH did not turn the `when` into a passthrough.
-        assertTrue(valid.execute(GatewayHttpRequest("api/config", "HEAD", null, 100)) is GatewayHttpResult.Rejected)
-        assertTrue(valid.execute(GatewayHttpRequest("api/config", "POST", null, 100)) is GatewayHttpResult.Rejected)
-        assertTrue(valid.execute(GatewayHttpRequest("api/config", "PATCH", null, 100)) is GatewayHttpResult.Rejected)
+        val unsupported = valid.execute(GatewayHttpRequest("api/config", "HEAD", null, 100))
+            as GatewayHttpResult.Rejected
+        assertEquals("Hermes got an unsupported Gateway request.", unsupported.safeMessage)
+
+        // A verb this transport *does* serve, asked for without the body it
+        // requires, is a caller that built the request wrong — not an unknown
+        // verb. Asserting only the type would let the body guard disappear.
+        for (verb in listOf("POST", "PUT", "PATCH")) {
+            val incomplete = valid.execute(GatewayHttpRequest("api/config", verb, null, 100))
+                as GatewayHttpResult.Rejected
+            assertEquals("Hermes got an incomplete Gateway request.", incomplete.safeMessage)
+        }
+
+        // And the inverse for the one body-less destructive verb.
+        val bodiedDelete = valid.execute(
+            GatewayHttpRequest("api/config", "DELETE", "{}".toRequestBody("application/json".toMediaType()), 100),
+        ) as GatewayHttpResult.Rejected
+        assertEquals("Hermes got an unsupported Gateway request.", bodiedDelete.safeMessage)
+
+        // None of these are a hop: nothing reached the Gateway, and `0` is how
+        // that is spelled.
+        assertEquals(0, unsupported.statusCode)
+        assertEquals(0, bodiedDelete.statusCode)
     }
 
     @Test
@@ -167,6 +190,12 @@ class GatewayHttpTest {
             GatewayHttpRequest("api/git/status", "GET", null, 100, maxResponseBytes = 64),
         ) as GatewayHttpResult.Rejected
         assertTrue(result.safeMessage.contains("too much data"))
+        // The route answered, and the request ran on the host. Reporting `0`
+        // here would make an oversized page indistinguishable from a dead route
+        // or a connection that never completed — and a caller that remembers
+        // "this backend does not serve that" off the wrong signal degrades a
+        // working Gateway for the rest of the session.
+        assertEquals(200, result.statusCode)
     }
 
     @Test
