@@ -94,12 +94,24 @@ data class LocalGatewayProfile(
  *
  * Accepted: a literal `http://` prefix, a loopback host, an optional port that
  * defaults to [DEFAULT_LOCAL_GATEWAY_PORT], and an optional path. Refused: any
- * other scheme, any other host, userinfo, a query, a fragment — and any
- * abbreviated form of the scheme, because the URL parser accepts `http:host:port`
- * and `http:/host:port` while the port is then only findable in the raw text.
- * Guessing there would silently move a row from the port somebody typed onto
- * 9119, bind that row's session token to 9119, and hand the token to whatever
- * process happens to be listening on it.
+ * other scheme, any other host, userinfo, a query, a fragment — plus two shapes
+ * that exist only because the URL parser is more forgiving than this rule can
+ * afford to be.
+ *
+ * An abbreviated scheme, because the parser accepts `http:host:port` and
+ * `http:/host:port`, where the port is then only findable in the raw text. And
+ * a backslash anywhere in the input, because the parser ends the authority at
+ * one: `http://127.0.0.1\\evil:9200` puts the port in the *path* and reports
+ * the scheme default, and `http://127.0.0.1:92\\00` reports port 92. In both
+ * cases a port the person typed is replaced by one they did not, and the row —
+ * with its session token bound to it — then names a different server on this
+ * device than the one they meant. Any app on this phone can bind a loopback
+ * port with no permission, so that substitution hands the token away.
+ *
+ * The set is what a sweep found rather than what seemed likely: every code
+ * point from U+0000 to U+0020, plus U+007F, U+00A0, `%5C`, `%2F`, `%09`, `%00`
+ * and `%20`, was fed through as an authority separator, and the backslash is
+ * the only one the parser and this rule disagreed about.
  *
  * The returned form always names its port, including port 80, so normalizing a
  * normalized address is a no-op: the value is written to disk, re-read, and
@@ -111,6 +123,11 @@ internal fun normalizeLocalGatewayUrl(raw: String): String? {
     // The one shape whose authority the raw text can be read from. Everything
     // below depends on it, so it is checked before the parser is asked.
     if (!trimmed.startsWith(LOCAL_SCHEME, ignoreCase = true)) return null
+    // The parser ends an authority at a backslash; [namesPort] does not, and a
+    // rule that reads the port out of the raw text cannot survive the two
+    // disagreeing. Refused outright rather than reconciled: a backslash has no
+    // place in a loopback address, so there is nothing here worth rescuing.
+    if (BACKSLASH in trimmed) return null
     val parsed = trimmed.toHttpUrlOrNull() ?: return null
     if (parsed.scheme != "http") return null
     if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return null
@@ -158,7 +175,8 @@ internal fun localGatewayHealthRequest(normalizedBaseUrl: String, token: ByteArr
  * a literal `http://` prefix first: without it there is no authority to read
  * here, and this would report "no port" for an address that named one.
  * Userinfo is refused before this runs, so the first colon after the host
- * cannot be a password separator.
+ * cannot be a password separator, and so is a backslash, which the parser
+ * treats as an authority terminator and this cut deliberately does not have to.
  */
 private fun namesPort(raw: String): Boolean {
     val authority = raw.substringAfter("://", "")
@@ -175,6 +193,7 @@ private fun namesPort(raw: String): Boolean {
 }
 
 private const val LOCAL_SCHEME = "http://"
+private const val BACKSLASH = '\\'
 
 /**
  * Every spelling of "this device". OkHttp lowercases hosts and unwraps IPv6

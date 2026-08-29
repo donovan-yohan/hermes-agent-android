@@ -110,11 +110,19 @@ class LocalGatewayTest {
             "http:/127.0.0.1:9200",
             "http:localhost:9200",
             "http:[::1]:9200",
+            // The parser ends the authority at a backslash and this rule's port
+            // cut does not, so the first names port 80 and the second names 92 —
+            // each one a different server on this device than the person typed,
+            // with their session token bound to it.
+            "http://127.0.0.1\\evil:9200",
+            "http://127.0.0.1\\:9200",
+            "http://127.0.0.1:92\\00",
+            "http://127.0.0.1:9200\\evil",
             "",
             "   ",
         )
 
-        (refused + "http:" + "\\".repeat(2) + "127.0.0.1:9200").forEach { raw ->
+        (refused + ("http:" + "\\".repeat(2) + "127.0.0.1:9200")).forEach { raw ->
             assertNull("$raw must be refused, not guessed at", normalizeLocalGatewayUrl(raw))
         }
     }
