@@ -374,22 +374,23 @@ internal class LocalGatewayConnector(
      * is what keeps "your token is wrong" from arriving as "the socket was
      * refused", which names no cause and offers nothing to do.
      *
-     * Every other way the upgrade can fail is the readiness check's answer one
-     * step later: a Hermes that stopped between the health request and this one,
-     * or one answering something other than a WebSocket. Both are this device
-     * not answering, and both say so — a transport failure carries no status at
-     * all, so the exception it arrives in would otherwise reach the surface as
-     * its own transport wording.
+     * The absence of a status says something too. A Hermes stopped between the
+     * health request and this one leaves nothing to answer the upgrade, and the
+     * failure that arrives carries no status at all — so it is the same "not
+     * answering" the readiness check would have given a moment earlier, rather
+     * than the transport's own wording. A status means something *did* answer
+     * on that port, which is neither a stopped Hermes nor a refused token, and
+     * saying "start it" there would send the person to a server that is already
+     * running.
      */
     private suspend fun openSocket(baseUrl: String, token: ByteArray): GatewayRpcClient = try {
         rpcOpen(baseUrl, token)
     } catch (refused: GatewayRpcException) {
         when (refused.statusCode) {
             401, 403 -> throw GatewayAuthException(LocalGatewayCopy.TOKEN_REFUSED, refused.statusCode)
-            else -> throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
+            null -> throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
+            else -> throw refused
         }
-    } catch (unreachable: IOException) {
-        throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
     }
 
     /**

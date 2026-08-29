@@ -366,7 +366,7 @@ class GatewayConnectionManagerTest {
 
     private class ReadinessRpc : GatewayRpcClient {
         override val events = MutableSharedFlow<GatewayEvent>()
-        private val closure = MutableSharedFlow<Unit>(replay = 1)
+        private val closure = MutableSharedFlow<GatewayCloseCause>(replay = 1)
         override val closed = closure
         val closeSubscribers: Int get() = closure.subscriptionCount.value
         val calls = mutableListOf<String>()
@@ -382,7 +382,7 @@ class GatewayConnectionManagerTest {
         }
 
         fun failFromServer() {
-            closure.tryEmit(Unit)
+            closure.tryEmit(GatewayCloseCause.TransportFailure)
         }
     }
 

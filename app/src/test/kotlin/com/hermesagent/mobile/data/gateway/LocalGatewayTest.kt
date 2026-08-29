@@ -353,6 +353,28 @@ class LocalGatewayTest {
     }
 
     @Test
+    fun `a Local socket closed in an orderly way never claims Hermes stopped`() = runTest {
+        val leg = LocalLeg()
+        val manager = manager(leg, managerScope = backgroundScope)
+        assertTrue(manager.connectLocal(PROFILE) is GatewayConnectResult.Connected)
+
+        // The Gateway closing the socket itself, and this client failing the
+        // connection over its own event buffer, both arrive here. Neither is a
+        // process that stopped: `hermes serve` is still up and still holding the
+        // port, so "start it" would be a false cause and an action that fails.
+        leg.rpc.closeSocket()
+        runCurrent()
+
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(
+            "The Gateway connection closed. Reconnect to continue.",
+            manager.state.value.message,
+        )
+        manager.disconnect()
+        runCurrent()
+    }
+
+    @Test
     fun `a saved token brings the Local route back with nobody present`() = runTest {
         val leg = LocalLeg(scraped = "scraped-token-fixture")
         val manager = manager(leg)
@@ -659,7 +681,7 @@ class LocalGatewayTest {
 
     private class LocalRpc : GatewayRpcClient {
         override val events = MutableSharedFlow<GatewayEvent>()
-        override val closed = MutableSharedFlow<Unit>(replay = 1)
+        override val closed = MutableSharedFlow<GatewayCloseCause>(replay = 1)
         val calls = mutableListOf<String>()
         var failRequests = false
         var socketClosed = false
@@ -676,7 +698,12 @@ class LocalGatewayTest {
 
         /** What a `hermes serve` that exited in Termux looks like from here. */
         fun dropSocket() {
-            closed.tryEmit(Unit)
+            closed.tryEmit(GatewayCloseCause.TransportFailure)
+        }
+
+        /** A socket closed in an orderly way, by either end, with the server still up. */
+        fun closeSocket() {
+            closed.tryEmit(GatewayCloseCause.Orderly)
         }
     }
 

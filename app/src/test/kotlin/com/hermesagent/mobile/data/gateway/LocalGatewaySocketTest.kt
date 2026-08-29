@@ -129,9 +129,11 @@ class LocalGatewaySocketTest {
                 ),
             )
 
-            val result = manager.connectLocal(
-                LocalGatewayProfile("http://127.0.0.1:$port", secretSlotId = "row-local"),
-            )
+            val result = withTimeoutOrNull(20_000) {
+                manager.connectLocal(
+                    LocalGatewayProfile("http://127.0.0.1:$port", secretSlotId = "row-local"),
+                )
+            }
 
             assertTrue("expected Failed, got $result", result is GatewayConnectResult.Failed)
             assertEquals(
@@ -160,8 +162,9 @@ class LocalGatewaySocketTest {
                     tokens = StoredToken(TOKEN),
                     // Readiness passes, so the upgrade is the hop that finds the
                     // port empty — the window where the person stops the server
-                    // mid-dial, and the one place a transport failure carries no
-                    // status for the refusal mapping to read.
+                    // mid-dial. The failure OkHttp reports for a refused connect
+                    // carries no HTTP status, and it is that absence the mapping
+                    // reads: something that answered would have one.
                     health = { _, _ -> },
                     rpcOpen = { baseUrl, token ->
                         OkHttpGatewayRpcClient.connectLocal(OkHttpClient(), baseUrl, token)
@@ -169,9 +172,11 @@ class LocalGatewaySocketTest {
                 ),
             )
 
-            val result = manager.connectLocal(
-                LocalGatewayProfile("http://127.0.0.1:$port", secretSlotId = "row-local"),
-            )
+            val result = withTimeoutOrNull(20_000) {
+                manager.connectLocal(
+                    LocalGatewayProfile("http://127.0.0.1:$port", secretSlotId = "row-local"),
+                )
+            }
 
             assertTrue("expected Failed, got $result", result is GatewayConnectResult.Failed)
             assertEquals(
@@ -179,6 +184,10 @@ class LocalGatewaySocketTest {
                 (result as GatewayConnectResult.Failed).message,
             )
             assertTrue(result.retryable)
+            // The published state, not just the returned result: the sentence
+            // this fix is about is the one the surface renders.
+            assertEquals(LocalGatewayCopy.NOT_ANSWERING, manager.state.value.message)
+            assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
             assertNull("nothing was published over a socket that never opened", manager.gatewayHttp.value)
         } finally {
             scope.cancel()
@@ -188,6 +197,13 @@ class LocalGatewaySocketTest {
     /**
      * A loopback port with nothing listening on it: claimed from the ephemeral
      * range so no other server can be answering there, then released.
+     *
+     * The window between releasing it and dialling it is not closable — a port
+     * cannot be both bound and refusing — but a reused port fails these tests
+     * rather than passing them falsely: whatever claimed it would have to
+     * answer an authenticated `/api/health` and a Hermes WebSocket upgrade to
+     * turn a refusal into a pass. The dials are bounded, so a host that drops
+     * instead of refusing fails on the timeout rather than hanging the lane.
      */
     private fun unboundLoopbackPort(): Int =
         ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }

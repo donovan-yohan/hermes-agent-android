@@ -1055,16 +1055,20 @@ internal class GatewayConnectionManager(
     private fun watchRpc(rpc: GatewayRpcClient) {
         rpcMonitor?.cancel()
         rpcMonitor = scope.launch {
-            rpc.closed.first()
+            val cause = rpc.closed.first()
             mutex.withLock {
                 if (active?.rpc !== rpc) return@withLock
                 val reconnect = (active as? ActiveConnection.Remote)?.profile
                     ?.takeIf { desiredRemoteProfile == it }
-                // A loopback socket that closed is a Hermes that stopped, never
-                // a network that went away. Someone in airplane mode with the
-                // one Gateway they have beside them in Termux must not be told
-                // to wait for a network: there is no waiting that would help.
-                val wasLoopback = active is ActiveConnection.Local
+                // A Local socket that closed is a Hermes that stopped, never a
+                // network that went away. Someone in airplane mode with the one
+                // Gateway they have beside them in Termux must not be told to
+                // wait for a network: there is no waiting that would help.
+                //
+                // Named for the route, not the address, because the Managed SSH
+                // leg's socket is loopback too — it is the far end of a forward,
+                // and a network that goes away does take it with it.
+                val wasLocalRoute = active is ActiveConnection.Local
                 val stableConnection = remoteConnectedAtMillis
                     ?.let { connectedAt -> nowMillis() - connectedAt >= STABLE_REMOTE_CONNECTION_MILLIS }
                     ?: false
@@ -1072,23 +1076,31 @@ internal class GatewayConnectionManager(
                     remoteReconnectAttempts = 0
                     beginRemoteFailureEpisodeLocked(null)
                 }
-                if (!networkAvailable && !wasLoopback) {
+                if (!networkAvailable && !wasLocalRoute) {
                     cancelReconnectLocked()
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,
                         NETWORK_WAIT_MESSAGE,
                     )
                 } else if (reconnect == null) {
-                    // No desired route to retry against. On loopback the cause
-                    // is not in doubt — the socket went with the process that
-                    // held it — so the Local route names the device that stopped
-                    // answering and what starts it, which is also what the next
-                    // Connect will say. The other routes keep the neutral close:
-                    // a Gateway across a network closes a socket for reasons
-                    // that are not "the host stopped".
+                    // No desired route to retry against. A Local route whose
+                    // transport failed is a Hermes that stopped — the socket
+                    // went with the process — so it names the device that
+                    // stopped answering and what starts it, which is also what
+                    // the next Connect will say.
+                    //
+                    // Only the transport failure, which is why the cause is
+                    // carried here at all. The Gateway closing the socket
+                    // itself, and this client failing the connection over its
+                    // own event buffer, are both a server that is still running
+                    // and still holding the port: "start Hermes" would be a
+                    // false cause and an action that cannot succeed. They keep
+                    // the neutral close, as every non-Local route does.
+                    val stoppedOnThisDevice =
+                        wasLocalRoute && cause == GatewayCloseCause.TransportFailure
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,
-                        if (wasLoopback) {
+                        if (stoppedOnThisDevice) {
                             LocalGatewayCopy.NOT_ANSWERING
                         } else {
                             "The Gateway connection closed. Reconnect to continue."

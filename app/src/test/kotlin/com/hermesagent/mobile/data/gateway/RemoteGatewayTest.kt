@@ -1361,7 +1361,7 @@ class RemoteGatewayTest {
 
     private class FakeRpc : GatewayRpcClient {
         override val events = MutableSharedFlow<GatewayEvent>()
-        override val closed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        override val closed = MutableSharedFlow<GatewayCloseCause>(extraBufferCapacity = 1)
         val calls = mutableListOf<String>()
         var closedByClient = false
 
@@ -1375,13 +1375,13 @@ class RemoteGatewayTest {
         }
 
         fun failFromServer() {
-            closed.tryEmit(Unit)
+            closed.tryEmit(GatewayCloseCause.TransportFailure)
         }
     }
 
     private class BlockingReadinessRpc : GatewayRpcClient {
         override val events = MutableSharedFlow<GatewayEvent>()
-        override val closed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        override val closed = MutableSharedFlow<GatewayCloseCause>(extraBufferCapacity = 1)
         val requestStarted = CompletableDeferred<Unit>()
         val releaseRequest = CompletableDeferred<Unit>()
         var closedByClient = false
@@ -1397,7 +1397,7 @@ class RemoteGatewayTest {
         }
 
         fun failFromServer() {
-            closed.tryEmit(Unit)
+            closed.tryEmit(GatewayCloseCause.TransportFailure)
         }
     }
 
@@ -1406,7 +1406,7 @@ class RemoteGatewayTest {
         private val failure: Throwable = GatewayConnectionException("The Gateway could not be reached."),
     ) : GatewayRpcClient {
         override val events = MutableSharedFlow<GatewayEvent>()
-        override val closed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        override val closed = MutableSharedFlow<GatewayCloseCause>(extraBufferCapacity = 1)
         var closedByClient = false
 
         override suspend fun request(method: String, params: JsonObject): JsonElement = throw failure

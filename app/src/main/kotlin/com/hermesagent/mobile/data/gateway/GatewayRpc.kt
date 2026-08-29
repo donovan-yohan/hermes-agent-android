@@ -60,9 +60,31 @@ internal interface GatewayRpcWire {
     fun close()
 }
 
+/**
+ * Why a connection ended, for the one decision that turns on it: what the
+ * person is told.
+ *
+ * A closed socket looks the same from here whether the process holding it died
+ * or the app closed the leg itself, and on the Local route those two want
+ * opposite sentences — "start Hermes" is wrong, and unactionable, for a server
+ * that is still running and still holding the port.
+ */
+internal enum class GatewayCloseCause {
+    /** The transport failed. The far side is gone, or the path to it is. */
+    TransportFailure,
+
+    /**
+     * Anything closed in an orderly way: this app closing the leg, the Gateway
+     * closing the socket itself, or this client failing the connection over its
+     * own event buffer. The server may well still be running, so nothing here
+     * may be reported as one that stopped.
+     */
+    Orderly,
+}
+
 internal interface GatewayRpcClient : Closeable {
     val events: Flow<GatewayEvent>
-    val closed: Flow<Unit> get() = emptyFlow()
+    val closed: Flow<GatewayCloseCause> get() = emptyFlow()
     suspend fun request(method: String, params: JsonObject = JsonObject(emptyMap())): JsonElement
 }
 
@@ -84,11 +106,11 @@ internal class CorrelatedGatewayRpc(
     // deltas through normal bursts; overflow fails the connection rather than
     // silently dropping transcript bytes or allowing unbounded remote input.
     private val eventChannel = Channel<GatewayEvent>(EVENT_BUFFER_CAPACITY)
-    private val closedFlow = MutableSharedFlow<Unit>(replay = 1)
+    private val closedFlow = MutableSharedFlow<GatewayCloseCause>(replay = 1)
     private var isClosed = false
 
     override val events: Flow<GatewayEvent> = eventChannel.receiveAsFlow()
-    override val closed: Flow<Unit> = closedFlow
+    override val closed: Flow<GatewayCloseCause> = closedFlow
 
     override suspend fun request(method: String, params: JsonObject): JsonElement {
         require(method.isNotBlank())
@@ -157,7 +179,14 @@ internal class CorrelatedGatewayRpc(
         if (accepted.isFailure) connectionClosed("The gateway event stream exceeded its safe buffer.")
     }
 
-    fun connectionClosed(message: String = "The gateway connection closed.") {
+    /**
+     * [cause] defaults to [GatewayCloseCause.Orderly], so a close only claims
+     * the far side is gone where a caller saw the transport fail.
+     */
+    fun connectionClosed(
+        message: String = "The gateway connection closed.",
+        cause: GatewayCloseCause = GatewayCloseCause.Orderly,
+    ) {
         val abandoned = synchronized(lock) {
             if (isClosed) return
             isClosed = true
@@ -166,7 +195,7 @@ internal class CorrelatedGatewayRpc(
         val failure = GatewayRpcException(message, requestMayHaveBeenAccepted = true)
         abandoned.forEach { it.completeExceptionally(failure) }
         eventChannel.close()
-        closedFlow.tryEmit(Unit)
+        closedFlow.tryEmit(cause)
     }
 
     override fun close() {
@@ -294,7 +323,10 @@ internal class OkHttpGatewayRpcClient private constructor(
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                         Log.w(LOG_TAG, "Gateway WebSocket failed (http=${response?.code ?: "none"})")
-                        rpc.connectionClosed("The gateway WebSocket failed.")
+                        rpc.connectionClosed(
+                            "The gateway WebSocket failed.",
+                            GatewayCloseCause.TransportFailure,
+                        )
                         if (continuation.isActive) {
                             continuation.resumeWithException(
                                 GatewayRpcException(
