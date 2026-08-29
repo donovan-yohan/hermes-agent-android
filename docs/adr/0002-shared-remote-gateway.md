@@ -3,6 +3,8 @@
 **Status:** implemented as the default connection route, 2026-08-20
 **Terminology amended:** 2026-08-24 — product label changed from Shared Gateway
 to Remote Gateway; the ownership and authentication decision is unchanged
+**Amended:** 2026-08-29 — the Local route addendum below extends the same
+host-owned boundary to a Termux Gateway on this device
 **Authority:** `NousResearch/hermes-agent` @
 `59795c40fff95b3029b8f2b02164da892429070f`
 
@@ -113,3 +115,96 @@ concurrent multi-controller policy is not claimed.
 - Physical validation must still prove the system browser can reach the Android
   loopback listener on the supported device/browser combinations and that a
   real gated Gateway completes refresh and one-time ticket reconnects.
+
+## Addendum — the Local route, 2026-08-29
+
+**Status:** accepted; transport and credential implemented, Gateways entry and
+device evidence pending
+**Authority:** `NousResearch/hermes-agent` @
+`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
+
+### Context
+
+A person can run Hermes on the phone itself, inside Termux
+(`website/docs/getting-started/termux.md` @ `f82f2db`). That is a host-owned
+Gateway where the host happens to be this device, so the decision above already
+covers it — but the transport does not look like either existing route, and the
+difference is worth writing down rather than inferring.
+
+The seam is fixed by the platform, not chosen.
+[ADR 0001](./0001-ssh-probe-to-tunnel.md), line 12, records why the Managed SSH
+route exists at all: "this app cannot read Termux files or agent sockets". Two Android apps are two sandboxes; there is no shared filesystem
+path, no unix socket, and no supported way to invoke Termux's binaries. What is
+left is a TCP port on loopback, which is exactly the interface `hermes serve`
+already publishes.
+
+### Decision
+
+The **Local** route is a third connection kind: a saved connection whose
+endpoint is a loopback address on this device.
+
+- **Ownership is unchanged.** The Gateway is host-owned. This app never starts,
+  adopts, stops, or reaps `hermes serve`; there is no spawn token, no pid, no
+  ownership nonce and nothing to reap. Disconnecting closes a socket. The
+  Termux process belongs to the person, exactly as a Remote Gateway belongs to
+  its host.
+- **Authentication is the static Hermes session token.** On loopback there is
+  no TLS, no OAuth gate and no host key, and the server compares an
+  `X-Hermes-Session-Token` header against a value fixed for the life of the
+  process (`hermes_cli/web_server.py:499-504`, `:567-584` @ `f82f2db`). That
+  token is therefore the entire boundary between this app and every other app
+  on the phone, all of which may bind loopback ports without a permission. It
+  is stored in the same Keystore-encrypted per-row slot the Remote route's
+  token envelope uses — one file per row id below `noBackupFilesDir`, bound to
+  the address that minted it, refused but kept when the row is re-addressed,
+  and zeroed and unlinked by row id when the row is removed. It is required:
+  reading a token off whatever is answering is an empty-slot convenience, never
+  a fallback after a refusal.
+- **Cleartext is permitted to loopback domains and nowhere else.**
+  `res/xml/network_security_config.xml` sets `cleartextTrafficPermitted="false"`
+  as the base and names exactly `127.0.0.1`, `localhost` and `::1`.
+  `android:usesCleartextTraffic="true"` would grant the same thing to every
+  host on the internet, so a repo invariant fails the build if it appears and
+  compares the permitted domain list against the loopback set. The Remote route
+  keeps refusing plain HTTP in its own normalizer regardless.
+- **A port somebody typed is never substituted.** `http` only, host exactly
+  `127.0.0.1`, `localhost` or `::1`, no userinfo, query or fragment, and the
+  canonical form always names its port. An address that names no port takes
+  the documented default, 9119; what is refused is every shape where the URL
+  parser would report a port other than the one in the text — an abbreviated
+  scheme (`http:host:port`), and a backslash anywhere in the input, which ends
+  the authority early and moves the port into the path. Which port a row names
+  decides which process on this phone receives the token, and any app may bind
+  a loopback port without a permission, so a silent substitution hands the
+  token away.
+- **Readiness is proved the same way; the socket is the token gate.**
+  `GET /api/health`, then the WebSocket, then one correlated `session.list`
+  before Connected — the Managed SSH order minus the parts that belong to an
+  app-owned process. The health request carries the token but does not test
+  it: `/api/health` is on the Gateway's public allowlist at the pin
+  (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `f82f2db`), so it
+  answers 200 to a wrong token. The upgrade is where the token is checked
+  (`web_server.py:17017-17025` @ `f82f2db`), and its 401/403 is read back as a
+  distinct, non-retryable refusal with its own sentence rather than as a
+  generic socket failure — a refused token is a wrong token, and retrying it
+  or reading a second credential off the same server would turn "fix this"
+  into a silent loop.
+
+### Consequences
+
+- Three routes, one ownership model: only Managed SSH owns a process, and it
+  stays the only route that does.
+- A Local connection cannot be shared. It is one phone talking to its own
+  runtime, so the multi-client boundary above does not apply — but the same
+  rule does: do not drive one running session from Desktop and this phone at
+  once if the Termux Hermes is also reachable another way.
+- Losing the network never tears a Local leg down, and there is no automatic
+  redial: loopback does not travel over the network, and Termux is exactly
+  where somebody is when they have none.
+- Keeping the Gateway alive is Android's problem and the person's, not the
+  app's: wake lock, battery exemption and the Android 12+ phantom-process
+  killer. Upstream calls Termux gateway persistence best-effort
+  (`termux.md:43` @ `f82f2db`). Setup and troubleshooting live in
+  [the Termux local Gateway guide](../guides/termux-local-gateway.md).
+- Physical validation is still owed: a Pixel pass with Termux `hermes serve`
+  and an app Local connection producing a session list and a live turn.

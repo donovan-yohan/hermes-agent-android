@@ -2,8 +2,9 @@
 
 Native Kotlin/Jetpack Compose Android client for a self-hosted Hermes Agent.
 The preferred shared topology is an authenticated, host-owned Remote Gateway;
-Managed SSH remains an explicit fallback for an app-owned private backend.
-Phase 2 ships both connection routes, backend sessions, and live turns.
+Managed SSH remains an explicit fallback for an app-owned private backend, and
+Local reaches a Termux-hosted Hermes on this same phone over loopback.
+Phase 2 ships all three connection routes, backend sessions, and live turns.
 
 ## Directory map
 
@@ -21,6 +22,7 @@ Phase 2 ships both connection routes, backend sessions, and live turns.
 | `app/src/androidTest/kotlin/` | The instrumented emulator lane: real display density, the platform accessibility tree, a real input-method binding, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
 | `status/` | Current shipping status, limitations, and roadmap direction | Checking what works now or remains deferred |
 | `docs/workflows/` | Durable port + theme-sync checklists | Before porting a Desktop surface or syncing themes |
+| `docs/guides/` | Setup guides written for the person using the app | Telling someone how to stand a Gateway up |
 | `docs/adr/` | Decisions with consequences | Before changing the SSH seam |
 | `docs/spikes/` | The research this repo was founded on | Background; long |
 | `.chalk/` | chalkbag source (skills, permissions, providers) | Editing agent config; see `.chalk/README.md` |
@@ -99,6 +101,15 @@ single-connection reader is a projection of that row, so a connection edit has
 one writer and no second copy. The pre-registry `host.single.*` /
 `gateway.single.*` keys were migrated into row one, not overloaded.
 
+**Cleartext is loopback-only, and Local owns no process.** The base network
+security config refuses cleartext and excuses exactly `127.0.0.1`, `localhost`
+and `::1`; `usesCleartextTraffic="true"` would grant the same to every host on
+the internet, so an invariant fails the build on it and on any other permitted
+domain. A Local row addresses a Hermes the person runs in Termux on this phone:
+`normalizeLocalGatewayUrl` refuses rather than guesses, because which port a row
+names decides which process receives its token, and the app never starts, adopts,
+stops or reaps that runtime. See `docs/adr/0002-shared-remote-gateway.md`.
+
 **The SSH destination is one field.** `user@host`, port 22 implicit,
 `user@[ipv6]:port` supported. `parseSshDestination` refuses rather than guesses,
 only a value that parses reaches the profile, and the parsed host/port/username
@@ -171,3 +182,4 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `.chalk/README.md` | chalkbag source-of-truth rules |
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |
 | `docs/parity/profile-switcher.md` | Profile rail, active-profile scope, and the read-only roster: pin, adaptation, deviations |
+| `docs/guides/termux-local-gateway.md` | Standing up a Termux `hermes serve` on the phone and adding it as a Local connection |
