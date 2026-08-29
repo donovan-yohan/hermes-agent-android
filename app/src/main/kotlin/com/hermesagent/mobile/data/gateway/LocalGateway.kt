@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -382,17 +383,26 @@ internal class LocalGatewayConnector(
      * The bytes are not handed back, and the copy read here is zeroed on the
      * way out. [open] reads the slot again for the dial it actually makes, so
      * nothing has to carry a live credential across a decision.
+     *
+     * The read and the zeroing are one uninterruptible step. `loadSessionToken`
+     * ends in a `withContext(Dispatchers.IO)`, which is a cancellation point
+     * *after* the token exists, and a restore is routinely cancelled — the
+     * route follower ends every one with `cancelAndJoin` the moment the row
+     * being restored is edited. Cancelling in that window would drop a live
+     * [SessionTokenRead.Found] on the floor with nothing having wiped it.
      */
     suspend fun storedToken(profile: LocalGatewayProfile): StoredSessionToken {
         val slot = profile.secretSlot ?: return StoredSessionToken.Absent
-        return when (val stored = tokens.loadSessionToken(slot)) {
-            is SessionTokenRead.Found -> {
-                stored.token.fill(0)
-                StoredSessionToken.Present
-            }
+        return withContext(NonCancellable) {
+            when (val stored = tokens.loadSessionToken(slot)) {
+                is SessionTokenRead.Found -> {
+                    stored.token.fill(0)
+                    StoredSessionToken.Present
+                }
 
-            SessionTokenRead.Absent -> StoredSessionToken.Absent
-            SessionTokenRead.Refused -> StoredSessionToken.Refused
+                SessionTokenRead.Absent -> StoredSessionToken.Absent
+                SessionTokenRead.Refused -> StoredSessionToken.Refused
+            }
         }
     }
 

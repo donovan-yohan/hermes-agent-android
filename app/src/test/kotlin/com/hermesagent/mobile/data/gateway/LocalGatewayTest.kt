@@ -486,7 +486,7 @@ class LocalGatewayTest {
     }
 
     @Test
-    fun `a refusal never lands on top of a connection somebody else opened`() = runTest {
+    fun `a refusal defers to a dial already in flight`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val leg = LocalLeg(healthGate = gate)
         val manager = manager(leg, managerScope = backgroundScope)
@@ -496,6 +496,12 @@ class LocalGatewayTest {
 
         // A restore that has nothing to dial still has a sentence to publish,
         // and the route it would publish it over belongs to the dial in flight.
+        //
+        // This is the ordering a single-threaded dispatcher can actually
+        // produce, so it pins the *outcome* — the refusal stands down and the
+        // dial lands — rather than the interleaving. Whether the fence is read
+        // before or under the lock is not what this discriminates; the live
+        // Remote case in `RemoteGatewayTest` is.
         val refusing = async {
             manager.restoreLocal(LocalGatewayProfile("http://10.0.0.1:9119", secretSlotId = "row-local"))
         }

@@ -34,6 +34,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -975,6 +976,45 @@ class RemoteGatewayTest {
     }
 
     /** Cached-token authenticator: a restore in these tests must never open a login. */
+    @Test
+    fun `a Local refusal never publishes over a live connection on another route`() = runTest {
+        val rpc = FakeRpc()
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("the Remote route owns no process") },
+            remoteConnector = RemoteGatewayConnector(cachedAuthenticator(FakeAuthApi())) { _, _ -> rpc },
+            localConnector = LocalGatewayConnector(
+                tokens = object : GatewaySessionTokenStore {
+                    override suspend fun loadSessionToken(slot: GatewaySecretSlot) = SessionTokenRead.Absent
+
+                    override suspend fun saveSessionToken(slot: GatewaySecretSlot, token: ByteArray) =
+                        error("a refusal stores nothing")
+
+                    override suspend fun clearSessionToken(slot: GatewaySecretSlot) =
+                        error("a refusal erases nothing")
+                },
+                health = { _, _ -> error("a refusal must not dial") },
+                rpcOpen = { _, _ -> error("a refusal must not dial") },
+            ),
+        )
+
+        assertTrue(manager.connectRemote(PROFILE, GatewayBrowserLauncher {}) is GatewayConnectResult.Connected)
+
+        // A saved Local row with no token has a sentence to publish, and the
+        // loopback flags say nothing at all about the Remote leg that is up:
+        // fenced on those alone, this replaces a live connection's state with
+        // advice about a row this app is not even on.
+        val refused = manager.restoreLocal(
+            LocalGatewayProfile("http://127.0.0.1:9119", secretSlotId = "row-local"),
+        )
+
+        assertNull("the refusal stood down", refused)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        assertNull("and said nothing over the live route", manager.state.value.message)
+
+        manager.disconnect()
+    }
+
     private fun cachedAuthenticator(api: FakeAuthApi) = NativeGatewayAuthenticator(
         api = api,
         store = MemoryTokenStore(VALID_TOKENS),

@@ -594,13 +594,19 @@ internal class GatewayConnectionManager(
         // Every branch here that does not dial says one sentence and stops, so
         // the sentence is the only thing that varies between them.
         //
-        // Whether it gets to say it is decided under the lock, not before it:
-        // every other state-publishing path in this class is fenced against a
-        // newer connect, and a refusal that landed on top of a dial somebody
-        // else had already opened would replace a live connection with a
-        // sentence about a row that is no longer the one being dialled.
+        // Whether it gets to say it is fenced the way every other publishing
+        // path in this class is, and against *any* connection rather than a
+        // loopback one. The loopback flags are false while a Remote or SSH leg
+        // is up, so on their own they would let a sentence about a Local row
+        // this app is not even on replace a live connection's state. The pair
+        // that actually answers "is anything live or opening" is the one
+        // `restoreRemote` gates its arming on: no active leg, and no connect
+        // holding the intent.
         suspend fun refuse(message: String): GatewayConnectResult? = mutex.withLock {
-            if (loopbackRouteBusy()) null else fail(null, message, retryable = false)
+            val somethingElseOwnsTheState = loopbackRouteBusy() ||
+                active != null ||
+                connectIntent.get().job != null
+            if (somethingElseOwnsTheState) null else fail(null, message, retryable = false)
         }
 
         val connector = localConnector ?: return refuse(LocalGatewayCopy.UNAVAILABLE)
