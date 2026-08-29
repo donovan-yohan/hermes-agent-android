@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -351,6 +352,182 @@ class LocalGatewayTest {
     }
 
     @Test
+    fun `a saved token brings the Local route back with nobody present`() = runTest {
+        val leg = LocalLeg(scraped = "scraped-token-fixture")
+        val manager = manager(leg)
+
+        val result = manager.restoreLocal(PROFILE)
+
+        assertTrue("expected Connected, got $result", result is GatewayConnectResult.Connected)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        // The readiness gate is the explicit dial's, in the same order: an
+        // authenticated health check, then the socket, then one authenticated
+        // round trip. A restore that skipped any of it would come up on a
+        // Gateway that had not proved it could answer.
+        assertEquals("http://127.0.0.1:9119", leg.healthCheckedUrl)
+        assertEquals(TOKEN, leg.healthToken)
+        assertEquals(TOKEN, leg.socketToken)
+        assertEquals(listOf("session.list"), leg.rpc.calls)
+        assertNotNull(manager.gatewayHttp.value)
+        assertEquals("an unattended dial never asks the port for a credential", 0, leg.scrapes)
+
+        manager.disconnect()
+        runCurrent()
+    }
+
+    @Test
+    fun `a row with no saved token is never dialled, and says what it is missing`() = runTest {
+        val leg = LocalLeg(scraped = "scraped-token-fixture")
+        leg.tokenStore.stored = null
+        val manager = manager(leg)
+
+        val result = manager.restoreLocal(PROFILE)
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(LocalGatewayCopy.TOKEN_MISSING, (result as GatewayConnectResult.Failed).message)
+        assertFalse("there is nothing here to retry into", result.retryable)
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(LocalGatewayCopy.TOKEN_MISSING, manager.state.value.message)
+        // The scrape is a convenience for somebody standing at the form. Run at
+        // every launch it would let whatever holds the port hand this app a
+        // credential, which it would then keep using.
+        assertEquals("a restore never scrapes", 0, leg.scrapes)
+        assertEquals("and nothing was dialled", 0, leg.healthChecks)
+        assertNull(leg.socketUrl)
+    }
+
+    @Test
+    fun `a stored token this row may not use is a refusal, never a launch-time scrape`() = runTest {
+        // What a re-addressed row leaves behind. The slot is not empty, so the
+        // one case that may be filled in by asking the server does not apply.
+        val leg = LocalLeg(scraped = "scraped-token-fixture")
+        leg.tokenStore.refuses = true
+        val manager = manager(leg)
+
+        val result = manager.restoreLocal(PROFILE)
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(LocalGatewayCopy.TOKEN_REFUSED, (result as GatewayConnectResult.Failed).message)
+        assertFalse(result.retryable)
+        assertEquals(LocalGatewayCopy.TOKEN_REFUSED, manager.state.value.message)
+        assertEquals(0, leg.scrapes)
+        assertEquals(0, leg.healthChecks)
+        assertNull(leg.socketUrl)
+    }
+
+    @Test
+    fun `a token the Gateway refuses at the upgrade lands once, and nothing retries it`() = runTest {
+        val leg = LocalLeg(socketStatus = 401)
+        val manager = manager(leg, managerScope = backgroundScope)
+
+        val result = manager.restoreLocal(PROFILE)
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(LocalGatewayCopy.TOKEN_REFUSED, (result as GatewayConnectResult.Failed).message)
+        assertFalse("a wrong token is not a transient failure", result.retryable)
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+
+        // Nothing is armed behind a restore on this route, so an hour of
+        // virtual time leaves the same single attempt and the same sentence.
+        advanceTimeBy(60 * 60 * 1000L)
+        runCurrent()
+
+        assertEquals("one upgrade, one refusal", 1, leg.socketOpens)
+        assertEquals(1, leg.healthChecks)
+        assertEquals(LocalGatewayCopy.TOKEN_REFUSED, manager.state.value.message)
+    }
+
+    @Test
+    fun `a Hermes that is not running is the retryable failure it always was`() = runTest {
+        val leg = LocalLeg(healthStatus = 503)
+        val manager = manager(leg, managerScope = backgroundScope)
+
+        val result = manager.restoreLocal(PROFILE)
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(LocalGatewayCopy.NOT_ANSWERING, (result as GatewayConnectResult.Failed).message)
+        assertTrue("`hermes serve` can be started; this is worth another tap", result.retryable)
+
+        // Worth another tap, not another dial: the only thing that starts that
+        // process is the person, so nothing loops behind this.
+        advanceTimeBy(60 * 60 * 1000L)
+        runCurrent()
+
+        assertEquals(1, leg.healthChecks)
+        assertNull(leg.socketUrl)
+    }
+
+    @Test
+    fun `a restore stands aside for a dial already in flight, and for a live one`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val leg = LocalLeg(healthGate = gate)
+        val manager = manager(leg, managerScope = backgroundScope)
+
+        val dialling = async { manager.connectLocal(PROFILE) }
+        runCurrent()
+        val readsBefore = leg.tokenStore.reads
+
+        // Launch, or a connection switch, arriving while the person's own
+        // Connect is still inside the readiness check. The route is theirs and
+        // names the same server; a second dial would add nothing but a socket.
+        assertNull("the restore declined", manager.restoreLocal(PROFILE))
+        assertEquals("and read no credential to decide it", readsBefore, leg.tokenStore.reads)
+
+        gate.complete(Unit)
+        assertTrue(dialling.await() is GatewayConnectResult.Connected)
+        assertEquals("one dial, not two", 1, leg.healthChecks)
+
+        // Nor does a later re-arm redial the connection it is already on.
+        assertNull(manager.restoreLocal(PROFILE))
+        assertEquals(1, leg.healthChecks)
+
+        manager.disconnect()
+        runCurrent()
+    }
+
+    @Test
+    fun `a refusal never lands on top of a connection somebody else opened`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val leg = LocalLeg(healthGate = gate)
+        val manager = manager(leg, managerScope = backgroundScope)
+
+        val dialling = async { manager.connectLocal(PROFILE) }
+        runCurrent()
+
+        // A restore that has nothing to dial still has a sentence to publish,
+        // and the route it would publish it over belongs to the dial in flight.
+        val refusing = async {
+            manager.restoreLocal(LocalGatewayProfile("http://10.0.0.1:9119", secretSlotId = "row-local"))
+        }
+        runCurrent()
+        gate.complete(Unit)
+
+        assertTrue(dialling.await() is GatewayConnectResult.Connected)
+        assertNull("the refusal stood down", refusing.await())
+        assertEquals(
+            "a live connection is not replaced by a sentence about another row",
+            GatewayConnectionStatus.Connected,
+            manager.state.value.status,
+        )
+
+        manager.disconnect()
+        runCurrent()
+    }
+
+    @Test
+    fun `an address this app cannot use is refused before the slot is read`() = runTest {
+        val leg = LocalLeg()
+        val manager = manager(leg)
+
+        val result = manager.restoreLocal(LocalGatewayProfile("http://10.0.0.1:9119", secretSlotId = "row-local"))
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(LocalGatewayCopy.INVALID_URL, (result as GatewayConnectResult.Failed).message)
+        assertEquals("no slot was read", 0, leg.tokenStore.reads)
+        assertEquals(0, leg.healthChecks)
+    }
+
+    @Test
     fun `the wire contract is the one pinned Hermes serves`() {
         val base = "http://127.0.0.1:9119"
         val token = TOKEN.toByteArray(Charsets.US_ASCII)
@@ -389,19 +566,27 @@ class LocalGatewayTest {
         private val scraped: String? = null,
         /** Held open to keep a connect suspended inside the readiness check. */
         val healthGate: CompletableDeferred<Unit>? = null,
+        /**
+         * The status a refused upgrade answers with. `/api/health` is public at
+         * the pin, so this is the only place a wrong token is detected.
+         */
+        private val socketStatus: Int? = null,
     ) {
         val tokenStore = FakeSessionTokenStore(TOKEN.toByteArray(Charsets.US_ASCII))
         val rpc = LocalRpc()
         var healthCheckedUrl: String? = null
         var healthToken: String? = null
+        var healthChecks = 0
         var socketUrl: String? = null
         var socketToken: String? = null
+        var socketOpens = 0
         var scrapes = 0
 
         fun connector() = LocalGatewayConnector(
             tokens = tokenStore,
             health = { url, token ->
                 healthGate?.await()
+                healthChecks += 1
                 healthCheckedUrl = url
                 healthToken = token.toString(Charsets.US_ASCII)
                 when {
@@ -415,6 +600,13 @@ class LocalGatewayTest {
                 }
             },
             rpcOpen = { url, token ->
+                // The counter is attempts; the two fields below stay "the
+                // socket that opened", which is what `assertNull(socketUrl)`
+                // is read as everywhere else in this file.
+                socketOpens += 1
+                socketStatus?.let { status ->
+                    throw GatewayRpcException("The Gateway refused the connection.", statusCode = status)
+                }
                 socketUrl = url
                 socketToken = token.toString(Charsets.US_ASCII)
                 rpc

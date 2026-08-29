@@ -152,8 +152,23 @@ internal class ConnectionSwitchController(
         if (dropDrafts) drafts.clear()
     }
 
+    /**
+     * Whether the app-scoped route follower can bring this row up with nobody
+     * present, which is the only case worth holding a pending badge for.
+     *
+     * A Remote row has a stored sign-in and a Local row a stored session token.
+     * Managed SSH's credential is in memory and died with the connection this
+     * switch has just closed, so nothing is coming for it.
+     */
+    private val SavedConnection.restorable: Boolean
+        get() = when (kind) {
+            ConnectionKind.Remote -> remote.isValid
+            ConnectionKind.Local -> local.isValid
+            ConnectionKind.Ssh -> false
+        }
+
     private suspend fun awaitSettle(target: SavedConnection?) {
-        if (target == null || target.kind != ConnectionKind.Remote || !target.remote.isValid) return
+        if (target == null || !target.restorable) return
         withTimeoutOrNull(settleTimeoutMillis) {
             gateway.state.first { state ->
                 state.status == GatewayConnectionStatus.Connected ||

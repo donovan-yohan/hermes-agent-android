@@ -5,6 +5,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectResult
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.session.SessionCache
@@ -123,6 +124,36 @@ class ConnectionSwitchControllerTest {
         advanceTimeBy(2)
         switch.join()
         assertNull(controller.pendingConnectionId.value)
+    }
+
+    @Test
+    fun `a Local target is waited on, because its token is already on this device`() = runTest {
+        val rows = listOf(
+            TWO_ROWS.first(),
+            SavedConnection(
+                "two",
+                "Termux",
+                ConnectionKind.Local,
+                local = LocalGatewayProfile("http://127.0.0.1:9119"),
+            ),
+        )
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(rows, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, SessionCache(), settleTimeoutMillis = 5_000)
+
+        val switch = launch { controller.select("two") }
+        runCurrent()
+
+        // The follower restores this row with no interaction, so the badge has
+        // something real to wait for — the difference from Managed SSH, whose
+        // credential died with the connection that was just closed.
+        assertEquals("two", controller.pendingConnectionId.value)
+
+        gateway.publish(GatewayConnectionStatus.Connected)
+        switch.join()
+
+        assertNull(controller.pendingConnectionId.value)
+        assertEquals("two", store.connectionRegistry.first().activeId)
     }
 
     @Test
