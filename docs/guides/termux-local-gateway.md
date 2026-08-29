@@ -28,9 +28,29 @@ Use another route instead when:
 
 > **Status.** The Local route's transport and token slot shipped in slice S-A1
 > of [#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93); the
-> Gateways entry that creates a Local connection is slice S-A2 ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)). No physical
-> device pass has been run yet — see
-> [Known limitations](../../status/ROADMAP.md#known-limitations).
+> Gateways entry that creates a Local connection is slice S-A2
+> ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)), and the
+> launch restore is S-A5
+> ([#97](https://github.com/donovan-yohan/hermes-agent-android/pull/97)).
+>
+> **What is verified.** Everything below marked *Verified* was run end to end on
+> 2026-08-29 against app head `fe67796`, on a Pixel 10 Pro emulator — Android 17
+> (API 37), arm64, `getconf PAGESIZE` = 16384 — installing `hermes-agent 0.20.4`
+> from `f82f2db` in Termux and connecting the app to it. That pass covers the
+> install, the token gating, connecting, the session list and the negative cases.
+> One sentence in the troubleshooting table below is *not* from that head: on
+> `fe67796` a stopped Gateway answered with the Remote route's "check the host"
+> wording, which is the defect the pass found. The corrected sentence ships in
+> [#98](https://github.com/donovan-yohan/hermes-agent-android/pull/98) and is
+> covered by unit tests, not by a second device run: the **Connect** half
+> against a real refused loopback connection, and the half where a live
+> connection loses its Gateway against a socket close reported as a transport
+> failure.
+> It does **not** cover a live turn (no provider key was on the device) or
+> keep-alive on a physical phone, which is where step 5 is still unproven — see
+> [Known limitations](../../status/ROADMAP.md#known-limitations). Anything called
+> community-documented here — step 5's Android settings, and the entries under
+> [Sources](#sources) — is somebody else's evidence, not this repository's.
 
 ## 1. Install Termux
 
@@ -41,6 +61,61 @@ installed over the other.
 
 - <https://f-droid.org/packages/com.termux/>
 - <https://github.com/termux/termux-app/releases>
+
+### Check the page size before you trust the install
+
+Android 15 brought 16 KB memory pages, and Pixel 8 and newer devices — plus the
+current Pixel emulator images — run that way. Termux `v0.118.3` bundles a
+bootstrap linked for 4 KB pages, so on a 16 KB device its very first launch dies
+before it reaches a prompt, leaving an app that opens to nothing:
+
+```
+E Termux:TermuxInstaller: (-1) Termux Bootstrap Second Stage Command:
+E Termux:TermuxInstaller: Exit Code: `139`
+```
+
+139 is SIGSEGV. Ask the device which size it uses — in Termux if it runs, or
+over `adb` if it does not:
+
+```bash
+getconf PAGESIZE
+```
+
+`4096` and there is nothing to do. `16384` and you need a Termux whose bootstrap
+is built for 16 KB pages: a release later than `v0.118.3` whose notes say so, or
+a `termux-packages` bootstrap of `bootstrap-2026.08.23-r1` (aarch64) or later
+installed over the failed one. Check any bootstrap archive against the
+`_sha256sums` file published beside it before extracting it.
+
+> **Verified.** On the Pixel 10 Pro emulator, `v0.118.3+github-debug_arm64-v8a`
+> installed and its bundled bootstrap segfaulted exactly as above; `readelf -lW`
+> on `bin/bash` from the APK's `libtermux-bootstrap.so` shows every `LOAD`
+> segment aligned to `0x1000`. Extracting `bootstrap-2026.08.23-r1` (aarch64)
+> over `$PREFIX` gave a working `bash 5.3.15`, and everything below then ran on
+> it.
+
+Replacing a bootstrap by hand needs `adb` and a debug-signed Termux build, so it
+is a developer workaround rather than a user path. What the device pass ran, as
+the `com.termux` user with the archive already pushed to
+`/data/data/com.termux/files/bs.zip`:
+
+```bash
+cd /data/data/com.termux/files
+# Never skip this: everything below runs as $PREFIX/bin.
+sha256sum -c bootstrap-aarch64.zip.sha256   # from the release's `_sha256sums`
+rm -rf usr && mkdir -p usr
+unzip -q -o bs.zip -d usr
+# The archive ships its symlinks as a manifest: `target←linkpath`, one per line.
+cd usr
+while read -r line; do
+  [ -z "$line" ] && continue
+  ln -sf "${line%%←*}" "${line##*←}"
+done < SYMLINKS.txt
+chmod -R 700 bin libexec
+./bin/bash -c 'echo $BASH_VERSION'
+```
+
+### Update the packages
 
 Open Termux and update its packages:
 
@@ -57,14 +132,20 @@ manual path (`termux.md:103-162`); the one-line installer in the note below
 tries `.[termux-all]` first and falls back to it (`termux.md:93`).
 
 ```bash
-pkg install -y git python clang rust make pkg-config libffi openssl nodejs ripgrep ffmpeg
+pkg install -y git python clang rust make pkg-config libffi openssl nodejs ripgrep ffmpeg libjpeg-turbo
+
+# Hermes pins `requires-python = ">=3.11,<3.14"`, and Termux's `python` is past
+# that. 3.11 comes from the Termux User Repository.
+pkg install -y tur-repo
+pkg install -y python3.11
 
 git clone https://github.com/NousResearch/hermes-agent.git
 cd hermes-agent
 
-python -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
+export CARGO_BUILD_JOBS=1
 python -m pip install --upgrade pip setuptools wheel
 
 python -m pip install -e '.[termux]' -c constraints-termux.txt
@@ -74,10 +155,37 @@ hermes version
 hermes doctor
 ```
 
-`ANDROID_API_LEVEL` matters: Rust/maturin packages such as `jiter` fail to build
-without it (`termux.md:135`). `$PREFIX/bin` is already on Termux's `PATH`, so
-the symlink keeps `hermes` available in new shells without re-activating the
-virtualenv (`termux.md:149-155`).
+> **Verified.** That sequence is what the device pass converged on to get
+> `hermes-agent 0.20.4` installed and serving — the interpreter and build flags
+> below are what it took to get there. It installed the package list
+> without `nodejs` and `ffmpeg`, which `serve` itself does not need, and the
+> `pip install` takes a long time on a phone: it builds Rust and C extensions
+> from source.
+
+Three of those lines are deviations from upstream's manual path, and each one is
+a build that fails without it:
+
+- **`python3.11`, not `python`.** Termux now ships Python 3.14, and Hermes pins
+  `requires-python = ">=3.11,<3.14"` (`pyproject.toml:15` @ `f82f2db`), so the
+  default interpreter is refused outright. 3.13 does not work either: PEP 738
+  makes `sys.platform` report `android` from 3.13 onwards, and the pinned
+  `psutil==7.2.2` (`pyproject.toml:108`) answers that with `platform android is
+  not supported`. On 3.11 `sys.platform` is still `linux` and the build
+  completes.
+- **`libjpeg-turbo`.** Pillow is a core dependency (`pyproject.toml:134`), and
+  without the JPEG headers it stops with *"The headers or library files could
+  not be found for jpeg"*.
+- **`CARGO_BUILD_JOBS=1`.** Parallel cargo builds of `jiter` fail in Termux with
+  `pyo3-ffi`'s `Text file busy (os error 26)`. One job at a time is slower and
+  it finishes. The verified run also set `MAKEFLAGS=-j1`, which is not known to
+  be required.
+
+The fourth, `ANDROID_API_LEVEL`, is upstream's own requirement: Rust/maturin
+packages such as `jiter` fail to build without it (`termux.md:135`).
+
+`$PREFIX/bin` is already on Termux's `PATH`, so the symlink keeps `hermes`
+available in new shells without re-activating the virtualenv
+(`termux.md:149-155`).
 
 Upstream also ships a Termux-aware one-line installer that does the same work
 and picks the right extra automatically (`termux.md:81-97`):
@@ -86,11 +194,19 @@ and picks the right extra automatically (`termux.md:81-97`):
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 ```
 
+The device pass did not use it. It builds against whatever `python` Termux
+supplies, which is the interpreter the pin above refuses, so on a current Termux
+expect it to stop at the same place — use the manual path.
+
 Then configure a model, once:
 
 ```bash
 hermes model
 ```
+
+A model needs a provider key. `hermes doctor` names what is missing — an absent
+`~/.hermes/.env` and an unconfigured provider are what it reports on a fresh
+install — and without one, connecting works but every turn ends in an error.
 
 ## 3. Choose the session token yourself
 
@@ -143,6 +259,12 @@ To see what is running, from any Termux shell:
 hermes serve --status
 ```
 
+> **Verified.** With the server up, `/api/health` answered
+> `200 {"ok":true,"version":"0.20.4","auth_required":false}` with no token — it
+> is public at the pin, which is why the app's readiness check cannot be the
+> place a wrong token is caught. `/api/sessions` answered `401` with no token,
+> `200` with the right one and `401` with a wrong one.
+
 ## 5. Keep it running
 
 Android will suspend or kill background processes unless you tell it not to.
@@ -175,6 +297,11 @@ Even with all three, upstream calls gateway persistence on Android
 "best-effort rather than a normal managed service" (`termux.md:43` @ `f82f2db`).
 Expect to restart `hermes serve` sometimes.
 
+> **Not verified.** This step is the one part of this guide the device pass could
+> not exercise: an emulator with the app in the foreground is not a phone in a
+> pocket. Treat the three settings as community advice until a physical-device
+> pass says otherwise.
+
 ## 6. Add the connection in the app
 
 In Hermes Mobile: **Gateways → Add connection → Local**.
@@ -196,13 +323,22 @@ Two rules worth knowing before you type:
   mistyped port is recoverable by fixing the address. Save the token again once
   the address is right.
 
+> **Verified.** The saved row read `Local · 127.0.0.1:9119 · Session token`, the
+> chat surface showed the repository and branch only the Termux Gateway knows,
+> and force-stopping and relaunching the app came back **Connected** with the
+> session restored and without opening Gateways. A wrong token was refused and
+> stayed refused — nothing retried it — and re-saving the right one reconnected,
+> as did restarting a stopped `hermes serve`. The session token appeared nowhere
+> in `logcat`.
+
 ## Troubleshooting
 
 | Symptom | What is happening | Fix |
 |---|---|---|
 | The app says *"Session token was refused. Save the token Hermes is running with, then connect."* | The token the app holds is not the token the running server has — usually because `hermes serve` restarted without `HERMES_DASHBOARD_SESSION_TOKEN` set and minted a new random one (`web_server.py:499-500` @ `f82f2db`). The refusal comes from the WebSocket upgrade, not the readiness check: `/api/health` needs no token at the pinned Hermes (`dashboard_auth/public_paths.py:33-38`), so the socket is where a wrong token is caught. The app does not retry it. | Export the token as in step 3, restart `hermes serve`, then re-save the token on the connection. |
-| The app says *"Hermes is not answering on this device. Start it, then connect."* | Nothing is listening on that port: `hermes serve` exited, or Android killed it in the background. | Run `hermes serve --status` in Termux. If it lists nothing, start it again, and work through step 5 — a server that dies minutes after you switch apps is the phantom-process killer or battery optimisation, not Hermes. |
+| The app says *"Hermes is not answering on this device. Start it, then connect."* | Nothing is answering on that port: `hermes serve` exited, or Android suspended or killed it in the background. This is the sentence for both halves of that — pressing **Connect** when the server is not running, and a connection that was live until the server went away — and the app offers **Connect** again rather than retrying by itself, because the only thing that starts that process is you. | Run `hermes serve --status` in Termux. If it lists nothing, start it again, then press **Connect**. A server that dies minutes after you switch apps is the phantom-process killer or battery optimisation, not Hermes — work through step 5. |
 | The app says *"Save this Gateway's session token, then connect."* | The row has no token saved. `hermes serve` is headless and serves no web UI, so there is no page for the app to read one from (`dashboard.py:166-170` @ `f82f2db`). | Edit the connection and paste the token from step 3. |
+| The app connects, but every turn ends with *"That turn failed — Hermes ended this turn unexpectedly. Check the Gateway, then try again."* | The Gateway is running and answering; the turn is what failed. On a fresh Termux install that is usually a missing provider key, so Hermes has no model to run the turn with. | Run `hermes doctor` in Termux. If it reports a missing `~/.hermes/.env` or an unconfigured provider, add the key and run `hermes model`, then restart `hermes serve`. |
 | `hermes serve` exits at startup complaining the address is in use | Another Hermes — or another app — already holds port 9119. | `hermes serve --status` lists running Hermes servers and `hermes serve --stop` stops them (`dashboard.py:75-84` @ `f82f2db`). If something else owns the port, start Hermes on another one (`--port 9130`), then change the address on the saved row and save the token again. |
 
 ## What Termux does not give you
@@ -236,3 +372,15 @@ is not verified by this repository's gates:
 - phantom-process killing and the flags that disable it —
   [agnostic-apollo/Android-Docs](https://github.com/agnostic-apollo/Android-Docs/blob/master/en/docs/apps/processes/phantom-cached-and-empty-processes.md),
   [termux/termux-app#3506](https://github.com/termux/termux-app/issues/3506)
+- 16 KB memory pages and which devices use them —
+  [Android developer documentation](https://developer.android.com/guide/practices/page-sizes)
+- Termux bootstrap archives and their checksums —
+  [termux/termux-packages releases](https://github.com/termux/termux-packages/releases)
+- `sys.platform == "android"` from Python 3.13 —
+  [PEP 738](https://peps.python.org/pep-0738/)
+
+The 16 KB bootstrap failure, the interpreter and build deviations in step 2, and
+every note marked *Verified* were observed by this repository's device pass for
+[#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93) on the
+hardware named at the top of this guide. They are one device's evidence, not a
+support matrix.

@@ -118,8 +118,9 @@ concurrent multi-controller policy is not claimed.
 
 ## Addendum — the Local route, 2026-08-29
 
-**Status:** accepted; transport and credential implemented, Gateways entry and
-device evidence pending
+**Status:** accepted; transport, credential, Gateways entry and launch restore
+implemented, and verified against a real Termux Gateway on an emulator — a live
+turn and physical-device keep-alive are still open
 **Authority:** `NousResearch/hermes-agent` @
 `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
 
