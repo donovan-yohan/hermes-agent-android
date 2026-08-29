@@ -69,9 +69,11 @@ SSH host, port, username, optional remote profile, auth method and accepted
 fingerprint reach disk, plus which row is active and a random per-install
 ownership id — that one stays per install, because it namespaces this app's
 remote processes on a host rather than an endpoint. The imported key's display
-name is screen state the store drops. A Remote row's OAuth tokens are the one
-secret with a disk slot: Keystore ciphertext below `noBackupFilesDir`, one file
-per row id, naming the Gateway that minted it. It is refused — and kept on
+name is screen state the store drops. Two secrets have a disk slot, and they
+share one machinery: a Remote row's OAuth tokens, and a Local row's static
+Hermes session token. Keystore ciphertext below `noBackupFilesDir`, one file
+per row id, naming the Gateway that minted it, and one kind of credential per
+row. Either is refused — and kept on
 disk, so a mistyped address is recoverable — if that row later points
 elsewhere, and it is zeroed and unlinked when the row is removed — addressable by row id alone, so a row whose URL was blanked or
 mistyped can still be cleaned up rather than orphaning its credential.

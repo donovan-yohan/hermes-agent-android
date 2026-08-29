@@ -102,7 +102,7 @@ internal class KeystoreSecretCipher : SecretCipher {
 internal class AndroidGatewayTokenStore(
     context: Context,
     private val cipher: SecretCipher = KeystoreSecretCipher(),
-) : GatewayTokenStore {
+) : GatewayTokenStore, GatewaySessionTokenStore {
     private val directory = File(context.noBackupFilesDir, "gateway-auth")
 
     override suspend fun load(slot: GatewaySecretSlot): GatewayNativeTokens? = withContext(Dispatchers.IO) {
@@ -110,27 +110,15 @@ internal class AndroidGatewayTokenStore(
         // can be erased but never read.
         val expectedUrl = slot.normalizedBaseUrl ?: return@withContext null
         val (file, adopted) = adoptedFile(slot) ?: return@withContext null
-        val encoded = runCatching { file.readBytes() }.getOrNull() ?: return@withContext null
-        var plaintext: ByteArray? = null
-        val stored = try {
-            if (encoded.size <= HEADER_BYTES || encoded[0] != FORMAT_VERSION) {
-                // `file`, not `slotFile(slot)`: when adoption's rename failed
-                // this read came from the pre-registry file, and that is the
-                // unusable one to remove.
-                erase(file)
-                return@withContext null
-            }
-            val iv = encoded.copyOfRange(1, 1 + IV_BYTES)
-            val ciphertext = encoded.copyOfRange(1 + IV_BYTES, encoded.size)
-            plaintext = cipher.open(iv, ciphertext)
-            parseStoredTokens(plaintext.toString(Charsets.UTF_8))
-        } catch (_: Exception) {
-            erase(file)
-            null
-        } finally {
-            encoded.fill(0)
-            plaintext?.fill(0)
-        } ?: return@withContext null
+        val stored = readCredential(file) ?: return@withContext null
+        // A slot holds one kind of credential, because a saved connection is one
+        // kind. A session token read as a sign-in would be presented as a bearer
+        // to a route that never minted it.
+        if (stored !is StoredCredential.NativeTokens) {
+            stored.wipe()
+            return@withContext null
+        }
+        val tokens = stored.tokens
 
         // Refusal is the guarantee, and refusal alone. Reading is not the place
         // to destroy anything: a mistyped URL is a read against the wrong host,
@@ -144,15 +132,15 @@ internal class AndroidGatewayTokenStore(
             // bound, once, so the next read has the same guarantee as any
             // other and a later re-address cannot slip past this branch.
             null -> if (adopted) {
-                save(slot, stored.tokens)
-                stored.tokens
+                save(slot, tokens)
+                tokens
             } else {
                 // A row-named blob naming no host cannot be proved to belong to
                 // whoever is asking, so it is returned to nobody.
                 null
             }
 
-            expectedUrl -> stored.tokens
+            expectedUrl -> tokens
 
             // Minted by another Gateway. The credential is that Gateway's, this
             // row now points elsewhere, and presenting it here would hand one
@@ -165,17 +153,115 @@ internal class AndroidGatewayTokenStore(
         val boundUrl = requireNotNull(slot.normalizedBaseUrl) {
             "A credential can only be stored for a Gateway this app can address."
         }
+        writeCredential(
+            slot,
+            buildJsonObject {
+                put(KIND, JsonPrimitive(KIND_NATIVE))
+                put("accessToken", JsonPrimitive(tokens.accessToken))
+                put("refreshToken", JsonPrimitive(tokens.refreshToken))
+                put("expiresAt", JsonPrimitive(tokens.expiresAt))
+                put("provider", JsonPrimitive(tokens.provider))
+                put("userId", JsonPrimitive(tokens.userId))
+                // Which Gateway minted this. Read back on every load; a mismatch
+                // is refused rather than presented to the wrong host.
+                put(BOUND_URL, JsonPrimitive(boundUrl))
+            },
+        )
+    }
+
+    /**
+     * The Local route's static session token, under the same binding rule.
+     *
+     * A blob that names another address is refused and kept, exactly as a
+     * sign-in is: on loopback the address is a port, and a person who changed
+     * the port of a row still owns the token for the old one.
+     */
+    override suspend fun loadSessionToken(slot: GatewaySecretSlot): ByteArray? = withContext(Dispatchers.IO) {
+        val expectedUrl = slot.normalizedBaseUrl ?: return@withContext null
+        // No adoption: the Local route has no pre-registry, URL-named ancestor.
+        val file = slotFile(slot).takeIf { it.isFile } ?: return@withContext null
+        val stored = readCredential(file) ?: return@withContext null
+        if (stored !is StoredCredential.SessionToken) {
+            stored.wipe()
+            return@withContext null
+        }
+        if (stored.boundUrl != expectedUrl) {
+            stored.wipe()
+            return@withContext null
+        }
+        stored.token
+    }
+
+    override suspend fun saveSessionToken(slot: GatewaySecretSlot, token: ByteArray) {
+        withContext(Dispatchers.IO) {
+            try {
+                val boundUrl = requireNotNull(slot.normalizedBaseUrl) {
+                    "A credential can only be stored for a Gateway this app can address."
+                }
+                require(token.isNotEmpty()) { "A session token cannot be empty." }
+                writeCredential(
+                    slot,
+                    buildJsonObject {
+                        put(KIND, JsonPrimitive(KIND_SESSION))
+                        put(SESSION_TOKEN, JsonPrimitive(token.toString(Charsets.US_ASCII)))
+                        put(BOUND_URL, JsonPrimitive(boundUrl))
+                    },
+                )
+            } finally {
+                // The caller's copy dies here whatever happened, including a
+                // refused write: a token that could not be stored is still a
+                // token, and leaving it in a live array is the same leak.
+                token.fill(0)
+            }
+        }
+    }
+
+    override suspend fun clear(slot: GatewaySecretSlot) {
+        withContext(Dispatchers.IO) {
+            erase(slotFile(slot))
+            legacyFile(slot)?.let(::erase)
+        }
+    }
+
+    override suspend fun clearSessionToken(slot: GatewaySecretSlot) = clear(slot)
+
+    /**
+     * Decrypts and parses one blob, erasing what it cannot use.
+     *
+     * A blob that is truncated, mis-versioned or undecryptable is removed: it
+     * can never become readable again, and leaving it means a slot that is
+     * permanently occupied by nothing. A blob that decrypts but does not parse
+     * is left alone — that is this build failing to understand a document,
+     * which is not the same as the document being rubbish.
+     */
+    private fun readCredential(file: File): StoredCredential? {
+        val encoded = runCatching { file.readBytes() }.getOrNull() ?: return null
+        var plaintext: ByteArray? = null
+        return try {
+            if (encoded.size <= HEADER_BYTES || encoded[0] != FORMAT_VERSION) {
+                // `file`, not `slotFile(slot)`: when adoption's rename failed
+                // this read came from the pre-registry file, and that is the
+                // unusable one to remove.
+                erase(file)
+                return null
+            }
+            val iv = encoded.copyOfRange(1, 1 + IV_BYTES)
+            val ciphertext = encoded.copyOfRange(1 + IV_BYTES, encoded.size)
+            plaintext = cipher.open(iv, ciphertext)
+            parseStoredCredential(plaintext.toString(Charsets.UTF_8))
+        } catch (_: Exception) {
+            erase(file)
+            null
+        } finally {
+            encoded.fill(0)
+            plaintext?.fill(0)
+        }
+    }
+
+    /** Seals one credential document into this slot's file, atomically. */
+    private fun writeCredential(slot: GatewaySecretSlot, document: JsonObject) {
         directory.mkdirs()
-        val plaintext = buildJsonObject {
-            put("accessToken", JsonPrimitive(tokens.accessToken))
-            put("refreshToken", JsonPrimitive(tokens.refreshToken))
-            put("expiresAt", JsonPrimitive(tokens.expiresAt))
-            put("provider", JsonPrimitive(tokens.provider))
-            put("userId", JsonPrimitive(tokens.userId))
-            // Which Gateway minted this. Read back on every load; a mismatch is
-            // refused rather than presented to the wrong host.
-            put(BOUND_URL, JsonPrimitive(boundUrl))
-        }.toString().toByteArray(Charsets.UTF_8)
+        val plaintext = document.toString().toByteArray(Charsets.UTF_8)
         var encrypted: ByteArray? = null
         try {
             val (iv, ciphertext) = cipher.seal(plaintext)
@@ -194,17 +280,9 @@ internal class AndroidGatewayTokenStore(
             // The pre-registry file is superseded the moment this connection has
             // its own; leaving it would be a second copy of the same credential.
             legacyFile(slot)?.takeIf { it != target }?.let { superseded -> erase(superseded) }
-            Unit
         } finally {
             plaintext.fill(0)
             encrypted?.fill(0)
-        }
-    }
-
-    override suspend fun clear(slot: GatewaySecretSlot) {
-        withContext(Dispatchers.IO) {
-            erase(slotFile(slot))
-            legacyFile(slot)?.let(::erase)
         }
     }
 
@@ -238,9 +316,17 @@ internal class AndroidGatewayTokenStore(
         else -> urlFile(requireNotNull(slot.normalizedBaseUrl))
     }
 
+    /**
+     * The pre-registry, URL-named file, when this slot could have one.
+     *
+     * Only the Remote route ever wrote one, so only an HTTPS address names it.
+     * A Local row's loopback address has no such ancestor to adopt or
+     * supersede, and asking [urlFile] to name one would be asking the *remote*
+     * normalizer to parse an address it is right to refuse.
+     */
     private fun legacyFile(slot: GatewaySecretSlot): File? = when {
         slot.connectionId.isBlank() -> null
-        else -> slot.normalizedBaseUrl?.let(::urlFile)
+        else -> slot.normalizedBaseUrl?.let(::normalizeRemoteGatewayUrl)?.let(::urlFile)
     }
 
     private fun urlFile(normalizedBaseUrl: String): File =
@@ -266,30 +352,75 @@ internal class AndroidGatewayTokenStore(
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
-    private fun parseStoredTokens(raw: String): StoredCredential? {
+    private fun parseStoredCredential(raw: String): StoredCredential? {
         val body = runCatching { JSON.parseToJsonElement(raw) as JsonObject }.getOrNull() ?: return null
-        val accessToken = body.string("accessToken").orEmpty()
-        if (accessToken.isBlank()) return null
-        return StoredCredential(
-            tokens = GatewayNativeTokens(
-                accessToken = accessToken,
-                refreshToken = body.string("refreshToken").orEmpty(),
-                expiresAt = (body["expiresAt"] as? JsonPrimitive)?.longOrNull ?: 0L,
-                provider = body.string("provider").orEmpty(),
-                userId = body.string("userId").orEmpty(),
-            ),
-            boundUrl = body.string(BOUND_URL)?.takeIf(String::isNotBlank),
-        )
+        val boundUrl = body.string(BOUND_URL)?.takeIf(String::isNotBlank)
+        // An absent discriminator is a sign-in written before the Local route
+        // existed. Reading it as anything else would sign an upgrading install
+        // out of every Gateway it had.
+        return when (body.string(KIND) ?: KIND_NATIVE) {
+            KIND_SESSION -> body.string(SESSION_TOKEN)
+                ?.takeIf(String::isNotBlank)
+                ?.let { token -> StoredCredential.SessionToken(token.toByteArray(Charsets.US_ASCII), boundUrl) }
+
+            KIND_NATIVE -> body.string("accessToken")
+                ?.takeIf(String::isNotBlank)
+                ?.let { accessToken ->
+                    StoredCredential.NativeTokens(
+                        tokens = GatewayNativeTokens(
+                            accessToken = accessToken,
+                            refreshToken = body.string("refreshToken").orEmpty(),
+                            expiresAt = (body["expiresAt"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                            provider = body.string("provider").orEmpty(),
+                            userId = body.string("userId").orEmpty(),
+                        ),
+                        boundUrl = boundUrl,
+                    )
+                }
+
+            else -> null
+        }
     }
 
     /** A decrypted blob plus the Gateway it names, absent on a pre-registry one. */
-    private data class StoredCredential(val tokens: GatewayNativeTokens, val boundUrl: String?)
+    private sealed interface StoredCredential {
+        val boundUrl: String?
+
+        /** Zero anything mutable this blob is still holding. */
+        fun wipe()
+
+        data class NativeTokens(
+            val tokens: GatewayNativeTokens,
+            override val boundUrl: String?,
+        ) : StoredCredential {
+            override fun wipe() = Unit
+        }
+
+        /**
+         * The Local route's static session token. Not a data class: a generated
+         * `toString()` would print a live credential.
+         */
+        class SessionToken(
+            val token: ByteArray,
+            override val boundUrl: String?,
+        ) : StoredCredential {
+            override fun wipe() = token.fill(0)
+
+            override fun toString(): String = "SessionToken(token=<redacted>, boundUrl=$boundUrl)"
+        }
+    }
 
     internal companion object {
         const val IV_BYTES = 12
         const val HEADER_BYTES = 1 + IV_BYTES
         const val FORMAT_VERSION: Byte = 1
         const val BOUND_URL = "baseUrl"
+
+        /** Which credential a blob holds. Absent means the pre-Local sign-in. */
+        const val KIND = "kind"
+        const val KIND_NATIVE = "native"
+        const val KIND_SESSION = "sessionToken"
+        const val SESSION_TOKEN = "token"
 
         /** A stored sign-in is a few hundred bytes; this only bounds a corrupt length. */
         const val MAX_ERASE_BYTES = 64L * 1024L

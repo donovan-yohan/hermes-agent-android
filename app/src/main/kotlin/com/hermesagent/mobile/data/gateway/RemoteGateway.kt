@@ -34,6 +34,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 enum class GatewayConnectionMode {
     Remote,
     Ssh,
+
+    /**
+     * A Hermes the person runs on this same device, in Termux, reached over
+     * loopback. The app never hosts or starts it — see [LocalGatewayProfile].
+     */
+    Local,
 }
 
 /** Non-secret configuration for a host-owned Remote Gateway. */
@@ -78,6 +84,14 @@ data class RemoteGatewayProfile(
 interface RemoteGatewayProfileStore {
     val remoteGatewayProfile: kotlinx.coroutines.flow.Flow<RemoteGatewayProfile>
     val gatewayConnectionMode: kotlinx.coroutines.flow.Flow<GatewayConnectionMode>
+
+    /**
+     * The active row's Local route, when it has one. A store that keeps no
+     * Local row reports an empty profile, which is never valid — the same
+     * answer a fresh install gives.
+     */
+    val localGatewayProfile: kotlinx.coroutines.flow.Flow<LocalGatewayProfile>
+        get() = kotlinx.coroutines.flow.flowOf(LocalGatewayProfile())
 
     suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile)
     suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode)
@@ -146,6 +160,28 @@ internal interface GatewayTokenStore {
     suspend fun load(slot: GatewaySecretSlot): GatewayNativeTokens?
     suspend fun save(slot: GatewaySecretSlot, tokens: GatewayNativeTokens)
     suspend fun clear(slot: GatewaySecretSlot)
+}
+
+/**
+ * The same slots, holding the other kind of credential this app can be given:
+ * a Hermes dashboard session token, which is static for the life of the server
+ * process and has no refresh (`hermes_cli/web_server.py:499-504` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ *
+ * A separate interface rather than more methods on [GatewayTokenStore] because
+ * the two credentials have no caller in common: the Local route never signs
+ * in, and the Remote route never presents a session token. One slot still holds
+ * at most one of them — a saved connection has exactly one kind.
+ */
+internal interface GatewaySessionTokenStore {
+    /** Fresh ASCII bytes the caller owns and must zero; null when absent or refused. */
+    suspend fun loadSessionToken(slot: GatewaySecretSlot): ByteArray?
+
+    /** Stores one session token. Takes ownership of [token] and zeroes it. */
+    suspend fun saveSessionToken(slot: GatewaySecretSlot, token: ByteArray)
+
+    /** Erases whatever this slot holds. Addressable by row id alone. */
+    suspend fun clearSessionToken(slot: GatewaySecretSlot)
 }
 
 internal class GatewayAuthException(

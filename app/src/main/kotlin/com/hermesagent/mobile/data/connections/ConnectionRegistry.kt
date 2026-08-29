@@ -1,36 +1,44 @@
 package com.hermesagent.mobile.data.connections
 
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
+import com.hermesagent.mobile.data.gateway.normalizeLocalGatewayUrl
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import java.text.Normalizer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * Which endpoint shape a saved connection is.
  *
  * Desktop registers four kinds (`apps/desktop/src/app/settings/connections-registry.tsx:26-31`
- * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). Android ships the two routes it
- * actually has: `local` is a non-goal because this app never hosts a runtime,
- * and `cloud` has no Android sign-in. Persisted by [Enum.name], never ordinal.
+ * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). Android ships three: `cloud`
+ * has no Android sign-in. `local` means something different here than it does
+ * on Desktop — Desktop's local runtime is the one its own app manages, while
+ * this one is a Hermes the person runs in Termux on this same phone and this
+ * app only connects to. Persisted by [Enum.name], never ordinal.
  */
 enum class ConnectionKind {
     Remote,
     Ssh,
+    Local,
     ;
 
     val mode: GatewayConnectionMode
         get() = when (this) {
             Remote -> GatewayConnectionMode.Remote
             Ssh -> GatewayConnectionMode.Ssh
+            Local -> GatewayConnectionMode.Local
         }
 
     companion object {
         fun of(mode: GatewayConnectionMode): ConnectionKind = when (mode) {
             GatewayConnectionMode.Remote -> Remote
             GatewayConnectionMode.Ssh -> Ssh
+            GatewayConnectionMode.Local -> Local
         }
 
         /** An unrecognised stored name is a Remote gateway, never a keyless SSH route. */
@@ -56,6 +64,7 @@ data class SavedConnection(
     val kind: ConnectionKind,
     val remote: RemoteGatewayProfile = RemoteGatewayProfile(),
     val host: HostProfile = HostProfile(),
+    val local: LocalGatewayProfile = LocalGatewayProfile(),
 ) {
     /**
      * The remote profile stamped with this row's secret slot, so the Keystore
@@ -63,6 +72,20 @@ data class SavedConnection(
      * exactly this slot.
      */
     val remoteProfile: RemoteGatewayProfile get() = remote.copy(secretSlotId = id)
+
+    /** The same rule for the Local route's session token: one row, one slot. */
+    val localProfile: LocalGatewayProfile get() = local.copy(secretSlotId = id)
+
+    /**
+     * The one stored address, whichever addressed kind this row is. Both routes
+     * are a URL, so both are persisted in one field rather than two that a row
+     * could disagree with itself across.
+     */
+    internal val endpointUrl: String
+        get() = when (kind) {
+            ConnectionKind.Local -> local.baseUrl
+            ConnectionKind.Remote, ConnectionKind.Ssh -> remote.baseUrl
+        }
 
     /**
      * Human-readable, non-secret endpoint — Desktop's `connectionEndpoint`
@@ -73,12 +96,14 @@ data class SavedConnection(
         get() = when (kind) {
             ConnectionKind.Ssh -> host.destination.takeIf(String::isNotBlank)
             ConnectionKind.Remote -> remote.baseUrl.trim().takeIf(String::isNotBlank)
+            ConnectionKind.Local -> local.displayEndpoint
         }
 
     /** How this row proves who the user is. Never the secret, only the method. */
     val authModeLabel: String
         get() = when (kind) {
             ConnectionKind.Remote -> BROWSER_SIGN_IN
+            ConnectionKind.Local -> SESSION_TOKEN
             ConnectionKind.Ssh -> when (host.authMethod) {
                 AuthMethod.TailscaleSsh -> "Tailscale SSH"
                 AuthMethod.Password -> "Password"
@@ -88,6 +113,13 @@ data class SavedConnection(
 
     companion object {
         const val BROWSER_SIGN_IN: String = "Browser sign-in"
+
+        /**
+         * The Local route's whole boundary: on loopback there is no TLS, no
+         * sign-in and no host key, so the dashboard session token is what tells
+         * this app apart from anything else on the phone.
+         */
+        const val SESSION_TOKEN: String = "Session token"
     }
 }
 
@@ -162,12 +194,31 @@ private val PORT_SUFFIX = Regex("^(.*):(\\d+)$")
 private const val DEFAULT_SSH_PORT = "22"
 
 /**
+ * Dedupe key for a loopback Gateway address.
+ *
+ * Desktop allows exactly one local connection because its local runtime is the
+ * one its own app manages (`connections-registry.tsx` `duplicateLocal`,
+ * `en.ts:753` @ `f82f2dba`). Here the person can run more than one
+ * `hermes serve` on this phone, on different ports, so the rule is per address
+ * instead — but `127.0.0.1`, `localhost` and `[::1]` on one port are one
+ * server, and collapsing them is what stops the same Hermes being saved three
+ * times under three spellings. An address this app cannot use collides with
+ * nothing.
+ */
+fun localGatewayKey(url: String): String {
+    val address = normalizeLocalGatewayUrl(url)?.toHttpUrlOrNull() ?: return ""
+    return "loopback:${address.port}${address.encodedPath.trimEnd('/')}"
+}
+
+/**
  * The row [candidate] collides with, or null.
  *
  * Desktop's rule (`connections-registry.tsx:120-168` @ `f82f2dba`), minus the
  * kinds Android does not ship: remote rows are duplicates when their normalized
  * URLs match; SSH rows are duplicates on `user@host:port` plus the remote
- * Hermes profile.
+ * Hermes profile; Local rows are duplicates on the loopback address, which is
+ * where this deviates from Desktop's one-local-connection rule and why
+ * [localGatewayKey] says so.
  */
 fun findDuplicateConnection(
     candidate: SavedConnection,
@@ -182,6 +233,19 @@ fun findDuplicateConnection(
                 it.kind == ConnectionKind.Remote &&
                     it.id != candidate.id &&
                     normalizeGatewayUrl(it.remote.baseUrl) == key
+            }
+        }
+    }
+
+    ConnectionKind.Local -> {
+        val key = localGatewayKey(candidate.local.baseUrl)
+        if (key.isEmpty()) {
+            null
+        } else {
+            connections.firstOrNull {
+                it.kind == ConnectionKind.Local &&
+                    it.id != candidate.id &&
+                    localGatewayKey(it.local.baseUrl) == key
             }
         }
     }
@@ -205,7 +269,8 @@ fun findDuplicateConnection(
 /**
  * One stable, human-readable order — Desktop's `sortConnectionsForDisplay`
  * (`connection-display.ts:11-23` @ `f82f2dba`) without its Local anchor, which
- * Android has no kind for. The label comparison is numeric-aware and
+ * belongs to the Local *preset* rather than to the kind and arrives with it.
+ * The label comparison is numeric-aware and
  * case-insensitive, as Desktop's collator is, so `Gateway 2` sorts before
  * `Gateway 10`; the id breaks ties so the order never depends on input order.
  */

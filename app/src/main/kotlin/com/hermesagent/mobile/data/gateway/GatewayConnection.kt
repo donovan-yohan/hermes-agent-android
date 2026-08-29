@@ -40,6 +40,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlin.random.Random
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -84,7 +86,21 @@ internal interface GatewayConnectionController {
     suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult =
         GatewayConnectResult.Failed(null, "Reconnect to this Gateway from settings.")
 
+    /**
+     * Opens the Local route: a Hermes the person runs on this device, reached
+     * over loopback with a saved session token.
+     *
+     * There is no interactive step and no process to start, so this is the
+     * whole of the route — but it is still explicit, because a token this app
+     * holds is not permission to dial a server the person may have stopped.
+     */
+    suspend fun connectLocal(profile: LocalGatewayProfile): GatewayConnectResult =
+        GatewayConnectResult.Failed(null, LocalGatewayCopy.UNAVAILABLE, retryable = false)
+
     suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile)
+
+    /** Erases one Local row's session token. Addressable by row id alone. */
+    suspend fun forgetLocalAuthentication(profile: LocalGatewayProfile) = Unit
 
     /**
      * Rotate the live leg's credential once, without user interaction, for a
@@ -177,6 +193,16 @@ internal fun interface GatewayServedTokenResolver {
 }
 
 /**
+ * The same scrape, addressed by a whole loopback base URL rather than a
+ * forwarded port, for the Local route — where the person may have named
+ * `localhost` or `[::1]` and assuming `127.0.0.1` would read a different
+ * server than the one they saved.
+ */
+internal fun interface GatewayServedTokenScraper {
+    suspend fun scrape(normalizedBaseUrl: String): ByteArray?
+}
+
+/**
  * Reads only the public dashboard root through the established loopback
  * forward. Fetch or parse failure deliberately falls back to the spawn token,
  * matching pinned Desktop's adoption contract.
@@ -188,7 +214,7 @@ internal fun interface GatewayServedTokenResolver {
 internal class GatewayDashboardTokenResolver(
     http: OkHttpClient,
     private val onCandidateReady: (ByteArray) -> Unit = {},
-) : GatewayServedTokenResolver {
+) : GatewayServedTokenResolver, GatewayServedTokenScraper {
     private val publicHttp = http.newBuilder()
         .followRedirects(false)
         .followSslRedirects(false)
@@ -196,11 +222,18 @@ internal class GatewayDashboardTokenResolver(
 
     override suspend fun resolve(localPort: Int): ByteArray? {
         require(localPort in 1..65535) { "The local Gateway port is invalid." }
+        return fetch(requireNotNull("http://127.0.0.1:$localPort/".toHttpUrlOrNull()))
+    }
+
+    override suspend fun scrape(normalizedBaseUrl: String): ByteArray? =
+        fetch(normalizeLocalGatewayUrl(normalizedBaseUrl)?.toHttpUrlOrNull() ?: return null)
+
+    private suspend fun fetch(url: HttpUrl): ByteArray? {
         val pending = AtomicReference<ByteArray?>(null)
         return try {
             runInterruptible(Dispatchers.IO) {
                 val request = Request.Builder()
-                    .url("http://127.0.0.1:$localPort/")
+                    .url(url)
                     .get()
                     .build()
                 val call = publicHttp.newCall(request)
@@ -352,6 +385,7 @@ internal class GatewayConnectionManager(
         OkHttpGatewayRpcClient.connect(http, port, token)
     },
     private val remoteConnector: RemoteGatewayConnector? = null,
+    private val localConnector: LocalGatewayConnector? = null,
     private val reconnectWait: suspend (Long) -> Unit = { millis -> delay(millis) },
     private val reconnectJitter: () -> Double = { Random.nextDouble() },
     private val nowMillis: () -> Long = System::currentTimeMillis,
@@ -456,6 +490,88 @@ internal class GatewayConnectionManager(
             }
         } finally {
             releaseConnectIntent(intent)
+        }
+    }
+
+    override suspend fun connectLocal(profile: LocalGatewayProfile): GatewayConnectResult {
+        val intent = beginConnectIntent(currentCoroutineContext()[Job])
+        return try {
+            try {
+                mutex.withLock {
+                    if (!isCurrentConnectIntent(intent)) throw CancellationException()
+                    // The Local route carries no automatic redial: it is one
+                    // explicit dial at a server the person started themselves.
+                    // Clearing the remote route is what stops a previously
+                    // desired Remote Gateway from reconnecting over it.
+                    clearRemoteRouteLocked()
+                    closeActive()
+                    _state.value = GatewayConnectionState(GatewayConnectionStatus.Connecting)
+                    val connector = localConnector
+                        ?: return@withLock fail(null, LocalGatewayCopy.UNAVAILABLE, retryable = false)
+                    val baseUrl = profile.normalizedBaseUrl
+                        ?: return@withLock fail(null, LocalGatewayCopy.INVALID_URL, retryable = false)
+                    finishLocalConnect(connector, profile, baseUrl)
+                }
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable) {
+                    mutex.withLock {
+                        if (releaseConnectIntent(intent)) {
+                            closeActive()
+                            _state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+                        }
+                    }
+                }
+                throw cancelled
+            }
+        } finally {
+            releaseConnectIntent(intent)
+        }
+    }
+
+    /**
+     * Called only while [mutex] is held. The readiness boundary is the same as
+     * the Managed SSH leg's — authenticated health, then socket, then one
+     * authenticated JSON-RPC round trip — minus the ownership proof, because
+     * this app owns no process here.
+     */
+    private suspend fun finishLocalConnect(
+        connector: LocalGatewayConnector,
+        profile: LocalGatewayProfile,
+        baseUrl: String,
+    ): GatewayConnectResult {
+        var leg: LocalGatewayLeg? = null
+        try {
+            leg = connector.open(profile)
+            val rpc = leg.rpc
+            // A successful upgrade alone is not readiness. This authenticated
+            // round trip proves the leg the app will actually use.
+            rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
+
+            active = ActiveConnection.Local(rpc, profile)
+            liveRemoteProfile.set(null)
+            val authorized = leg
+            _gatewayHttp.value = OkHttpGatewayHttp(
+                http = http,
+                resolveEndpoint = { baseUrl },
+                resolveAuthorization = { authorized.authorization() },
+            )
+            _imageLoader.value = OkHttpGatewayImageLoader(
+                http = http,
+                resolveEndpoint = { baseUrl },
+                resolveAuthorization = { authorized.authorization() },
+            )
+            _client.value = rpc
+            _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+            watchRpc(rpc)
+            return GatewayConnectResult.Connected
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) { runCatching { leg?.rpc?.close() } }
+            if (failure is CancellationException) throw failure
+            return fail(
+                null,
+                safeConnectionMessage(failure),
+                retryable = failure.isRetryableRemoteConnectionFailure(),
+            )
         }
     }
 
@@ -611,6 +727,10 @@ internal class GatewayConnectionManager(
         remoteConnector?.signOut(profile)
     }
 
+    override suspend fun forgetLocalAuthentication(profile: LocalGatewayProfile) {
+        localConnector?.forget(profile)
+    }
+
     override suspend fun refreshCredential(): Boolean {
         // Only the remote leg carries a rotatable bearer. Read it from the
         // mirror rather than under [mutex]: `openRemote` can hold that lock for
@@ -714,6 +834,12 @@ internal class GatewayConnectionManager(
                 if (networkEventGeneration.get() != eventGeneration) return@withLock
                 val wasAvailable = networkAvailable
                 networkAvailable = available
+                // A Gateway on this device is reached over loopback, which is up
+                // whether or not the phone has a network at all. Tearing this
+                // leg down on an airplane-mode edge would disconnect the one
+                // route that still works, and Termux is exactly where someone
+                // is when they have no network.
+                if (active is ActiveConnection.Local) return@withLock
                 val profile = desiredRemoteProfile
                 if (!available) {
                     cancelReconnectLocked()
@@ -754,6 +880,9 @@ internal class GatewayConnectionManager(
         scope.launch {
             mutex.withLock {
                 if (connectIntent.get().generation != invalidatedIntent.generation) return@withLock
+                // Same reason as the availability edge: loopback does not travel
+                // over the network that just changed.
+                if (active is ActiveConnection.Local) return@withLock
                 if (active == null && _state.value.status != GatewayConnectionStatus.Connecting) return@withLock
                 cancelReconnectLocked()
                 _state.value = GatewayConnectionState(
@@ -778,6 +907,10 @@ internal class GatewayConnectionManager(
             runCatching { closing.rpc.close() }
             when (closing) {
                 is ActiveConnection.Remote -> Unit
+                // Closing the socket is the whole teardown. The runtime on this
+                // device belongs to whoever started it in Termux; this app has
+                // no claim on it and never stops it.
+                is ActiveConnection.Local -> Unit
                 is ActiveConnection.Ssh -> {
                     runCatching { closing.forward.close() }
                     runCatching { closing.backend.shutdown() }
@@ -1108,6 +1241,16 @@ internal class GatewayConnectionManager(
         data class Remote(
             override val rpc: GatewayRpcClient,
             val profile: RemoteGatewayProfile,
+        ) : ActiveConnection
+
+        /**
+         * A Hermes running on this device. The profile carries an address and a
+         * row id and nothing else — the session token is held by the leg that
+         * opened the socket, never by the connection record.
+         */
+        data class Local(
+            override val rpc: GatewayRpcClient,
+            val profile: LocalGatewayProfile,
         ) : ActiveConnection
     }
 

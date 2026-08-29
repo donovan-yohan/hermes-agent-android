@@ -24,6 +24,7 @@ import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.GatewayInstallStore
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
@@ -259,6 +260,9 @@ class HermesPreferences(private val context: Context) :
     override val gatewayConnectionMode: Flow<GatewayConnectionMode> =
         connectionRegistry.map { it.active?.kind?.mode ?: GatewayConnectionMode.Remote }
 
+    override val localGatewayProfile: Flow<LocalGatewayProfile> =
+        connectionRegistry.map { it.active?.localProfile ?: LocalGatewayProfile() }
+
     /**
      * One authoritative scope for sticky new-draft controls. It follows the
      * saved route/profile values rather than a ViewModel-owned label, so a
@@ -398,6 +402,15 @@ class HermesPreferences(private val context: Context) :
                 connectionIdentity = "ssh:" + active.host.username.trim() + "@" +
                     active.host.host.trim().lowercase() + ":" + active.host.port,
                 profileIdentity = active.host.remoteHermesProfile.trim().ifBlank { "default" },
+            )
+
+            // A Hermes on this device serves one profile per running process,
+            // and the person picks it when they start it in Termux. The address
+            // is therefore the whole scope.
+            ConnectionKind.Local -> ComposerControlsScope(
+                connectionIdentity = "local:" +
+                    active.local.normalizedBaseUrl.orEmpty().ifBlank { "unconfigured" },
+                profileIdentity = "default",
             )
         }
     }

@@ -35,10 +35,15 @@ fun gatewayConfigured(
     // the process, to answer a question that did not change.
     profiles.gatewayConnectionMode.distinctUntilChanged(),
     profiles.remoteGatewayProfile.distinctUntilChanged(),
+    profiles.localGatewayProfile.distinctUntilChanged(),
     hosts.hostProfile.distinctUntilChanged(),
-) { mode, remote, host ->
+) { mode, remote, local, host ->
     when (mode) {
         GatewayConnectionMode.Remote -> remote.isValid
         GatewayConnectionMode.Ssh -> host.isValid
+        // An address is all "configured" means here. Whether the person has
+        // also saved the session token, and whether Hermes is running in Termux
+        // right now, are both answers only a connection attempt has.
+        GatewayConnectionMode.Local -> local.isValid
     }
 }.distinctUntilChanged()

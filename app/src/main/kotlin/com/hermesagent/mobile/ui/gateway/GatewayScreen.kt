@@ -29,6 +29,10 @@ import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
+/** The routes the form above the registry can configure today. */
+private val GATEWAY_ROUTE_OPTIONS =
+    listOf(GatewayConnectionMode.Remote, GatewayConnectionMode.Ssh)
+
 @Composable
 fun GatewayScreen(
     state: GatewaySettingsUiState,
@@ -47,12 +51,16 @@ fun GatewayScreen(
         ) {
             SectionLabel("Connection")
             SegmentedControl(
-                options = GatewayConnectionMode.entries,
+                // The routes this form can configure. The Local route's form
+                // arrives with its preset (#93, S-A2); until then a Local row is
+                // managed from the registry below.
+                options = GATEWAY_ROUTE_OPTIONS,
                 selected = state.mode,
                 label = {
                     when (it) {
                         GatewayConnectionMode.Remote -> "Remote Gateway"
                         GatewayConnectionMode.Ssh -> "Managed SSH"
+                        GatewayConnectionMode.Local -> ConnectionsCopy.KIND_LOCAL
                     }
                 },
                 onSelect = gatewayActions.onModeChange,
@@ -60,6 +68,7 @@ fun GatewayScreen(
                     when (it) {
                         GatewayConnectionMode.Remote -> "Use a host-owned Remote Gateway"
                         GatewayConnectionMode.Ssh -> "Use an app-managed Gateway over SSH"
+                        GatewayConnectionMode.Local -> ConnectionsCopy.KIND_LOCAL_DESC
                     }
                 },
             )
@@ -86,6 +95,15 @@ fun GatewayScreen(
                 )
 
                 GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions, footer = registry)
+
+                GatewayConnectionMode.Local -> Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    content = registry,
+                )
             }
         }
     }

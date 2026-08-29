@@ -14,11 +14,14 @@ import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionManager
+import com.hermesagent.mobile.data.gateway.GatewayDashboardTokenResolver
 import com.hermesagent.mobile.data.gateway.GatewayNetworkMonitor
 import com.hermesagent.mobile.data.gateway.LiveGatewaySessionRepository
+import com.hermesagent.mobile.data.gateway.LocalGatewayConnector
 import com.hermesagent.mobile.data.gateway.LoopbackGatewayNativeLogin
 import com.hermesagent.mobile.data.gateway.NativeGatewayAuthenticator
 import com.hermesagent.mobile.data.gateway.OkHttpGatewayNativeAuthApi
+import com.hermesagent.mobile.data.gateway.OkHttpLocalGatewayHealthCheck
 import com.hermesagent.mobile.data.gateway.OkHttpGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.RemoteGatewayConnector
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
@@ -66,9 +69,13 @@ class HermesApplication : Application() {
     }
     internal val gatewayConnection: GatewayConnectionManager by lazy {
         val authApi = OkHttpGatewayNativeAuthApi(http)
+        // One store, two credential shapes: a Remote row's sign-in and a Local
+        // row's session token share the slot machinery that names a file after
+        // the connection and binds its contents to the address that minted them.
+        val secrets = AndroidGatewayTokenStore(this)
         val authenticator = NativeGatewayAuthenticator(
             api = authApi,
-            store = AndroidGatewayTokenStore(this),
+            store = secrets,
             login = LoopbackGatewayNativeLogin(authApi),
         )
         GatewayConnectionManager(
@@ -78,6 +85,12 @@ class HermesApplication : Application() {
             remoteConnector = RemoteGatewayConnector(authenticator) { baseUrl, ticket ->
                 OkHttpGatewayRpcClient.connectRemote(http, baseUrl, ticket)
             },
+            localConnector = LocalGatewayConnector(
+                tokens = secrets,
+                health = OkHttpLocalGatewayHealthCheck(http),
+                rpcOpen = { baseUrl, token -> OkHttpGatewayRpcClient.connectLocal(http, baseUrl, token) },
+                scraper = GatewayDashboardTokenResolver(http),
+            ),
         )
     }
     internal val gatewayHttp: com.hermesagent.mobile.data.gateway.GatewayHttp? get() = gatewayConnection.gatewayHttp.value

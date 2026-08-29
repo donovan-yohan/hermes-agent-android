@@ -220,6 +220,28 @@ internal class OkHttpGatewayRpcClient private constructor(
             return connectRequest(http, request, requestTimeoutMillis)
         }
 
+        /**
+         * Opens a Hermes running on this device, over loopback.
+         *
+         * Addressed by the whole normalized base URL rather than a port: the
+         * person may have saved `localhost` or `[::1]`, and a server bound to
+         * one of those is not reachable at the others.
+         */
+        suspend fun connectLocal(
+            http: OkHttpClient,
+            normalizedBaseUrl: String,
+            token: ByteArray,
+            requestTimeoutMillis: Long = 15_000,
+        ): OkHttpGatewayRpcClient {
+            val url = localGatewayEndpoint(normalizedBaseUrl, "api/ws")
+                .newBuilder()
+                .addQueryParameter("token", token.toString(Charsets.US_ASCII))
+                .build()
+            // OkHttp accepts an HTTP URL here and performs the WebSocket
+            // upgrade itself, which also keeps the query parameter encoded.
+            return connectRequest(http, Request.Builder().url(url).build(), requestTimeoutMillis)
+        }
+
         /** Opens a Remote Gateway with a fresh, single-use WS ticket. */
         suspend fun connectRemote(
             http: OkHttpClient,
