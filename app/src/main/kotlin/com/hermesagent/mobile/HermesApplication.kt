@@ -216,7 +216,7 @@ class HermesApplication : Application() {
 }
 
 /**
- * Restores the *active* saved connection's Remote Gateway, and re-arms when the
+ * Restores the *active* saved connection's Gateway, and re-arms when the
  * active connection changes.
  *
  * Switching connections is the only event that re-dials on its own; editing a
@@ -236,7 +236,27 @@ internal suspend fun followActiveConnection(
         routeGeneration,
     ) { activeId, generation -> activeId to generation }
         .distinctUntilChanged()
-        .collectLatest { restoreSavedRemoteGateway(profiles, connection) }
+        .collectLatest { restoreActiveGateway(profiles, connection) }
+}
+
+/**
+ * Restores whichever route the active row is on, when that route can come up
+ * with no one present.
+ *
+ * Exactly one route is active, so this dispatches rather than racing the two.
+ * A Remote row has a stored sign-in and a Local row a stored session token;
+ * Managed SSH's credential is created by the connection and died with it, which
+ * is why it is not restored at all.
+ */
+internal suspend fun restoreActiveGateway(
+    profiles: RemoteGatewayProfileStore,
+    connection: GatewayConnectionController,
+) {
+    when (profiles.gatewayConnectionMode.first()) {
+        GatewayConnectionMode.Remote -> restoreSavedRemoteGateway(profiles, connection)
+        GatewayConnectionMode.Local -> restoreSavedLocalGateway(profiles, connection)
+        GatewayConnectionMode.Ssh -> Unit
+    }
 }
 
 /**
@@ -264,6 +284,39 @@ internal suspend fun restoreSavedRemoteGateway(
     coroutineScope {
         val restore = launch(start = CoroutineStart.UNDISPATCHED) {
             connection.restoreRemote(initial.second)
+        }
+        try {
+            routes.first { it != initial }
+        } finally {
+            restore.cancelAndJoin()
+        }
+    }
+}
+
+/**
+ * Restores a saved Hermes on this device, using the session token that row
+ * already holds.
+ *
+ * The same shape as [restoreSavedRemoteGateway] — dial, then stop at the first
+ * persisted edit to the route being dialled and leave the teardown to whoever
+ * made that edit — and deliberately a separate function rather than a third
+ * value in that one's `combine`. Each watches only its own route's address, so
+ * editing a Local row cannot cancel a Remote restore, or the reverse.
+ */
+internal suspend fun restoreSavedLocalGateway(
+    profiles: RemoteGatewayProfileStore,
+    connection: GatewayConnectionController,
+) {
+    val routes = combine(
+        profiles.gatewayConnectionMode,
+        profiles.localGatewayProfile,
+    ) { mode, profile -> mode to profile }.distinctUntilChanged()
+    val initial = routes.first()
+    if (initial.first != GatewayConnectionMode.Local || !initial.second.isValid) return
+
+    coroutineScope {
+        val restore = launch(start = CoroutineStart.UNDISPATCHED) {
+            connection.restoreLocal(initial.second)
         }
         try {
             routes.first { it != initial }

@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -246,6 +247,25 @@ internal sealed interface SessionTokenRead {
     }
 }
 
+/**
+ * Whether a saved row already owns a credential this app may dial it with.
+ *
+ * The narrower answer [SessionTokenRead] gives, with the bytes left out: a
+ * caller deciding *whether* to dial has no business holding a decrypted token
+ * while it decides, and the dial it may go on to make reads the slot for
+ * itself.
+ */
+internal enum class StoredSessionToken {
+    /** A token bound to the address this row names right now. */
+    Present,
+
+    /** Nothing is stored. Only this may be filled in by asking the server. */
+    Absent,
+
+    /** Something is stored that this row may not use. Never filled in. */
+    Refused,
+}
+
 /** Bounded, authenticated readiness check against a Hermes on this device. */
 internal fun interface LocalGatewayHealthCheck {
     /**
@@ -347,6 +367,42 @@ internal class LocalGatewayConnector(
         when (refused.statusCode) {
             401, 403 -> throw GatewayAuthException(LocalGatewayCopy.TOKEN_REFUSED, refused.statusCode)
             else -> throw refused
+        }
+    }
+
+    /**
+     * What this row's slot holds, asked without dialling anything and without
+     * the scrape.
+     *
+     * A cold-start restore has to know this before a socket exists: it may dial
+     * only a row that already owns a usable token, because the scrape is a
+     * convenience for a person standing at the form and doing it unattended at
+     * every launch would let whatever got hold of the loopback port hand this
+     * app a credential it then kept using.
+     *
+     * The bytes are not handed back, and the copy read here is zeroed on the
+     * way out. [open] reads the slot again for the dial it actually makes, so
+     * nothing has to carry a live credential across a decision.
+     *
+     * The read and the zeroing are one uninterruptible step. `loadSessionToken`
+     * ends in a `withContext(Dispatchers.IO)`, which is a cancellation point
+     * *after* the token exists, and a restore is routinely cancelled — the
+     * route follower ends every one with `cancelAndJoin` the moment the row
+     * being restored is edited. Cancelling in that window would drop a live
+     * [SessionTokenRead.Found] on the floor with nothing having wiped it.
+     */
+    suspend fun storedToken(profile: LocalGatewayProfile): StoredSessionToken {
+        val slot = profile.secretSlot ?: return StoredSessionToken.Absent
+        return withContext(NonCancellable) {
+            when (val stored = tokens.loadSessionToken(slot)) {
+                is SessionTokenRead.Found -> {
+                    stored.token.fill(0)
+                    StoredSessionToken.Present
+                }
+
+                SessionTokenRead.Absent -> StoredSessionToken.Absent
+                SessionTokenRead.Refused -> StoredSessionToken.Refused
+            }
         }
     }
 

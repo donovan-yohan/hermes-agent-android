@@ -117,6 +117,37 @@ class GatewaySettingsViewModelTest {
         assertEquals(listOf("http://127.0.0.1:9119"), gateway.localDials.map { it.baseUrl })
     }
 
+    @Test
+    fun `the surface adds no second dial while a restore is still connecting`() = runTest(dispatcher) {
+        val store = MemoryProfileStore(
+            mode = GatewayConnectionMode.Local,
+            local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119", secretSlotId = "row-one"),
+        )
+        val gateway = RecordingGateway()
+        val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        // A cold-start restore is dialling this very row, and the connection it
+        // publishes is what tells this screen so.
+        gateway.publish(GatewayConnectionStatus.Connecting)
+        advanceUntilIdle()
+
+        subject.connectLocal()
+        advanceUntilIdle()
+
+        assertTrue("the dial in flight is the dial", gateway.localDials.isEmpty())
+
+        // Busy, never disabled: the same tap after that restore lands dials
+        // exactly as it did before there was a restore at all.
+        gateway.publish(GatewayConnectionStatus.NeedsAttention)
+        advanceUntilIdle()
+        subject.connectLocal()
+        advanceUntilIdle()
+
+        assertEquals(listOf("http://127.0.0.1:9119"), gateway.localDials.map { it.baseUrl })
+    }
+
     private class MemoryProfileStore(
         mode: GatewayConnectionMode,
         remote: RemoteGatewayProfile = RemoteGatewayProfile(),
@@ -142,6 +173,11 @@ class GatewaySettingsViewModelTest {
     private class RecordingGateway : GatewayConnectionController {
         private val _state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Disconnected))
         override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
+
+        /** Stands in for the app-scoped restore, which owns the same state. */
+        fun publish(status: GatewayConnectionStatus) {
+            _state.value = GatewayConnectionState(status)
+        }
 
         val forgottenLocal = mutableListOf<LocalGatewayProfile>()
         val forgottenRemote = mutableListOf<RemoteGatewayProfile>()

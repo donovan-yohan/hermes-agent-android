@@ -98,6 +98,16 @@ internal interface GatewayConnectionController {
     suspend fun connectLocal(profile: LocalGatewayProfile): GatewayConnectResult =
         GatewayConnectResult.Failed(null, LocalGatewayCopy.UNAVAILABLE, retryable = false)
 
+    /**
+     * Brings the active Local row up on its own, with the token it already
+     * owns and no scrape.
+     *
+     * Null means it declined because something is already on, or dialling, the
+     * loopback route: nothing was dialled and nothing was published.
+     */
+    suspend fun restoreLocal(profile: LocalGatewayProfile): GatewayConnectResult? =
+        GatewayConnectResult.Failed(null, LocalGatewayCopy.UNAVAILABLE, retryable = false)
+
     suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile)
 
     /** Erases one Local row's session token. Addressable by row id alone. */
@@ -559,6 +569,69 @@ internal class GatewayConnectionManager(
         } finally {
             releaseConnectIntent(intent)
             localConnectsInFlight.decrementAndGet()
+        }
+    }
+
+    /**
+     * Restores the Local route without anybody asking, at launch and after a
+     * connection switch lands on a Local row.
+     *
+     * The difference from [connectLocal] is what it refuses to do, not what it
+     * does: the dial itself *is* [connectLocal], so a restored connection has
+     * been through exactly the same readiness gate as one somebody tapped for.
+     * What is added is a decision taken before any socket exists — this row
+     * must already hold a token this app may use. A restore never scrapes: a
+     * scrape asks whatever answers on loopback for a credential, which is a
+     * reasonable convenience for a person standing at the form and a bad thing
+     * to do unattended at every launch.
+     *
+     * There is no automatic redial behind it either. A Hermes that is not
+     * answering has been stopped in Termux, and the only thing that starts it
+     * again is the person, so this lands on the same retryable failure an
+     * explicit dial does and stops.
+     */
+    override suspend fun restoreLocal(profile: LocalGatewayProfile): GatewayConnectResult? {
+        // Every branch here that does not dial says one sentence and stops, so
+        // the sentence is the only thing that varies between them.
+        //
+        // Whether it gets to say it is fenced the way every other publishing
+        // path in this class is, and against *any* connection rather than a
+        // loopback one. The loopback flags are false while a Remote or SSH leg
+        // is up, so on their own they would let a sentence about a Local row
+        // this app is not even on replace a live connection's state. The pair
+        // that actually answers "is anything live or opening" is the one
+        // `restoreRemote` gates its arming on: no active leg, and no connect
+        // holding the intent.
+        suspend fun refuse(message: String): GatewayConnectResult? = mutex.withLock {
+            val somethingElseOwnsTheState = loopbackRouteBusy() ||
+                active != null ||
+                connectIntent.get().job != null
+            if (somethingElseOwnsTheState) null else fail(null, message, retryable = false)
+        }
+
+        val connector = localConnector ?: return refuse(LocalGatewayCopy.UNAVAILABLE)
+        if (!profile.isValid) return refuse(LocalGatewayCopy.INVALID_URL)
+        // A restore is the passive caller on this route. Anything already on it
+        // or dialling it is either this app's own explicit Connect or a restore
+        // that got there first, and both are dialling the same server.
+        if (loopbackRouteBusy()) return null
+        val stored = connector.storedToken(profile)
+        // Asked again, because the slot read is a suspending hop and a tap on
+        // Connect during it would already own the route by now.
+        if (loopbackRouteBusy()) return null
+        return when (stored) {
+            StoredSessionToken.Present -> connectLocal(profile)
+
+            // Nothing to restore, so nothing is dialled. Said rather than
+            // passed over in silence: the pane would otherwise offer a Connect
+            // that fails for a reason it never named.
+            StoredSessionToken.Absent -> refuse(LocalGatewayCopy.TOKEN_MISSING)
+
+            // Something is stored that this row may not use — a token minted
+            // for an address the row has since been moved off. It lands where
+            // a token the Gateway itself refuses lands, for the same reason:
+            // one refusal carrying its next action, never a retry.
+            StoredSessionToken.Refused -> refuse(LocalGatewayCopy.TOKEN_REFUSED)
         }
     }
 

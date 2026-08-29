@@ -9,6 +9,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectResult
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
 import com.hermesagent.mobile.data.ssh.HostProfile
@@ -113,6 +114,49 @@ class ActiveConnectionFollowerTest {
         follower.cancel()
     }
 
+    @Test
+    fun `switching to a Local row restores it once, on the route it is actually on`() = runTest {
+        val rows = listOf(
+            ROWS.first(),
+            SavedConnection(
+                "two",
+                "Termux",
+                ConnectionKind.Local,
+                local = LocalGatewayProfile("http://127.0.0.1:9119"),
+            ),
+        )
+        val store = MemoryStore(rows, activeId = "one")
+        val connection = RecordingConnection()
+
+        val follower = backgroundScope.launch { followActiveConnection(store, store, connection) }
+        runCurrent()
+        assertEquals(1, connection.restored.size)
+
+        store.registry.value = ConnectionRegistry(rows, activeId = "two")
+        runCurrent()
+
+        assertEquals(
+            "the row's own id is what addresses its Keystore slot",
+            listOf("http://127.0.0.1:9119" to "two"),
+            connection.restoredLocal.map { it.baseUrl to it.secretSlotId },
+        )
+        assertEquals("and the Remote route was not dialled again", 1, connection.restored.size)
+        follower.cancel()
+    }
+
+    @Test
+    fun `a Local row with no address is not dialled`() = runTest {
+        val rows = listOf(SavedConnection("one", "Termux", ConnectionKind.Local))
+        val store = MemoryStore(rows, activeId = "one")
+        val connection = RecordingConnection()
+
+        val follower = backgroundScope.launch { followActiveConnection(store, store, connection) }
+        runCurrent()
+
+        assertEquals(emptyList<LocalGatewayProfile>(), connection.restoredLocal)
+        follower.cancel()
+    }
+
     private class MemoryStore(
         rows: List<SavedConnection>,
         activeId: String?,
@@ -123,6 +167,8 @@ class ActiveConnectionFollowerTest {
             registry.map { it.active?.remoteProfile ?: RemoteGatewayProfile() }
         override val gatewayConnectionMode: Flow<GatewayConnectionMode> =
             registry.map { it.active?.kind?.mode ?: GatewayConnectionMode.Remote }
+        override val localGatewayProfile: Flow<LocalGatewayProfile> =
+            registry.map { it.active?.localProfile ?: LocalGatewayProfile() }
 
         override suspend fun saveConnection(connection: SavedConnection) = Unit
         override suspend fun removeConnection(id: String) = Unit
@@ -137,6 +183,7 @@ class ActiveConnectionFollowerTest {
     private class RecordingConnection : GatewayConnectionController {
         override val state = MutableStateFlow(GatewayConnectionState())
         val restored = mutableListOf<RemoteGatewayProfile>()
+        val restoredLocal = mutableListOf<LocalGatewayProfile>()
 
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             error("SSH is never dialled by the follower")
@@ -148,6 +195,11 @@ class ActiveConnectionFollowerTest {
 
         override suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult {
             restored += profile
+            return GatewayConnectResult.Connected
+        }
+
+        override suspend fun restoreLocal(profile: LocalGatewayProfile): GatewayConnectResult {
+            restoredLocal += profile
             return GatewayConnectResult.Connected
         }
 
