@@ -132,6 +132,14 @@ internal object ConnectionsCopy {
     /** The Local pane, when no saved row names an address it could dial. */
     const val LOCAL_NO_ADDRESS = "Add a Local gateway below, then connect."
 
+    /**
+     * What the Local route is, on the pane that dials it. Says whose the
+     * runtime is, because that is the whole difference from Desktop's Local
+     * connection, and that the route does not leave the phone.
+     */
+    const val LOCAL_INTRO =
+        "Connect to a Hermes you run on this phone in Termux. This app never starts or stops it, and nothing on this route leaves the device."
+
     /** `en.ts:760`. */
     const val SAVE = "Save connection"
 

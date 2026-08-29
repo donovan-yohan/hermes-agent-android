@@ -21,6 +21,7 @@ import com.hermesagent.mobile.data.ssh.DestinationParse
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.parseSshDestination
 import com.hermesagent.mobile.data.ssh.redact
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -394,12 +395,30 @@ internal class ConnectionsViewModel(
             // person just saved, with the form already closed behind them. The
             // erase still lands first either way.
             val tokenStored = typedToken == null ||
-                runCatching { gateway.saveLocalSessionToken(candidate.localProfile, typedToken) }.isSuccess
+                runCatching { gateway.saveLocalSessionToken(candidate.localProfile, typedToken) }
+                    // `runCatching` catches everything, and a cancellation is
+                    // not a failed write: swallowing it would report a Keystore
+                    // error for a screen that is simply going away, and would
+                    // go on to write the row inside a coroutine that has
+                    // already been cancelled.
+                    .onFailure { if (it is CancellationException) throw it }
+                    .isSuccess
             if (!tokenStored) {
                 // Nothing was written, so nothing is half-saved: the row does
                 // not go in, and the form comes back with the typing still in
                 // it rather than reporting a success that did not happen.
-                _uiState.update { it.copy(editor = editor.copy(token = token, error = ConnectionsCopy.TOKEN_NOT_STORED)) }
+                _uiState.update { state ->
+                    // Only where the form is still closed. This write is
+                    // asynchronous, so an editor opened while it was in flight
+                    // belongs to something the person started afterwards, and
+                    // replacing it would throw their typing away to report a
+                    // failure about a form they have already moved on from.
+                    if (state.editor != null) {
+                        state
+                    } else {
+                        state.copy(editor = editor.copy(token = token, error = ConnectionsCopy.TOKEN_NOT_STORED))
+                    }
+                }
                 return@launch
             }
             // Renaming the connection you are on changes nothing about where it

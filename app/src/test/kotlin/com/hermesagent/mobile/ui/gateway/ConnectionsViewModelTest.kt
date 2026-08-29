@@ -17,6 +17,7 @@ import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.SshCredential
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -656,6 +657,44 @@ class ConnectionsViewModelTest {
         assertTrue(gateway.storedTokens.isEmpty())
     }
 
+    @Test
+    fun `a failed write never replaces a form opened while it was in flight`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gate = CompletableDeferred<Unit>()
+        val gateway = RecordingGateway().apply {
+            failTokenWrites = true
+            tokenWriteGate = gate
+        }
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        subject.editToken("demo-session-token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        // The save closed the form and the write is parked in the Keystore.
+        assertNull(subject.uiState.value.editor)
+        // The person has already moved on and started another connection.
+        subject.beginAdd()
+        subject.editLabel("Something else")
+        advanceUntilIdle()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        val editor = subject.uiState.value.editor
+        assertEquals(
+            "reporting the old form's failure over the new one would throw away live typing",
+            "Something else",
+            editor?.label,
+        )
+        assertNull("and it is not the old form's error either", editor?.error)
+    }
+
     /** One saved Local row, its slot id stamped the way the registry stamps it. */
     private fun localRow(id: String, label: String, url: String) = SavedConnection(
         id = id,
@@ -699,6 +738,9 @@ class ConnectionsViewModelTest {
         /** Stands in for a Keystore alias this device has invalidated. */
         var failTokenWrites = false
 
+        /** Parks the write, so a test can act while it is still in flight. */
+        var tokenWriteGate: CompletableDeferred<Unit>? = null
+
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             GatewayConnectResult.Connected
 
@@ -719,6 +761,7 @@ class ConnectionsViewModelTest {
 
         override suspend fun saveLocalSessionToken(profile: LocalGatewayProfile, token: ByteArray) {
             calls += "save-token"
+            tokenWriteGate?.await()
             if (failTokenWrites) {
                 token.fill(0)
                 throw IllegalStateException("keystore refused")

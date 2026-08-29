@@ -50,7 +50,7 @@ class GatewayJourneyTest {
 
     @Test
     fun `Remote Gateway is the default route and Managed SSH stays a separate mode`() {
-        var state by mutableStateOf(GatewaySettingsUiState())
+        var state by mutableStateOf(GatewaySettingsUiState(loaded = true))
         compose.setContent {
             HermesTheme(AppearanceSelection()) {
                 GatewayScreen(
@@ -72,7 +72,7 @@ class GatewayJourneyTest {
 
     @Test
     fun `valid remote URL enables browser sign-in and connected state exposes sign-out`() {
-        var state by mutableStateOf(GatewaySettingsUiState())
+        var state by mutableStateOf(GatewaySettingsUiState(loaded = true))
         var connects = 0
         var disconnects = 0
         var forgets = 0
@@ -118,7 +118,7 @@ class GatewayJourneyTest {
     @Test
     fun `the Local route is offered, dials on request, and says what a refused token means`() {
         var state by mutableStateOf(
-            GatewaySettingsUiState(local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119")),
+            GatewaySettingsUiState(local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"), loaded = true),
         )
         var connects = 0
         compose.setContent {
@@ -170,7 +170,7 @@ class GatewayJourneyTest {
 
     @Test
     fun `a Local route with no address anywhere says where to add one instead of offering a dial`() {
-        val state = GatewaySettingsUiState(mode = GatewayConnectionMode.Local)
+        val state = GatewaySettingsUiState(mode = GatewayConnectionMode.Local, loaded = true)
         compose.setContent {
             HermesTheme(AppearanceSelection()) {
                 GatewayScreen(
@@ -199,7 +199,7 @@ class GatewayJourneyTest {
      */
     @Test
     fun `switching away from the SSH form does not unprotect the page it was on`() {
-        var state by mutableStateOf(GatewaySettingsUiState(mode = GatewayConnectionMode.Ssh))
+        var state by mutableStateOf(GatewaySettingsUiState(mode = GatewayConnectionMode.Ssh, loaded = true))
         var window: Window? = null
         compose.setContent {
             val context = LocalContext.current
@@ -224,6 +224,47 @@ class GatewayJourneyTest {
             "the page still holds it: the registry editor here takes a session token",
             secured.isSecure(),
         )
+    }
+
+    /**
+     * The route selector rewrites the *active row's kind*, so a tap it accepts
+     * before the saved route has been read is not a no-op: the control is
+     * showing the default rather than the truth, and the write would carry a
+     * `previous` that is still the default — stranding a Local row's session
+     * token behind an erase that never sees it.
+     */
+    @Test
+    fun `the route selector is dead until the saved route has been read`() {
+        var state by mutableStateOf(GatewaySettingsUiState(loaded = false))
+        var modeChanges = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                GatewayScreen(
+                    state = state,
+                    gatewayActions = GatewayActions(
+                        onModeChange = {
+                            modeChanges++
+                            state = state.copy(mode = it)
+                        },
+                    ),
+                    sshState = SshUiState(),
+                    sshActions = SshActions(),
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Use an app-managed Gateway over SSH").performClick()
+        compose.waitForIdle()
+        assertEquals("a tap before the store has answered must change nothing", 0, modeChanges)
+        assertEquals(GatewayConnectionMode.Remote, state.mode)
+
+        state = state.copy(loaded = true)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Use an app-managed Gateway over SSH").performClick()
+        compose.waitForIdle()
+
+        assertEquals(1, modeChanges)
+        assertEquals(GatewayConnectionMode.Ssh, state.mode)
     }
 }
 

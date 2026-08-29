@@ -75,7 +75,13 @@ fun GatewayScreen(
                         GatewayConnectionMode.Local -> ConnectionsCopy.KIND_LOCAL
                     }
                 },
-                onSelect = gatewayActions.onModeChange,
+                // Dead until the saved route has actually been read. Before
+                // that this control shows the default rather than the truth, so
+                // a tap lands as "change route" when the person meant "the one
+                // already selected" — and it rewrites the active row's kind
+                // from a `previous` that is still the default, so a Local row's
+                // session token is stranded by an erase that never sees it.
+                onSelect = { if (state.loaded) gatewayActions.onModeChange(it) },
                 describe = {
                     when (it) {
                         GatewayConnectionMode.Remote -> "Use a host-owned Remote Gateway"
@@ -146,7 +152,7 @@ private fun LocalGatewayScreen(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(ConnectionsCopy.KIND_LOCAL, style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
             Text(
-                "Connect to a Hermes you run on this phone in Termux. This app never starts or stops it, and nothing on this route leaves the device.",
+                ConnectionsCopy.LOCAL_INTRO,
                 style = HermesTheme.type.body,
                 color = tokens.textSecondary,
             )
