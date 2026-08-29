@@ -158,7 +158,7 @@ private fun LocalGatewayScreen(
                 // A row that names no usable address has nothing to dial, so
                 // the line that would show it says what to do instead.
                 text = state.local.displayEndpoint?.let(::redact)
-                    ?: "Add a Local gateway below, then connect.",
+                    ?: ConnectionsCopy.LOCAL_NO_ADDRESS,
                 style = HermesTheme.type.body,
                 color = tokens.textSecondary,
             )

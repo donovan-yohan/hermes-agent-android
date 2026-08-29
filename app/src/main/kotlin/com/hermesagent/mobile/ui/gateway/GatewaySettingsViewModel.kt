@@ -82,17 +82,38 @@ internal class GatewaySettingsViewModel(
         }
     }
 
+    /**
+     * Switches which route the active row is.
+     *
+     * This control rewrites the *saved row's kind* — see
+     * `HermesPreferences.saveGatewayConnectionMode` — so moving off the Local
+     * route leaves that row pointing at no loopback address at all, and its
+     * session token bound to an address the row no longer names. The registry
+     * editor erases a credential on exactly that edge, and so does this: a slot
+     * nothing can address again is not "sealed and refused", it is litter, and
+     * a session token is cheap to paste back where an OAuth sign-in is not.
+     *
+     * Deliberately narrowed to the Local slot. Remote's sign-in survives a
+     * route change today, and turning a single tap into a sign-out is a change
+     * to behaviour that predates this route — it belongs with the wider
+     * question of whether this control should rewrite a saved row's kind at
+     * all, not with adding a third option to it.
+     */
     fun setMode(mode: GatewayConnectionMode) {
-        if (_uiState.value.mode == mode) return
+        val previous = _uiState.value
+        if (previous.mode == mode) return
         edited = true
         cancelConnectionAttempt()
         _uiState.update { it.copy(mode = mode, loaded = true) }
+        val abandonedSessionToken = previous.local
+            .takeIf { previous.mode == GatewayConnectionMode.Local && it.secretSlotId.isNotBlank() }
         viewModelScope.launch {
             try {
                 store.saveGatewayConnectionMode(mode)
             } finally {
                 leaveEndpoint()
             }
+            abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it) }
         }
     }
 

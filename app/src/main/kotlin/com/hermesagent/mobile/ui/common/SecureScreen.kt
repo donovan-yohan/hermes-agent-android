@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.view.Window
 import android.view.WindowManager
+import java.util.WeakHashMap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -32,11 +33,13 @@ import androidx.compose.ui.platform.LocalContext
  *
  * **Nesting.** The Gateways surface is protected *and* contains the SSH form,
  * which is protected on its own account, so two of these can be live over one
- * window. `clearFlags` is not reference-counted by the platform — the inner
- * screen's disposal would unprotect the outer one that is still on screen — so
- * the count is kept here. Compose runs effects on the main thread and disposes
- * children before parents, which is what makes a plain map safe and makes the
- * outermost screen the one that clears the flag.
+ * window. `clearFlags` is not reference-counted by the platform — one screen's
+ * disposal would unprotect another that is still on screen — so the count is
+ * kept here, and the flag clears when the last holder goes. The count is what
+ * makes that true, in either disposal order: these two are siblings in the slot
+ * table rather than parent and child, so nothing here may depend on which of
+ * them Compose disposes first. A plain map is enough only because composition
+ * effects all run on the main thread.
  *
  * [onLeave] is read through [rememberUpdatedState] so a recomposition with a new
  * lambda does not re-run the effect — re-running it would clear and re-add the
@@ -54,14 +57,21 @@ internal fun SecureScreenLifetime(onLeave: () -> Unit = {}) {
             }
         }
         onDispose {
-            leave()
-            window?.let { secured ->
-                val held = (secureScreens[secured] ?: 0) - 1
-                if (held > 0) {
-                    secureScreens[secured] = held
-                } else {
-                    secureScreens.remove(secured)
-                    secured.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            // `leave()` is a ViewModel call, so it can throw. In a `finally`
+            // because a wipe that failed must not also strand the count: that
+            // would pin FLAG_SECURE for the life of the process and hold this
+            // window — and its Activity — for just as long.
+            try {
+                leave()
+            } finally {
+                window?.let { secured ->
+                    val held = (secureScreens[secured] ?: 0) - 1
+                    if (held > 0) {
+                        secureScreens[secured] = held
+                    } else {
+                        secureScreens.remove(secured)
+                        secured.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
                 }
             }
         }
@@ -71,11 +81,13 @@ internal fun SecureScreenLifetime(onLeave: () -> Unit = {}) {
 /**
  * How many composed screens are asking this window to stay secure.
  *
- * Entries are removed as they reach zero, so a finished Activity's window is
- * not held here. Touched only from composition effects, which run on the main
- * thread.
+ * Entries are removed as they reach zero, so an ordinary teardown leaves
+ * nothing here. Weak keys are the belt to that braces: this is process-global
+ * and a `Window` transitively holds its Activity, so the one path that ever
+ * skipped the decrement must not be able to leak a destroyed screen. Touched
+ * only from composition effects, which run on the main thread.
  */
-private val secureScreens = mutableMapOf<Window, Int>()
+private val secureScreens = WeakHashMap<Window, Int>()
 
 /** Null in a `@Preview` or any other host that is not an Activity. */
 private tailrec fun Context.findActivityWindow(): Window? = when (this) {

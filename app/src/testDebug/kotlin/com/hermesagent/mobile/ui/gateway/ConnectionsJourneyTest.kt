@@ -295,8 +295,11 @@ class ConnectionsJourneyTest {
         compose.onNodeWithContentDescription(ConnectionsCopy.KIND_LOCAL_DESC).performClick()
         compose.waitForIdle()
 
-        // The one address anyone starts, already filled in and still editable.
-        assertEquals(DEFAULT_LOCAL_GATEWAY_URL, state.editor?.url)
+        // The prefill rule itself is `ConnectionsViewModel`'s and is asserted
+        // there; this fake only mirrors it so the form under test is the one a
+        // device shows. What is worth asserting *here* is that the address
+        // reaches the field as a rendered value rather than a placeholder.
+        compose.onNodeWithText(DEFAULT_LOCAL_GATEWAY_URL).assertExists()
         compose.onNodeWithContentDescription(ConnectionsCopy.LABEL_TITLE).performTextInput("This phone")
         compose.onNodeWithContentDescription(ConnectionsCopy.TOKEN_TITLE)
             .performScrollTo()

@@ -541,6 +541,121 @@ class ConnectionsViewModelTest {
         assertTrue(editor.toString().contains("token=<redacted>"))
     }
 
+    @Test
+    fun `a token that is only whitespace never replaces the one that works`() = runTest(dispatcher) {
+        val existing = localRow("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL)
+        val store = MemoryRegistryStore(listOf(existing, twoRows().first()), activeId = "local")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        // The address has not moved, so the row is allowed to keep its saved
+        // token — which is exactly the branch where a blank write would land.
+        subject.beginEdit("local")
+        subject.editToken("   ")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertNull("whitespace is not a token, and not a reason to refuse either", subject.uiState.value.editor)
+        assertTrue(
+            "overwriting a working token with spaces is a 401 nobody can diagnose",
+            gateway.storedTokens.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `a pasted token keeps none of the whitespace the terminal gave it`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        // What a long-press paste out of a Termux terminal actually delivers.
+        subject.editToken("  demo-session-token\n")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertEquals(
+            "the Gateway compares the header literally, so a stray newline is a permanent 401",
+            listOf("demo-session-token" to DEFAULT_LOCAL_GATEWAY_URL),
+            gateway.storedTokens,
+        )
+    }
+
+    @Test
+    fun `a token carrying something no header can express is refused, not mangled`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        // A smart quote out of a notes app; ASCII encoding would flatten it to
+        // `?` and the refusal would arrive from the Gateway with no diagnosis.
+        subject.editToken("demo\u2019session\u2019token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertEquals(ConnectionsCopy.TOKEN_UNREADABLE, subject.uiState.value.editor?.error)
+        assertTrue(gateway.storedTokens.isEmpty())
+    }
+
+    @Test
+    fun `a Keystore that refuses the token saves no row and gives the form back`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gateway = RecordingGateway().apply { failTokenWrites = true }
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        subject.editToken("demo-session-token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        val editor = subject.uiState.value.editor
+        assertNotNull("losing the row and the form to a failed write is the worst outcome", editor)
+        assertEquals(ConnectionsCopy.TOKEN_NOT_STORED, editor?.error)
+        assertEquals("demo-session-token", editor?.token)
+        assertEquals(
+            "nothing is half-saved: no row either",
+            2,
+            store.connectionRegistry.value.connections.size,
+        )
+    }
+
+    @Test
+    fun `an address that only looks different leaves the live connection alone`() = runTest(dispatcher) {
+        val existing = localRow("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL)
+        val store = MemoryRegistryStore(listOf(existing, twoRows().first()), activeId = "local")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginEdit("local")
+        // Same server, one trailing slash. The token rule and the erase rule
+        // both normalize, so the teardown rule has to as well.
+        subject.editUrl("$DEFAULT_LOCAL_GATEWAY_URL/")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertNull(subject.uiState.value.editor)
+        assertFalse("nothing moved, so nothing may be torn down", gateway.calls.contains("disconnect"))
+        assertTrue(gateway.forgottenLocal.isEmpty())
+        assertTrue(gateway.storedTokens.isEmpty())
+    }
+
     /** One saved Local row, its slot id stamped the way the registry stamps it. */
     private fun localRow(id: String, label: String, url: String) = SavedConnection(
         id = id,
@@ -581,6 +696,9 @@ class ConnectionsViewModelTest {
          */
         val storedTokens = mutableListOf<Pair<String, String>>()
 
+        /** Stands in for a Keystore alias this device has invalidated. */
+        var failTokenWrites = false
+
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             GatewayConnectResult.Connected
 
@@ -601,6 +719,10 @@ class ConnectionsViewModelTest {
 
         override suspend fun saveLocalSessionToken(profile: LocalGatewayProfile, token: ByteArray) {
             calls += "save-token"
+            if (failTokenWrites) {
+                token.fill(0)
+                throw IllegalStateException("keystore refused")
+            }
             storedTokens += token.toString(Charsets.US_ASCII) to (profile.normalizedBaseUrl ?: "")
             // The real store takes ownership and zeroes; the fake has to too, or
             // a test could pass against a copy production would have wiped.

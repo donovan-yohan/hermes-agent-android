@@ -1,9 +1,11 @@
 package com.hermesagent.mobile.ui.gateway
 
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 
@@ -18,6 +20,11 @@ import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.Window
+import android.view.WindowManager
 import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
 import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
@@ -27,6 +34,7 @@ import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -174,7 +182,57 @@ class GatewayJourneyTest {
             }
         }
 
-        compose.onNodeWithText("Add a Local gateway below, then connect.").assertExists()
+        compose.onNodeWithText(ConnectionsCopy.LOCAL_NO_ADDRESS).assertExists()
         compose.onNode(hasText("Connect") and hasClickAction()).performScrollTo().assertIsNotEnabled()
     }
+
+    /**
+     * The case the reference count exists for, and the only one that fails
+     * without it.
+     *
+     * Leaving the surface entirely disposes both holders, so a naive
+     * `clearFlags` on the inner one looks correct there. Switching *route* does
+     * not: `SshScreen` is disposed while the Gateways page — still showing the
+     * registry, whose editor takes a Local row's session token — stays on
+     * screen. Without the count that disposal unprotects the window, and the
+     * token field would be screenshot-able on the two routes that are not SSH.
+     */
+    @Test
+    fun `switching away from the SSH form does not unprotect the page it was on`() {
+        var state by mutableStateOf(GatewaySettingsUiState(mode = GatewayConnectionMode.Ssh))
+        var window: Window? = null
+        compose.setContent {
+            val context = LocalContext.current
+            SideEffect { window = context.activityWindow() }
+            HermesTheme(AppearanceSelection()) {
+                GatewayScreen(
+                    state = state,
+                    gatewayActions = GatewayActions(onModeChange = { state = state.copy(mode = it) }),
+                    sshState = SshUiState(),
+                    sshActions = SshActions(),
+                )
+            }
+        }
+        val secured = requireNotNull(window) { "the test needs a real Activity window" }
+        assertTrue("the SSH form holds the window secure", secured.isSecure())
+
+        compose.onNodeWithContentDescription("Use a host-owned Remote Gateway").performClick()
+        compose.waitForIdle()
+
+        assertEquals(GatewayConnectionMode.Remote, state.mode)
+        assertTrue(
+            "the page still holds it: the registry editor here takes a session token",
+            secured.isSecure(),
+        )
+    }
+}
+
+private fun Window.isSecure(): Boolean =
+    attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+
+/** Null in any host that is not an Activity. */
+private tailrec fun Context.activityWindow(): Window? = when (this) {
+    is Activity -> window
+    is ContextWrapper -> baseContext.activityWindow()
+    else -> null
 }

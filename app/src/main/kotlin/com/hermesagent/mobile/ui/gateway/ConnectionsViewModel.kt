@@ -311,13 +311,31 @@ internal class ConnectionsViewModel(
         // where the only remaining advice would be to come back to this form.
         val wasLocalAtSameAddress = existing?.kind == ConnectionKind.Local &&
             existing.local.normalizedBaseUrl == candidate.local.normalizedBaseUrl
-        if (candidate.kind == ConnectionKind.Local && editor.token.isBlank() && !wasLocalAtSameAddress) {
+        // Trimmed once, and the same value decides both the refusal and the
+        // write. A token is pasted out of a Termux terminal, so it arrives with
+        // the newline that ended the line it was on, and the Gateway compares
+        // it literally — an untrimmed paste is a permanent 401 with nothing on
+        // screen to explain it. Two different emptiness tests would be the same
+        // bug from the other side: a field holding only spaces would fail to
+        // count as missing and would overwrite a working token with them.
+        val token = editor.token.trim()
+        if (candidate.kind == ConnectionKind.Local && token.isEmpty() && !wasLocalAtSameAddress) {
             val message = if (existing?.kind == ConnectionKind.Local) {
                 ConnectionsCopy.TOKEN_READDRESSED
             } else {
                 ConnectionsCopy.TOKEN_REQUIRED
             }
             _uiState.update { it.copy(editor = editor.copy(error = message)) }
+            return
+        }
+        // What survives the trim still has to be something the header can
+        // carry. Anything outside printable ASCII would be flattened to `?` by
+        // the ASCII encoding below and then refused by a Gateway that never
+        // minted it; a control character is refused by the HTTP client itself,
+        // as an exception rather than a sentence. Neither is a diagnosis, so
+        // the refusal happens here instead.
+        if (candidate.kind == ConnectionKind.Local && token.any { it.code !in 0x21..0x7E }) {
+            _uiState.update { it.copy(editor = editor.copy(error = ConnectionsCopy.TOKEN_UNREADABLE)) }
             return
         }
         val readdressed = candidate.id == _uiState.value.activeId &&
@@ -328,7 +346,10 @@ internal class ConnectionsViewModel(
                     // The Local address lives in its own profile, so a Local row
                     // that was re-addressed changes nothing the two clauses
                     // above can see — and would come up on the old endpoint.
-                    existing.local != candidate.local ||
+                    // Normalized, like the token rule above and the erase rule
+                    // below: raw equality would call a trailing slash a new
+                    // address and drop a live socket that never moved.
+                    existing.local.normalizedBaseUrl != candidate.local.normalizedBaseUrl ||
                     existing.host != candidate.host
                 )
         // A stored sign-in belongs to the host that minted it. When a row stops
@@ -352,7 +373,7 @@ internal class ConnectionsViewModel(
             }
         // Read out of the editor before it is dropped, and handed on as bytes
         // the store takes ownership of and zeroes.
-        val typedToken = editor.token
+        val typedToken = token
             .takeIf { candidate.kind == ConnectionKind.Local && it.isNotEmpty() }
             ?.toByteArray(Charsets.US_ASCII)
         _uiState.update { it.copy(editor = null) }
@@ -366,7 +387,21 @@ internal class ConnectionsViewModel(
             // as part of that write — a token that landed afterwards would miss
             // the dial it exists for. The slot is bound to the address, not to
             // the stored row, so nothing here depends on the row existing yet.
-            typedToken?.let { gateway.saveLocalSessionToken(candidate.localProfile, it) }
+            // Guarded, unlike the erase beside it: sealing a credential can
+            // fail on a Keystore whose alias was invalidated, and this write
+            // also touches the filesystem. Uncaught, it would take the process
+            // down *and* skip the row write below — losing the connection the
+            // person just saved, with the form already closed behind them. The
+            // erase still lands first either way.
+            val tokenStored = typedToken == null ||
+                runCatching { gateway.saveLocalSessionToken(candidate.localProfile, typedToken) }.isSuccess
+            if (!tokenStored) {
+                // Nothing was written, so nothing is half-saved: the row does
+                // not go in, and the form comes back with the typing still in
+                // it rather than reporting a success that did not happen.
+                _uiState.update { it.copy(editor = editor.copy(token = token, error = ConnectionsCopy.TOKEN_NOT_STORED)) }
+                return@launch
+            }
             // Renaming the connection you are on changes nothing about where it
             // points. Re-addressing it points somewhere else, so it leaves the
             // old address and comes up on the new one under a pending state,

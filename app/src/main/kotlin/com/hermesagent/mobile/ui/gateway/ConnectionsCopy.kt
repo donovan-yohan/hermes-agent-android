@@ -113,6 +113,25 @@ internal object ConnectionsCopy {
      */
     const val LOCAL_LIMITATION = "Runs only while Termux keeps hermes serve alive."
 
+    /**
+     * A token the Gateway could never match, refused before it is stored.
+     *
+     * The field never reads back, so a stray character pasted out of a terminal
+     * — a newline, a non-breaking space, a smart quote — would otherwise be an
+     * unexplainable 401 with nothing on screen to look at. Refusing beats
+     * mangling it into `?` on the way to ASCII.
+     */
+    const val TOKEN_UNREADABLE = "That is not a session token. Paste the value Hermes shows, with no quotes or spaces."
+
+    /**
+     * The Keystore refused the write. Nothing was saved — not the token and not
+     * the row — so the next action is the same one that just failed.
+     */
+    const val TOKEN_NOT_STORED = "Could not save this gateway's token on this device. Try again."
+
+    /** The Local pane, when no saved row names an address it could dial. */
+    const val LOCAL_NO_ADDRESS = "Add a Local gateway below, then connect."
+
     /** `en.ts:760`. */
     const val SAVE = "Save connection"
 
