@@ -42,8 +42,10 @@ Use another route instead when:
 > `fe67796` a stopped Gateway answered with the Remote route's "check the host"
 > wording, which is the defect the pass found. The corrected sentence ships in
 > [#98](https://github.com/donovan-yohan/hermes-agent-android/pull/98) and is
-> covered by unit tests against a real refused loopback connection, not by a
-> second device run.
+> covered by unit tests, not by a second device run: the **Connect** half
+> against a real refused loopback connection, and the half where a live
+> connection loses its Gateway against a socket close reported as a transport
+> failure.
 > It does **not** cover a live turn (no provider key was on the device) or
 > keep-alive on a physical phone, which is where step 5 is still unproven — see
 > [Known limitations](../../status/ROADMAP.md#known-limitations). Anything called

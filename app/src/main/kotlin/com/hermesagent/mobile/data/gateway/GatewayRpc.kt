@@ -310,6 +310,10 @@ internal class OkHttpGatewayRpcClient private constructor(
 
                     override fun onMessage(webSocket: WebSocket, text: String) = rpc.receive(text)
 
+                    // A close frame is orderly by definition, so a `hermes serve`
+                    // that shuts down cleanly lands here and gets the neutral
+                    // copy rather than "start it" — deliberate: the next Connect
+                    // finds the port empty and says the right thing then.
                     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                         Log.w(LOG_TAG, "Gateway WebSocket closing (code=$code)")
                         rpc.connectionClosed()
