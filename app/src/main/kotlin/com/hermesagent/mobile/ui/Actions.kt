@@ -107,6 +107,12 @@ class GatewayActions(
     val onRemoteUrlChange: (String) -> Unit = {},
     val onProviderChange: (String) -> Unit = {},
     val onConnectRemote: () -> Unit = {},
+    /**
+     * Dial the Hermes this device is running. Separate from [onConnectRemote]
+     * because it has no interactive step at all: there is no browser, no
+     * sign-in and no process for this app to start — only a socket.
+     */
+    val onConnectLocal: () -> Unit = {},
     val onDisconnect: () -> Unit = {},
     val onForgetSignIn: () -> Unit = {},
 )
@@ -127,10 +133,19 @@ class ConnectionsActions(
     val onEditUrl: (String) -> Unit = {},
     val onEditProvider: (String) -> Unit = {},
     val onEditDestination: (String) -> Unit = {},
+    /** The Local route's session token. Held by the form, never read back from the store. */
+    val onEditToken: (String) -> Unit = {},
     val onSaveEditor: () -> Unit = {},
     val onRequestRemove: (String) -> Unit = {},
     val onCancelRemove: () -> Unit = {},
     val onConfirmRemove: () -> Unit = {},
+    /**
+     * The Gateways surface is leaving. Ends the editor's credential lifetime —
+     * see [com.hermesagent.mobile.ui.gateway.ConnectionsViewModel.releaseScreen]
+     * — for the same reason [SshActions.onLeaveScreen] exists: the ViewModel
+     * outlives the screen the person believes they closed.
+     */
+    val onLeaveScreen: () -> Unit = {},
 )
 
 class SshActions(

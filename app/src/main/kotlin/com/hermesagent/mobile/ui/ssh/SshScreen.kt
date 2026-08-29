@@ -1,10 +1,5 @@
 package com.hermesagent.mobile.ui.ssh
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.view.Window
-import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -22,12 +17,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -47,6 +39,7 @@ import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.LogView
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.ScaffoldRow
+import com.hermesagent.mobile.ui.common.SecureScreenLifetime
 import com.hermesagent.mobile.ui.common.StatusDot
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.SegmentedControl
@@ -335,49 +328,6 @@ private fun ProbeFailure.nextAction(): String = when (this) {
     ProbeFailure.Unknown -> "Check the connection settings and try again."
 }
 
-/**
- * One effect owns both halves of "this screen is the protected one".
- *
- * **Secure window.** `FLAG_SECURE` keeps the surface out of screenshots, screen
- * recordings, casts and the recent-apps preview for exactly as long as it is
- * composed. Scoped here rather than set once on the Activity: this is the only
- * surface holding a password, a passphrase or a host-key decision, and a
- * process-wide flag would also black out a chat transcript nobody asked to
- * protect.
- *
- * **Secret lifetime.** [onLeave] ends the screen's credential lifetime. It is in
- * this effect, and ahead of `clearFlags`, on purpose. The ViewModel is
- * Activity-scoped while this screen is one destination inside a single
- * composition, so navigating away destroys nothing by itself; putting the wipe
- * in a second `DisposableEffect` would work but would leave the order to
- * Compose's disposal sequence rather than stating it. Two statements, one after
- * the other, is the whole guarantee: nothing secret is still held once the
- * window has stopped being a secure one.
- *
- * [onLeave] is read through [rememberUpdatedState] so a recomposition with a new
- * lambda does not re-run the effect — re-running it would clear and re-add the
- * flag, and would fire a wipe while the screen is still on screen.
- */
-@Composable
-private fun SecureScreenLifetime(onLeave: () -> Unit) {
-    val window = LocalContext.current.findActivityWindow()
-    val leave by rememberUpdatedState(onLeave)
-
-    DisposableEffect(window) {
-        window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose {
-            leave()
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        }
-    }
-}
-
-/** Null in a `@Preview` or any other host that is not an Activity. */
-private tailrec fun Context.findActivityWindow(): Window? = when (this) {
-    is Activity -> window
-    is ContextWrapper -> baseContext.findActivityWindow()
-    else -> null
-}
 
 /** Short enough for a third of a segmented control, and still the real name. */
 private fun AuthMethod.label(): String = when (this) {

@@ -17,6 +17,9 @@ import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.connections.CONNECTION_SEARCH_THRESHOLD
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.SavedConnection
+import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
+import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.ui.ConnectionsActions
@@ -245,6 +248,134 @@ class ConnectionsJourneyTest {
 
         compose.onNodeWithContentDescription(ConnectionsCopy.SEARCH_PLACEHOLDER).assertExists()
     }
+
+    @Test
+    fun `adding a Local gateway takes an address and a token, then the row summarises both`() {
+        var state by mutableStateOf(ConnectionsUiState(loaded = true))
+        val actions = ConnectionsActions(
+            onBeginAdd = { state = state.copy(editor = ConnectionEditorState()) },
+            // The prefill and the kind rule live in the ViewModel; the journey
+            // mirrors them so this test drives the same form a device does.
+            onEditKind = { kind ->
+                state = state.copy(
+                    editor = state.editor?.copy(
+                        kind = kind,
+                        url = if (kind == ConnectionKind.Local) DEFAULT_LOCAL_GATEWAY_URL else "",
+                    ),
+                )
+            },
+            onEditLabel = { value -> state = state.copy(editor = state.editor?.copy(label = value)) },
+            onEditToken = { value -> state = state.copy(editor = state.editor?.copy(token = value)) },
+            onSaveEditor = {
+                val editor = requireNotNull(state.editor)
+                state = ConnectionsUiState(
+                    connections = listOf(
+                        SavedConnection(
+                            id = "local",
+                            label = editor.label,
+                            kind = ConnectionKind.Local,
+                            local = LocalGatewayProfile(baseUrl = editor.url),
+                        ),
+                    ),
+                    activeId = "local",
+                    loaded = true,
+                )
+            },
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = actions)
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription(ConnectionsCopy.ADD_CONNECTION).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_LOCAL_DESC).performClick()
+        compose.waitForIdle()
+
+        // The prefill rule itself is `ConnectionsViewModel`'s and is asserted
+        // there; this fake only mirrors it so the form under test is the one a
+        // device shows. What is worth asserting *here* is that the address
+        // reaches the field as a rendered value rather than a placeholder.
+        compose.onNodeWithText(DEFAULT_LOCAL_GATEWAY_URL).assertExists()
+        compose.onNodeWithContentDescription(ConnectionsCopy.LABEL_TITLE).performTextInput("This phone")
+        compose.onNodeWithContentDescription(ConnectionsCopy.TOKEN_TITLE)
+            .performScrollTo()
+            .performTextInput("demo-session-token")
+        compose.waitForIdle()
+        assertEquals("demo-session-token", state.editor?.token)
+
+        // The limitation stands beside the action it qualifies.
+        compose.onNodeWithText(ConnectionsCopy.LOCAL_LIMITATION).assertExists()
+        compose.onNodeWithText(ConnectionsCopy.SAVE).performScrollTo().performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("This phone").assertExists()
+        compose.onNodeWithText(ConnectionsCopy.CURRENT_PILL).assertExists()
+        compose.onNodeWithText("${ConnectionsCopy.KIND_LOCAL} · 127.0.0.1:9119 · ${SavedConnection.SESSION_TOKEN}")
+            .assertExists()
+        // Whatever else the row says, it never says the token.
+        compose.onNodeWithText("demo-session-token", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `an address that is not this device is refused where it was typed`() {
+        val state = ConnectionsUiState(
+            editor = ConnectionEditorState(
+                kind = ConnectionKind.Local,
+                label = "Not this device",
+                url = "http://hermes.example.com:9119",
+                error = LocalGatewayCopy.INVALID_URL,
+            ),
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = ConnectionsActions())
+                }
+            }
+        }
+
+        compose.onNodeWithText(LocalGatewayCopy.INVALID_URL).performScrollTo().assertExists()
+    }
+
+    @Test
+    fun `a re-addressed Local row is told the saved token no longer applies`() {
+        val state = ConnectionsUiState(
+            connections = listOf(localConnection("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL)),
+            activeId = "local",
+            editor = ConnectionEditorState(
+                id = "local",
+                kind = ConnectionKind.Local,
+                label = "This phone",
+                url = "http://127.0.0.1:9200",
+                error = ConnectionsCopy.TOKEN_READDRESSED,
+            ),
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = ConnectionsActions())
+                }
+            }
+        }
+
+        compose.onNodeWithText(ConnectionsCopy.TOKEN_READDRESSED).performScrollTo().assertExists()
+        // The kind is stated on an existing row, never offered.
+        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_REMOTE_DESC).assertDoesNotExist()
+    }
+
+    private fun localConnection(id: String, label: String, url: String): SavedConnection =
+        SavedConnection(
+            id = id,
+            label = label,
+            kind = ConnectionKind.Local,
+            local = LocalGatewayProfile(baseUrl = url),
+        )
 
     private fun remoteConnection(id: String, label: String, url: String): SavedConnection =
         SavedConnection(

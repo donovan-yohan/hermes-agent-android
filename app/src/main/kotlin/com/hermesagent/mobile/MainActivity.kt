@@ -257,10 +257,12 @@ class MainActivity : ComponentActivity() {
                     onEditUrl = connectionsViewModel::editUrl,
                     onEditProvider = connectionsViewModel::editProvider,
                     onEditDestination = connectionsViewModel::editDestination,
+                    onEditToken = connectionsViewModel::editToken,
                     onSaveEditor = connectionsViewModel::saveEditor,
                     onRequestRemove = connectionsViewModel::requestRemove,
                     onCancelRemove = connectionsViewModel::cancelRemove,
                     onConfirmRemove = connectionsViewModel::confirmRemove,
+                    onLeaveScreen = connectionsViewModel::releaseScreen,
                 )
             }
             // Remembered so the instance is stable: rebuilding it every
@@ -342,6 +344,7 @@ class MainActivity : ComponentActivity() {
                     onRemoteUrlChange = gatewaySettingsViewModel::setRemoteUrl,
                     onProviderChange = gatewaySettingsViewModel::setProvider,
                     onConnectRemote = { gatewaySettingsViewModel.connectRemote(gatewayBrowser) },
+                    onConnectLocal = gatewaySettingsViewModel::connectLocal,
                     onDisconnect = gatewaySettingsViewModel::disconnect,
                     onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
                 ),

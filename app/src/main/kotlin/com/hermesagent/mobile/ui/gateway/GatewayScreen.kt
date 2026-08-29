@@ -17,11 +17,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.PrimaryButton
+import com.hermesagent.mobile.ui.common.SecureScreenLifetime
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.SegmentedControl
 import com.hermesagent.mobile.ui.common.TextButton
@@ -29,9 +31,17 @@ import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
-/** The routes the form above the registry can configure today. */
-private val GATEWAY_ROUTE_OPTIONS =
-    listOf(GatewayConnectionMode.Remote, GatewayConnectionMode.Ssh)
+/**
+ * Every route the form above the registry can configure.
+ *
+ * Exhaustive on purpose, and asserted to be: [SegmentedControl] cannot render a
+ * `selected` value that is not among its `options`, so a curated subset can
+ * leave a saved route with no segment lit and no way to change it. Being total
+ * over [GatewayConnectionMode] is what makes that unreachable —
+ * `GatewayScreenTest` fails if a route is added without one.
+ */
+internal val GATEWAY_ROUTE_OPTIONS =
+    listOf(GatewayConnectionMode.Remote, GatewayConnectionMode.Ssh, GatewayConnectionMode.Local)
 
 @Composable
 fun GatewayScreen(
@@ -44,6 +54,11 @@ fun GatewayScreen(
     connectionsActions: ConnectionsActions = ConnectionsActions(),
 ) {
     val tokens = HermesTheme.tokens
+    // The whole surface is the protected one, not just the SSH form inside it:
+    // the registry's editor takes a Local row's session token, and it is
+    // reachable from every route. The same disposal ends that form's secret
+    // lifetime, before the window stops being secure.
+    SecureScreenLifetime(onLeave = connectionsActions.onLeaveScreen)
     Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
@@ -51,9 +66,6 @@ fun GatewayScreen(
         ) {
             SectionLabel("Connection")
             SegmentedControl(
-                // The routes this form can configure. The Local route's form
-                // arrives with its preset (#93, S-A2); until then a Local row is
-                // managed from the registry below.
                 options = GATEWAY_ROUTE_OPTIONS,
                 selected = state.mode,
                 label = {
@@ -63,7 +75,13 @@ fun GatewayScreen(
                         GatewayConnectionMode.Local -> ConnectionsCopy.KIND_LOCAL
                     }
                 },
-                onSelect = gatewayActions.onModeChange,
+                // Dead until the saved route has actually been read. Before
+                // that this control shows the default rather than the truth, so
+                // a tap lands as "change route" when the person meant "the one
+                // already selected" — and it rewrites the active row's kind
+                // from a `previous` that is still the default, so a Local row's
+                // session token is stranded by an erase that never sees it.
+                onSelect = { if (state.loaded) gatewayActions.onModeChange(it) },
                 describe = {
                     when (it) {
                         GatewayConnectionMode.Remote -> "Use a host-owned Remote Gateway"
@@ -96,16 +114,96 @@ fun GatewayScreen(
 
                 GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions, footer = registry)
 
-                GatewayConnectionMode.Local -> Column(
-                    Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                    content = registry,
+                GatewayConnectionMode.Local -> LocalGatewayScreen(
+                    state = state,
+                    actions = gatewayActions,
+                    footer = registry,
                 )
             }
         }
+    }
+}
+
+/**
+ * The Local route: a Hermes the person is running on this same phone.
+ *
+ * There is no form here beyond the action, on purpose. The address and the
+ * session token belong to a saved row, and the registry below is the one writer
+ * of a saved row — a second address field on this page would be a second copy
+ * of the connection, which is exactly what the registry exists to prevent. So
+ * this pane states where it will dial, dials it, and hands everything else to
+ * the row.
+ */
+@Composable
+private fun LocalGatewayScreen(
+    state: GatewaySettingsUiState,
+    actions: GatewayActions,
+    footer: @Composable ColumnScope.() -> Unit,
+) {
+    val tokens = HermesTheme.tokens
+    val connection = state.connection
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(ConnectionsCopy.KIND_LOCAL, style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
+            Text(
+                ConnectionsCopy.LOCAL_INTRO,
+                style = HermesTheme.type.body,
+                color = tokens.textSecondary,
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            SectionLabel(ConnectionsCopy.URL_TITLE)
+            Text(
+                // A row that names no usable address has nothing to dial, so
+                // the line that would show it says what to do instead.
+                text = state.local.displayEndpoint?.let(::redact)
+                    ?: ConnectionsCopy.LOCAL_NO_ADDRESS,
+                style = HermesTheme.type.body,
+                color = tokens.textSecondary,
+            )
+        }
+
+        connection.message?.let { message ->
+            Text(
+                message,
+                style = HermesTheme.type.caption,
+                color = if (connection.status == GatewayConnectionStatus.NeedsAttention) tokens.destructive else tokens.textSecondary,
+            )
+        }
+
+        when (connection.status) {
+            GatewayConnectionStatus.Connected ->
+                PrimaryButton("Disconnect", actions.onDisconnect, Modifier.fillMaxWidth())
+
+            GatewayConnectionStatus.Connecting -> {
+                PrimaryButton("Connecting…", {}, Modifier.fillMaxWidth(), enabled = false)
+                TextButton("Cancel", actions.onDisconnect, color = tokens.textTertiary)
+            }
+
+            GatewayConnectionStatus.Disconnected,
+            GatewayConnectionStatus.NeedsAttention,
+            -> PrimaryButton(
+                "Connect",
+                actions.onConnectLocal,
+                Modifier.fillMaxWidth(),
+                enabled = state.canConnectLocal,
+            )
+        }
+
+        Text(
+            ConnectionsCopy.LOCAL_LIMITATION,
+            style = HermesTheme.type.caption,
+            color = tokens.textTertiary,
+        )
+
+        footer()
     }
 }
 
