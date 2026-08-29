@@ -355,6 +355,23 @@ internal class LocalGatewayConnector(
         profile.eraseSlot?.let { tokens.clearSessionToken(it) }
     }
 
+    /**
+     * Stores this row's session token, bound to the address the row names now.
+     *
+     * Takes ownership of [token] and zeroes it in every path, the refused one
+     * included: a row with no usable address has nowhere to put a token, and
+     * leaving the caller's only mutable copy alive because of that would make
+     * a refusal *less* safe than a write.
+     */
+    suspend fun remember(profile: LocalGatewayProfile, token: ByteArray) {
+        val slot = profile.secretSlot
+        if (slot == null) {
+            token.fill(0)
+            return
+        }
+        tokens.saveSessionToken(slot, token)
+    }
+
     private suspend fun resolveToken(profile: LocalGatewayProfile, baseUrl: String): ByteArray? {
         val stored = profile.secretSlot?.let { tokens.loadSessionToken(it) } ?: SessionTokenRead.Absent
         return when (stored) {

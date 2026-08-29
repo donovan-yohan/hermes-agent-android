@@ -88,6 +88,25 @@ class ConnectionRegistryTest {
     }
 
     @Test
+    fun `a gateway on this device is anchored above every gateway that is not`() {
+        val rows = listOf(
+            remote("b", "Alpha", "https://b.test"),
+            SavedConnection(
+                id = "a",
+                label = "Zulu",
+                kind = ConnectionKind.Local,
+                local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
+            ),
+        )
+
+        assertEquals(
+            "Desktop's local anchor: the row on this device leads, whatever it is called",
+            listOf("a", "b"),
+            sortConnectionsForDisplay(rows).map(SavedConnection::id),
+        )
+    }
+
+    @Test
     fun `search matches every needle across the non-secret details`() {
         val row = ssh("one", "Homelab box", user = "demo-user", host = "demo-host", port = 2222)
 

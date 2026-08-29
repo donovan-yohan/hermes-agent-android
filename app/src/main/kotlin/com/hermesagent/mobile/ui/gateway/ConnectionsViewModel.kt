@@ -12,6 +12,7 @@ import com.hermesagent.mobile.data.connections.findDuplicateConnection
 import com.hermesagent.mobile.data.connections.newConnectionId
 import com.hermesagent.mobile.data.connections.normalizeGatewayUrl
 import com.hermesagent.mobile.data.connections.sortConnectionsForDisplay
+import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
 import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
@@ -45,9 +46,27 @@ data class ConnectionEditorState(
     val provider: String = "",
     /** The one SSH field: `user@host`, port 22 implicit. */
     val destination: String = "",
+    /**
+     * The Local route's session token, for the life of this form only.
+     *
+     * Never read back out of the Keystore slot — a form that could show a
+     * stored token would make every screenshot of this screen a credential —
+     * so blank on an existing row means "keep the saved one" and blank on a new
+     * or re-addressed one is refused.
+     */
+    val token: String = "",
     val error: String? = null,
 ) {
     val canSave: Boolean get() = label.isNotBlank()
+
+    /**
+     * Hand-written, like [com.hermesagent.mobile.ui.ssh.SshUiState]'s: a
+     * generated `toString()` would print a live session token into whatever log
+     * or crash report happened to be holding this state.
+     */
+    override fun toString(): String =
+        "ConnectionEditorState(id=$id, kind=$kind, label=$label, url=$url, provider=$provider, " +
+            "destination=$destination, token=<redacted>, error=$error)"
 }
 
 data class ConnectionsUiState(
@@ -138,7 +157,7 @@ internal class ConnectionsViewModel(
                     id = row.id,
                     kind = row.kind,
                     label = row.label,
-                    url = row.endpointUrl,
+                    url = row.endpointUrl.ifBlank { prefilledUrl(row.kind) },
                     provider = row.remote.provider,
                     destination = row.host.destination,
                 ),
@@ -146,11 +165,61 @@ internal class ConnectionsViewModel(
         }
     }
 
+    /**
+     * Closes the form and drops what it was holding, the token included. The
+     * same call covers Cancel and a save that has been accepted.
+     */
     fun cancelEditor() {
         _uiState.update { it.copy(editor = null) }
     }
 
-    fun editKind(kind: ConnectionKind) = editEditor { it.copy(kind = kind) }
+    /**
+     * Ends this form's secret lifetime when the Gateways surface goes.
+     *
+     * This ViewModel is Activity-scoped while the surface is one destination
+     * inside a single composition, so leaving it destroys nothing by itself —
+     * without this a typed session token would still be here when the screen is
+     * reopened, and would still be in a state snapshot in between. The form
+     * itself stays: the address and the name are not secrets, and losing them
+     * on a stray back gesture would be a worse screen, not a safer one.
+     *
+     * Called from the same disposal that clears `FLAG_SECURE`, and ahead of it.
+     * Idempotent, and safe on a screen that never held anything.
+     */
+    fun releaseScreen() {
+        _uiState.update { state ->
+            val editor = state.editor ?: return@update state
+            if (editor.token.isEmpty()) state else state.copy(editor = editor.copy(token = ""))
+        }
+    }
+
+    /**
+     * The kind is a choice only while creating, and refused rather than quietly
+     * applied afterwards (`connections-registry.tsx:649-654` @ `f82f2dba`, whose
+     * buttons disable on edit): the fields a row carries, the trust it has
+     * accepted and the secret slot it owns all belong to one kind.
+     *
+     * The address travels with the choice. Local is the one route with an
+     * address worth guessing — there is exactly one Hermes anyone starts by
+     * default, on the port upstream documents — so choosing it fills that in,
+     * and choosing away from it takes the guess back out rather than leaving a
+     * loopback address sitting in a Remote form.
+     */
+    fun editKind(kind: ConnectionKind) = editEditor { editor ->
+        if (editor.id != null) {
+            editor
+        } else {
+            editor.copy(
+                kind = kind,
+                url = when {
+                    editor.url.isBlank() -> prefilledUrl(kind)
+                    editor.url == DEFAULT_LOCAL_GATEWAY_URL && kind != ConnectionKind.Local -> ""
+                    else -> editor.url
+                },
+                token = if (kind == ConnectionKind.Local) editor.token else "",
+            )
+        }
+    }
 
     fun editLabel(value: String) = editEditor { it.copy(label = value) }
 
@@ -159,6 +228,8 @@ internal class ConnectionsViewModel(
     fun editProvider(value: String) = editEditor { it.copy(provider = value) }
 
     fun editDestination(value: String) = editEditor { it.copy(destination = value) }
+
+    fun editToken(value: String) = editEditor { it.copy(token = value) }
 
     /**
      * Validates, then writes.
@@ -233,11 +304,31 @@ internal class ConnectionsViewModel(
             _uiState.update { it.copy(editor = editor.copy(error = message)) }
             return
         }
+        // The Local route's one credential, asked for where the person can
+        // still supply it. A new row has no saved token, and a re-addressed one
+        // may not use the token it has — the slot is bound to the address that
+        // minted it — so both are refused here rather than at the first dial,
+        // where the only remaining advice would be to come back to this form.
+        val wasLocalAtSameAddress = existing?.kind == ConnectionKind.Local &&
+            existing.local.normalizedBaseUrl == candidate.local.normalizedBaseUrl
+        if (candidate.kind == ConnectionKind.Local && editor.token.isBlank() && !wasLocalAtSameAddress) {
+            val message = if (existing?.kind == ConnectionKind.Local) {
+                ConnectionsCopy.TOKEN_READDRESSED
+            } else {
+                ConnectionsCopy.TOKEN_REQUIRED
+            }
+            _uiState.update { it.copy(editor = editor.copy(error = message)) }
+            return
+        }
         val readdressed = candidate.id == _uiState.value.activeId &&
             (
                 existing == null ||
                     existing.kind != candidate.kind ||
                     existing.remote != candidate.remote ||
+                    // The Local address lives in its own profile, so a Local row
+                    // that was re-addressed changes nothing the two clauses
+                    // above can see — and would come up on the old endpoint.
+                    existing.local != candidate.local ||
                     existing.host != candidate.host
                 )
         // A stored sign-in belongs to the host that minted it. When a row stops
@@ -259,10 +350,23 @@ internal class ConnectionsViewModel(
                 candidate.kind != ConnectionKind.Local ||
                     it.local.normalizedBaseUrl != candidate.local.normalizedBaseUrl
             }
+        // Read out of the editor before it is dropped, and handed on as bytes
+        // the store takes ownership of and zeroes.
+        val typedToken = editor.token
+            .takeIf { candidate.kind == ConnectionKind.Local && it.isNotEmpty() }
+            ?.toByteArray(Charsets.US_ASCII)
         _uiState.update { it.copy(editor = null) }
         viewModelScope.launch {
             abandonedSignIn?.let { gateway.forgetRemoteAuthentication(it.remoteProfile) }
             abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it.localProfile) }
+            // After the erase and never before it: a re-addressed row keeps its
+            // id, so the two are the same slot, and writing first would hand the
+            // new token to the erase that was meant for the old one. And before
+            // the row is written, because re-addressing the *active* row redials
+            // as part of that write — a token that landed afterwards would miss
+            // the dial it exists for. The slot is bound to the address, not to
+            // the stored row, so nothing here depends on the row existing yet.
+            typedToken?.let { gateway.saveLocalSessionToken(candidate.localProfile, it) }
             // Renaming the connection you are on changes nothing about where it
             // points. Re-addressing it points somewhere else, so it leaves the
             // old address and comes up on the new one under a pending state,
@@ -312,6 +416,15 @@ internal class ConnectionsViewModel(
             store.removeConnection(target.id)
         }
     }
+
+    /**
+     * What a kind's address field starts as. Only the Local route has one worth
+     * guessing: upstream documents exactly one `hermes serve` on one port
+     * (`website/docs/getting-started/termux.md` @ `f82f2dba`), and it is still
+     * editable — the address rule refuses whatever it cannot use.
+     */
+    private fun prefilledUrl(kind: ConnectionKind): String =
+        if (kind == ConnectionKind.Local) DEFAULT_LOCAL_GATEWAY_URL else ""
 
     private fun editEditor(transform: (ConnectionEditorState) -> ConnectionEditorState) {
         _uiState.update { state ->

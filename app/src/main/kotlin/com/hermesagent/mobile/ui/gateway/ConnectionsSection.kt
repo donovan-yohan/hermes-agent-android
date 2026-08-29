@@ -58,9 +58,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * list is long, an inline editor, and a destructive confirm before a removal.
  * Desktop's Cloud kind, its per-connection Test and Make primary actions, its
  * update fan-out, its launch-mode toggle and its proxy-header editor are all
- * deliberately absent — see `docs/parity/gateway-connections.md`. The Local
- * kind exists as a saved kind and a transport; its preset in this form arrives
- * with S-A2 of #93.
+ * deliberately absent — see `docs/parity/gateway-connections.md`.
  */
 @Composable
 internal fun ConnectionsSection(
@@ -254,10 +252,6 @@ private fun ConnectionEditor(
     ) {
         if (editor.id == null) {
             SegmentedControl(
-                // The kinds this form can fill in. Local is a saved kind before
-                // it is an offered one: the transport, its token slot and its
-                // loopback rule land first, and the preset that prefills the
-                // address and takes the token follows (#93, S-A2).
                 options = OFFERED_CONNECTION_KINDS,
                 selected = editor.kind,
                 label = ConnectionsCopy::kindLabel,
@@ -321,9 +315,11 @@ private fun ConnectionEditor(
                 )
             }
 
-            // The address only. A Local row cannot be created here yet, so this
-            // is what editing one already stored offers; its preset, prefilled
-            // address and session-token field arrive together (#93, S-A2).
+            // The address and the one credential this route has. Desktop's
+            // Local connection needs no credential at all — it is the runtime
+            // its own app manages — so this pairs Desktop's *remote* token
+            // field (`connections-registry.tsx:721-733` @ `f82f2dba`) with the
+            // loopback address, which is what the route actually is.
             ConnectionKind.Local -> {
                 LabelledField(
                     label = ConnectionsCopy.URL_TITLE,
@@ -332,11 +328,30 @@ private fun ConnectionEditor(
                     onValueChange = actions.onEditUrl,
                     keyboardType = KeyboardType.Uri,
                 )
+                LabelledField(
+                    label = ConnectionsCopy.TOKEN_TITLE,
+                    value = editor.token,
+                    placeholder = ConnectionsCopy.TOKEN_PLACEHOLDER,
+                    onValueChange = actions.onEditToken,
+                    secret = true,
+                )
+                Text(ConnectionsCopy.TOKEN_DESC, style = HermesTheme.type.caption, color = tokens.textTertiary)
             }
         }
 
         editor.error?.let { message ->
             Text(message, style = HermesTheme.type.caption, color = tokens.destructive)
+        }
+
+        // One limitation, beside the action it qualifies. This app connects to
+        // that Hermes; it does not keep it alive, and a row saved here is not a
+        // promise that anything is listening.
+        if (editor.kind == ConnectionKind.Local) {
+            Text(
+                ConnectionsCopy.LOCAL_LIMITATION,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+            )
         }
 
         Row(
@@ -361,8 +376,20 @@ private fun SavedConnection.summary(): String {
     return redact("${ConnectionsCopy.kindLabel(kind)} · $endpoint · $authModeLabel")
 }
 
-/** The kinds the add form can create today; see the control's own note. */
-private val OFFERED_CONNECTION_KINDS = listOf(ConnectionKind.Remote, ConnectionKind.Ssh)
+/**
+ * Every kind this app ships, Local first — Desktop offers all of its own on
+ * create and anchors Local at the head of the row
+ * (`connections-registry.tsx:652` @ `f82f2dba`).
+ *
+ * Exhaustive on purpose, and asserted to be: [SegmentedControl] has no way to
+ * render a `selected` value that is not among its `options`, so a hand-curated
+ * subset can leave a kind selected with no segment lit and no way back. The
+ * list being total over [ConnectionKind] is what makes that unreachable rather
+ * than merely unlikely — `ConnectionsSectionTest` fails if a fourth kind is
+ * added without a segment.
+ */
+internal val OFFERED_CONNECTION_KINDS =
+    listOf(ConnectionKind.Local, ConnectionKind.Remote, ConnectionKind.Ssh)
 
 /** Desktop's `KIND_ICONS`, restricted to the kinds Android ships (`connections-registry.tsx:26-31`). */
 internal val ConnectionKind.glyph: HermesIcon

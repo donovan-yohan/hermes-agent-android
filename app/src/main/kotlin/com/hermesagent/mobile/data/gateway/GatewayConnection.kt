@@ -104,6 +104,19 @@ internal interface GatewayConnectionController {
     suspend fun forgetLocalAuthentication(profile: LocalGatewayProfile) = Unit
 
     /**
+     * Stores one Local row's session token, bound to the address that row
+     * names.
+     *
+     * Takes ownership of [token] and zeroes it — including on a build that
+     * cannot store it at all. A caller that has handed over its only mutable
+     * copy must not be left holding a live one because the route was
+     * unavailable.
+     */
+    suspend fun saveLocalSessionToken(profile: LocalGatewayProfile, token: ByteArray) {
+        token.fill(0)
+    }
+
+    /**
      * Rotate the live leg's credential once, without user interaction, for a
      * REST caller the Gateway just refused.
      *
@@ -758,6 +771,15 @@ internal class GatewayConnectionManager(
 
     override suspend fun forgetLocalAuthentication(profile: LocalGatewayProfile) {
         localConnector?.forget(profile)
+    }
+
+    override suspend fun saveLocalSessionToken(profile: LocalGatewayProfile, token: ByteArray) {
+        val connector = localConnector
+        if (connector == null) {
+            token.fill(0)
+            return
+        }
+        connector.remember(profile, token)
     }
 
     override suspend fun refreshCredential(): Boolean {

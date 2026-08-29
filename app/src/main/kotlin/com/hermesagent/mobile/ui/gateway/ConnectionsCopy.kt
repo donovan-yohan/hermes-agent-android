@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui.gateway
 
 import com.hermesagent.mobile.data.connections.ConnectionKind
+import com.hermesagent.mobile.data.connections.SavedConnection
 
 /**
  * The Connections vocabulary, taken from Desktop's `i18n/en.ts` at pinned SHA
@@ -18,8 +19,11 @@ internal object ConnectionsCopy {
     /** `en.ts:704`. */
     const val TITLE = "Registered gateways"
 
-    /** `en.ts:705`, minus the Cloud route Android has no sign-in for. */
-    const val INTRO = "Manage every Hermes gateway this device can reach over remote or SSH connections."
+    /**
+     * `en.ts:705`, minus the Cloud route Android has no sign-in for. Desktop's
+     * "this device and" is back now that a Local row can be created here.
+     */
+    const val INTRO = "Manage this device and every Hermes gateway it can reach over remote or SSH connections."
 
     /** `en.ts:706-707`, minus the profile rail and cron jobs Android does not ship yet. */
     const val STAGED_NOTE =
@@ -69,6 +73,45 @@ internal object ConnectionsCopy {
      * above the list already uses.
      */
     const val INVALID_URL = "Enter an HTTPS Gateway URL."
+
+    /**
+     * `en.ts:827`, and the same words a Local row reports as its auth mode.
+     * One string with two readers: a field whose label disagreed with the row
+     * summary would read as two different credentials.
+     */
+    const val TOKEN_TITLE = SavedConnection.SESSION_TOKEN
+
+    /** `en.ts:831`. */
+    const val TOKEN_PLACEHOLDER = "Paste session token"
+
+    /**
+     * `en.ts:828`, rewritten for where the token comes from here. Desktop
+     * names a remote gateway's `.env`; on this route it is what `hermes serve`
+     * prints in Termux when it starts.
+     */
+    const val TOKEN_DESC = "The token Hermes shows when it starts. On a saved gateway, leave this blank to keep the one you saved."
+
+    /**
+     * Desktop never requires a token: its Local connection is the runtime its
+     * own app manages and needs no credential at all. On loopback here the
+     * token is the whole boundary, so a Local row cannot be saved without one.
+     */
+    const val TOKEN_REQUIRED = "Paste this gateway's session token, then save."
+
+    /**
+     * The re-address rule, said where it happens. The Keystore slot is bound to
+     * the address that minted it (S-A1), so a row that now names a different
+     * address cannot use the token it had — and the person is the only one who
+     * can supply the new one.
+     */
+    const val TOKEN_READDRESSED =
+        "This is a different address, so the saved token no longer applies. Paste the token this Hermes is running with."
+
+    /**
+     * The one limitation worth stating beside Save. Everything else about
+     * running Hermes in Termux belongs in the guide, not on this form.
+     */
+    const val LOCAL_LIMITATION = "Runs only while Termux keeps hermes serve alive."
 
     /** `en.ts:760`. */
     const val SAVE = "Save connection"

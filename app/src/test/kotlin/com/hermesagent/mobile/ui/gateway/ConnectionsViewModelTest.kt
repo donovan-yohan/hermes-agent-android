@@ -10,6 +10,9 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectResult
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
+import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.ssh.HostProfile
@@ -327,6 +330,225 @@ class ConnectionsViewModelTest {
         )
     }
 
+    @Test
+    fun `choosing Local prefills the one address anyone starts, and choosing away takes it back`() =
+        runTest(dispatcher) {
+            val subject = buildSubject(MemoryRegistryStore(twoRows(), activeId = "one"), RecordingGateway())
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            subject.beginAdd()
+            subject.editKind(ConnectionKind.Local)
+            assertEquals(DEFAULT_LOCAL_GATEWAY_URL, subject.uiState.value.editor?.url)
+
+            // A loopback address left behind in a Remote form is a URL that
+            // route will refuse, offered as if it were a suggestion.
+            subject.editKind(ConnectionKind.Remote)
+            assertEquals("", subject.uiState.value.editor?.url)
+        }
+
+    @Test
+    fun `a Local row cannot be saved without the token that is its only boundary`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        val editor = subject.uiState.value.editor
+        assertNotNull("a refusal keeps the form open, with the typing still in it", editor)
+        assertEquals(ConnectionsCopy.TOKEN_REQUIRED, editor?.error)
+        assertEquals(2, store.connectionRegistry.value.connections.size)
+        assertTrue(gateway.storedTokens.isEmpty())
+    }
+
+    @Test
+    fun `saving a Local row stores its token bound to the address that row names`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        subject.editToken("demo-session-token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertNull("an accepted save closes the form", subject.uiState.value.editor)
+        val saved = store.connectionRegistry.value.connections.first { it.kind == ConnectionKind.Local }
+        assertEquals(DEFAULT_LOCAL_GATEWAY_URL, saved.local.baseUrl)
+        assertEquals("127.0.0.1:9119", saved.endpoint)
+        assertEquals(SavedConnection.SESSION_TOKEN, saved.authModeLabel)
+        assertEquals(
+            listOf("demo-session-token" to DEFAULT_LOCAL_GATEWAY_URL),
+            gateway.storedTokens,
+        )
+    }
+
+    @Test
+    fun `two spellings of this device on one port are one gateway`() = runTest(dispatcher) {
+        val existing = localRow("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL)
+        val store = MemoryRegistryStore(listOf(existing, twoRows().first()), activeId = "one")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("Same phone again")
+        // localhost, 127.0.0.1 and [::1] on one port are one server.
+        subject.editUrl("http://localhost:9119")
+        subject.editToken("demo-session-token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertEquals(ConnectionsCopy.duplicateUrl("This phone"), subject.uiState.value.editor?.error)
+        assertEquals(2, store.connectionRegistry.value.connections.size)
+        assertTrue("nothing may be stored for a row that was not saved", gateway.storedTokens.isEmpty())
+    }
+
+    @Test
+    fun `re-addressing a Local row asks for the token again, then rebinds the slot`() = runTest(dispatcher) {
+        val existing = localRow("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL)
+        val store = MemoryRegistryStore(listOf(existing, twoRows().first()), activeId = "local")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginEdit("local")
+        subject.editUrl("http://127.0.0.1:9200")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertEquals(
+            "the slot is bound to the address that minted it, so the old token cannot follow",
+            ConnectionsCopy.TOKEN_READDRESSED,
+            subject.uiState.value.editor?.error,
+        )
+        assertEquals(DEFAULT_LOCAL_GATEWAY_URL, store.connectionRegistry.value.connections.first { it.id == "local" }.local.baseUrl)
+
+        subject.editToken("a-different-token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertEquals(
+            "http://127.0.0.1:9200",
+            store.connectionRegistry.value.connections.first { it.id == "local" }.local.baseUrl,
+        )
+        assertEquals(listOf("local"), gateway.forgottenLocal.map { it.secretSlotId })
+        assertEquals(
+            "the erase clears the one slot both tokens share, so it has to land first",
+            listOf("forget-local", "save-token"),
+            gateway.calls.filter { it == "forget-local" || it == "save-token" },
+        )
+        assertEquals(listOf("a-different-token" to "http://127.0.0.1:9200"), gateway.storedTokens)
+        assertTrue("re-addressing the active row leaves the old endpoint", gateway.calls.contains("disconnect"))
+    }
+
+    @Test
+    fun `renaming a Local row keeps the token it already has`() = runTest(dispatcher) {
+        val existing = localRow("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL)
+        val store = MemoryRegistryStore(listOf(existing, twoRows().first()), activeId = "local")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginEdit("local")
+        subject.editLabel("Pocket Hermes")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertNull(subject.uiState.value.editor)
+        assertTrue("a blank field on a saved row means keep what is stored", gateway.storedTokens.isEmpty())
+        assertTrue(gateway.forgottenLocal.isEmpty())
+        assertFalse(gateway.calls.contains("disconnect"))
+    }
+
+    @Test
+    fun `an unusable loopback address is refused with product copy`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val gateway = RecordingGateway()
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("Not this device")
+        subject.editUrl("http://hermes.example.com:9119")
+        subject.editToken("demo-session-token")
+        subject.saveEditor()
+        advanceUntilIdle()
+
+        assertEquals(LocalGatewayCopy.INVALID_URL, subject.uiState.value.editor?.error)
+        assertEquals(2, store.connectionRegistry.value.connections.size)
+        assertTrue(gateway.storedTokens.isEmpty())
+    }
+
+    @Test
+    fun `the kind is fixed once a row exists`() = runTest(dispatcher) {
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, RecordingGateway())
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginEdit("one")
+        subject.editKind(ConnectionKind.Local)
+
+        assertEquals(
+            "the fields, the trust and the secret slot all belong to one kind",
+            ConnectionKind.Remote,
+            subject.uiState.value.editor?.kind,
+        )
+    }
+
+    @Test
+    fun `leaving the surface drops a typed token and keeps the rest of the form`() = runTest(dispatcher) {
+        val subject = buildSubject(MemoryRegistryStore(twoRows(), activeId = "one"), RecordingGateway())
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.beginAdd()
+        subject.editKind(ConnectionKind.Local)
+        subject.editLabel("This phone")
+        subject.editToken("demo-session-token")
+
+        subject.releaseScreen()
+
+        val editor = subject.uiState.value.editor
+        assertEquals("", editor?.token)
+        assertEquals("This phone", editor?.label)
+        assertEquals(DEFAULT_LOCAL_GATEWAY_URL, editor?.url)
+    }
+
+    @Test
+    fun `the editor never prints a session token`() {
+        val editor = ConnectionEditorState(kind = ConnectionKind.Local, token = "demo-session-token")
+
+        assertFalse("a crash report must not carry a live credential", editor.toString().contains("demo-session-token"))
+        assertTrue(editor.toString().contains("token=<redacted>"))
+    }
+
+    /** One saved Local row, its slot id stamped the way the registry stamps it. */
+    private fun localRow(id: String, label: String, url: String) = SavedConnection(
+        id = id,
+        label = label,
+        kind = ConnectionKind.Local,
+        local = LocalGatewayProfile(baseUrl = url),
+    )
+
     /** Two ordinary Remote rows; no real host, user or URL anywhere. */
     private fun twoRows() = listOf(
         SavedConnection("one", "Alpha", ConnectionKind.Remote, RemoteGatewayProfile("https://alpha.test")),
@@ -348,6 +570,17 @@ class ConnectionsViewModelTest {
         /** Every profile handed to [forgetRemoteAuthentication], in order. */
         val forgotten = mutableListOf<RemoteGatewayProfile>()
 
+        /** Every Local profile whose session token was erased, in order. */
+        val forgottenLocal = mutableListOf<LocalGatewayProfile>()
+
+        /**
+         * Every session token stored, as the text it was, paired with the slot
+         * it was bound to. Recorded before the bytes are zeroed, which is what
+         * lets a test assert both the value and that the caller's array was
+         * taken over.
+         */
+        val storedTokens = mutableListOf<Pair<String, String>>()
+
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             GatewayConnectResult.Connected
 
@@ -359,6 +592,19 @@ class ConnectionsViewModelTest {
         override suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile) {
             calls += "forget"
             forgotten += profile
+        }
+
+        override suspend fun forgetLocalAuthentication(profile: LocalGatewayProfile) {
+            calls += "forget-local"
+            forgottenLocal += profile
+        }
+
+        override suspend fun saveLocalSessionToken(profile: LocalGatewayProfile, token: ByteArray) {
+            calls += "save-token"
+            storedTokens += token.toString(Charsets.US_ASCII) to (profile.normalizedBaseUrl ?: "")
+            // The real store takes ownership and zeroes; the fake has to too, or
+            // a test could pass against a copy production would have wiped.
+            token.fill(0)
         }
 
         override suspend fun disconnect() {

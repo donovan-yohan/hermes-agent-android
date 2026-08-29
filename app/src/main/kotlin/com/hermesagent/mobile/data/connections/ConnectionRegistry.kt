@@ -268,14 +268,20 @@ fun findDuplicateConnection(
 
 /**
  * One stable, human-readable order — Desktop's `sortConnectionsForDisplay`
- * (`connection-display.ts:11-23` @ `f82f2dba`) without its Local anchor, which
- * belongs to the Local *preset* rather than to the kind and arrives with it.
+ * (`connection-display.ts:11-23` @ `f82f2dba`), Local anchor included now that
+ * a Local row can be created: a Hermes on *this* device sorts above every
+ * gateway that is somewhere else, whatever either is called, because it is the
+ * one row whose reachability the person controls from the phone in their hand.
  * The label comparison is numeric-aware and
  * case-insensitive, as Desktop's collator is, so `Gateway 2` sorts before
  * `Gateway 10`; the id breaks ties so the order never depends on input order.
  */
 fun sortConnectionsForDisplay(connections: List<SavedConnection>): List<SavedConnection> =
-    connections.sortedWith(compareBy(NATURAL_ORDER, SavedConnection::label).thenBy(NATURAL_ORDER, SavedConnection::id))
+    connections.sortedWith(
+        compareByDescending<SavedConnection> { it.kind == ConnectionKind.Local }
+            .thenBy(NATURAL_ORDER, SavedConnection::label)
+            .thenBy(NATURAL_ORDER, SavedConnection::id),
+    )
 
 /**
  * Search the non-secret details a person can see or remember about a gateway —
