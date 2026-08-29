@@ -176,20 +176,23 @@ internal class AndroidGatewayTokenStore(
      * sign-in is: on loopback the address is a port, and a person who changed
      * the port of a row still owns the token for the old one.
      */
-    override suspend fun loadSessionToken(slot: GatewaySecretSlot): ByteArray? = withContext(Dispatchers.IO) {
-        val expectedUrl = slot.normalizedBaseUrl ?: return@withContext null
+    override suspend fun loadSessionToken(slot: GatewaySecretSlot): SessionTokenRead = withContext(Dispatchers.IO) {
         // No adoption: the Local route has no pre-registry, URL-named ancestor.
-        val file = slotFile(slot).takeIf { it.isFile } ?: return@withContext null
-        val stored = readCredential(file) ?: return@withContext null
+        // An absent file is the *only* empty answer; every other outcome below
+        // is a refusal, because a slot that holds something a caller may not
+        // use must not be filled in by trusting whatever is answering instead.
+        val file = slotFile(slot).takeIf { it.isFile } ?: return@withContext SessionTokenRead.Absent
+        val expectedUrl = slot.normalizedBaseUrl ?: return@withContext SessionTokenRead.Refused
+        val stored = readCredential(file) ?: return@withContext SessionTokenRead.Refused
         if (stored !is StoredCredential.SessionToken) {
             stored.wipe()
-            return@withContext null
+            return@withContext SessionTokenRead.Refused
         }
         if (stored.boundUrl != expectedUrl) {
             stored.wipe()
-            return@withContext null
+            return@withContext SessionTokenRead.Refused
         }
-        stored.token
+        SessionTokenRead.Found(stored.token)
     }
 
     override suspend fun saveSessionToken(slot: GatewaySecretSlot, token: ByteArray) {

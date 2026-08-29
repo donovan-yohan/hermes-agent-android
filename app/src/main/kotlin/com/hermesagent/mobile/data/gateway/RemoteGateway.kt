@@ -174,8 +174,12 @@ internal interface GatewayTokenStore {
  * at most one of them — a saved connection has exactly one kind.
  */
 internal interface GatewaySessionTokenStore {
-    /** Fresh ASCII bytes the caller owns and must zero; null when absent or refused. */
-    suspend fun loadSessionToken(slot: GatewaySecretSlot): ByteArray?
+    /**
+     * What this slot has to say, which is three answers rather than two: a
+     * token, an empty slot, or a refusal. The caller owns and must zero the
+     * bytes of a [SessionTokenRead.Found].
+     */
+    suspend fun loadSessionToken(slot: GatewaySecretSlot): SessionTokenRead
 
     /** Stores one session token. Takes ownership of [token] and zeroes it. */
     suspend fun saveSessionToken(slot: GatewaySecretSlot, token: ByteArray)

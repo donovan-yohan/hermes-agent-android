@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.connections.localGatewayKey
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -52,6 +54,8 @@ class LocalGatewayTest {
             // scheme default and re-normalizing to 9119 on the next pass.
             "http://127.0.0.1:80" to "http://127.0.0.1:80",
             "http://127.0.0.1:9119/hermes/" to "http://127.0.0.1:9119/hermes",
+            // The scheme is case-insensitive; only its abbreviated forms are refused.
+            "HTTP://127.0.0.1:9200" to "http://127.0.0.1:9200",
         )
 
         accepted.forEach { (raw, expected) ->
@@ -95,11 +99,22 @@ class LocalGatewayTest {
             "http://127.0.0.1.:9119",
             // No scheme at all: refuse rather than assume one.
             "127.0.0.1:9119",
+            // Abbreviated schemes the URL parser accepts and this rule must
+            // not. Each of these names port 9200; read through an authority
+            // that is not there, the port silently became 9119, the row was
+            // saved against 9119, and the session token typed for the Hermes on
+            // 9200 would have been stored for — and presented to — whatever
+            // process was listening on 9119. Any app on this phone can bind
+            // that port without a permission.
+            "http:127.0.0.1:9200",
+            "http:/127.0.0.1:9200",
+            "http:localhost:9200",
+            "http:[::1]:9200",
             "",
             "   ",
         )
 
-        refused.forEach { raw ->
+        (refused + "http:" + "\\".repeat(2) + "127.0.0.1:9200").forEach { raw ->
             assertNull("$raw must be refused, not guessed at", normalizeLocalGatewayUrl(raw))
         }
     }
@@ -265,6 +280,92 @@ class LocalGatewayTest {
         runCurrent()
     }
 
+    @Test
+    fun `a stored token this row may not use is never answered with a scraped one`() = runTest {
+        // What a re-addressed row leaves behind: the slot holds a token minted
+        // for the address the row used to name, and the binding refuses it. The
+        // binding would mean nothing if the connector then read a credential off
+        // whatever now answers at the new address.
+        val leg = LocalLeg(scraped = "scraped-token-fixture")
+        leg.tokenStore.refuses = true
+
+        val result = manager(leg).connectLocal(PROFILE)
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(LocalGatewayCopy.TOKEN_MISSING, (result as GatewayConnectResult.Failed).message)
+        assertEquals("a refusal is not an empty slot", 0, leg.scrapes)
+        assertNull(leg.socketUrl)
+    }
+
+    @Test
+    fun `losing the network mid-dial never cancels a Gateway on this device`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val leg = LocalLeg(healthGate = gate)
+        val manager = manager(leg, managerScope = backgroundScope)
+
+        val dialling = async { manager.connectLocal(PROFILE) }
+        runCurrent()
+
+        // The edge arrives while the readiness check is still in flight, which
+        // is where the connect intent lives and where cancelling it would abort
+        // a dial that was going to succeed.
+        manager.networkAvailabilityChanged(false)
+        manager.networkChanged()
+        runCurrent()
+
+        gate.complete(Unit)
+
+        assertTrue("the dial survived the edge, got ${dialling.await()}", dialling.await() is GatewayConnectResult.Connected)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        manager.disconnect()
+        runCurrent()
+    }
+
+    @Test
+    fun `a Hermes that stops in Termux is reported as a closed connection, not a missing network`() = runTest {
+        val leg = LocalLeg()
+        val manager = manager(leg, managerScope = backgroundScope)
+        assertTrue(manager.connectLocal(PROFILE) is GatewayConnectResult.Connected)
+
+        manager.networkAvailabilityChanged(false)
+        runCurrent()
+        leg.rpc.dropSocket()
+        runCurrent()
+
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(
+            "waiting for a network is advice nothing can act on here",
+            "The Gateway connection closed. Reconnect to continue.",
+            manager.state.value.message,
+        )
+        manager.disconnect()
+        runCurrent()
+    }
+
+    @Test
+    fun `the wire contract is the one pinned Hermes serves`() {
+        val base = "http://127.0.0.1:9119"
+        val token = TOKEN.toByteArray(Charsets.US_ASCII)
+
+        val health = localGatewayHealthRequest(base, token)
+        assertEquals("$base/api/health", health.url.toString())
+        assertEquals("GET", health.method)
+        assertEquals(TOKEN, health.header(SESSION_TOKEN_HEADER))
+
+        // The socket authenticates in the query, which is where the Gateway
+        // looks for it, and which `redact` already knows to hide.
+        val socket = localGatewayWebSocketUrl(base, token)
+        assertEquals("$base/api/ws?token=$TOKEN", socket.toString())
+        assertEquals(TOKEN, socket.queryParameter("token"))
+
+        // A base URL with a path keeps it: the route is joined onto the address
+        // the person saved, not onto its root.
+        assertEquals(
+            "http://localhost:9200/hermes/api/health",
+            localGatewayHealthRequest("http://localhost:9200/hermes", token).url.toString(),
+        )
+    }
+
     private fun TestScope.manager(
         leg: LocalLeg,
         managerScope: CoroutineScope = backgroundScope,
@@ -278,6 +379,8 @@ class LocalGatewayTest {
     private class LocalLeg(
         private val healthStatus: Int = 200,
         private val scraped: String? = null,
+        /** Held open to keep a connect suspended inside the readiness check. */
+        val healthGate: CompletableDeferred<Unit>? = null,
     ) {
         val tokenStore = FakeSessionTokenStore(TOKEN.toByteArray(Charsets.US_ASCII))
         val rpc = LocalRpc()
@@ -290,6 +393,7 @@ class LocalGatewayTest {
         fun connector() = LocalGatewayConnector(
             tokens = tokenStore,
             health = { url, token ->
+                healthGate?.await()
                 healthCheckedUrl = url
                 healthToken = token.toString(Charsets.US_ASCII)
                 when {
@@ -318,12 +422,21 @@ class LocalGatewayTest {
         var reads = 0
         var erasures = 0
 
+        /** Something is stored that this row may not use, as a re-address leaves. */
+        var refuses = false
+
         /** The exact array a caller was given, so a test can watch it die. */
         var lastHandedOut: ByteArray? = null
 
-        override suspend fun loadSessionToken(slot: GatewaySecretSlot): ByteArray? {
+        override suspend fun loadSessionToken(slot: GatewaySecretSlot): SessionTokenRead {
             reads += 1
-            return stored?.copyOf()?.also { lastHandedOut = it }
+            return when {
+                refuses -> SessionTokenRead.Refused
+                else -> stored?.copyOf()
+                    ?.also { lastHandedOut = it }
+                    ?.let(SessionTokenRead::Found)
+                    ?: SessionTokenRead.Absent
+            }
         }
 
         override suspend fun saveSessionToken(slot: GatewaySecretSlot, token: ByteArray) {
@@ -352,6 +465,11 @@ class LocalGatewayTest {
 
         override fun close() {
             socketClosed = true
+        }
+
+        /** What a `hermes serve` that exited in Termux looks like from here. */
+        fun dropSocket() {
+            closed.tryEmit(Unit)
         }
     }
 

@@ -202,7 +202,13 @@ fi
 # against the loopback set rather than merely inspected for a base rule.
 manifest="app/src/main/AndroidManifest.xml"
 nsc="app/src/main/res/xml/network_security_config.xml"
+# Sorted by codepoint, which is what LC_ALL=C below guarantees on any machine.
 expected_domains=$'127.0.0.1\n::1\nlocalhost'
+
+# How many times the file grants cleartext at all. Exactly one grant, on the
+# loopback domain-config, is the whole claim; counting is what stops a second
+# grant elsewhere in the file from hiding behind the first one being correct.
+grants=$(grep -c 'cleartextTrafficPermitted="true"' "$nsc" 2>/dev/null || true)
 
 if grep -qE 'usesCleartextTraffic[[:space:]]*=[[:space:]]*"true"' "$manifest" 2>/dev/null; then
   problem "$manifest sets usesCleartextTraffic=\"true\"."
@@ -215,13 +221,25 @@ elif [[ ! -f "$nsc" ]]; then
 elif ! grep -qE '<base-config[^>]*cleartextTrafficPermitted="false"' "$nsc"; then
   problem "$nsc does not set base cleartextTrafficPermitted=\"false\"."
   note "fix: the base config must refuse cleartext; only the loopback domain-config permits it."
+elif grep -q '<debug-overrides' "$nsc"; then
+  # A debug-overrides block applies to every host in a debuggable build, and a
+  # debug build is the one people run against a real Gateway by hand.
+  problem "$nsc has a debug-overrides block; cleartext must not be re-opened for debug builds."
+  note "fix: remove it; the loopback domain-config already covers every address this app needs."
+elif [[ "$grants" != "1" ]]; then
+  problem "$nsc grants cleartext $grants times; exactly one loopback domain-config may."
+  note "fix: keep one <domain-config cleartextTrafficPermitted=\"true\"> holding only the loopback names."
+elif ! grep -qE '<domain-config[^>]*cleartextTrafficPermitted="true"' "$nsc"; then
+  problem "$nsc grants cleartext somewhere other than a domain-config element."
+  note "fix: the single grant belongs on <domain-config>, so it is scoped to named hosts."
 else
+  # Every <domain> in the file, because the single grant above is already known
+  # to be the loopback domain-config and nothing else may hold one.
   actual_domains="$(
-    sed -n '/<domain-config[^>]*cleartextTrafficPermitted="true"/,/<\/domain-config>/p' "$nsc" |
-      grep -oE '<domain[^>]*>[^<]+</domain>' |
+    grep -oE '<domain[^>]*>[^<]+</domain>' "$nsc" |
       sed -E 's|.*<domain[^>]*>([^<]+)</domain>.*|\1|' |
       sed -E 's/[[:space:]]+//g' |
-      sort -u
+      LC_ALL=C sort -u
   )"
   if [[ "$actual_domains" != "$expected_domains" ]]; then
     problem "$nsc permits cleartext to something other than loopback:"

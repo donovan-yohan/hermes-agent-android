@@ -15,6 +15,7 @@ import java.nio.charset.CodingErrorAction
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
@@ -408,6 +409,22 @@ internal class GatewayConnectionManager(
      * rotation, it is a hang. Written only where [active] is.
      */
     private val liveRemoteProfile = AtomicReference<RemoteGatewayProfile?>(null)
+
+    /**
+     * Whether the loopback route is live *or* being opened, readable without
+     * [mutex].
+     *
+     * The network handlers cancel the in-flight connect intent before they take
+     * the lock, so a guard that only inspected [active] would still abort a
+     * Local connect that was going to succeed — [active] is null for the whole
+     * of a connect. The counter covers the open; the flag covers the connection
+     * it leaves behind. Written where [active] is, plus around [connectLocal].
+     */
+    private val localConnectsInFlight = AtomicInteger(0)
+    private val localRouteActive = AtomicBoolean(false)
+
+    /** Every authenticated loopback hop, redirect following off. */
+    private val loopbackHttp by lazy { loopbackClient(http) }
     private val connectIntent = AtomicReference(ConnectIntent(generation = 0, job = null))
     private var rpcMonitor: Job? = null
     private var reconnectJob: Job? = null
@@ -494,6 +511,9 @@ internal class GatewayConnectionManager(
     }
 
     override suspend fun connectLocal(profile: LocalGatewayProfile): GatewayConnectResult {
+        // Claimed before the intent exists, so a network edge arriving during
+        // this dial cannot cancel the job that is doing it.
+        localConnectsInFlight.incrementAndGet()
         val intent = beginConnectIntent(currentCoroutineContext()[Job])
         return try {
             try {
@@ -525,8 +545,13 @@ internal class GatewayConnectionManager(
             }
         } finally {
             releaseConnectIntent(intent)
+            localConnectsInFlight.decrementAndGet()
         }
     }
+
+    /** True while this app is on, or dialling, a Gateway on this device. */
+    private fun loopbackRouteBusy(): Boolean =
+        localConnectsInFlight.get() > 0 || localRouteActive.get()
 
     /**
      * Called only while [mutex] is held. The readiness boundary is the same as
@@ -549,14 +574,17 @@ internal class GatewayConnectionManager(
 
             active = ActiveConnection.Local(rpc, profile)
             liveRemoteProfile.set(null)
+            localRouteActive.set(true)
             val authorized = leg
+            // The loopback client, not the shared one: every hop that carries
+            // the session token refuses to follow a redirect off the device.
             _gatewayHttp.value = OkHttpGatewayHttp(
-                http = http,
+                http = loopbackHttp,
                 resolveEndpoint = { baseUrl },
                 resolveAuthorization = { authorized.authorization() },
             )
             _imageLoader.value = OkHttpGatewayImageLoader(
-                http = http,
+                http = loopbackHttp,
                 resolveEndpoint = { baseUrl },
                 resolveAuthorization = { authorized.authorization() },
             )
@@ -634,6 +662,7 @@ internal class GatewayConnectionManager(
                         requireRemoteOpenCurrentLocked(intent, profile, admission, requireForeground)
                         active = ActiveConnection.Remote(rpc, profile)
                         liveRemoteProfile.set(profile)
+                        localRouteActive.set(false)
                         _gatewayHttp.value = OkHttpGatewayHttp(
                             http = http,
                             resolveEndpoint = { profile.normalizedBaseUrl },
@@ -777,6 +806,7 @@ internal class GatewayConnectionManager(
 
             active = ActiveConnection.Ssh(transport, backend, forward, rpc)
             liveRemoteProfile.set(null)
+            localRouteActive.set(false)
             // Capture the loopback session token eagerly — the same pattern
             // the RPC client uses — because the backend clears its buffer once
             // connect finishes. The header contract matches the readiness
@@ -828,18 +858,22 @@ internal class GatewayConnectionManager(
     fun networkAvailabilityChanged(available: Boolean) {
         networkAvailableSignal.set(available)
         val eventGeneration = networkEventGeneration.incrementAndGet()
-        invalidateConnectIntent()
+        // A Gateway on this device is reached over loopback, which is up whether
+        // or not the phone has a network at all. Tearing that leg down on an
+        // airplane-mode edge would disconnect the one route that still works,
+        // and Termux is exactly where someone is when they have no network. The
+        // cancellation is skipped as well as the teardown: it is what would
+        // abort a dial already in flight.
+        val loopback = loopbackRouteBusy()
+        if (!loopback) invalidateConnectIntent()
         scope.launch {
             mutex.withLock {
                 if (networkEventGeneration.get() != eventGeneration) return@withLock
                 val wasAvailable = networkAvailable
+                // The flag is still recorded, so a later switch to a route that
+                // does use the network starts from the truth.
                 networkAvailable = available
-                // A Gateway on this device is reached over loopback, which is up
-                // whether or not the phone has a network at all. Tearing this
-                // leg down on an airplane-mode edge would disconnect the one
-                // route that still works, and Termux is exactly where someone
-                // is when they have no network.
-                if (active is ActiveConnection.Local) return@withLock
+                if (loopback || active is ActiveConnection.Local) return@withLock
                 val profile = desiredRemoteProfile
                 if (!available) {
                     cancelReconnectLocked()
@@ -876,12 +910,14 @@ internal class GatewayConnectionManager(
 
     /** Compatibility seam for callers that cannot distinguish loss from recovery. */
     fun networkChanged() {
+        // Same reason as the availability edge: loopback does not travel over
+        // the network that just changed, and cancelling here would abort a dial
+        // in flight.
+        if (loopbackRouteBusy()) return
         val invalidatedIntent = invalidateConnectIntent()
         scope.launch {
             mutex.withLock {
                 if (connectIntent.get().generation != invalidatedIntent.generation) return@withLock
-                // Same reason as the availability edge: loopback does not travel
-                // over the network that just changed.
                 if (active is ActiveConnection.Local) return@withLock
                 if (active == null && _state.value.status != GatewayConnectionStatus.Connecting) return@withLock
                 cancelReconnectLocked()
@@ -900,6 +936,7 @@ internal class GatewayConnectionManager(
         val closing = active
         active = null
         liveRemoteProfile.set(null)
+        localRouteActive.set(false)
         _client.value = null
         _gatewayHttp.value = null
         _imageLoader.value = null
@@ -928,6 +965,11 @@ internal class GatewayConnectionManager(
                 if (active?.rpc !== rpc) return@withLock
                 val reconnect = (active as? ActiveConnection.Remote)?.profile
                     ?.takeIf { desiredRemoteProfile == it }
+                // A loopback socket that closed is a Hermes that stopped, never
+                // a network that went away. Someone in airplane mode with the
+                // one Gateway they have beside them in Termux must not be told
+                // to wait for a network: there is no waiting that would help.
+                val wasLoopback = active is ActiveConnection.Local
                 val stableConnection = remoteConnectedAtMillis
                     ?.let { connectedAt -> nowMillis() - connectedAt >= STABLE_REMOTE_CONNECTION_MILLIS }
                     ?: false
@@ -935,7 +977,7 @@ internal class GatewayConnectionManager(
                     remoteReconnectAttempts = 0
                     beginRemoteFailureEpisodeLocked(null)
                 }
-                if (!networkAvailable) {
+                if (!networkAvailable && !wasLoopback) {
                     cancelReconnectLocked()
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,

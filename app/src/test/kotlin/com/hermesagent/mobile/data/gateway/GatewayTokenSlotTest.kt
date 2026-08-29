@@ -270,10 +270,7 @@ class GatewayTokenSlotTest {
 
         store.saveSessionToken(LOCAL_SLOT, sessionToken())
 
-        assertEquals(
-            SESSION_TOKEN_FIXTURE,
-            store.loadSessionToken(LOCAL_SLOT)?.toString(Charsets.US_ASCII),
-        )
+        assertEquals(SESSION_TOKEN_FIXTURE, store.loadSessionToken(LOCAL_SLOT).text())
         assertEquals("one file per connection, whatever it holds", 1, blobs().size)
     }
 
@@ -297,12 +294,19 @@ class GatewayTokenSlotTest {
             // server, so this is a different Hermes with a different token.
             val movedPort = GatewaySecretSlot("connection-local", "http://127.0.0.1:9200")
 
-            assertNull("another port is another server", store.loadSessionToken(movedPort))
+            // Refused, and said so as a refusal rather than as an empty slot:
+            // only an empty slot may be filled in by reading a credential off
+            // whatever now answers, and doing that here would undo the binding.
+            assertEquals(
+                "another port is another server",
+                SessionTokenRead.Refused,
+                store.loadSessionToken(movedPort),
+            )
             assertEquals("the sealed token is still on disk", 1, blobs().size)
             assertEquals(
                 "and it works again the moment the row points home",
                 SESSION_TOKEN_FIXTURE,
-                store.loadSessionToken(LOCAL_SLOT)?.toString(Charsets.US_ASCII),
+                store.loadSessionToken(LOCAL_SLOT).text(),
             )
         }
 
@@ -314,7 +318,11 @@ class GatewayTokenSlotTest {
         assertNull("a session token is not a sign-in", store.load(LOCAL_SLOT))
 
         store.save(SLOT_A, tokens("alpha"))
-        assertNull("and a sign-in is not a session token", store.loadSessionToken(SLOT_A))
+        assertEquals(
+            "and a sign-in is not a session token",
+            SessionTokenRead.Refused,
+            store.loadSessionToken(SLOT_A),
+        )
     }
 
     @Test
@@ -340,9 +348,13 @@ class GatewayTokenSlotTest {
         // Nothing named after the loopback address is ever adopted: only the
         // Remote route ever wrote a URL-named file, and asking the remote
         // normalizer to name one for an `http://` address would refuse anyway.
-        assertNull(store.loadSessionToken(LOCAL_SLOT))
+        assertEquals(SessionTokenRead.Absent, store.loadSessionToken(LOCAL_SLOT))
         assertTrue(blobs().isEmpty())
     }
+
+    /** The token a read found, or null for an empty or refused slot. */
+    private fun SessionTokenRead.text(): String? =
+        (this as? SessionTokenRead.Found)?.token?.toString(Charsets.US_ASCII)
 
     /** Records which host each access token was presented to. */
     private class RecordingAuthApi : GatewayNativeAuthApi {

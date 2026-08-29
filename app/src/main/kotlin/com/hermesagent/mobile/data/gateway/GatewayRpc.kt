@@ -233,13 +233,10 @@ internal class OkHttpGatewayRpcClient private constructor(
             token: ByteArray,
             requestTimeoutMillis: Long = 15_000,
         ): OkHttpGatewayRpcClient {
-            val url = localGatewayEndpoint(normalizedBaseUrl, "api/ws")
-                .newBuilder()
-                .addQueryParameter("token", token.toString(Charsets.US_ASCII))
-                .build()
             // OkHttp accepts an HTTP URL here and performs the WebSocket
             // upgrade itself, which also keeps the query parameter encoded.
-            return connectRequest(http, Request.Builder().url(url).build(), requestTimeoutMillis)
+            val request = Request.Builder().url(localGatewayWebSocketUrl(normalizedBaseUrl, token)).build()
+            return connectRequest(loopbackClient(http), request, requestTimeoutMillis)
         }
 
         /** Opens a Remote Gateway with a fresh, single-use WS ticket. */
