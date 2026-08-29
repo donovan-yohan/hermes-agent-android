@@ -331,7 +331,7 @@ class LocalGatewayTest {
     }
 
     @Test
-    fun `a Hermes that stops in Termux is reported as a closed connection, not a missing network`() = runTest {
+    fun `a Hermes that stops in Termux says so, and never blames the network`() = runTest {
         val leg = LocalLeg()
         val manager = manager(leg, managerScope = backgroundScope)
         assertTrue(manager.connectLocal(PROFILE) is GatewayConnectResult.Connected)
@@ -343,8 +343,9 @@ class LocalGatewayTest {
 
         assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
         assertEquals(
-            "waiting for a network is advice nothing can act on here",
-            "The Gateway connection closed. Reconnect to continue.",
+            "waiting for a network is advice nothing can act on here, and the " +
+                "socket went with the process, so this is the sentence Connect would give too",
+            LocalGatewayCopy.NOT_ANSWERING,
             manager.state.value.message,
         )
         manager.disconnect()

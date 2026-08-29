@@ -1079,10 +1079,20 @@ internal class GatewayConnectionManager(
                         NETWORK_WAIT_MESSAGE,
                     )
                 } else if (reconnect == null) {
-                    // No desired route to retry against (user-initiated close).
+                    // No desired route to retry against. On loopback the cause
+                    // is not in doubt — the socket went with the process that
+                    // held it — so the Local route names the device that stopped
+                    // answering and what starts it, which is also what the next
+                    // Connect will say. The other routes keep the neutral close:
+                    // a Gateway across a network closes a socket for reasons
+                    // that are not "the host stopped".
                     _state.value = GatewayConnectionState(
                         GatewayConnectionStatus.NeedsAttention,
-                        "The Gateway connection closed. Reconnect to continue.",
+                        if (wasLoopback) {
+                            LocalGatewayCopy.NOT_ANSWERING
+                        } else {
+                            "The Gateway connection closed. Reconnect to continue."
+                        },
                     )
                 } else {
                     recordRemoteFailureLocked()

@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.gateway
 
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -280,12 +281,24 @@ internal class OkHttpLocalGatewayHealthCheck(http: OkHttpClient) : LocalGatewayH
 
     override suspend fun verify(normalizedBaseUrl: String, token: ByteArray) =
         withContext(Dispatchers.IO) {
-            loopbackHttp.newCall(localGatewayHealthRequest(normalizedBaseUrl, token)).execute().use { response ->
+            // A Hermes that was stopped is not a server answering badly: nothing
+            // is bound to the port, so the call fails with an [IOException]
+            // before there is any response to read a status from. That is this
+            // route's most common failure — the person stopped `hermes serve`,
+            // or Android suspended Termux — and it has to arrive as the sentence
+            // that names this device and what starts it, never as the generic
+            // "check the host" a Remote row's failure would fall through to.
+            val response = try {
+                loopbackHttp.newCall(localGatewayHealthRequest(normalizedBaseUrl, token)).execute()
+            } catch (unreachable: IOException) {
+                throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
+            }
+            response.use { answered ->
                 when {
-                    response.code == 401 || response.code == 403 ->
-                        throw GatewayAuthException(LocalGatewayCopy.TOKEN_REFUSED, response.code)
+                    answered.code == 401 || answered.code == 403 ->
+                        throw GatewayAuthException(LocalGatewayCopy.TOKEN_REFUSED, answered.code)
 
-                    !response.isSuccessful ->
+                    !answered.isSuccessful ->
                         throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
 
                     else -> Unit
@@ -360,14 +373,23 @@ internal class LocalGatewayConnector(
      * the handshake simply fails with an HTTP status. Reading that status back
      * is what keeps "your token is wrong" from arriving as "the socket was
      * refused", which names no cause and offers nothing to do.
+     *
+     * Every other way the upgrade can fail is the readiness check's answer one
+     * step later: a Hermes that stopped between the health request and this one,
+     * or one answering something other than a WebSocket. Both are this device
+     * not answering, and both say so — a transport failure carries no status at
+     * all, so the exception it arrives in would otherwise reach the surface as
+     * its own transport wording.
      */
     private suspend fun openSocket(baseUrl: String, token: ByteArray): GatewayRpcClient = try {
         rpcOpen(baseUrl, token)
     } catch (refused: GatewayRpcException) {
         when (refused.statusCode) {
             401, 403 -> throw GatewayAuthException(LocalGatewayCopy.TOKEN_REFUSED, refused.statusCode)
-            else -> throw refused
+            else -> throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
         }
+    } catch (unreachable: IOException) {
+        throw GatewayConnectionException(LocalGatewayCopy.NOT_ANSWERING)
     }
 
     /**

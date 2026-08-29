@@ -20,7 +20,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The one refusal the readiness check cannot see.
+ * What the Local route learns from a real socket, and only from a real socket.
+ *
+ * Two failures live here, both of them things a fake transport would answer by
+ * assumption: the token refusal the readiness check cannot see, and the stopped
+ * Hermes that never answers at all.
+ *
+ * ## The refusal the readiness check cannot see
  *
  * `/api/health` is on the Gateway's public allowlist at the pin
  * (`hermes_cli/dashboard_auth/public_paths.py:33-38` @
@@ -35,6 +41,17 @@ import org.robolectric.annotation.Config
  * wrong, and it is why this drives the real OkHttp client against a real
  * loopback server rather than a fake: what the socket layer does with a refused
  * upgrade is the entire question, and a fake would answer it by assumption.
+ *
+ * ## The Hermes that is not running
+ *
+ * When `hermes serve` has been stopped — the route's most common failure, since
+ * the person owns that process and Android may suspend Termux — nothing is bound
+ * to the port and the connect is refused by the kernel. There is no response and
+ * no status: the OkHttp call raises an `IOException`, which a status-shaped
+ * mapping walks straight past. The device pass on this issue caught that landing
+ * on the Remote route's "check the host", advice nobody can act on for a host
+ * that is the phone in their hand. Proving the fix needs a port with nothing on
+ * it, which is exactly as unfakeable as the refusal above.
  *
  * Robolectric, because the production listener logs through `android.util.Log`
  * and this module deliberately does not stub the Android platform in unit tests
@@ -93,6 +110,87 @@ class LocalGatewaySocketTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun `a Hermes that is not running says which device stopped answering`() = runBlocking {
+        val port = unboundLoopbackPort()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val manager = GatewayConnectionManager(
+                scope = scope,
+                installStore = GatewayInstallStore { "0123456789abcdef0123456789abcdef" },
+                localConnector = LocalGatewayConnector(
+                    tokens = StoredToken(TOKEN),
+                    // The production readiness check, against a real port with
+                    // nothing on it. The whole question is what the OkHttp call
+                    // does when the connect is refused instead of answered.
+                    health = OkHttpLocalGatewayHealthCheck(OkHttpClient()),
+                    rpcOpen = { _, _ -> throw AssertionError("readiness must fail before any socket is opened") },
+                ),
+            )
+
+            val result = manager.connectLocal(
+                LocalGatewayProfile("http://127.0.0.1:$port", secretSlotId = "row-local"),
+            )
+
+            assertTrue("expected Failed, got $result", result is GatewayConnectResult.Failed)
+            assertEquals(
+                "a stopped Hermes is not a host to check: it is this device, and it can be started",
+                LocalGatewayCopy.NOT_ANSWERING,
+                (result as GatewayConnectResult.Failed).message,
+            )
+            assertTrue("`hermes serve` can be started; this is worth another tap", result.retryable)
+            assertEquals(LocalGatewayCopy.NOT_ANSWERING, manager.state.value.message)
+            assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+            assertNull(manager.gatewayHttp.value)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `a Hermes that stops between the readiness check and the socket says the same thing`() = runBlocking {
+        val port = unboundLoopbackPort()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val manager = GatewayConnectionManager(
+                scope = scope,
+                installStore = GatewayInstallStore { "0123456789abcdef0123456789abcdef" },
+                localConnector = LocalGatewayConnector(
+                    tokens = StoredToken(TOKEN),
+                    // Readiness passes, so the upgrade is the hop that finds the
+                    // port empty — the window where the person stops the server
+                    // mid-dial, and the one place a transport failure carries no
+                    // status for the refusal mapping to read.
+                    health = { _, _ -> },
+                    rpcOpen = { baseUrl, token ->
+                        OkHttpGatewayRpcClient.connectLocal(OkHttpClient(), baseUrl, token)
+                    },
+                ),
+            )
+
+            val result = manager.connectLocal(
+                LocalGatewayProfile("http://127.0.0.1:$port", secretSlotId = "row-local"),
+            )
+
+            assertTrue("expected Failed, got $result", result is GatewayConnectResult.Failed)
+            assertEquals(
+                LocalGatewayCopy.NOT_ANSWERING,
+                (result as GatewayConnectResult.Failed).message,
+            )
+            assertTrue(result.retryable)
+            assertNull("nothing was published over a socket that never opened", manager.gatewayHttp.value)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * A loopback port with nothing listening on it: claimed from the ephemeral
+     * range so no other server can be answering there, then released.
+     */
+    private fun unboundLoopbackPort(): Int =
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
 
     /** A slot that always has this token, so only the socket can refuse it. */
     private class StoredToken(private val token: String) : GatewaySessionTokenStore {
