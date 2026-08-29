@@ -15,6 +15,7 @@ limitations, and likely next slices behind that table.
 |---|---|
 | Preferred shared topology | **Remote Gateway**. Desktop and mobile authenticate independently to one host-owned Gateway. |
 | Fallback topology | **Managed SSH**. Mobile owns a private remote Gateway process, SSH tunnel, and positively proved cleanup lifecycle. |
+| Same-device topology | **Local**. A Termux-hosted `hermes serve` on `127.0.0.1`, saved as a connection and authenticated by its session token. Host-owned like Remote; device evidence pending. |
 | Android support | API 26+ (Android 8.0+), target API 36. |
 | App version | `0.2.0-phase2` (`versionCode` 2). |
 | Distribution | One rolling, persistently debug-signed `hermes-mobile-latest` artifact from successful `main` builds. No production release channel yet. |
@@ -37,6 +38,15 @@ limitations, and likely next slices behind that table.
   refusal, one selected authentication method with no fallback, in-memory
   credential handling, loopback forwarding, remote process ownership proofs,
   and guarded cleanup.
+- **Local is the same-device route.** A Hermes the person runs in Termux on this
+  phone is a saved connection reached over loopback: `http://127.0.0.1:9119`,
+  authenticated by the static Hermes session token, which is kept in the same
+  Keystore-encrypted per-row slot a Remote sign-in uses and is bound to the
+  address that saved it. Cleartext stays refused by default and is permitted for
+  the three loopback names only; there is no `usesCleartextTraffic`. The app
+  never starts, adopts, stops, or reaps that Termux process, and disconnecting
+  closes a socket and nothing else. Setup lives in the
+  [Termux local Gateway guide](../docs/guides/termux-local-gateway.md).
 - Default-network loss or handoff closes stale connection state. While the app
   is foregrounded, Remote Gateway retries transient failures with full-jitter
   backoff and resumes immediately after network recovery or foreground return;
@@ -44,8 +54,9 @@ limitations, and likely next slices behind that table.
   Remote Gateway disconnect never kills the host-owned server.
 
 See [ADR 0002](../docs/adr/0002-shared-remote-gateway.md) for Remote Gateway
-ownership and authentication, and [ADR 0001](../docs/adr/0001-ssh-probe-to-tunnel.md)
-for the Managed SSH lifecycle.
+ownership and authentication — and its addendum for the Local route — and
+[ADR 0001](../docs/adr/0001-ssh-probe-to-tunnel.md) for the Managed SSH
+lifecycle.
 
 ### Sessions and projects
 
@@ -168,6 +179,7 @@ for the Managed SSH lifecycle.
 |---|---|---|
 | Same running session on two clients | One Remote Gateway safely shares process and session storage, but Desktop and mobile should not open or control the same running session simultaneously. Different sessions are safe. | Gateway multi-client event fan-out with equivalent mobile coverage. |
 | Android background lifecycle | There is no general foreground service for the Gateway connection. Automatic Remote Gateway redials pause while the app is backgrounded — including when only the wake-word service remains active — and resume on foreground return. Android may suspend or stop the app, so uninterrupted background connectivity is not claimed. | A justified Android lifecycle design with notification, power, privacy, reconnect, and process-death acceptance evidence. |
+| Local route on Termux | The route is verified on the JVM only: address rule, token slot, connect and refusal paths, and the cleartext invariant. No physical device pass has been run, so nothing is claimed about a real Termux install end to end. It also carries no automatic redial, and no cold-start restore: a Local row connects on an explicit action, as Managed SSH does. Keeping `hermes serve` alive is Android's business, not the app's — wake lock, battery exemption, and the Android 12+ phantom-process killer all apply, and upstream calls Termux gateway persistence best-effort. | The Pixel pass in [#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93): Termux `hermes serve` plus an app Local connection producing a session list and a live turn. |
 | Managed SSH reconnect | A reconnect starts a fresh owned backend; safe lockfile reuse is not implemented. Positively unowned or ambiguous processes are never killed. | Full lock, argv, profile, home, token, HTTP ownership, and RPC readiness proof before reuse. |
 | Session management | Create/open/history work; rename and archive are absent. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
@@ -218,7 +230,11 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 
 ## Intentional non-goals
 
-- Running Hermes itself inside Android or using Termux as the app runtime.
+- Running Hermes itself inside the APK. This app hosts no runtime, bundles no
+  Python, and starts no agent process. A Hermes the person runs in Termux on
+  the same phone is a supported *connection* — the Local route — and it stays
+  host-owned: the app connects to it over loopback and never starts, adopts,
+  stops, or reaps it.
 - Copying Desktop cookies, session tokens, SSH agents, or credentials. Remote
   Gateway clients sign in independently.
 - Starting separate app-owned Gateway processes against one shared
@@ -234,7 +250,9 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 
 - [Desktop surface port workflow](../docs/workflows/port-desktop-surface.md)
 - [Phase 2 architecture and current connection sequence](../docs/phase-2-architecture.md)
-- [Remote Gateway ADR](../docs/adr/0002-shared-remote-gateway.md)
+- [Remote Gateway ADR](../docs/adr/0002-shared-remote-gateway.md), including the
+  Local route addendum
+- [Termux local Gateway setup guide](../docs/guides/termux-local-gateway.md)
 - [Managed SSH ADR](../docs/adr/0001-ssh-probe-to-tunnel.md)
 - [Composer capability contract](../docs/parity/composer-capabilities.json)
 - [Transcript selection and copy parity](../docs/parity/transcript-selection-copy.md)
