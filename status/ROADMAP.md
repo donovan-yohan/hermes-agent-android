@@ -15,7 +15,7 @@ limitations, and likely next slices behind that table.
 |---|---|
 | Preferred shared topology | **Remote Gateway**. Desktop and mobile authenticate independently to one host-owned Gateway. |
 | Fallback topology | **Managed SSH**. Mobile owns a private remote Gateway process, SSH tunnel, and positively proved cleanup lifecycle. |
-| Same-device topology | **Local**. A Termux-hosted `hermes serve` on `127.0.0.1`, saved as a connection and authenticated by its session token. Host-owned like Remote; device evidence pending. |
+| Same-device topology | **Local**. A Termux-hosted `hermes serve` on `127.0.0.1`, saved as a connection and authenticated by its session token, restored on launch. Host-owned like Remote; verified against a real Termux Gateway on an emulator, with a live turn and physical-device keep-alive still open. |
 | Android support | API 26+ (Android 8.0+), target API 36. |
 | App version | `0.2.0-phase2` (`versionCode` 2). |
 | Distribution | One rolling, persistently debug-signed `hermes-mobile-latest` artifact from successful `main` builds. No production release channel yet. |
@@ -45,7 +45,11 @@ limitations, and likely next slices behind that table.
   address that saved it. Cleartext stays refused by default and is permitted for
   the three loopback names only; there is no `usesCleartextTraffic`. The app
   never starts, adopts, stops, or reaps that Termux process, and disconnecting
-  closes a socket and nothing else. Setup lives in the
+  closes a socket and nothing else. The active Local row comes back on launch on
+  the token it already holds, never on one read off whatever answers the port. A
+  Hermes that has stopped — the common case, since Android suspends Termux — says
+  so and says what starts it, whether Connect finds it gone or a live connection
+  loses it. Setup lives in the
   [Termux local Gateway guide](../docs/guides/termux-local-gateway.md).
 - Default-network loss or handoff closes stale connection state. While the app
   is foregrounded, Remote Gateway retries transient failures with full-jitter
@@ -179,7 +183,7 @@ lifecycle.
 |---|---|---|
 | Same running session on two clients | One Remote Gateway safely shares process and session storage, but Desktop and mobile should not open or control the same running session simultaneously. Different sessions are safe. | Gateway multi-client event fan-out with equivalent mobile coverage. |
 | Android background lifecycle | There is no general foreground service for the Gateway connection. Automatic Remote Gateway redials pause while the app is backgrounded — including when only the wake-word service remains active — and resume on foreground return. Android may suspend or stop the app, so uninterrupted background connectivity is not claimed. | A justified Android lifecycle design with notification, power, privacy, reconnect, and process-death acceptance evidence. |
-| Local route on Termux | The route is verified on the JVM only: address rule, token slot, connect and refusal paths, and the cleartext invariant. No physical device pass has been run, so nothing is claimed about a real Termux install end to end. It also carries no automatic redial, and no cold-start restore: a Local row connects on an explicit action, as Managed SSH does. Keeping `hermes serve` alive is Android's business, not the app's — wake lock, battery exemption, and the Android 12+ phantom-process killer all apply, and upstream calls Termux gateway persistence best-effort. | The Pixel pass in [#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93): Termux `hermes serve` plus an app Local connection producing a session list and a live turn. |
+| Local route on Termux | A device pass on a Pixel 10 Pro emulator (Android 17, arm64, 16 KB pages) ran the route end to end against a real Termux `hermes serve` at `f82f2db`: install, token gating, connect, a Gateway-sourced session list and repository, launch restore after a force-stop, the refusal and stopped-server negatives, and no token in `logcat`. Two things that pass does not claim. A **live turn**: no provider key was on the device, so every turn ended in the app's turn-failure copy — correct for the condition, and no evidence about turns. And **keep-alive on a physical phone**: an emulator with the app foregrounded proves nothing about a pocket, so wake lock, battery exemption and the Android 12+ phantom-process killer remain community advice, and upstream calls Termux gateway persistence best-effort. The route still carries no automatic redial: a Local row reconnects on an explicit action, as Managed SSH does. The install itself needed four documented deviations from upstream's manual path — see the [Termux local Gateway guide](../docs/guides/termux-local-gateway.md). | A physical Pixel pass in [#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93): a provider-backed live turn, and `hermes serve` surviving a screen-off background period. |
 | Managed SSH reconnect | A reconnect starts a fresh owned backend; safe lockfile reuse is not implemented. Positively unowned or ambiguous processes are never killed. | Full lock, argv, profile, home, token, HTTP ownership, and RPC readiness proof before reuse. |
 | Session management | Create/open/history work; rename and archive are absent. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
