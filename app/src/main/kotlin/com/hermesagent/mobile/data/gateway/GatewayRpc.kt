@@ -38,6 +38,15 @@ internal class GatewayRpcException(
     message: String,
     /** True when the frame was sent and a lost response cannot prove rejection. */
     val requestMayHaveBeenAccepted: Boolean = false,
+    /**
+     * The HTTP status a refused upgrade answered with, when there was one.
+     *
+     * A WebSocket that never opened failed as an ordinary HTTP exchange, and
+     * the status is the only thing that says *why*. The transport reports it
+     * rather than interpreting it: what a 403 on the upgrade means is a
+     * question about the route, and the routes disagree.
+     */
+    val statusCode: Int? = null,
 ) : Exception(message)
 
 internal class GatewayRpcError(
@@ -287,7 +296,12 @@ internal class OkHttpGatewayRpcClient private constructor(
                         Log.w(LOG_TAG, "Gateway WebSocket failed (http=${response?.code ?: "none"})")
                         rpc.connectionClosed("The gateway WebSocket failed.")
                         if (continuation.isActive) {
-                            continuation.resumeWithException(GatewayRpcException("The gateway WebSocket was refused."))
+                            continuation.resumeWithException(
+                                GatewayRpcException(
+                                    "The gateway WebSocket was refused.",
+                                    statusCode = response?.code,
+                                ),
+                            )
                         }
                     }
                 })

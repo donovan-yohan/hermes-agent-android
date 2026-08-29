@@ -322,9 +322,31 @@ internal class LocalGatewayConnector(
             ?: throw GatewayAuthException(LocalGatewayCopy.TOKEN_MISSING, 401)
         return try {
             health.verify(baseUrl, token)
-            LocalGatewayLeg(rpcOpen(baseUrl, token), token.toString(Charsets.US_ASCII))
+            LocalGatewayLeg(openSocket(baseUrl, token), token.toString(Charsets.US_ASCII))
         } finally {
             token.fill(0)
+        }
+    }
+
+    /**
+     * The socket, and the refusal it is the only one to see.
+     *
+     * `/api/health` is on the Gateway's public allowlist at the pin
+     * (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `f82f2dba`), so the
+     * readiness check answers 200 to a wrong token as readily as to a right
+     * one. The upgrade is where the token is actually checked
+     * (`web_server.py:15925-15931`, `:17017-17025`), and because the handler
+     * closes *before* accepting, the client never sees the 4401 close code —
+     * the handshake simply fails with an HTTP status. Reading that status back
+     * is what keeps "your token is wrong" from arriving as "the socket was
+     * refused", which names no cause and offers nothing to do.
+     */
+    private suspend fun openSocket(baseUrl: String, token: ByteArray): GatewayRpcClient = try {
+        rpcOpen(baseUrl, token)
+    } catch (refused: GatewayRpcException) {
+        when (refused.statusCode) {
+            401, 403 -> throw GatewayAuthException(LocalGatewayCopy.TOKEN_REFUSED, refused.statusCode)
+            else -> throw refused
         }
     }
 
