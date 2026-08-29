@@ -167,14 +167,28 @@ endpoint is a loopback address on this device.
   host on the internet, so a repo invariant fails the build if it appears and
   compares the permitted domain list against the loopback set. The Remote route
   keeps refusing plain HTTP in its own normalizer regardless.
-- **The address is validated, not guessed.** `http` only, host exactly
+- **A port somebody typed is never substituted.** `http` only, host exactly
   `127.0.0.1`, `localhost` or `::1`, no userinfo, query or fragment, and the
-  port always explicit in the canonical form. Which port a row names decides
-  which process on this phone receives the token, so an ambiguous address is
-  refused rather than defaulted.
-- **Readiness is proved the same way.** An authenticated `GET /api/health`,
-  then the WebSocket, then one correlated `session.list` before Connected — the
-  Managed SSH order minus the parts that belong to an app-owned process.
+  canonical form always names its port. An address that names no port takes
+  the documented default, 9119; what is refused is every shape where the URL
+  parser would report a port other than the one in the text — an abbreviated
+  scheme (`http:host:port`), and a backslash anywhere in the input, which ends
+  the authority early and moves the port into the path. Which port a row names
+  decides which process on this phone receives the token, and any app may bind
+  a loopback port without a permission, so a silent substitution hands the
+  token away.
+- **Readiness is proved the same way; the socket is the token gate.**
+  `GET /api/health`, then the WebSocket, then one correlated `session.list`
+  before Connected — the Managed SSH order minus the parts that belong to an
+  app-owned process. The health request carries the token but does not test
+  it: `/api/health` is on the Gateway's public allowlist at the pin
+  (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `f82f2db`), so it
+  answers 200 to a wrong token. The upgrade is where the token is checked
+  (`web_server.py:17017-17025` @ `f82f2db`), and its 401/403 is read back as a
+  distinct, non-retryable refusal with its own sentence rather than as a
+  generic socket failure — a refused token is a wrong token, and retrying it
+  or reading a second credential off the same server would turn "fix this"
+  into a silent loop.
 
 ### Consequences
 

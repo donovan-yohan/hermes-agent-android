@@ -28,7 +28,7 @@ Use another route instead when:
 
 > **Status.** The Local route's transport and token slot shipped in slice S-A1
 > of [#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93); the
-> Gateways entry that creates a Local connection is slice S-A2. No physical
+> Gateways entry that creates a Local connection is slice S-A2 ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)). No physical
 > device pass has been run yet — see
 > [Known limitations](../../status/ROADMAP.md#known-limitations).
 
@@ -50,9 +50,11 @@ pkg update
 
 ## 2. Install Hermes in Termux
 
-The tested Android bundle is the `termux` extra with the Termux constraints
-file. The steps below are upstream's explicit manual path
-(`website/docs/getting-started/termux.md:103-162` @ `f82f2db`).
+Upstream documents two tested Android bundles, `.[termux]` and
+`.[termux-all]` (`website/docs/getting-started/termux.md:277` @ `f82f2db`).
+The steps below install the smaller `.[termux]` one along upstream's explicit
+manual path (`termux.md:103-162`); the one-line installer in the note below
+tries `.[termux-all]` first and falls back to it (`termux.md:93`).
 
 ```bash
 pkg install -y git python clang rust make pkg-config libffi openssl nodejs ripgrep ffmpeg
@@ -155,7 +157,9 @@ Three settings, in the order worth trying:
 3. **Disable phantom-process killing (Android 12 and newer).** Android kills
    background child processes once all apps together exceed 32 of them, which
    is exactly what a shell running a Python server looks like. The switch is
-   not in the UI; it needs `adb` from a computer, or wireless debugging.
+   not in the UI; it needs `adb` from a computer, or wireless debugging. The
+   flags below are community-documented and are not verified by this
+   repository — see [Sources](#sources).
 
    | Android version | Command |
    |---|---|
@@ -196,7 +200,7 @@ Two rules worth knowing before you type:
 
 | Symptom | What is happening | Fix |
 |---|---|---|
-| Connecting fails after a restart — the app either says *"Session token was refused. Save the token Hermes is running with, then connect."* or reports a plain connection failure | The token the app holds is not the token the running server has, usually because `hermes serve` restarted without `HERMES_DASHBOARD_SESSION_TOKEN` set and minted a new random one (`web_server.py:499-500` @ `f82f2db`). Both messages mean the same thing here: at the pinned Hermes `/api/health` needs no token (`dashboard_auth/public_paths.py:33-38`), so a wrong token is often only caught when the authenticated socket is refused. | Export the token as in step 3, restart `hermes serve`, then re-save the token on the connection. |
+| The app says *"Session token was refused. Save the token Hermes is running with, then connect."* | The token the app holds is not the token the running server has — usually because `hermes serve` restarted without `HERMES_DASHBOARD_SESSION_TOKEN` set and minted a new random one (`web_server.py:499-500` @ `f82f2db`). The refusal comes from the WebSocket upgrade, not the readiness check: `/api/health` needs no token at the pinned Hermes (`dashboard_auth/public_paths.py:33-38`), so the socket is where a wrong token is caught. The app does not retry it. | Export the token as in step 3, restart `hermes serve`, then re-save the token on the connection. |
 | The app says *"Hermes is not answering on this device. Start it, then connect."* | Nothing is listening on that port: `hermes serve` exited, or Android killed it in the background. | Run `hermes serve --status` in Termux. If it lists nothing, start it again, and work through step 5 — a server that dies minutes after you switch apps is the phantom-process killer or battery optimisation, not Hermes. |
 | The app says *"Save this Gateway's session token, then connect."* | The row has no token saved. `hermes serve` is headless and serves no web UI, so there is no page for the app to read one from (`dashboard.py:166-170` @ `f82f2db`). | Edit the connection and paste the token from step 3. |
 | `hermes serve` exits at startup complaining the address is in use | Another Hermes — or another app — already holds port 9119. | `hermes serve --status` lists running Hermes servers and `hermes serve --stop` stops them (`dashboard.py:75-84` @ `f82f2db`). If something else owns the port, start Hermes on another one (`--port 9130`), then change the address on the saved row and save the token again. |
@@ -226,7 +230,9 @@ is not verified by this repository's gates:
 
 - Termux install sources and the deprecated Play build —
   [termux/termux-app discussion #4000](https://github.com/termux/termux-app/discussions/4000)
-- `termux-wake-lock` — [Termux wiki](https://wiki.termux.com/wiki/Termux:Boot)
+- `termux-wake-lock` / `termux-wake-unlock` — shipped by the `termux-tools`
+  package ([termux/termux-tools](https://github.com/termux/termux-tools)); the
+  same wake lock is the **Acquire wakelock** action on the Termux notification
 - phantom-process killing and the flags that disable it —
   [agnostic-apollo/Android-Docs](https://github.com/agnostic-apollo/Android-Docs/blob/master/en/docs/apps/processes/phantom-cached-and-empty-processes.md),
   [termux/termux-app#3506](https://github.com/termux/termux-app/issues/3506)
