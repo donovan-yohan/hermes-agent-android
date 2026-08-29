@@ -38,6 +38,12 @@ Use another route instead when:
 > (API 37), arm64, `getconf PAGESIZE` = 16384 — installing `hermes-agent 0.20.4`
 > from `f82f2db` in Termux and connecting the app to it. That pass covers the
 > install, the token gating, connecting, the session list and the negative cases.
+> One sentence in the troubleshooting table below is *not* from that head: on
+> `fe67796` a stopped Gateway answered with the Remote route's "check the host"
+> wording, which is the defect the pass found. The corrected sentence ships in
+> [#98](https://github.com/donovan-yohan/hermes-agent-android/pull/98) and is
+> covered by unit tests against a real refused loopback connection, not by a
+> second device run.
 > It does **not** cover a live turn (no provider key was on the device) or
 > keep-alive on a physical phone, which is where step 5 is still unproven — see
 > [Known limitations](../../status/ROADMAP.md#known-limitations). Anything called
@@ -93,6 +99,8 @@ the `com.termux` user with the archive already pushed to
 
 ```bash
 cd /data/data/com.termux/files
+# Never skip this: everything below runs as $PREFIX/bin.
+sha256sum -c bootstrap-aarch64.zip.sha256   # from the release's `_sha256sums`
 rm -rf usr && mkdir -p usr
 unzip -q -o bs.zip -d usr
 # The archive ships its symlinks as a manifest: `target←linkpath`, one per line.
@@ -145,8 +153,9 @@ hermes version
 hermes doctor
 ```
 
-> **Verified.** That sequence is what the device pass ran to get
-> `hermes-agent 0.20.4` installed and serving. It installed the package list
+> **Verified.** That sequence is what the device pass converged on to get
+> `hermes-agent 0.20.4` installed and serving — the interpreter and build flags
+> below are what it took to get there. It installed the package list
 > without `nodejs` and `ffmpeg`, which `serve` itself does not need, and the
 > `pip install` takes a long time on a phone: it builds Rust and C extensions
 > from source.
