@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.connections
 
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
@@ -185,6 +186,52 @@ class ConnectionRegistryTest {
     }
 
     @Test
+    fun `a Local row round-trips through the one stored address field`() {
+        val rows = listOf(local("one", "This phone", "http://127.0.0.1:9119"))
+
+        val stored = ConnectionRegistryCodec.encode(rows)
+
+        assertEquals(rows, ConnectionRegistryCodec.decode(stored))
+        assertTrue(
+            "the address is written to the one url field, not a second one",
+            stored.contains("\"url\":\"http://127.0.0.1:9119\""),
+        )
+    }
+
+    @Test
+    fun `a Local row collides on the loopback address, however it was spelled`() {
+        val existing = local("one", "This phone", "http://127.0.0.1:9119")
+        val sameServer = local("two", "Also this phone", "http://localhost:9119")
+        val otherPort = local("three", "The other one", "http://127.0.0.1:9200")
+
+        assertEquals(existing, findDuplicateConnection(sameServer, listOf(existing)))
+        assertNull(findDuplicateConnection(otherPort, listOf(existing)))
+        assertNull("a row never duplicates itself", findDuplicateConnection(existing, listOf(existing)))
+    }
+
+    @Test
+    fun `a Local row states its address and how it proves itself`() {
+        val row = local("one", "This phone", "http://127.0.0.1:9119")
+
+        assertEquals("127.0.0.1:9119", row.endpoint)
+        assertEquals(SavedConnection.SESSION_TOKEN, row.authModeLabel)
+        assertEquals("the slot follows the row, not the address", "one", row.localProfile.secretSlotId)
+    }
+
+    @Test
+    fun `a build without the Local route reads a Local row as an unusable Remote one`() {
+        // What an older build's decoder does with a kind it has never heard of:
+        // it falls back to Remote and finds an address its own normalizer
+        // refuses, so the row is inert rather than dialled wrongly.
+        val stored = """{"version":"1","connections":[{"id":"one","label":"Phone","kind":"Cloud","url":"http://127.0.0.1:9119"}]}"""
+
+        val row = ConnectionRegistryCodec.decode(stored).single()
+
+        assertEquals(ConnectionKind.Remote, row.kind)
+        assertFalse("an http address is not a usable Remote gateway", row.remote.isValid)
+    }
+
+    @Test
     fun `an unrecognised stored kind is a remote gateway, never a keyless SSH route`() {
         val stored = """{"version":"1","connections":[{"id":"one","label":"Alpha","kind":"Cloud"}]}"""
 
@@ -217,6 +264,13 @@ class ConnectionRegistryTest {
             label = label,
             kind = ConnectionKind.Remote,
             remote = RemoteGatewayProfile(baseUrl = url),
+        )
+
+        fun local(id: String, label: String, url: String) = SavedConnection(
+            id = id,
+            label = label,
+            kind = ConnectionKind.Local,
+            local = LocalGatewayProfile(baseUrl = url),
         )
 
         fun ssh(

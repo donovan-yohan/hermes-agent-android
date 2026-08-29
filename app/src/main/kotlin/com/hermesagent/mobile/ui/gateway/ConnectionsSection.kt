@@ -27,6 +27,7 @@ import com.hermesagent.mobile.data.connections.CONNECTION_SEARCH_THRESHOLD
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.connections.connectionMatchesQuery
+import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.common.ConfirmSheet
@@ -55,9 +56,11 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Same grammar: a `SectionHeading` over `ListRow`s, one kind glyph per row,
  * an `EmptyState` when there is nothing (or nothing matching), search once the
  * list is long, an inline editor, and a destructive confirm before a removal.
- * Desktop's Local and Cloud kinds, its per-connection Test and Make primary
- * actions, its update fan-out, its launch-mode toggle and its proxy-header
- * editor are all deliberately absent — see `docs/parity/gateway-connections.md`.
+ * Desktop's Cloud kind, its per-connection Test and Make primary actions, its
+ * update fan-out, its launch-mode toggle and its proxy-header editor are all
+ * deliberately absent — see `docs/parity/gateway-connections.md`. The Local
+ * kind exists as a saved kind and a transport; its preset in this form arrives
+ * with S-A2 of #93.
  */
 @Composable
 internal fun ConnectionsSection(
@@ -251,7 +254,11 @@ private fun ConnectionEditor(
     ) {
         if (editor.id == null) {
             SegmentedControl(
-                options = ConnectionKind.entries,
+                // The kinds this form can fill in. Local is a saved kind before
+                // it is an offered one: the transport, its token slot and its
+                // loopback rule land first, and the preset that prefills the
+                // address and takes the token follows (#93, S-A2).
+                options = OFFERED_CONNECTION_KINDS,
                 selected = editor.kind,
                 label = ConnectionsCopy::kindLabel,
                 onSelect = actions.onEditKind,
@@ -313,6 +320,19 @@ private fun ConnectionEditor(
                     color = tokens.textTertiary,
                 )
             }
+
+            // The address only. A Local row cannot be created here yet, so this
+            // is what editing one already stored offers; its preset, prefilled
+            // address and session-token field arrive together (#93, S-A2).
+            ConnectionKind.Local -> {
+                LabelledField(
+                    label = ConnectionsCopy.URL_TITLE,
+                    value = editor.url,
+                    placeholder = DEFAULT_LOCAL_GATEWAY_URL,
+                    onValueChange = actions.onEditUrl,
+                    keyboardType = KeyboardType.Uri,
+                )
+            }
         }
 
         editor.error?.let { message ->
@@ -341,9 +361,13 @@ private fun SavedConnection.summary(): String {
     return redact("${ConnectionsCopy.kindLabel(kind)} · $endpoint · $authModeLabel")
 }
 
+/** The kinds the add form can create today; see the control's own note. */
+private val OFFERED_CONNECTION_KINDS = listOf(ConnectionKind.Remote, ConnectionKind.Ssh)
+
 /** Desktop's `KIND_ICONS`, restricted to the kinds Android ships (`connections-registry.tsx:26-31`). */
 internal val ConnectionKind.glyph: HermesIcon
     get() = when (this) {
         ConnectionKind.Remote -> HermesIcon.Globe
         ConnectionKind.Ssh -> HermesIcon.Terminal
+        ConnectionKind.Local -> HermesIcon.DeviceMobile
     }

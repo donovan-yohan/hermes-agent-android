@@ -13,6 +13,8 @@ import com.hermesagent.mobile.data.connections.newConnectionId
 import com.hermesagent.mobile.data.connections.normalizeGatewayUrl
 import com.hermesagent.mobile.data.connections.sortConnectionsForDisplay
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
+import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.DestinationParse
 import com.hermesagent.mobile.data.ssh.HostProfile
@@ -136,7 +138,7 @@ internal class ConnectionsViewModel(
                     id = row.id,
                     kind = row.kind,
                     label = row.label,
-                    url = row.remote.baseUrl,
+                    url = row.endpointUrl,
                     provider = row.remote.provider,
                     destination = row.host.destination,
                 ),
@@ -191,14 +193,23 @@ internal class ConnectionsViewModel(
                 }
             }
 
-            ConnectionKind.Remote -> existing?.host ?: HostProfile()
+            ConnectionKind.Remote, ConnectionKind.Local -> existing?.host ?: HostProfile()
         }
+        val url = editor.url.trim()
         val candidate = SavedConnection(
             id = editor.id ?: newConnectionId(),
             label = editor.label.trim(),
             kind = editor.kind,
-            remote = RemoteGatewayProfile(baseUrl = editor.url.trim(), provider = editor.provider.trim()),
+            // One typed address, filed under the kind that can use it. A Remote
+            // row and a Local row are refused by different normalizers, and a
+            // row that carried both would be claiming to be two connections.
+            remote = if (editor.kind == ConnectionKind.Local) {
+                RemoteGatewayProfile()
+            } else {
+                RemoteGatewayProfile(baseUrl = url, provider = editor.provider.trim())
+            },
             host = host,
+            local = if (editor.kind == ConnectionKind.Local) LocalGatewayProfile(baseUrl = url) else LocalGatewayProfile(),
         )
         // A Remote row whose URL cannot be addressed is refused rather than
         // saved: an unaddressable row is one whose sign-in nothing can reach,
@@ -208,9 +219,15 @@ internal class ConnectionsViewModel(
             _uiState.update { it.copy(editor = editor.copy(error = ConnectionsCopy.INVALID_URL)) }
             return
         }
+        // Same rule, other normalizer: a Local row this app cannot address is a
+        // row whose session token nothing can reach.
+        if (candidate.kind == ConnectionKind.Local && !candidate.local.isValid) {
+            _uiState.update { it.copy(editor = editor.copy(error = LocalGatewayCopy.INVALID_URL)) }
+            return
+        }
         findDuplicateConnection(candidate, _uiState.value.connections)?.let { clash ->
             val message = when (editor.kind) {
-                ConnectionKind.Remote -> ConnectionsCopy.duplicateUrl(clash.label)
+                ConnectionKind.Remote, ConnectionKind.Local -> ConnectionsCopy.duplicateUrl(clash.label)
                 ConnectionKind.Ssh -> ConnectionsCopy.duplicateSsh(clash.label)
             }
             _uiState.update { it.copy(editor = editor.copy(error = message)) }
@@ -227,15 +244,25 @@ internal class ConnectionsViewModel(
         // pointing at that host — a new URL, or a change of kind — its
         // credential is erased here rather than left for the load path to
         // refuse later. The refusal is still the guarantee; this is the tidy-up.
-        val abandonedCredential = existing
+        val abandonedSignIn = existing
             ?.takeIf { it.kind == ConnectionKind.Remote }
             ?.takeIf {
                 candidate.kind != ConnectionKind.Remote ||
                     it.remote.normalizedBaseUrl != candidate.remote.normalizedBaseUrl
             }
+        // The Local route's session token is bound to its address the same way,
+        // so it is abandoned on the same two edges: a change of kind, or a
+        // change of address.
+        val abandonedSessionToken = existing
+            ?.takeIf { it.kind == ConnectionKind.Local }
+            ?.takeIf {
+                candidate.kind != ConnectionKind.Local ||
+                    it.local.normalizedBaseUrl != candidate.local.normalizedBaseUrl
+            }
         _uiState.update { it.copy(editor = null) }
         viewModelScope.launch {
-            abandonedCredential?.let { gateway.forgetRemoteAuthentication(it.remoteProfile) }
+            abandonedSignIn?.let { gateway.forgetRemoteAuthentication(it.remoteProfile) }
+            abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it.localProfile) }
             // Renaming the connection you are on changes nothing about where it
             // points. Re-addressing it points somewhere else, so it leaves the
             // old address and comes up on the new one under a pending state,
@@ -277,8 +304,10 @@ internal class ConnectionsViewModel(
         _uiState.update { it.copy(removeTarget = null) }
         viewModelScope.launch {
             if (state.activeId == target.id) switch.abandonCurrentEndpoint()
-            if (target.kind == ConnectionKind.Remote) {
-                gateway.forgetRemoteAuthentication(target.remoteProfile)
+            when (target.kind) {
+                ConnectionKind.Remote -> gateway.forgetRemoteAuthentication(target.remoteProfile)
+                ConnectionKind.Local -> gateway.forgetLocalAuthentication(target.localProfile)
+                ConnectionKind.Ssh -> Unit
             }
             store.removeConnection(target.id)
         }

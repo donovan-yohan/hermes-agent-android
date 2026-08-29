@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.connections
 
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
@@ -36,7 +37,12 @@ internal object ConnectionRegistryCodec {
                         put("id", JsonPrimitive(connection.id))
                         put("label", JsonPrimitive(connection.label))
                         put("kind", JsonPrimitive(connection.kind.name))
-                        connection.remote.baseUrl.takeIf(String::isNotBlank)
+                        // One `url` field for both addressed kinds, deliberately.
+                        // A build without the Local route reads `kind: "Local"`
+                        // as an unrecognised name, falls back to Remote, and
+                        // finds an `http://` URL its own normalizer refuses — an
+                        // inert row rather than a route it would dial wrongly.
+                        connection.endpointUrl.takeIf(String::isNotBlank)
                             ?.let { put("url", JsonPrimitive(it)) }
                         connection.remote.provider.takeIf(String::isNotBlank)
                             ?.let { put("provider", JsonPrimitive(it)) }
@@ -83,13 +89,18 @@ internal object ConnectionRegistryCodec {
     private fun decodeRow(row: JsonObject): SavedConnection? {
         val id = row.text("id")?.takeIf(String::isNotBlank) ?: return null
         val label = row.text("label")?.takeIf(String::isNotBlank) ?: return null
+        val kind = ConnectionKind.fromStoredName(row.text("kind"))
+        val url = row.text("url").orEmpty()
         return SavedConnection(
             id = id,
             label = label,
-            kind = ConnectionKind.fromStoredName(row.text("kind")),
+            kind = kind,
             remote = RemoteGatewayProfile(
-                baseUrl = row.text("url").orEmpty(),
+                baseUrl = if (kind == ConnectionKind.Local) "" else url,
                 provider = row.text("provider").orEmpty(),
+            ),
+            local = LocalGatewayProfile(
+                baseUrl = if (kind == ConnectionKind.Local) url else "",
             ),
             host = HostProfile(
                 host = row.text("host").orEmpty(),

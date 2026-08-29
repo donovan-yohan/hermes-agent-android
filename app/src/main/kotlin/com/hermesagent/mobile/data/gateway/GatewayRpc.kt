@@ -38,6 +38,15 @@ internal class GatewayRpcException(
     message: String,
     /** True when the frame was sent and a lost response cannot prove rejection. */
     val requestMayHaveBeenAccepted: Boolean = false,
+    /**
+     * The HTTP status a refused upgrade answered with, when there was one.
+     *
+     * A WebSocket that never opened failed as an ordinary HTTP exchange, and
+     * the status is the only thing that says *why*. The transport reports it
+     * rather than interpreting it: what a 403 on the upgrade means is a
+     * question about the route, and the routes disagree.
+     */
+    val statusCode: Int? = null,
 ) : Exception(message)
 
 internal class GatewayRpcError(
@@ -220,6 +229,25 @@ internal class OkHttpGatewayRpcClient private constructor(
             return connectRequest(http, request, requestTimeoutMillis)
         }
 
+        /**
+         * Opens a Hermes running on this device, over loopback.
+         *
+         * Addressed by the whole normalized base URL rather than a port: the
+         * person may have saved `localhost` or `[::1]`, and a server bound to
+         * one of those is not reachable at the others.
+         */
+        suspend fun connectLocal(
+            http: OkHttpClient,
+            normalizedBaseUrl: String,
+            token: ByteArray,
+            requestTimeoutMillis: Long = 15_000,
+        ): OkHttpGatewayRpcClient {
+            // OkHttp accepts an HTTP URL here and performs the WebSocket
+            // upgrade itself, which also keeps the query parameter encoded.
+            val request = Request.Builder().url(localGatewayWebSocketUrl(normalizedBaseUrl, token)).build()
+            return connectRequest(loopbackClient(http), request, requestTimeoutMillis)
+        }
+
         /** Opens a Remote Gateway with a fresh, single-use WS ticket. */
         suspend fun connectRemote(
             http: OkHttpClient,
@@ -268,7 +296,12 @@ internal class OkHttpGatewayRpcClient private constructor(
                         Log.w(LOG_TAG, "Gateway WebSocket failed (http=${response?.code ?: "none"})")
                         rpc.connectionClosed("The gateway WebSocket failed.")
                         if (continuation.isActive) {
-                            continuation.resumeWithException(GatewayRpcException("The gateway WebSocket was refused."))
+                            continuation.resumeWithException(
+                                GatewayRpcException(
+                                    "The gateway WebSocket was refused.",
+                                    statusCode = response?.code,
+                                ),
+                            )
                         }
                     }
                 })

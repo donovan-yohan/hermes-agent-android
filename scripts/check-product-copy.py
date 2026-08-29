@@ -30,6 +30,7 @@ RENDERED_DATA_SOURCES = (
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayRestClient.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewayRpc.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/LocalGateway.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteLifecycle.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/relay/RelayAvailabilityController.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/relay/RelayPluginRepository.kt",

@@ -102,11 +102,22 @@ internal object ConnectionsCopy {
     /** `en.ts:736`. */
     const val KIND_SSH = "SSH"
 
+    /** `en.ts:733`. */
+    const val KIND_LOCAL = "Local"
+
     /** `en.ts:738`, narrowed to HTTPS: this app refuses a plain-HTTP Gateway URL. */
     const val KIND_REMOTE_DESC = "A Hermes gateway reachable over HTTPS — LAN, Tailscale, or the internet."
 
     /** `en.ts:740`. */
     const val KIND_SSH_DESC = "A Hermes install reached over SSH."
+
+    /**
+     * Deviates from `en.ts:737` (“The Hermes runtime managed by this app.”),
+     * which is true of Desktop and false here: this app hosts nothing. The
+     * runtime is one the person starts on this phone, and the description has
+     * to say whose it is.
+     */
+    const val KIND_LOCAL_DESC = "A Hermes running on this device."
 
     /** `en.ts:720-721`. */
     fun removeConfirmDesc(label: String): String =
@@ -125,10 +136,12 @@ internal object ConnectionsCopy {
     fun kindLabel(kind: ConnectionKind): String = when (kind) {
         ConnectionKind.Remote -> KIND_REMOTE
         ConnectionKind.Ssh -> KIND_SSH
+        ConnectionKind.Local -> KIND_LOCAL
     }
 
     fun kindDescription(kind: ConnectionKind): String = when (kind) {
         ConnectionKind.Remote -> KIND_REMOTE_DESC
         ConnectionKind.Ssh -> KIND_SSH_DESC
+        ConnectionKind.Local -> KIND_LOCAL_DESC
     }
 }

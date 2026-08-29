@@ -34,6 +34,13 @@ enum class HermesIcon(val glyph: String) {
     File("\uEA7B"),
     /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `f82f2dba`). */
     Globe("\uEB01"),
+    /**
+     * Desktop's `local` kind glyph is `Monitor` (`connections-registry.tsx:28`
+     * @ `f82f2dba`), because its local runtime lives on a desktop. Here it
+     * lives on the phone the person is holding, so the same idea is drawn with
+     * the same family's `device-mobile`.
+     */
+    DeviceMobile("\uEADB"),
     Trash("\uEA81"),
     SettingsGear("\uEB51"),
     Search("\uEA6D"),

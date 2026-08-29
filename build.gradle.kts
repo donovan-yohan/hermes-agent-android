@@ -25,5 +25,9 @@ val verifyRepoInvariants by tasks.registering(Exec::class) {
     inputs.file(layout.projectDirectory.file("docs/parity/composer-capture-matrix.json"))
     inputs.file(layout.projectDirectory.file("docs/parity/desktop-composer-inventory.json"))
     inputs.files(layout.projectDirectory.file("AGENTS.md"))
+    // The cleartext invariant reads both of these, so a change to either has to
+    // re-run the check rather than being declared up to date over it.
+    inputs.file(layout.projectDirectory.file("app/src/main/AndroidManifest.xml"))
+    inputs.file(layout.projectDirectory.file("app/src/main/res/xml/network_security_config.xml"))
     commandLine(script.asFile.absolutePath)
 }

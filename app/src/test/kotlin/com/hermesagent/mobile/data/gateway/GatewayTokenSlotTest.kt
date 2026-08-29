@@ -264,6 +264,98 @@ class GatewayTokenSlotTest {
         assertTrue(blobs().isEmpty())
     }
 
+    @Test
+    fun `a session token round-trips through the same slot machinery`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+
+        store.saveSessionToken(LOCAL_SLOT, sessionToken())
+
+        assertEquals(SESSION_TOKEN_FIXTURE, store.loadSessionToken(LOCAL_SLOT).text())
+        assertEquals("one file per connection, whatever it holds", 1, blobs().size)
+    }
+
+    @Test
+    fun `saving a session token zeroes the caller's copy`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+        val handed = sessionToken()
+
+        store.saveSessionToken(LOCAL_SLOT, handed)
+
+        assertArrayEquals("the array the caller passed is dead", ByteArray(handed.size), handed)
+    }
+
+    @Test
+    fun `a session token is refused when its row points at another address, and kept for the one that minted it`() =
+        runBlocking {
+            val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+            store.saveSessionToken(LOCAL_SLOT, sessionToken())
+
+            // The same row on another port. On loopback the port *is* the
+            // server, so this is a different Hermes with a different token.
+            val movedPort = GatewaySecretSlot("connection-local", "http://127.0.0.1:9200")
+
+            // Refused, and said so as a refusal rather than as an empty slot:
+            // only an empty slot may be filled in by reading a credential off
+            // whatever now answers, and doing that here would undo the binding.
+            assertEquals(
+                "another port is another server",
+                SessionTokenRead.Refused,
+                store.loadSessionToken(movedPort),
+            )
+            assertEquals("the sealed token is still on disk", 1, blobs().size)
+            assertEquals(
+                "and it works again the moment the row points home",
+                SESSION_TOKEN_FIXTURE,
+                store.loadSessionToken(LOCAL_SLOT).text(),
+            )
+        }
+
+    @Test
+    fun `neither credential is ever read as the other`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+
+        store.saveSessionToken(LOCAL_SLOT, sessionToken())
+        assertNull("a session token is not a sign-in", store.load(LOCAL_SLOT))
+
+        store.save(SLOT_A, tokens("alpha"))
+        assertEquals(
+            "and a sign-in is not a session token",
+            SessionTokenRead.Refused,
+            store.loadSessionToken(SLOT_A),
+        )
+    }
+
+    @Test
+    fun `removing a Local row erases its session token, addressable by row id alone`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+        store.saveSessionToken(LOCAL_SLOT, sessionToken())
+        val blob = blobs().single()
+        val stored = blob.readBytes()
+        val witness = File(directory, "witness.link")
+        Files.createLink(witness.toPath(), blob.toPath())
+
+        // What a Local row looks like once someone blanks its address.
+        store.clearSessionToken(GatewaySecretSlot.forRow("connection-local"))
+
+        assertTrue("the entry is unlinked", blobs().isEmpty())
+        assertArrayEquals("and its bytes were zeroed first", ByteArray(stored.size), witness.readBytes())
+    }
+
+    @Test
+    fun `a session token slot has no pre-registry ancestor to adopt`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+
+        // Nothing named after the loopback address is ever adopted: only the
+        // Remote route ever wrote a URL-named file, and asking the remote
+        // normalizer to name one for an `http://` address would refuse anyway.
+        assertEquals(SessionTokenRead.Absent, store.loadSessionToken(LOCAL_SLOT))
+        assertTrue(blobs().isEmpty())
+    }
+
+    /** The token a read found, or null for an empty or refused slot. */
+    private fun SessionTokenRead.text(): String? =
+        (this as? SessionTokenRead.Found)?.token?.toString(Charsets.US_ASCII)
+
     /** Records which host each access token was presented to. */
     private class RecordingAuthApi : GatewayNativeAuthApi {
         val presentedTo = mutableMapOf<String, List<String>>()
@@ -310,6 +402,14 @@ class GatewayTokenSlotTest {
             "3dd7954644c364f9dc48d6325dbe62fdad29a71c7945aece5ad505225dea1831.bin"
         val SLOT_A = GatewaySecretSlot("connection-a", "https://alpha.test")
         val SLOT_B = GatewaySecretSlot("connection-b", "https://beta.test")
+
+        /** A Local row: loopback, so no host name and nothing anyone else can reach. */
+        val LOCAL_SLOT = GatewaySecretSlot("connection-local", "http://127.0.0.1:9119")
+
+        /** Shaped like the Gateway's `token_urlsafe(32)`, and not one. */
+        const val SESSION_TOKEN_FIXTURE = "fixture-session-token_not-a-real-one"
+
+        fun sessionToken(): ByteArray = SESSION_TOKEN_FIXTURE.toByteArray(Charsets.US_ASCII)
 
         fun tokens(prefix: String) = GatewayNativeTokens(
             accessToken = "$prefix-access",
