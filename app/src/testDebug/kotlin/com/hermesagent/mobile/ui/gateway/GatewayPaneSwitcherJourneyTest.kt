@@ -83,21 +83,27 @@ class GatewayPaneSwitcherJourneyTest {
             }
         }
 
-        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha").assertDoesNotExist()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCHER_LABEL}: Alpha").assertDoesNotExist()
         // The pane itself is unchanged: the mode chooser is still the first
         // thing under where the trigger would have been.
         compose.onNodeWithText(GatewayModeCopy.MODE_TITLE).assertExists()
     }
 
     /**
-     * The whole point of the second mount: pick another gateway from the top
-     * of this screen and the screen you are on becomes that gateway's.
+     * The mount's wiring: the trigger opens the sheet, a row reports the id it
+     * was asked for, and the screen is rebuilt from the state that comes back.
      *
-     * The route pane is a projection of the active row (#111), so this asserts
-     * the projection end to end — the Remote pane's `Gateway URL` gives way to
-     * the SSH pane's `SSH destination`, the trigger relabels, and the `Current`
-     * pill moves down in the registry list, which is what the per-row `Switch`
-     * action disappearing from Bravo and appearing on Alpha proves.
+     * This is *not* end-to-end proof of the projection — the harness supplies
+     * `mode` and `onSelect` itself, standing in for the real ones. That the
+     * active row actually re-projects the route, its fields and what Connect
+     * would dial is `GatewayScreenTest`'s sibling
+     * `GatewaySettingsViewModelTest.kt:165`, on virtual time against the store.
+     * What is only true here is the *composition*: pick a gateway from the top
+     * of this screen and the screen you are on is rebuilt for it — the Remote
+     * pane's `Gateway URL` gives way to the SSH pane's `SSH destination`, the
+     * trigger relabels, and the `Current` pill moves down in the registry list,
+     * which is what the per-row `Switch` action disappearing from Bravo and
+     * appearing on Alpha proves.
      */
     @Test
     fun `picking a gateway from the pane switcher re-projects the pane and moves Current`() {
@@ -137,7 +143,7 @@ class GatewayPaneSwitcherJourneyTest {
             .performScrollTo()
             .assertExists()
 
-        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha")
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCHER_LABEL}: Alpha")
             .performScrollTo()
             .performClick()
         compose.waitForIdle()
@@ -151,7 +157,7 @@ class GatewayPaneSwitcherJourneyTest {
         // The pane is Bravo's now, not Alpha's.
         compose.onNodeWithContentDescription("SSH destination").performScrollTo().assertExists()
         compose.onNodeWithContentDescription("Gateway URL").assertDoesNotExist()
-        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Bravo").assertExists()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCHER_LABEL}: Bravo").assertExists()
         // And so is the marker in the registry below: the row that can be
         // switched to is the one this app is no longer on.
         compose.onNodeWithText(ConnectionsCopy.CURRENT_PILL).performScrollTo().assertExists()
@@ -193,7 +199,15 @@ class GatewayPaneSwitcherJourneyTest {
 
         compose.onNodeWithContentDescription(ConnectionsCopy.ADD_CONNECTION).performScrollTo().assertExists()
 
-        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha")
+        // Desktop names its trigger with the registry's own section title
+        // (`connection-switcher.tsx:154`), which is fine where the two are on
+        // different surfaces. Here they are on one, so the trigger must not
+        // carry it: a screen reader would meet "Registered gateways" twice,
+        // once as this button and once as the heading over the list below.
+        compose.onNodeWithText(ConnectionsCopy.TITLE).performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha").assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCHER_LABEL}: Alpha")
             .performScrollTo()
             .performClick()
         compose.waitForIdle()
@@ -237,7 +251,7 @@ class GatewayPaneSwitcherJourneyTest {
         val secured = requireNotNull(window) { "the test needs a real Activity window" }
         assertTrue("the Gateways page holds the window secure", secured.isWindowSecure())
 
-        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha")
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCHER_LABEL}: Alpha")
             .performScrollTo()
             .performClick()
         compose.waitForIdle()

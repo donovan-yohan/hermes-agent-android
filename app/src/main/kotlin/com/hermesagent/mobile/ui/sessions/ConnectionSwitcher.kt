@@ -92,6 +92,18 @@ fun ConnectionSwitcherBar(
      * would drop a control Desktop always renders.
      */
     onManage: (() -> Unit)?,
+    /**
+     * The trigger's accessible name, announced as "⟨title⟩: ⟨connection⟩" —
+     * Desktop's own `title` prop and its own composition
+     * (`connection-switcher.tsx:248,264` @ `f82f2dba`).
+     *
+     * The default is the value Desktop passes (`:154`), so a mount that says
+     * nothing gets Desktop's label rather than losing one — unlike [onManage],
+     * where a silent default would drop a control. The Gateways screen
+     * overrides it, because there alone the registry heading carries that same
+     * string a few rows below; see [ConnectionsCopy.SWITCHER_LABEL].
+     */
+    title: String = ConnectionsCopy.TITLE,
     modifier: Modifier = Modifier,
 ) {
     if (!state.switchable) return
@@ -106,7 +118,7 @@ fun ConnectionSwitcherBar(
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .clickable(role = Role.Button) { sheetVisible = true }
             .semantics {
-                contentDescription = "${ConnectionsCopy.TITLE}: ${active.label}"
+                contentDescription = "$title: ${active.label}"
                 if (pending) stateDescription = ConnectionsCopy.CONNECTING
             }
             .padding(horizontal = 8.dp),

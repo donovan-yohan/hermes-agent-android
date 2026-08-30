@@ -139,11 +139,14 @@ fun GatewayScreen(
         // hides itself below two connections, exactly as the rail's does
         // (`connection-switcher.tsx:118-120`) — with one saved row this pane is
         // already showing it — and it is handed no `onManage`, because that
-        // item navigates here.
+        // item navigates here. Its accessible name is this screen's, not the
+        // rail's: only here does the registry heading carry Desktop's trigger
+        // label again, a few rows below.
         ConnectionSwitcherBar(
             state = connectionsState,
             actions = connectionsActions,
             onManage = null,
+            title = ConnectionsCopy.SWITCHER_LABEL,
         )
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Desktop's own heading, in Desktop's casing: caption size, medium
