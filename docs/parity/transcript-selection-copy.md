@@ -58,7 +58,7 @@ What a *drag* selection actually copies, which would pin the `DisableSelection` 
 | `data-selectable-text` on `terminal-output.tsx` and `log-view.tsx` | drift | Tool output, inline diffs and reasoning text are not selectable | Their own container interacts with `horizontalScroll` and the disclosure row's collapse tap; #56 |
 | A fence's or table's `horizontalScroll` inside a selectable subtree | drift | Unverified on device | Compose's selection/scroll arbitration is modelled badly on a host JVM; #56 |
 | `ReadAloudButton`, `Reload` and `branchInNewChat` in the action bar | omission | Absent; the bar here has one control | pill-owed: #101 — Desktop renders all three, so each owes a disabled "coming soon" control (rewind is #69) |
-| A reply whose only content is a standalone `@image:` line | omission | The control is mounted but disabled, with no TalkBack action | coming soon is not the case here: the strip empties the projection, so the control is honestly dead rather than absent; the defect underneath is the transcript drawing a wire-format line as prose (#56) |
+| A reply whose only content is a standalone `@image:` line | drift | The copy control is mounted but permanently disabled, and offers no TalkBack action | Not an omission and not a pill: the `@image:` strip empties the projection, so a mounted control is dead. The defect underneath is the transcript drawing a wire-format line as prose at all; #56 |
 
 ## Visual report
 

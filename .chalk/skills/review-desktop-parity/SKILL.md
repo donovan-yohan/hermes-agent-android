@@ -21,10 +21,15 @@ first and come back here for review.
 
 ## Non-negotiables
 
-1. **Find the Desktop original at the pin.** `git show <pin>:<path>` on the
-   read-only checkout; never write to it, never check out inside it. Name the
-   `path:line` of the component, its i18n keys, and its tests. If Desktop has no
-   equivalent, say so explicitly — that is a finding, not an absence of one.
+1. **Find the Desktop original at the pin.** Read it out of the disposable
+   export from step 2, not out of `~/.hermes/hermes-agent` — that checkout is
+   read-only, its `HEAD` is neither pin, and `.chalk/permissions.yaml` denies
+   `git -C ~/.hermes/*` outright. Name the `path:line` of the component, its
+   i18n keys, and its tests, each against the SHA you actually read: the UI pin
+   `f82f2db` for structure and copy, the theme ledger's `45fcaaa` for colour
+   values, or a per-surface pin where the page declares one (#103). If Desktop
+   has no equivalent, say so explicitly — that is a finding, not an absence
+   of one.
 2. **Render it.** Capture Desktop from a **disposable pinned export** with CDP
    (`git clone --no-hardlinks --no-checkout <upstream> <export>` then
    `git -C <export> checkout <pin>`, so the checkout that moves is the throwaway
@@ -62,7 +67,10 @@ first and come back here for review.
    A silently missing control is a finding.
 7. **Classify every divergence** as exactly one of `mobile-adaptation` (a real
    touch/space/accessibility reason), `drift` (a finding, with an issue) or
-   `omission` (`non-goal`, a shipped `coming soon` pill, or `pill-owed: #<issue>`).
+   `omission`. An omission's Evidence cell must *begin* with `non-goal: <reason>`
+   (never returning), `coming soon` (the pill ships today), `pill-owed: #<issue>`
+   (a control that owes one), `out-of-scope: #<issue>` (that issue excluded it,
+   and it may return) or `deferred: #<issue>` (a detail, never a control).
    "Material does this" and "not implemented yet" are not reasons.
 8. **Land it in the ledger.** The surface's `docs/parity/<surface>.md` carries a
    `## Visual report` and a `## Divergences` table; `scripts/check-parity-evidence.py`

@@ -228,7 +228,7 @@ above carry the argument.
 | Scope follows a live gateway, so it cannot name a profile that does not exist | drift | A stale persisted scope stamps the launch profile's rows with the missing name until each is opened | #81 |
 | Profile create, rename, delete, export/import, and the SOUL.md editor | omission | Absent | non-goal: the roster is read-only |
 | Avatars (`profiles.get_asset`) | omission | `has_avatar` is parsed; the asset is never fetched | non-goal: a read-only roster does not fetch profile assets |
-| Drag-reorder and long-press-recolour | omission | Absent | non-goal |
+| Drag-reorder and long-press-recolour | omission | Absent | non-goal: the roster is read-only, so there is no order or colour of its own to change |
 | `POST /api/profiles/active` | omission | Never called | non-goal: it sets the CLI sticky default and does not retarget a running Gateway (`hermes_cli/web_routers/profiles.py:922`) |
 | Cron and messaging slices, scoped by profile | omission | Absent | non-goal: this app ships neither |
 | `Select a profile to view its details.` (`i18n/en.ts:1779`) | omission | Never rendered | non-goal: the string is unreachable upstream (`app/profiles/index.tsx:74-80,109-119,156-160`), and this port does not invent a state to reach it |

@@ -13,11 +13,24 @@ The words themselves are [`review-product-copy.md`](review-product-copy.md).
 
 ## 0. Pin
 
-The authority is `~/.hermes/hermes-agent` at
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. Read it with
-`git show <pin>:<path>`. Never write to it, never fetch, never check out inside
-it — the local checkout's `HEAD` is not the pin and is not to be moved to it.
-A citation without the SHA cites nothing.
+**Two Desktop pins coexist in this repo, and a citation is worthless without
+saying which one it is against.**
+
+| Surface | Pin | Where it is recorded |
+|---|---|---|
+| UI structure, behaviour and copy — everything this checklist reviews | `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` | `AGENTS.md` |
+| Theme values: presets, palettes, colour tokens | `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
+| A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/relay-channels-surface.md` pins the Relay plugin at `563a8c8` |
+
+Use the UI pin for this checklist, and the theme pin only when the question is
+a colour value. The divergence is tracked in
+[#103](https://github.com/donovan-yohan/hermes-agent-android/issues/103); until
+it closes, write the SHA you actually read next to every `path:line`.
+
+The reference checkout `~/.hermes/hermes-agent` is read-only and its `HEAD` is
+neither pin. Never write to it, never fetch, and never check it out to a pin —
+make the disposable export in step 2 and read *that*. A citation without the
+SHA cites nothing.
 
 ## 1. Find the Desktop original
 
@@ -88,9 +101,14 @@ not taken.
 ## 3. Diff the copy verbatim
 
 ```bash
-git show "$pin":apps/desktop/src/i18n/en.ts > /tmp/desktop-en.ts
-grep -n '<the key>' /tmp/desktop-en.ts
+grep -n '<the key>' "$export/apps/desktop/src/i18n/en.ts"
 ```
+
+`$export` is the pinned export from step 2, already checked out at the pin.
+Running `git show "$pin":…` from this repo cannot work — the Desktop commit is
+not an object here — and running it against `~/.hermes/hermes-agent` is refused
+by `.chalk/permissions.yaml`. If you have not made the export yet, make it now;
+it is the only sanctioned way to read Desktop at a pin.
 
 Every rendered Android string that has a Desktop counterpart keeps Desktop's
 words, sentence and capitalization. Shortening for a phone is allowed and gets
@@ -127,7 +145,17 @@ understood.
 |---|---|---|
 | `mobile-adaptation` | A deliberate change with a real reason: touch mechanics, viewport space, accessibility, or an explicit mobile priority | The reason, written down. "Material does this", "by default", "not implemented yet" and a blank cell all fail the gate |
 | `drift` | An unintended difference. A finding | An issue number. Every drift row is at least a **Concern** on the review |
-| `omission` | Something Desktop renders that this app does not | One of: `non-goal` (this platform will never have it, with the reason), a shipped disabled **"coming soon"** pill, or `pill-owed: #<issue>` for a control that still owes one. `deferred: #<issue>` covers an omitted *detail* that is not a control — never a control or a mode |
+| `omission` | Something Desktop renders that this app does not | The Evidence cell must **begin** with one of the five markers below. It is matched at the start of the cell on purpose: "this is not a non-goal, we just have not built it" passes a substring test and is exactly the row the gate exists to catch |
+
+The five omission markers, and what each one commits you to:
+
+| Marker | Means | Do not use it for |
+|---|---|---|
+| `non-goal: <reason>` | This platform will never have it, and here is why | Anything that might return. The reason is mandatory — a bare `non-goal` fails |
+| `coming soon` | The disabled pill ships **today** | A control that is simply absent |
+| `pill-owed: #<issue>` | A control or mode Desktop renders, absent here, owing the disabled pill | A detail that is not a control |
+| `out-of-scope: #<issue>` | That issue deliberately excluded it. Not a platform judgement, and it may return | A platform non-goal; say `non-goal:` and mean it |
+| `deferred: #<issue>` | An omitted *detail* — text, a field, a value — with a named owner | A control or a mode. That is `pill-owed:` |
 
 **Unsupported means disabled, not absent.** Where Desktop renders a mode or
 control this app does not support yet, the control stays visible and disabled
