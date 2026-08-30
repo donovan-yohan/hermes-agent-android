@@ -25,6 +25,12 @@ import com.hermesagent.mobile.data.gateway.OkHttpLocalGatewayHealthCheck
 import com.hermesagent.mobile.data.gateway.OkHttpGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.RemoteGatewayConnector
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
+import com.hermesagent.mobile.data.notifications.AndroidNotificationPreferences
+import com.hermesagent.mobile.data.notifications.AndroidNotificationSurface
+import com.hermesagent.mobile.data.notifications.NotificationPreferenceStore
+import com.hermesagent.mobile.data.notifications.NotificationPresence
+import com.hermesagent.mobile.data.notifications.NotificationSurface
+import com.hermesagent.mobile.data.notifications.SessionNotifier
 import com.hermesagent.mobile.data.prefs.HermesPreferences
 import com.hermesagent.mobile.data.session.SessionCache
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +43,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -148,6 +155,24 @@ class HermesApplication : Application() {
     }
 
     /**
+     * Where the user is. Process-scoped because a notification decision has to
+     * be answerable while no Activity exists, and because "the app is away" is
+     * a fact about the process, not about a screen.
+     */
+    internal val notificationPresence: NotificationPresence by lazy(::NotificationPresence)
+
+    internal val notificationPreferences: NotificationPreferenceStore by lazy {
+        AndroidNotificationPreferences(this)
+    }
+
+    /**
+     * Held here, not built per use: the shade's Approve/Reject receiver has to
+     * withdraw the same notification the notifier posted, and its group
+     * bookkeeping only works if there is one of it.
+     */
+    internal val notificationSurface: NotificationSurface by lazy { AndroidNotificationSurface(this) }
+
+    /**
      * The profile roster follows the one live Gateway connection, so it is
      * process-scoped like the session cache. `profiles.list` is only ever asked
      * on a connection edge or an explicit refresh — never on a timer.
@@ -190,20 +215,23 @@ class HermesApplication : Application() {
         // a reconnect nudge. Mobile also stops automatic redials while the app
         // is backgrounded; an already-open socket is not torn down.
         val processLifecycle = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle
-        gatewayConnection.applicationForegroundChanged(
-            processLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED),
-        )
+        val startedNow = processLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+        gatewayConnection.applicationForegroundChanged(startedNow)
+        notificationPresence.applicationForegroundChanged(startedNow)
         processLifecycle.addObserver(
             object : androidx.lifecycle.DefaultLifecycleObserver {
                 override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                     gatewayConnection.applicationForegroundChanged(true)
+                    notificationPresence.applicationForegroundChanged(true)
                 }
 
                 override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                     gatewayConnection.applicationForegroundChanged(false)
+                    notificationPresence.applicationForegroundChanged(false)
                 }
             },
         )
+        startSessionNotifier()
         appScope.launch {
             followActiveConnection(
                 connections = preferences,
@@ -212,6 +240,29 @@ class HermesApplication : Application() {
                 routeGeneration = connectionSwitch.routeGeneration,
             )
         }
+    }
+
+    /**
+     * OS notifications follow the repository, not any transport, so Remote,
+     * Managed SSH and Local behave identically — they deliver the same events
+     * over the same socket.
+     *
+     * Connected-only by construction: nothing here holds the connection open,
+     * so when the socket is gone nothing arrives. That is the honest T1 shape
+     * and it is stated in `status/ROADMAP.md` rather than hidden.
+     */
+    private fun startSessionNotifier() {
+        SessionNotifier(
+            pendingInputs = sessionRepository.pendingInputs,
+            turnOutcomes = sessionRepository.turnOutcomes,
+            sessions = cache.state,
+            // A new client instance is a new socket, which is a new replay.
+            socketOpens = gatewayConnection.client.filterNotNull().map { },
+            presence = notificationPresence,
+            settingsFlow = notificationPreferences.notificationSettings,
+            surface = notificationSurface,
+            clock = System::currentTimeMillis,
+        ).start(appScope)
     }
 }
 

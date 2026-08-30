@@ -33,6 +33,13 @@
             android:name=".data.voice.WakeWordForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!--
+            Approve / Reject from the shade. Never exported: the only sender is
+            a PendingIntent this app built, with every field already fixed.
+        -->
+        <receiver
+            android:name=".data.notifications.NotificationActionReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

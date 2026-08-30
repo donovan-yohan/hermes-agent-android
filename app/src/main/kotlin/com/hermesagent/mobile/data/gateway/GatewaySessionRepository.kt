@@ -44,6 +44,7 @@ import java.math.RoundingMode
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -98,6 +99,14 @@ interface GatewaySessionRepository {
     /** Live required-action requests, keyed by generation/runtime/request/kind. */
     val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>
         get() = error("Pending inputs are not implemented by this repository.")
+
+    /**
+     * Terminal turn frames, for app-scoped followers that need to tell a
+     * finished turn from a failed one. Both settle the session to
+     * [SessionStatus.Idle], so the cache cannot answer that on its own.
+     */
+    val turnOutcomes: Flow<GatewayTurnOutcome> get() = emptyFlow()
+
     suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
         error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
@@ -426,6 +435,16 @@ internal class LiveGatewaySessionRepository(
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
     private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
     override val composerControls: Flow<SessionComposerControls> = composerControlEvents
+    /**
+     * Buffered and dropping: emitted from under `stateLock`, so it must never
+     * suspend, and a follower slow enough to lose one has lost a notification
+     * rather than a fact.
+     */
+    private val turnOutcomeEvents = MutableSharedFlow<GatewayTurnOutcome>(
+        extraBufferCapacity = 32,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    override val turnOutcomes: Flow<GatewayTurnOutcome> = turnOutcomeEvents
     private val mutablePendingInputs =
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
     override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
@@ -2446,6 +2465,7 @@ internal class LiveGatewaySessionRepository(
                 setStatus(durableId, SessionStatus.Idle)
                 ephemeralSessions.remove(durableId)
                 releaseRuntimeGuard(runtimeId)
+                turnOutcomeEvents.tryEmit(GatewayTurnOutcome(durableId, failed = true))
                 true
             }
 
@@ -2799,6 +2819,7 @@ internal class LiveGatewaySessionRepository(
         setStatus(durableId, SessionStatus.Idle)
         ephemeralSessions.remove(durableId)
         releaseRuntimeGuard(runtimeId)
+        turnOutcomeEvents.tryEmit(GatewayTurnOutcome(durableId, failed = errorText != null))
     }
 
     private fun applyTool(type: String, durableId: String, runtimeId: String, payload: JsonObject) {
