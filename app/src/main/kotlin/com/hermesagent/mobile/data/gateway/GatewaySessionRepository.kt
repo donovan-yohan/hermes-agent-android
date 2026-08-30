@@ -449,6 +449,34 @@ internal class LiveGatewaySessionRepository(
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
     override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
 
+    /**
+     * Requests *this* connection retired: answered, expired, superseded, or
+     * died with their turn.
+     *
+     * It exists so that a key missing from [mutablePendingInputs] can be told
+     * apart from a key that was never there. Both look identical to a lookup,
+     * and they are opposite facts: the first is finished business, the second
+     * is a request this client cannot answer at all.
+     *
+     * [PendingInputKey.connectionGeneration] cannot make that distinction on
+     * its own, which is the subtle part. The generation is a per-process
+     * counter that restarts at zero, so a notification posted by a process
+     * that has since died carries a generation number a *fresh* process will
+     * happily reach again — and on that fresh process the pending map is
+     * empty because no session has been opened yet, not because anything was
+     * answered. Membership here is process-scoped, so it cannot collide.
+     *
+     * Cleared with the pending map on every connection change, because
+     * "retired" is a fact about one socket. Bounded, and evicting oldest-first
+     * degrades an ancient key from "answered" to "cannot answer" — the safe
+     * direction, since that shows the user a way to respond rather than
+     * silently withdrawing a live request.
+     */
+    private val retiredKeys = object : LinkedHashMap<PendingInputKey, Unit>(64, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PendingInputKey, Unit>): Boolean =
+            size > MAX_RETIRED_KEYS
+    }
+
     private val identities = SessionIdentityMap()
     private val sequence = AtomicLong()
     private val stateLock = Any()
@@ -567,7 +595,11 @@ internal class LiveGatewaySessionRepository(
                     liveTurnRuntimeIds.clear()
                     // Pending prompts are connection-scoped memory; a new
                     // client rehydrates only through fresh resume responses.
+                    // These are stranded, not retired: the requests may still
+                    // be parked on the Gateway, so nothing here may later read
+                    // as "already answered".
                     mutablePendingInputs.value = emptyMap()
+                    retiredKeys.clear()
                     clearUnscopedRuntime()
                     val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
                     if (next != null) ephemeralSessions.clear()
@@ -1720,9 +1752,18 @@ internal class LiveGatewaySessionRepository(
         key: PendingInputKey,
         action: PendingInputAction,
     ): PendingInputResponse {
-        val request = mutablePendingInputs.value[key] ?: return PendingInputResponse.Resolved
-        // Generation fence: a stale key cannot answer on the new connection.
-        if (key.connectionGeneration != connectionGeneration) return PendingInputResponse.Retryable
+        // A miss is two different facts wearing the same face. The key carries
+        // its own generation, so a key from a dead connection can never be in
+        // this map — which is exactly why the generation fence below can never
+        // see one, and why the miss has to be classified here instead.
+        val request = mutablePendingInputs.value[key]
+            ?: return synchronized(stateLock) {
+                if (key in retiredKeys) PendingInputResponse.Resolved
+                else PendingInputResponse.Unanswerable
+            }
+        // Generation fence: belt and braces for a key that is somehow in the
+        // map under a generation this repository has already moved past.
+        if (key.connectionGeneration != connectionGeneration) return PendingInputResponse.Unanswerable
         if (!respondingKeys.add(key)) return PendingInputResponse.Retryable
         try {
             val binding = try {
@@ -1844,7 +1885,15 @@ internal class LiveGatewaySessionRepository(
 
     private fun removePendingInput(key: PendingInputKey) {
         val next = mutablePendingInputs.value.minus(key)
-        if (next.size != mutablePendingInputs.value.size) mutablePendingInputs.value = next
+        if (next.size != mutablePendingInputs.value.size) {
+            mutablePendingInputs.value = next
+            retire(listOf(key))
+        }
+    }
+
+    /** Records requests this connection finished with. See [retiredKeys]. */
+    private fun retire(keys: Collection<PendingInputKey>) {
+        synchronized(stateLock) { keys.forEach { retiredKeys[it] = Unit } }
     }
 
     override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
@@ -2485,7 +2534,12 @@ internal class LiveGatewaySessionRepository(
     private fun clearPendingInputsForRuntime(runtimeId: String) {
         val current = mutablePendingInputs.value
         val remaining = current.filterKeys { it.runtimeSessionId != runtimeId }
-        if (remaining.size != current.size) mutablePendingInputs.value = remaining
+        if (remaining.size != current.size) {
+            mutablePendingInputs.value = remaining
+            // The turn these were blocking is over, so they are finished
+            // business rather than requests anyone still owes an answer to.
+            retire(current.keys - remaining.keys)
+        }
     }
 
     private fun clearPendingInputsForGeneration(generation: Long) {
@@ -2521,12 +2575,14 @@ internal class LiveGatewaySessionRepository(
             )
         }
         // A newer same-kind request for this runtime supersedes the older one.
-        val next = mutablePendingInputs.value
+        val current = mutablePendingInputs.value
+        val next = current
             .filterValues { existing ->
                 !(existing.key.kind == kind && existing.key.runtimeSessionId == runtimeId)
             }
             .plus(key to request)
         mutablePendingInputs.value = next
+        retire(current.keys - next.keys)
         setStatus(durableId, SessionStatus.NeedsInput)
     }
 
@@ -4421,6 +4477,9 @@ private fun String.epochMillisOrNull(): Long? {
 private const val MAX_TOOL_DETAIL = 4_096
 private const val MAX_TOOL_PAYLOAD = 32_768
 private const val MAX_TOOL_LABEL = 256
+/** Retired keys held per connection. Tens is the realistic count; this is headroom. */
+private const val MAX_RETIRED_KEYS = 256
+
 private const val MAX_PENDING_TEXT = 1_024
 private const val MAX_PENDING_CHOICE = 240
 private const val MAX_PENDING_CHOICES = 12

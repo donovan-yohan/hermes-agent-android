@@ -157,7 +157,11 @@ class MainActivity : ComponentActivity() {
 
     private var notificationRationaleVisible by mutableStateOf(false)
 
-    /** Dismissing is "not now", not "never": the next launch may ask again. */
+    /**
+     * Dismissing is "not now", not "never": the next launch may ask again.
+     * Saved instance state, because a rotation is not a new launch and having
+     * the dialog reappear mid-turn is exactly the nag this avoids.
+     */
     private var notificationRationaleDismissed = false
 
     /**
@@ -208,6 +212,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        notificationRationaleDismissed = savedInstanceState?.getBoolean(STATE_RATIONALE_DISMISSED) == true
         openSessionFromIntent(intent)
         followVisibleSession()
         followNotificationPermissionNeed()
@@ -495,6 +500,11 @@ class MainActivity : ComponentActivity() {
         Build.VERSION.SDK_INT < ANDROID_TIRAMISU ||
             checkSelfPermission(POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_RATIONALE_DISMISSED, notificationRationaleDismissed)
+    }
+
     override fun onStop() {
         chatViewModel.flushDraft()
         super.onStop()
@@ -590,5 +600,6 @@ class MainActivity : ComponentActivity() {
 
         /** Named rather than referenced: the constant only exists from API 33. */
         const val POST_NOTIFICATIONS = "android.permission.POST_NOTIFICATIONS"
+        const val STATE_RATIONALE_DISMISSED = "notificationRationaleDismissed"
     }
 }

@@ -256,6 +256,129 @@ class SessionNotifierTest {
     }
 
     @Test
+    fun `a prompt seen on screen is raised again once the user leaves`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(true)
+        world.presence.visibleSessionChanged("chat")
+        world.start()
+        world.leaveQuietWindow()
+
+        // Arrives while the user is looking straight at it: correctly silent.
+        world.pendingInputs.value = approval("chat")
+        runCurrent()
+        assertEquals(emptyList<Pair<NotificationKind, String>>(), world.surface.posted())
+
+        // They walk away and it is still parked. Recording the suppressed
+        // notification as though it had been posted is what used to make this
+        // unreachable for the rest of the connection.
+        world.presence.applicationForegroundChanged(false)
+        runCurrent()
+        world.pendingInputs.value = approval("chat") + approval("other")
+        runCurrent()
+
+        assertTrue(NotificationKind.Approval to "chat" in world.surface.posted())
+    }
+
+    @Test
+    fun `opening a conversation and leaving it again does not bury a still-parked prompt`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.presence.visibleSessionChanged("chat")
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = approval("chat")
+        runCurrent()
+        assertEquals(1, world.surface.posts.size)
+
+        // Opened: the notification is withdrawn.
+        world.presence.applicationForegroundChanged(true)
+        runCurrent()
+        assertEquals(listOf("chat"), world.surface.clearedSessions)
+
+        // Backgrounded again, prompt still blocking the agent.
+        world.presence.applicationForegroundChanged(false)
+        runCurrent()
+        advanceTimeBy(1_001)
+        world.pendingInputs.value = approval("chat") + approval("other")
+        runCurrent()
+
+        assertTrue(NotificationKind.Approval to "chat" in world.surface.posted())
+    }
+
+    @Test
+    fun `a superseding request repoints the buttons even inside the throttle window`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = approval("chat", requestId = "first")
+        runCurrent()
+        // Well inside the one-second throttle: the Gateway replaced the
+        // request, and a button still pointing at "first" would answer nothing.
+        advanceTimeBy(100)
+        world.pendingInputs.value = approval("chat", requestId = "second")
+        runCurrent()
+
+        val posts = world.surface.posts
+        assertEquals(2, posts.size)
+        assertEquals("first", posts[0].approval?.key?.requestId)
+        assertEquals("second", posts[1].approval?.key?.requestId)
+    }
+
+    @Test
+    fun `a replayed prompt stays old news for the rest of the connection`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+
+        world.socketOpens.emit(Unit)
+        runCurrent()
+        world.pendingInputs.value = approval("parked")
+        runCurrent()
+        assertEquals(emptyList<Pair<NotificationKind, String>>(), world.surface.posted())
+
+        // The window passes and an unrelated prompt arrives. The replayed one
+        // is still not something that just happened.
+        advanceTimeBy(5_000)
+        world.pendingInputs.value = approval("parked") + approval("fresh")
+        runCurrent()
+
+        assertEquals(listOf(NotificationKind.Approval to "fresh"), world.surface.posted())
+    }
+
+    @Test
+    fun `a new socket makes its own replay old news, not the previous one's`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        // Parked and announced on this connection.
+        world.pendingInputs.value = approval("chat")
+        runCurrent()
+        assertEquals(1, world.surface.posts.size)
+
+        // Reconnect: the repository empties its map, the socket reopens, and
+        // the replay that follows is suppressed.
+        world.pendingInputs.value = emptyMap()
+        runCurrent()
+        world.socketOpens.emit(Unit)
+        runCurrent()
+        world.pendingInputs.value = approval("chat")
+        runCurrent()
+        assertEquals(1, world.surface.posts.size)
+
+        // Past the window, a genuinely new prompt on that same session fires.
+        advanceTimeBy(5_000)
+        world.pendingInputs.value = approval("chat") + clarify("chat")
+        runCurrent()
+
+        assertTrue(NotificationKind.Input to "chat" in world.surface.posted())
+    }
+
+    @Test
     fun `a superseding request repoints the same notification instead of stacking a second`() = runTest {
         val world = World(this)
         world.presence.applicationForegroundChanged(false)

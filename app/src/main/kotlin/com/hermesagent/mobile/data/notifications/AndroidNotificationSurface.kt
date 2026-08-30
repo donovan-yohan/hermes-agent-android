@@ -107,15 +107,26 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         // re-posting an identical summary on a high-importance channel is a
         // second alert for news the user has already been told.
         if (firstOfItsKind) {
-            manager.notify(summaryTag(durableSessionId), NOTIFICATION_ID, summary(durableSessionId))
+            manager.notify(summaryTag(durableSessionId), NOTIFICATION_ID, summary(kind, durableSessionId))
         }
     }
 
-    private fun summary(durableSessionId: String) =
-        NotificationCompat.Builder(context, APPROVALS_CHANNEL_ID)
+    /**
+     * The summary rides the channel of the notification that created it, never
+     * a fixed one: pinning it to the high-importance Approvals channel made a
+     * finished turn — a default-importance event — arrive with an approval's
+     * urgency, which is a lie the user cannot see the source of.
+     *
+     * [NotificationCompat.GROUP_ALERT_CHILDREN] then keeps it silent
+     * regardless. The summary is scaffolding for bundling; the children are
+     * the news, and only they should ever make a sound.
+     */
+    private fun summary(kind: NotificationKind, durableSessionId: String) =
+        NotificationCompat.Builder(context, kind.channelId)
             .setSmallIcon(SMALL_ICON)
             .setGroup(groupKey(durableSessionId))
             .setGroupSummary(true)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(openSessionIntent(durableSessionId))
@@ -160,7 +171,7 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             .putExtra(EXTRA_CHOICE, choice)
         return PendingIntent.getBroadcast(
             context,
-            requestCode(choice, target.durableSessionId + target.key.requestId),
+            requestCode(choice, target.durableSessionId, target.key.requestId),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -184,7 +195,13 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         fun priorityFor(kind: NotificationKind): Int =
             if (kind in ATTENTION_KINDS) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT
 
-        fun requestCode(role: String, discriminator: String): Int = (role + discriminator).hashCode()
+        /**
+         * Hashed as components, never as one concatenated string: joining them
+         * lets a session id ending in a request id's prefix collide with a
+         * different pair, and a PendingIntent collision hands one
+         * notification's button to another notification's request.
+         */
+        fun requestCode(vararg components: String): Int = components.contentHashCode()
     }
 }
 

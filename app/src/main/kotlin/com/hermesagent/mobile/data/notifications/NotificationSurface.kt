@@ -7,9 +7,15 @@ import com.hermesagent.mobile.data.gateway.PendingInputKey
  *
  * It carries the repository's own [PendingInputKey] rather than a copy of its
  * fields, which is the whole point: the shade is not a second writer with its
- * own idea of what is pending. A key from a dead connection generation is
- * refused by the repository rather than answered, so an action button that
- * survived a reconnect cannot resolve a prompt on the new socket.
+ * own idea of what is pending.
+ *
+ * A key whose connection is gone answers nothing. The repository reports that
+ * as [com.hermesagent.mobile.data.gateway.PendingInputResponse.Unanswerable]
+ * — distinct from "already answered" — so an action button that outlived its
+ * socket, or its whole process, tells the user to open the app instead of
+ * quietly withdrawing a request that is still parked. The generation carried
+ * in the key is not what establishes that on its own: it is a per-process
+ * counter and a fresh process reaches the same numbers again.
  *
  * The durable id rides alongside because the key identifies the *request* and
  * a notification is filed under the *conversation*.

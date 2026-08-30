@@ -90,17 +90,46 @@ legitimate notification.
 | 9 | `turnError`, `backgroundDone`, `credits` and `plugin` are in the preference store but never dispatched | omission → coming soon | `turnError` is S-N5 with the connection-lost row. The other three have no mobile source at all: no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so that S-N2's settings screen is a pure UI slice, and so the parity mandate's "visible but disabled" rows have something to bind to. |
 | 10 | No `RemoteInput` reply on a question | omission → coming soon | Owner decision 3 on #99. A clarify can be a batch of questions with constrained choices (`PendingInput.kt:24-30`); a single free-text box cannot answer that honestly. |
 | 11 | No completion-sound picker | omission | Explicitly a non-goal on #99: Electron-only (`notifications-settings.tsx:65-108`). |
-| 12 | Notifications for a session vanish when the socket does | drift, stated | The repository clears its pending map on every client change, and the notifier follows it. On a reconnect the 4 s quiet window then suppresses the replay, so a still-parked approval has no notification until something new happens. Desktop keeps its in-app prompt through the same window; this app does too — only the OS notification goes. This is the honest shape of T1 and is stated in `status/ROADMAP.md`. |
+| 12 | An interrupted turn still raises "Hermes finished" | none, deliberate | Desktop dispatches `turnDone` from the completion handler regardless of the interrupt flag (`index.ts:772`; the error path is a separate `failAssistantMessage`). Stopping a turn requires the app in the foreground, so the gate almost always suppresses it anyway. Kept verbatim rather than "improved" into a silent divergence. |
+| 13 | A superseding approval bypasses the 1 s throttle | adaptation | Desktop's throttle would drop it, and on Desktop that costs a stale body. Here the notification carries *buttons* bound to a request id, so a throttled supersession leaves the shade able to answer a request the Gateway has already replaced. The exemption is the narrowest that fixes it: same identity, changed target only. |
+| 14 | A prompt replayed into the quiet window is remembered as old news | adaptation | Desktop dispatches per event, so a dropped replay is simply never offered again. This follows a state map, where the same prompt is re-offered on every subsequent change, so the verdict is recorded explicitly and cleared on the next socket open. |
+| 15 | Notifications for a session vanish when the socket does | drift, stated | The repository clears its pending map on every client change, and the notifier follows it. On a reconnect the 4 s quiet window then suppresses the replay, so a still-parked approval has no notification until something new happens. Desktop keeps its in-app prompt through the same window; this app does too — only the OS notification goes. This is the honest shape of T1 and is stated in `status/ROADMAP.md`. |
 
-## `resolved == 0` is success
+## `resolved == 0` is success — but a map miss is not
 
 `approval.respond` answers `{"resolved": N}` and carries no `status` field
-(`methods_prompt.py:1496-1517`). `respondToPendingInput` reads an absent status
-as resolved (`GatewaySessionRepository.kt`, the `null, "ok", "resolved"`
-branch), so an approval that somebody already answered elsewhere arrives at the
-shade handler as `PendingInputResponse.Resolved` and the notification is
-withdrawn without a word. That is the intended reading of #99's
-"success-and-cancel-the-notification", and it needed no repository change.
+(`methods_prompt.py:1496-1517`), and `respondToPendingInput` reads an absent
+status as resolved. So an approval the Gateway reports as `resolved: 0` —
+answered somewhere else — is withdrawn from the shade without a word. That is
+the intended reading of #99's "success-and-cancel-the-notification".
+
+What that reading must **not** be extended to is a request missing from the
+repository's pending map, and the first version of this port made exactly that
+mistake. `respondToPendingInput` began with
+`mutablePendingInputs.value[key] ?: return Resolved`, which reported success
+for a request it had never sent. The generation fence on the next line could
+never catch it, because `PendingInputKey` carries its own generation and the
+map is emptied on every connection change: a key from a dead connection is
+guaranteed to miss the map and return on the line above. On the primary T1
+path — process dies, notification survives, user presses Approve — the fresh
+repository reported success, the notification vanished, and the agent stayed
+blocked behind an approval nobody had answered.
+
+The map miss is now classified against a per-connection ledger of keys this
+repository actually **retired**: answered, expired, superseded, or died with
+their turn. Membership means finished business (`Resolved`); absence means the
+request may still be parked (`Unanswerable`, routed to "Open to respond",
+never to a silent withdrawal). The ledger is cleared with the pending map on
+every connection change, and it is bounded — evicting oldest-first degrades an
+ancient key to "cannot answer", which is the safe direction.
+
+A generation comparison alone would not have been enough, which is the part
+worth remembering. `connectionGeneration` is a per-process counter that
+restarts at zero, so the number baked into a notification by a process that has
+since died is a number a fresh process reaches again within milliseconds — and
+on that fresh process the map is empty because no session has been opened yet,
+not because anything was answered. `ShadeApprovalTest` pins both the mismatched
+and the colliding case.
 
 The shade answers through the **same** `respondToPendingInput` as the in-app
 bar, so there is one writer, one session token, one `connectionGeneration`
@@ -124,8 +153,9 @@ state: nothing renders from it and nothing persists it. It also makes S-N5's
 
 | Claim | Where it is proved |
 |---|---|
-| Gating, throttle, quiet window, grouping, resolve-clears | `app/src/test/kotlin/.../notifications/SessionNotifierTest.kt` (16 tests, virtual time) |
-| The three shade-response outcomes | `app/src/test/kotlin/.../notifications/ShadeApprovalTest.kt` |
+| Gating, throttle, quiet window, grouping, resolve-clears, supersession, re-raising a prompt the user viewed and left | `app/src/test/kotlin/.../notifications/SessionNotifierTest.kt` (22 tests, virtual time) |
+| The shade-response outcomes, including a notification outliving its process and a colliding generation, against the live repository | `app/src/test/kotlin/.../notifications/ShadeApprovalTest.kt` |
+| "Retired" against "never seen" at the repository | `app/src/test/kotlin/.../gateway/PendingInputTest.kt` |
 | Desktop's kinds, order and defaults; redaction of a session title | `app/src/test/kotlin/.../notifications/NotificationSettingsTest.kt` |
 | When the permission is asked for | `app/src/test/kotlin/.../notifications/NotificationPermissionGateTest.kt` |
 | Channels, extras, public version, action intents, denied path | `app/src/testDebug/kotlin/.../notifications/AndroidNotificationSurfaceTest.kt` (13 tests, Robolectric) |

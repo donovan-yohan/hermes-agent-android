@@ -56,13 +56,20 @@ class NotificationActionReceiver : BroadcastReceiver() {
 private val SHADE_CHOICES = setOf(CHOICE_APPROVE, CHOICE_DENY)
 
 /**
- * Android-free so the three outcomes can be tested without a device.
+ * Android-free so every outcome can be tested without a device.
  *
  * `approval.respond` answers `{resolved: N}` (`tui_gateway/methods_prompt.py:1496-1517`
  * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) and carries no `status`, so
- * `resolved == 0` — nothing was pending, because it was answered somewhere else
- * — arrives here as [PendingInputResponse.Resolved]. That is the intended
- * reading: withdraw the notification without saying anything.
+ * `resolved == 0` — the request was answered somewhere else — arrives here as
+ * [PendingInputResponse.Resolved]. That is the intended reading: withdraw the
+ * notification without saying anything.
+ *
+ * The outcome that must never be confused with it is
+ * [PendingInputResponse.Unanswerable]: the request was never sent, because the
+ * connection that parked it is gone. A notification outlives the process that
+ * posted it, so its buttons routinely arrive at a repository that has never
+ * heard of the request — and withdrawing the notification there would tell
+ * someone their approval went through while an agent stays blocked behind it.
  */
 internal suspend fun respondFromShade(
     repository: GatewaySessionRepository,
@@ -79,10 +86,14 @@ internal suspend fun respondFromShade(
         PendingInputResponse.Retryable
     }
     when (response) {
+        // Finished business on the connection that owned it.
         PendingInputResponse.Resolved, PendingInputResponse.Expired ->
             surface.clear(NotificationKind.Approval, durableSessionId)
-        // The socket moved on, or another answer is already in flight. The
-        // request may still be parked, so the notification stays and says so.
-        PendingInputResponse.Retryable -> surface.degradeApproval(durableSessionId)
+        // Nothing was sent. Either the socket moved on, another answer is
+        // already in flight, or this process never knew the request at all.
+        // The request may still be parked, so the notification stays and says
+        // where it can still be answered.
+        PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
+            surface.degradeApproval(durableSessionId)
     }
 }

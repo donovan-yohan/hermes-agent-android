@@ -166,6 +166,31 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
+    fun `a finished turn's group summary does not borrow the approval channel's urgency`() {
+        AndroidNotificationSurface(context).post(
+            NotificationPost(
+                kind = NotificationKind.TurnDone,
+                durableSessionId = SESSION,
+                title = NotificationCopy.TURN_DONE_TITLE,
+                body = "Refactor the parser",
+            ),
+        )
+
+        val summary = shadowOf(manager).getNotification(summaryTag(SESSION), NOTIFICATION_ID)
+        assertEquals(RESPONSES_CHANNEL_ID, summary.channelId)
+        assertEquals(Notification.GROUP_ALERT_CHILDREN, summary.groupAlertBehavior)
+    }
+
+    @Test
+    fun `an approval's summary rides the approvals channel and still never alerts on its own`() {
+        AndroidNotificationSurface(context).post(approvalPost())
+
+        val summary = shadowOf(manager).getNotification(summaryTag(SESSION), NOTIFICATION_ID)
+        assertEquals(APPROVALS_CHANNEL_ID, summary.channelId)
+        assertEquals(Notification.GROUP_ALERT_CHILDREN, summary.groupAlertBehavior)
+    }
+
+    @Test
     fun `withdrawing the last notification withdraws its summary too`() {
         val surface = AndroidNotificationSurface(context)
         surface.post(approvalPost())

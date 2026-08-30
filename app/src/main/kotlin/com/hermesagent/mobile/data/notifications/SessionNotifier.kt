@@ -72,12 +72,32 @@ class SessionNotifier(
     private val lastFiredAt = mutableMapOf<String, Long>()
 
     /**
-     * What is currently parked, and — for an approval — which request the
-     * shade's buttons would answer. Keyed by (session, kind) because that is
-     * the notification's identity: a superseding request updates the same
-     * notification in place rather than stacking a second one.
+     * The prompt notifications actually in the shade, and — for an approval —
+     * which request their buttons would answer. Keyed by (session, kind)
+     * because that is the notification's identity: a superseding request
+     * updates the same notification in place rather than stacking a second one.
+     *
+     * Only notifications that were really posted belong here. Recording
+     * suppressed ones too would wedge them: an approval that arrived while the
+     * user was looking at its conversation would be remembered as shown, and
+     * could never be raised once they left.
+     *
+     * Prompts only. A completion is not derived from the pending map, so
+     * filing one here would make the next pending update withdraw it for the
+     * sole reason that no pending request corresponds to it.
      */
     private var shown = mapOf<Pair<String, NotificationKind>, ApprovalTarget?>()
+
+    /**
+     * Prompts this socket replayed into the quiet window.
+     *
+     * Desktop dispatches per event, so a replayed prompt it drops is simply
+     * never offered again. This follows a state map instead, where the same
+     * prompt is re-offered on every subsequent change, so the "not news"
+     * verdict has to be remembered rather than implied. Emptied on each socket
+     * open, because the next replay is a different set of old news.
+     */
+    private val replayed = mutableSetOf<Pair<String, NotificationKind>>()
 
     /**
      * Every signal through one collector, so the quiet window, the throttle map
@@ -118,6 +138,7 @@ class SessionNotifier(
      */
     private fun markBaseline() {
         quietUntil = clock() + SEED_QUIET_MS
+        replayed.clear()
     }
 
     private fun applyPending(requests: Map<PendingInputKey, PendingInputRequest>) {
@@ -133,16 +154,39 @@ class SessionNotifier(
                 ?.let { ApprovalTarget(key, it.durableSessionId) }
         }
 
-        for ((identity, _) in shown) {
+        for (identity in shown.keys) {
             if (identity !in desired) surface.clear(identity.second, identity.first)
         }
+
+        val next = shown.filterKeys { it in desired }.toMutableMap()
         for ((identity, target) in desired) {
             // A superseding request changes the target without changing the
-            // identity; re-dispatching keeps the buttons pointed at the live one.
-            if (identity in shown && shown[identity] == target) continue
-            dispatch(identity.second, identity.first, target)
+            // identity. It is a different request, so none of the "already
+            // dealt with" rules below apply to it.
+            val supersedes = identity in shown && shown[identity] != target
+            if (!supersedes) {
+                if (identity in shown) continue
+                // Replayed into the quiet window on this connection. It was
+                // not news then and it does not become news later merely
+                // because some unrelated prompt arrived — which is exactly
+                // what a state diff, unlike Desktop's per-event dispatch,
+                // would otherwise do.
+                if (identity in replayed) continue
+                if (clock() < quietUntil) {
+                    replayed += identity
+                    continue
+                }
+            }
+            // The throttle is bypassed for a supersession: the shade's buttons
+            // would otherwise keep pointing at a request id the Gateway has
+            // already replaced, and pressing one would answer nothing.
+            val posted = dispatch(identity.second, identity.first, target, bypassThrottle = supersedes)
+            if (posted) next[identity] = target else next.remove(identity)
         }
-        shown = desired
+        shown = next
+        // A request that is gone can stop being remembered as old news; a
+        // genuinely new one under the same identity deserves its own chance.
+        replayed.retainAll(desired.keys)
     }
 
     private fun applyTurn(outcome: GatewayTurnOutcome) {
@@ -155,15 +199,31 @@ class SessionNotifier(
 
     private fun applyPresence(foregrounded: Boolean, visibleSessionId: String?) {
         // Opening a conversation is reading it. Nothing about it is still news.
-        if (foregrounded && visibleSessionId != null) surface.clearSession(visibleSessionId)
+        if (!foregrounded || visibleSessionId == null) return
+        surface.clearSession(visibleSessionId)
+        // Those notifications are gone from the shade, so they are gone from
+        // the record of what is in it. Keeping them would mean a prompt still
+        // parked when the user leaves again could never be raised a second
+        // time, because it would look like it was already showing.
+        shown = shown.filterKeys { it.first != visibleSessionId }
     }
 
-    /** Desktop's `dispatchNativeNotification`, guard for guard (`:190-223`). */
-    private fun dispatch(kind: NotificationKind, durableSessionId: String, approval: ApprovalTarget?) {
-        if (!settings.allows(kind)) return
-        if (clock() < quietUntil) return
-        if (!shouldFire(kind, durableSessionId)) return
-        if (throttled("${kind.key}:$durableSessionId", clock())) return
+    /**
+     * Desktop's `dispatchNativeNotification`, guard for guard (`:190-223`).
+     * Returns whether the notification reached the surface, exactly as
+     * Desktop's does (`:187-190`) and for the same reason: the caller records
+     * per-notification state that a suppressed one must never acquire.
+     */
+    private fun dispatch(
+        kind: NotificationKind,
+        durableSessionId: String,
+        approval: ApprovalTarget?,
+        bypassThrottle: Boolean = false,
+    ): Boolean {
+        if (!settings.allows(kind)) return false
+        if (clock() < quietUntil) return false
+        if (!shouldFire(kind, durableSessionId)) return false
+        if (!allowedByThrottle("${kind.key}:$durableSessionId", clock(), bypassThrottle)) return false
 
         val title = sessions.value.sessions[durableSessionId]?.title.orEmpty().notificationSafeTitle()
         surface.post(
@@ -175,6 +235,7 @@ class SessionNotifier(
                 approval = approval,
             ),
         )
+        return true
     }
 
     /**
@@ -196,6 +257,20 @@ class SessionNotifier(
         // Completion kinds: only the active session, only while away — so a busy
         // gateway can't raise one notification per background session.
         return backgrounded && durableSessionId == visible
+    }
+
+    /**
+     * The throttle, plus the one exemption mobile needs.
+     *
+     * A bypass still restarts the window: the notification did fire, so the
+     * next ordinary one for this pair should be measured from now rather than
+     * from the post it replaced.
+     */
+    private fun allowedByThrottle(key: String, now: Long, bypass: Boolean): Boolean {
+        if (!throttled(key, now)) return true
+        if (!bypass) return false
+        lastFiredAt[key] = now
+        return true
     }
 
     /** `native-notifications.ts:100-114` @ the pin. */
