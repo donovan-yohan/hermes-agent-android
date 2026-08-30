@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -62,14 +62,35 @@ internal class GatewaySettingsViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GatewaySettingsUiState())
     val uiState: StateFlow<GatewaySettingsUiState> = _uiState.asStateFlow()
+
+    /**
+     * Whether this pane's own fields are ahead of the store.
+     *
+     * The route form persists on every keystroke, so the store echoes back what
+     * was typed one write later; without this latch that echo would arrive
+     * behind the next character and undo it. It says nothing about which row is
+     * being edited, which is why [project] resets it.
+     */
     private var edited = false
+
+    /** The row [_uiState] is currently a projection of. */
+    private var activeRowId: String? = null
     private var connectJob: Job? = null
 
     init {
+        // Collected rather than read once, and collected together. The route,
+        // the Gateway URL and the row they belong to are three projections of
+        // one saved row (`HermesPreferences.connectionRegistry`), so a switch
+        // has to reach this pane as a single change — a mode that arrived
+        // without its URL would render one connection's route over another's
+        // address.
         viewModelScope.launch {
-            val mode = store.gatewayConnectionMode.first()
-            val remote = store.remoteGatewayProfile.first()
-            if (!edited) _uiState.update { it.copy(mode = mode, remote = remote, loaded = true) }
+            combine(
+                store.activeConnectionId,
+                store.gatewayConnectionMode,
+                store.remoteGatewayProfile,
+                ::Triple,
+            ).collect { (row, mode, remote) -> project(row, mode, remote) }
         }
         viewModelScope.launch {
             gateway.state.collect { connection -> _uiState.update { it.copy(connection = connection) } }
@@ -80,6 +101,37 @@ internal class GatewaySettingsViewModel(
         viewModelScope.launch {
             store.localGatewayProfile.collect { local -> _uiState.update { it.copy(local = local) } }
         }
+    }
+
+    /**
+     * Re-projects this pane onto whichever row is active.
+     *
+     * **A switch discards unsaved edits made in this pane, and the pane shows
+     * the new row.** Switching is an explicit navigation to another connection,
+     * not a way of moving text between two of them; the alternative keeps the
+     * old row's half-typed address on screen while every field here autosaves
+     * into whatever row is active, which is one connection's address written
+     * into another. The store refuses that write as well
+     * ([RemoteGatewayProfileStore.saveRemoteGatewayProfile]) — the two are one
+     * rule, stated where it can be seen and enforced where it cannot be raced.
+     * What is lost is at most the characters typed since the last keystroke
+     * landed, all of them belonging to a connection the person has just
+     * navigated away from.
+     */
+    private fun project(row: String?, mode: GatewayConnectionMode, remote: RemoteGatewayProfile) {
+        if (row != activeRowId) {
+            activeRowId = row
+            edited = false
+            // A dial aimed at the row we just left must not come up under the
+            // one that replaced it. Putting the old endpoint down and forgetting
+            // what it told us is the switch's own job and it already does both,
+            // before it moves the marker
+            // (`ConnectionSwitchController.kt:84,150-151`); the attempt this
+            // ViewModel is still holding is the part that controller cannot see.
+            cancelConnectionAttempt()
+        }
+        if (edited) return
+        _uiState.update { it.copy(mode = mode, remote = remote, loaded = true) }
     }
 
     /**
@@ -121,6 +173,17 @@ internal class GatewaySettingsViewModel(
 
     fun setProvider(value: String) = editRemote { it.copy(provider = value) }
 
+    /**
+     * Dials the host-owned Gateway this pane is showing.
+     *
+     * Both the offer and the target come from the same projected row, so a tap
+     * can only ever dial the connection whose address is on screen. A tap that
+     * lands in the instant before a switch is the one case where those two come
+     * apart, and it is caught on the way out rather than on the way in: [project]
+     * cancels the attempt when the active row moves, and the switch itself has
+     * already put the old endpoint down and cleared what it told us
+     * (`ConnectionSwitchController.kt:84,150-151`).
+     */
     fun connectRemote(browser: GatewayBrowserLauncher) {
         val state = _uiState.value
         if (state.mode != GatewayConnectionMode.Remote || !state.canConnectRemote) return

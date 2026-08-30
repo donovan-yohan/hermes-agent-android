@@ -93,6 +93,26 @@ interface RemoteGatewayProfileStore {
     val localGatewayProfile: kotlinx.coroutines.flow.Flow<LocalGatewayProfile>
         get() = kotlinx.coroutines.flow.flowOf(LocalGatewayProfile())
 
+    /**
+     * Which saved row every projection above is *of*.
+     *
+     * The values alone cannot answer that: two rows can carry the same URL,
+     * the same route, or both, so a screen that has to notice it is now
+     * looking at a different connection has to be told the identity rather
+     * than infer it from what changed. A store with no registry answers null
+     * forever, which is the same answer it has always given.
+     */
+    val activeConnectionId: kotlinx.coroutines.flow.Flow<String?>
+        get() = kotlinx.coroutines.flow.flowOf(null)
+
+    /**
+     * Writes the active row's Gateway URL and provider.
+     *
+     * [RemoteGatewayProfile.secretSlotId] names the row the caller composed
+     * this edit against. A non-blank one that is no longer the active row is
+     * refused outright rather than written where it landed — see the
+     * implementation note on the store.
+     */
     suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile)
     suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode)
 }

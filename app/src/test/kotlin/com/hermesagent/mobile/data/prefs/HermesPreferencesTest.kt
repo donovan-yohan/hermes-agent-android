@@ -256,6 +256,43 @@ class HermesPreferencesTest {
         }
     }
 
+    /**
+     * The route form persists on every keystroke, so one of its writes can be in
+     * flight when the switcher moves the marker. The row a character was typed
+     * against travels with the profile, and it is the only thing that tells that
+     * write apart from a legitimate edit of the row now active.
+     */
+    @Test
+    fun `a route edit stamped for a row that is no longer active is dropped, not redirected`() = runBlocking {
+        val first = SavedConnection("fixture-a", "Alpha", ConnectionKind.Remote)
+        val second = SavedConnection("fixture-b", "Beta", ConnectionKind.Remote)
+        try {
+            preferences.saveConnection(first)
+            preferences.saveConnection(second)
+            preferences.setActiveConnection(second.id)
+
+            preferences.saveRemoteGatewayProfile(
+                RemoteGatewayProfile("https://typed-into-alpha.example", "alpha", secretSlotId = first.id),
+            )
+
+            val rows = preferences.connectionRegistry.first().connections
+            assertEquals("the row it landed on is untouched", "", rows.first { it.id == second.id }.remote.baseUrl)
+            assertEquals("and it is not redirected to the row it was for", "", rows.first { it.id == first.id }.remote.baseUrl)
+
+            // A caller naming the active row, or naming no row at all, still writes.
+            preferences.saveRemoteGatewayProfile(
+                RemoteGatewayProfile("https://gateway-b.example", "beta", secretSlotId = second.id),
+            )
+            assertEquals(
+                "https://gateway-b.example",
+                preferences.connectionRegistry.first().connections.first { it.id == second.id }.remote.baseUrl,
+            )
+        } finally {
+            preferences.removeConnection(second.id)
+            preferences.removeConnection(first.id)
+        }
+    }
+
     @Test
     fun `removing the active row moves the marker instead of leaving it dangling`() = runBlocking {
         val first = SavedConnection("fixture-a", "Alpha", ConnectionKind.Remote)

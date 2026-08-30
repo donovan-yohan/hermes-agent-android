@@ -264,6 +264,13 @@ class HermesPreferences(private val context: Context) :
         connectionRegistry.map { it.active?.localProfile ?: LocalGatewayProfile() }
 
     /**
+     * The identity behind the four projections above — the row itself, not the
+     * marker: a marker naming a row that is gone resolves to the first row,
+     * and it is the resolved row every projection is of.
+     */
+    override val activeConnectionId: Flow<String?> = connectionRegistry.map { it.active?.id }
+
+    /**
      * One authoritative scope for sticky new-draft controls. It follows the
      * saved route/profile values rather than a ViewModel-owned label, so a
      * connection edit cannot carry a prior Gateway's paid-model selection.
@@ -300,10 +307,24 @@ class HermesPreferences(private val context: Context) :
      * The caller cannot choose which Keystore slot it writes to: the active
      * row's own id is stamped back in, so a profile that travelled through the
      * UI can never point a sign-in at another connection's slot.
+     *
+     * The same stamp decides whether there is a write at all. The route form
+     * has no discrete save — it persists on every keystroke — so one of its
+     * writes can still be in flight when a switch moves the marker, and the
+     * row a character was typed against is the only thing that tells that
+     * apart from an edit of the row now active. A profile stamped for some
+     * other row is dropped here, inside the transaction that reads the marker,
+     * which is the only place the two can be compared without a gap. A blank
+     * stamp is a caller with no row in mind — the pre-registry migration path
+     * and every test fixture — and still writes wherever the marker points.
      */
     override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
         editActiveConnection { active ->
-            active.copy(remote = RemoteGatewayProfile(baseUrl = profile.baseUrl, provider = profile.provider))
+            if (profile.secretSlotId.isNotBlank() && profile.secretSlotId != active.id) {
+                active
+            } else {
+                active.copy(remote = RemoteGatewayProfile(baseUrl = profile.baseUrl, provider = profile.provider))
+            }
         }
     }
 
