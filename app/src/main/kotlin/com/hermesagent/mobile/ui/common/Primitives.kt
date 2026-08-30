@@ -9,10 +9,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,13 +34,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -49,6 +59,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -528,4 +539,286 @@ fun WorkingDots(
 @Composable
 fun VerticalHairline(modifier: Modifier = Modifier) {
     Box(modifier.width(1.dp).background(HermesTheme.tokens.strokeTertiary))
+}
+
+/**
+ * Desktop's shared card emphasis, `selectableCardClass({ active, prominent })`
+ * (`apps/desktop/src/lib/selectable-card.ts:22-31` @ `f82f2dba`).
+ *
+ * Three tiers there, two of them used here: `active` is the strongest —
+ * `border-primary bg-primary/[0.06] ring-2 ring-primary/20`; `prominent` is
+ * the resting card — `border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary)`. The
+ * muted tier is a hover treatment for pickers, and touch has no hover.
+ *
+ * One colour role is **not** matched, and it is a divergence rather than a
+ * translation. Desktop's `--ui-bg-quinary` is a translucent accent-tinted wash
+ * (`styles.css:288-292` @ `f82f2dba`: an accent mix over 3% of the base); the
+ * nearest thing this app's token layer has is `widgetSurface`, which is opaque
+ * and derived from the card fill. The port skill's rule is to add the missing
+ * token with its Desktop provenance rather than reach past the layer — but the
+ * token layer is pinned at a *different* SHA and gated by `ThemeParityTest`,
+ * so adding one is a theme-sync change, not this slice's. Recorded in
+ * `docs/parity/gateway-connections.md` as drift with an owner instead of
+ * quietly painting the wrong thing under a comment that claims otherwise.
+ *
+ * Desktop's ring is a box-shadow, so it costs no layout. Here the 2dp is
+ * always reserved and only *painted* when active, which keeps a card exactly
+ * the same size selected and unselected — Desktop's cards do not move either.
+ */
+@Composable
+fun selectableCardModifier(active: Boolean, shape: RoundedCornerShape): Modifier {
+    val tokens = HermesTheme.tokens
+    return Modifier
+        .border(2.dp, if (active) tokens.accent.copy(alpha = 0.20f) else Color.Transparent, shape)
+        .padding(2.dp)
+        .border(1.dp, if (active) tokens.accent else tokens.strokeTertiary, shape)
+        .background(if (active) tokens.accent.copy(alpha = 0.06f) else tokens.widgetSurface, shape)
+}
+
+/** The card radius Desktop writes as `rounded-lg`, and this app's container radius. */
+private val ModeCardShape = RoundedCornerShape(10.dp)
+
+/**
+ * Desktop's `ModeCard` (`apps/desktop/src/app/settings/gateway-settings.tsx:88-135`
+ * @ `f82f2dba`): a selectable card carrying an icon, a medium-weight title, an
+ * optional hint, a check when it is the active one, and a description.
+ *
+ * Two mechanics change and nothing else does.
+ *
+ * Desktop's hint is a hover `Tip` on a `HelpCircle`. Touch has no hover, so the
+ * glyph is a button that reveals the *same sentence* under the description.
+ * Revealing beats hiding: the text is on screen rather than one gesture away
+ * from being undiscoverable. It sits inside a 48dp touch area it does not paint
+ * (`minimumInteractiveComponentSize`), so the hit target clears the platform
+ * floor without the 14sp glyph growing into a Material toolbar icon, and it
+ * consumes its own tap the way Desktop's `stopPropagation` does.
+ *
+ * `disabled:opacity-50` becomes a disabled card whose text drops a tier, since
+ * a flat 50% alpha over a themed surface is not a token this app has.
+ */
+@Composable
+fun ModeCard(
+    title: String,
+    description: String,
+    icon: HermesIcon,
+    active: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    hint: String? = null,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    val tokens = HermesTheme.tokens
+    var hintShown by rememberSaveable(title) { mutableStateOf(false) }
+    val bodyColor = if (enabled) tokens.textTertiary else tokens.textQuaternary
+
+    Column(
+        modifier
+            .fillMaxWidth()
+            .then(selectableCardModifier(active, ModeCardShape))
+            // Before `selectable`: an unclipped ripple paints square corners
+            // over a rounded card.
+            .clip(ModeCardShape)
+            .selectable(
+                selected = active,
+                enabled = enabled,
+                onClick = onSelect,
+                role = Role.RadioButton,
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                // Every card reserves the same header height, hint or not.
+                // The revealer below needs the platform's 48dp, and a card
+                // that grew only where it had a hint would leave the four
+                // sitting at two different heights in the one-column layout,
+                // where no row exists to equalise them.
+                .heightIn(min = HermesTheme.spacing.touchTarget),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HermesIconGlyph(
+                // Desktop writes this `text-muted-foreground` and the
+                // description `--ui-text-tertiary`, which sound like two roles
+                // and render as one: the captured contract has both at the
+                // same 54% ink (`build/visual-parity/gateway-connection-mode`).
+                // Tertiary, then — and it is `HermesIconGlyph`'s own default.
+                icon = icon,
+                color = if (enabled) tokens.textTertiary else tokens.textQuaternary,
+            )
+            // Desktop groups icon + title + hint and pushes the check away with
+            // `ml-auto`. This inner row is that group: it takes the free width,
+            // so the trailing slot lands flush right, and the title shrinks
+            // inside it the way `min-w-0` lets it.
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = HermesTheme.type.body.copy(fontWeight = FontWeight.Medium),
+                    color = if (enabled) tokens.textPrimary else tokens.textTertiary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (hint != null) {
+                    Box(
+                        Modifier
+                            .minimumInteractiveComponentSize()
+                            .clickable(role = Role.Button) { hintShown = !hintShown }
+                            .semantics { contentDescription = "About $title" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        HermesIconGlyph(HermesIcon.Question, color = tokens.textTertiary)
+                    }
+                }
+            }
+            when {
+                trailing != null -> trailing()
+                active -> HermesIconGlyph(HermesIcon.Check, color = tokens.accent)
+            }
+        }
+        Text(
+            text = description,
+            style = HermesTheme.type.caption,
+            color = bodyColor,
+        )
+        if (hint != null && hintShown) {
+            Text(
+                text = hint,
+                style = HermesTheme.type.caption,
+                color = bodyColor,
+            )
+        }
+    }
+}
+
+/**
+ * Desktop's mode grid steps at `sm` (40rem / 640px) and `min-[72rem]`
+ * (1152px), and both are **viewport** media queries — not the container query
+ * its registry kind chooser uses (`gateway-settings.tsx:1048` versus
+ * `connections-registry.tsx:648` @ `f82f2dba`). So this reads the window too.
+ *
+ * `640px` lands on 600dp because that is Android's own compact/medium boundary
+ * — the platform's "this is no longer a phone" line, and the nearest standard
+ * one to Desktop's. `1152px` lands on 720dp because that is already this app's
+ * wide breakpoint (`ui/chat/ChatScreen.kt:95-97`), and Desktop's 1152px window
+ * is also carrying a sidebar and a chat pane that this settings column is not;
+ * inventing a third breakpoint to be arithmetically closer would buy nothing.
+ *
+ * Separate from the composable so the mapping is a fact a JVM test can assert
+ * without a device.
+ */
+internal fun modeCardColumnsFor(widthDp: Int): Int = when {
+    widthDp >= MODE_CARD_WIDE_DP -> 4
+    widthDp >= MODE_CARD_TWO_COLUMN_DP -> 2
+    else -> 1
+}
+
+/** Desktop's `sm:` step, on Android's compact/medium boundary. */
+internal const val MODE_CARD_TWO_COLUMN_DP = 600
+
+/** Desktop's `min-[72rem]:` step, on this app's existing wide breakpoint. */
+internal const val MODE_CARD_WIDE_DP = 720
+
+/**
+ * `grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4`
+ * (`gateway-settings.tsx:1048` @ `f82f2dba`).
+ *
+ * `auto-rows-fr` is what makes every card in a row the same height regardless
+ * of how long its description is; `IntrinsicSize.Min` plus `fillMaxHeight` is
+ * the same statement here. Laid out by hand rather than with a lazy grid
+ * because this lives inside a page that already scrolls, and there are four
+ * items — a nested scroller would be the bug, not the feature.
+ */
+@Composable
+fun <T> ModeCardGrid(
+    items: List<T>,
+    modifier: Modifier = Modifier,
+    columns: Int = modeCardColumnsFor(LocalConfiguration.current.screenWidthDp),
+    itemContent: @Composable (T) -> Unit,
+) {
+    Column(
+        modifier.fillMaxWidth().selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.chunked(columns).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { item ->
+                    Box(Modifier.weight(1f).fillMaxHeight()) { itemContent(item) }
+                }
+                // A short last row keeps the column rhythm instead of
+                // stretching two cards across four columns' worth of width.
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/**
+ * Desktop's `Button` in the two variants its registry kind chooser uses:
+ * `variant="default"` for the chosen kind and `variant="outline"` for the rest
+ * (`connections-registry.tsx:653-664` @ `f82f2dba`).
+ *
+ * Not a [ModeCard]: Desktop deliberately renders the *registry* chooser as a
+ * plain button row, and the mode cards only on the Gateways page above it.
+ * Keeping the two treatments apart is the parity contract.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ChoiceButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    val tokens = HermesTheme.tokens
+    val shape = RoundedCornerShape(8.dp)
+    // Desktop's two columns give a phone roughly 148dp a cell, and a label plus
+    // a "coming soon" pill wants nearer 175. Flowing rather than truncating
+    // keeps Desktop's column count *and* the whole label; on a wide pane
+    // everything fits on one line and this is an ordinary row.
+    FlowRow(
+        modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .background(
+                // Desktop's `variant="default"` is a solid `bg-primary`, not a
+                // wash (`components/ui/button.tsx` via
+                // `connections-registry.tsx:661` @ `f82f2dba`). This app's
+                // segmented control uses a 16% accent tint for *its* selected
+                // segment, but that is a different control; matching Desktop
+                // here costs nothing and removes a divergence.
+                if (selected && enabled) tokens.accent else Color.Transparent,
+                shape,
+            )
+            .border(1.dp, if (selected && enabled) tokens.accent else tokens.strokeTertiary, shape)
+            .clip(shape)
+            .selectable(selected = selected, enabled = enabled, onClick = onClick, role = Role.RadioButton)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = label,
+            style = HermesTheme.type.caption,
+            color = when {
+                !enabled -> tokens.textQuaternary
+                // On a solid accent fill the label is Desktop's
+                // `text-primary-foreground`, not the ordinary ink.
+                selected -> tokens.accentForeground
+                else -> tokens.textSecondary
+            },
+        )
+        trailing?.invoke()
+    }
 }

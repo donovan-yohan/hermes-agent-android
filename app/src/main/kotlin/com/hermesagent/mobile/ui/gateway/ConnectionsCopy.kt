@@ -237,6 +237,13 @@ internal object ConnectionsCopy {
     /** `en.ts:733`. */
     const val KIND_LOCAL = "Local"
 
+    /**
+     * `en.ts:735`. The kind itself is not offered — there is no Android Hermes
+     * Cloud sign-in — but the chooser still renders it, disabled, so the form
+     * teaches the same four kinds Desktop's does.
+     */
+    const val KIND_CLOUD = "Hermes Cloud"
+
     /** `en.ts:738`, narrowed to HTTPS: this app refuses a plain-HTTP Gateway URL. */
     const val KIND_REMOTE_DESC = "A Hermes gateway reachable over HTTPS — LAN, Tailscale, or the internet."
 
@@ -276,4 +283,80 @@ internal object ConnectionsCopy {
         ConnectionKind.Ssh -> KIND_SSH_DESC
         ConnectionKind.Local -> KIND_LOCAL_DESC
     }
+}
+
+/**
+ * The **Connection mode** cards' vocabulary, from Desktop's `settings.gateway`
+ * i18n block at pinned SHA `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
+ * (`apps/desktop/src/i18n/en.ts:776-783`, `:865-868`), as rendered by
+ * `apps/desktop/src/app/settings/gateway-settings.tsx:1044-1084`.
+ *
+ * Separate from [ConnectionsCopy], which is the `settings.connections` block
+ * below it on the same page. Two Desktop blocks, two objects, so a line here
+ * can be checked against the line it cites without guessing which block it
+ * came from.
+ *
+ * Titles and hints are verbatim. Two descriptions are not, and both say
+ * "desktop" or "start" about an app that is neither and does not — the
+ * deviation is per-constant below and in `docs/parity/gateway-connections.md`.
+ */
+internal object GatewayModeCopy {
+    /** `en.ts:776`. */
+    const val MODE_TITLE = "Connection mode"
+
+    /** `en.ts:777`. */
+    const val LOCAL_TITLE = "Local gateway"
+
+    /**
+     * Deviates from `en.ts:778` ("Start a private Hermes backend on localhost.
+     * This is the default and works offline."). Two of its three clauses are
+     * false here: this app starts nothing — the person runs `hermes serve` in
+     * Termux and this app only dials it — and Local is not the default, since
+     * ADR-0002 makes the host-owned Remote Gateway the preferred topology on
+     * mobile. Desktop's "private", "backend" and "works offline" survive
+     * because they are still true.
+     */
+    const val LOCAL_DESC = "Connect to a private Hermes backend you run on this phone. Works offline."
+
+    /** `en.ts:782`. */
+    const val CLOUD_TITLE = "Hermes Cloud"
+
+    /** `en.ts:783`. */
+    const val CLOUD_DESC =
+        "Sign in once to Hermes Cloud and pick from the agents on your account — no URL to paste."
+
+    /** `en.ts:779`. */
+    const val REMOTE_TITLE = "Remote gateway"
+
+    /**
+     * `en.ts:780` ("Connect this desktop shell to a remote Hermes backend."),
+     * with the one word that names the wrong client replaced. Nothing else
+     * about the sentence changes.
+     */
+    const val REMOTE_DESC = "Connect this app to a remote Hermes backend."
+
+    /** `en.ts:781`. */
+    const val REMOTE_AUTH_HINT =
+        "Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token."
+
+    /** `en.ts:865`. */
+    const val SSH_TITLE = "Connect via SSH"
+
+    /**
+     * `en.ts:866-867`, minus one adjective. Desktop's sentence ends "Requires
+     * working **key-based** SSH access to the host", which is false here and
+     * not harmlessly so: this route offers three methods
+     * (`AuthMethod.TailscaleSsh`, `Password`, `PrivateKey` —
+     * `data/ssh/SshModel.kt:80`), and only one of them is a key. Left verbatim,
+     * the line tells a person whose host takes a password, or who is on a
+     * tailnet, that the route will not work for them — a deterrent, not a
+     * cosmetic difference. Everything else is Desktop's, word for word.
+     */
+    const val SSH_DESC =
+        "Hermes is launched on the remote over SSH and tunneled to this app — nothing to start " +
+            "or expose yourself. Requires working SSH access to the host."
+
+    /** `en.ts:868`. */
+    const val SSH_TRUST_HINT =
+        "The first presented host key is trusted and pinned; later changes fail closed."
 }

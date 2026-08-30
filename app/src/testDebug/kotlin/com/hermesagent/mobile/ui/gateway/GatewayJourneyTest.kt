@@ -62,12 +62,16 @@ class GatewayJourneyTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Use a host-owned Remote Gateway").assertIsDisplayed()
+        compose.onNodeWithText(GatewayModeCopy.REMOTE_TITLE).assertIsDisplayed()
         compose.onNodeWithText("Sign in and connect").assertExists()
-        compose.onNodeWithContentDescription("Use an app-managed Gateway over SSH").performClick()
+        compose.onNodeWithText(GatewayModeCopy.SSH_TITLE).performClick()
 
         assertEquals(GatewayConnectionMode.Ssh, state.mode)
-        compose.onNodeWithText("Connect this app to a remote Hermes Gateway over SSH.").assertIsDisplayed()
+        // The mode cards now head the page's own scroll, as they do on
+        // Desktop, so the chosen route's pane starts below them.
+        compose.onNodeWithText("Connect this app to a remote Hermes Gateway over SSH.")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -135,7 +139,7 @@ class GatewayJourneyTest {
             }
         }
 
-        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_LOCAL_DESC).performClick()
+        compose.onNodeWithText(GatewayModeCopy.LOCAL_TITLE).performClick()
         compose.waitForIdle()
         assertEquals(GatewayConnectionMode.Local, state.mode)
 
@@ -216,7 +220,7 @@ class GatewayJourneyTest {
         val secured = requireNotNull(window) { "the test needs a real Activity window" }
         assertTrue("the SSH form holds the window secure", secured.isSecure())
 
-        compose.onNodeWithContentDescription("Use a host-owned Remote Gateway").performClick()
+        compose.onNodeWithText(GatewayModeCopy.REMOTE_TITLE).performClick()
         compose.waitForIdle()
 
         assertEquals(GatewayConnectionMode.Remote, state.mode)
@@ -253,14 +257,14 @@ class GatewayJourneyTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Use an app-managed Gateway over SSH").performClick()
+        compose.onNodeWithText(GatewayModeCopy.SSH_TITLE).performClick()
         compose.waitForIdle()
         assertEquals("a tap before the store has answered must change nothing", 0, modeChanges)
         assertEquals(GatewayConnectionMode.Remote, state.mode)
 
         state = state.copy(loaded = true)
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Use an app-managed Gateway over SSH").performClick()
+        compose.onNodeWithText(GatewayModeCopy.SSH_TITLE).performClick()
         compose.waitForIdle()
 
         assertEquals(1, modeChanges)

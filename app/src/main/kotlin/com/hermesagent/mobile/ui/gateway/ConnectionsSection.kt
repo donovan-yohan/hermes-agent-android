@@ -3,6 +3,7 @@ package com.hermesagent.mobile.ui.gateway
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,8 @@ import com.hermesagent.mobile.data.connections.connectionMatchesQuery
 import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
+import com.hermesagent.mobile.ui.common.COMING_SOON
+import com.hermesagent.mobile.ui.common.ChoiceButton
 import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.ConfirmSheet
 import com.hermesagent.mobile.ui.common.EmptyState
@@ -40,11 +43,11 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.LabelledField
+import com.hermesagent.mobile.ui.common.ModeCardGrid
 import com.hermesagent.mobile.ui.common.Pill
 import com.hermesagent.mobile.ui.common.PillTone
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.SearchField
-import com.hermesagent.mobile.ui.common.SegmentedControl
 import com.hermesagent.mobile.ui.common.SettingsListRow
 import com.hermesagent.mobile.ui.common.SettingsSectionHeading
 import com.hermesagent.mobile.ui.common.TextButton
@@ -376,13 +379,29 @@ private fun ConnectionEditor(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (editor.id == null) {
-            SegmentedControl(
-                options = OFFERED_CONNECTION_KINDS,
-                selected = editor.kind,
-                label = ConnectionsCopy::kindLabel,
-                onSelect = actions.onEditKind,
-                describe = ConnectionsCopy::kindDescription,
-            )
+            // Desktop's `grid grid-cols-2 gap-2 @2xl:grid-cols-4`
+            // (`connections-registry.tsx:648` @ `f82f2dba`). That one *is* a
+            // container query — unlike the mode grid above, which is a viewport
+            // query — so this reads the editor's own width, not the window's.
+            BoxWithConstraints {
+                ModeCardGrid(
+                    items = CONNECTION_KIND_CHOICES,
+                    columns = if (maxWidth >= KIND_CHOOSER_FOUR_COLUMN) 4 else 2,
+                ) { choice ->
+                    ChoiceButton(
+                        label = choice.label,
+                        selected = choice.kind == editor.kind,
+                        enabled = choice.kind != null,
+                        onClick = { choice.kind?.let(actions.onEditKind) },
+                        modifier = Modifier.fillMaxWidth(),
+                        trailing = if (choice.kind == null) {
+                            { Pill(COMING_SOON) }
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
         } else {
             Text(
                 text = ConnectionsCopy.kindLabel(editor.kind),
@@ -502,24 +521,65 @@ private fun SavedConnection.summary(): String {
 }
 
 /**
- * Every kind this app ships, Local first — Desktop offers all of its own on
- * create and anchors Local at the head of the row
- * (`connections-registry.tsx:652` @ `f82f2dba`).
+ * One button in Desktop's registry kind chooser
+ * (`connections-registry.tsx:652-665` @ `f82f2dba`).
  *
- * Exhaustive on purpose, and asserted to be: [SegmentedControl] has no way to
- * render a `selected` value that is not among its `options`, so a hand-curated
- * subset can leave a kind selected with no segment lit and no way back. The
- * list being total over [ConnectionKind] is what makes that unreachable rather
- * than merely unlikely — `ConnectionsSectionTest` fails if a fourth kind is
- * added without a segment.
+ * [kind] is `null` for a kind Desktop offers that a row here cannot be. Like
+ * the mode cards above, it renders anyway — disabled, behind a "coming soon"
+ * pill — because the gate's rule is that unsupported is disabled rather than
+ * absent, and a `null` kind is unselectable by construction.
  */
-internal val OFFERED_CONNECTION_KINDS =
-    listOf(ConnectionKind.Local, ConnectionKind.Remote, ConnectionKind.Ssh)
+internal data class ConnectionKindChoice(
+    val kind: ConnectionKind?,
+    val label: String,
+)
+
+/**
+ * The four kinds Desktop offers on create, in Desktop's order: local, cloud,
+ * remote, ssh (`connections-registry.tsx:652` @ `f82f2dba`).
+ *
+ * Total over [ConnectionKind], and asserted to be. The chooser used to be a
+ * `SegmentedControl`, which has no way to render a `selected` value that is
+ * not among its `options` — a hand-curated subset could leave a kind selected
+ * with nothing lit and no way back. Buttons compute their own `selected`, so
+ * that shape is gone; the hazard underneath it is not, because a kind with no
+ * button is still a kind the form cannot show or change.
+ * `ConnectionsSectionTest` fails if a fourth kind is added without one.
+ *
+ * Desktop also disables Local once its one managed local entry exists
+ * (`connections-registry.tsx:654`) and explains that with `localAddHint`
+ * (`en.ts:757`). Neither is ported, deliberately: Desktop's registry holds at
+ * most one Local, while this one keys Local rows by normalized loopback
+ * *address* — two Termux servers on two ports are two Gateways — so there is
+ * no one-Local rule to disable on, a genuine duplicate is refused by address
+ * instead, and a hint announcing a rule this app does not have would be false
+ * on the device it is on. `cloudAddHint` (`en.ts:758-759`) goes with the Cloud
+ * kind: it renders only while the editor's kind *is* cloud, which a disabled
+ * Cloud button makes unreachable.
+ */
+internal val CONNECTION_KIND_CHOICES = listOf(
+    ConnectionKindChoice(ConnectionKind.Local, ConnectionsCopy.KIND_LOCAL),
+    // Desktop's `cloud`. There is no Android Hermes Cloud sign-in, and
+    // `ConnectionKind` deliberately has no member for it: a kind no row can be
+    // should be unrepresentable, not merely refused.
+    ConnectionKindChoice(null, ConnectionsCopy.KIND_CLOUD),
+    ConnectionKindChoice(ConnectionKind.Remote, ConnectionsCopy.KIND_REMOTE),
+    ConnectionKindChoice(ConnectionKind.Ssh, ConnectionsCopy.KIND_SSH),
+)
+
+/** Every kind a saved row can be, in chooser order. */
+internal val OFFERED_CONNECTION_KINDS = CONNECTION_KIND_CHOICES.mapNotNull { it.kind }
+
+/**
+ * Desktop's `@2xl` container step (42rem / 672px), read off the editor's own
+ * width because Desktop's is a container query, not a viewport one.
+ */
+private val KIND_CHOOSER_FOUR_COLUMN = 672.dp
 
 /** Desktop's `KIND_ICONS`, restricted to the kinds Android ships (`connections-registry.tsx:26-31`). */
 internal val ConnectionKind.glyph: HermesIcon
     get() = when (this) {
         ConnectionKind.Remote -> HermesIcon.Globe
         ConnectionKind.Ssh -> HermesIcon.Terminal
-        ConnectionKind.Local -> HermesIcon.DeviceMobile
+        ConnectionKind.Local -> HermesIcon.Monitor
     }

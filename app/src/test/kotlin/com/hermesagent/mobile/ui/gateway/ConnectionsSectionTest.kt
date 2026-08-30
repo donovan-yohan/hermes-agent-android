@@ -1,26 +1,42 @@
 package com.hermesagent.mobile.ui.gateway
 
 import com.hermesagent.mobile.data.connections.ConnectionKind
+import com.hermesagent.mobile.ui.common.HermesIcon
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * The kind chooser's options, as a set rather than as a picture.
+ * The registry's kind chooser, against Desktop's at
+ * `connections-registry.tsx:648-671` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
  *
- * `SegmentedControl` has no representation for a `selected` value that is not
- * among its `options`: it renders the row with nothing lit, and the person is
- * left looking at a form whose kind they cannot see or change. That was a real
- * possibility while the chooser offered a hand-curated subset of the kinds a
- * saved row can be. This is the gate that keeps the two in step, so a fourth
- * kind cannot be added to the registry without also being offered here.
+ * Order and labels are Desktop's; the fourth entry is the one this app cannot
+ * be, kept visible and disabled rather than dropped.
  */
 class ConnectionsSectionTest {
 
     @Test
-    fun `every kind a row can be is a segment the chooser offers`() {
+    fun `the chooser offers Desktop's four kinds, in Desktop's order`() {
+        assertEquals(
+            listOf("Local", "Hermes Cloud", "Remote gateway", "SSH"),
+            CONNECTION_KIND_CHOICES.map { it.label },
+        )
+    }
+
+    @Test
+    fun `Hermes Cloud is offered but cannot be chosen`() {
+        val cloud = CONNECTION_KIND_CHOICES.single { it.label == "Hermes Cloud" }
+        // `ConnectionKind` has no Cloud member, so no saved row can be one and
+        // the button has nothing to select. Unsupported is disabled, not absent.
+        assertNull(cloud.kind)
+    }
+
+    @Test
+    fun `every kind a row can be is a button the chooser offers`() {
         assertEquals(ConnectionKind.entries.toSet(), OFFERED_CONNECTION_KINDS.toSet())
         assertEquals(
-            "a duplicate segment would be two ways to pick one kind",
+            "a duplicate button would be two ways to pick one kind",
             OFFERED_CONNECTION_KINDS.size,
             OFFERED_CONNECTION_KINDS.toSet().size,
         )
@@ -29,5 +45,20 @@ class ConnectionsSectionTest {
     @Test
     fun `Local is anchored first, as Desktop anchors it`() {
         assertEquals(ConnectionKind.Local, OFFERED_CONNECTION_KINDS.first())
+        assertEquals("Local", CONNECTION_KIND_CHOICES.first().label)
+    }
+
+    /**
+     * Desktop's `KIND_ICONS` (`connections-registry.tsx:26-31`): cloud/local/
+     * remote/ssh to Cloud/Monitor/Globe/Terminal. Local used to be drawn with
+     * `device-mobile` here; the parity gate calls a changed glyph drift, so it
+     * is Desktop's monitor again and the ownership difference lives in the
+     * description instead.
+     */
+    @Test
+    fun `each kind carries Desktop's glyph`() {
+        assertEquals(HermesIcon.Monitor, ConnectionKind.Local.glyph)
+        assertEquals(HermesIcon.Globe, ConnectionKind.Remote.glyph)
+        assertEquals(HermesIcon.Terminal, ConnectionKind.Ssh.glyph)
     }
 }

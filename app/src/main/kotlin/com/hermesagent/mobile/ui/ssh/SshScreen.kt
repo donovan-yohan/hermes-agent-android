@@ -64,6 +64,13 @@ fun SshScreen(
     state: SshUiState,
     actions: SshActions,
     modifier: Modifier = Modifier,
+    /**
+     * Page content that belongs above this form — the Gateways page's
+     * Connection mode cards. Desktop scrolls the mode grid with the rest of
+     * the page (`gateway-settings.tsx:1044-1084` @ `f82f2dba`) rather than
+     * pinning it, and four stacked cards on a phone are far too tall to pin.
+     */
+    header: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {},
     /** Page content that belongs below this form — the Gateways page's connections registry. */
     footer: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {},
 ) {
@@ -86,6 +93,8 @@ fun SshScreen(
             .padding(horizontal = inset, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        header()
+
         Text(
             "Connect this app to a remote Hermes Gateway over SSH.",
             style = HermesTheme.type.caption,
