@@ -77,24 +77,44 @@ legitimate notification.
 
 ## Divergences
 
-| # | What | Class | Why |
+Classified for `scripts/check-parity-evidence.py`. Two entries that were in this
+table are not divergences at all and have moved below it, rather than being
+given a class they do not deserve.
+
+| Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| 1a | A conversation's group summary rides the channel of the *first* notification filed under it | adaptation | Android needs a summary before it will bundle a group, and a summary has to sit on some channel. Harmless because `GROUP_ALERT_CHILDREN` keeps the summary silent whichever channel it lands on — only the children ever alert — so the channel decides nothing the user can hear. Pinning it to `Approvals` instead, as the first version did, was not harmless: it gave a finished turn an approval's importance. |
-| 1 | Two channels (`Approvals`, `Responses`) rather than one preference per kind at the OS layer | adaptation | Android importance is a property of a channel, and a channel's importance can never be lowered after the OS creates it. Per-kind channels would freeze seven importances on first launch. The names are the issue's own event matrix; the descriptions are Desktop's per-kind sentences (`en.ts:437`, `:441`, `:445`). |
-| 2 | An approval's body is the **session title**, never the command | adaptation | Desktop puts `command \|\| description` in the body (`gateway-event.ts:1346`). A phone renders that on a lock screen. Issue #99's security section forbids commands, tool output, sudo prompts and secret names in a notification, and this honours that: the only Gateway text that reaches the shade is a session title, through `redact()` and bounded. |
-| 3 | `VISIBILITY_PRIVATE` with a `publicVersion` carrying only the kind | adaptation | Desktop has no lock screen. A locked phone is told "Approval needed" and nothing about which conversation. |
-| 4 | Shade buttons are **Approve** and **Reject**, sending `once` and `deny` | none | Desktop's own labels (`en.ts:176-177`) and Desktop's own mapping (`native-notifications.ts:349`). `session` and `always` are offered by the Gateway (`api_server.py:77`) and stay in the app: a persistent grant should not be one mis-tap from a lock screen. |
-| 5 | No explicit "Open" action button | adaptation | Tapping the notification body *is* Open on Android. A button that duplicates the tap target is noise. The exception is divergence 6, where the buttons are gone and the body says so. |
-| 6 | "Open to respond." when the connection has moved on | adaptation | Desktop's renderer is always there to answer; this app's socket may not be. A button that silently does nothing is worse than a sentence. Raised on `PendingInputResponse.Retryable`. |
-| 7 | A runtime permission prompt with its own rationale | adaptation | `POST_NOTIFICATIONS` has no Desktop equivalent. The rationale reuses the settings panel's vocabulary (`en.ts:431`) rather than inventing a second description. Asked at the first live Gateway, once. |
-| 8 | The status-bar glyph is `android.R.drawable.stat_notify_chat` | omission → coming soon | A drawn Hermes notification mark is design work. The launcher icon is a colour bitmap and would render as a white block. Matches the precedent already in `WakeWordForegroundService`. |
-| 9 | `turnError`, `backgroundDone`, `credits` and `plugin` are in the preference store but never dispatched | omission → coming soon | `turnError` is S-N5 with the connection-lost row. The other three have no mobile source at all: no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so that S-N2's settings screen is a pure UI slice, and so the parity mandate's "visible but disabled" rows have something to bind to. |
-| 10 | No `RemoteInput` reply on a question | omission → coming soon | Owner decision 3 on #99. A clarify can be a batch of questions with constrained choices (`PendingInput.kt:24-30`); a single free-text box cannot answer that honestly. |
-| 11 | No completion-sound picker | omission | Explicitly a non-goal on #99: Electron-only (`notifications-settings.tsx:65-108`). |
-| 12 | An interrupted turn still raises "Hermes finished" | none, deliberate | Desktop dispatches `turnDone` from the completion handler regardless of the interrupt flag (`index.ts:772`; the error path is a separate `failAssistantMessage`). Stopping a turn requires the app in the foreground, so the gate almost always suppresses it anyway. Kept verbatim rather than "improved" into a silent divergence. |
-| 13 | A superseding approval bypasses the 1 s throttle | adaptation | Desktop's throttle would drop it, and on Desktop that costs a stale body. Here the notification carries *buttons* bound to a request id, so a throttled supersession leaves the shade able to answer a request the Gateway has already replaced. The exemption is the narrowest that fixes it: same identity, changed target only. |
-| 14 | A prompt replayed into the quiet window is remembered as old news | adaptation | Desktop dispatches per event, so a dropped replay is simply never offered again. This follows a state map, where the same prompt is re-offered on every subsequent change, so the verdict is recorded explicitly and cleared on the next socket open. |
-| 15 | Notifications for a session vanish when the socket does | drift, stated | The repository clears its pending map on every client change, and the notifier follows it. On a reconnect the 4 s quiet window then suppresses the replay, so a still-parked approval has no notification until something new happens. Desktop keeps its in-app prompt through the same window; this app does too — only the OS notification goes. This is the honest shape of T1 and is stated in `status/ROADMAP.md`. |
+| One preference per kind, and the OS layer has no notion of a channel | mobile-adaptation | Two channels, `Approvals` and `Responses` | Android importance is a property of a channel and can never be lowered after the OS creates it, so per-kind channels would freeze seven importances on first launch. The names are the issue's own event matrix; the descriptions are Desktop's per-kind sentences (`en.ts:437`, `:441`, `:445`) |
+| No grouping layer: Electron files each notification on its own | mobile-adaptation | A conversation's group summary rides the channel of the *first* notification filed under it | Android needs a summary before it will bundle a group, and a summary has to sit on some channel. `GROUP_ALERT_CHILDREN` keeps the summary silent whichever channel it lands on, so the channel decides nothing the user can hear. Pinning it to `Approvals`, as the first version did, was not harmless: it gave a finished turn an approval's importance |
+| An approval's body is `command \|\| description` (`gateway-event.ts:1346`) | mobile-adaptation | The body is the **session title**, never the command | A phone renders that on a lock screen. #99's security section forbids commands, tool output, sudo prompts and secret names in a notification; the only Gateway text that reaches the shade is a session title, through `redact()` and bounded |
+| No lock screen exists | mobile-adaptation | `VISIBILITY_PRIVATE` with a `publicVersion` carrying only the kind | A locked phone is told "Approval needed" and nothing about which conversation |
+| Clicking the notification body focuses the window; there is no button vocabulary for it | mobile-adaptation | No explicit "Open" action button | Tapping the notification body *is* Open on Android, so a button duplicating the tap target is noise. The exception is the row below, where the buttons are gone and the body says so |
+| The renderer is always there to answer, so an action button always works | mobile-adaptation | "Open to respond." when the connection has moved on, raised on `PendingInputResponse.Retryable` | This app's socket may not be there. A button that silently does nothing is worse than a sentence |
+| Electron needs no notification grant | mobile-adaptation | A `POST_NOTIFICATIONS` runtime prompt with its own rationale, asked at the first live Gateway, once | No Desktop equivalent to port. The rationale reuses the settings panel's vocabulary (`en.ts:431`) rather than inventing a second description |
+| A clarify is answered in the renderer | mobile-adaptation | No `RemoteInput` reply on a question | Owner decision 3 on #99: a clarify can be a batch of questions with constrained choices (`PendingInput.kt:24-30`), and a single free-text box cannot answer that honestly |
+| The 1 s throttle drops a superseding approval, at the cost of a stale body (`:97-114`) | mobile-adaptation | Same identity with a changed target is exempt from the throttle | Here the notification carries *buttons* bound to a request id, so a throttled supersession would leave the shade able to answer a request the Gateway has already replaced. The exemption is the narrowest that fixes it |
+| Dispatch is per event, so a prompt dropped in the quiet window is simply never offered again (`notify-baseline.ts:1-26`) | mobile-adaptation | A prompt replayed into the quiet window is recorded as old news, and the verdict is cleared on the next socket open | This app follows a state map, where the same prompt is re-offered on every subsequent change, so the drop has to be remembered explicitly or it repeats |
+| The notification carries the app's own mark | drift | The status-bar glyph is `android.R.drawable.stat_notify_chat` | A monochrome Hermes status-bar mark is undrawn design work, and the launcher icon is a colour bitmap that would render as a white block. Matches the precedent in `WakeWordForegroundService`; #99 |
+| A parked approval keeps its notification across a reconnect | drift | Notifications for a session vanish when the socket does, and the 4 s quiet window then suppresses the replay | The repository clears its pending map on every client change and the notifier follows it, so a still-parked approval has no notification until something new happens. The in-app prompt survives; only the OS notification goes. The honest shape of T1, stated in `status/ROADMAP.md`; #99 |
+| `turnError` is dispatched (`gateway-event.ts:1661`) | omission | In the preference store, never dispatched | pill-owed: #101 — its preference row is a control, and S-N5 wires the dispatch alongside the connection-lost row (#99) |
+| `backgroundDone`, `credits` and `plugin` kinds | omission | In the preference store, never dispatched | non-goal: none has a mobile source at all — no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so S-N2's settings screen is a pure UI slice and the disabled rows have something to bind to |
+| Completion-sound picker (`notifications-settings.tsx:65-108`) | omission | Absent | out-of-scope: #99 named it a non-goal of that issue, being Electron-only |
+
+### Verbatim from Desktop, and deliberately so
+
+Neither of these is a divergence; both were worth writing down, so they are
+here rather than in the table under a class they would not earn.
+
+- **Shade buttons are Approve and Reject, sending `once` and `deny`.** Desktop's
+  own labels (`en.ts:176-177`) and Desktop's own mapping
+  (`native-notifications.ts:349`). `session` and `always` are offered by the
+  Gateway (`api_server.py:77`) and stay in the app: a persistent grant should
+  not be one mis-tap from a lock screen.
+- **An interrupted turn still raises "Hermes finished".** Desktop dispatches
+  `turnDone` from the completion handler regardless of the interrupt flag
+  (`index.ts:772`; the error path is a separate `failAssistantMessage`).
+  Stopping a turn requires the app in the foreground, so the gate almost always
+  suppresses it anyway. Kept verbatim rather than "improved" into a silent
+  divergence.
 
 ## `resolved == 0` is success — but a map miss is not
 
@@ -164,3 +184,14 @@ state: nothing renders from it and nothing persists it. It also makes S-N5's
 Not proved off-device, and deliberately not claimed: that a real approval can
 be answered from a real shade. That is #99's acceptance gate and it needs the
 server-mac emulator lane driving real events through the Termux Local route.
+
+## Visual report
+
+- pending: #99
+
+A notification is drawn by the OS shade, not by this app, so the side-by-side
+that matters is an Android shade against an Electron notification — and it needs
+the real events #99's acceptance gate already calls for: the server-mac emulator
+lane driving approvals through the Termux Local route. `AndroidNotificationSurfaceTest`
+pins the channels, extras, public version, action intents and group alert
+behaviour off-device; none of that is a picture of the shade.
