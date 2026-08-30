@@ -22,7 +22,10 @@ content description, or `product-copy-allow` exception.
    and content descriptions; do not review comments as if they were UI.
 2. For a Desktop-derived surface, compare the pinned SHA-scoped authority for
    terminology and behavior. Record when a frozen authority ledger replaces
-   direct upstream inspection.
+   direct upstream inspection. The verbatim `en.ts` diff and the surface's
+   divergence ledger belong to
+   [`review-desktop-parity.md`](review-desktop-parity.md); run it for any change
+   under `ui/`.
 3. Render phone and wide layouts plus relevant light/dark states. Check line
    wrapping, hierarchy, the action beside each limitation, and that details do
    not crowd the primary path.

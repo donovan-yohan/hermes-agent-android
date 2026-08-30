@@ -8,6 +8,8 @@ description: Review Android product copy for task, state, outcome, next action, 
 Primary UI is product copy, not an implementation note. Read the rendered
 strings in their real Kotlin call sites and follow the complete checklist in
 [`docs/workflows/review-product-copy.md`](../../../docs/workflows/review-product-copy.md).
+Whether a string matches Desktop's word for word is `review-desktop-parity`'s
+verbatim `en.ts` diff; this skill owns whether the words serve the user.
 
 ## Required evidence
 

@@ -7,6 +7,7 @@ chalkbag source of truth for this repo: skills, permissions, provider config.
 | Path | What it is |
 |---|---|
 | `skills/port-hermes-desktop-surface/` | How to translate a Hermes Desktop surface into this app |
+| `skills/review-desktop-parity/` | The review gate for any UI change: render Desktop at the pin beside Android, diff copy and menu order, classify every divergence; pairs with `scripts/check-parity-evidence.py` |
 | `skills/sync-hermes-desktop-themes/` | How to keep the theme registry in step with Desktop; ships an executable parity diff under `scripts/` |
 | `skills/review-product-copy/` | How to review actual rendered strings, screenshots and semantics; pairs with the repo copy gate |
 | `permissions.yaml` | Per-provider permissions. Encodes the two hard rules: upstream is read-only, and nothing reads a credential |
