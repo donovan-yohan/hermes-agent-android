@@ -53,7 +53,7 @@ import com.hermesagent.mobile.ui.gateway.glyph
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
- * The session rail's connection switcher — Desktop's `ConnectionSwitcher`
+ * The connection switcher — Desktop's `ConnectionSwitcher`
  * (`apps/desktop/src/app/chat/sidebar/connection-switcher.tsx:40-322` @
  * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
  *
@@ -64,12 +64,34 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * radio rows with the active one checked, its `DropdownMenuSearch` appears at
  * the same eight-connection threshold, and its trailing "Manage gateways…"
  * item stays last, below a hairline.
+ *
+ * Mounted twice. The session rail is Desktop's own home for it — the statusbar
+ * (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @ `f82f2dba`) — and
+ * the top of the Gateways pane is the owner-approved mobile adaptation
+ * recorded in `docs/parity/gateway-connections.md`: a phone's Gateways screen
+ * is a destination rather than a pane beside a sidebar that is always there,
+ * so without it the person who has just added a gateway must leave the screen
+ * to start using it. One composable, two mounts — the trigger, the sheet, the
+ * order, the search threshold and the select path are the same on both.
  */
 @Composable
 fun ConnectionSwitcherBar(
     state: ConnectionsUiState,
     actions: ConnectionsActions,
-    onManage: () -> Unit,
+    /**
+     * Where "Manage gateways…" goes, or null on the surface that *is* that
+     * destination. Desktop's trailing item navigates to the settings
+     * connections tab (`connection-switcher.tsx:234-236` @ `f82f2dba`), which
+     * in this app is the Gateways screen — offering it from that screen would
+     * be a door back into the room you are standing in. The hairline above it
+     * goes with it, rather than leaving a rule under the last connection with
+     * nothing beneath it.
+     *
+     * Deliberately without a default: Desktop's prop is required
+     * (`connection-switcher.tsx:40`), so a mount that quietly forgot this
+     * would drop a control Desktop always renders.
+     */
+    onManage: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     if (!state.switchable) return
@@ -113,9 +135,11 @@ fun ConnectionSwitcherBar(
                 sheetVisible = false
                 actions.onSelect(id)
             },
-            onManage = {
-                sheetVisible = false
-                onManage()
+            onManage = onManage?.let { manage ->
+                {
+                    sheetVisible = false
+                    manage()
+                }
             },
             onDismiss = { sheetVisible = false },
         )
@@ -126,7 +150,7 @@ fun ConnectionSwitcherBar(
 private fun ConnectionSwitcherSheet(
     state: ConnectionsUiState,
     onSelect: (String) -> Unit,
-    onManage: () -> Unit,
+    onManage: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -185,23 +209,25 @@ private fun ConnectionSwitcherSheet(
                     }
                 }
             }
-            Hairline()
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = HermesTheme.spacing.touchTarget)
-                    .clickable(role = Role.Button, onClick = onManage)
-                    .semantics { contentDescription = ConnectionsCopy.MANAGE_GATEWAYS }
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                HermesIconGlyph(HermesIcon.SettingsGear, color = tokens.textTertiary)
-                Text(
-                    ConnectionsCopy.MANAGE_GATEWAYS,
-                    style = HermesTheme.type.body,
-                    color = tokens.textSecondary,
-                )
+            if (onManage != null) {
+                Hairline()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = HermesTheme.spacing.touchTarget)
+                        .clickable(role = Role.Button, onClick = onManage)
+                        .semantics { contentDescription = ConnectionsCopy.MANAGE_GATEWAYS }
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    HermesIconGlyph(HermesIcon.SettingsGear, color = tokens.textTertiary)
+                    Text(
+                        ConnectionsCopy.MANAGE_GATEWAYS,
+                        style = HermesTheme.type.body,
+                        color = tokens.textSecondary,
+                    )
+                }
             }
         }
     }

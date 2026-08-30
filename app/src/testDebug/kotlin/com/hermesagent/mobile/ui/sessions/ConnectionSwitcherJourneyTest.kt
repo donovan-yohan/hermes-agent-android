@@ -168,6 +168,37 @@ class ConnectionSwitcherJourneyTest {
     }
 
     /**
+     * The Gateways screen mounts this same composable, and "Manage gateways…"
+     * navigates to the Gateways screen — so on that mount the item, and the
+     * hairline that separates it, are not rendered at all. The rail's mount,
+     * which has somewhere to go, is the test above.
+     */
+    @Test
+    fun `a mount with nowhere to manage renders no Manage gateways row`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                sshConnection("b", "Bravo", "demo-host"),
+            ),
+            activeId = "a",
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ConnectionSwitcherBar(state = state, actions = ConnectionsActions(), onManage = null)
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha").performClick()
+        compose.waitForIdle()
+
+        // The sheet is open and listing connections; only the footer is gone.
+        compose.onNodeWithTag("Connection switcher sheet").assertExists()
+        compose.onNode(descriptionStartsWith("Bravo")).assertExists()
+        compose.onNodeWithContentDescription(ConnectionsCopy.MANAGE_GATEWAYS).assertDoesNotExist()
+        compose.onNodeWithText(ConnectionsCopy.MANAGE_GATEWAYS).assertDoesNotExist()
+    }
+
+    /**
      * The sheet's own row carries its label as a *prefix* of its content
      * description ("Alpha. https://alpha.test…"), which is what distinguishes
      * it from the trigger's "Registered gateways: Alpha" — a plain substring

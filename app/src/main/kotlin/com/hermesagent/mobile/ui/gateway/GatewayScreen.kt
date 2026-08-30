@@ -32,6 +32,7 @@ import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.common.WipPill
+import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
 import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -129,6 +130,21 @@ fun GatewayScreen(
     // route's own form a sliver of what is left. So the chooser travels into
     // whichever route is showing, exactly as the registry already does.
     val chooser: @Composable ColumnScope.() -> Unit = {
+        // Desktop mounts its `ConnectionSwitcher` in the statusbar and nowhere
+        // else (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @
+        // `f82f2dba`); this second mount is the owner-approved mobile
+        // adaptation of 2026-08-30, argued in `docs/parity/gateway-connections.md`.
+        // The same composable, not a copy: a forked trigger is how two
+        // switchers end up disagreeing about which gateway you are on. It
+        // hides itself below two connections, exactly as the rail's does
+        // (`connection-switcher.tsx:118-120`) — with one saved row this pane is
+        // already showing it — and it is handed no `onManage`, because that
+        // item navigates here.
+        ConnectionSwitcherBar(
+            state = connectionsState,
+            actions = connectionsActions,
+            onManage = null,
+        )
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Desktop's own heading, in Desktop's casing: caption size, medium
             // weight, `--ui-text-secondary` (`gateway-settings.tsx:1045-1047`).
