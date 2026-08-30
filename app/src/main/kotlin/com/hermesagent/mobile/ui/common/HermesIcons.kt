@@ -35,12 +35,30 @@ enum class HermesIcon(val glyph: String) {
     /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `f82f2dba`). */
     Globe("\uEB01"),
     /**
-     * Desktop's `local` kind glyph is `Monitor` (`connections-registry.tsx:28`
-     * @ `f82f2dba`), because its local runtime lives on a desktop. Here it
-     * lives on the phone the person is holding, so the same idea is drawn with
-     * the same family's `device-mobile`.
+     * Desktop's `local` kind and Local-gateway mode glyph
+     * (`connections-registry.tsx:28`, `gateway-settings.tsx:1053` @ `f82f2dba`),
+     * which is lucide `Monitor`.
+     *
+     * This used to be `device-mobile`, on the argument that Android's local
+     * runtime lives on the phone rather than on a desktop. That reasoning
+     * changed the glyph to make a point the words already make, and a changed
+     * glyph is what the parity gate calls drift
+     * (`docs/workflows/review-desktop-parity.md`, "Compare structure"). The
+     * glyph is Desktop's again; the *ownership* difference stays in the
+     * description, where it always belonged.
+     *
+     * Codicons 0.0.45 ships no `device-desktop`, so this is the family's own
+     * monitor, `vm` — same shape, same family, verified against the shipped
+     * font by [HermesIconFontTest].
      */
-    DeviceMobile("\uEADB"),
+    Monitor("\uEA7A"),
+    /**
+     * Desktop's `cloud` connection kind and Hermes Cloud mode glyph
+     * (`connections-registry.tsx:27`, `gateway-settings.tsx:1061` @ `f82f2dba`).
+     * This app has no Hermes Cloud sign-in yet, so the control it marks ships
+     * visible and disabled behind a "coming soon" pill rather than absent.
+     */
+    Cloud("\uEBAA"),
     Trash("\uEA81"),
     SettingsGear("\uEB51"),
     Search("\uEA6D"),
