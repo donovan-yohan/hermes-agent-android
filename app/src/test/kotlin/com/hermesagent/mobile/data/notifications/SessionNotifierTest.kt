@@ -349,6 +349,33 @@ class SessionNotifierTest {
     }
 
     @Test
+    fun `superseding a prompt that was replayed into the quiet window still notifies`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+
+        world.socketOpens.emit(Unit)
+        runCurrent()
+        // Parked before this socket existed, replayed on connect: old news.
+        world.pendingInputs.value = approval("chat", requestId = "replayed")
+        runCurrent()
+        assertEquals(emptyList<Pair<NotificationKind, String>>(), world.surface.posted())
+
+        // The Gateway now replaces it with a genuinely new request. A suppressed
+        // prompt never entered `shown`, so there is nothing to recognise the
+        // supersession against — which is why the "old news" verdict has to be
+        // remembered per request and not per (session, kind). Remembered per
+        // identity, this replacement would be swallowed for the whole
+        // connection and its buttons would never appear.
+        advanceTimeBy(5_000)
+        world.pendingInputs.value = approval("chat", requestId = "replacement")
+        runCurrent()
+
+        assertEquals(listOf(NotificationKind.Approval to "chat"), world.surface.posted())
+        assertEquals("replacement", world.surface.posts.single().approval?.key?.requestId)
+    }
+
+    @Test
     fun `a new socket makes its own replay old news, not the previous one's`() = runTest {
         val world = World(this)
         world.presence.applicationForegroundChanged(false)

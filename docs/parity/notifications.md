@@ -79,6 +79,7 @@ legitimate notification.
 
 | # | What | Class | Why |
 |---|---|---|---|
+| 1a | A conversation's group summary rides the channel of the *first* notification filed under it | adaptation | Android needs a summary before it will bundle a group, and a summary has to sit on some channel. Harmless because `GROUP_ALERT_CHILDREN` keeps the summary silent whichever channel it lands on — only the children ever alert — so the channel decides nothing the user can hear. Pinning it to `Approvals` instead, as the first version did, was not harmless: it gave a finished turn an approval's importance. |
 | 1 | Two channels (`Approvals`, `Responses`) rather than one preference per kind at the OS layer | adaptation | Android importance is a property of a channel, and a channel's importance can never be lowered after the OS creates it. Per-kind channels would freeze seven importances on first launch. The names are the issue's own event matrix; the descriptions are Desktop's per-kind sentences (`en.ts:437`, `:441`, `:445`). |
 | 2 | An approval's body is the **session title**, never the command | adaptation | Desktop puts `command \|\| description` in the body (`gateway-event.ts:1346`). A phone renders that on a lock screen. Issue #99's security section forbids commands, tool output, sudo prompts and secret names in a notification, and this honours that: the only Gateway text that reaches the shade is a session title, through `redact()` and bounded. |
 | 3 | `VISIBILITY_PRIVATE` with a `publicVersion` carrying only the kind | adaptation | Desktop has no lock screen. A locked phone is told "Approval needed" and nothing about which conversation. |
@@ -153,12 +154,12 @@ state: nothing renders from it and nothing persists it. It also makes S-N5's
 
 | Claim | Where it is proved |
 |---|---|
-| Gating, throttle, quiet window, grouping, resolve-clears, supersession, re-raising a prompt the user viewed and left | `app/src/test/kotlin/.../notifications/SessionNotifierTest.kt` (22 tests, virtual time) |
-| The shade-response outcomes, including a notification outliving its process and a colliding generation, against the live repository | `app/src/test/kotlin/.../notifications/ShadeApprovalTest.kt` |
-| "Retired" against "never seen" at the repository | `app/src/test/kotlin/.../gateway/PendingInputTest.kt` |
+| Gating, throttle, quiet window, grouping, resolve-clears, supersession (including of a replayed prompt), re-raising a prompt the user viewed and left | `app/src/test/kotlin/.../notifications/SessionNotifierTest.kt` (23 tests, virtual time) |
+| The shade-response outcomes, including a notification outliving its process and a colliding generation, against the live repository | `app/src/test/kotlin/.../notifications/ShadeApprovalTest.kt` (7 tests) |
+| "Retired" against "never seen" at the repository | `app/src/test/kotlin/.../gateway/PendingInputTest.kt` (11 tests) |
 | Desktop's kinds, order and defaults; redaction of a session title | `app/src/test/kotlin/.../notifications/NotificationSettingsTest.kt` |
 | When the permission is asked for | `app/src/test/kotlin/.../notifications/NotificationPermissionGateTest.kt` |
-| Channels, extras, public version, action intents, denied path | `app/src/testDebug/kotlin/.../notifications/AndroidNotificationSurfaceTest.kt` (13 tests, Robolectric) |
+| Channels, extras, public version, action intents, group summary channel and alert behaviour, denied path | `app/src/testDebug/kotlin/.../notifications/AndroidNotificationSurfaceTest.kt` (15 tests, Robolectric) |
 
 Not proved off-device, and deliberately not claimed: that a real approval can
 be answered from a real shade. That is #99's acceptance gate and it needs the

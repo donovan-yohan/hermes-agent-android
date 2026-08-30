@@ -2542,12 +2542,6 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    private fun clearPendingInputsForGeneration(generation: Long) {
-        val current = mutablePendingInputs.value
-        val remaining = current.filterKeys { it.connectionGeneration == generation }
-        if (remaining.size != current.size) mutablePendingInputs.value = remaining
-    }
-
     private fun applyPendingInputEvent(
         type: String,
         durableId: String,

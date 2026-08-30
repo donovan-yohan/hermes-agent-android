@@ -45,6 +45,9 @@ class SessionNotifier(
     private val surface: NotificationSurface,
     private val clock: () -> Long,
 ) {
+    /** One parked request as the shade needs it: what it is, and how to answer it. */
+    private data class Prompt(val key: PendingInputKey, val approval: ApprovalTarget?)
+
     private sealed interface Signal {
         data object SocketOpen : Signal
         data class Pending(val requests: Map<PendingInputKey, PendingInputRequest>) : Signal
@@ -86,18 +89,26 @@ class SessionNotifier(
      * filing one here would make the next pending update withdraw it for the
      * sole reason that no pending request corresponds to it.
      */
-    private var shown = mapOf<Pair<String, NotificationKind>, ApprovalTarget?>()
+    private var shown = mapOf<Pair<String, NotificationKind>, Prompt>()
 
     /**
-     * Prompts this socket replayed into the quiet window.
+     * Requests this socket replayed into the quiet window.
      *
      * Desktop dispatches per event, so a replayed prompt it drops is simply
      * never offered again. This follows a state map instead, where the same
      * prompt is re-offered on every subsequent change, so the "not news"
      * verdict has to be remembered rather than implied. Emptied on each socket
      * open, because the next replay is a different set of old news.
+     *
+     * Keyed by request rather than by (session, kind), and that distinction is
+     * load-bearing. A replayed prompt is suppressed, so it never enters
+     * [shown] — which means when the Gateway later *supersedes* it, there is
+     * nothing to compare against and the supersession cannot be recognised.
+     * Under a (session, kind) key the replacement would inherit the old
+     * request's "old news" verdict and be swallowed for the life of the
+     * connection. Under a request key it is simply a request nobody has seen.
      */
-    private val replayed = mutableSetOf<Pair<String, NotificationKind>>()
+    private val replayed = mutableSetOf<PendingInputKey>()
 
     /**
      * Every signal through one collector, so the quiet window, the throttle map
@@ -142,7 +153,7 @@ class SessionNotifier(
     }
 
     private fun applyPending(requests: Map<PendingInputKey, PendingInputRequest>) {
-        val desired = mutableMapOf<Pair<String, NotificationKind>, ApprovalTarget?>()
+        val desired = mutableMapOf<Pair<String, NotificationKind>, Prompt>()
         for ((key, request) in requests) {
             val kind = key.kind.notificationKind()
             val identity = request.durableSessionId to kind
@@ -150,8 +161,10 @@ class SessionNotifier(
             // same kind: one notification per (session, kind), and answering it
             // resolves one of them rather than an arbitrary merge of both.
             if (identity in desired) continue
-            desired[identity] = (request as? ApprovalPending)
-                ?.let { ApprovalTarget(key, it.durableSessionId) }
+            desired[identity] = Prompt(
+                key = key,
+                approval = (request as? ApprovalPending)?.let { ApprovalTarget(key, it.durableSessionId) },
+            )
         }
 
         for (identity in shown.keys) {
@@ -159,11 +172,11 @@ class SessionNotifier(
         }
 
         val next = shown.filterKeys { it in desired }.toMutableMap()
-        for ((identity, target) in desired) {
-            // A superseding request changes the target without changing the
-            // identity. It is a different request, so none of the "already
-            // dealt with" rules below apply to it.
-            val supersedes = identity in shown && shown[identity] != target
+        for ((identity, prompt) in desired) {
+            // A different request id under the same identity is the Gateway
+            // replacing the question, not repeating it. None of the "already
+            // dealt with" rules below apply to a request nobody has seen.
+            val supersedes = shown[identity]?.key?.let { it != prompt.key } == true
             if (!supersedes) {
                 if (identity in shown) continue
                 // Replayed into the quiet window on this connection. It was
@@ -171,22 +184,23 @@ class SessionNotifier(
                 // because some unrelated prompt arrived — which is exactly
                 // what a state diff, unlike Desktop's per-event dispatch,
                 // would otherwise do.
-                if (identity in replayed) continue
+                if (prompt.key in replayed) continue
                 if (clock() < quietUntil) {
-                    replayed += identity
+                    replayed += prompt.key
                     continue
                 }
             }
             // The throttle is bypassed for a supersession: the shade's buttons
             // would otherwise keep pointing at a request id the Gateway has
             // already replaced, and pressing one would answer nothing.
-            val posted = dispatch(identity.second, identity.first, target, bypassThrottle = supersedes)
-            if (posted) next[identity] = target else next.remove(identity)
+            val posted = dispatch(identity.second, identity.first, prompt.approval, bypassThrottle = supersedes)
+            if (posted) next[identity] = prompt else next.remove(identity)
         }
         shown = next
-        // A request that is gone can stop being remembered as old news; a
-        // genuinely new one under the same identity deserves its own chance.
-        replayed.retainAll(desired.keys)
+        // A request that is no longer parked can stop being remembered as old
+        // news. Keyed by request, so superseding a replayed prompt retires the
+        // replayed one and leaves its replacement free to fire.
+        replayed.retainAll(requests.keys)
     }
 
     private fun applyTurn(outcome: GatewayTurnOutcome) {
