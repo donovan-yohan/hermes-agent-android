@@ -641,8 +641,13 @@ fun ModeCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             HermesIconGlyph(
+                // Desktop writes this `text-muted-foreground` and the
+                // description `--ui-text-tertiary`, which sound like two roles
+                // and render as one: the captured contract has both at the
+                // same 54% ink (`build/visual-parity/gateway-connection-mode`).
+                // Tertiary, then — and it is `HermesIconGlyph`'s own default.
                 icon = icon,
-                color = if (enabled) tokens.textSecondary else tokens.textQuaternary,
+                color = if (enabled) tokens.textTertiary else tokens.textQuaternary,
             )
             // Desktop groups icon + title + hint and pushes the check away with
             // `ml-auto`. This inner row is that group: it takes the free width,

@@ -235,6 +235,7 @@ argument.
 | `localDesc`: "Start a private Hermes backend on localhost. This is the default and works offline." (`en.ts:778`) | mobile-adaptation | "Connect to a private Hermes backend you run on this phone. Works offline." | Two of Desktop's three clauses are false here: this app starts nothing — the person runs `hermes serve` in Termux and this app only dials it — and ADR-0002 makes the host-owned Remote Gateway, not Local, the preferred route on mobile |
 | `remoteDesc`: "Connect this **desktop shell** to a remote Hermes backend." (`en.ts:780`) | mobile-adaptation | "Connect this app to a remote Hermes backend." | One word, and it named the wrong client; the rest of the sentence is Desktop's |
 | `sshDesc` ends "Requires working **key-based** SSH access to the host" (`en.ts:866-867`) | mobile-adaptation | "Requires working SSH access to the host." | This route offers three methods and only one is a key (`AuthMethod.TailscaleSsh`, `Password`, `PrivateKey` — `data/ssh/SshModel.kt:80`); left verbatim the line tells a password or tailnet user the route will not work for them, which is a deterrent rather than a cosmetic difference. The rest of the sentence is Desktop's word for word |
+| `rounded-lg` on the card, **measured** at 2.4px in the captured theme (`--radius: 0.75rem`, `styles.css:426`, scaled down by the active preset) | drift | A fixed 10dp, this app's container radius | #100. Desktop scales radii per theme; this app has no radius token at all — `HermesTokens` carries colours and nothing else — so every container is 10dp regardless of preset. Making only these four cards 2.4dp would fragment the app rather than fix it; the fix is a radius token, which is a theme-layer change |
 | `ModeCard` `disabled:opacity-50` (`gateway-settings.tsx:99`) | mobile-adaptation | The disabled card drops each text role one tier (title to tertiary, body and glyph to quaternary) rather than compositing at 50% | Accessibility: a flat 50% alpha over a themed surface lands at a contrast ratio nothing in the token set controls, and several presets are already low-contrast. Stepping the semantic roles keeps the disabled state legible in every theme, and the tokens are the layer this app is allowed to reach for |
 | Local kind button disabled while the one managed local entry exists, with `localAddHint` (`connections-registry.tsx:654`, `en.ts:757`) | mobile-adaptation | Local stays offered; a genuine duplicate is refused by loopback address instead | Desktop's registry holds at most one Local; this one keys Local rows by address, so there is no one-Local rule to disable on and the hint would announce a rule this app does not have |
 | Switching happens in the sidebar radio group; `stagedNote` says "Switch gateways from Sessions" (`connection-switcher.tsx:212-227`, `en.ts:706`) | mobile-adaptation | A `Switch` action on every non-active row, ahead of Desktop's four, calling the same `selectConnection` semantics | Desktop's Settings sits beside a sidebar that is always there; a phone's Gateways screen is a destination, and the person is already standing on it when they add or repair a gateway. The verb is Desktop's own, so the two surfaces name one act |
@@ -245,7 +246,7 @@ argument.
 | No-results text carries `role="status"` (`connection-switcher.tsx:216-221`) | drift | Plain `Text` | Not a live region here; #85 |
 | A separator sits between the search field and the radio group (`:202`) | drift | No separator; the hairline sits below the list | #85 |
 | Unread markers survive a source switch (`gateway-switch.ts:70-76`) | drift | Unread is a cached row field, and the cache is cleared | No durable unread store exists yet; #66 |
-| Registry kind chooser resting card fill `bg-(--ui-bg-quinary)` — a translucent accent wash over 3% base (`styles.css:288-292`) | drift | `tokens.widgetSurface`, an opaque card-derived fill | #100. The token layer has no quinary equivalent, and it is pinned at a different SHA and gated by `ThemeParityTest`, so adding one is a theme-sync change rather than this slice's. Recorded rather than painted under a comment claiming otherwise |
+| Resting card fill `bg-(--ui-bg-quinary)` — a translucent accent wash (`styles.css:288-292`), **measured** at `srgb(0.044 0.210 0.554 / 0.059)` in the capture | drift | `tokens.widgetSurface`, an opaque card-derived fill | #100. The token layer has no quinary equivalent, and it is pinned at a different SHA and gated by `ThemeParityTest`, so adding one is a theme-sync change rather than this slice's. The capture puts a number on it: Desktop's resting card is a ~6% accent wash over whatever is behind it, ours is opaque |
 | `Make primary` is hidden on the row that already is primary (`connections-registry.tsx:601`) | drift | Rendered on every row, uniformly disabled | Android persists no `registry.primary` / `launchMode`, so the condition has nothing to test against and no row is the one Desktop would hide it on. Hiding it on an arbitrary row would invent the concept; revisit when launch mode is ported — #100 |
 | `Test` (`en.ts:723`) and `Make primary` (`en.ts:722`) | omission | Present on every row, disabled, each behind a `Coming soon` pill via the shared `ComingSoonAction` primitive | coming soon — the pill ships today (S-C1, #104). `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the `launchMode` / `registry.primary` field Android does not persist |
 | `Update all instances`, and the launch-mode toggle | omission | Absent | pill-owed: #101 — page-level controls Desktop renders, so each owes the same disabled row `Test` and `Make primary` now have (#100) |
@@ -257,27 +258,47 @@ argument.
 
 ## Visual report
 
-- pending: #100
+- report: build/visual-parity/gateway-connection-mode/desktop/ (`reference.png` + `contract.json`, 45 nodes)
+- commit: d0eddba
 
-Owed, not fabricated, and the reason is checkable rather than a shrug. The
-capture script attaches to a running renderer, and getting *this* surface into
-one is the blocker: the mode cards live inside `GatewaySettings`, which
-early-returns an `EmptyState` carrying `unavailableTitle` / `unavailableDesc`
-whenever `window.hermesDesktop` is absent (`gateway-settings.tsx:206` @
-`f82f2dba`). A browser pointed at the vite dev renderer has no such bridge, so
-it renders that fallback and there are no cards to photograph; the supported
-mock path, `apps/desktop/scripts/dev-mock.mjs`, launches the **built Electron
-app** rather than seeding a browser bridge, so it needs a full `npm run build`,
-an Electron binary and a display. A disposable export was cloned and verified
-at `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`; the export is not the missing
-piece.
+**Desktop half only.** There is a real capture of Desktop's mode grid at the
+pin now, but no Android capture beside it, so no side-by-side was built and
+nothing here has been *compared* by eye at pixel level — the ceiling
+`review-desktop-parity` sets for that still applies. What the packet does give
+is measurements, and three rows above are now numbers instead of readings of
+the JSX.
 
-The Android half needs an attached device, and this pane is `FLAG_SECURE`, so
-`screencap` returns black and an accessibility dump is the substitute. No
-device was attached for this slice.
+How it was taken, so it can be repeated or disbelieved:
 
-Until the report lands, this slice's rendered evidence is
-`ConnectionModeCardsJourneyTest` and `ConnectionKindChooserJourneyTest`, which
-measure the order, the states and the column counts on a real Compose frame —
-and the ceiling `review-desktop-parity` sets for an unrendered UI change
-applies. #85 carries the device re-run of the switch path.
+```
+node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
+  --name gateway-connection-mode --selector 'div.grid.auto-rows-fr' \
+  --upstream <disposable export at the pin> \
+  --expect-sha f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 --match 5174
+```
+
+`contract.json` records `upstreamSha:
+f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` and the root node's classes as
+`grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4`,
+which is `gateway-settings.tsx:1048` verbatim — the selector matched the right
+element.
+
+Three caveats, none of them cosmetic:
+
+- **Synthetic bridge.** `GatewaySettings` early-returns its unavailable state
+  unless `window.hermesDesktop.getConnectionConfig` exists
+  (`gateway-settings.tsx:1015`), and `scripts/dev-mock.mjs` launches the built
+  Electron app rather than seeding a browser one. The renderer was driven with
+  an injected stub returning empty strings, `false` and `null` — no host,
+  credential, fingerprint or path — so the cards show the `local` default with
+  every field blank.
+- **Container width is not authoritative.** The grid measured 694px wide with
+  four 167.5px columns inside a 1600px viewport, because the surface mounted in
+  a narrower pane than the standalone settings column. Treat copy, order,
+  glyphs, structure, type and colour as authoritative; treat absolute widths as
+  container-dependent.
+- **One theme, light.** Every colour above is that preset's.
+
+The Android half still needs a device, and this pane is `FLAG_SECURE`, so
+`screencap` returns black and an accessibility dump is the substitute. None was
+attached for this slice. #85 carries the device re-run of the switch path.
