@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -147,6 +148,7 @@ private fun ConnectionSwitcherSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

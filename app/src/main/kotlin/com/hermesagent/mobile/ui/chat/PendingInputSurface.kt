@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -302,6 +304,15 @@ internal fun SecurePendingDialog(
             Modifier
                 .background(tokens.cardSurface, RoundedCornerShape(16.dp))
                 .testTag("Secure pending dialog")
+                // Same reason as `ProjectCreateDialog`: a dialog keeps
+                // `decorFitsSystemWindows`, so the keyboard resizes this window
+                // instead of drawing over it and the IME inset here is zero.
+                // This is the surface least able to afford the resize going
+                // wrong — the keyboard is up for its whole life, and what the
+                // shorter window would push out of reach is the row holding
+                // Cancel. Only the scroll offset lives here; the secret does
+                // not.
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {

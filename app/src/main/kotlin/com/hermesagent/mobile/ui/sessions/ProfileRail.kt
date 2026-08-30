@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -367,7 +368,7 @@ private fun ProfilePickerSheet(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().navigationBarsPadding()) {
+    Column(modifier.fillMaxWidth().imePadding().navigationBarsPadding()) {
         SectionLabel(PROFILES_TITLE, Modifier.padding(start = 16.dp, bottom = 4.dp))
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
             items(items = state.named, key = { it.name }) { profile ->

@@ -261,4 +261,36 @@ else
   fi
 fi
 
+# A bottom sheet is its own window, created with SOFT_INPUT_ADJUST_NOTHING on
+# API 30+, so it inherits nothing from OverlayScaffold and the keyboard draws
+# straight over it. Every route already gets this from that one scaffold; a
+# sheet is the one surface that has to ask, and asking is a single modifier
+# that is trivially forgotten. The rule is written on OverlayScaffold in
+# HermesApp.kt; this is the part of it that can fail.
+sheet_files="$(grep -rl 'ModalBottomSheet(' app/src/main/kotlin --include='*.kt' | LC_ALL=C sort || true)"
+if [[ -z "$sheet_files" ]]; then
+  problem "no ModalBottomSheet call sites found; this invariant is watching nothing."
+  note "fix: if sheets really are gone, delete this check rather than leaving it green by vacancy."
+else
+  sheet_gap=""
+  while IFS= read -r sheet_file; do
+    # `grep -c` exits 1 on zero matches, and zero matches is exactly the
+    # failure this is looking for, so neither count may end the script.
+    sheets="$(grep -c 'ModalBottomSheet(' "$sheet_file" || true)"
+    padded="$(grep -c 'imePadding()' "$sheet_file" || true)"
+    if (( padded < sheets )); then
+      sheet_gap+="  $sheet_file: $sheets sheets, $padded imePadding()"$'\n'
+    fi
+  done <<< "$sheet_files"
+  if [[ -n "$sheet_gap" ]]; then
+    problem "a bottom sheet does not pad its content root for the keyboard:"
+    note "$(printf '%s' "$sheet_gap")"
+    note "fix: add imePadding() to the sheet's content root, above navigationBarsPadding()"
+    note "     and outside any scroll modifier, or whatever the sheet's own covered part"
+    note "     is will be unreachable rather than merely hidden."
+  else
+    ok "every bottom sheet pads its content root for the keyboard"
+  fi
+fi
+
 exit $fail

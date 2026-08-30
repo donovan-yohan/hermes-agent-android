@@ -87,6 +87,11 @@ fun SshScreen(
             // this column, and the actions that matter are at the bottom of it.
             // `imePadding` consumes the IME inset first, so the navigation-bar
             // pass only adds what is left rather than doubling it.
+            //
+            // `OverlayScaffold` already applies both, so inside the app these
+            // two measure zero. They stay because this screen is also hosted
+            // on its own in the journey tests, and a surface that only works
+            // when something above it happens to be correct is not a contract.
             .imePadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())

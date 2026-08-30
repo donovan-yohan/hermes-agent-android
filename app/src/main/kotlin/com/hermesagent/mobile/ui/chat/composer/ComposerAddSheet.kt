@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -122,6 +123,7 @@ private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit
         Column(
             Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -195,7 +197,7 @@ private fun UrlReferenceSheet(onDismiss: () -> Unit, onInsert: (String) -> Unit)
         modifier = Modifier.testTag("Composer URL sheet"),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
+            Modifier.fillMaxWidth().imePadding().padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Add URL", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
@@ -251,7 +253,7 @@ internal fun PromptSnippetSheet(onDismiss: () -> Unit, onInsert: (String) -> Uni
         modifier = Modifier.testTag("Composer prompt snippets sheet"),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
+            Modifier.fillMaxWidth().imePadding().padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text("Prompt snippets", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)

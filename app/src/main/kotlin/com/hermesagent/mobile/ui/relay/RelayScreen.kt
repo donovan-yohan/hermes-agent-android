@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -516,9 +515,10 @@ private fun RetryState(
  * - Desktop sends on Cmd/Ctrl+Enter. A soft keyboard has no modifier, so the
  *   tap beside the field is the only way to send and Enter inserts a newline.
  *   There is deliberately no key handling here at all — that *is* the feature.
- * - `imePadding` lifts the composer over the keyboard. The scaffold already
- *   consumed the navigation-bar inset, so this adds the keyboard's own height
- *   and not that inset a second time.
+ * - Nothing here handles the keyboard. `OverlayScaffold` pads the whole pane
+ *   for the IME inset, so the transcript above shrinks and this composer rides
+ *   up with it; a second `imePadding` here would only measure zero, and would
+ *   suggest the lifting happens at this altitude when it does not.
  * - The send control is a 48dp target, and the outcome beside it is a polite
  *   live region so the answer is spoken, not only drawn.
  */
@@ -534,7 +534,6 @@ private fun RelayComposer(
         modifier = Modifier
             .fillMaxWidth()
             .background(tokens.chatSurface)
-            .imePadding()
             .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

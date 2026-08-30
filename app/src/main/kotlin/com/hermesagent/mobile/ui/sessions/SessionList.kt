@@ -26,9 +26,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
@@ -456,6 +458,13 @@ private fun ProjectCreateDialog(
                 .widthIn(max = 420.dp)
                 .fillMaxWidth()
                 .background(tokens.cardSurface, RoundedCornerShape(10.dp))
+                // A dialog is its own window and keeps `decorFitsSystemWindows`,
+                // so the keyboard resizes it rather than drawing over it — the
+                // IME inset here is always zero and padding for it would be a
+                // lie. What the resize can do is leave the window shorter than
+                // two fields and two buttons, so the content scrolls instead of
+                // putting "Create project" out of reach.
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
