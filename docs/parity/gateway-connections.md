@@ -258,8 +258,8 @@ argument.
 
 ## Visual report
 
-- report: build/visual-parity/gateway-connection-mode/desktop/ (`reference.png` + `contract.json`, 45 nodes)
-- commit: d0eddba
+- report: docs/parity/visual/gateway-connection-mode/ (`reference.png` + `contract.json`, 45 nodes)
+- commit: b2d591a
 
 **Desktop half only.** There is a real capture of Desktop's mode grid at the
 pin now, but no Android capture beside it, so no side-by-side was built and
@@ -282,6 +282,16 @@ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` and the root node's classes as
 `grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4`,
 which is `gateway-settings.tsx:1048` verbatim — the selector matched the right
 element.
+
+The packet is committed rather than left in the untracked `build/` tree, so it
+survives a `./gradlew clean` and a reviewer can open it from the branch. **One
+byte-range was changed on the way in:** `reference.upstream` held the absolute
+path of the throwaway export, which carries a username and a session id, and
+the port skill bans a filesystem path from a capture as firmly as it bans a
+host. It now reads `<disposable export checked out at the pin>`; the SHA beside
+it is untouched, and nothing else in the file differs from what the script
+wrote. The screenshot needed no scrub — every string in it is Desktop's own
+product copy, and the whole capture ran against empty synthetic state.
 
 Three caveats, none of them cosmetic:
 
