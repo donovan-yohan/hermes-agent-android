@@ -69,6 +69,17 @@ internal fun ConnectionsSection(
     state: ConnectionsUiState,
     actions: ConnectionsActions,
     modifier: Modifier = Modifier,
+    /**
+     * Whether the route pane above this list is currently showing its Connect
+     * button (`SshScreen.kt`, `GatewayScreen.kt` — offered only while the
+     * gateway is neither connected nor connecting).
+     *
+     * A row that cannot dial itself explains why and names Connect as the next
+     * action; once that connection is up there is no Connect on screen and
+     * nothing left to explain, so the sentence would be stale advice about a
+     * problem that is over.
+     */
+    connectOffered: Boolean = true,
 ) {
     val tokens = HermesTheme.tokens
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -132,6 +143,7 @@ internal fun ConnectionsSection(
                     // say so itself — and every other row has to stop offering
                     // a switch that would be ignored.
                     pendingId = state.pendingId,
+                    connectOffered = connectOffered,
                     canRemove = state.canRemove,
                     onSelect = { actions.onSelect(connection.id) },
                     onEdit = { actions.onBeginEdit(connection.id) },
@@ -201,6 +213,8 @@ private fun ConnectionRow(
     current: Boolean,
     /** The row a switch is in flight for, if any — see [ConnectionRowActions]. */
     pendingId: String?,
+    /** Whether the route pane above is currently offering its Connect button. */
+    connectOffered: Boolean,
     canRemove: Boolean,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
@@ -235,7 +249,7 @@ private fun ConnectionRow(
                 // sentence is per-kind, because only the reason is. The route
                 // pane above this list follows the active row's kind, so the
                 // Connect both sentences name is already on screen.
-                if (current && !connection.restorable) {
+                if (current && !connection.restorable && connectOffered) {
                     Text(
                         text = when (connection.kind) {
                             ConnectionKind.Ssh -> ConnectionsCopy.SSH_NEEDS_CREDENTIAL
@@ -266,7 +280,8 @@ private fun ConnectionRow(
  * (`connections-registry.tsx:586-625`), and so does this — but a phone row is
  * narrower than a Desktop one, so the cluster wraps instead of overflowing.
  *
- * Two of Desktop's four are here disabled behind a [ConnectionsCopy.COMING_SOON]
+ * Two of Desktop's four are here disabled behind a
+ * [com.hermesagent.mobile.ui.common.COMING_SOON]
  * pill rather than left out: `Test` has no route-independent reachability probe
  * on Android yet, and `Make primary` needs the launch-mode registry field this
  * app does not persist. Showing them dimmed says the surface is unfinished;
@@ -300,7 +315,14 @@ private fun ConnectionRowActions(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        if (!current) {
+        // `pending ||`, not just `!current`: the controller writes the active
+        // marker *before* it waits for the dial
+        // (`ConnectionSwitchController.select`), so for the whole settle window
+        // the target row is already `current`. Keying only on `!current` took
+        // this control away exactly when it had something to say, leaving a row
+        // marked `Current` beside siblings whose `Switch` had gone grey for no
+        // stated reason.
+        if (pending || !current) {
             TextButton(
                 label = if (pending) ConnectionsCopy.CONNECTING else ConnectionsCopy.SWITCH_CONNECTION,
                 onClick = onSelect,

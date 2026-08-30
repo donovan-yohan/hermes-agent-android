@@ -33,6 +33,23 @@ import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import com.hermesagent.mobile.data.connections.ConnectionRegistry
+import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
+import com.hermesagent.mobile.data.connections.ConnectionSwitchController
+import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
+import com.hermesagent.mobile.data.gateway.GatewayConnectResult
+import com.hermesagent.mobile.data.gateway.GatewayConnectionController
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.ssh.SshCredential
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -425,40 +442,81 @@ class ConnectionsJourneyTest {
     }
 
     @Test
-    fun `a switch in flight says so on its own row and takes no second tap`() {
-        val state = ConnectionsUiState(
-            connections = listOf(
-                remoteConnection("a", "Alpha", "https://alpha.test"),
-                remoteConnection("b", "Bravo", "https://bravo.test"),
-                remoteConnection("c", "Charlie", "https://charlie.test"),
-            ),
-            activeId = "a",
-            pendingId = "b",
-            loaded = true,
+    fun `the row being switched to says Connecting for the whole dial, and no row takes a second tap`() {
+        // Driven by the real ConnectionSwitchController, because the bug this
+        // covers is entirely about its ordering: `select` writes the active
+        // marker *before* it waits for the dial, so for the whole settle window
+        // the target row is both `current` and `pending`. A hand-built state
+        // with activeId still on the old row would never reach that overlap and
+        // would pass against the broken UI.
+        val rows = listOf(
+            remoteConnection("a", "Alpha", "https://alpha.test"),
+            remoteConnection("b", "Bravo", "https://bravo.test"),
+            remoteConnection("c", "Charlie", "https://charlie.test"),
         )
-        var selectCount = 0
-        val actions = ConnectionsActions(onSelect = { selectCount++ })
+        val store = FakeRegistryStore(rows, activeId = "a")
+        val gateway = StalledGateway()
+        // Long enough that the settle window never closes on its own, so the
+        // assertions below see the real mid-dial state rather than racing it.
+        val switch = ConnectionSwitchController(
+            store,
+            gateway,
+            SessionCache(),
+            settleTimeoutMillis = 10 * 60_000L,
+        )
         compose.setContent {
+            // The same mapping `ConnectionsViewModel` performs over the same two
+            // real flows — nothing about the row's state is invented here.
+            val registry by store.connectionRegistry.collectAsState(ConnectionRegistry(rows, "a"))
+            val pendingId by switch.pendingConnectionId.collectAsState()
+            val scope = rememberCoroutineScope()
             HermesTheme(AppearanceSelection()) {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ConnectionsSection(state = state, actions = actions)
+                    ConnectionsSection(
+                        state = ConnectionsUiState(
+                            connections = registry.connections,
+                            activeId = registry.active?.id,
+                            pendingId = pendingId,
+                            loaded = true,
+                        ),
+                        actions = ConnectionsActions(
+                            onSelect = { id -> scope.launch { switch.select(id) } },
+                        ),
+                    )
                 }
             }
         }
 
-        // The same word the session rail uses while a switch is in flight.
-        compose.onNodeWithText(ConnectionsCopy.CONNECTING).performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
+            .performScrollTo()
+            .performClick()
+        compose.waitForIdle()
 
-        val bravo = compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
-        bravo.performScrollTo().assertIsNotEnabled().performClick()
-        // And no other row can start a competing one either.
+        // The controller has moved the marker and is now waiting on the dial.
+        assertEquals("b", store.registry.value.activeId)
+        assertEquals("b", switch.pendingConnectionId.value)
+
+        // Bravo is Current *and* still says what is happening to it. Before the
+        // fix the `if (!current)` guard dropped this control the instant the
+        // marker moved, leaving `Current` beside greyed siblings and no word.
+        compose.onNodeWithText(ConnectionsCopy.CONNECTING).performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .performClick()
+        // And no other row can start a competing one while it runs.
         compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Charlie")
             .performScrollTo()
             .assertIsNotEnabled()
             .performClick()
         compose.waitForIdle()
 
-        assertEquals("a tap on a disarmed switch must not reach the ViewModel", 0, selectCount)
+        assertEquals(
+            "a tap on a disarmed switch must not start a second teardown",
+            1,
+            gateway.disconnects,
+        )
+        assertEquals("b", switch.pendingConnectionId.value)
     }
 
     @Test
@@ -537,6 +595,40 @@ class ConnectionsJourneyTest {
         compose.onNodeWithText("Connect").performScrollTo().assertExists()
     }
 
+    @Test
+    fun `the Managed SSH sentence goes when the connection it asks for is up`() {
+        val connections = ConnectionsUiState(
+            connections = listOf(sshConnection("b", "Bravo", "demo-host")),
+            activeId = "b",
+            loaded = true,
+        )
+
+        // Connected: SshScreen offers Disconnect, not Connect, so a sentence
+        // naming Connect would be advice about a problem that is over.
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                GatewayScreen(
+                    state = GatewaySettingsUiState(
+                        mode = GatewayConnectionMode.Ssh,
+                        connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
+                        loaded = true,
+                    ),
+                    gatewayActions = GatewayActions(),
+                    sshState = SshUiState(
+                        connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
+                    ),
+                    sshActions = SshActions(),
+                    connectionsState = connections,
+                    connectionsActions = ConnectionsActions(),
+                )
+            }
+        }
+
+        compose.onNodeWithText(ConnectionsCopy.SSH_NEEDS_CREDENTIAL).assertDoesNotExist()
+        compose.onNodeWithText("Connect").assertDoesNotExist()
+        compose.onNodeWithText(ConnectionsCopy.CURRENT_PILL).performScrollTo().assertExists()
+    }
+
     private fun localConnection(id: String, label: String, url: String): SavedConnection =
         SavedConnection(
             id = id,
@@ -565,4 +657,65 @@ class ConnectionsJourneyTest {
             kind = ConnectionKind.Ssh,
             host = HostProfile(host = host, username = username),
         )
+    /** The saved rows, in memory, with the real store's active-marker rules. */
+    private class FakeRegistryStore(
+        rows: List<SavedConnection>,
+        activeId: String?,
+    ) : ConnectionRegistryStore {
+        val registry = MutableStateFlow(ConnectionRegistry(rows, activeId))
+        override val connectionRegistry: StateFlow<ConnectionRegistry> = registry.asStateFlow()
+
+        override suspend fun saveConnection(connection: SavedConnection) {
+            registry.update { current ->
+                val index = current.connections.indexOfFirst { it.id == connection.id }
+                val next = if (index >= 0) {
+                    current.connections.toMutableList().also { it[index] = connection }
+                } else {
+                    current.connections + connection
+                }
+                current.copy(connections = next)
+            }
+        }
+
+        override suspend fun removeConnection(id: String) {
+            registry.update { current ->
+                val next = current.connections.filterNot { it.id == id }
+                val active = if (current.activeId == id) next.firstOrNull()?.id else current.activeId
+                current.copy(connections = next, activeId = active)
+            }
+        }
+
+        override suspend fun setActiveConnection(id: String) {
+            registry.update { it.copy(activeId = id) }
+        }
+    }
+
+    /**
+     * A gateway that goes down when asked and never comes back up.
+     *
+     * Nothing publishes `Connected`, so the switch controller's settle wait
+     * stays parked and the mid-dial state this test is about persists rather
+     * than resolving out from under the assertions.
+     */
+    private class StalledGateway : GatewayConnectionController {
+        private val _state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Disconnected))
+        override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
+
+        var disconnects = 0
+            private set
+
+        override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
+            GatewayConnectResult.Connected
+
+        override suspend fun connectRemote(
+            profile: RemoteGatewayProfile,
+            browser: GatewayBrowserLauncher,
+        ): GatewayConnectResult = GatewayConnectResult.Connected
+
+        override suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile) = Unit
+
+        override suspend fun disconnect() {
+            disconnects += 1
+        }
+    }
 }
