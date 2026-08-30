@@ -195,15 +195,36 @@ class KeyboardInsetLayoutTest {
         )
     }
 
+    @Test
+    fun `a wide rail too short for its own chrome scrolls to its search field`() {
+        // The device case this comes from: landscape, keyboard up, the rail
+        // left shorter than switcher plus title row plus search field. The
+        // field was clipped to a sliver with nothing on screen that scrolled,
+        // so `performScrollTo` is the assertion — it fails outright when no
+        // scrollable ancestor exists, which is exactly the bug.
+        launchChat(imeInsets = { WindowInsets(bottom = CRAMPING_IME_PX) }, query = "keyboard")
+
+        compose.onNodeWithContentDescription(SEARCH_FIELD).performScrollTo().assertIsDisplayed()
+
+        val field = compose.onNodeWithContentDescription(SEARCH_FIELD).fetchSemanticsNode().boundsInRoot
+        val keyboardTop = compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom - CRAMPING_IME_PX
+        assertTrue(
+            "the search field must sit wholly above the keyboard once scrolled to, not straddle it",
+            field.bottom <= keyboardTop + tolerancePx(),
+        )
+    }
+
     private fun launchChat(
         imeInsets: () -> WindowInsets,
         wideRailInsets: WindowInsets = WindowInsets(bottom = 0),
         modifier: Modifier = Modifier,
+        query: String = "",
     ) {
         compose.setContent {
             HermesTheme(AppearanceSelection()) {
                 ChatScreen(
                     state = ChatUiState(
+                        query = query,
                         sessionRows = listOf(
                             SessionListRow.Row(
                                 SessionSummary(
@@ -232,8 +253,15 @@ class KeyboardInsetLayoutTest {
         const val PAGE = "Overlay page content"
         const val SESSION_LIST = "Session list"
         const val CONNECT = "Sign in and connect"
+        const val SEARCH_FIELD = "Search sessions"
         const val IME_PX = 320
         const val RAIL_NAV_PX = 40
+
+        /**
+         * Leaves the rail ~100dp: under `RAIL_SCROLLS_BELOW`, and under its
+         * fixed chrome, which is the condition the device hit.
+         */
+        const val CRAMPING_IME_PX = 600
         const val NOW = 1_755_600_000_000L
     }
 }
