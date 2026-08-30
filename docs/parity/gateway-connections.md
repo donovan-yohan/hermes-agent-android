@@ -188,3 +188,39 @@ read-only, so the Desktop side of every claim above is cited to the JSX and the
 copy table instead — `connections-registry.tsx:586-625` for the action cluster
 and its order, `connection-switcher.tsx:212-227` for where switching actually
 lives, and `i18n/en.ts:703-764` for the words.
+
+## Divergences
+
+Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the
+argument.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| `DropdownMenu` + `DropdownMenuRadioGroup` anchored to the rail trigger | mobile-adaptation | `ModalBottomSheet` with 48dp radio rows | Pointer menus are brittle on a phone; order, checkmark and search threshold are unchanged |
+| `ConfirmDialog` | mobile-adaptation | `ConfirmSheet` | Same touch reason; same title, description, destructive confirm and cancel |
+| Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | mobile-adaptation | Endpoint under the label in the sheet, and in the settings row description | Touch has no hover, so the information is shown rather than hidden |
+| Icon-only ghost `Pencil`/`Trash2` with `aria-label` | mobile-adaptation | Same glyphs in 48dp targets, `contentDescription` "Edit ⟨label⟩" / "Remove ⟨label⟩" | Touch floor, and a list of rows needs the label to tell two identical buttons apart |
+| Searchable list capped at `h-48` (`connection-switcher.tsx:208`) | mobile-adaptation | `heightIn(max = 320.dp)` on a `LazyColumn` | Same intent, phone-scaled |
+| `local` is the runtime the app manages: `Monitor` glyph, at most one ever | mobile-adaptation | A Termux Hermes the person runs: `DeviceMobile` glyph, one row per loopback address | The word is Desktop's and the ownership is not; two Termux servers on two ports are two Gateways |
+| Switching happens in the sidebar radio group; `stagedNote` says "Switch gateways from Sessions" (`connection-switcher.tsx:212-227`, `en.ts:706`) | mobile-adaptation | A `Switch` action on every non-active row, ahead of Desktop's four, calling the same `selectConnection` semantics | Desktop's Settings sits beside a sidebar that is always there; a phone's Gateways screen is a destination, and the person is already standing on it when they add or repair a gateway. The verb is Desktop's own, so the two surfaces name one act |
+| `stagedNote`: "Switch gateways from Sessions." (`en.ts:706`) | mobile-adaptation | "Switch gateways here or from Sessions." | Forced by the row above: naming Sessions as the only route would now be false, and would point at the longer of the two |
+| A pending switch shows on the rail trigger only, because the radio menu closes on the click (`connection-switcher.tsx:133,272`) | mobile-adaptation | The registry row itself reads `Connecting…` and is disarmed, as is every other row's switch | This list does not close when you tap it, so the row that is moving has to say so itself; the word is the constant the rail uses |
+| SSH is main-process-owned with stored credentials, so a row never lands active-but-undialled | mobile-adaptation | A row that cannot come up unattended says so and names `Connect`, but only while the route pane above is offering that button | No Desktop equivalent to port. Gating on the button's own condition keeps the sentence from becoming stale advice about a problem that is already over |
+| `Edit`/`Remove` are hidden on the `local` kind (`connections-registry.tsx:604`) | mobile-adaptation | Shown on every kind, including Local | Desktop's Local is the runtime its own app manages, so there is nothing to edit and removing it is meaningless. Android's Local is a Hermes the person runs in Termux: its address and session token are theirs to change, and the row is theirs to delete |
+| No-results text carries `role="status"` (`connection-switcher.tsx:216-221`) | drift | Plain `Text` | Not a live region here; #85 |
+| A separator sits between the search field and the radio group (`:202`) | drift | No separator; the hairline sits below the list | #85 |
+| Unread markers survive a source switch (`gateway-switch.ts:70-76`) | drift | Unread is a cached row field, and the cache is cleared | No durable unread store exists yet; #66 |
+| `Make primary` is hidden on the row that already is primary (`connections-registry.tsx:601`) | drift | Rendered on every row, uniformly disabled | Android persists no `registry.primary` / `launchMode`, so the condition has nothing to test against and no row is the one Desktop would hide it on. Hiding it on an arbitrary row would invent the concept; revisit when launch mode is ported — #100 |
+| `Test` (`en.ts:723`) and `Make primary` (`en.ts:722`) | omission | Present on every row, disabled, each behind a `Coming soon` pill via the shared `ComingSoonAction` primitive | coming soon — the pill ships today (S-C1, #104). `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the `launchMode` / `registry.primary` field Android does not persist |
+| `Update all instances`, and the launch-mode toggle | omission | Absent | pill-owed: #101 — page-level controls Desktop renders, so each owes the same disabled row `Test` and `Make primary` now have (#100) |
+| Extra-header editor | omission | Absent | out-of-scope: #100 named it an explicit non-goal of that issue; nothing about the platform refuses it |
+| `cloud` kind | omission | Absent | non-goal: there is no Android Hermes Cloud sign-in |
+| Plain-text-keyring consent | omission | Absent | non-goal: every secret here is a Keystore slot, so there is nothing to consent to |
+
+## Visual report
+
+- pending: #100
+
+Owed, not fabricated, for the reason the paragraph above gives: the capture
+script attaches to a running renderer, and none was available. #85 carries the
+device re-run of the switch path.

@@ -69,3 +69,17 @@ launches of 719ms and 658ms; `topResumed` and fatal scans clean; frame hashes
 `768e990bf64869acbfc9fb7d4adadfc1f367aa6559a308d77052ef85b25d1cce`;
 pixel diff 19,210 pixels bounded to y=306..601.
 No private data was used.
+
+## Divergences
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| 1.25 px running ring on a compact 26 px row | mobile-adaptation | 1.25 dp ring on the existing 48 dp minimum touch-target row | Android's touch target is an accessibility requirement; the ring stays flush, rounded and non-interactive, and the decoration clears its semantics so the row keeps one clickable target and one spoken label |
+
+## Visual report
+
+- pending: #72
+
+The ring's colour contract is decided offline by the token derivation and
+asserted by the tests above; the rendered side-by-side belongs to the device
+acceptance matrix.

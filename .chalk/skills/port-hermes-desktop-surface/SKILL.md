@@ -10,7 +10,9 @@ tests define behavior. A screenshot plus computed styles defines the rendered
 visual contract. A port needs both.
 
 The full checklist is [`docs/workflows/port-desktop-surface.md`](../../../docs/workflows/port-desktop-surface.md).
-Follow it; this file is the contract it enforces.
+Follow it; this file is the contract it enforces. A finished port is reviewed by
+`review-desktop-parity`, which is where the rendered comparison and the
+divergence classes become a pass or fail.
 
 ## Non-negotiables
 

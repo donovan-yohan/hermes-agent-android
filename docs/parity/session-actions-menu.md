@@ -141,6 +141,16 @@ menu, so S15 cannot quietly redden Archive too.
 
 ### Deviation the reviewer should weigh explicitly
 
+> **Superseded by [#101](https://github.com/donovan-yohan/hermes-agent-android/issues/101).**
+> The standing rule is now Desktop's: a mode or control this app does not
+> support **yet** stays visible and disabled with a "coming soon" pill rather
+> than being absent, so the menu's shape is the same one Desktop teaches. Only
+> a *non-goal* — something this platform will never have — is omitted outright.
+> The reasoning below still settles the non-goals (the right-click twin, the
+> modifier gestures, the tab and open groups) and the blank-id case. It no
+> longer settles rename, delete, pin, archive or the nested submenus; those are
+> `pill-owed` rows in the Divergences table.
+
 Desktop keeps every identity / work / danger item mounted and **disabled** when
 its handler is missing. This port **omits** an unavailable verb instead.
 
@@ -225,7 +235,28 @@ a gate is that removing the behaviour turns it red):
 that must never be reached, and its whole job is to fail loudly the first time
 S14's Rename arrives without a handler instead of rendering a dead row.
 
-## Visual capture
+## Divergences
+
+Classified for `scripts/check-parity-evidence.py`; the adaptation table above
+carries the argument and the citations.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| 20 px kebab, `opacity-0` until row hover (`session-row.tsx:319`) | mobile-adaptation | The same glyph at 14 sp inside a 48 dp target, always visible | Touch has no hover; visual weight and right-edge placement are unchanged |
+| Kebab `absolute right-0` over the trailing meta slot (`:320`) | mobile-adaptation | Overlay aligned `CenterEnd`, with the control's whole width reserved as end inset | The 48 dp target must not grow the row or reflow it, and the hit box is wider than the centred glyph |
+| `w-40` (160 px) content | mobile-adaptation | `widthIn(min = 220.dp)` | The phone type scale is ~1.15× Desktop's, and this matches the sidebar's existing dropdown so the two menus read as one system |
+| `aria-label="Session actions"` on `DropdownMenuContent` | mobile-adaptation | The **trigger** carries the `contentDescription`; the content carries only a test tag | On Android a description on the menu container merges its children and swallows the item labels |
+| Copy failure raises a notification *and* swaps the item, with a tooltip (`copy-button.tsx:142,149-164`) | mobile-adaptation | One slot: the item swaps to `Close` + `Could not copy session ID` for the same 1500 ms | Touch has no hover so the tooltip has nowhere to go, and this build has no notification centre |
+| Unavailable verbs stay mounted and **disabled** | omission | Absent | pill-owed: #101 — this page previously argued for omitting them; the standing rule is now a visible disabled row with a "coming soon" pill, and #65/#66 carry the verbs |
+| Rename, delete, pin, mark read/unread, branch, export, move to project, archive, colour | omission | Absent | pill-owed: #101 — rename and delete are #65, pin/archive/unread are #66 |
+| Nested `Appearance` and `Move to project` submenus (`:470-478,491-499`) | omission | Absent | pill-owed: #101 — they flatten into their group when their verbs land; nested pointer submenus are not what ships |
+| Right-click `SessionContextMenu` (`session-actions-menu.tsx:621-639`) | omission | Absent | non-goal: long-press belongs to text selection on a phone, and binding the menu to it would fight the transcript's gesture |
+| ⇧-click pin, ⌥⇧-click archive (`session-row-gesture.ts:33,45`) | omission | Absent | non-goal: a soft keyboard has no modifier keys |
+| The open group and the tab group | omission | Absent | non-goal: no tabs, windows or local terminal on this platform |
+
+## Visual report
+
+- pending: #72
 
 Not captured. The Desktop reference capture in the port workflow needs a
 disposable pinned dev renderer with CDP, which was not available for this slice;

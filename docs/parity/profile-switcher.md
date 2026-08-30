@@ -214,7 +214,28 @@ Not deviations — things this slice does not ship, stated rather than hidden.
   does not invent a state to reach it.
 - **Rendered visual capture.** See below.
 
-## Visual capture
+## Divergences
+
+Classified for `scripts/check-parity-evidence.py`; the ledger and omissions
+above carry the argument.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| `profiles.list` re-pulls on window focus or visibility (`profile-switcher.tsx:179`) | mobile-adaptation | Asked on a connection edge | Mobile lifecycle: `profiles.list` is a slow-lane call, and putting it on every foreground would spend seconds of a cold backend's time on a roster that changes rarely |
+| `DropdownMenu` rail trigger and roster page | mobile-adaptation | Rail plus a bottom sheet, 48 dp rows | Pointer menus are brittle on a phone; order and checkmark are unchanged |
+| Manage is always rendered, because the renderer only runs inside a connected app | mobile-adaptation | The rail is absent until a Gateway answers, and stays after that | This app can be looking at no Gateway at all, and before the first answer a rail has nothing to switch between; once one `profiles.list` has answered it stays, because it is the only way out of a profile scope |
+| The `.env` pill reads `profile.has_env`, served only by the REST route (`hermes_cli/web_server.py:14475`) | mobile-adaptation | Parsed and rendered when a Gateway offers it; dark at this pin | Reading the roster over REST would tie the surface to a route only one of this app's two connection legs reaches |
+| Scope follows a live gateway, so it cannot name a profile that does not exist | drift | A stale persisted scope stamps the launch profile's rows with the missing name until each is opened | #81 |
+| Profile create, rename, delete, export/import, and the SOUL.md editor | omission | Absent | non-goal: the roster is read-only |
+| Avatars (`profiles.get_asset`) | omission | `has_avatar` is parsed; the asset is never fetched | non-goal: a read-only roster does not fetch profile assets |
+| Drag-reorder and long-press-recolour | omission | Absent | non-goal: the roster is read-only, so there is no order or colour of its own to change |
+| `POST /api/profiles/active` | omission | Never called | non-goal: it sets the CLI sticky default and does not retarget a running Gateway (`hermes_cli/web_routers/profiles.py:922`) |
+| Cron and messaging slices, scoped by profile | omission | Absent | non-goal: this app ships neither |
+| `Select a profile to view its details.` (`i18n/en.ts:1779`) | omission | Never rendered | non-goal: the string is unreachable upstream (`app/profiles/index.tsx:74-80,109-119,156-160`), and this port does not invent a state to reach it |
+
+## Visual report
+
+- pending: #43
 
 `capture-android-reference.py` needs an attached device or emulator and
 `capture-desktop-reference.mjs` needs a disposable pinned Desktop dev renderer

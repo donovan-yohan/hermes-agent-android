@@ -21,9 +21,12 @@ val verifyRepoInvariants by tasks.registering(Exec::class) {
     inputs.dir(layout.projectDirectory.dir("scripts/tests"))
     inputs.file(layout.projectDirectory.file(".chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py"))
     inputs.file(layout.projectDirectory.file(".github/workflows/android-exact-head.yml"))
-    inputs.file(layout.projectDirectory.file("docs/parity/composer-capabilities.json"))
-    inputs.file(layout.projectDirectory.file("docs/parity/composer-capture-matrix.json"))
-    inputs.file(layout.projectDirectory.file("docs/parity/desktop-composer-inventory.json"))
+    inputs.file(layout.projectDirectory.file("scripts/check-parity-evidence.py"))
+    // The composer contract's three JSON files and every `docs/parity/*.md` page
+    // the parity-evidence gate reads live here, so the directory is the input:
+    // adding a parity page must re-run the check rather than be declared up to
+    // date over it.
+    inputs.dir(layout.projectDirectory.dir("docs/parity"))
     inputs.files(layout.projectDirectory.file("AGENTS.md"))
     // The cleartext invariant reads both of these, so a change to either has to
     // re-run the check rather than being declared up to date over it.

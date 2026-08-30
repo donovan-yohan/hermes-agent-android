@@ -9,6 +9,8 @@ Themes are the one place where Android and Desktop must agree on *values*, not
 just behaviour. Drift here is invisible in review and obvious on a device.
 
 The full checklist is [`docs/workflows/sync-desktop-themes.md`](../../../docs/workflows/sync-desktop-themes.md).
+A sync that moves a rendered surface is reviewed by `review-desktop-parity`,
+which owns the side-by-side and the divergence classes.
 
 ## The executable half
 

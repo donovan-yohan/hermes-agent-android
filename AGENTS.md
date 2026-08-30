@@ -21,7 +21,8 @@ Phase 2 ships all three connection routes, backend sessions, and live turns.
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
 | `app/src/androidTest/kotlin/` | The instrumented emulator lane: real display density, the platform accessibility tree, a real input-method binding, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
 | `status/` | Current shipping status, limitations, and roadmap direction | Checking what works now or remains deferred |
-| `docs/workflows/` | Durable port + theme-sync checklists | Before porting a Desktop surface or syncing themes |
+| `docs/workflows/` | Durable port, parity-review, copy and theme-sync checklists | Before porting a Desktop surface, reviewing a UI change, or syncing themes |
+| `docs/parity/` | Per-surface parity pages: pin, divergence ledger, visual report | Reviewing or changing a Desktop-derived surface |
 | `docs/guides/` | Setup guides written for the person using the app | Telling someone how to stand a Gateway up |
 | `docs/adr/` | Decisions with consequences | Before changing the SSH seam |
 | `docs/spikes/` | The research this repo was founded on | Background; long |
@@ -41,7 +42,8 @@ export ANDROID_HOME=/opt/android-sdk        # JDK 17; platform 36, build-tools 3
 ./gradlew :app:lintDebug
 ./gradlew :app:assembleDebugAndroidTest    # compile and package the instrumented lane
 ./gradlew :app:connectedDebugAndroidTest   # run it on an attached device or emulator
-./scripts/check-repo-invariants.sh          # symlink, ignore rules, theme pin
+./scripts/check-repo-invariants.sh          # symlink, ignore rules, theme pin, parity evidence
+python3 scripts/check-parity-evidence.py    # every docs/parity page names a report and classifies its rows
 python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
   --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" # live upstream diff
 chalkbag validate && chalkbag build --yes && chalkbag doctor  # after editing .chalk/
@@ -140,6 +142,23 @@ happened and a safe next step, never raw exceptions or secrets. Run
 `scripts/check-product-copy.py`; rare long strings need a nearby reasoned
 `product-copy-allow` marker and review under `docs/workflows/review-product-copy.md`.
 
+**Parity is checked visually, in review.** Hermes Desktop is the spec, not a
+mood board: the same UX, the same menu treatment, the same words. Every PR
+touching `app/src/main/kotlin/.../ui/` runs the `review-desktop-parity` skill
+and cites the rendered side-by-side report — Desktop captured from a disposable
+pinned export, Android captured beside it — or the `pending: #<issue>` that owes
+one, because an unrendered UI change reviews at Concern at best. Compare menu
+and action **order**, group separators, glyph family and size, label casing,
+every visible state Desktop has, and copy diffed **verbatim** against
+`apps/desktop/src/i18n/en.ts` at the pin. A Desktop mode or control this app
+does not support *yet* stays visible and **disabled with a "coming soon" pill**;
+only a non-goal — something this platform will never have — is omitted outright,
+and a silently missing control is a finding. Classify every difference in
+`docs/parity/<surface>.md` as mobile-adaptation, drift or omission;
+`scripts/check-parity-evidence.py` fails the build on a missing `## Visual
+report` or `## Divergences` section and on an unclassified or unevidenced row,
+and every drift row is at least a Concern on the review.
+
 **`CLAUDE.md` is a symlink to `AGENTS.md`** and `./gradlew check` fails if it
 stops being one. Generated `.agents/`, `.claude/`, `.codex/`, `.opencode/` and
 `opencode.json` are ignored and must never be committed.
@@ -176,6 +195,7 @@ and neither the workflow nor the ROADMAP may imply it is.
 |---|---|
 | `status/ROADMAP.md` | Current capabilities, evidence limits, known gaps, and roadmap direction |
 | `docs/workflows/port-desktop-surface.md` | Porting any Desktop UI/capability: pinning, source-and-test reading, state classification, mobile adaptation, evidence |
+| `docs/workflows/review-desktop-parity.md` | The review gate for any UI change: rendering Desktop at the pin, verbatim copy and menu-order diffs, the three divergence classes, the reviewer's verdict |
 | `docs/workflows/sync-desktop-themes.md` | Desktop theme/token changes: inventory diff, mapping, fonts, parity, visual checks |
 | `docs/adr/0002-shared-remote-gateway.md` | Preferred Remote Gateway topology, native authentication, and multi-client boundary |
 | `docs/adr/0001-ssh-probe-to-tunnel.md` | Managed SSH transport, remote ownership, Gateway readiness, and restart limitation |

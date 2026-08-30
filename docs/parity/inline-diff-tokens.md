@@ -90,3 +90,21 @@ This is the correction, not a regression.
 
 No device capture is claimed here: every value on this page is decided offline
 by the derivation and asserted by the tests above.
+
+## Divergences
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| 2 px left gutter accent from the border tokens | drift | No gutter accent | A geometry change #71 S34 makes an acceptance criterion |
+| File headers and `@@` hunk lines are stripped (`diff-lines.tsx:95-132`) | drift | Only `--- ` / `+++ ` lines are dropped | #71 S34 |
+| Large diffs render windowed | drift | Rendered whole | #71 S34 |
+| Long-press selection of diff text | drift | Not selectable | Needs real-device gesture arbitration evidence; #71 S35 |
+| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:468-479`) | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own; nothing about the platform refuses it |
+
+## Visual report
+
+- pending: #71
+
+No device capture is claimed here: every value on this page is decided offline
+by the derivation and asserted by the tests above. The rendered side-by-side
+belongs with the panel geometry in #71 S34.

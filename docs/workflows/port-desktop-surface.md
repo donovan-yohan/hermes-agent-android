@@ -97,6 +97,10 @@ descriptor-guarded cleanup. These lifecycle paths were inspected at pinned SHA
 
 ## 2. Freeze the rendered visual contract
 
+Reviewing this evidence — and every later change to the surface — is
+[`review-desktop-parity.md`](review-desktop-parity.md), which owns the
+divergence classes and the reviewer's verdict.
+
 Source tells you intent; the renderer tells you what won. Capture both before
 styling Android. Do not use a screenshot as a substitute for reading source,
 and do not use source as an excuse to skip looking at the actual pixels.

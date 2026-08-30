@@ -13,9 +13,19 @@ bash:
     - "git log*"
     - "git show*"
     - "./scripts/check-repo-invariants.sh"
+    # The repo gates and the capture scripts are run directly, by name.
+    - "python3 scripts/*"
+    - "python3 .chalk/skills/*"
+    - "node .chalk/skills/*"
     - "adb devices"
     - "adb logcat*"
   ask:
+    # A visual-parity capture needs Desktop's tree at a pin, which means a
+    # clone — but `git clone` is not a read. `--upload-pack=<cmd>` and
+    # `-c protocol.ext.allow=always ext::sh -c <cmd>` each execute an arbitrary
+    # command, and nothing constrains the destination, so `--bare` into the
+    # reference checkout is spellable. It prompts, once per review.
+    - "git clone*"
     - "adb install*"
     - "adb uninstall*"
     - "chalkbag build*"

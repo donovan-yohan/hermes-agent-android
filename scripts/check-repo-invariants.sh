@@ -86,6 +86,17 @@ if ! python3 scripts/check-product-copy.py; then
   fail=1
 fi
 
+# ── 5b. Every parity page names a visual report and classifies its divergences ─
+# Desktop is the spec, and a parity page that only argues in prose can claim
+# anything. This is the structural half: the report is named (or explicitly
+# owed), and every divergence is mobile-adaptation, drift or omission with the
+# obligation that class carries. Judging the pixels is the review-desktop-parity
+# skill's job; this makes an unclassified or unevidenced page fail the build.
+python3 scripts/check-parity-evidence.py --self-test || fail=1
+if ! python3 scripts/check-parity-evidence.py; then
+  fail=1
+fi
+
 # ── 6. Composer parity checker keeps rejecting broken contracts ──────────────
 if ! python3 -m unittest discover -s scripts/tests -p 'test_*.py'; then
   problem "composer parity checker tests failed."

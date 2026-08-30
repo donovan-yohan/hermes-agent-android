@@ -151,7 +151,23 @@ Not deviations — things this slice does not ship, stated rather than hidden.
   re-requests the same fixed 50-row window every time.
 - **Rendered visual capture.** See below.
 
-## Visual capture
+## Divergences
+
+Classified for `scripts/check-parity-evidence.py`; the ledger above carries the
+argument.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Two panes side by side | mobile-adaptation | One pane at a time, with the transcript pushed as its own destination | A 360 dp column cannot hold a channel list and a transcript at a legible type scale |
+| Hover-revealed row affordances | mobile-adaptation | Always visible inside 48 dp targets | Touch has no hover; glyph weight and placement are unchanged |
+| Composer | omission | Absent | pill-owed: #101 — Relay's composer is #42, so the input owes a disabled "coming soon" state rather than an empty foot |
+| Harnesses inspector | omission | Absent | pill-owed: #101 — out of scope for v1 (the epic #38 boundary), so it owes a disabled entry rather than a missing one |
+| The `auth_required` banner's `Authorize Relay` action (`desktop/plugin.js:384-388` @ `563a8c8`) | omission | The banner's title and body render; the action does not | pill-owed: #101 — it is a control, so it ships disabled rather than absent. Redeeming the host's one-time grant (`POST /connection/authorize`) is a write and lands with the write slice |
+| `summary` on a channel row | omission | Not projected | deferred: #43 — the pinned mobile client does not carry the field |
+
+## Visual report
+
+- pending: #43
 
 `.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py`
 needs an attached device or emulator, and
