@@ -153,20 +153,11 @@ internal class ConnectionSwitchController(
     }
 
     /**
-     * Whether the app-scoped route follower can bring this row up with nobody
-     * present, which is the only case worth holding a pending badge for.
-     *
-     * A Remote row has a stored sign-in and a Local row a stored session token.
-     * Managed SSH's credential is in memory and died with the connection this
-     * switch has just closed, so nothing is coming for it.
+     * Waits, bounded, for the new endpoint to come up — but only where anything
+     * is coming. [SavedConnection.restorable] owns that rule; a row that cannot
+     * self-restore is not waited on, because a pending badge would sit there for
+     * the whole timeout claiming a dial that nobody started.
      */
-    private val SavedConnection.restorable: Boolean
-        get() = when (kind) {
-            ConnectionKind.Remote -> remote.isValid
-            ConnectionKind.Local -> local.isValid
-            ConnectionKind.Ssh -> false
-        }
-
     private suspend fun awaitSettle(target: SavedConnection?) {
         if (target == null || !target.restorable) return
         withTimeoutOrNull(settleTimeoutMillis) {

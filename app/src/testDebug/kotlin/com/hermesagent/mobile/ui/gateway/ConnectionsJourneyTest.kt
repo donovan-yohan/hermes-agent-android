@@ -7,8 +7,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -18,11 +21,16 @@ import com.hermesagent.mobile.data.connections.CONNECTION_SEARCH_THRESHOLD
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
+import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
 import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.ui.ConnectionsActions
+import com.hermesagent.mobile.ui.common.COMING_SOON
+import com.hermesagent.mobile.ui.GatewayActions
+import com.hermesagent.mobile.ui.SshActions
+import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import org.junit.Assert.assertEquals
@@ -367,6 +375,166 @@ class ConnectionsJourneyTest {
         compose.onNodeWithText(ConnectionsCopy.TOKEN_READDRESSED).performScrollTo().assertExists()
         // The kind is stated on an existing row, never offered.
         compose.onNodeWithContentDescription(ConnectionsCopy.KIND_REMOTE_DESC).assertDoesNotExist()
+    }
+
+    @Test
+    fun `switching to another row is offered on that row and moves the Current marker`() {
+        var state by mutableStateOf(
+            ConnectionsUiState(
+                connections = listOf(
+                    remoteConnection("a", "Alpha", "https://alpha.test"),
+                    remoteConnection("b", "Bravo", "https://bravo.test"),
+                ),
+                activeId = "a",
+                loaded = true,
+            ),
+        )
+        val selected = mutableListOf<String>()
+        val actions = ConnectionsActions(
+            onSelect = { id ->
+                selected += id
+                // What the real switch does once it settles: the marker moves.
+                state = state.copy(activeId = id)
+            },
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = actions)
+                }
+            }
+        }
+
+        // The active row does not offer to switch to itself; the other one does.
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Alpha")
+            .assertDoesNotExist()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf("b"), selected)
+        assertEquals("b", state.activeId)
+        // Exactly one row is Current, and the offer has moved to the other row.
+        compose.onAllNodesWithText(ConnectionsCopy.CURRENT_PILL).assertCountEquals(1)
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
+            .assertDoesNotExist()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Alpha")
+            .assertExists()
+    }
+
+    @Test
+    fun `a switch in flight says so on its own row and takes no second tap`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+                remoteConnection("c", "Charlie", "https://charlie.test"),
+            ),
+            activeId = "a",
+            pendingId = "b",
+            loaded = true,
+        )
+        var selectCount = 0
+        val actions = ConnectionsActions(onSelect = { selectCount++ })
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = actions)
+                }
+            }
+        }
+
+        // The same word the session rail uses while a switch is in flight.
+        compose.onNodeWithText(ConnectionsCopy.CONNECTING).performScrollTo().assertExists()
+
+        val bravo = compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
+        bravo.performScrollTo().assertIsNotEnabled().performClick()
+        // And no other row can start a competing one either.
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Charlie")
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .performClick()
+        compose.waitForIdle()
+
+        assertEquals("a tap on a disarmed switch must not reach the ViewModel", 0, selectCount)
+    }
+
+    @Test
+    fun `every row offers Desktop's actions, with the two Android cannot do yet marked`() {
+        val state = ConnectionsUiState(
+            connections = listOf(remoteConnection("a", "Alpha", "https://alpha.test")),
+            activeId = "a",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = ConnectionsActions())
+                }
+            }
+        }
+
+        // Rendered and marked, not omitted: an absent control reads as a
+        // surface that never had the feature (`connections-registry.tsx:589-603`).
+        compose.onNodeWithText(ConnectionsCopy.TEST_CONNECTION).performScrollTo().assertExists()
+        compose.onNodeWithText(ConnectionsCopy.MAKE_PRIMARY).performScrollTo().assertExists()
+        compose.onAllNodesWithText(COMING_SOON).assertCountEquals(2)
+        compose.onNodeWithContentDescription(
+            "${ConnectionsCopy.TEST_CONNECTION}. ${COMING_SOON}",
+        ).assertExists()
+        compose.onNodeWithContentDescription(
+            "${ConnectionsCopy.MAKE_PRIMARY}. ${COMING_SOON}",
+        ).assertExists()
+    }
+
+    @Test
+    fun `switching to a Managed SSH row lands on the SSH pane with Connect one tap away`() {
+        var connections by mutableStateOf(
+            ConnectionsUiState(
+                connections = listOf(
+                    remoteConnection("a", "Alpha", "https://alpha.test"),
+                    sshConnection("b", "Bravo", "demo-host"),
+                ),
+                activeId = "a",
+                loaded = true,
+            ),
+        )
+        val actions = ConnectionsActions(onSelect = { id -> connections = connections.copy(activeId = id) })
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                // The whole Gateways screen, because the claim under test is
+                // about where the person lands: the route pane is a projection
+                // of the active row's kind, so activating an SSH row is what
+                // puts the Managed SSH pane's Connect above this list.
+                GatewayScreen(
+                    state = GatewaySettingsUiState(
+                        mode = connections.active?.kind?.mode ?: GatewayConnectionMode.Remote,
+                        loaded = true,
+                    ),
+                    gatewayActions = GatewayActions(),
+                    sshState = SshUiState(),
+                    sshActions = SshActions(),
+                    connectionsState = connections,
+                    connectionsActions = actions,
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Bravo")
+            .performScrollTo()
+            .performClick()
+        compose.waitForIdle()
+
+        assertEquals("b", connections.activeId)
+        // It is Current even though nothing dialled — the marker is where the
+        // app is pointed, not whether a socket is up.
+        compose.onNodeWithText(ConnectionsCopy.CURRENT_PILL).performScrollTo().assertExists()
+        // And it says why, rather than looking like a switch that hung.
+        compose.onNodeWithText(ConnectionsCopy.SSH_NEEDS_CREDENTIAL).performScrollTo().assertExists()
+        // The next action the copy names is really on screen.
+        compose.onNodeWithText("Connect").performScrollTo().assertExists()
     }
 
     private fun localConnection(id: String, label: String, url: String): SavedConnection =

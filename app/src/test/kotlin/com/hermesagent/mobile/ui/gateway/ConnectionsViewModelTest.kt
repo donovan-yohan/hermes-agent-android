@@ -695,6 +695,80 @@ class ConnectionsViewModelTest {
         assertNull("and it is not the old form's error either", editor?.error)
     }
 
+    @Test
+    fun `activating another row switches once, and the second tap is ignored`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        // Both taps land before the first switch can finish, which is exactly
+        // the double-tap a 48dp target invites. Two teardowns racing is how a
+        // connection ends up pointing at neither endpoint.
+        subject.select("two")
+        subject.select("two")
+        advanceUntilIdle()
+
+        assertEquals(
+            "the second tap must not start a second teardown",
+            1,
+            gateway.calls.count { it == "disconnect" },
+        )
+        assertEquals("two", store.connectionRegistry.first().activeId)
+        assertNull("the pending badge is released once the switch settles", subject.uiState.value.pendingId)
+    }
+
+    @Test
+    fun `activating the row already active does nothing at all`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.select("one")
+        advanceUntilIdle()
+
+        assertFalse(
+            "re-selecting the active row must not tear down the connection it is on",
+            gateway.calls.contains("disconnect"),
+        )
+        assertEquals("one", store.connectionRegistry.first().activeId)
+    }
+
+    @Test
+    fun `activating a Managed SSH row moves the marker without waiting for a dial that is not coming`() =
+        runTest(dispatcher) {
+            val ssh = SavedConnection(
+                id = "two",
+                label = "Beta",
+                kind = ConnectionKind.Ssh,
+                host = HostProfile(host = "demo-host", username = "demo-user"),
+            )
+            val gateway = RecordingGateway()
+            // Nothing publishes a settled state, so a route that *were* waited
+            // on would burn the whole settle timeout.
+            gateway.settleOnDisconnect = false
+            val store = MemoryRegistryStore(listOf(twoRows().first(), ssh), activeId = "one")
+            val subject = buildSubject(store, gateway)
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+            val startedAt = dispatcher.scheduler.currentTime
+
+            subject.select("two")
+            advanceUntilIdle()
+
+            assertEquals("the marker moves even though nothing dialled", "two", store.connectionRegistry.first().activeId)
+            assertTrue("the old endpoint is still left", gateway.calls.contains("disconnect"))
+            assertEquals(
+                "Managed SSH's credential died with the connection, so there is nothing to wait for",
+                startedAt,
+                dispatcher.scheduler.currentTime,
+            )
+            assertNull("and no pending badge is left hanging", subject.uiState.value.pendingId)
+        }
+
     /** One saved Local row, its slot id stamped the way the registry stamps it. */
     private fun localRow(id: String, label: String, url: String) = SavedConnection(
         id = id,
@@ -738,6 +812,15 @@ class ConnectionsViewModelTest {
         /** Stands in for a Keystore alias this device has invalidated. */
         var failTokenWrites = false
 
+        /**
+         * Whether [disconnect] publishes a settled state.
+         *
+         * False stands in for an endpoint nothing is bringing back up, which
+         * is what lets a test tell a route that is waited on from one that is
+         * not without burning real time on either.
+         */
+        var settleOnDisconnect = true
+
         /** Parks the write, so a test can act while it is still in flight. */
         var tokenWriteGate: CompletableDeferred<Unit>? = null
 
@@ -776,7 +859,9 @@ class ConnectionsViewModelTest {
             calls += "disconnect"
             // Publish Connected immediately so a caller's settle wait
             // resolves without burning virtual time.
-            _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+            if (settleOnDisconnect) {
+                _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+            }
         }
     }
 
