@@ -8,6 +8,24 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!--
+        Package visibility for the sign-in hand-off only. Android 11+ hides other
+        packages by default, and without these two the app cannot see that a
+        Custom Tabs provider exists: `CustomTabsClient.getPackageName` returns
+        null, the binding that keeps this process out of the cached-app freezer
+        is never made, and the loopback callback is frozen out. Nothing here is
+        read for any other purpose.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".HermesApplication"
         android:allowBackup="true"

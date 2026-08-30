@@ -3,6 +3,7 @@ package com.hermesagent.mobile.data.gateway
 import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.Socket
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -154,9 +155,89 @@ interface RemoteGatewayProfileStore {
     ): Boolean
 }
 
-/** Opens the system browser. The callback URI is always a temporary loopback listener. */
+/**
+ * Opens the sign-in page. The callback URI is always a temporary loopback
+ * listener this app binds first and closes when the flow ends.
+ *
+ * The two defaulted members are what make the hand-off survive a real phone.
+ * A plain `ACTION_VIEW` leaves this app cached with nothing raising its
+ * importance, and on Android 12+ the cached-app freezer then SIGSTOPs it: the
+ * kernel still accepts the browser's callback into the listener's backlog, but
+ * the loop that would read it never runs, and the Gateway's authorization code
+ * expires 120 s later (hermes-agent @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+ * `hermes_cli/dashboard_auth/native_flow.py:89`). A held service binding is
+ * what keeps the process runnable across that window.
+ */
 fun interface GatewayBrowserLauncher {
     suspend fun open(url: String)
+
+    /**
+     * Binds whatever keeps this process running while the browser is in front
+     * of it, before [open]. The returned handle is closed exactly where the
+     * loopback listener is closed, because the two protect the same window.
+     *
+     * Null means this launcher has nothing to bind — no Custom Tabs provider,
+     * or a caller (a test, a headless fake) that never leaves the process. The
+     * flow still runs; it is only unprotected against the freezer.
+     */
+    suspend fun bindForSignIn(): AutoCloseable? = null
+
+    /**
+     * Brings the app forward once a callback has been *accepted*, so finishing
+     * in the browser finishes in the app. Never called for a callback this app
+     * rejected: the person is left where the refusal is explained.
+     */
+    suspend fun returnToApp() = Unit
+}
+
+/**
+ * Every step the sign-in hand-off can report, and the whole vocabulary of it.
+ *
+ * An enum rather than a string because the rule this seam exists under — a step
+ * name and nothing else, never an authorization code, a `state`, a token, a
+ * Gateway URL or a port — is not enforceable as prose. This reaches logcat,
+ * which every app on the device could read before Android 11 and which crash
+ * reporters still collect, so there must be no way to interpolate a value into
+ * it at a call site.
+ */
+internal enum class GatewaySignInStep(private val label: String) {
+    SignInStartFailed("could not start the sign-in"),
+    ListenerBound("callback listener bound"),
+    BrowserBindFailed("browser service bind failed"),
+    BrowserBound("browser service bound"),
+    BrowserUnbound("no browser service to bind"),
+    FellBackToBrowser("fell back to the default browser"),
+    BrowserLaunchFailed("browser would not open"),
+    CallbackReceived("callback received"),
+    CallbackAccepted("callback accepted"),
+    CallbackRefused("callback reported a refusal"),
+    StateMismatch("callback state did not match"),
+    ListenerClosed("callback listener closed early"),
+    ExchangeRefused("token exchange refused"),
+    ReturnRefused("could not bring the app forward"),
+    ;
+
+    override fun toString(): String = "sign-in: $label"
+}
+
+/**
+ * Breadcrumbs for the sign-in hand-off, in the one place a silent failure used
+ * to be indistinguishable from a hang.
+ */
+internal fun interface GatewaySignInLog {
+    fun step(step: GatewaySignInStep)
+
+    /**
+     * A step that failed, and the *type* of what went wrong.
+     *
+     * The type only. A throwable's message routinely carries a host, a path or
+     * a URL, and this reaches logcat. The type alone is what turns "it failed
+     * somewhere" into one grep on a device — which is exactly what was missing
+     * when a crash in this app's own sign-in plumbing surfaced as "check the
+     * host and reconnect".
+     */
+    fun failed(step: GatewaySignInStep, cause: Throwable) = step(step)
 }
 
 internal data class GatewayAuthStatus(
@@ -451,7 +532,20 @@ internal class OkHttpGatewayNativeAuthApi(
         )
     }
 
-    override suspend fun exchange(baseUrl: String, code: String, verifier: String): GatewayNativeTokens =
+    /**
+     * A code the Gateway will not redeem is a 400, and deliberately a generic
+     * one: unknown, expired, already redeemed and PKCE mismatch are one reply,
+     * so the code is consumed on every path and there is no verifier oracle
+     * (hermes-agent @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+     * `hermes_cli/dashboard_auth/routes.py:988-1005`). The app cannot tell
+     * those apart either, so it says the one thing they have in common and the
+     * one action that fixes all of them.
+     *
+     * Rethrown without a status code, which is what marks it terminal for the
+     * automatic redial ([Throwable.isRetryableRemoteConnectionFailure]): only a
+     * fresh sign-in can produce another code, and a retry loop cannot.
+     */
+    override suspend fun exchange(baseUrl: String, code: String, verifier: String): GatewayNativeTokens = try {
         parseTokens(
             requestJson(
                 endpoint(baseUrl, "auth/native/token"),
@@ -462,6 +556,10 @@ internal class OkHttpGatewayNativeAuthApi(
                 null,
             ),
         )
+    } catch (failure: GatewayAuthException) {
+        if (failure.statusCode == 400) throw GatewayAuthException(GatewaySignInCopy.EXPIRED_CODE)
+        throw failure
+    }
 
     override suspend fun refresh(
         baseUrl: String,
@@ -545,33 +643,159 @@ internal class OkHttpGatewayNativeAuthApi(
     }
 }
 
+/**
+ * What a person is told when a native sign-in does not finish.
+ *
+ * Each one names a different thing that happened and the one safe next step,
+ * because before this they were all the same silence. None of them echoes a
+ * code, a `state` value, a token or a host.
+ */
+internal object GatewaySignInCopy {
+    // There is deliberately no "that reply did not match" message. A callback
+    // carrying the wrong `state` is indistinguishable from any other process on
+    // the device probing the loopback port, so it is ignored rather than
+    // reported, and a sign-in that never receives its real callback ends at the
+    // timeout below instead. See the `state` gate in [LoopbackGatewayNativeLogin].
+    const val REFUSED =
+        "Hermes sign-in was cancelled or refused. Sign in again to continue."
+    const val LISTENER_CLOSED =
+        "Hermes stopped waiting for the browser before sign-in finished. Sign in again."
+    const val EXPIRED_CODE =
+        "The sign-in took too long to finish, so Hermes would not accept it. Sign in again."
+    const val CANCELLED =
+        "Sign-in was cancelled before it finished. Sign in again when you are ready."
+    const val NO_BROWSER =
+        "This device has no browser to sign in with. Install one, then sign in again."
+    const val START_FAILED =
+        "Hermes could not start sign-in on this device. Try again, and reconnect from Gateways if it repeats."
+    const val BROWSER_LAUNCH_FAILED =
+        "Hermes could not open the browser to sign in. Try again, or set a default browser first."
+}
+
+/** Any free loopback port; the Gateway is told which one in `redirect_uri`. */
+private const val CALLBACK_ANY_PORT = 0
+
+/**
+ * Above one on purpose: browsers open speculative connections to a loopback
+ * origin before navigating to it, and with a single slot one idle probe is
+ * enough for the kernel to refuse the callback that matters.
+ */
+private const val CALLBACK_BACKLOG = 4
+
+/** How often `accept()` returns so the flow can notice it was cancelled. */
+private const val CALLBACK_ACCEPT_POLL_MILLIS = 1_000
+
+/**
+ * How long one accepted connection may take to produce its request line.
+ *
+ * Short on purpose, and shorter than it was. The accept loop is single
+ * threaded, so every silent browser preconnect holds the real callback behind
+ * it for this long — and raising [CALLBACK_BACKLOG] admits more of them. A
+ * genuine callback's request line arrives with the connection; only a probe
+ * ever spends this budget.
+ */
+private const val CALLBACK_READ_TIMEOUT_MILLIS = 1_500
+
+/** The loopback listener a native sign-in redirects back to. */
+private fun loopbackCallbackListener(): ServerSocket =
+    ServerSocket(CALLBACK_ANY_PORT, CALLBACK_BACKLOG, InetAddress.getByName("127.0.0.1")).apply {
+        soTimeout = CALLBACK_ACCEPT_POLL_MILLIS
+    }
+
 /** Android/desktop-compatible RFC 8252 loopback login driver. */
 internal class LoopbackGatewayNativeLogin(
     private val api: GatewayNativeAuthApi,
     private val random: SecureRandom = SecureRandom(),
     private val callbackReadTimeoutMillis: Int = CALLBACK_READ_TIMEOUT_MILLIS,
+    /**
+     * Deliberately a no-op by default. `android.util.Log` is not mocked in this
+     * project's JVM unit tests (`app/build.gradle.kts:71-77`), so a default that
+     * reached it would make every plain unit test of this class throw. The
+     * process wires the real one in `HermesApplication`; tests pass a recorder.
+     */
+    private val log: GatewaySignInLog = GatewaySignInLog {},
+    /** Test seam: the callback listener, so a test can close it mid-flow. */
+    private val openListener: () -> ServerSocket = ::loopbackCallbackListener,
+    /**
+     * Test seam. Production waits the full window because a person really may
+     * take minutes in a provider's browser; a test fixture that cannot deliver
+     * its callback must fail in seconds rather than stall a CI job for five
+     * minutes.
+     */
+    private val loginTimeoutMillis: Long = LOGIN_TIMEOUT_MILLIS,
 ) : GatewayNativeLogin {
     override suspend fun login(
         profile: RemoteGatewayProfile,
         browser: GatewayBrowserLauncher,
     ): GatewayNativeTokens {
         val baseUrl = requireNotNull(profile.normalizedBaseUrl)
-        val verifier = randomUrlToken(32)
-        val state = randomUrlToken(24)
-        val challenge = base64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
-        val listener = withContext(Dispatchers.IO) {
-            ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).apply {
-                soTimeout = CALLBACK_ACCEPT_POLL_MILLIS
-            }
+        val verifier: String
+        val state: String
+        val challenge: String
+        val listener: ServerSocket
+        try {
+            verifier = randomUrlToken(32)
+            state = randomUrlToken(24)
+            challenge = base64Url(
+                MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)),
+            )
+            listener = withContext(Dispatchers.IO) { openListener() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            // None of this is the person's doing and none of it is the host's:
+            // a device that will not bind a loopback port, or a security
+            // provider with no SHA-256, used to reach the UI as "check the host
+            // and reconnect" — pointing at the one thing demonstrably fine. The
+            // type is logged so a device run localizes in one grep.
+            log.failed(GatewaySignInStep.SignInStartFailed, failure)
+            throw GatewayAuthException(GatewaySignInCopy.START_FAILED)
         }
+        // The browser binding and the listener have one lifetime. The binding is
+        // the only thing keeping this process runnable while the tab is in front
+        // of it, and the listener is what it is protecting, so the binding is
+        // released in the same `finally` that closes the socket — never earlier.
+        // The app is brought forward before the token exchange, but "forward"
+        // is a request to the window manager, not a guarantee it has happened
+        // by the time the exchange needs the process to still be running.
+        var binding: AutoCloseable? = null
         return try {
             val redirectUri = "http://127.0.0.1:${listener.localPort}/callback"
-            browser.open(authorizeUrl(baseUrl, challenge, redirectUri, state, profile.provider))
-            val code = withGatewayLoginTimeout(LOGIN_TIMEOUT_MILLIS) {
+            log.step(GatewaySignInStep.ListenerBound)
+            // A browser service that will not bind costs the freezer protection
+            // and nothing else. It must never cost the sign-in, so this degrades
+            // to the same unbound path a device with no provider takes.
+            binding = try {
+                browser.bindForSignIn()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                log.failed(GatewaySignInStep.BrowserBindFailed, failure)
+                null
+            }
+            log.step(if (binding != null) GatewaySignInStep.BrowserBound else GatewaySignInStep.BrowserUnbound)
+            try {
+                browser.open(authorizeUrl(baseUrl, challenge, redirectUri, state, profile.provider))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (domain: GatewayAuthException) {
+                throw domain
+            } catch (failure: Throwable) {
+                log.failed(GatewaySignInStep.BrowserLaunchFailed, failure)
+                throw GatewayAuthException(GatewaySignInCopy.BROWSER_LAUNCH_FAILED)
+            }
+            val code = withGatewayLoginTimeout(loginTimeoutMillis) {
                 awaitAuthorizationCode(listener, state)
             }
-            api.exchange(baseUrl, code, verifier)
+            browser.returnToApp()
+            try {
+                api.exchange(baseUrl, code, verifier)
+            } catch (failure: GatewayAuthException) {
+                log.step(GatewaySignInStep.ExchangeRefused)
+                throw failure
+            }
         } finally {
+            runCatching { binding?.close() }
             runCatching { listener.close() }
         }
     }
@@ -584,6 +808,19 @@ internal class LoopbackGatewayNativeLogin(
                 } catch (_: SocketTimeoutException) {
                     if (Thread.currentThread().isInterrupted) throw InterruptedException()
                     continue
+                } catch (_: IOException) {
+                    if (Thread.currentThread().isInterrupted) throw InterruptedException()
+                    // Narrowed to the one condition this claims to detect. A
+                    // browser's speculative loopback connection torn down between
+                    // SYN and accept also lands here, and aborting a sign-in that
+                    // would have completed a second later is exactly the silent
+                    // failure this whole change is about.
+                    if (!listener.isClosed) continue
+                    // The listener went away underneath the flow. Before this was
+                    // caught the browser simply hit a refused connection and the
+                    // app said nothing at all.
+                    log.step(GatewaySignInStep.ListenerClosed)
+                    throw GatewayAuthException(GatewaySignInCopy.LISTENER_CLOSED)
                 }
                 socket.use {
                     socket.soTimeout = callbackReadTimeoutMillis
@@ -595,19 +832,41 @@ internal class LoopbackGatewayNativeLogin(
                         // An idle or abandoned probe must not cancel the real sign-in.
                         continue
                     }
-                    runCatching {
-                        val output = socket.getOutputStream()
-                        output.write(DONE_RESPONSE)
-                        output.flush()
+                    val parsed = target?.let { ("http://127.0.0.1$it").toHttpUrlOrNull() }
+                    // RFC 8252 §8.9. Every process on the device can reach this
+                    // port, and nothing but `state` says a request came from the
+                    // authorization this app started. So `state` is checked
+                    // before any other field is read and before any branch can
+                    // end the flow: otherwise one unauthenticated GET carrying
+                    // `error=` — or a request line long enough to be refused —
+                    // cancels a stranger's sign-in without knowing anything at
+                    // all. Anything that fails this gets the same neutral 404 as
+                    // a browser's stray probe, tells the attacker nothing, and
+                    // leaves the listener waiting. The five-minute timeout is
+                    // the backstop, and it is the honest one: a wrong `state` is
+                    // indistinguishable from an attacker, so it cannot be
+                    // reported to the person as their own failure.
+                    if (parsed == null || parsed.queryParameter("state") != expectedState) {
+                        respond(socket, NOT_A_CALLBACK_RESPONSE)
+                        if (parsed != null) log.step(GatewaySignInStep.StateMismatch)
+                        continue
                     }
-                    val parsed = ("http://127.0.0.1$target").toHttpUrlOrNull() ?: continue
-                    val error = parsed.queryParameter("error")
-                    if (error != null) throw GatewayAuthException("Hermes sign-in was cancelled or refused.")
-                    val code = parsed.queryParameter("code") ?: continue
-                    val state = parsed.queryParameter("state")
-                    if (state != expectedState) {
-                        throw GatewayAuthException("The sign-in callback did not match this request.")
+                    log.step(GatewaySignInStep.CallbackReceived)
+                    // Past the gate, and every branch below still decides before
+                    // it writes: a page that says "signed in" must never be the
+                    // reply to a callback this app is about to reject.
+                    if (parsed.queryParameter("error") != null) {
+                        respond(socket, REJECTED_RESPONSE)
+                        log.step(GatewaySignInStep.CallbackRefused)
+                        throw GatewayAuthException(GatewaySignInCopy.REFUSED)
                     }
+                    val code = parsed.queryParameter("code")
+                    if (code == null) {
+                        respond(socket, NOT_A_CALLBACK_RESPONSE)
+                        continue
+                    }
+                    respond(socket, SIGNED_IN_RESPONSE)
+                    log.step(GatewaySignInStep.CallbackAccepted)
                     return@runInterruptible code
                 }
             }
@@ -615,7 +874,37 @@ internal class LoopbackGatewayNativeLogin(
             throw GatewayAuthException("Hermes sign-in did not complete.")
         }
 
-    private fun readRequestTarget(input: java.io.InputStream): String {
+    /**
+     * Best effort by design: the person's browser may already be gone, and a
+     * page this app could not write is never a reason to drop a callback it has
+     * already validated.
+     *
+     * [Socket.shutdownOutput] rather than a bare close. Only the request line is
+     * read ([readRequestTarget]), so the headers after it are still sitting in
+     * the receive buffer, and closing a socket with unread inbound data sends
+     * RST instead of FIN — which discards the queued response. The refusal page
+     * is the only place a person learns their callback was rejected, so it has
+     * to actually arrive.
+     */
+    private fun respond(socket: Socket, page: ByteArray) {
+        runCatching {
+            val output = socket.getOutputStream()
+            output.write(page)
+            output.flush()
+            socket.shutdownOutput()
+        }
+    }
+
+    /**
+     * The request target, or null when this was not a request line worth
+     * parsing — oversized, not a `GET`, or not a path.
+     *
+     * Null rather than an exception. The read is bounded either way, but an
+     * unauthenticated caller must not be able to end a sign-in by sending eight
+     * kilobytes of anything: the caller answers null with the same neutral 404
+     * every other unauthenticated request gets, and keeps waiting.
+     */
+    private fun readRequestTarget(input: java.io.InputStream): String? {
         val bytes = ByteArray(MAX_REQUEST_LINE_BYTES)
         var size = 0
         try {
@@ -625,11 +914,11 @@ internal class LoopbackGatewayNativeLogin(
                 bytes[size++] = next.toByte()
                 if (size >= 2 && bytes[size - 2] == '\r'.code.toByte() && bytes[size - 1] == '\n'.code.toByte()) break
             }
-            if (size == bytes.size) throw GatewayAuthException("The sign-in callback was oversized.")
+            if (size == bytes.size) return null
             val line = bytes.copyOf(size).toString(Charsets.US_ASCII).trim()
             val pieces = line.split(' ')
-            if (pieces.size < 3 || pieces[0] != "GET") return "/"
-            return pieces[1].takeIf { it.startsWith('/') } ?: "/"
+            if (pieces.size < 3 || pieces[0] != "GET") return null
+            return pieces[1].takeIf { it.startsWith('/') }
         } finally {
             bytes.fill(0)
         }
@@ -639,16 +928,43 @@ internal class LoopbackGatewayNativeLogin(
         .also(random::nextBytes)
         .let(::base64Url)
 
-    private companion object {
+    internal companion object {
         const val LOGIN_TIMEOUT_MILLIS = 5 * 60 * 1_000L
-        const val CALLBACK_ACCEPT_POLL_MILLIS = 1_000
-        const val CALLBACK_READ_TIMEOUT_MILLIS = 5_000
         const val MAX_REQUEST_LINE_BYTES = 8 * 1024
-        val DONE_RESPONSE = (
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n" +
-                "<!doctype html><meta charset=\"utf-8\"><title>Signed in</title>" +
-                "<p>Signed in to Hermes. You can return to the app.</p>"
-            ).toByteArray(Charsets.UTF_8)
+
+        val SIGNED_IN_RESPONSE = htmlResponse(
+            status = "200 OK",
+            title = "Signed in",
+            body = "Signed in to Hermes. You can close this tab \u2014 the app is finishing sign-in.",
+        )
+        val REJECTED_RESPONSE = htmlResponse(
+            status = "400 Bad Request",
+            title = "Sign-in not accepted",
+            body = "Hermes did not accept this sign-in. Close this tab and start the sign-in again from the app.",
+        )
+        val NOT_A_CALLBACK_RESPONSE = htmlResponse(
+            status = "404 Not Found",
+            title = "Nothing here",
+            body = "This address is only used while you are signing in to Hermes.",
+        )
+
+        /**
+         * The page a browser is left on. Product copy, and the only copy in this
+         * app a person reads outside it — so it says what happened and what to
+         * do, and it never echoes a query value back into a rendered page.
+         */
+        private fun htmlResponse(status: String, title: String, body: String): ByteArray {
+            val page = "<!doctype html><meta charset=\"utf-8\"><title>$title</title><p>$body</p>"
+                .toByteArray(Charsets.UTF_8)
+            // Length-delimited, not close-delimited: a close-delimited body is
+            // indistinguishable from a reset connection, and this page is the
+            // only thing that explains a refusal.
+            val head = (
+                "HTTP/1.1 $status\r\nContent-Type: text/html; charset=utf-8\r\n" +
+                    "Content-Length: ${page.size}\r\nConnection: close\r\n\r\n"
+                ).toByteArray(Charsets.US_ASCII)
+            return head + page
+        }
     }
 }
 

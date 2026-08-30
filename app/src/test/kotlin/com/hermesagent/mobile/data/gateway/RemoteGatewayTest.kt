@@ -4,10 +4,17 @@ import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
 import com.hermesagent.mobile.data.ssh.SshCredential
 import com.hermesagent.mobile.restoreSavedRemoteGateway
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
@@ -221,6 +228,665 @@ class RemoteGatewayTest {
 
         assertEquals("code-after-probe", api.exchangedCode)
         assertEquals(VALID_TOKENS, tokens)
+    }
+
+    /**
+     * RFC 8252 §8.9. The loopback port is reachable by every process on the
+     * device, so a request that cannot prove it came from this authorization
+     * must not be able to do anything — least of all end the sign-in. Each of
+     * these is an unauthenticated kill attempt that used to work, or would have.
+     */
+    @Test
+    fun `an unauthenticated caller cannot end a sign-in, and the real callback still lands`() = runBlocking {
+        val api = FakeAuthApi()
+        val trace = SignInTrace()
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = GatewaySignInLog(trace::record),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+        )
+        val attacks = AtomicReference<List<String>>(emptyList())
+        val callbackThread = AtomicReference<Thread>()
+
+        val tokens = login.login(PROFILE, GatewayBrowserLauncher { url ->
+            val parsed = requireNotNull(url.toHttpUrlOrNull())
+            val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+            val port = requireNotNull(redirect.toHttpUrlOrNull()).port
+            val state = requireNotNull(parsed.queryParameter("state"))
+            callbackThread.set(
+                Thread {
+                    attacks.set(
+                        listOf(
+                            // A refusal with no state at all: the one-request kill.
+                            rawRequest(port, "GET /callback?error=access_denied HTTP/1.1"),
+                            // A refusal that guessed everything except state.
+                            rawRequest(port, "GET /callback?error=access_denied&state=guessed HTTP/1.1"),
+                            // Not a callback, not even a GET.
+                            rawRequest(port, "POST /callback HTTP/1.1"),
+                            rawRequest(port, "garbage"),
+                            // A request line past the bound, which used to throw.
+                            rawRequest(port, "GET /callback?x=" + "a".repeat(9_000) + " HTTP/1.1"),
+                            // And a code with the wrong state.
+                            rawRequest(port, "GET /callback?code=stolen&state=wrong HTTP/1.1"),
+                        ),
+                    )
+                    // Only now, the real one.
+                    readCallback("$redirect?code=code-fixture&state=$state")
+                }.also(Thread::start),
+            )
+        })
+        callbackThread.get()?.join(15_000)
+
+        assertEquals("the sign-in survives every one of them", VALID_TOKENS, tokens)
+        assertEquals("code-fixture", api.exchangedCode)
+        for (served in attacks.get()) {
+            assertTrue("an unauthenticated request gets the neutral page", served.contains("404 Not Found"))
+            assertFalse("and is told nothing about the sign-in", served.contains("Signed in"))
+            assertFalse(served.contains("Sign-in not accepted"))
+        }
+        // No step past the gate was ever reached for them, and the one callback
+        // that could prove itself is the only one that was received at all.
+        assertEquals(1, trace.snapshot().count { it == GatewaySignInStep.CallbackReceived.toString() })
+        assertEquals(1, trace.snapshot().count { it == GatewaySignInStep.CallbackAccepted.toString() })
+    }
+
+    @Test
+    fun `a refusal that carries the right state is surfaced`() = runBlocking {
+        val api = FakeAuthApi()
+        val trace = SignInTrace()
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = GatewaySignInLog(trace::record),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+        )
+        val page = AtomicReference<String>()
+        val callbackThread = AtomicReference<Thread>()
+
+        val failure = runCatching {
+            login.login(PROFILE, GatewayBrowserLauncher { url ->
+                val parsed = requireNotNull(url.toHttpUrlOrNull())
+                val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+                val state = requireNotNull(parsed.queryParameter("state"))
+                callbackThread.set(
+                    Thread {
+                        page.set(readCallback("$redirect?error=access_denied&state=$state"))
+                    }.also(Thread::start),
+                )
+            })
+        }.exceptionOrNull()
+        callbackThread.get()?.join(5_000)
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(GatewaySignInCopy.REFUSED, failure?.message)
+        assertNull("a refused sign-in is never dialled", api.exchangedCode)
+        val served = requireNotNull(page.get())
+        assertTrue(served.contains("Sign-in not accepted"))
+        assertFalse("the refusal page must not claim a sign-in", served.contains("Signed in"))
+        assertEquals(
+            listOf(
+                GatewaySignInStep.ListenerBound.toString(),
+                GatewaySignInStep.BrowserUnbound.toString(),
+                GatewaySignInStep.CallbackReceived.toString(),
+                GatewaySignInStep.CallbackRefused.toString(),
+            ),
+            trace.snapshot(),
+        )
+    }
+
+    @Test
+    fun `the signed-in page and the hand back to the app come only after validation`() = runBlocking {
+        val trace = SignInTrace()
+        val api = TracingAuthApi(trace)
+        val login = LoopbackGatewayNativeLogin(api, log = GatewaySignInLog(trace::record), loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS)
+        val page = AtomicReference<String>()
+        val browser = TracingBrowser(trace) { redirect, state ->
+            page.set(readCallback("$redirect?code=code-fixture&state=$state"))
+        }
+
+        val tokens = login.login(PROFILE, browser)
+        browser.await()
+
+        assertEquals(VALID_TOKENS, tokens)
+        assertTrue(requireNotNull(page.get()).contains("Signed in to Hermes"))
+        assertEquals(
+            listOf(
+                GatewaySignInStep.ListenerBound.toString(),
+                GatewaySignInStep.BrowserBound.toString(),
+                TracingBrowser.OPENED,
+                GatewaySignInStep.CallbackReceived.toString(),
+                GatewaySignInStep.CallbackAccepted.toString(),
+                TracingBrowser.RETURNED,
+                TracingAuthApi.EXCHANGED,
+            ),
+            trace.snapshot(),
+        )
+        // Same `finally` as the listener: the binding that kept this process
+        // runnable is not left behind once the flow is over.
+        assertTrue("the browser binding must be released with the listener", browser.bindingClosed)
+    }
+
+    @Test
+    fun `a callback listener that closes mid-flow surfaces an actionable failure`() = runBlocking {
+        val api = FakeAuthApi()
+        val trace = SignInTrace()
+        val listener = ServerSocket(0, 4, InetAddress.getByName("127.0.0.1")).apply { soTimeout = 100 }
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = GatewaySignInLog(trace::record),
+            openListener = { listener },
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+        )
+        val callbackThread = AtomicReference<Thread>()
+
+        val failure = runCatching {
+            login.login(PROFILE, GatewayBrowserLauncher { url ->
+                val redirect = requireNotNull(requireNotNull(url.toHttpUrlOrNull()).queryParameter("redirect_uri"))
+                callbackThread.set(
+                    Thread {
+                        listener.close()
+                        runCatching { readCallback("$redirect?code=code-fixture&state=whatever") }
+                    }.also(Thread::start),
+                )
+            })
+        }.exceptionOrNull()
+        callbackThread.get()?.join(5_000)
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(GatewaySignInCopy.LISTENER_CLOSED, failure?.message)
+        assertNull(api.exchangedCode)
+        assertTrue(trace.snapshot().contains(GatewaySignInStep.ListenerClosed.toString()))
+    }
+
+    @Test
+    fun `an authorization code the Gateway will not redeem says so and does not retry`() = runTest {
+        val refusing = OkHttpGatewayNativeAuthApi(
+            OkHttpClient.Builder().addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(400)
+                    .message("Bad Request")
+                    .body("""{"detail":"Invalid or expired authorization code."}""".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }.build(),
+        )
+
+        val failure = runCatching {
+            refusing.exchange("https://gateway.example/hermes", "stale-code", "verifier")
+        }.exceptionOrNull()
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(GatewaySignInCopy.EXPIRED_CODE, failure?.message)
+        // Only a fresh sign-in mints another code, so the redial loop must stop.
+        assertFalse(requireNotNull(failure).isRetryableRemoteConnectionFailure())
+    }
+
+    @Test
+    fun `abandoning a sign-in that reached the browser says so instead of going quiet`() = runTest {
+        val handedOff = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                awaitCancellation()
+            },
+            nowSeconds = { 1_000L },
+        )
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher { handedOff.complete(Unit) })
+        runCurrent()
+        assertTrue("the flow must have reached the browser", handedOff.isCompleted)
+
+        manager.cancelRemoteSignIn()
+        runCurrent()
+
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(GatewaySignInCopy.CANCELLED, manager.state.value.message)
+    }
+
+    /**
+     * The emulator repro for #114 in the shape a JVM test can hold: a valid
+     * callback that lands while the app is in the background, which used to
+     * serve its "Signed in" page and then produce no token request at all.
+     *
+     * Backgrounding here is the app's own lifecycle signal, not a process
+     * freeze and not a cancellation — those two are covered by
+     * `a sign-in outlives the screen that started it` and
+     * `abandoning a sign-in never publishes the connection it opened`. What
+     * this pins is narrower and still worth pinning: nothing on the
+     * foreground/background edge fences an interactive open, so the exchange
+     * crosses that edge and the connection still comes up.
+     */
+    @Test
+    fun `a callback that lands while the app is backgrounded still exchanges the code`() = runTest {
+        val api = FakeAuthApi()
+        val callbackLanded = CompletableDeferred<Unit>()
+        val handedOff = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = api,
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { profile, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                // The person is in the browser. Nothing happens here until the
+                // callback lands, which is the whole window under test.
+                callbackLanded.await()
+                api.exchange(requireNotNull(profile.normalizedBaseUrl), "code-while-backgrounded", "verifier")
+            },
+            nowSeconds = { 1_000L },
+        )
+        val rpc = FakeRpc()
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> rpc },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue(handedOff.isCompleted)
+
+        // Android stops the app behind the browser.
+        manager.applicationForegroundChanged(false)
+        runCurrent()
+
+        callbackLanded.complete(Unit)
+        runCurrent()
+
+        assertEquals("the token exchange must happen while the app is away", "code-while-backgrounded", api.exchangedCode)
+        assertEquals(listOf("session.list"), rpc.calls)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        manager.disconnect()
+    }
+
+    /** The same edge, on the leg that reports rather than connects. */
+    @Test
+    fun `a refusal that lands while the app is backgrounded is still surfaced`() = runTest {
+        val handedOff = CompletableDeferred<Unit>()
+        val callbackLanded = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                callbackLanded.await()
+                throw GatewayAuthException(GatewaySignInCopy.REFUSED)
+            },
+            nowSeconds = { 1_000L },
+        )
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue(handedOff.isCompleted)
+        manager.applicationForegroundChanged(false)
+        runCurrent()
+
+        callbackLanded.complete(Unit)
+        runCurrent()
+
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(GatewaySignInCopy.REFUSED, manager.state.value.message)
+    }
+
+    /**
+     * The fix itself, proved by contrast rather than asserted.
+     *
+     * Both halves run the identical sign-in against the identical manager. The
+     * only difference is who owns the coroutine: the first is the old shape,
+     * started from the screen's scope, and dies when Android destroys that
+     * screen behind the open browser — the callback then has nothing to come
+     * back to and no token is ever requested, though it is at least reported
+     * now rather than silent. The second is what ships, owned by the process,
+     * and completes through the same destruction.
+     */
+    @Test
+    fun `a sign-in outlives the screen that started it, where the old shape died with it`() = runTest {
+        suspend fun signIn(
+            start: (GatewayConnectionManager, GatewayBrowserLauncher) -> Unit,
+        ): Pair<FakeAuthApi, GatewayConnectionManager> {
+            val api = FakeAuthApi()
+            val handedOff = CompletableDeferred<Unit>()
+            val callbackLanded = CompletableDeferred<Unit>()
+            val authenticator = NativeGatewayAuthenticator(
+                api = api,
+                store = MemoryTokenStore(null),
+                login = GatewayNativeLogin { profile, browser ->
+                    browser.open("https://gateway.example/hermes/auth/native/authorize")
+                    handedOff.complete(Unit)
+                    callbackLanded.await()
+                    api.exchange(requireNotNull(profile.normalizedBaseUrl), "code-after-destroy", "verifier")
+                },
+                nowSeconds = { 1_000L },
+            )
+            val manager = GatewayConnectionManager(
+                scope = backgroundScope,
+                installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+                remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+            )
+            start(manager, GatewayBrowserLauncher {})
+            runCurrent()
+            assertTrue(handedOff.isCompleted)
+            callbackLanded.complete(Unit)
+            runCurrent()
+            return api to manager
+        }
+
+        // The old shape: the screen owns the coroutine, and Android destroys it
+        // while the person is still in the browser.
+        val screenScope = CoroutineScope(coroutineContext + Job())
+        val (oldApi, oldManager) = signIn { manager, browser ->
+            screenScope.launch(start = CoroutineStart.UNDISPATCHED) { manager.connectRemote(PROFILE, browser) }
+            screenScope.cancel()
+        }
+        assertNull("this is the bug: the callback comes back to nothing", oldApi.exchangedCode)
+        // It is at least no longer silent — the abandonment is now reported
+        // rather than published as a bare `Disconnected`. But a message is not a
+        // sign-in, which is exactly why ownership had to move.
+        assertEquals(GatewayConnectionStatus.NeedsAttention, oldManager.state.value.status)
+        assertEquals(GatewaySignInCopy.CANCELLED, oldManager.state.value.message)
+
+        // What ships: the process owns it, and the same destruction changes
+        // nothing about the sign-in.
+        val rebuiltScreenScope = CoroutineScope(coroutineContext + Job())
+        val (newApi, newManager) = signIn { manager, browser ->
+            manager.startRemoteSignIn(PROFILE, browser)
+            rebuiltScreenScope.cancel()
+        }
+        assertEquals("code-after-destroy", newApi.exchangedCode)
+        assertEquals(GatewayConnectionStatus.Connected, newManager.state.value.status)
+        newManager.disconnect()
+    }
+
+    @Test
+    fun `abandoning a sign-in never publishes the connection it opened`() = runTest {
+        val released = CompletableDeferred<Unit>()
+        val handedOff = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                withContext(NonCancellable) { released.await() }
+                VALID_TOKENS
+            },
+            nowSeconds = { 1_000L },
+        )
+        val rpc = FakeRpc()
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> rpc },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue(handedOff.isCompleted)
+
+        // Abandoned while the sign-in is uncancellable, so it finishes and
+        // arrives at the publish phase already cancelled.
+        manager.cancelRemoteSignIn()
+        released.complete(Unit)
+        runCurrent()
+
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(GatewaySignInCopy.CANCELLED, manager.state.value.message)
+        assertNull("an abandoned sign-in must not leave a live connection", manager.client.value)
+        assertTrue("the socket it opened has to be put down", rpc.closedByClient)
+    }
+
+    /**
+     * The shape #114's device run never had: a crash in this app's own sign-in
+     * plumbing must name itself, not borrow the copy for an unreachable host.
+     *
+     * A device that will not bind a loopback port is the concrete case — an
+     * emulator image with a restrictive policy, or a port the kernel refuses —
+     * and it lands above the first breadcrumb, which is exactly where a whole
+     * device run was spent failing to localize.
+     */
+    @Test
+    fun `a listener this device will not bind is reported as our own failure, not the host's`() = runBlocking {
+        val api = FakeAuthApi()
+        val trace = SignInTrace()
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = trace.asLog(),
+            openListener = { throw java.net.BindException("EACCES (Permission denied)") },
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+        )
+
+        val failure = runCatching {
+            login.login(PROFILE, GatewayBrowserLauncher { error("the browser must never be reached") })
+        }.exceptionOrNull()
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(GatewaySignInCopy.START_FAILED, failure?.message)
+        assertNull(api.exchangedCode)
+        // And the one line a device run needs: the step, and the type that broke it.
+        assertEquals(
+            listOf("${GatewaySignInStep.SignInStartFailed} (BindException)"),
+            trace.snapshot(),
+        )
+    }
+
+    @Test
+    fun `a browser that will not launch is reported as a browser problem`() = runBlocking {
+        val api = FakeAuthApi()
+        val trace = SignInTrace()
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = trace.asLog(),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+        )
+
+        val failure = runCatching {
+            login.login(
+                PROFILE,
+                // What a real platform throws when an Application context starts
+                // an Activity the system will not let it start.
+                GatewayBrowserLauncher { throw IllegalStateException("no activity") },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(GatewaySignInCopy.BROWSER_LAUNCH_FAILED, failure?.message)
+        assertNull(api.exchangedCode)
+        assertEquals(
+            listOf(
+                GatewaySignInStep.ListenerBound.toString(),
+                GatewaySignInStep.BrowserUnbound.toString(),
+                "${GatewaySignInStep.BrowserLaunchFailed} (IllegalStateException)",
+            ),
+            trace.snapshot(),
+        )
+    }
+
+    @Test
+    fun `a browser service that will not bind costs the protection, never the sign-in`() = runBlocking {
+        val api = FakeAuthApi()
+        val trace = SignInTrace()
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = trace.asLog(),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+        )
+        val callbackThread = AtomicReference<Thread>()
+
+        val tokens = login.login(
+            PROFILE,
+            object : GatewayBrowserLauncher {
+                override suspend fun bindForSignIn(): AutoCloseable =
+                    throw SecurityException("not allowed to bind that service")
+
+                override suspend fun open(url: String) {
+                    val parsed = requireNotNull(url.toHttpUrlOrNull())
+                    val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+                    val state = requireNotNull(parsed.queryParameter("state"))
+                    callbackThread.set(
+                        Thread { readCallback("$redirect?code=code-unbound&state=$state") }.also(Thread::start),
+                    )
+                }
+            },
+        )
+        callbackThread.get()?.join(15_000)
+
+        assertEquals("the sign-in completes unprotected rather than not at all", VALID_TOKENS, tokens)
+        assertEquals("code-unbound", api.exchangedCode)
+        val steps = trace.snapshot()
+        assertTrue(steps.contains("${GatewaySignInStep.BrowserBindFailed} (SecurityException)"))
+        assertTrue(steps.contains(GatewaySignInStep.BrowserUnbound.toString()))
+        assertTrue(steps.contains(GatewaySignInStep.CallbackAccepted.toString()))
+    }
+
+    @Test
+    fun `a crash in our own plumbing never tells the person to check their host`() = runTest {
+        val appFailures = mutableListOf<String>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, _ -> throw NullPointerException("a bug in this app") },
+            nowSeconds = { 1_000L },
+        )
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+            logAppFailure = { appFailures += it },
+        )
+
+        val result = manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+
+        assertTrue(result is GatewayConnectResult.Failed)
+        val message = manager.state.value.message
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertFalse(
+            "the host is the one thing that is demonstrably fine here",
+            message.orEmpty().contains("Check the host"),
+        )
+        assertTrue(message.orEmpty().contains("problem in the app"))
+        assertEquals(listOf("java.lang.NullPointerException"), appFailures)
+    }
+
+    /** Sends one hand-written request line, for the shapes no HTTP client will send. */
+    private fun rawRequest(port: Int, requestLine: String): String =
+        Socket("127.0.0.1", port).use { socket ->
+            socket.soTimeout = FIXTURE_SOCKET_TIMEOUT_MILLIS
+            socket.getOutputStream().apply {
+                write("$requestLine\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+            socket.getInputStream().bufferedReader().readText()
+        }
+
+    /**
+     * Reads a callback page including the body of a refusal, which
+     * `URL.readText()` throws away.
+     */
+    private fun readCallback(url: String): String {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            // A fixture that cannot be served must fail in seconds with a real
+            // message rather than block a browser-thread join forever.
+            connectTimeout = FIXTURE_SOCKET_TIMEOUT_MILLIS
+            readTimeout = FIXTURE_SOCKET_TIMEOUT_MILLIS
+        }
+        return try {
+            val stream = runCatching { connection.inputStream }.getOrNull() ?: connection.errorStream
+            stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /**
+     * One ordered trace of the whole hand-off — breadcrumbs, browser and wire —
+     * which is how "the page was written before the check" is caught at all.
+     * Synchronized because the callback arrives on a browser thread.
+     */
+    private class SignInTrace {
+        private val events = mutableListOf<String>()
+
+        @Synchronized
+        fun record(event: String) {
+            events += event
+        }
+
+        /** The typed breadcrumb seam, rendered into the same ordered trace. */
+        fun record(step: GatewaySignInStep) = record(step.toString())
+
+        /** The seam a test injects, so a failed step and its type both land. */
+        fun asLog(): GatewaySignInLog = object : GatewaySignInLog {
+            override fun step(step: GatewaySignInStep) = record(step)
+
+            override fun failed(step: GatewaySignInStep, cause: Throwable) =
+                record("$step (${cause.javaClass.simpleName})")
+        }
+
+        @Synchronized
+        fun snapshot(): List<String> = events.toList()
+    }
+
+    /** A browser that records its own half of the trace and drives the callback. */
+    private class TracingBrowser(
+        private val trace: SignInTrace,
+        private val callback: (redirect: String, state: String) -> Unit,
+    ) : GatewayBrowserLauncher {
+        private val thread = AtomicReference<Thread>()
+        var bindingClosed = false
+            private set
+
+        override suspend fun bindForSignIn(): AutoCloseable = AutoCloseable { bindingClosed = true }
+
+        override suspend fun open(url: String) {
+            trace.record(OPENED)
+            val parsed = requireNotNull(url.toHttpUrlOrNull())
+            val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+            val state = requireNotNull(parsed.queryParameter("state"))
+            thread.set(Thread { callback(redirect, state) }.also(Thread::start))
+        }
+
+        override suspend fun returnToApp() {
+            trace.record(RETURNED)
+        }
+
+        fun await() {
+            thread.get()?.join(5_000)
+        }
+
+        companion object {
+            const val OPENED = "browser: sign-in page opened"
+            const val RETURNED = "browser: app brought forward"
+        }
+    }
+
+    private class TracingAuthApi(private val trace: SignInTrace) : GatewayNativeAuthApi {
+        override suspend fun status(baseUrl: String) =
+            GatewayAuthStatus(authRequired = true, authFlows = setOf("native_pkce"))
+
+        override suspend fun exchange(baseUrl: String, code: String, verifier: String): GatewayNativeTokens {
+            trace.record(EXCHANGED)
+            return VALID_TOKENS
+        }
+
+        override suspend fun refresh(baseUrl: String, refreshToken: String, provider: String): GatewayNativeTokens? =
+            error("an interactive sign-in must not rotate")
+
+        override suspend fun mintWebSocketTicket(baseUrl: String, accessToken: String): String = "ticket-trace"
+
+        companion object {
+            const val EXCHANGED = "wire: authorization code exchanged"
+        }
     }
 
     @Test
@@ -1317,6 +1983,11 @@ class RemoteGatewayTest {
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             error("SSH must not be used during remote restore")
 
+        override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) =
+            error("interactive sign-in must not run during restore")
+
+        override fun cancelRemoteSignIn() = Unit
+
         override suspend fun connectRemote(
             profile: RemoteGatewayProfile,
             browser: GatewayBrowserLauncher,
@@ -1341,6 +2012,11 @@ class RemoteGatewayTest {
 
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             error("SSH must not be used during remote restore")
+
+        override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) =
+            error("interactive sign-in must not run during restore")
+
+        override fun cancelRemoteSignIn() = Unit
 
         override suspend fun connectRemote(
             profile: RemoteGatewayProfile,
@@ -1421,6 +2097,10 @@ class RemoteGatewayTest {
     }
 
     private companion object {
+        /** Production waits five minutes for a person; a fixture must not. */
+        const val FIXTURE_LOGIN_TIMEOUT_MILLIS = 15_000L
+        const val FIXTURE_SOCKET_TIMEOUT_MILLIS = 5_000
+
         val PROFILE = RemoteGatewayProfile("https://gateway.example/hermes/", provider = "fixture-provider")
         val VALID_TOKENS = GatewayNativeTokens(
             accessToken = "access-fixture",

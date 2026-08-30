@@ -8,6 +8,7 @@ import com.hermesagent.mobile.data.ssh.SshOpenResult
 import com.hermesagent.mobile.data.ssh.SshSessionOpener
 import com.hermesagent.mobile.data.ssh.SshTransport
 import java.io.Closeable
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CharacterCodingException
@@ -19,11 +20,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,6 +85,32 @@ internal interface GatewayConnectionController {
         profile: RemoteGatewayProfile,
         browser: GatewayBrowserLauncher,
     ): GatewayConnectResult
+
+    /**
+     * Starts an interactive Remote sign-in that outlives the screen that asked
+     * for it.
+     *
+     * The person leaves this app for a browser, and Android is free to destroy
+     * the Activity behind them. A flow launched in `viewModelScope` dies there,
+     * silently, with the loopback listener it owns — which is exactly what a
+     * rotation or a memory-pressure kill during provider auth looks like from
+     * the outside: nothing happens, ever. So the coroutine belongs to the
+     * process-scoped connection layer, which is where the connection it is
+     * opening belongs anyway.
+     *
+     * Starting a second one supersedes the first. [cancelRemoteSignIn] is the
+     * only other thing that ends it: destroying a screen is not a decision to
+     * abandon a sign-in.
+     *
+     * Abstract rather than defaulted, deliberately. This is the method the
+     * Connect button routes through, so a `= Unit` default would let any
+     * implementer — a fake, a future controller — turn that button into a
+     * silent no-op with nothing to catch it.
+     */
+    fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher)
+
+    /** Abandons an interactive sign-in, if one is running. */
+    fun cancelRemoteSignIn()
 
     /** Restores a saved Remote Gateway without opening an interactive browser. */
     suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult =
@@ -415,6 +444,13 @@ internal class GatewayConnectionManager(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     /** Test seam for the cancellation/foreground interleave; production is immediate. */
     private val beforeReconnectCancellationCleanup: suspend () -> Unit = {},
+    /**
+     * Names the *type* of a failure that came from this app rather than the
+     * network. A no-op by default: `android.util.Log` is deliberately not
+     * mocked in this project's JVM unit tests (`app/build.gradle.kts:71-77`),
+     * so the process wires the real one.
+     */
+    private val logAppFailure: (String) -> Unit = {},
 ) : Closeable, GatewayConnectionController {
     private val mutex = Mutex()
     private val _state = MutableStateFlow(GatewayConnectionState())
@@ -427,9 +463,9 @@ internal class GatewayConnectionManager(
      * The live remote profile, mirrored out of [active] at every write.
      *
      * [refreshCredential] and [signInAvailable] must answer without waiting on
-     * [mutex]: `openRemote` holds it across an interactive browser sign-in, and
-     * a non-interactive rotation that parks for minutes behind that is not a
-     * rotation, it is a hang. Written only where [active] is.
+     * [mutex]: even now that `openRemote` releases the lock across the browser
+     * round trip, a rotation that parks behind an in-flight connect is a hang
+     * rather than a rotation. Written only where [active] is.
      */
     private val liveRemoteProfile = AtomicReference<RemoteGatewayProfile?>(null)
 
@@ -451,6 +487,15 @@ internal class GatewayConnectionManager(
     private val connectIntent = AtomicReference(ConnectIntent(generation = 0, job = null))
     private var rpcMonitor: Job? = null
     private var reconnectJob: Job? = null
+
+    /**
+     * The running interactive sign-in, held by the process rather than by the
+     * screen that started it — see [GatewayConnectionController.startRemoteSignIn].
+     * Atomic rather than mutex-guarded because it is claimed and abandoned from
+     * the main thread, and taking [mutex] to do that would put a UI tap behind
+     * whatever open is in flight.
+     */
+    private val signInJob = AtomicReference<Job?>(null)
     private var desiredRemoteProfile: RemoteGatewayProfile? = null
     private var remoteConnectedAtMillis: Long? = null
     private var remoteReconnectAttempts = 0
@@ -694,9 +739,44 @@ internal class GatewayConnectionManager(
         browser: GatewayBrowserLauncher,
     ): GatewayConnectResult {
         val intent = beginConnectIntent(currentCoroutineContext()[Job])
-        return openRemote(profile, browser, intent, requireForeground = false) {
+        // Whether the person was actually sent to a browser is the difference
+        // between "this attempt stopped" and "your sign-in was abandoned
+        // half-way through", and only this seam can see it.
+        val handedOff = AtomicBoolean(false)
+        // Delegation, not hand-forwarding: a member added to
+        // [GatewayBrowserLauncher] later must keep reaching the real launcher
+        // rather than silently falling back to the interface default here.
+        val observed = object : GatewayBrowserLauncher by browser {
+            override suspend fun open(url: String) {
+                handedOff.set(true)
+                browser.open(url)
+            }
+        }
+        return openRemote(
+            profile,
+            observed,
+            intent,
+            requireForeground = false,
+            abortMessage = { GatewaySignInCopy.CANCELLED.takeIf { handedOff.get() } },
+        ) {
             claimRemoteRouteLocked(profile)
         }
+    }
+
+    override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) {
+        // UNDISPATCHED so the connect intent is claimed on the caller's thread,
+        // before this returns: the screen that asked is entitled to know the
+        // attempt it superseded is already superseded.
+        val started = scope.launch(start = CoroutineStart.UNDISPATCHED) { connectRemote(profile, browser) }
+        // Claim first, then arm: `invokeOnCompletion` fires inline for a job that
+        // already finished, and if it ran before the swap its compare-and-set
+        // would miss and strand a dead job in the reference.
+        signInJob.getAndSet(started)?.cancel()
+        started.invokeOnCompletion { signInJob.compareAndSet(started, null) }
+    }
+
+    override fun cancelRemoteSignIn() {
+        signInJob.getAndSet(null)?.cancel()
     }
 
     override suspend fun restoreRemote(profile: RemoteGatewayProfile): GatewayConnectResult {
@@ -720,11 +800,31 @@ internal class GatewayConnectionManager(
         return result
     }
 
+    /**
+     * Opens the Remote route.
+     *
+     * [mutex] deliberately covers only the two phases that touch shared state:
+     * the admission/teardown/`Connecting` phase, and the publish phase that
+     * installs the live connection. Everything in between — an interactive
+     * browser sign-in, the token exchange, the socket, and the authenticated
+     * readiness round trip — runs with the lock released. It used to be held
+     * across all of it, which meant one person standing in a browser for up to
+     * five minutes parked every other caller of this class behind them, and a
+     * cancelled sign-in could not even publish its own outcome until they
+     * finished. Nothing is lost by releasing it: [requireRemoteOpenCurrentLocked]
+     * is re-checked under the lock before anything is published, so an open
+     * that was superseded while it was outside is discarded there.
+     *
+     * [abortMessage] answers what to say if this attempt is cancelled — null
+     * for the non-interactive paths, where a cancellation is bookkeeping rather
+     * than something that happened to a person.
+     */
     private suspend fun openRemote(
         profile: RemoteGatewayProfile,
         browser: GatewayBrowserLauncher?,
         intent: ConnectIntent,
         requireForeground: Boolean,
+        abortMessage: () -> String? = { null },
         prepareAdmissionLocked: () -> RemoteOpenAdmission,
     ): GatewayConnectResult {
         var admission: RemoteOpenAdmission? = null
@@ -734,45 +834,63 @@ internal class GatewayConnectionManager(
                     if (!isCurrentConnectIntent(intent)) throw CancellationException()
                     prepareAdmissionLocked()
                 }
-                mutex.withLock {
+                var unavailable: GatewayConnectResult.Failed? = null
+                val connector = mutex.withLock {
                     requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground)
-                    val connector = remoteConnector
-                        ?: return@withLock fail(null, "Remote Gateway connections are unavailable in this build.")
-                    closeActive()
-                    publishUnlessEscalatedLocked(GatewayConnectionState(GatewayConnectionStatus.Connecting))
+                    val candidate = remoteConnector
+                    if (candidate == null) {
+                        unavailable = fail(null, "Remote Gateway connections are unavailable in this build.")
+                    } else {
+                        closeActive()
+                        publishUnlessEscalatedLocked(GatewayConnectionState(GatewayConnectionStatus.Connecting))
+                    }
+                    candidate
+                }
+                if (connector == null) {
+                    checkNotNull(unavailable)
+                } else {
                     val rpc = connector.open(profile, browser)
                     try {
                         // The authenticated RPC round trip, not merely a WS
                         // upgrade, is the readiness boundary.
                         rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
-                        requireRemoteOpenCurrentLocked(intent, profile, admission, requireForeground)
-                        active = ActiveConnection.Remote(rpc, profile)
-                        liveRemoteProfile.set(profile)
-                        localRouteActive.set(false)
-                        _gatewayHttp.value = OkHttpGatewayHttp(
-                            http = http,
-                            resolveEndpoint = { profile.normalizedBaseUrl },
-                            resolveAuthorization = {
-                                runCatching { connector.accessToken(profile) }.getOrNull()
-                                    ?.takeIf(String::isNotBlank)
-                                    ?.let { "Authorization" to "Bearer $it" }
-                            },
-                        )
-                        _imageLoader.value = OkHttpGatewayImageLoader(
-                            http = http,
-                            resolveEndpoint = { profile.normalizedBaseUrl },
-                            resolveAuthorization = {
-                                runCatching { connector.accessToken(profile) }.getOrNull()
-                                    ?.takeIf(String::isNotBlank)
-                                    ?.let { "Authorization" to "Bearer $it" }
-                            },
-                        )
-                        remoteConnectedAtMillis = nowMillis()
-                        beginRemoteFailureEpisodeLocked(null)
-                        _client.value = rpc
-                        _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
-                        watchRpc(rpc)
-                        GatewayConnectResult.Connected
+                        mutex.withLock {
+                            // `cancelRemoteSignIn` is the one competing path that
+                            // does not bump the connect-intent generation — it
+                            // cancels this coroutine and nothing else — and
+                            // `Mutex.lock` takes an uncontended fast path with no
+                            // cancellation check, so without this an abandoned
+                            // sign-in could still publish a live connection.
+                            currentCoroutineContext().ensureActive()
+                            requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground)
+                            active = ActiveConnection.Remote(rpc, profile)
+                            liveRemoteProfile.set(profile)
+                            localRouteActive.set(false)
+                            _gatewayHttp.value = OkHttpGatewayHttp(
+                                http = http,
+                                resolveEndpoint = { profile.normalizedBaseUrl },
+                                resolveAuthorization = {
+                                    runCatching { connector.accessToken(profile) }.getOrNull()
+                                        ?.takeIf(String::isNotBlank)
+                                        ?.let { "Authorization" to "Bearer $it" }
+                                },
+                            )
+                            _imageLoader.value = OkHttpGatewayImageLoader(
+                                http = http,
+                                resolveEndpoint = { profile.normalizedBaseUrl },
+                                resolveAuthorization = {
+                                    runCatching { connector.accessToken(profile) }.getOrNull()
+                                        ?.takeIf(String::isNotBlank)
+                                        ?.let { "Authorization" to "Bearer $it" }
+                                },
+                            )
+                            remoteConnectedAtMillis = nowMillis()
+                            beginRemoteFailureEpisodeLocked(null)
+                            _client.value = rpc
+                            _state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+                            watchRpc(rpc)
+                            GatewayConnectResult.Connected
+                        }
                     } catch (failure: Throwable) {
                         runCatching { rpc.close() }
                         throw failure
@@ -805,8 +923,13 @@ internal class GatewayConnectionManager(
                                     }
                                 }
 
-                                else -> _state.value =
-                                    GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+                                // A sign-in the person was actually sent to a
+                                // browser for says so; a bare `Disconnected`
+                                // here is indistinguishable from the app having
+                                // forgotten they asked.
+                                else -> _state.value = abortMessage()
+                                    ?.let { GatewayConnectionState(GatewayConnectionStatus.NeedsAttention, it) }
+                                    ?: GatewayConnectionState(GatewayConnectionStatus.Disconnected)
                             }
                         }
                     }
@@ -1373,14 +1496,32 @@ internal class GatewayConnectionManager(
         return GatewayConnectResult.Failed(kind, message, retryable)
     }
 
-    private fun safeConnectionMessage(failure: Throwable): String = when (failure) {
-        is RemoteLifecycleException,
-        is GatewayConnectionException,
-        is GatewayAuthException,
-        is GatewayRpcException,
-        -> failure.message ?: "The Gateway connection failed. Check the host and reconnect."
+    /**
+     * What a person is told about a failed connection, and — just as
+     * important — what they are *not* told.
+     *
+     * The third branch is the lesson of #114. A `Throwable` that is neither a
+     * domain failure nor an [IOException] did not come from the network: it is
+     * this app breaking. Reporting that as "check the host and reconnect" sends
+     * the person to inspect the one component that is demonstrably fine, and it
+     * is what let a crash inside the sign-in hand-off look exactly like an
+     * unreachable Gateway for a whole device run. Its type is logged so the
+     * next one is one grep away; its message never is, because a message
+     * routinely carries a host or a path.
+     */
+    private fun safeConnectionMessage(failure: Throwable): String = when {
+        failure is RemoteLifecycleException ||
+            failure is GatewayConnectionException ||
+            failure is GatewayAuthException ||
+            failure is GatewayRpcException ->
+            failure.message ?: HOST_FAILURE_MESSAGE
 
-        else -> "The Gateway connection failed. Check the host and reconnect."
+        failure !is IOException -> {
+            logAppFailure(failure.javaClass.name)
+            APP_FAILURE_MESSAGE
+        }
+
+        else -> HOST_FAILURE_MESSAGE
     }
 
     override fun close() {
@@ -1462,6 +1603,9 @@ internal class GatewayConnectionManager(
     }
 
     private companion object {
+        const val HOST_FAILURE_MESSAGE = "The Gateway connection failed. Check the host and reconnect."
+        const val APP_FAILURE_MESSAGE =
+            "Hermes hit a problem in the app while connecting. Try again, and report it if it repeats."
         const val NETWORK_WAIT_MESSAGE = "Waiting for a network connection."
         const val STILL_TRYING_MESSAGE =
             "Still trying to reach the Gateway. Check your connection or the host."

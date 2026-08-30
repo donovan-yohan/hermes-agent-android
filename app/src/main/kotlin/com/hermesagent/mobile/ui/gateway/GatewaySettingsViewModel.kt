@@ -114,6 +114,14 @@ internal class GatewaySettingsViewModel(
      */
     private fun project(route: ActiveGatewayRoute) {
         if (route.connectionId != activeRowId) {
+            // Whether this is a switch at all. A brand-new ViewModel starts with
+            // no row, so its *first* projection always takes this branch — and
+            // an Activity destroyed behind an open browser is rebuilt into
+            // exactly that state. Treating that as a switch would have this
+            // screen coming back and killing the process-scoped sign-in it was
+            // rebuilt to show the result of, which is the failure this whole
+            // slice exists to remove.
+            val switched = activeRowId != null
             activeRowId = route.connectionId
             edited = false
             // A dial aimed at the row we just left must not come up under the
@@ -122,7 +130,9 @@ internal class GatewaySettingsViewModel(
             // before it moves the marker
             // (`ConnectionSwitchController.kt:84,150-151`); the attempt this
             // ViewModel is still holding is the part that controller cannot see.
-            cancelConnectionAttempt()
+            connectJob?.cancel()
+            connectJob = null
+            if (switched) gateway.cancelRemoteSignIn()
         }
         if (edited) return
         _uiState.update { it.copy(mode = route.mode, remote = route.remote, loaded = true) }
@@ -185,15 +195,20 @@ internal class GatewaySettingsViewModel(
      * cancels the attempt when the active row moves, and the switch itself has
      * already put the old endpoint down and cleared what it told us
      * (`ConnectionSwitchController.kt:84,150-151`).
+     *
+     * Deliberately not this ViewModel's coroutine. A sign-in sends the person
+     * to a browser, and Android may destroy this screen while they are there;
+     * a flow in [viewModelScope] would die with it, taking its loopback
+     * callback listener along and leaving the person to come back to an app
+     * that never noticed. The connection layer is process-scoped and owns it
+     * instead — this pane keeps the right to *abandon* it
+     * ([cancelConnectionAttempt]), which is not the same as being destroyed.
      */
     fun connectRemote(browser: GatewayBrowserLauncher) {
         val state = _uiState.value
         if (state.mode != GatewayConnectionMode.Remote || !state.canConnectRemote) return
-        val profile = state.remote
-        connectJob?.cancel()
-        connectJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            gateway.connectRemote(profile, browser)
-        }
+        cancelConnectionAttempt()
+        gateway.startRemoteSignIn(state.remote, browser)
     }
 
     /**
@@ -249,13 +264,30 @@ internal class GatewaySettingsViewModel(
         }
     }
 
+    /**
+     * Abandons whatever this pane started: the Local dial it owns, and the
+     * process-scoped Remote sign-in it does not.
+     *
+     * Every caller is a person doing something — connecting, disconnecting,
+     * changing the route, editing the address, signing out. [project] is
+     * deliberately not one of them: a screen being rebuilt is not a decision.
+     */
     private fun cancelConnectionAttempt() {
         connectJob?.cancel()
         connectJob = null
+        gateway.cancelRemoteSignIn()
     }
 
+    /**
+     * A destroyed screen is not a decision. The Local dial goes with
+     * [viewModelScope] because it is this screen's coroutine and completes in
+     * milliseconds; the Remote sign-in deliberately does not, because the
+     * person is in a browser and this ViewModel being torn down behind them is
+     * the ordinary case, not an abandonment.
+     */
     override fun onCleared() {
-        cancelConnectionAttempt()
+        connectJob?.cancel()
+        connectJob = null
         super.onCleared()
     }
 

@@ -19,7 +19,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.notifications.ACTION_OPEN_SESSION
 import com.hermesagent.mobile.data.notifications.ANDROID_TIRAMISU
@@ -54,7 +53,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
@@ -137,11 +135,6 @@ class MainActivity : ComponentActivity() {
                 ) = app.relayRepository.post(channelId, text, format, clientMessageId)
             },
         )
-    }
-    private val gatewayBrowser = GatewayBrowserLauncher { url ->
-        withContext(Dispatchers.Main.immediate) {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }
     }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
@@ -382,7 +375,9 @@ class MainActivity : ComponentActivity() {
                     onModeChange = gatewaySettingsViewModel::setMode,
                     onRemoteUrlChange = gatewaySettingsViewModel::setRemoteUrl,
                     onProviderChange = gatewaySettingsViewModel::setProvider,
-                    onConnectRemote = { gatewaySettingsViewModel.connectRemote(gatewayBrowser) },
+                    // Process-scoped: the sign-in it starts outlives this Activity, so the
+                    // launcher must not hold it.
+                    onConnectRemote = { gatewaySettingsViewModel.connectRemote(app.signInBrowser) },
                     onConnectLocal = gatewaySettingsViewModel::connectLocal,
                     onDisconnect = gatewaySettingsViewModel::disconnect,
                     onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
@@ -444,6 +439,14 @@ class MainActivity : ComponentActivity() {
     /**
      * A notification tap lands here. The extra is consumed, so an Activity
      * recreate does not re-navigate away from wherever the user has since gone.
+     *
+     * The sign-in hand-back also arrives here, because it resumes this instance
+     * rather than starting a second one ([GatewaySignInBrowser.returnIntent]).
+     * It carries no action and no extras and is therefore ignored below, which
+     * is the whole intent: come forward, change nothing. [setIntent] is what
+     * keeps that true — without it `getIntent()` would still answer the
+     * notification intent that launched this Activity, and the next thing to
+     * read it would act on a navigation the person already consumed.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

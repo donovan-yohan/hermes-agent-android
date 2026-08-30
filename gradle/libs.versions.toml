@@ -12,6 +12,10 @@ androidxActivity = "1.11.0"
 androidxLifecycle = "2.9.4"
 composeBom = "2026.06.01"
 datastore = "1.1.7"
+# Custom Tabs. The sign-in hand-off binds this browser service for the whole
+# flow: a bound service is what keeps this process out of the Android 12+
+# cached-app freezer while the tab is in front of it.
+androidxBrowser = "1.9.0"
 
 # SSH. sshj is the spike's recommendation (docs/spikes/native-kotlin-ssh-client-scope.md §7.2).
 # bouncycastle/asn-one come in transitively; they are pinned here so a CVE bump
@@ -56,6 +60,7 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "androidxBrowser" }
 
 sshj = { module = "com.hierynomus:sshj", version.ref = "sshj" }
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastleProv" }

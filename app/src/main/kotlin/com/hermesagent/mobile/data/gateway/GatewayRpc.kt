@@ -34,6 +34,9 @@ internal data class GatewayEvent(
     val payload: JsonElement,
 )
 
+/** One logcat tag for the whole gateway package: connections and the sign-in that opens them. */
+internal const val GATEWAY_LOG_TAG = "HermesGateway"
+
 internal class GatewayRpcException(
     message: String,
     /** True when the frame was sent and a lost response cannot prove rejection. */
@@ -347,7 +350,7 @@ internal class OkHttpGatewayRpcClient private constructor(
             }
         }
 
-        private const val LOG_TAG = "HermesGateway"
+        private const val LOG_TAG = GATEWAY_LOG_TAG
     }
 
     internal class SocketWire : GatewayRpcWire {

@@ -10,12 +10,15 @@ import com.hermesagent.mobile.data.composer.ProfileSwitchingComposerQueueStore
 import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
+import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInLog
+import com.hermesagent.mobile.data.gateway.androidGatewayAppFailureLog
 import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionManager
 import com.hermesagent.mobile.data.gateway.GatewayDashboardTokenResolver
 import com.hermesagent.mobile.data.gateway.GatewayNetworkMonitor
+import com.hermesagent.mobile.data.gateway.GatewaySignInBrowser
 import com.hermesagent.mobile.data.gateway.LiveGatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.LocalGatewayConnector
 import com.hermesagent.mobile.data.gateway.LoopbackGatewayNativeLogin
@@ -83,7 +86,7 @@ class HermesApplication : Application() {
         val authenticator = NativeGatewayAuthenticator(
             api = authApi,
             store = secrets,
-            login = LoopbackGatewayNativeLogin(authApi),
+            login = LoopbackGatewayNativeLogin(authApi, log = AndroidGatewaySignInLog),
         )
         GatewayConnectionManager(
             scope = appScope,
@@ -92,6 +95,9 @@ class HermesApplication : Application() {
             remoteConnector = RemoteGatewayConnector(authenticator) { baseUrl, ticket ->
                 OkHttpGatewayRpcClient.connectRemote(http, baseUrl, ticket)
             },
+            // Without this a crash in this app's own connection plumbing is
+            // indistinguishable, on a device, from an unreachable Gateway.
+            logAppFailure = androidGatewayAppFailureLog,
             localConnector = LocalGatewayConnector(
                 tokens = secrets,
                 health = OkHttpLocalGatewayHealthCheck(http),
@@ -101,6 +107,22 @@ class HermesApplication : Application() {
         )
     }
     internal val gatewayHttp: com.hermesagent.mobile.data.gateway.GatewayHttp? get() = gatewayConnection.gatewayHttp.value
+
+    /**
+     * The sign-in hand-off, process-scoped like the connection it opens.
+     *
+     * Held here rather than by the Gateways screen because both halves of the
+     * hand-off outlive that screen: the Custom Tabs binding that keeps this
+     * process runnable while the browser is in front of it, and the intent that
+     * brings the app back once the callback is accepted.
+     */
+    internal val signInBrowser: GatewaySignInBrowser by lazy {
+        GatewaySignInBrowser(
+            context = this,
+            mainActivity = MainActivity::class.java,
+            log = AndroidGatewaySignInLog,
+        )
+    }
 
     /** The one place a connection switch is performed; see its own doc for the order. */
     internal val connectionSwitch: ConnectionSwitchController by lazy {
