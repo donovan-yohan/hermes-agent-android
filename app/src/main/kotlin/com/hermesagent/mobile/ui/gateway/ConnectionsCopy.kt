@@ -25,9 +25,14 @@ internal object ConnectionsCopy {
      */
     const val INTRO = "Manage this device and every Hermes gateway it can reach over remote or SSH connections."
 
-    /** `en.ts:706-707`, minus the profile rail and cron jobs Android does not ship yet. */
+    /**
+     * `en.ts:706-707`, minus the profile rail and cron jobs Android does not
+     * ship yet, and widened by one word: Desktop can only switch from its
+     * sidebar, and this list can switch too (S-C1). Saying "from Sessions"
+     * alone would now name the longer of the two routes as the only one.
+     */
     const val STAGED_NOTE =
-        "Switch gateways from Sessions. Chats and messaging stay with their gateway; " +
+        "Switch gateways here or from Sessions. Chats and messaging stay with their gateway; " +
             "work on other gateways keeps running."
 
     /** `en.ts:710`. */
@@ -38,6 +43,63 @@ internal object ConnectionsCopy {
 
     /** `en.ts:713`. */
     const val CURRENT_PILL = "Current"
+
+    /**
+     * The act of re-homing this device to another saved row.
+     *
+     * Desktop's registry has no such action — its rows offer Test, Make
+     * primary, Edit and Remove, and switching is the sidebar's radio group
+     * (`connection-switcher.tsx:212-227`). The word is still Desktop's: it is
+     * the verb `stagedNote` uses for exactly this act (`en.ts:706`), so the
+     * two surfaces name the same thing rather than inventing a second term.
+     */
+    const val SWITCH_CONNECTION = "Switch"
+
+    /**
+     * The one word both switch surfaces use while a switch is in flight.
+     *
+     * Shared rather than duplicated: the session rail says it on its trigger
+     * and this list says it on the row, and two spellings of one state is how
+     * a person starts wondering whether they are two different states.
+     */
+    const val CONNECTING = "Connecting…"
+
+    /**
+     * `en.ts:723`. Rendered disabled behind
+     * [com.hermesagent.mobile.ui.common.COMING_SOON]: this app has no
+     * route-independent reachability probe to run.
+     */
+    const val TEST_CONNECTION = "Test"
+
+    /**
+     * `en.ts:722`. Rendered disabled for the same reason: `primary` is the
+     * launch-mode default (`registry.primary`), and Android persists no such
+     * field — with one active connection it would not differ from `Current`.
+     */
+    const val MAKE_PRIMARY = "Make primary"
+
+    /**
+     * Why activating a Managed SSH row does not dial it.
+     *
+     * The SSH credential is in memory for the life of the screen and died with
+     * the connection the switch just closed, so nothing can bring this row up
+     * unattended (`ConnectionSwitchController.restorable`). The next action is
+     * the Connect button on the Managed SSH pane this switch just revealed,
+     * directly above this list.
+     */
+    const val SSH_NEEDS_CREDENTIAL =
+        "Managed SSH signs in on this device, so it cannot reconnect on its own. " +
+            "Enter this host's credential above, then Connect."
+
+    /**
+     * The same landing for any other row that cannot come up unattended.
+     *
+     * Reached when a saved row no longer names an address this app can use, so
+     * there is no stored sign-in to restore it with. Rare — the editor refuses
+     * an unaddressable row at save — but [SSH_NEEDS_CREDENTIAL] would be a lie
+     * about a route that has no host credential to enter.
+     */
+    const val NEEDS_CONNECT = "This gateway did not reconnect on its own. Check its address above, then Connect."
 
     /** `en.ts:716`. */
     const val ADD_CONNECTION = "Add connection"

@@ -111,6 +111,28 @@ data class SavedConnection(
             }
         }
 
+    /**
+     * Whether the app-scoped route follower can bring this row up with nobody
+     * present.
+     *
+     * A Remote row has a stored sign-in and a Local row a stored session token,
+     * so each can be restored from disk — provided it names an address this app
+     * can still use. Managed SSH's credential is created by the connection and
+     * dies with it, so nothing is ever coming for it unattended.
+     *
+     * One rule, two readers: [com.hermesagent.mobile.data.connections.ConnectionSwitchController]
+     * decides whether a switch is worth holding a pending badge for, and the
+     * Gateways list decides whether a row that is now active has to explain why
+     * nothing dialled. Restating it as a `kind ==` check in either place is how
+     * the two drift the first time a kind is added.
+     */
+    val restorable: Boolean
+        get() = when (kind) {
+            ConnectionKind.Remote -> remote.isValid
+            ConnectionKind.Local -> local.isValid
+            ConnectionKind.Ssh -> false
+        }
+
     companion object {
         const val BROWSER_SIGN_IN: String = "Browser sign-in"
 

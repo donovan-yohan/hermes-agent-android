@@ -4,6 +4,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,6 +32,7 @@ import com.hermesagent.mobile.data.connections.connectionMatchesQuery
 import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
+import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.ConfirmSheet
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -56,15 +59,27 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Same grammar: a `SectionHeading` over `ListRow`s, one kind glyph per row,
  * an `EmptyState` when there is nothing (or nothing matching), search once the
  * list is long, an inline editor, and a destructive confirm before a removal.
- * Desktop's Cloud kind, its per-connection Test and Make primary actions, its
- * update fan-out, its launch-mode toggle and its proxy-header editor are all
- * deliberately absent — see `docs/parity/gateway-connections.md`.
+ * Desktop's Cloud kind, its update fan-out, its launch-mode toggle and its
+ * proxy-header editor are deliberately absent, and its per-row `Test` and
+ * `Make primary` are present but disabled — see
+ * `docs/parity/gateway-connections.md`.
  */
 @Composable
 internal fun ConnectionsSection(
     state: ConnectionsUiState,
     actions: ConnectionsActions,
     modifier: Modifier = Modifier,
+    /**
+     * Whether the route pane above this list is currently showing its Connect
+     * button (`SshScreen.kt`, `GatewayScreen.kt` — offered only while the
+     * gateway is neither connected nor connecting).
+     *
+     * A row that cannot dial itself explains why and names Connect as the next
+     * action; once that connection is up there is no Connect on screen and
+     * nothing left to explain, so the sentence would be stale advice about a
+     * problem that is over.
+     */
+    connectOffered: Boolean = true,
 ) {
     val tokens = HermesTheme.tokens
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -122,7 +137,15 @@ internal fun ConnectionsSection(
                 ConnectionRow(
                     connection = connection,
                     current = connection.id == state.activeId,
+                    // Desktop reports a pending switch on the rail trigger
+                    // only, because its radio menu closes on the click; this
+                    // list stays on screen, so the row that is moving has to
+                    // say so itself — and every other row has to stop offering
+                    // a switch that would be ignored.
+                    pendingId = state.pendingId,
+                    connectOffered = connectOffered,
                     canRemove = state.canRemove,
+                    onSelect = { actions.onSelect(connection.id) },
                     onEdit = { actions.onBeginEdit(connection.id) },
                     onRemove = { actions.onRequestRemove(connection.id) },
                 )
@@ -174,18 +197,26 @@ internal fun ConnectionsSection(
 }
 
 /**
- * One saved connection: kind glyph, label, the Current marker, and the
- * non-secret endpoint summary — Desktop's row title and description
- * (`connections-registry.tsx:578-641`).
+ * One saved connection: kind glyph, label, the Current marker, the non-secret
+ * endpoint summary, and the row's actions — Desktop's row title, description
+ * and action cluster (`connections-registry.tsx:578-641`).
  *
- * Everything endpoint-shaped goes through [redact] on the way to the screen,
- * so a value typed into the wrong field cannot be read back out of this list.
+ * Desktop's action order is kept (`Test`, `Make primary`, `Edit`, `Remove`),
+ * with the switch action ahead of it because on a phone this list *is* a
+ * switch surface — see [ConnectionRowActions]. Everything endpoint-shaped goes
+ * through [redact] on the way to the screen, so a value typed into the wrong
+ * field cannot be read back out of this list.
  */
 @Composable
 private fun ConnectionRow(
     connection: SavedConnection,
     current: Boolean,
+    /** The row a switch is in flight for, if any — see [ConnectionRowActions]. */
+    pendingId: String?,
+    /** Whether the route pane above is currently offering its Connect button. */
+    connectOffered: Boolean,
     canRemove: Boolean,
+    onSelect: () -> Unit,
     onEdit: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -210,26 +241,120 @@ private fun ConnectionRow(
             }
         },
         action = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                HermesIconButton(
-                    icon = HermesIcon.Edit,
-                    contentDescription = "${ConnectionsCopy.EDIT_CONNECTION} ${connection.label}",
-                    onClick = onEdit,
-                )
-                HermesIconButton(
-                    icon = HermesIcon.Trash,
-                    contentDescription = if (canRemove) {
-                        "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}"
-                    } else {
-                        "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}. " +
-                            ConnectionsCopy.LAST_CONNECTION_HINT
-                    },
-                    onClick = onRemove,
-                    enabled = canRemove,
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // The honest landing for a row that is now active but that
+                // nothing is going to dial. Whether that is true is
+                // `SavedConnection.restorable`'s to say, not this screen's —
+                // the same rule the switch controller waits on. Only the
+                // sentence is per-kind, because only the reason is. The route
+                // pane above this list follows the active row's kind, so the
+                // Connect both sentences name is already on screen.
+                if (current && !connection.restorable && connectOffered) {
+                    Text(
+                        text = when (connection.kind) {
+                            ConnectionKind.Ssh -> ConnectionsCopy.SSH_NEEDS_CREDENTIAL
+                            ConnectionKind.Remote, ConnectionKind.Local -> ConnectionsCopy.NEEDS_CONNECT
+                        },
+                        style = HermesTheme.type.caption,
+                        color = tokens.textTertiary,
+                    )
+                }
+                ConnectionRowActions(
+                    connection = connection,
+                    current = current,
+                    pendingId = pendingId,
+                    canRemove = canRemove,
+                    onSelect = onSelect,
+                    onEdit = onEdit,
+                    onRemove = onRemove,
                 )
             }
         },
     )
+}
+
+/**
+ * Desktop's row action cluster, in Desktop's order.
+ *
+ * Desktop renders these inline rather than behind an overflow menu
+ * (`connections-registry.tsx:586-625`), and so does this — but a phone row is
+ * narrower than a Desktop one, so the cluster wraps instead of overflowing.
+ *
+ * Two of Desktop's four are here disabled behind a
+ * [com.hermesagent.mobile.ui.common.COMING_SOON]
+ * pill rather than left out: `Test` has no route-independent reachability probe
+ * on Android yet, and `Make primary` needs the launch-mode registry field this
+ * app does not persist. Showing them dimmed says the surface is unfinished;
+ * omitting them would say it was never meant to have them.
+ *
+ * The switch action leads, and exists only here. Desktop switches from its
+ * sidebar radio group and its registry does not offer the act at all
+ * (`connection-switcher.tsx:212-227`); on a phone the person is already on
+ * this screen when they add or fix a gateway, and sending them back to Sessions
+ * to start using it is a round trip Desktop never has to make. It is a discrete
+ * target rather than a tap on the whole row on purpose: a switch drops the live
+ * connection, this endpoint's cached sessions and its unsent drafts, so it must
+ * not be what a thumb reaching for Edit lands on.
+ */
+@Composable
+private fun ConnectionRowActions(
+    connection: SavedConnection,
+    current: Boolean,
+    pendingId: String?,
+    canRemove: Boolean,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    // Both facts come from one field, so it travels as one field: a `pending`
+    // that disagreed with a `switching` would be a state this row cannot be in,
+    // and nothing down here would have caught it.
+    val pending = connection.id == pendingId
+    val switching = pendingId != null
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        // `pending ||`, not just `!current`: the controller writes the active
+        // marker *before* it waits for the dial
+        // (`ConnectionSwitchController.select`), so for the whole settle window
+        // the target row is already `current`. Keying only on `!current` took
+        // this control away exactly when it had something to say, leaving a row
+        // marked `Current` beside siblings whose `Switch` had gone grey for no
+        // stated reason.
+        if (pending || !current) {
+            TextButton(
+                label = if (pending) ConnectionsCopy.CONNECTING else ConnectionsCopy.SWITCH_CONNECTION,
+                onClick = onSelect,
+                // Disarmed for the whole flight, on every row: the one being
+                // switched to has nothing left to ask for, and the others
+                // would be asking for a switch that is already being ignored.
+                enabled = !switching,
+                modifier = Modifier.semantics {
+                    contentDescription = "${ConnectionsCopy.SWITCH_CONNECTION} ${connection.label}"
+                    if (pending) stateDescription = ConnectionsCopy.CONNECTING
+                },
+            )
+        }
+        ComingSoonAction(ConnectionsCopy.TEST_CONNECTION)
+        ComingSoonAction(ConnectionsCopy.MAKE_PRIMARY)
+        HermesIconButton(
+            icon = HermesIcon.Edit,
+            contentDescription = "${ConnectionsCopy.EDIT_CONNECTION} ${connection.label}",
+            onClick = onEdit,
+        )
+        HermesIconButton(
+            icon = HermesIcon.Trash,
+            contentDescription = if (canRemove) {
+                "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}"
+            } else {
+                "${ConnectionsCopy.REMOVE_CONNECTION} ${connection.label}. " +
+                    ConnectionsCopy.LAST_CONNECTION_HINT
+            },
+            onClick = onRemove,
+            enabled = canRemove,
+        )
+    }
 }
 
 /**

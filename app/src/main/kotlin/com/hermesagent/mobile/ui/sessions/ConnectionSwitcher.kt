@@ -84,7 +84,7 @@ fun ConnectionSwitcherBar(
             .clickable(role = Role.Button) { sheetVisible = true }
             .semantics {
                 contentDescription = "${ConnectionsCopy.TITLE}: ${active.label}"
-                if (pending) stateDescription = CONNECTING
+                if (pending) stateDescription = ConnectionsCopy.CONNECTING
             }
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -100,7 +100,7 @@ fun ConnectionSwitcherBar(
             modifier = Modifier.weight(1f, fill = false),
         )
         if (pending) {
-            Text(CONNECTING, style = HermesTheme.type.scaffold, color = tokens.textTertiary)
+            Text(ConnectionsCopy.CONNECTING, style = HermesTheme.type.scaffold, color = tokens.textTertiary)
         }
         HermesIconGlyph(HermesIcon.ChevronDown, color = tokens.textQuaternary, size = 12.sp)
     }
@@ -268,6 +268,3 @@ private fun ConnectionRadioRow(
         }
     }
 }
-
-/** The one word this surface uses while a switch is in flight. */
-private const val CONNECTING = "Connecting…"

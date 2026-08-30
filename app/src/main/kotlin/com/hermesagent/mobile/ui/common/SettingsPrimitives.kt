@@ -16,6 +16,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -56,6 +59,41 @@ fun Pill(text: String, modifier: Modifier = Modifier, tone: PillTone = PillTone.
             )
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
+}
+
+/**
+ * The marker on a control this app has not built yet.
+ *
+ * Not Desktop vocabulary — Desktop is not missing anything — which is why it
+ * lives with the primitive rather than in any one surface's copy object.
+ */
+const val COMING_SOON: String = "Coming soon"
+
+/**
+ * A control a ported surface is expected to have, rendered disabled and marked.
+ *
+ * The pill is what stops a dimmed control from reading as one that is merely
+ * unavailable right now: there is no state in which these light up, and a
+ * person is entitled to know that before they go hunting for the condition
+ * that would enable it. Omitting the control instead would say the surface was
+ * never meant to have it, which is a different and less honest claim.
+ *
+ * One spoken node, so a screen reader announces the action and its status
+ * together rather than reading a label and leaving the pill to follow.
+ */
+@Composable
+fun ComingSoonAction(label: String, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label. $COMING_SOON"
+            disabled()
+        },
+    ) {
+        TextButton(label = label, onClick = {}, enabled = false)
+        Pill(COMING_SOON)
+    }
 }
 
 /** Icon + title heading above a run of rows (`settings/primitives.tsx:31-52`). */

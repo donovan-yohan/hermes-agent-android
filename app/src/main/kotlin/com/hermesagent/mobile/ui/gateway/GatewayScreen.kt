@@ -97,8 +97,19 @@ fun GatewayScreen(
             // `f82f2dba`). On a phone the page is one scroll per route, so the
             // section travels into whichever route is showing rather than
             // becoming a second, separately-scrolling band.
+            // Whether the pane above this footer is offering Connect right now.
+            // Both panes gate that button on the same controller status
+            // (`SshScreen.kt`'s `when (state.connection.status)`), and a row
+            // that cannot dial itself points at that button by name — so the
+            // row must stop pointing at it once it is no longer there.
+            val connectOffered = state.connection.status != GatewayConnectionStatus.Connected &&
+                state.connection.status != GatewayConnectionStatus.Connecting
             val registry: @Composable ColumnScope.() -> Unit = {
-                ConnectionsSection(connectionsState, connectionsActions)
+                ConnectionsSection(
+                    state = connectionsState,
+                    actions = connectionsActions,
+                    connectOffered = connectOffered,
+                )
             }
             when (state.mode) {
                 GatewayConnectionMode.Remote -> RemoteGatewayScreen(

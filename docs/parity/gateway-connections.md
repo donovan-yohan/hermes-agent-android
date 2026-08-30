@@ -14,6 +14,7 @@ that SHA.
 | Kind glyphs (`KIND_ICONS`) | `connections-registry.tsx:26-31` — `cloud`/`local`/`remote`/`ssh` → Cloud/Monitor/Globe/Terminal | `ConnectionKind.glyph`: Remote → Codicon `globe`, Ssh → Codicon `terminal`, Local → Codicon `device-mobile` (Desktop's `Monitor` names the wrong device here) |
 | Row grammar | `settings/primitives.tsx:108-155` (`ListRow`), `:27-29` (`Pill` over `components/ui/badge.tsx:7-21`), `components/ui/empty-state.tsx:7-23` | `ui/common/SettingsPrimitives.kt` — `SettingsListRow`, `Pill`, plus the existing `EmptyState` |
 | Row content | `connections-registry.tsx:578-641` — kind glyph, label, Current/Primary pills, `kind · endpoint` description | Kind glyph, label, `Current` pill, `kind · endpoint · auth mode`, all through `redact()` |
+| Row actions | `connections-registry.tsx:586-625` — inline, not an overflow menu, in the order `Test` (always), `Make primary` (when not primary), `Edit`, `Remove` (both icon-only, both hidden for `local`); copy at `en.ts:717`, `:718`, `:722`, `:723` | `ConnectionRowActions` — same four in the same order, wrapping instead of overflowing, with a `Switch` action ahead of them. `Test` and `Make primary` are rendered disabled behind a `Coming soon` pill; `Edit`/`Remove` are shown on every kind |
 | Duplicate rule | `connections-registry.tsx:89-168` (`normalizeGatewayUrl`, `sshCompositeKey`, `findDuplicateConnection`) | `data/connections/ConnectionRegistry.kt`, same three functions, plus `localGatewayKey`: Local rows collide on the normalized loopback address (`127.0.0.1`, `localhost` and `[::1]` on one port are one server), not on being local at all |
 | Removal | `connections-registry.tsx:866-874` (`ConfirmDialog`, destructive) | `ui/common/ConfirmSheet` — a bottom sheet with the same title, description and destructive confirm |
 | Display order | `lib/connection-display.ts:11-23` (`Intl.Collator`, numeric, base sensitivity) | `sortConnectionsForDisplay`, numeric-aware and case-insensitive, id breaking ties |
@@ -24,8 +25,10 @@ that SHA.
 | Hidden for one source | `connection-switcher.tsx:118-120` | `ConnectionsUiState.switchable`; the rail renders no chrome |
 | Radio group + active check | `connection-switcher.tsx:205-233` (`DropdownMenuRadioGroup`/`RadioItem`) | 48dp rows with `Role.RadioButton`, selected semantics, and a Codicon `check` |
 | Trailing manage item | `connection-switcher.tsx:234-237` + `i18n/en.ts:1772` | A hairline, then a `Manage gateways…` row that opens Gateways |
-| Pending state | `connection-switcher.tsx:133,272` (`aria-busy`, spinner) | `stateDescription = "Connecting…"` on the trigger and a per-row `Connecting…` |
+| Pending state | `connection-switcher.tsx:133,272` (`aria-busy`, spinner) | `stateDescription = "Connecting…"` on the rail trigger, and on the registry row the switch control itself reads `Connecting…` from the same `ConnectionsCopy.CONNECTING` constant. Keyed on **pending, not on not-current**: `ConnectionSwitchController.select` writes the active marker *before* it waits for the dial, so the target row is `Current` and still connecting for the whole settle window |
 | Switch semantics | `store/connections.ts:153-225` (`selectConnection`) and `store/gateway-switch.ts:47-96` (`wipeSessionListsForGatewaySwitch`) | `data/connections/ConnectionSwitchController.kt` plus `SessionCache.resetForEndpointSwitch()` |
+| A route that cannot come up unattended is not waited on (`store/connections.ts:186-190` throws rather than hanging when the target never becomes active) | `SavedConnection.restorable` — one rule, read by `ConnectionSwitchController.awaitSettle` for whether to hold a pending badge and by the Gateways row for whether to explain that nothing dialled | Restating "which kinds self-restore" as a `kind == Ssh` check in the UI is how the two copies drift the first time a kind is added. Only the *sentence* is per-kind, because only the reason is. |
+| Switch is re-entrant-safe | `store/connections.ts:159-161` — a repeat `selectConnection` for the target already in flight returns before it touches anything | `ConnectionsViewModel.select` drops the tap while `switchJob` is active, and `ConnectionSwitchController.select` serialises on one mutex |
 | Copy | `i18n/en.ts:703-764`, `:1770`, `:1772` | `ui/gateway/ConnectionsCopy.kt`, one constant per line, cited |
 
 ## State classification
@@ -53,7 +56,16 @@ that SHA.
 | Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | The endpoint is rendered under the label in the sheet, and in the row description in settings | Touch has no hover; the information is shown rather than hidden. |
 | Row description `kind · endpoint` | `kind · endpoint · auth mode` | The issue's acceptance list asks for the auth mode on the row; it is a mode name, never a secret. |
 | `EmptyState` with a title only | Title plus one next-action line | Product-copy rule: state the outcome *and* the next action. |
-| `Test`, `Make primary`, `Update all instances`, launch-mode toggle, extra-header editor, plain-text-keyring consent | Absent | Omissions, not adaptations. `Test`/`Update all` have no Android equivalent yet; `primary` is meaningless with one active connection; header editing and the keyring consent are explicit non-goals of the issue. Recorded so the port stays honestly incomplete. |
+| `Test` (`en.ts:723`), `Make primary` (`en.ts:722`) | Present on every row, disabled, each behind a `Coming soon` pill | **Omission → coming-soon.** Still not implemented, but no longer invisible: an absent control reads as a surface that never had the feature, so a person goes looking for it elsewhere. `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the launch-mode registry field (`launchMode`, `registry.primary`) Android does not persist, and with exactly one active connection `primary` has nothing to distinguish it from `Current`. |
+| `Make primary` is hidden on the row that already is primary (`connections-registry.tsx:601`) | Shown on every row | **Divergence, classified.** The condition has nothing to test against here: Android persists no `registry.primary` / `launchMode` field, so no row is ever the one Desktop would hide it on. Rendering it uniformly disabled is the honest reading of "this app has no primary"; hiding it on an arbitrary row would invent the concept. Revisit if launch mode is ever ported. |
+| No equivalent — Desktop's SSH connection is main-process-owned with stored credentials, so it never lands active-but-undialled | A row that cannot come up unattended says so and names `Connect`, but only while the route pane above is actually offering that button (neither `Connected` nor `Connecting`, per `SshScreen.kt`'s status `when`) | Gating on the button's own condition is what keeps the sentence from becoming stale advice about a problem that is already over. |
+| `Update all instances`, launch-mode toggle, extra-header editor, plain-text-keyring consent | Absent | Omissions, not adaptations, and not row actions — they are page-level controls. `Update all` has no Android equivalent; header editing and the keyring consent are explicit non-goals of the issue. Recorded so the port stays honestly incomplete. |
+| No way to switch connection from the registry at all — Desktop switches from the sidebar radio group (`connection-switcher.tsx:212-227`), and `stagedNote` says so in as many words: "Switch gateways from Sessions" (`en.ts:706`) | A `Switch` action on every non-active row, ahead of Desktop's four, calling the same `selectConnection` semantics | **Adaptation.** Desktop's Settings is a window beside a sidebar that is always there; a phone's Gateways screen is a destination you navigate to, and the person is already standing on it when they add or repair a gateway. Sending them back to Sessions to start using what they just saved is a round trip Desktop never has to make. The verb is Desktop's own (`en.ts:706`), so the two surfaces name one act. It is a discrete target rather than a whole-row tap because a switch drops the live connection, this endpoint's cached sessions and its unsent drafts — not what a thumb reaching for Edit should land on. |
+| Saving a new connection leaves it staged: `save()` calls `bridge.save`, republishes the registry and closes the editor, and nothing else (`connections-registry.tsx:277-370`). The component only *reads* `$activeConnectionId` (`:224`, `:571`) — it never calls `selectConnection`, and `setPrimary` (`:400`) sets the launch default, not the active row | Same. `ConnectionsViewModel.saveEditor` writes the row; only a re-address of the row that is *already* active redials | **Parity, not a gap.** An emulator pass read "a freshly saved row is neither activated nor dialled" as a defect; Desktop behaves identically, and the string Desktop calls `stagedNote` is named for exactly this. Auto-activating on save would also be destructive: adding a gateway would tear down the connection you are on, drop its cached sessions and discard its unsent drafts. What was genuinely missing is that the staged row had no way to *become* active from this screen — which is what the `Switch` action above fixes, one tap, on the row. |
+| `ListRow`'s body is not a target: a plain grid `div` with title/description/hint/`below` and an `action` slot, no `onClick`, no `role`, no `tabIndex` (`settings/primitives.tsx:108-155`) | Same — `SettingsListRow` has no click handler, so a row tap and a long-press do nothing | **Parity, deliberate.** The same emulator pass read the inert row body as a defect. It is Desktop's treatment, and the right one here: the destructive act on this row is the switch, and a whole-row target is what a thumb reaching for Edit or Remove hits by accident. Every action on the row is an explicit, named target. |
+| `stagedNote`: "Switch gateways from Sessions." (`en.ts:706`) | "Switch gateways here or from Sessions." | **Adaptation**, forced by the row above. Naming Sessions as the only route would now be false, and would point at the longer of the two. The rest of the sentence is unchanged. |
+| A pending switch is reported on the rail trigger only; the radio menu closes on the click, so no row is on screen while its own switch is in flight (`connection-switcher.tsx:133,272`) | The registry row itself reads `Connecting…` and is disarmed, as is every other row's switch | **Adaptation.** This list does not close when you tap it, so the row that is moving has to say so itself. The word is the same constant the rail uses. |
+| `Edit`/`Remove` are hidden on the `local` kind (`connections-registry.tsx:604`) | Shown on every kind, including Local | **Drift, deliberate.** Desktop's Local connection is the runtime its own app manages, so there is nothing for a person to edit and removing it is meaningless. Android's Local row is a Hermes the person runs in Termux: its address and its session token are theirs to change, and the row is theirs to delete. Already recorded in the Local-kind row above. |
 | `local` kind: "The Hermes runtime managed by this app." (`en.ts:733`, `:737`), `Monitor` glyph (`connections-registry.tsx:26-31`), at most one ever (`connections-registry.tsx:132-134`, `en.ts:753`, `:757`) | `ConnectionKind.Local`, label `Local`, description "A Hermes running on this device.", `HermesIcon.DeviceMobile`, and one row per loopback address rather than one row full stop. The Gateways form — the kind entry, the prefilled address, the **Session token** field and the limitation line beside Save — lands with S-A2 ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)); the transport, the token slot and the copy constants are already here | The word is Desktop's; the ownership is not. Desktop's local connection is the runtime its own app manages, so there can only be one and it needs no credential. Android's is a Hermes the person runs in Termux on the same phone, which this app only connects to: the description has to say whose it is, the glyph is a phone rather than a monitor, and the count rule follows the address because two Termux servers on two ports are two Gateways. On loopback there is no TLS, no sign-in and no host key, so the static Hermes session token is the whole boundary and the form has to ask for it. Setup lives in [the Termux local Gateway guide](../guides/termux-local-gateway.md). |
 | `cloud` kind | Absent | Non-goal. There is no Android Hermes Cloud sign-in. |
 | `intro` names Cloud; `stagedNote` names profiles and cron jobs | Both shortened to what Android ships | Copy must be true on the device it is on. Source lines still cited. |
@@ -133,7 +145,11 @@ that SHA.
   refused inline, re-addressing the active row tears the old endpoint down and
   erases the credential it abandoned, renaming it tears nothing down, and a
   registry this build may not write refuses both a save and a removal in place
-  rather than appearing to succeed.
+  rather than appearing to succeed. On switching: two taps in one flight tear
+  the old endpoint down exactly once and leave no pending marker behind,
+  re-selecting the active row is a no-op, and activating a Managed SSH row moves
+  the marker without spending a single millisecond of virtual time waiting for a
+  dial that is not coming.
 - `SecretRedactionTest` — URL userinfo never reaches a screen or a screen
   reader, and an ordinary URL is left alone.
 - `HermesPreferencesTest` — a registry document this build cannot read is never
@@ -144,8 +160,31 @@ that SHA.
   destructive confirm sheet, the inline duplicate error, and — on the rail —
   no chrome for one connection, the sheet's rows and their selected state, the
   eight-connection search threshold with its no-matches copy, the pending
-  `Connecting…` state, and `Manage gateways…`.
+  `Connecting…` state, and `Manage gateways…`. On switching from the registry:
+  the active row offers no switch to itself and the other row does, taking it
+  moves the `Current` marker and the offer with it; a row mid-switch reads
+  `Connecting…` — driven by the real `ConnectionSwitchController`, so the
+  assertion sees the genuine window in which the target row is `Current` *and*
+  still dialling — and neither it nor any sibling will take a second tap; `Test`
+  and `Make primary` render with the shared `ComingSoonAction` primitive's
+  pill and its spoken "⟨label⟩. Coming soon"; and activating a Managed SSH row — driven through the
+  whole `GatewayScreen`, because the claim is about where the person lands —
+  leaves it `Current`, states why nothing dialled, and puts the Managed SSH
+  pane's own `Connect` on screen above the list — and that sentence is gone
+  once the connection is up and the pane offers `Disconnect` instead.
 
 Rendered visual capture against a Desktop dev renderer has **not** been done for
 this slice; the surface is evidenced by the Compose journeys and this ledger.
 That is an omission, recorded here rather than implied away.
+
+The port skill's `capture-desktop-reference.mjs` was considered and is not
+usable here. It attaches over CDP to an **already running** Electron renderer
+(`--port`, `--match`) rather than rendering from source, so a reference shot of
+this surface would need the Desktop app built and launched from a checkout at
+the pinned SHA, on a display, with a registry holding at least two connections
+so the row actions and the `Current`/`Primary` pills have anything to show. None
+of that is available in this environment, and the pinned upstream checkout is
+read-only, so the Desktop side of every claim above is cited to the JSX and the
+copy table instead — `connections-registry.tsx:586-625` for the action cluster
+and its order, `connection-switcher.tsx:212-227` for where switching actually
+lives, and `i18n/en.ts:703-764` for the words.
