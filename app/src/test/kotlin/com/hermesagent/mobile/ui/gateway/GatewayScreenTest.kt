@@ -46,10 +46,12 @@ class GatewayScreenTest {
             "Sign in once to Hermes Cloud and pick from the agents on your account — no URL to paste.",
             cards.getValue("Hermes Cloud").description,
         )
-        // Verbatim, `en.ts:866-867`.
+        // `en.ts:866-867` minus one adjective: Desktop says "key-based", and
+        // this route offers Tailscale SSH and Password as well as a key
+        // (`data/ssh/SshModel.kt:80`), so the word would turn people away.
         assertEquals(
             "Hermes is launched on the remote over SSH and tunneled to this app — nothing to start " +
-                "or expose yourself. Requires working key-based SSH access to the host.",
+                "or expose yourself. Requires working SSH access to the host.",
             cards.getValue("Connect via SSH").description,
         )
         // Verbatim, `en.ts:781` and `:868`.

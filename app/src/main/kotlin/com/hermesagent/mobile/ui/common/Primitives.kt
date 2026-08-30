@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -541,24 +542,6 @@ fun VerticalHairline(modifier: Modifier = Modifier) {
 }
 
 /**
- * What this app shows where Desktop has a control it cannot run yet.
- *
- * The parity gate's rule is that unsupported is *disabled, not absent*
- * (`docs/workflows/review-desktop-parity.md`, "Classify every divergence"): a
- * removed control teaches a different shape than Desktop, and a surface that
- * teaches the wrong shape is a worse lie than one that admits a gap. Desktop
- * has no such word — it supports everything it renders — so this string is
- * Android's, defined once so every owed pill reads the same.
- */
-const val COMING_SOON = "Coming soon"
-
-/** [COMING_SOON] in the app's pill grammar. One definition, every owed control. */
-@Composable
-fun ComingSoonPill(modifier: Modifier = Modifier) {
-    Pill(COMING_SOON, modifier)
-}
-
-/**
  * Desktop's shared card emphasis, `selectableCardClass({ active, prominent })`
  * (`apps/desktop/src/lib/selectable-card.ts:22-31` @ `f82f2dba`).
  *
@@ -566,6 +549,17 @@ fun ComingSoonPill(modifier: Modifier = Modifier) {
  * `border-primary bg-primary/[0.06] ring-2 ring-primary/20`; `prominent` is
  * the resting card — `border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary)`. The
  * muted tier is a hover treatment for pickers, and touch has no hover.
+ *
+ * One colour role is **not** matched, and it is a divergence rather than a
+ * translation. Desktop's `--ui-bg-quinary` is a translucent accent-tinted wash
+ * (`styles.css:288-292` @ `f82f2dba`: an accent mix over 3% of the base); the
+ * nearest thing this app's token layer has is `widgetSurface`, which is opaque
+ * and derived from the card fill. The port skill's rule is to add the missing
+ * token with its Desktop provenance rather than reach past the layer — but the
+ * token layer is pinned at a *different* SHA and gated by `ThemeParityTest`,
+ * so adding one is a theme-sync change, not this slice's. Recorded in
+ * `docs/parity/gateway-connections.md` as drift with an owner instead of
+ * quietly painting the wrong thing under a comment that claims otherwise.
  *
  * Desktop's ring is a box-shadow, so it costs no layout. Here the 2dp is
  * always reserved and only *painted* when active, which keeps a card exactly
@@ -622,6 +616,9 @@ fun ModeCard(
         modifier
             .fillMaxWidth()
             .then(selectableCardModifier(active, ModeCardShape))
+            // Before `selectable`: an unclipped ripple paints square corners
+            // over a rounded card.
+            .clip(ModeCardShape)
             .selectable(
                 selected = active,
                 enabled = enabled,
@@ -790,10 +787,17 @@ fun ChoiceButton(
         modifier
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .background(
-                if (selected && enabled) tokens.accent.copy(alpha = 0.16f) else Color.Transparent,
+                // Desktop's `variant="default"` is a solid `bg-primary`, not a
+                // wash (`components/ui/button.tsx` via
+                // `connections-registry.tsx:661` @ `f82f2dba`). This app's
+                // segmented control uses a 16% accent tint for *its* selected
+                // segment, but that is a different control; matching Desktop
+                // here costs nothing and removes a divergence.
+                if (selected && enabled) tokens.accent else Color.Transparent,
                 shape,
             )
             .border(1.dp, if (selected && enabled) tokens.accent else tokens.strokeTertiary, shape)
+            .clip(shape)
             .selectable(selected = selected, enabled = enabled, onClick = onClick, role = Role.RadioButton)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -804,7 +808,9 @@ fun ChoiceButton(
             style = HermesTheme.type.caption,
             color = when {
                 !enabled -> tokens.textQuaternary
-                selected -> tokens.textPrimary
+                // On a solid accent fill the label is Desktop's
+                // `text-primary-foreground`, not the ordinary ink.
+                selected -> tokens.accentForeground
                 else -> tokens.textSecondary
             },
         )

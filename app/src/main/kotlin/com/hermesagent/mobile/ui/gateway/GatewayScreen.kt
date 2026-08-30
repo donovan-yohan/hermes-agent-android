@@ -22,11 +22,12 @@ import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
-import com.hermesagent.mobile.ui.common.ComingSoonPill
+import com.hermesagent.mobile.ui.common.COMING_SOON
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.ModeCard
 import com.hermesagent.mobile.ui.common.ModeCardGrid
+import com.hermesagent.mobile.ui.common.Pill
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.SecureScreenLifetime
 import com.hermesagent.mobile.ui.common.SectionLabel
@@ -161,7 +162,7 @@ fun GatewayScreen(
                         if (mode != null && state.loaded) gatewayActions.onModeChange(mode)
                     },
                     trailing = if (card.mode == null) {
-                        { ComingSoonPill() }
+                        { Pill(COMING_SOON) }
                     } else {
                         null
                     },

@@ -342,10 +342,19 @@ internal object GatewayModeCopy {
     /** `en.ts:865`. */
     const val SSH_TITLE = "Connect via SSH"
 
-    /** `en.ts:866-867`. True as written on Android, so it is written as it is. */
+    /**
+     * `en.ts:866-867`, minus one adjective. Desktop's sentence ends "Requires
+     * working **key-based** SSH access to the host", which is false here and
+     * not harmlessly so: this route offers three methods
+     * (`AuthMethod.TailscaleSsh`, `Password`, `PrivateKey` —
+     * `data/ssh/SshModel.kt:80`), and only one of them is a key. Left verbatim,
+     * the line tells a person whose host takes a password, or who is on a
+     * tailnet, that the route will not work for them — a deterrent, not a
+     * cosmetic difference. Everything else is Desktop's, word for word.
+     */
     const val SSH_DESC =
         "Hermes is launched on the remote over SSH and tunneled to this app — nothing to start " +
-            "or expose yourself. Requires working key-based SSH access to the host."
+            "or expose yourself. Requires working SSH access to the host."
 
     /** `en.ts:868`. */
     const val SSH_TRUST_HINT =
