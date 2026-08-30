@@ -11,12 +11,18 @@ import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.ConnectionRegistryCodec
 import com.hermesagent.mobile.data.connections.SavedConnection
+import com.hermesagent.mobile.data.gateway.ActiveGatewayRoute
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -66,7 +72,7 @@ class HermesPreferencesTest {
         )
 
         preferences.saveRemoteGatewayProfile(remote)
-        preferences.saveGatewayConnectionMode(GatewayConnectionMode.Ssh)
+        preferences.saveGatewayConnectionMode(GatewayConnectionMode.Ssh, expectedConnectionId = null)
 
         val loaded = preferences.remoteGatewayProfile.first()
         assertEquals(remote.baseUrl, loaded.baseUrl)
@@ -293,6 +299,85 @@ class HermesPreferencesTest {
         }
     }
 
+    /**
+     * The route is read by a surface that renders the row, its kind and its
+     * address at once. Handed out as three flows it reaches that surface as
+     * three changes, one of which pairs the row just switched to with the route
+     * and address of the row before it — and a keystroke landing in that gap
+     * pins the surface on the old address. One value has no such gap.
+     */
+    @Test
+    fun `a switch hands out one route, never a new row's kind over the last row's address`() = runBlocking {
+        val first = SavedConnection(
+            "fixture-a",
+            "Alpha",
+            ConnectionKind.Remote,
+            remote = RemoteGatewayProfile("https://alpha.example", "alpha"),
+        )
+        val second = SavedConnection(
+            "fixture-b",
+            "Beta",
+            ConnectionKind.Local,
+            local = LocalGatewayProfile("http://127.0.0.1:9119"),
+        )
+        try {
+            preferences.saveConnection(first)
+            preferences.saveConnection(second)
+            preferences.setActiveConnection(first.id)
+
+            val seen = mutableListOf<ActiveGatewayRoute>()
+            val collector = launch(Dispatchers.Unconfined) {
+                preferences.activeGatewayRoute.collect { seen += it }
+            }
+            try {
+                awaitRoute(seen, first.id)
+                val before = seen.size
+
+                preferences.setActiveConnection(second.id)
+                awaitRoute(seen, second.id)
+
+                assertEquals("one commit, one route", 1, seen.size - before)
+                val route = seen.last()
+                assertEquals(second.id, route.connectionId)
+                assertEquals("the kind of the row it names", GatewayConnectionMode.Local, route.mode)
+                assertEquals("and that row's Gateway URL, which is none", "", route.remote.baseUrl)
+                assertEquals("stamped for the row it came from", second.id, route.remote.secretSlotId)
+            } finally {
+                collector.cancel()
+            }
+        } finally {
+            preferences.removeConnection(second.id)
+            preferences.removeConnection(first.id)
+        }
+    }
+
+    @Test
+    fun `a route change stamped for a row that is no longer active is dropped, not redirected`() = runBlocking {
+        val first = SavedConnection("fixture-a", "Alpha", ConnectionKind.Remote)
+        val second = SavedConnection("fixture-b", "Beta", ConnectionKind.Remote)
+        try {
+            preferences.saveConnection(first)
+            preferences.saveConnection(second)
+            preferences.setActiveConnection(second.id)
+
+            val written = preferences.saveGatewayConnectionMode(GatewayConnectionMode.Local, first.id)
+
+            assertFalse("the caller is told its change went nowhere", written)
+            val rows = preferences.connectionRegistry.first().connections
+            assertEquals("the row it landed on keeps its kind", ConnectionKind.Remote, rows.first { it.id == second.id }.kind)
+            assertEquals("and so does the row it was for", ConnectionKind.Remote, rows.first { it.id == first.id }.kind)
+
+            assertTrue(preferences.saveGatewayConnectionMode(GatewayConnectionMode.Local, second.id))
+            assertEquals(
+                ConnectionKind.Local,
+                preferences.connectionRegistry.first().connections.first { it.id == second.id }.kind,
+            )
+        } finally {
+            preferences.removeConnection(second.id)
+            preferences.removeConnection(first.id)
+        }
+    }
+
     @Test
     fun `removing the active row moves the marker instead of leaving it dangling`() = runBlocking {
         val first = SavedConnection("fixture-a", "Alpha", ConnectionKind.Remote)
@@ -366,7 +451,7 @@ class HermesPreferencesTest {
     @Test
     fun `active composer scope follows the selected remote route and provider`() = runBlocking {
         try {
-            preferences.saveGatewayConnectionMode(GatewayConnectionMode.Remote)
+            preferences.saveGatewayConnectionMode(GatewayConnectionMode.Remote, expectedConnectionId = null)
             preferences.saveRemoteGatewayProfile(RemoteGatewayProfile("https://gateway-a.example/hermes/", "alpha"))
             val first = preferences.activeScope.first()
             preferences.saveRemoteGatewayProfile(RemoteGatewayProfile("https://gateway-b.example/hermes", "beta"))
@@ -380,7 +465,17 @@ class HermesPreferencesTest {
         }
     }
 
+    /** DataStore emits on its own scope; this waits for the route under test to arrive. */
+    private suspend fun awaitRoute(seen: List<ActiveGatewayRoute>, id: String) {
+        withTimeout(ROUTE_TIMEOUT_MILLIS) {
+            while (seen.lastOrNull()?.connectionId != id) delay(POLL_MILLIS)
+        }
+    }
+
     private companion object {
+        const val ROUTE_TIMEOUT_MILLIS = 5_000L
+        const val POLL_MILLIS = 5L
+
         val LEGACY = stringPreferencesKey("host.single.importedKeyName")
         val HOST = stringPreferencesKey("host.single.host")
 

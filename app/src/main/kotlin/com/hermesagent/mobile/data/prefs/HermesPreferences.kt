@@ -23,6 +23,7 @@ import com.hermesagent.mobile.data.profiles.normalizeProfileKey
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.HostProfileStore
+import com.hermesagent.mobile.data.gateway.ActiveGatewayRoute
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.GatewayInstallStore
@@ -32,6 +33,7 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -264,11 +266,25 @@ class HermesPreferences(private val context: Context) :
         connectionRegistry.map { it.active?.localProfile ?: LocalGatewayProfile() }
 
     /**
-     * The identity behind the four projections above — the row itself, not the
-     * marker: a marker naming a row that is gone resolves to the first row,
-     * and it is the resolved row every projection is of.
+     * The three route projections above as one value, taken from one read of
+     * one row so they cannot be observed disagreeing. `distinctUntilChanged`
+     * because a commit that touched some other preference is not a route
+     * change, and the surfaces downstream re-render on every emission.
+     *
+     * The identity is the resolved row, not the marker: a marker naming a row
+     * that is gone resolves to the first row, and the first row is what every
+     * other projection here is of.
      */
-    override val activeConnectionId: Flow<String?> = connectionRegistry.map { it.active?.id }
+    override val activeGatewayRoute: Flow<ActiveGatewayRoute> = connectionRegistry
+        .map { registry ->
+            val active = registry.active
+            ActiveGatewayRoute(
+                connectionId = active?.id,
+                mode = active?.kind?.mode ?: GatewayConnectionMode.Remote,
+                remote = active?.remoteProfile ?: RemoteGatewayProfile(),
+            )
+        }
+        .distinctUntilChanged()
 
     /**
      * One authoritative scope for sticky new-draft controls. It follows the
@@ -328,8 +344,27 @@ class HermesPreferences(private val context: Context) :
         }
     }
 
-    override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) {
-        editActiveConnection { active -> active.copy(kind = ConnectionKind.of(mode)) }
+    /**
+     * Stamped like the profile write, and for the same reason — see
+     * [RemoteGatewayProfileStore.saveGatewayConnectionMode]. The comparison
+     * happens inside the transaction that resolves the marker, which is the
+     * only place the caller's row and the active row can be compared without a
+     * gap between reading one and writing the other.
+     */
+    override suspend fun saveGatewayConnectionMode(
+        mode: GatewayConnectionMode,
+        expectedConnectionId: String?,
+    ): Boolean {
+        var written = false
+        editActiveConnection { active ->
+            if (expectedConnectionId != null && expectedConnectionId != active.id) {
+                active
+            } else {
+                written = true
+                active.copy(kind = ConnectionKind.of(mode))
+            }
+        }
+        return written
     }
 
     /** Inserts a new row or replaces one by id. Which row is active is a separate decision. */

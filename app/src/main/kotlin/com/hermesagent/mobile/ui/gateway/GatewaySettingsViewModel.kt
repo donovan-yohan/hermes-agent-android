@@ -3,6 +3,7 @@ package com.hermesagent.mobile.ui.gateway
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.hermesagent.mobile.data.gateway.ActiveGatewayRoute
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -17,7 +18,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -78,19 +78,13 @@ internal class GatewaySettingsViewModel(
     private var connectJob: Job? = null
 
     init {
-        // Collected rather than read once, and collected together. The route,
-        // the Gateway URL and the row they belong to are three projections of
-        // one saved row (`HermesPreferences.connectionRegistry`), so a switch
-        // has to reach this pane as a single change — a mode that arrived
-        // without its URL would render one connection's route over another's
-        // address.
+        // Collected rather than read once, and read as one value rather than
+        // assembled from three. The store hands the row, its route and its
+        // address out together (`RemoteGatewayProfileStore.activeGatewayRoute`)
+        // precisely so a switch cannot reach this pane as a sequence, one step
+        // of which is a new connection's route over the last one's address.
         viewModelScope.launch {
-            combine(
-                store.activeConnectionId,
-                store.gatewayConnectionMode,
-                store.remoteGatewayProfile,
-                ::Triple,
-            ).collect { (row, mode, remote) -> project(row, mode, remote) }
+            store.activeGatewayRoute.collect(::project)
         }
         viewModelScope.launch {
             gateway.state.collect { connection -> _uiState.update { it.copy(connection = connection) } }
@@ -118,9 +112,9 @@ internal class GatewaySettingsViewModel(
      * landed, all of them belonging to a connection the person has just
      * navigated away from.
      */
-    private fun project(row: String?, mode: GatewayConnectionMode, remote: RemoteGatewayProfile) {
-        if (row != activeRowId) {
-            activeRowId = row
+    private fun project(route: ActiveGatewayRoute) {
+        if (route.connectionId != activeRowId) {
+            activeRowId = route.connectionId
             edited = false
             // A dial aimed at the row we just left must not come up under the
             // one that replaced it. Putting the old endpoint down and forgetting
@@ -131,7 +125,7 @@ internal class GatewaySettingsViewModel(
             cancelConnectionAttempt()
         }
         if (edited) return
-        _uiState.update { it.copy(mode = mode, remote = remote, loaded = true) }
+        _uiState.update { it.copy(mode = route.mode, remote = route.remote, loaded = true) }
     }
 
     /**
@@ -154,18 +148,26 @@ internal class GatewaySettingsViewModel(
     fun setMode(mode: GatewayConnectionMode) {
         val previous = _uiState.value
         if (previous.mode == mode) return
+        val row = activeRowId
         edited = true
         cancelConnectionAttempt()
         _uiState.update { it.copy(mode = mode, loaded = true) }
         val abandonedSessionToken = previous.local
             .takeIf { previous.mode == GatewayConnectionMode.Local && it.secretSlotId.isNotBlank() }
         viewModelScope.launch {
+            // Both consequences below belong to the row this tap was aimed at.
+            // If the store dropped the write, that row is not the one this app
+            // is on any more: the connection to put down and the token to erase
+            // are the new row's, and neither has been changed by anything. A
+            // write that *failed* is not that case and still tears down, since
+            // the saved route may have moved regardless.
+            var dropped = false
             try {
-                store.saveGatewayConnectionMode(mode)
+                dropped = !store.saveGatewayConnectionMode(mode, row)
             } finally {
-                leaveEndpoint()
+                if (!dropped) leaveEndpoint()
             }
-            abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it) }
+            if (!dropped) abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it) }
         }
     }
 

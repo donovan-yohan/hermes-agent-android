@@ -3,6 +3,7 @@ package com.hermesagent.mobile.ui.gateway
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.ConnectionRegistry
 import com.hermesagent.mobile.data.connections.SavedConnection
+import com.hermesagent.mobile.data.gateway.ActiveGatewayRoute
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectResult
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -261,6 +263,76 @@ class GatewaySettingsViewModelTest {
             )
         }
 
+    /**
+     * The switch window: the marker has moved and this pane has not been told
+     * yet, so what it is showing — and anything typed into it — belongs to the
+     * row that is already behind it.
+     */
+    @Test
+    fun `a keystroke racing a switch is dropped, and the pane still lands on the row switched to`() =
+        runTest(dispatcher) {
+            val store = twoRows()
+            val gateway = RecordingGateway()
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            store.switchTo("row-beta")
+            subject.setRemoteUrl("https://alpha.test/typed")
+            advanceUntilIdle()
+
+            assertEquals(
+                "the pane ends on the row the switch landed on, not pinned by the character it raced",
+                "https://beta.test",
+                subject.uiState.value.remote.baseUrl,
+            )
+            assertEquals("the row it arrived at is untouched", "https://beta.test", store.row("row-beta").remote.baseUrl)
+            assertEquals(
+                "and the character was not redirected into it",
+                "https://alpha.test",
+                store.row("row-alpha").remote.baseUrl,
+            )
+            assertEquals(listOf("row-alpha"), store.droppedWrites)
+        }
+
+    /**
+     * The same window for the route selector. It is the more expensive one to
+     * get wrong: a landed write rewrites the new row's *kind*, and the erase it
+     * drags behind it would take a token belonging to a row nobody changed.
+     */
+    @Test
+    fun `a route tap racing a switch is dropped, and the row it was aimed at keeps its token`() =
+        runTest(dispatcher) {
+            val store = MemoryProfileStore(
+                listOf(
+                    SavedConnection(
+                        "row-local",
+                        "Alpha",
+                        ConnectionKind.Local,
+                        local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
+                    ),
+                    SavedConnection("row-ssh", "Beta", ConnectionKind.Ssh),
+                ),
+            )
+            val gateway = RecordingGateway()
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            store.switchTo("row-ssh")
+            subject.setMode(GatewayConnectionMode.Remote)
+            advanceUntilIdle()
+
+            assertEquals("the row it landed on keeps its kind", ConnectionKind.Ssh, store.row("row-ssh").kind)
+            assertEquals("and so does the row it was aimed at", ConnectionKind.Local, store.row("row-local").kind)
+            assertEquals(listOf("row-local"), store.droppedWrites)
+            assertTrue(
+                "a write that changed no route stranded no token",
+                gateway.forgottenLocal.isEmpty(),
+            )
+            assertEquals(GatewayConnectionMode.Ssh, subject.uiState.value.mode)
+        }
+
     private fun oneRow(
         kind: ConnectionKind,
         remote: RemoteGatewayProfile = RemoteGatewayProfile(),
@@ -286,14 +358,15 @@ class GatewaySettingsViewModelTest {
     )
 
     /**
-     * Shaped like the real store: rows, a marker, and every projection read off
-     * whichever row the marker names.
+     * Shaped like the real store: rows, a marker, every projection read off
+     * whichever row the marker names, and the route handed out as one value.
      *
-     * Deliberately *without* the store's own refusal of a write stamped for
-     * another row ([com.hermesagent.mobile.data.prefs.HermesPreferences.saveRemoteGatewayProfile],
-     * pinned in `HermesPreferencesTest`). What these tests are for is that the
-     * pane composes its edits from the row it is showing; a fake that rejected a
-     * mismatched write would answer correctly for the wrong reason.
+     * It honours the stamp rule too, because that rule is stated on
+     * [RemoteGatewayProfileStore] rather than discovered in one implementation
+     * of it — a fake that accepted a write the contract says is dropped would
+     * make every test above it optimistic. Which row a dropped write was
+     * composed against is recorded, since that is the only part of a drop a
+     * caller can be held to.
      */
     private class MemoryProfileStore(rows: List<SavedConnection>) : RemoteGatewayProfileStore {
         private val registry = MutableStateFlow(ConnectionRegistry(rows, rows.first().id))
@@ -304,7 +377,19 @@ class GatewaySettingsViewModelTest {
             registry.map { it.active?.kind?.mode ?: GatewayConnectionMode.Remote }
         override val localGatewayProfile: Flow<LocalGatewayProfile> =
             registry.map { it.active?.localProfile ?: LocalGatewayProfile() }
-        override val activeConnectionId: Flow<String?> = registry.map { it.active?.id }
+        override val activeGatewayRoute: Flow<ActiveGatewayRoute> = registry
+            .map { current ->
+                val active = current.active
+                ActiveGatewayRoute(
+                    connectionId = active?.id,
+                    mode = active?.kind?.mode ?: GatewayConnectionMode.Remote,
+                    remote = active?.remoteProfile ?: RemoteGatewayProfile(),
+                )
+            }
+            .distinctUntilChanged()
+
+        /** The row each dropped write named, in the order they were dropped. */
+        val droppedWrites = mutableListOf<String>()
 
         fun row(id: String): SavedConnection = registry.value.connections.first { it.id == id }
 
@@ -312,22 +397,33 @@ class GatewaySettingsViewModelTest {
         fun switchTo(id: String) = registry.update { it.copy(activeId = id) }
 
         /** Stands in for the registry editor, the one writer of a row's Local route. */
-        fun setLocal(profile: LocalGatewayProfile) = editActive { it.copy(local = profile) }
-
-        override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) = editActive { active ->
-            active.copy(remote = RemoteGatewayProfile(baseUrl = profile.baseUrl, provider = profile.provider))
+        fun setLocal(profile: LocalGatewayProfile) {
+            editActive(expected = null) { it.copy(local = profile) }
         }
 
-        override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) =
-            editActive { it.copy(kind = ConnectionKind.of(mode)) }
+        override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
+            editActive(profile.secretSlotId.takeIf { it.isNotBlank() }) { active ->
+                active.copy(remote = RemoteGatewayProfile(baseUrl = profile.baseUrl, provider = profile.provider))
+            }
+        }
 
-        private fun editActive(transform: (SavedConnection) -> SavedConnection) {
+        override suspend fun saveGatewayConnectionMode(
+            mode: GatewayConnectionMode,
+            expectedConnectionId: String?,
+        ): Boolean = editActive(expectedConnectionId) { it.copy(kind = ConnectionKind.of(mode)) }
+
+        private fun editActive(expected: String?, transform: (SavedConnection) -> SavedConnection): Boolean {
+            val active = registry.value.active ?: return false
+            if (expected != null && expected != active.id) {
+                droppedWrites += expected
+                return false
+            }
             registry.update { current ->
-                val active = current.active ?: return@update current
                 current.copy(
                     connections = current.connections.map { if (it.id == active.id) transform(it) else it },
                 )
             }
+            return true
         }
     }
 
