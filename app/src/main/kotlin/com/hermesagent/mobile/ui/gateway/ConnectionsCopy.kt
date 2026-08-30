@@ -66,7 +66,7 @@ internal object ConnectionsCopy {
 
     /**
      * `en.ts:723`. Rendered disabled behind
-     * [com.hermesagent.mobile.ui.common.COMING_SOON]: this app has no
+     * [com.hermesagent.mobile.ui.common.WIP_PILL]: this app has no
      * route-independent reachability probe to run.
      */
     const val TEST_CONNECTION = "Test"

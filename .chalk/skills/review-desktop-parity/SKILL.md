@@ -64,8 +64,10 @@ first and come back here for review.
    label casing, and every visible state Desktop has — default, selected/open,
    loading, empty, error, disabled.
 6. **Unsupported is disabled, not absent.** A Desktop mode or control this app
-   does not support **yet** ships visible and disabled with a "coming soon"
-   pill. Only a non-goal — something this platform will never have — is omitted.
+   does not support **yet** ships visible and disabled behind the marker chip.
+   The chip renders `WIP`; `coming soon` stays the class name in the tables, so
+   the two never have to agree. Only a non-goal — something this platform will
+   never have — is omitted.
    A silently missing control is a finding.
 7. **Classify every divergence** as exactly one of `mobile-adaptation` (a real
    touch/space/accessibility reason), `drift` (a finding, with an issue) or

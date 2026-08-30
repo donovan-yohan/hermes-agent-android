@@ -162,7 +162,9 @@ The five omission markers, and what each one commits you to:
 
 **Unsupported means disabled, not absent.** Where Desktop renders a mode or
 control this app does not support yet, the control stays visible and disabled
-with a "coming soon" pill, so the surface teaches the same shape Desktop does.
+behind the marker chip, so the surface teaches the same shape Desktop does. The
+chip renders `WIP`; the marker in the table above stays `coming soon`, because
+one names what is drawn and the other names the class.
 Removing it is only correct for a non-goal. This reverses the older reasoning in
 `docs/parity/session-actions-menu.md`; see
 [#101](https://github.com/donovan-yohan/hermes-agent-android/issues/101).

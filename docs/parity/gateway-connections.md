@@ -19,7 +19,7 @@ that SHA.
 | Kind glyphs (`KIND_ICONS`) | `connections-registry.tsx:26-31` — `cloud`/`local`/`remote`/`ssh` → Cloud/Monitor/Globe/Terminal | `ConnectionKind.glyph`: Remote → Codicon `globe`, Ssh → Codicon `terminal`, Local → Codicon `vm`, this family's monitor (Codicons 0.0.45 ships no `device-desktop`). Cloud has no `ConnectionKind`; the chooser still renders it, disabled |
 | Row grammar | `settings/primitives.tsx:108-155` (`ListRow`), `:27-29` (`Pill` over `components/ui/badge.tsx:7-21`), `components/ui/empty-state.tsx:7-23` | `ui/common/SettingsPrimitives.kt` — `SettingsListRow`, `Pill`, plus the existing `EmptyState` |
 | Row content | `connections-registry.tsx:578-641` — kind glyph, label, Current/Primary pills, `kind · endpoint` description | Kind glyph, label, `Current` pill, `kind · endpoint · auth mode`, all through `redact()` |
-| Row actions | `connections-registry.tsx:586-625` — inline, not an overflow menu, in the order `Test` (always), `Make primary` (when not primary), `Edit`, `Remove` (both icon-only, both hidden for `local`); copy at `en.ts:717`, `:718`, `:722`, `:723` | `ConnectionRowActions` — same four in the same order, wrapping instead of overflowing, with a `Switch` action ahead of them. `Test` and `Make primary` are rendered disabled behind a `Coming soon` pill; `Edit`/`Remove` are shown on every kind |
+| Row actions | `connections-registry.tsx:586-625` — inline, not an overflow menu, in the order `Test` (always), `Make primary` (when not primary), `Edit`, `Remove` (both icon-only, both hidden for `local`); copy at `en.ts:717`, `:718`, `:722`, `:723` | `ConnectionRowActions` — same four in the same order, inline like Desktop's and on one line at 411dp, with a `Switch` action ahead of them. `Test` and `Make primary` are rendered disabled behind a `WIP` pill; `Edit`/`Remove` are shown on every kind |
 | Duplicate rule | `connections-registry.tsx:89-168` (`normalizeGatewayUrl`, `sshCompositeKey`, `findDuplicateConnection`) | `data/connections/ConnectionRegistry.kt`, same three functions, plus `localGatewayKey`: Local rows collide on the normalized loopback address (`127.0.0.1`, `localhost` and `[::1]` on one port are one server), not on being local at all |
 | Removal | `connections-registry.tsx:866-874` (`ConfirmDialog`, destructive) | `ui/common/ConfirmSheet` — a bottom sheet with the same title, description and destructive confirm |
 | Display order | `lib/connection-display.ts:11-23` (`Intl.Collator`, numeric, base sensitivity) | `sortConnectionsForDisplay`, numeric-aware and case-insensitive, id breaking ties |
@@ -63,7 +63,7 @@ that SHA.
 | Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | The endpoint is rendered under the label in the sheet, and in the row description in settings | Touch has no hover; the information is shown rather than hidden. |
 | Row description `kind · endpoint` | `kind · endpoint · auth mode` | The issue's acceptance list asks for the auth mode on the row; it is a mode name, never a secret. |
 | `EmptyState` with a title only | Title plus one next-action line | Product-copy rule: state the outcome *and* the next action. |
-| `Test` (`en.ts:723`), `Make primary` (`en.ts:722`) | Present on every row, disabled, each behind a `Coming soon` pill | **Omission → coming-soon.** Still not implemented, but no longer invisible: an absent control reads as a surface that never had the feature, so a person goes looking for it elsewhere. `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the launch-mode registry field (`launchMode`, `registry.primary`) Android does not persist, and with exactly one active connection `primary` has nothing to distinguish it from `Current`. |
+| `Test` (`en.ts:723`), `Make primary` (`en.ts:722`) | Present on every row, disabled, each behind a `WIP` pill | **Omission → coming-soon.** Still not implemented, but no longer invisible: an absent control reads as a surface that never had the feature, so a person goes looking for it elsewhere. `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the launch-mode registry field (`launchMode`, `registry.primary`) Android does not persist, and with exactly one active connection `primary` has nothing to distinguish it from `Current`. |
 | `Make primary` is hidden on the row that already is primary (`connections-registry.tsx:601`) | Shown on every row | **Divergence, classified.** The condition has nothing to test against here: Android persists no `registry.primary` / `launchMode` field, so no row is ever the one Desktop would hide it on. Rendering it uniformly disabled is the honest reading of "this app has no primary"; hiding it on an arbitrary row would invent the concept. Revisit if launch mode is ever ported. |
 | No equivalent — Desktop's SSH connection is main-process-owned with stored credentials, so it never lands active-but-undialled | A row that cannot come up unattended says so and names `Connect`, but only while the route pane above is actually offering that button (neither `Connected` nor `Connecting`, per `SshScreen.kt`'s status `when`) | Gating on the button's own condition is what keeps the sentence from becoming stale advice about a problem that is already over. |
 | `Update all instances`, launch-mode toggle, extra-header editor, plain-text-keyring consent | Absent | Omissions, not adaptations, and not row actions — they are page-level controls. `Update all` has no Android equivalent; header editing and the keyring consent are explicit non-goals of the issue. Recorded so the port stays honestly incomplete. |
@@ -168,13 +168,20 @@ that SHA.
   kind a row can be has a button, and each kind carries Desktop's glyph.
 - `ConnectionModeCardsJourneyTest` — rendered: the verbatim heading and all four
   cards, each description on screen, the active route checked and the others
-  not, a tap changing the route, Hermes Cloud displayed with its **Coming soon**
+  not, a tap changing the route, Hermes Cloud displayed with its **WIP**
   pill and refusing the tap, the hint glyph revealing and re-hiding Desktop's
   tooltip sentence, no revealer on a card Desktop gives no hint, and the column
   count measured at 411dp, 600dp and 840dp.
 - `ConnectionKindChooserJourneyTest` — rendered: all four kinds offered on
   create, the editor's kind selected, a choice reported, Cloud disabled behind
   the pill, and Local still offered because this registry has no one-Local rule.
+- `ConnectionRowActionsLayoutTest` — measured, under native graphics because
+  Robolectric's legacy stubs give every glyph about a dp of advance and would
+  make any cluster fit: at 411dp inside the page inset, the fullest row
+  (`Switch`, `Test`, `Make primary`, `Edit`, `Remove`, two pills) keeps every
+  action on one line and inside the page edge; the `WIP` pill leaves the row
+  exactly one touch target tall; and the marker measures as a chip rather than
+  a run of text.
 - `HermesIconFontTest` — `Monitor` and `Cloud` resolve in the shipped Codicons
   0.0.45 font, so neither is a blank box on a device.
 - `SecretRedactionTest` — URL userinfo never reaches a screen or a screen
@@ -194,7 +201,8 @@ that SHA.
   assertion sees the genuine window in which the target row is `Current` *and*
   still dialling — and neither it nor any sibling will take a second tap; `Test`
   and `Make primary` render with the shared `ComingSoonAction` primitive's
-  pill and its spoken "⟨label⟩. Coming soon"; and activating a Managed SSH row — driven through the
+  `WipPill` and its spoken "⟨label⟩. Work in progress."; and activating a
+  Managed SSH row — driven through the
   whole `GatewayScreen`, because the claim is about where the person lands —
   leaves it `Current`, states why nothing dialled, and puts the Managed SSH
   pane's own `Connect` on screen above the list — and that sentence is gone
@@ -248,10 +256,10 @@ argument.
 | Unread markers survive a source switch (`gateway-switch.ts:70-76`) | drift | Unread is a cached row field, and the cache is cleared | No durable unread store exists yet; #66 |
 | Resting card fill `bg-(--ui-bg-quinary)` — a translucent accent wash (`styles.css:288-292`), **measured** at `srgb(0.044 0.210 0.554 / 0.059)` in the capture | drift | `tokens.widgetSurface`, an opaque card-derived fill | #100. The token layer has no quinary equivalent, and it is pinned at a different SHA and gated by `ThemeParityTest`, so adding one is a theme-sync change rather than this slice's. The capture puts a number on it: Desktop's resting card is a ~6% accent wash over whatever is behind it, ours is opaque |
 | `Make primary` is hidden on the row that already is primary (`connections-registry.tsx:601`) | drift | Rendered on every row, uniformly disabled | Android persists no `registry.primary` / `launchMode`, so the condition has nothing to test against and no row is the one Desktop would hide it on. Hiding it on an arbitrary row would invent the concept; revisit when launch mode is ported — #100 |
-| `Test` (`en.ts:723`) and `Make primary` (`en.ts:722`) | omission | Present on every row, disabled, each behind a `Coming soon` pill via the shared `ComingSoonAction` primitive | coming soon — the pill ships today (S-C1, #104). `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the `launchMode` / `registry.primary` field Android does not persist |
+| `Test` (`en.ts:723`) and `Make primary` (`en.ts:722`) | omission | Present on every row, disabled, each behind a `WIP` pill via the shared `ComingSoonAction` primitive | coming soon — the pill ships today (S-C1, #104). `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the `launchMode` / `registry.primary` field Android does not persist |
 | `Update all instances`, and the launch-mode toggle | omission | Absent | pill-owed: #101 — page-level controls Desktop renders, so each owes the same disabled row `Test` and `Make primary` now have (#100) |
 | Extra-header editor | omission | Absent | out-of-scope: #100 named it an explicit non-goal of that issue; nothing about the platform refuses it |
-| Hermes Cloud connection mode (`gateway-settings.tsx:1057-1064`) and `cloud` kind (`connections-registry.tsx:652`) | omission | Rendered, disabled, in Desktop's position in both choosers, behind the shared `Coming soon` pill | coming soon — the pill ships in this change. There is no Android Hermes Cloud sign-in yet, and `GatewayConnectionMode`/`ConnectionKind` deliberately have no member for it, so it cannot be selected or saved |
+| Hermes Cloud connection mode (`gateway-settings.tsx:1057-1064`) and `cloud` kind (`connections-registry.tsx:652`) | omission | Rendered, disabled, in Desktop's position in both choosers, behind the shared `WIP` pill | coming soon — the pill ships in this change. There is no Android Hermes Cloud sign-in yet, and `GatewayConnectionMode`/`ConnectionKind` deliberately have no member for it, so it cannot be selected or saved |
 | `cloudAddHint` under the kind chooser (`en.ts:758-759`) | omission | Absent | deferred: #100 — a hint, not a control: it renders only while the editor's kind *is* cloud, which a disabled Cloud button makes unreachable, and it returns with the sign-in the card above is waiting on |
 | `envOverride` disabling every mode card (`gateway-settings.tsx:1052`, `en.ts:773-775`) | omission | Absent | non-goal: `HERMES_DESKTOP_REMOTE_URL`/`_TOKEN` are desktop-process environment variables, and an Android app has no shell environment to be overridden by |
 | Plain-text-keyring consent | omission | Absent | non-goal: every secret here is a Keystore slot, so there is nothing to consent to |

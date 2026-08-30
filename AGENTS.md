@@ -151,7 +151,8 @@ one, because an unrendered UI change reviews at Concern at best. Compare menu
 and action **order**, group separators, glyph family and size, label casing,
 every visible state Desktop has, and copy diffed **verbatim** against
 `apps/desktop/src/i18n/en.ts` at the pin. A Desktop mode or control this app
-does not support *yet* stays visible and **disabled with a "coming soon" pill**;
+does not support *yet* stays visible and **disabled behind the marker chip**,
+which renders `WIP` while parity tables keep `coming soon` as the class name;
 only a non-goal — something this platform will never have — is omitted outright,
 and a silently missing control is a finding. Classify every difference in
 `docs/parity/<surface>.md` as mobile-adaptation, drift or omission;

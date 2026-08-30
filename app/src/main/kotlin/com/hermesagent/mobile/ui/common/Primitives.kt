@@ -606,6 +606,13 @@ fun ModeCard(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     hint: String? = null,
+    /**
+     * A status this card carries, spoken last. `selectable` below merges this
+     * card's descendants, so a marker that spoke for itself would replace the
+     * card's name rather than follow it; the card says the whole phrase or
+     * nothing, and the marker beside it stays visual.
+     */
+    status: String? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
@@ -624,6 +631,13 @@ fun ModeCard(
                 enabled = enabled,
                 onClick = onSelect,
                 role = Role.RadioButton,
+            )
+            .then(
+                if (status == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { contentDescription = "$title. $description. $status" }
+                },
             )
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -780,14 +794,18 @@ fun ChoiceButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /** A status this choice carries, spoken last — see [ModeCard]'s own. */
+    status: String? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
     val shape = RoundedCornerShape(8.dp)
-    // Desktop's two columns give a phone roughly 148dp a cell, and a label plus
-    // a "coming soon" pill wants nearer 175. Flowing rather than truncating
-    // keeps Desktop's column count *and* the whole label; on a wide pane
-    // everything fits on one line and this is an ordinary row.
+    // Flowing rather than truncating, so a cell narrower than its contents
+    // keeps Desktop's column count *and* the whole label. It earned its keep
+    // when the marker beside an unbuilt choice was two words wide; the short
+    // `WIP` marker now fits beside every label this app passes here, measured
+    // at 411dp, so this is the floor under a long label or a large font scale
+    // rather than the ordinary case.
     FlowRow(
         modifier
             .heightIn(min = HermesTheme.spacing.touchTarget)
@@ -804,6 +822,13 @@ fun ChoiceButton(
             .border(1.dp, if (selected && enabled) tokens.accent else tokens.strokeTertiary, shape)
             .clip(shape)
             .selectable(selected = selected, enabled = enabled, onClick = onClick, role = Role.RadioButton)
+            .then(
+                if (status == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { contentDescription = "$label. $status" }
+                },
+            )
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),

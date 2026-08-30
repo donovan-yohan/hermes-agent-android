@@ -10,11 +10,13 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.ui.ConnectionsActions
-import com.hermesagent.mobile.ui.common.COMING_SOON
+import com.hermesagent.mobile.ui.common.WIP_PILL
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import org.junit.Assert.assertEquals
@@ -96,7 +98,11 @@ class ConnectionKindChooserJourneyTest {
         val cloud = compose.onNodeWithText(ConnectionsCopy.KIND_CLOUD)
         cloud.assertIsDisplayed()
         cloud.assertIsNotEnabled()
-        compose.onNodeWithText(COMING_SOON).assertIsDisplayed()
+        compose.onNodeWithTag(WIP_PILL, useUnmergedTree = true).assertIsDisplayed()
+        // The kind's own name has to survive the merge — see the mode cards.
+        compose.onNodeWithContentDescription(
+            "${ConnectionsCopy.KIND_CLOUD}. $WIP_SPOKEN",
+        ).assertExists()
 
         cloud.performClick()
         compose.waitForIdle()
