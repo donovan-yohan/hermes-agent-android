@@ -20,6 +20,22 @@ internal object ConnectionsCopy {
     const val TITLE = "Registered gateways"
 
     /**
+     * The switcher trigger's accessible name on the Gateways screen.
+     *
+     * Desktop names that trigger with the registry's own section title
+     * (`connection-switcher.tsx:154,248,264` passes `t.settings.connections.title`
+     * @ `f82f2dba`), and the rail's mount still does — there the two never meet,
+     * because the switcher is in the statusbar and the registry is a settings
+     * page. On this app's Gateways screen they are on one surface, so that name
+     * reaches a screen reader twice: once as this control, once as the heading
+     * over the list below it. The verb is Desktop's own — `stagedNote` calls
+     * the act "Switch gateways" (`en.ts:706`) — so the surfaces still name one
+     * thing, and the control now says what it does rather than repeating what
+     * it sits above.
+     */
+    const val SWITCHER_LABEL = "Switch gateways"
+
+    /**
      * `en.ts:705`, minus the Cloud route Android has no sign-in for. Desktop's
      * "this device and" is back now that a Local row can be created here.
      */
