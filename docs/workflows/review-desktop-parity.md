@@ -13,8 +13,8 @@ The words themselves are [`review-product-copy.md`](review-product-copy.md).
 
 ## 0. Pin
 
-**Two Desktop pins coexist in this repo, and a citation is worthless without
-saying which one it is against.**
+**Two repo-wide pins, plus a per-surface pin where a page declares one.** A
+citation is worthless without saying which one it is against.
 
 | Surface | Pin | Where it is recorded |
 |---|---|---|
@@ -58,7 +58,10 @@ git -C "$export" checkout --quiet "$pin"
 git -C "$export" rev-parse HEAD   # must print $pin
 ```
 
-`clone` reads the reference checkout and never writes to it, and
+These commands prompt for approval rather than running unattended: `git clone`
+executes an arbitrary command through `--upload-pack` or an `ext::` transport
+and its destination is unconstrained, so `.chalk/permissions.yaml` lists it
+under `ask`. Approve it once per review. The clone reads the reference checkout and never writes to it, and
 `--no-hardlinks` keeps the export's object store from reaching back into it, so
 the checkout that moves is the disposable one. That also gives
 `capture-desktop-reference.mjs` a real repository for its clean-tree and

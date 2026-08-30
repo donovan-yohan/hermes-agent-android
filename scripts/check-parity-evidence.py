@@ -225,7 +225,9 @@ def check_divergences(body: list[str] | None, problems: list[str]) -> None:
                 f"`## {DIVERGENCE_SECTION}` row {index} ({desktop!r}) is drift with "
                 f"no issue number; drift is a finding and needs an owner"
             )
-        elif klass == "omission" and not OMISSION_MARKER.match(evidence):
+        elif klass == "omission" and not OMISSION_MARKER.match(EMPHASIS.sub("", evidence).strip()):
+            # The marker is what matters, not the markup around it: a cell is
+            # free to write `**non-goal:** ...` or wrap the issue in backticks.
             problems.append(
                 f"`## {DIVERGENCE_SECTION}` row {index} ({desktop!r}) omits part of "
                 f"Desktop without saying which kind of omission it is. The Evidence "
@@ -300,6 +302,14 @@ def self_test() -> None:
     accepts("explicitly pending report", page(report="## Visual report\n\n- pending: #43\n"))
     accepts("no divergences", page(divergences=NO_DIVERGENCES))
     accepts("fenced example is not a claim", page() + "\n```\n- pending: #1\n```\n")
+    accepts(
+        "emphasised marker",
+        swap(NON_GOAL, "| Local terminal | omission | Absent | **non-goal:** this platform has no terminal |"),
+    )
+    accepts(
+        "marker in backticks",
+        swap(PILL_OWED_ROW, "| Rename | omission | Absent | `pill-owed: #101` — ships disabled |"),
+    )
     accepts(
         "omitted non-control with a named owner",
         page(divergences=as_table(*ROWS, "| `summary` on a row | omission | Not projected | deferred: #56 |")),
