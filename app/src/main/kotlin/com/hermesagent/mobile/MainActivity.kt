@@ -1,7 +1,9 @@
 package com.hermesagent.mobile
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
@@ -10,10 +12,20 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.notifications.ACTION_OPEN_SESSION
+import com.hermesagent.mobile.data.notifications.ANDROID_TIRAMISU
+import com.hermesagent.mobile.data.notifications.EXTRA_DURABLE_SESSION_ID
+import com.hermesagent.mobile.data.notifications.NotificationPermissionStep
+import com.hermesagent.mobile.data.notifications.notificationPermissionStep
 import com.hermesagent.mobile.data.ssh.KeyDocument
 import com.hermesagent.mobile.data.ssh.KeyImportGate
 import com.hermesagent.mobile.data.ssh.KeyImportProblem
@@ -26,6 +38,7 @@ import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
+import com.hermesagent.mobile.ui.common.NotificationPermissionPrompt
 import com.hermesagent.mobile.ui.gateway.ConnectionsViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.relay.RelayChannelReader
@@ -34,8 +47,12 @@ import com.hermesagent.mobile.ui.relay.RelayPoster
 import com.hermesagent.mobile.ui.relay.RelayViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
@@ -130,6 +147,24 @@ class MainActivity : ComponentActivity() {
     private var pendingPickerToken: Long? = null
 
     /**
+     * Shown once, when a live Gateway first makes the grant worth anything.
+     * The result is deliberately ignored: Android refuses a second request
+     * after two refusals, so re-asking would be a dialog that does nothing.
+     * Turning notifications back on is the OS settings screen's job.
+     */
+    private val requestPostNotifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private var notificationRationaleVisible by mutableStateOf(false)
+
+    /**
+     * Dismissing is "not now", not "never": the next launch may ask again.
+     * Saved instance state, because a rotation is not a new launch and having
+     * the dialog reappear mid-turn is exactly the nag this avoids.
+     */
+    private var notificationRationaleDismissed = false
+
+    /**
      * Storage Access Framework: the user picks a key file, we read it once and
      * keep it in memory. No persisted URI permission is taken — a key the app
      * can re-read after a restart is a key the app effectively stores.
@@ -177,6 +212,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        notificationRationaleDismissed = savedInstanceState?.getBoolean(STATE_RATIONALE_DISMISSED) == true
+        openSessionFromIntent(intent)
+        followVisibleSession()
+        followNotificationPermissionNeed()
         // Attachment grants are read on IO; only bytes enter the ViewModel.
         chatViewModel.openAttachmentStream = { uriString ->
             runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
@@ -377,7 +416,93 @@ class MainActivity : ComponentActivity() {
                     },
                 ),
             )
+
+            // Its own theme root rather than a parameter on HermesApp: a
+            // Dialog is a separate window, and this keeps the OS permission
+            // story out of the app's navigation shape entirely.
+            if (notificationRationaleVisible) {
+                HermesTheme(appearance) {
+                    NotificationPermissionPrompt(
+                        onContinue = {
+                            notificationRationaleVisible = false
+                            notificationRationaleDismissed = true
+                            app.appScope.launch { app.notificationPreferences.markNotificationPermissionAsked() }
+                            if (Build.VERSION.SDK_INT >= ANDROID_TIRAMISU) {
+                                requestPostNotifications.launch(POST_NOTIFICATIONS)
+                            }
+                        },
+                        onDismiss = {
+                            notificationRationaleVisible = false
+                            notificationRationaleDismissed = true
+                        },
+                    )
+                }
+            }
         }
+    }
+
+    /**
+     * A notification tap lands here. The extra is consumed, so an Activity
+     * recreate does not re-navigate away from wherever the user has since gone.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openSessionFromIntent(intent)
+    }
+
+    private fun openSessionFromIntent(intent: Intent?) {
+        if (intent?.action != ACTION_OPEN_SESSION) return
+        val durableSessionId = intent.getStringExtra(EXTRA_DURABLE_SESSION_ID)?.takeIf(String::isNotBlank) ?: return
+        intent.removeExtra(EXTRA_DURABLE_SESSION_ID)
+        chatViewModel.selectSession(durableSessionId)
+    }
+
+    /**
+     * Tells the process-scoped notifier which conversation is on screen — the
+     * Android reading of Desktop's `$activeSessionId`
+     * (`apps/desktop/src/store/native-notifications.ts:142` @
+     * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+     */
+    private fun followVisibleSession() {
+        lifecycleScope.launch {
+            chatViewModel.uiState
+                .map { it.activeSession?.id }
+                .distinctUntilChanged()
+                .collect(app.notificationPresence::visibleSessionChanged)
+        }
+    }
+
+    /** Asks for `POST_NOTIFICATIONS` at the first moment the grant buys anything. */
+    private fun followNotificationPermissionNeed() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                combine(
+                    app.notificationPreferences.notificationPermissionAsked,
+                    app.gatewayConnection.state.map { it.status == GatewayConnectionStatus.Connected },
+                ) { asked, connected -> asked to connected }
+                    .distinctUntilChanged()
+                    .collect { (asked, connected) ->
+                        val step = notificationPermissionStep(
+                            sdkInt = Build.VERSION.SDK_INT,
+                            granted = postNotificationsGranted(),
+                            alreadyAsked = asked,
+                            gatewayConnected = connected,
+                        )
+                        notificationRationaleVisible =
+                            step == NotificationPermissionStep.Rationale && !notificationRationaleDismissed
+                    }
+            }
+        }
+    }
+
+    private fun postNotificationsGranted(): Boolean =
+        Build.VERSION.SDK_INT < ANDROID_TIRAMISU ||
+            checkSelfPermission(POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_RATIONALE_DISMISSED, notificationRationaleDismissed)
     }
 
     override fun onStop() {
@@ -472,5 +597,9 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         val KEY_MIME_TYPES = arrayOf("*/*")
+
+        /** Named rather than referenced: the constant only exists from API 33. */
+        const val POST_NOTIFICATIONS = "android.permission.POST_NOTIFICATIONS"
+        const val STATE_RATIONALE_DISMISSED = "notificationRationaleDismissed"
     }
 }

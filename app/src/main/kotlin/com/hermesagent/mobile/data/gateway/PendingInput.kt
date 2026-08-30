@@ -88,6 +88,24 @@ sealed interface PendingInputResponse {
     data object Expired : PendingInputResponse
     /** Transport failed/ambiguous; the request stays pending for an explicit retry. */
     data object Retryable : PendingInputResponse
+
+    /**
+     * This client cannot answer this request and never will: the connection
+     * that parked it is gone, so nothing was sent.
+     *
+     * Deliberately not [Resolved]. Both mean "it is not in the pending map",
+     * but they are opposite facts about the world. Resolved means the request
+     * was retired on this connection — answered here, answered elsewhere,
+     * expired, or died with its turn — and the user owes it nothing. This
+     * means the request may still be parked on the Gateway with an agent
+     * blocked behind it, and a caller that treats the two alike will tell
+     * someone their approval went through when it did not.
+     *
+     * The case that forces the distinction is an OS notification outliving the
+     * process that posted it: its action button arrives at a repository that
+     * has never heard of the request.
+     */
+    data object Unanswerable : PendingInputResponse
 }
 
 /** Repository-owned registry of live pending requests, fenced per connection generation. */

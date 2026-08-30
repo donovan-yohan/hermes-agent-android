@@ -203,6 +203,63 @@ class PendingInputTest {
         assertTrue(repository.pendingInputs.value.isEmpty())
     }
 
+    @Test
+    fun `answering twice reports resolved, but a request this connection never had cannot be answered`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.emit("approval.request", "runtime-a", APPROVAL_REQUEST)
+        runCurrent()
+        val key = singlePending(env).key
+
+        val first = launch { env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once")) }
+        runCurrent()
+        env.rpc.respondResponse?.complete(json("{\"status\":\"ok\"}"))
+        first.join()
+
+        // Retired on this connection: finished business, and a second answer
+        // owes the user nothing.
+        assertEquals(
+            PendingInputResponse.Resolved,
+            env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once")),
+        )
+        // Never seen here. Identical shape, opposite fact.
+        assertEquals(
+            PendingInputResponse.Unanswerable,
+            env.repository.respondToPendingInput(
+                key.copy(requestId = "req-never-seen"),
+                PendingInputAction.ApprovalChoice("Run once"),
+            ),
+        )
+    }
+
+    @Test
+    fun `a connection change strands its pending requests rather than retiring them`() = runTest {
+        val cache = SessionCache()
+        cache.upsertSessions(listOf(summary("durable-a")))
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+        rpc.emit("approval.request", "runtime-a", APPROVAL_REQUEST)
+        runCurrent()
+        val key = repository.pendingInputs.value.keys.single()
+
+        clients.value = null
+        runCurrent()
+
+        // The Gateway may still have this parked. Reading it as answered is
+        // what would let a notification be withdrawn on a lie.
+        assertEquals(
+            PendingInputResponse.Unanswerable,
+            repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once")),
+        )
+    }
+
     private fun singlePending(env: Environment): PendingInputRequest {
         val requests = env.repository.pendingInputs.value.values.toList()
                 assertEquals(1, requests.size)
