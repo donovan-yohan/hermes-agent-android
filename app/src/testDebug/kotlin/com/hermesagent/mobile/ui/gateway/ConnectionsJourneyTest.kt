@@ -187,8 +187,12 @@ class ConnectionsJourneyTest {
         compose.waitForIdle()
 
         assertEquals("b", beganEditId)
-        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_REMOTE_DESC).assertDoesNotExist()
-        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_SSH_DESC).assertDoesNotExist()
+        // "Hermes Cloud" is rendered only by the kind chooser — no saved row
+        // can be one — so its absence is the chooser's absence.
+        // (`KIND_SSH` is no use here: this row *is* an SSH row, so the editor
+        // states that word whether or not the chooser is showing.)
+        compose.onNodeWithText(ConnectionsCopy.KIND_CLOUD).assertDoesNotExist()
+        compose.onNodeWithText(ConnectionsCopy.KIND_LOCAL).assertDoesNotExist()
     }
 
     @Test
@@ -317,7 +321,7 @@ class ConnectionsJourneyTest {
 
         compose.onNodeWithContentDescription(ConnectionsCopy.ADD_CONNECTION).performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_LOCAL_DESC).performClick()
+        compose.onNodeWithText(ConnectionsCopy.KIND_LOCAL).performClick()
         compose.waitForIdle()
 
         // The prefill rule itself is `ConnectionsViewModel`'s and is asserted
@@ -391,7 +395,7 @@ class ConnectionsJourneyTest {
 
         compose.onNodeWithText(ConnectionsCopy.TOKEN_READDRESSED).performScrollTo().assertExists()
         // The kind is stated on an existing row, never offered.
-        compose.onNodeWithContentDescription(ConnectionsCopy.KIND_REMOTE_DESC).assertDoesNotExist()
+        compose.onNodeWithText(ConnectionsCopy.KIND_CLOUD).assertDoesNotExist()
     }
 
     @Test

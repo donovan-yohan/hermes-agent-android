@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -21,27 +22,88 @@ import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
+import com.hermesagent.mobile.ui.common.ComingSoonPill
+import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.LabelledField
+import com.hermesagent.mobile.ui.common.ModeCard
+import com.hermesagent.mobile.ui.common.ModeCardGrid
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.SecureScreenLifetime
 import com.hermesagent.mobile.ui.common.SectionLabel
-import com.hermesagent.mobile.ui.common.SegmentedControl
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
- * Every route the form above the registry can configure.
+ * One of Desktop's four **Connection mode** cards
+ * (`apps/desktop/src/app/settings/gateway-settings.tsx:1049-1082` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
  *
- * Exhaustive on purpose, and asserted to be: [SegmentedControl] cannot render a
- * `selected` value that is not among its `options`, so a curated subset can
- * leave a saved route with no segment lit and no way to change it. Being total
- * over [GatewayConnectionMode] is what makes that unreachable —
- * `GatewayScreenTest` fails if a route is added without one.
+ * [mode] is `null` for a mode Desktop offers and this app cannot be on. That
+ * is not an absence: the card still renders, disabled, behind a "coming soon"
+ * pill, because the parity gate's rule is that an unsupported Desktop control
+ * ships visible and disabled rather than quietly missing
+ * (`docs/workflows/review-desktop-parity.md`, "Classify every divergence").
+ * It is also what makes such a card unselectable by construction rather than
+ * by a check someone has to remember to write.
  */
-internal val GATEWAY_ROUTE_OPTIONS =
-    listOf(GatewayConnectionMode.Remote, GatewayConnectionMode.Ssh, GatewayConnectionMode.Local)
+internal data class GatewayModeCard(
+    val mode: GatewayConnectionMode?,
+    val title: String,
+    val description: String,
+    val icon: HermesIcon,
+    val hint: String? = null,
+)
+
+/**
+ * The four cards, in Desktop's order: Local gateway, Hermes Cloud, Remote
+ * gateway, Connect via SSH (`gateway-settings.tsx:1049-1082` @ `f82f2dba`).
+ *
+ * Total over [GatewayConnectionMode], and asserted to be. The old segmented
+ * control could render a `selected` value that was not among its `options` —
+ * nothing lit, and no way back — which is why S-A2's review asked for this
+ * list to be exhaustive. Cards remove that particular shape: each one computes
+ * its own `active`, so there is no single selection to fall outside of. What
+ * survives is the underlying hazard, one layer down: a saved route with *no
+ * card* is a route the person cannot see they are on and cannot change. Being
+ * total is still the fix, so `GatewayScreenTest` still fails if a route is
+ * added without one.
+ */
+internal val GATEWAY_MODE_CARDS = listOf(
+    GatewayModeCard(
+        mode = GatewayConnectionMode.Local,
+        title = GatewayModeCopy.LOCAL_TITLE,
+        description = GatewayModeCopy.LOCAL_DESC,
+        icon = HermesIcon.Monitor,
+    ),
+    GatewayModeCard(
+        // No Android Hermes Cloud sign-in exists yet. Deliberately not a
+        // `GatewayConnectionMode`: a mode the app cannot be on should be
+        // unrepresentable as a saved route, not merely rejected at the tap.
+        mode = null,
+        title = GatewayModeCopy.CLOUD_TITLE,
+        description = GatewayModeCopy.CLOUD_DESC,
+        icon = HermesIcon.Cloud,
+    ),
+    GatewayModeCard(
+        mode = GatewayConnectionMode.Remote,
+        title = GatewayModeCopy.REMOTE_TITLE,
+        description = GatewayModeCopy.REMOTE_DESC,
+        icon = HermesIcon.Globe,
+        hint = GatewayModeCopy.REMOTE_AUTH_HINT,
+    ),
+    GatewayModeCard(
+        mode = GatewayConnectionMode.Ssh,
+        title = GatewayModeCopy.SSH_TITLE,
+        description = GatewayModeCopy.SSH_DESC,
+        icon = HermesIcon.Terminal,
+        hint = GatewayModeCopy.SSH_TRUST_HINT,
+    ),
+)
+
+/** Every route the form above the registry can configure, in card order. */
+internal val GATEWAY_ROUTE_OPTIONS = GATEWAY_MODE_CARDS.mapNotNull { it.mode }
 
 @Composable
 fun GatewayScreen(
@@ -59,38 +121,54 @@ fun GatewayScreen(
     // reachable from every route. The same disposal ends that form's secret
     // lifetime, before the window stops being secure.
     SecureScreenLifetime(onLeave = connectionsActions.onLeaveScreen)
-    Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            SectionLabel("Connection")
-            SegmentedControl(
-                options = GATEWAY_ROUTE_OPTIONS,
-                selected = state.mode,
-                label = {
-                    when (it) {
-                        GatewayConnectionMode.Remote -> "Remote Gateway"
-                        GatewayConnectionMode.Ssh -> "Managed SSH"
-                        GatewayConnectionMode.Local -> ConnectionsCopy.KIND_LOCAL
-                    }
-                },
-                // Dead until the saved route has actually been read. Before
-                // that this control shows the default rather than the truth, so
-                // a tap lands as "change route" when the person meant "the one
-                // already selected" — and it rewrites the active row's kind
-                // from a `previous` that is still the default, so a Local row's
-                // session token is stranded by an erase that never sees it.
-                onSelect = { if (state.loaded) gatewayActions.onModeChange(it) },
-                describe = {
-                    when (it) {
-                        GatewayConnectionMode.Remote -> "Use a host-owned Remote Gateway"
-                        GatewayConnectionMode.Ssh -> "Use an app-managed Gateway over SSH"
-                        GatewayConnectionMode.Local -> ConnectionsCopy.KIND_LOCAL_DESC
-                    }
-                },
+    // Desktop keeps the mode grid in the page's own scroll, above the panel
+    // for the chosen mode (`gateway-settings.tsx:1044-1089` @ `f82f2dba`).
+    // This used to be a pinned header, which a single segmented control could
+    // afford; four cards one-per-row on a phone cannot — they would leave the
+    // route's own form a sliver of what is left. So the chooser travels into
+    // whichever route is showing, exactly as the registry already does.
+    val chooser: @Composable ColumnScope.() -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Desktop's own heading, in Desktop's casing: caption size, medium
+            // weight, `--ui-text-secondary` (`gateway-settings.tsx:1045-1047`).
+            // Not `SectionLabel`, which uppercases — this app's field-group
+            // label is a different thing from Desktop's card-grid heading, and
+            // shouting it would change the words.
+            Text(
+                text = GatewayModeCopy.MODE_TITLE,
+                style = HermesTheme.type.caption.copy(fontWeight = FontWeight.Medium),
+                color = tokens.textSecondary,
             )
+            ModeCardGrid(GATEWAY_MODE_CARDS) { card ->
+                ModeCard(
+                    title = card.title,
+                    description = card.description,
+                    icon = card.icon,
+                    hint = card.hint,
+                    active = card.mode != null && card.mode == state.mode,
+                    enabled = card.mode != null,
+                    // Dead until the saved route has actually been read. Before
+                    // that this control shows the default rather than the truth,
+                    // so a tap lands as "change route" when the person meant "the
+                    // one already selected" — and it rewrites the active row's
+                    // kind from a `previous` that is still the default, so a
+                    // Local row's session token is stranded by an erase that
+                    // never sees it.
+                    onSelect = {
+                        val mode = card.mode
+                        if (mode != null && state.loaded) gatewayActions.onModeChange(mode)
+                    },
+                    trailing = if (card.mode == null) {
+                        { ComingSoonPill() }
+                    } else {
+                        null
+                    },
+                )
+            }
         }
+    }
+
+    Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
         Box(Modifier.weight(1f)) {
             // Desktop puts the registry at the foot of this same page, below the
             // window connection controls (`gateway-settings.tsx:1499-1502` @
@@ -120,14 +198,16 @@ fun GatewayScreen(
                     // form autosaves while someone is still typing, so the same
                     // rule surfaces as a warning beside the field instead.
                     duplicateOf = connectionsState.duplicateRemoteLabel(state.remote.baseUrl),
+                    header = chooser,
                     footer = registry,
                 )
 
-                GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions, footer = registry)
+                GatewayConnectionMode.Ssh -> SshScreen(sshState, sshActions, header = chooser, footer = registry)
 
                 GatewayConnectionMode.Local -> LocalGatewayScreen(
                     state = state,
                     actions = gatewayActions,
+                    header = chooser,
                     footer = registry,
                 )
             }
@@ -149,6 +229,7 @@ fun GatewayScreen(
 private fun LocalGatewayScreen(
     state: GatewaySettingsUiState,
     actions: GatewayActions,
+    header: @Composable ColumnScope.() -> Unit,
     footer: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -160,6 +241,8 @@ private fun LocalGatewayScreen(
             .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        header()
+
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(ConnectionsCopy.KIND_LOCAL, style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
             Text(
@@ -223,6 +306,7 @@ private fun RemoteGatewayScreen(
     state: GatewaySettingsUiState,
     actions: GatewayActions,
     duplicateOf: String?,
+    header: @Composable ColumnScope.() -> Unit,
     footer: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -234,6 +318,8 @@ private fun RemoteGatewayScreen(
             .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        header()
+
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Remote Gateway", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
             Text(
