@@ -9,9 +9,14 @@ that SHA.
 
 | Contract | Desktop source | Android port |
 |---|---|---|
+| Connection mode cards | `apps/desktop/src/app/settings/gateway-settings.tsx:1044-1084`, `ModeCard` at `:88-135`, emphasis from `lib/selectable-card.ts:22-31` | `GATEWAY_MODE_CARDS` in `ui/gateway/GatewayScreen.kt`, rendered by `ModeCard` / `ModeCardGrid` / `selectableCardModifier` in `ui/common/Primitives.kt` |
+| Mode card order and glyphs | `gateway-settings.tsx:1049-1082` — Local gateway (`Monitor`), Hermes Cloud (`Cloud`), Remote gateway (`Globe`), Connect via SSH (`Terminal`) | The same four, in the same order, with Codicon `vm`/`cloud`/`globe`/`terminal` |
+| Mode grid breakpoints | `gateway-settings.tsx:1048` — `grid-cols-1 sm:grid-cols-2 min-[72rem]:grid-cols-4`, both **viewport** queries | `modeCardColumnsFor`: 1 column, 2 at 600dp, 4 at 720dp, off the window width |
+| Mode copy | `i18n/en.ts:776-783`, `:865-868` | `GatewayModeCopy` in `ui/gateway/ConnectionsCopy.kt`, one constant per line, cited |
+| Registry kind chooser | `connections-registry.tsx:648-671` — plain `Button`s, `grid-cols-2 @2xl:grid-cols-4`, a **container** query | `CONNECTION_KIND_CHOICES` + `ChoiceButton`, 2 columns stepping to 4 at a 672dp editor |
 | Registry section | `apps/desktop/src/app/settings/connections-registry.tsx:221-888` | `ui/gateway/ConnectionsSection.kt` |
 | Where it lives | `apps/desktop/src/app/settings/gateway-settings.tsx:1499-1502` — foot of the Gateways page, below the connection controls | Same page, below the same controls, inside whichever route's scroll is showing |
-| Kind glyphs (`KIND_ICONS`) | `connections-registry.tsx:26-31` — `cloud`/`local`/`remote`/`ssh` → Cloud/Monitor/Globe/Terminal | `ConnectionKind.glyph`: Remote → Codicon `globe`, Ssh → Codicon `terminal`, Local → Codicon `device-mobile` (Desktop's `Monitor` names the wrong device here) |
+| Kind glyphs (`KIND_ICONS`) | `connections-registry.tsx:26-31` — `cloud`/`local`/`remote`/`ssh` → Cloud/Monitor/Globe/Terminal | `ConnectionKind.glyph`: Remote → Codicon `globe`, Ssh → Codicon `terminal`, Local → Codicon `vm`, this family's monitor (Codicons 0.0.45 ships no `device-desktop`). Cloud has no `ConnectionKind`; the chooser still renders it, disabled |
 | Row grammar | `settings/primitives.tsx:108-155` (`ListRow`), `:27-29` (`Pill` over `components/ui/badge.tsx:7-21`), `components/ui/empty-state.tsx:7-23` | `ui/common/SettingsPrimitives.kt` — `SettingsListRow`, `Pill`, plus the existing `EmptyState` |
 | Row content | `connections-registry.tsx:578-641` — kind glyph, label, Current/Primary pills, `kind · endpoint` description | Kind glyph, label, `Current` pill, `kind · endpoint · auth mode`, all through `redact()` |
 | Row actions | `connections-registry.tsx:586-625` — inline, not an overflow menu, in the order `Test` (always), `Make primary` (when not primary), `Edit`, `Remove` (both icon-only, both hidden for `local`); copy at `en.ts:717`, `:718`, `:722`, `:723` | `ConnectionRowActions` — same four in the same order, wrapping instead of overflowing, with a `Switch` action ahead of them. `Test` and `Make primary` are rendered disabled behind a `Coming soon` pill; `Edit`/`Remove` are shown on every kind |
@@ -49,6 +54,8 @@ that SHA.
 
 | Desktop | Android | Reason |
 |---|---|---|
+| Mode grid pinned above the panel in the page's own scroll | The chooser travels into whichever route's scroll is showing | Desktop's page scrolls as one, and so does this one. It used to be a pinned header, which a single segmented control could afford; four cards one-per-row on a phone would have left the route's own form a sliver of what was left. |
+| `ModeCard` hint: hover `Tip` on a `HelpCircle` (`gateway-settings.tsx:113-124`) | The same glyph as a button that reveals the same sentence under the description | Touch has no hover. Revealing beats hiding — the sentence lands on screen rather than one undiscoverable gesture away — and the revealer sits in a 48dp touch area it does not paint, so the hit box clears the platform floor without the 14sp glyph growing. Every card reserves that header height so the four do not sit at two different heights in one column. |
 | `DropdownMenu` + `DropdownMenuRadioGroup` anchored to the rail trigger | `ModalBottomSheet` with 48dp radio rows | Pointer menus are brittle on a phone; the sheet is this app's established equivalent (`ComposerAddSheet`, `ModelControl`). Order, checkmark and search threshold are unchanged. |
 | `ConfirmDialog` | `ConfirmSheet` bottom sheet | Same reason; same title, description, destructive confirm and cancel. |
 | `ListRow` with the control beside the label above `@2xl` | Always stacked | This *is* Desktop's own narrow rendering — the query is on the row's pane width, and a phone is always below the breakpoint. |
@@ -66,7 +73,7 @@ that SHA.
 | `stagedNote`: "Switch gateways from Sessions." (`en.ts:706`) | "Switch gateways here or from Sessions." | **Adaptation**, forced by the row above. Naming Sessions as the only route would now be false, and would point at the longer of the two. The rest of the sentence is unchanged. |
 | A pending switch is reported on the rail trigger only; the radio menu closes on the click, so no row is on screen while its own switch is in flight (`connection-switcher.tsx:133,272`) | The registry row itself reads `Connecting…` and is disarmed, as is every other row's switch | **Adaptation.** This list does not close when you tap it, so the row that is moving has to say so itself. The word is the same constant the rail uses. |
 | `Edit`/`Remove` are hidden on the `local` kind (`connections-registry.tsx:604`) | Shown on every kind, including Local | **Drift, deliberate.** Desktop's Local connection is the runtime its own app manages, so there is nothing for a person to edit and removing it is meaningless. Android's Local row is a Hermes the person runs in Termux: its address and its session token are theirs to change, and the row is theirs to delete. Already recorded in the Local-kind row above. |
-| `local` kind: "The Hermes runtime managed by this app." (`en.ts:733`, `:737`), `Monitor` glyph (`connections-registry.tsx:26-31`), at most one ever (`connections-registry.tsx:132-134`, `en.ts:753`, `:757`) | `ConnectionKind.Local`, label `Local`, description "A Hermes running on this device.", `HermesIcon.DeviceMobile`, and one row per loopback address rather than one row full stop. The Gateways form — the kind entry, the prefilled address, the **Session token** field and the limitation line beside Save — lands with S-A2 ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)); the transport, the token slot and the copy constants are already here | The word is Desktop's; the ownership is not. Desktop's local connection is the runtime its own app manages, so there can only be one and it needs no credential. Android's is a Hermes the person runs in Termux on the same phone, which this app only connects to: the description has to say whose it is, the glyph is a phone rather than a monitor, and the count rule follows the address because two Termux servers on two ports are two Gateways. On loopback there is no TLS, no sign-in and no host key, so the static Hermes session token is the whole boundary and the form has to ask for it. Setup lives in [the Termux local Gateway guide](../guides/termux-local-gateway.md). |
+| `local` kind: "The Hermes runtime managed by this app." (`en.ts:733`, `:737`), `Monitor` glyph (`connections-registry.tsx:26-31`), at most one ever (`connections-registry.tsx:132-134`, `en.ts:753`, `:757`) | `ConnectionKind.Local`, label `Local`, description "A Hermes running on this device.", `HermesIcon.Monitor`, and one row per loopback address rather than one row full stop. The Gateways form — the kind entry, the prefilled address, the **Session token** field and the limitation line beside Save — lands with S-A2 ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)); the transport, the token slot and the copy constants are already here | The word is Desktop's; the ownership is not. Desktop's local connection is the runtime its own app manages, so there can only be one and it needs no credential. Android's is a Hermes the person runs in Termux on the same phone, which this app only connects to: the description has to say whose it is, and the count rule follows the address because two Termux servers on two ports are two Gateways. On loopback there is no TLS, no sign-in and no host key, so the static Hermes session token is the whole boundary and the form has to ask for it. Setup lives in [the Termux local Gateway guide](../guides/termux-local-gateway.md). |
 | `cloud` kind | Absent | Non-goal. There is no Android Hermes Cloud sign-in. |
 | `intro` names Cloud; `stagedNote` names profiles and cron jobs | Both shortened to what Android ships | Copy must be true on the device it is on. Source lines still cited. |
 | Kind is fixed once created (`connections-registry.tsx:649-654`) | Same in the list editor. The route control at the top of Gateways still changes the **active** row's kind | That control predates this slice and is the active connection's own form. The Remote and SSH endpoint slots persist per row, so flipping between those two loses nothing. Flipping *away from* Local is not free: `GatewaySettingsViewModel.setMode` erases that row's session token, because a credential minted for a server the row no longer names has nothing left to authenticate. That branch lands with S-A2 ([#96](https://github.com/donovan-yohan/hermes-agent-android/pull/96)). |
@@ -150,6 +157,26 @@ that SHA.
   re-selecting the active row is a no-op, and activating a Managed SSH row moves
   the marker without spending a single millisecond of virtual time waiting for a
   dial that is not coming.
+- `GatewayScreenTest` — the four mode cards in Desktop's order with Desktop's
+  glyphs; every description and hint asserted against its `en.ts` line, so a
+  copy edit that drifts has to come through the citation; only Remote and SSH
+  carry a hint, as only they do on Desktop; Hermes Cloud has no
+  `GatewayConnectionMode` at all; every route has exactly one card; and the
+  1 / 2 / 4 column mapping at and either side of both breakpoints.
+- `ConnectionsSectionTest` — the registry chooser offers Desktop's four kinds in
+  Desktop's order, Cloud is unselectable by having no `ConnectionKind`, every
+  kind a row can be has a button, and each kind carries Desktop's glyph.
+- `ConnectionModeCardsJourneyTest` — rendered: the verbatim heading and all four
+  cards, each description on screen, the active route checked and the others
+  not, a tap changing the route, Hermes Cloud displayed with its **Coming soon**
+  pill and refusing the tap, the hint glyph revealing and re-hiding Desktop's
+  tooltip sentence, no revealer on a card Desktop gives no hint, and the column
+  count measured at 411dp, 600dp and 840dp.
+- `ConnectionKindChooserJourneyTest` — rendered: all four kinds offered on
+  create, the editor's kind selected, a choice reported, Cloud disabled behind
+  the pill, and Local still offered because this registry has no one-Local rule.
+- `HermesIconFontTest` — `Monitor` and `Cloud` resolve in the shipped Codicons
+  0.0.45 font, so neither is a blank box on a device.
 - `SecretRedactionTest` — URL userinfo never reaches a screen or a screen
   reader, and an ordinary URL is left alone.
 - `HermesPreferencesTest` — a registry document this build cannot read is never
@@ -201,7 +228,15 @@ argument.
 | Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | mobile-adaptation | Endpoint under the label in the sheet, and in the settings row description | Touch has no hover, so the information is shown rather than hidden |
 | Icon-only ghost `Pencil`/`Trash2` with `aria-label` | mobile-adaptation | Same glyphs in 48dp targets, `contentDescription` "Edit ⟨label⟩" / "Remove ⟨label⟩" | Touch floor, and a list of rows needs the label to tell two identical buttons apart |
 | Searchable list capped at `h-48` (`connection-switcher.tsx:208`) | mobile-adaptation | `heightIn(max = 320.dp)` on a `LazyColumn` | Same intent, phone-scaled |
-| `local` is the runtime the app manages: `Monitor` glyph, at most one ever | mobile-adaptation | A Termux Hermes the person runs: `DeviceMobile` glyph, one row per loopback address | The word is Desktop's and the ownership is not; two Termux servers on two ports are two Gateways |
+| `local` is the runtime the app manages, at most one ever (`connections-registry.tsx:132-134`) | mobile-adaptation | A Termux Hermes the person runs; one row per loopback address. The glyph is Desktop's `Monitor` again | The word is Desktop's and the ownership is not; two Termux servers on two ports are two Gateways, so the count rule follows the address. The glyph used to be `device-mobile` here, which changed Desktop's picture to make a point the description already makes — the parity gate calls that drift, so it is back |
+| `ModeCard` hint is a hover `Tip` on a `HelpCircle` (`gateway-settings.tsx:113-124`) | mobile-adaptation | The same glyph as a tap-to-reveal button showing the same sentence in the card | Touch has no hover; the sentence is shown rather than hidden, in a 48dp touch area that does not paint over the 14sp glyph |
+| Mode grid sits in the page scroll above the panel for the chosen mode (`gateway-settings.tsx:1044-1089`) | mobile-adaptation | The chooser scrolls with whichever route's pane is showing | Viewport space: four cards one-per-row on a phone cannot be a pinned header without crowding out the form they select |
+| `sm:grid-cols-2` at 640px, `min-[72rem]:grid-cols-4` at 1152px (`gateway-settings.tsx:1048`) | mobile-adaptation | 2 columns at 600dp, 4 at 720dp | 600dp is Android's own compact/medium boundary and the nearest standard line to Desktop's; 720dp is already this app's wide breakpoint (`ui/chat/ChatScreen.kt:95-97`), and Desktop's 1152px window is also carrying a sidebar and a chat pane this settings column is not |
+| `localDesc`: "Start a private Hermes backend on localhost. This is the default and works offline." (`en.ts:778`) | mobile-adaptation | "Connect to a private Hermes backend you run on this phone. Works offline." | Two of Desktop's three clauses are false here: this app starts nothing — the person runs `hermes serve` in Termux and this app only dials it — and ADR-0002 makes the host-owned Remote Gateway, not Local, the preferred route on mobile |
+| `remoteDesc`: "Connect this **desktop shell** to a remote Hermes backend." (`en.ts:780`) | mobile-adaptation | "Connect this app to a remote Hermes backend." | One word, and it named the wrong client; the rest of the sentence is Desktop's |
+| `sshDesc` ends "Requires working **key-based** SSH access to the host" (`en.ts:866-867`) | mobile-adaptation | "Requires working SSH access to the host." | This route offers three methods and only one is a key (`AuthMethod.TailscaleSsh`, `Password`, `PrivateKey` — `data/ssh/SshModel.kt:80`); left verbatim the line tells a password or tailnet user the route will not work for them, which is a deterrent rather than a cosmetic difference. The rest of the sentence is Desktop's word for word |
+| `ModeCard` `disabled:opacity-50` (`gateway-settings.tsx:99`) | mobile-adaptation | The disabled card drops each text role one tier (title to tertiary, body and glyph to quaternary) rather than compositing at 50% | Accessibility: a flat 50% alpha over a themed surface lands at a contrast ratio nothing in the token set controls, and several presets are already low-contrast. Stepping the semantic roles keeps the disabled state legible in every theme, and the tokens are the layer this app is allowed to reach for |
+| Local kind button disabled while the one managed local entry exists, with `localAddHint` (`connections-registry.tsx:654`, `en.ts:757`) | mobile-adaptation | Local stays offered; a genuine duplicate is refused by loopback address instead | Desktop's registry holds at most one Local; this one keys Local rows by address, so there is no one-Local rule to disable on and the hint would announce a rule this app does not have |
 | Switching happens in the sidebar radio group; `stagedNote` says "Switch gateways from Sessions" (`connection-switcher.tsx:212-227`, `en.ts:706`) | mobile-adaptation | A `Switch` action on every non-active row, ahead of Desktop's four, calling the same `selectConnection` semantics | Desktop's Settings sits beside a sidebar that is always there; a phone's Gateways screen is a destination, and the person is already standing on it when they add or repair a gateway. The verb is Desktop's own, so the two surfaces name one act |
 | `stagedNote`: "Switch gateways from Sessions." (`en.ts:706`) | mobile-adaptation | "Switch gateways here or from Sessions." | Forced by the row above: naming Sessions as the only route would now be false, and would point at the longer of the two |
 | A pending switch shows on the rail trigger only, because the radio menu closes on the click (`connection-switcher.tsx:133,272`) | mobile-adaptation | The registry row itself reads `Connecting…` and is disarmed, as is every other row's switch | This list does not close when you tap it, so the row that is moving has to say so itself; the word is the constant the rail uses |
@@ -210,17 +245,39 @@ argument.
 | No-results text carries `role="status"` (`connection-switcher.tsx:216-221`) | drift | Plain `Text` | Not a live region here; #85 |
 | A separator sits between the search field and the radio group (`:202`) | drift | No separator; the hairline sits below the list | #85 |
 | Unread markers survive a source switch (`gateway-switch.ts:70-76`) | drift | Unread is a cached row field, and the cache is cleared | No durable unread store exists yet; #66 |
+| Registry kind chooser resting card fill `bg-(--ui-bg-quinary)` — a translucent accent wash over 3% base (`styles.css:288-292`) | drift | `tokens.widgetSurface`, an opaque card-derived fill | #100. The token layer has no quinary equivalent, and it is pinned at a different SHA and gated by `ThemeParityTest`, so adding one is a theme-sync change rather than this slice's. Recorded rather than painted under a comment claiming otherwise |
 | `Make primary` is hidden on the row that already is primary (`connections-registry.tsx:601`) | drift | Rendered on every row, uniformly disabled | Android persists no `registry.primary` / `launchMode`, so the condition has nothing to test against and no row is the one Desktop would hide it on. Hiding it on an arbitrary row would invent the concept; revisit when launch mode is ported — #100 |
 | `Test` (`en.ts:723`) and `Make primary` (`en.ts:722`) | omission | Present on every row, disabled, each behind a `Coming soon` pill via the shared `ComingSoonAction` primitive | coming soon — the pill ships today (S-C1, #104). `Test` needs a route-independent reachability probe this app does not have; `Make primary` needs the `launchMode` / `registry.primary` field Android does not persist |
 | `Update all instances`, and the launch-mode toggle | omission | Absent | pill-owed: #101 — page-level controls Desktop renders, so each owes the same disabled row `Test` and `Make primary` now have (#100) |
 | Extra-header editor | omission | Absent | out-of-scope: #100 named it an explicit non-goal of that issue; nothing about the platform refuses it |
-| `cloud` kind | omission | Absent | non-goal: there is no Android Hermes Cloud sign-in |
+| Hermes Cloud connection mode (`gateway-settings.tsx:1057-1064`) and `cloud` kind (`connections-registry.tsx:652`) | omission | Rendered, disabled, in Desktop's position in both choosers, behind the shared `Coming soon` pill | coming soon — the pill ships in this change. There is no Android Hermes Cloud sign-in yet, and `GatewayConnectionMode`/`ConnectionKind` deliberately have no member for it, so it cannot be selected or saved |
+| `cloudAddHint` under the kind chooser (`en.ts:758-759`) | omission | Absent | deferred: #100 — a hint, not a control: it renders only while the editor's kind *is* cloud, which a disabled Cloud button makes unreachable, and it returns with the sign-in the card above is waiting on |
+| `envOverride` disabling every mode card (`gateway-settings.tsx:1052`, `en.ts:773-775`) | omission | Absent | non-goal: `HERMES_DESKTOP_REMOTE_URL`/`_TOKEN` are desktop-process environment variables, and an Android app has no shell environment to be overridden by |
 | Plain-text-keyring consent | omission | Absent | non-goal: every secret here is a Keystore slot, so there is nothing to consent to |
 
 ## Visual report
 
 - pending: #100
 
-Owed, not fabricated, for the reason the paragraph above gives: the capture
-script attaches to a running renderer, and none was available. #85 carries the
-device re-run of the switch path.
+Owed, not fabricated, and the reason is checkable rather than a shrug. The
+capture script attaches to a running renderer, and getting *this* surface into
+one is the blocker: the mode cards live inside `GatewaySettings`, which
+early-returns an `EmptyState` carrying `unavailableTitle` / `unavailableDesc`
+whenever `window.hermesDesktop` is absent (`gateway-settings.tsx:206` @
+`f82f2dba`). A browser pointed at the vite dev renderer has no such bridge, so
+it renders that fallback and there are no cards to photograph; the supported
+mock path, `apps/desktop/scripts/dev-mock.mjs`, launches the **built Electron
+app** rather than seeding a browser bridge, so it needs a full `npm run build`,
+an Electron binary and a display. A disposable export was cloned and verified
+at `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`; the export is not the missing
+piece.
+
+The Android half needs an attached device, and this pane is `FLAG_SECURE`, so
+`screencap` returns black and an accessibility dump is the substitute. No
+device was attached for this slice.
+
+Until the report lands, this slice's rendered evidence is
+`ConnectionModeCardsJourneyTest` and `ConnectionKindChooserJourneyTest`, which
+measure the order, the states and the column counts on a real Compose frame —
+and the ceiling `review-desktop-parity` sets for an unrendered UI change
+applies. #85 carries the device re-run of the switch path.
