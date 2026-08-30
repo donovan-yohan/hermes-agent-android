@@ -378,11 +378,12 @@ argument and the citations.
 | Windowed diff rendering, `+/-` gutters, `@@` headers, the 2 px gutter accent | drift | Absent | #71 S34 |
 | `stripAnsi` before `InlineDiffPanel` (`fallback-model/index.ts:781-789`) | drift | `inlineDiff` is rendered raw | The diff surface is S34's and the strip belongs with it; #71 S34 |
 | Long-press selection of tool payloads, and the select / horizontal-scroll / collapse-tap arbitration | drift | Not selectable | Needs real-device evidence; #71 S35, tracked as #56 |
-| A Copy control on an inline diff | omission | Absent | deferred: #71 — `InlineDiffPanel` owns that surface and S35 is where its affordances land |
-| `dynamicTitle` / `toolSubtitle` / `titleAction` (D8) | omission | Absent | deferred: #71 — Android's title grammar is the disclosure row's, and no slice is scheduled |
+| A Copy control on an inline diff | omission | Absent | pill-owed: #101 — a control, so it ships disabled rather than absent; `InlineDiffPanel` owns the surface and #71 S35 lands its affordances |
+| `titleAction` (D8) | omission | Absent | pill-owed: #101 — a control, so it ships disabled rather than absent; no slice is scheduled |
+| `dynamicTitle` / `toolSubtitle` (D8) | omission | Absent | deferred: #71 — title text, not a control; Android's title grammar is the disclosure row's |
 | Technical-mode raw args/result disclosure (`fallback.tsx:114-139`) | omission | Absent | non-goal: Android has no tool view mode toggle to hang it from |
-| Inline image results (`imageUrl`) and artifact preview targets (`previewTarget`) | omission | Absent | non-goal: explicit non-goals of #71 |
-| Syntax highlighting | omission | Absent | non-goal: an explicit non-goal of #71, being a size and cold-start decision of its own |
+| Inline image results (`imageUrl`) and artifact preview targets (`previewTarget`) | omission | Absent | out-of-scope: #71 excluded both from its own scope; neither is refused by the platform |
+| Syntax highlighting | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own |
 
 ## Visual report
 
