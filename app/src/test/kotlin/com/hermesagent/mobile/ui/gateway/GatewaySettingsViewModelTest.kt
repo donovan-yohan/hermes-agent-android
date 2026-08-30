@@ -1,5 +1,9 @@
 package com.hermesagent.mobile.ui.gateway
 
+import com.hermesagent.mobile.data.connections.ConnectionKind
+import com.hermesagent.mobile.data.connections.ConnectionRegistry
+import com.hermesagent.mobile.data.connections.SavedConnection
+import com.hermesagent.mobile.data.gateway.ActiveGatewayRoute
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectResult
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
@@ -11,11 +15,17 @@ import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.SshCredential
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -24,6 +34,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -37,6 +48,11 @@ import org.junit.Test
  * an address nothing can reach again. These pin that the slot is erased there,
  * and that the routes which did not gain a Keystore slot in this slice are left
  * exactly as they were.
+ *
+ * And the pane itself, which is a projection of one saved row: switching rows
+ * has to re-project it, because every field on it autosaves into whichever row
+ * is active — a pane left showing the row it switched away from is one
+ * connection's address being typed into another.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GatewaySettingsViewModelTest {
@@ -56,9 +72,9 @@ class GatewaySettingsViewModelTest {
     @Test
     fun `leaving the Local route erases the token bound to an address it no longer names`() =
         runTest(dispatcher) {
-            val store = MemoryProfileStore(
-                mode = GatewayConnectionMode.Local,
-                local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119", secretSlotId = "row-one"),
+            val store = oneRow(
+                ConnectionKind.Local,
+                local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
             )
             val gateway = RecordingGateway()
             val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
@@ -68,7 +84,7 @@ class GatewaySettingsViewModelTest {
             subject.setMode(GatewayConnectionMode.Remote)
             advanceUntilIdle()
 
-            assertEquals(GatewayConnectionMode.Remote, store.mode.value)
+            assertEquals(ConnectionKind.Remote, store.row("row-one").kind)
             assertEquals(
                 "a slot nothing can address again is litter, not a sealed refusal",
                 listOf("row-one"),
@@ -78,10 +94,7 @@ class GatewaySettingsViewModelTest {
 
     @Test
     fun `switching between the routes that own no session token erases nothing`() = runTest(dispatcher) {
-        val store = MemoryProfileStore(
-            mode = GatewayConnectionMode.Remote,
-            remote = RemoteGatewayProfile(baseUrl = "https://alpha.test", secretSlotId = "row-one"),
-        )
+        val store = oneRow(ConnectionKind.Remote, remote = RemoteGatewayProfile(baseUrl = "https://alpha.test"))
         val gateway = RecordingGateway()
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
         backgroundScope.launch { subject.uiState.collect { } }
@@ -99,7 +112,7 @@ class GatewaySettingsViewModelTest {
 
     @Test
     fun `the Local route dials only an address this app can use`() = runTest(dispatcher) {
-        val store = MemoryProfileStore(mode = GatewayConnectionMode.Local, local = LocalGatewayProfile())
+        val store = oneRow(ConnectionKind.Local)
         val gateway = RecordingGateway()
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
         backgroundScope.launch { subject.uiState.collect { } }
@@ -109,7 +122,7 @@ class GatewaySettingsViewModelTest {
         advanceUntilIdle()
         assertTrue("a row with no address has nothing to dial", gateway.localDials.isEmpty())
 
-        store.local.value = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119", secretSlotId = "row-one")
+        store.setLocal(LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"))
         advanceUntilIdle()
         subject.connectLocal()
         advanceUntilIdle()
@@ -119,9 +132,9 @@ class GatewaySettingsViewModelTest {
 
     @Test
     fun `the surface adds no second dial while a restore is still connecting`() = runTest(dispatcher) {
-        val store = MemoryProfileStore(
-            mode = GatewayConnectionMode.Local,
-            local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119", secretSlotId = "row-one"),
+        val store = oneRow(
+            ConnectionKind.Local,
+            local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
         )
         val gateway = RecordingGateway()
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
@@ -148,29 +161,276 @@ class GatewaySettingsViewModelTest {
         assertEquals(listOf("http://127.0.0.1:9119"), gateway.localDials.map { it.baseUrl })
     }
 
-    private class MemoryProfileStore(
-        mode: GatewayConnectionMode,
-        remote: RemoteGatewayProfile = RemoteGatewayProfile(),
-        local: LocalGatewayProfile = LocalGatewayProfile(),
-    ) : RemoteGatewayProfileStore {
-        val mode = MutableStateFlow(mode)
-        val local = MutableStateFlow(local)
-        private val remoteProfile = MutableStateFlow(remote)
+    @Test
+    fun `switching connections re-projects the route, its fields and what Connect would dial`() =
+        runTest(dispatcher) {
+            val store = twoRows()
+            store.switchTo("row-ssh")
+            val gateway = RecordingGateway()
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
 
-        override val remoteGatewayProfile: StateFlow<RemoteGatewayProfile> = remoteProfile.asStateFlow()
-        override val gatewayConnectionMode: StateFlow<GatewayConnectionMode> = this.mode.asStateFlow()
-        override val localGatewayProfile: StateFlow<LocalGatewayProfile> = this.local.asStateFlow()
+            assertEquals(GatewayConnectionMode.Ssh, subject.uiState.value.mode)
+            assertFalse(
+                "an SSH row names no Gateway URL, so this pane has nothing to dial",
+                subject.uiState.value.canConnectRemote,
+            )
 
-        override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
-            remoteProfile.value = profile
+            store.switchTo("row-beta")
+            advanceUntilIdle()
+
+            val state = subject.uiState.value
+            assertEquals(GatewayConnectionMode.Remote, state.mode)
+            assertEquals("https://beta.test", state.remote.baseUrl)
+            assertEquals("beta-provider", state.remote.provider)
+            assertTrue("the row now active is one this pane can dial", state.canConnectRemote)
+
+            subject.connectRemote { }
+            advanceUntilIdle()
+
+            assertEquals(
+                "Connect dials the row on screen, not the one it switched away from",
+                listOf("https://beta.test"),
+                gateway.remoteDials.map { it.baseUrl },
+            )
         }
 
-        override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) {
-            this.mode.value = mode
+    /**
+     * The P1 this slice exists for: the pane's fields autosave into whichever
+     * row is active, so text left over from the row a switch departed is text
+     * about to be written into the row it arrived at.
+     */
+    @Test
+    fun `a switch drops the unsaved edit that belonged to the row it left`() = runTest(dispatcher) {
+        val store = twoRows()
+        val gateway = RecordingGateway()
+        val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.setRemoteUrl("https://alpha.test/typed")
+        advanceUntilIdle()
+
+        store.switchTo("row-beta")
+        advanceUntilIdle()
+
+        assertEquals(
+            "the pane shows the row it switched to",
+            "https://beta.test",
+            subject.uiState.value.remote.baseUrl,
+        )
+        assertEquals(
+            "arriving at a row does not rewrite it",
+            "https://beta.test",
+            store.row("row-beta").remote.baseUrl,
+        )
+
+        // The next keystroke is an edit of the row now on screen, and it has to
+        // be composed from that row rather than from what was left of the last.
+        subject.setProvider("switched-provider")
+        advanceUntilIdle()
+
+        assertEquals("https://beta.test", store.row("row-beta").remote.baseUrl)
+        assertEquals("switched-provider", store.row("row-beta").remote.provider)
+        assertEquals(
+            "the row switched away from keeps what was typed into it, and only that",
+            "https://alpha.test/typed",
+            store.row("row-alpha").remote.baseUrl,
+        )
+    }
+
+    @Test
+    fun `a dial aimed at the row a switch left is abandoned rather than landing under the new one`() =
+        runTest(dispatcher) {
+            val store = twoRows()
+            val gateway = RecordingGateway(holdRemoteDial = true)
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            subject.connectRemote { }
+            advanceUntilIdle()
+            assertEquals(listOf("https://alpha.test"), gateway.remoteDials.map { it.baseUrl })
+
+            store.switchTo("row-beta")
+            advanceUntilIdle()
+
+            assertEquals(
+                "the attempt the switch controller cannot see is the one this pane has to drop",
+                "https://alpha.test",
+                gateway.abandonedRemoteDials.single().baseUrl,
+            )
+        }
+
+    /**
+     * The switch window: the marker has moved and this pane has not been told
+     * yet, so what it is showing — and anything typed into it — belongs to the
+     * row that is already behind it.
+     */
+    @Test
+    fun `a keystroke racing a switch is dropped, and the pane still lands on the row switched to`() =
+        runTest(dispatcher) {
+            val store = twoRows()
+            val gateway = RecordingGateway()
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            store.switchTo("row-beta")
+            subject.setRemoteUrl("https://alpha.test/typed")
+            advanceUntilIdle()
+
+            assertEquals(
+                "the pane ends on the row the switch landed on, not pinned by the character it raced",
+                "https://beta.test",
+                subject.uiState.value.remote.baseUrl,
+            )
+            assertEquals("the row it arrived at is untouched", "https://beta.test", store.row("row-beta").remote.baseUrl)
+            assertEquals(
+                "and the character was not redirected into it",
+                "https://alpha.test",
+                store.row("row-alpha").remote.baseUrl,
+            )
+            assertEquals(listOf("row-alpha"), store.droppedWrites)
+        }
+
+    /**
+     * The same window for the route selector. It is the more expensive one to
+     * get wrong: a landed write rewrites the new row's *kind*, and the erase it
+     * drags behind it would take a token belonging to a row nobody changed.
+     */
+    @Test
+    fun `a route tap racing a switch is dropped, and the row it was aimed at keeps its token`() =
+        runTest(dispatcher) {
+            val store = MemoryProfileStore(
+                listOf(
+                    SavedConnection(
+                        "row-local",
+                        "Alpha",
+                        ConnectionKind.Local,
+                        local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
+                    ),
+                    SavedConnection("row-ssh", "Beta", ConnectionKind.Ssh),
+                ),
+            )
+            val gateway = RecordingGateway()
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            store.switchTo("row-ssh")
+            subject.setMode(GatewayConnectionMode.Remote)
+            advanceUntilIdle()
+
+            assertEquals("the row it landed on keeps its kind", ConnectionKind.Ssh, store.row("row-ssh").kind)
+            assertEquals("and so does the row it was aimed at", ConnectionKind.Local, store.row("row-local").kind)
+            assertEquals(listOf("row-local"), store.droppedWrites)
+            assertTrue(
+                "a write that changed no route stranded no token",
+                gateway.forgottenLocal.isEmpty(),
+            )
+            assertEquals(GatewayConnectionMode.Ssh, subject.uiState.value.mode)
+        }
+
+    private fun oneRow(
+        kind: ConnectionKind,
+        remote: RemoteGatewayProfile = RemoteGatewayProfile(),
+        local: LocalGatewayProfile = LocalGatewayProfile(),
+    ) = MemoryProfileStore(listOf(SavedConnection("row-one", "Alpha", kind, remote = remote, local = local)))
+
+    private fun twoRows() = MemoryProfileStore(
+        listOf(
+            SavedConnection(
+                "row-alpha",
+                "Alpha",
+                ConnectionKind.Remote,
+                remote = RemoteGatewayProfile(baseUrl = "https://alpha.test", provider = "alpha-provider"),
+            ),
+            SavedConnection(
+                "row-beta",
+                "Beta",
+                ConnectionKind.Remote,
+                remote = RemoteGatewayProfile(baseUrl = "https://beta.test", provider = "beta-provider"),
+            ),
+            SavedConnection("row-ssh", "Gamma", ConnectionKind.Ssh),
+        ),
+    )
+
+    /**
+     * Shaped like the real store: rows, a marker, every projection read off
+     * whichever row the marker names, and the route handed out as one value.
+     *
+     * It honours the stamp rule too, because that rule is stated on
+     * [RemoteGatewayProfileStore] rather than discovered in one implementation
+     * of it — a fake that accepted a write the contract says is dropped would
+     * make every test above it optimistic. Which row a dropped write was
+     * composed against is recorded, since that is the only part of a drop a
+     * caller can be held to.
+     */
+    private class MemoryProfileStore(rows: List<SavedConnection>) : RemoteGatewayProfileStore {
+        private val registry = MutableStateFlow(ConnectionRegistry(rows, rows.first().id))
+
+        override val remoteGatewayProfile: Flow<RemoteGatewayProfile> =
+            registry.map { it.active?.remoteProfile ?: RemoteGatewayProfile() }
+        override val gatewayConnectionMode: Flow<GatewayConnectionMode> =
+            registry.map { it.active?.kind?.mode ?: GatewayConnectionMode.Remote }
+        override val localGatewayProfile: Flow<LocalGatewayProfile> =
+            registry.map { it.active?.localProfile ?: LocalGatewayProfile() }
+        override val activeGatewayRoute: Flow<ActiveGatewayRoute> = registry
+            .map { current ->
+                val active = current.active
+                ActiveGatewayRoute(
+                    connectionId = active?.id,
+                    mode = active?.kind?.mode ?: GatewayConnectionMode.Remote,
+                    remote = active?.remoteProfile ?: RemoteGatewayProfile(),
+                )
+            }
+            .distinctUntilChanged()
+
+        /** The row each dropped write named, in the order they were dropped. */
+        val droppedWrites = mutableListOf<String>()
+
+        fun row(id: String): SavedConnection = registry.value.connections.first { it.id == id }
+
+        /** Stands in for the switcher, which owns the marker and nothing else here. */
+        fun switchTo(id: String) = registry.update { it.copy(activeId = id) }
+
+        /** Stands in for the registry editor, the one writer of a row's Local route. */
+        fun setLocal(profile: LocalGatewayProfile) {
+            editActive(expected = null) { it.copy(local = profile) }
+        }
+
+        override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
+            editActive(profile.secretSlotId.takeIf { it.isNotBlank() }) { active ->
+                active.copy(remote = RemoteGatewayProfile(baseUrl = profile.baseUrl, provider = profile.provider))
+            }
+        }
+
+        override suspend fun saveGatewayConnectionMode(
+            mode: GatewayConnectionMode,
+            expectedConnectionId: String?,
+        ): Boolean = editActive(expectedConnectionId) { it.copy(kind = ConnectionKind.of(mode)) }
+
+        private fun editActive(expected: String?, transform: (SavedConnection) -> SavedConnection): Boolean {
+            val active = registry.value.active ?: return false
+            if (expected != null && expected != active.id) {
+                droppedWrites += expected
+                return false
+            }
+            registry.update { current ->
+                current.copy(
+                    connections = current.connections.map { if (it.id == active.id) transform(it) else it },
+                )
+            }
+            return true
         }
     }
 
-    private class RecordingGateway : GatewayConnectionController {
+    private class RecordingGateway(
+        /** Holds the dial open, the way a browser sign-in does, so a cancel is observable. */
+        private val holdRemoteDial: Boolean = false,
+    ) : GatewayConnectionController {
         private val _state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Disconnected))
         override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
 
@@ -182,6 +442,8 @@ class GatewaySettingsViewModelTest {
         val forgottenLocal = mutableListOf<LocalGatewayProfile>()
         val forgottenRemote = mutableListOf<RemoteGatewayProfile>()
         val localDials = mutableListOf<LocalGatewayProfile>()
+        val remoteDials = mutableListOf<RemoteGatewayProfile>()
+        val abandonedRemoteDials = mutableListOf<RemoteGatewayProfile>()
 
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             GatewayConnectResult.Connected
@@ -189,7 +451,18 @@ class GatewaySettingsViewModelTest {
         override suspend fun connectRemote(
             profile: RemoteGatewayProfile,
             browser: GatewayBrowserLauncher,
-        ): GatewayConnectResult = GatewayConnectResult.Connected
+        ): GatewayConnectResult {
+            remoteDials += profile
+            if (holdRemoteDial) {
+                try {
+                    awaitCancellation()
+                } catch (cancelled: CancellationException) {
+                    abandonedRemoteDials += profile
+                    throw cancelled
+                }
+            }
+            return GatewayConnectResult.Connected
+        }
 
         override suspend fun connectLocal(profile: LocalGatewayProfile): GatewayConnectResult {
             localDials += profile

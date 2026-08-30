@@ -10,6 +10,8 @@ import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -80,21 +82,76 @@ data class RemoteGatewayProfile(
         }
 }
 
+/**
+ * The active row's route: which row it is, which way it connects, and the
+ * Gateway it names — as one value.
+ *
+ * Three projections of one saved row are three emissions, and a reader that
+ * pairs them observes tuples the store never held: a row's id beside the route
+ * and address of the row before it. A single value cannot be seen half-changed,
+ * which is the only form of that guarantee a reader can actually rely on.
+ */
+data class ActiveGatewayRoute(
+    val connectionId: String? = null,
+    val mode: GatewayConnectionMode = GatewayConnectionMode.Remote,
+    val remote: RemoteGatewayProfile = RemoteGatewayProfile(),
+)
+
 /** Persisted remote route settings. Tokens deliberately live behind [GatewayTokenStore]. */
 interface RemoteGatewayProfileStore {
-    val remoteGatewayProfile: kotlinx.coroutines.flow.Flow<RemoteGatewayProfile>
-    val gatewayConnectionMode: kotlinx.coroutines.flow.Flow<GatewayConnectionMode>
+    val remoteGatewayProfile: Flow<RemoteGatewayProfile>
+    val gatewayConnectionMode: Flow<GatewayConnectionMode>
 
     /**
      * The active row's Local route, when it has one. A store that keeps no
      * Local row reports an empty profile, which is never valid — the same
      * answer a fresh install gives.
      */
-    val localGatewayProfile: kotlinx.coroutines.flow.Flow<LocalGatewayProfile>
-        get() = kotlinx.coroutines.flow.flowOf(LocalGatewayProfile())
+    val localGatewayProfile: Flow<LocalGatewayProfile>
+        get() = flowOf(LocalGatewayProfile())
 
+    /**
+     * [gatewayConnectionMode] and [remoteGatewayProfile] together with the row
+     * they are projections *of*.
+     *
+     * A surface that renders all three reads this rather than combining those
+     * two, so a switch reaches it as one change. The identity has to come from
+     * the store because the values cannot carry it: two rows can name the same
+     * URL, the same route, or both. A store with no registry answers the fresh
+     * defaults, and keeps answering them.
+     */
+    val activeGatewayRoute: Flow<ActiveGatewayRoute>
+        get() = flowOf(ActiveGatewayRoute())
+
+    /**
+     * Writes the active row's Gateway URL and provider, unless the edit was
+     * composed against a row that is no longer active.
+     *
+     * [RemoteGatewayProfile.secretSlotId] names the row the caller was editing.
+     * A non-blank one that no longer matches is dropped rather than written
+     * where it landed: the route form has no discrete save — it persists on
+     * every keystroke — so one of its writes can still be in flight when the
+     * marker moves, and the row a character was typed against is the only thing
+     * that tells that apart from an edit of the row now active. A blank stamp is
+     * a caller with no row in mind and writes wherever the marker points.
+     */
     suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile)
-    suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode)
+
+    /**
+     * The same rule for the route itself, which is a bare enum and cannot carry
+     * the row, so [expectedConnectionId] names it instead. Null means the caller
+     * has no row in mind.
+     *
+     * Returns whether the change was written. This one costs the live connection
+     * and can erase the session token of a row that has stopped naming a
+     * loopback address, so its caller has to know: a dropped write moved
+     * nothing, and everything those two acts would reach now belongs to the row
+     * that replaced it.
+     */
+    suspend fun saveGatewayConnectionMode(
+        mode: GatewayConnectionMode,
+        expectedConnectionId: String? = null,
+    ): Boolean
 }
 
 /** Opens the system browser. The callback URI is always a temporary loopback listener. */

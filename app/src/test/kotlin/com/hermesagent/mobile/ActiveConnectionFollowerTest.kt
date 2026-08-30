@@ -177,7 +177,10 @@ class ActiveConnectionFollowerTest {
         }
 
         override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) = Unit
-        override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) = Unit
+        override suspend fun saveGatewayConnectionMode(
+            mode: GatewayConnectionMode,
+            expectedConnectionId: String?,
+        ): Boolean = false
     }
 
     private class RecordingConnection : GatewayConnectionController {

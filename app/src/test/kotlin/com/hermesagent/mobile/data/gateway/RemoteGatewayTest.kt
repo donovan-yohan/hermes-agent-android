@@ -1300,8 +1300,12 @@ class RemoteGatewayTest {
         override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) {
             remoteGatewayProfile.value = profile
         }
-        override suspend fun saveGatewayConnectionMode(mode: GatewayConnectionMode) {
+        override suspend fun saveGatewayConnectionMode(
+            mode: GatewayConnectionMode,
+            expectedConnectionId: String?,
+        ): Boolean {
             gatewayConnectionMode.value = mode
+            return true
         }
     }
 

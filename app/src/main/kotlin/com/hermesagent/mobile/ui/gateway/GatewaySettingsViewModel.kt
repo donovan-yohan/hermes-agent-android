@@ -3,6 +3,7 @@ package com.hermesagent.mobile.ui.gateway
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.hermesagent.mobile.data.gateway.ActiveGatewayRoute
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -17,7 +18,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -62,14 +62,29 @@ internal class GatewaySettingsViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GatewaySettingsUiState())
     val uiState: StateFlow<GatewaySettingsUiState> = _uiState.asStateFlow()
+
+    /**
+     * Whether this pane's own fields are ahead of the store.
+     *
+     * The route form persists on every keystroke, so the store echoes back what
+     * was typed one write later; without this latch that echo would arrive
+     * behind the next character and undo it. It says nothing about which row is
+     * being edited, which is why [project] resets it.
+     */
     private var edited = false
+
+    /** The row [_uiState] is currently a projection of. */
+    private var activeRowId: String? = null
     private var connectJob: Job? = null
 
     init {
+        // Collected rather than read once, and read as one value rather than
+        // assembled from three. The store hands the row, its route and its
+        // address out together (`RemoteGatewayProfileStore.activeGatewayRoute`)
+        // precisely so a switch cannot reach this pane as a sequence, one step
+        // of which is a new connection's route over the last one's address.
         viewModelScope.launch {
-            val mode = store.gatewayConnectionMode.first()
-            val remote = store.remoteGatewayProfile.first()
-            if (!edited) _uiState.update { it.copy(mode = mode, remote = remote, loaded = true) }
+            store.activeGatewayRoute.collect(::project)
         }
         viewModelScope.launch {
             gateway.state.collect { connection -> _uiState.update { it.copy(connection = connection) } }
@@ -80,6 +95,37 @@ internal class GatewaySettingsViewModel(
         viewModelScope.launch {
             store.localGatewayProfile.collect { local -> _uiState.update { it.copy(local = local) } }
         }
+    }
+
+    /**
+     * Re-projects this pane onto whichever row is active.
+     *
+     * **A switch discards unsaved edits made in this pane, and the pane shows
+     * the new row.** Switching is an explicit navigation to another connection,
+     * not a way of moving text between two of them; the alternative keeps the
+     * old row's half-typed address on screen while every field here autosaves
+     * into whatever row is active, which is one connection's address written
+     * into another. The store refuses that write as well
+     * ([RemoteGatewayProfileStore.saveRemoteGatewayProfile]) — the two are one
+     * rule, stated where it can be seen and enforced where it cannot be raced.
+     * What is lost is at most the characters typed since the last keystroke
+     * landed, all of them belonging to a connection the person has just
+     * navigated away from.
+     */
+    private fun project(route: ActiveGatewayRoute) {
+        if (route.connectionId != activeRowId) {
+            activeRowId = route.connectionId
+            edited = false
+            // A dial aimed at the row we just left must not come up under the
+            // one that replaced it. Putting the old endpoint down and forgetting
+            // what it told us is the switch's own job and it already does both,
+            // before it moves the marker
+            // (`ConnectionSwitchController.kt:84,150-151`); the attempt this
+            // ViewModel is still holding is the part that controller cannot see.
+            cancelConnectionAttempt()
+        }
+        if (edited) return
+        _uiState.update { it.copy(mode = route.mode, remote = route.remote, loaded = true) }
     }
 
     /**
@@ -102,18 +148,26 @@ internal class GatewaySettingsViewModel(
     fun setMode(mode: GatewayConnectionMode) {
         val previous = _uiState.value
         if (previous.mode == mode) return
+        val row = activeRowId
         edited = true
         cancelConnectionAttempt()
         _uiState.update { it.copy(mode = mode, loaded = true) }
         val abandonedSessionToken = previous.local
             .takeIf { previous.mode == GatewayConnectionMode.Local && it.secretSlotId.isNotBlank() }
         viewModelScope.launch {
+            // Both consequences below belong to the row this tap was aimed at.
+            // If the store dropped the write, that row is not the one this app
+            // is on any more: the connection to put down and the token to erase
+            // are the new row's, and neither has been changed by anything. A
+            // write that *failed* is not that case and still tears down, since
+            // the saved route may have moved regardless.
+            var dropped = false
             try {
-                store.saveGatewayConnectionMode(mode)
+                dropped = !store.saveGatewayConnectionMode(mode, row)
             } finally {
-                leaveEndpoint()
+                if (!dropped) leaveEndpoint()
             }
-            abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it) }
+            if (!dropped) abandonedSessionToken?.let { gateway.forgetLocalAuthentication(it) }
         }
     }
 
@@ -121,6 +175,17 @@ internal class GatewaySettingsViewModel(
 
     fun setProvider(value: String) = editRemote { it.copy(provider = value) }
 
+    /**
+     * Dials the host-owned Gateway this pane is showing.
+     *
+     * Both the offer and the target come from the same projected row, so a tap
+     * can only ever dial the connection whose address is on screen. A tap that
+     * lands in the instant before a switch is the one case where those two come
+     * apart, and it is caught on the way out rather than on the way in: [project]
+     * cancels the attempt when the active row moves, and the switch itself has
+     * already put the old endpoint down and cleared what it told us
+     * (`ConnectionSwitchController.kt:84,150-151`).
+     */
     fun connectRemote(browser: GatewayBrowserLauncher) {
         val state = _uiState.value
         if (state.mode != GatewayConnectionMode.Remote || !state.canConnectRemote) return
