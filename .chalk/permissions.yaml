@@ -13,6 +13,16 @@ bash:
     - "git log*"
     - "git show*"
     - "./scripts/check-repo-invariants.sh"
+    # The repo gates and the capture scripts are run directly, by name. Without
+    # these the AGENTS.md command block and the parity skills describe commands
+    # an agent is not permitted to run.
+    - "python3 scripts/*"
+    - "python3 .chalk/skills/*"
+    - "node .chalk/skills/*"
+    # A visual-parity capture needs Desktop's tree at a pin. Cloning the
+    # reference checkout reads it and never writes to it; the deny rule below
+    # still refuses anything that would mutate it in place.
+    - "git clone *"
     - "adb devices"
     - "adb logcat*"
   ask:
