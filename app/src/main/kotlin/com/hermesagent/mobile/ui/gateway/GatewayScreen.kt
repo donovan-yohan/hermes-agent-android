@@ -145,7 +145,9 @@ fun GatewayScreen(
                     description = card.description,
                     icon = card.icon,
                     hint = card.hint,
-                    active = card.mode != null && card.mode == state.mode,
+                    // A null mode never equals a real one, so the Cloud card
+                    // is never the active one without a second guard.
+                    active = card.mode == state.mode,
                     enabled = card.mode != null,
                     // Dead until the saved route has actually been read. Before
                     // that this control shows the default rather than the truth,

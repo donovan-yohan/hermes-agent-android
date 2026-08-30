@@ -390,7 +390,7 @@ private fun ConnectionEditor(
                 ) { choice ->
                     ChoiceButton(
                         label = choice.label,
-                        selected = choice.kind != null && choice.kind == editor.kind,
+                        selected = choice.kind == editor.kind,
                         enabled = choice.kind != null,
                         onClick = { choice.kind?.let(actions.onEditKind) },
                         modifier = Modifier.fillMaxWidth(),
