@@ -23,8 +23,7 @@ first and come back here for review.
 
 1. **Find the Desktop original at the pin.** Read it out of the disposable
    export from step 2, not out of `~/.hermes/hermes-agent` — that checkout is
-   read-only, its `HEAD` is neither pin, and `.chalk/permissions.yaml` denies
-   `git -C ~/.hermes/*` outright. Name the `path:line` of the component, its
+   read-only and its `HEAD` is neither pin. Name the `path:line` of the component, its
    i18n keys, and its tests, each against the SHA you actually read: the UI pin
    `f82f2db` for structure and copy, the theme ledger's `45fcaaa` for colour
    values, or a per-surface pin where the page declares one (#103). If Desktop
@@ -33,7 +32,10 @@ first and come back here for review.
 2. **Render it.** Capture Desktop from a **disposable pinned export** with CDP
    (`git clone --no-hardlinks --no-checkout <upstream> <export>` then
    `git -C <export> checkout <pin>`, so the checkout that moves is the throwaway
-   one), capture the same state on Android, and build the side-by-side:
+   one), capture the same state on Android, and build the side-by-side. Making
+   the export prompts for approval — `git clone` runs an arbitrary command
+   through `--upload-pack` or an `ext::` transport, so it is an `ask`, not an
+   allow — and so do the reads against the export. Approve them once per review:
 
    ```bash
    node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
