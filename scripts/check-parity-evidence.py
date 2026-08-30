@@ -36,7 +36,22 @@ HEADING = re.compile(r"^##\s+(.+?)\s*$")
 FIELD = re.compile(r"^\s*[-*]\s*([A-Za-z][A-Za-z -]*?)\s*:\s*(\S.*?)\s*$")
 COMMIT = re.compile(r"(?:^|/)([0-9a-f]{7,40})$")
 ISSUE = re.compile(r"#\d+")
-OWED = re.compile(r"(?:pill-owed|deferred):\s*#\d+", re.IGNORECASE)
+# An omission has to say which kind it is, and say it *first*: this is matched
+# against the start of the Evidence cell, so "this is not a non-goal because ..."
+# is refused rather than passing on the substring it negates. `non-goal:` carries
+# a platform judgement and must be followed by the reason for it; the other four
+# name an owner instead.
+OMISSION_MARKER = re.compile(
+    r"^(?:"
+    r"non-goal:\s*\S"          # this platform will never have it, and why
+    r"|coming soon\b"          # the disabled pill already ships
+    r"|pill-owed:\s*#\d+"      # a control or mode that owes the pill
+    r"|out-of-scope:\s*#\d+"   # that issue deliberately excluded it
+    r"|deferred:\s*#\d+"       # a detail that is not a control
+    r")",
+    re.IGNORECASE,
+)
+FENCE = re.compile(r"^\s*(?:```|~~~)")
 CELL = re.compile(r"(?<!\\)\|")
 SEPARATOR = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 EMPHASIS = re.compile(r"[`*_]")
@@ -54,7 +69,16 @@ def sections(text: str) -> dict[str, list[str]]:
     """Split on level-2 headings; deeper headings stay inside their parent."""
     found: dict[str, list[str]] = {}
     current: str | None = None
+    fenced = False
     for line in text.splitlines():
+        # A fenced block is an example of the format, not a claim in it. The
+        # workflow doc shows a `pending:` line and a table inside fences; a page
+        # that quotes either must not be credited with having one.
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         heading = HEADING.match(line)
         if heading:
             current = heading.group(1)
@@ -189,7 +213,7 @@ def check_divergences(body: list[str] | None, problems: list[str]) -> None:
                 f"about Android"
             )
 
-        if klass == "mobile-adaptation" and NON_REASON.match(evidence):
+        if klass == "mobile-adaptation" and NON_REASON.search(evidence):
             problems.append(
                 f"`## {DIVERGENCE_SECTION}` row {index} ({desktop!r}) is a "
                 f"mobile-adaptation with no reason: {evidence!r}. Valid reasons are "
@@ -201,16 +225,17 @@ def check_divergences(body: list[str] | None, problems: list[str]) -> None:
                 f"`## {DIVERGENCE_SECTION}` row {index} ({desktop!r}) is drift with "
                 f"no issue number; drift is a finding and needs an owner"
             )
-        elif klass == "omission":
-            claim = f"{android} {evidence}".lower()
-            if not ("non-goal" in claim or "coming soon" in claim or OWED.search(claim)):
-                problems.append(
-                    f"`## {DIVERGENCE_SECTION}` row {index} ({desktop!r}) omits part of "
-                    f"Desktop without saying which kind of omission it is: mark it "
-                    f"`non-goal`, ship it disabled with a `coming soon` pill, or record "
-                    f"`pill-owed: #<issue>` (a control or mode) / `deferred: #<issue>` "
-                    f"(a detail that is not a control)"
-                )
+        elif klass == "omission" and not OMISSION_MARKER.match(evidence):
+            problems.append(
+                f"`## {DIVERGENCE_SECTION}` row {index} ({desktop!r}) omits part of "
+                f"Desktop without saying which kind of omission it is. The Evidence "
+                f"cell must *begin* with one of: `non-goal: <reason>` (this platform "
+                f"will never have it), `coming soon` (the disabled pill ships today), "
+                f"`pill-owed: #<issue>` (a control or mode that owes one), "
+                f"`out-of-scope: #<issue>` (that issue deliberately excluded it), or "
+                f"`deferred: #<issue>` (a detail that is not a control). "
+                f"Got: {evidence[:60]!r}"
+            )
 
 
 def check(text: str) -> list[str]:
@@ -240,8 +265,9 @@ ADAPTATION = (
 )
 DRIFT = '| No-results text has `role="status"` | drift | Plain `Text` | Not a live region here; #85 |'
 NON_GOAL = "| Local terminal | omission | Absent | non-goal: this platform has no terminal |"
+OUT_OF_SCOPE = "| Syntax highlighting | omission | Absent | out-of-scope: #71 |"
 PILL_OWED_ROW = "| Rename | omission | Absent | pill-owed: #101 |"
-ROWS = (ADAPTATION, DRIFT, NON_GOAL, PILL_OWED_ROW)
+ROWS = (ADAPTATION, DRIFT, NON_GOAL, OUT_OF_SCOPE, PILL_OWED_ROW)
 
 
 def as_table(*rows: str, header: str = "| Desktop | Class | Android | Evidence |") -> str:
@@ -273,6 +299,7 @@ def self_test() -> None:
     accepts("well-formed page", page())
     accepts("explicitly pending report", page(report="## Visual report\n\n- pending: #43\n"))
     accepts("no divergences", page(divergences=NO_DIVERGENCES))
+    accepts("fenced example is not a claim", page() + "\n```\n- pending: #1\n```\n")
     accepts(
         "omitted non-control with a named owner",
         page(divergences=as_table(*ROWS, "| `summary` on a row | omission | Not projected | deferred: #56 |")),
@@ -324,6 +351,41 @@ def self_test() -> None:
     rejects("drift with no owner", swap(DRIFT, "| No-results text | drift | Plain `Text` | Not a live region |"), "no issue number")
     rejects("silent omission", swap(PILL_OWED_ROW, "| Rename | omission | Absent | Later |"), "which kind of omission")
     rejects("ragged row", swap(PILL_OWED_ROW, "| Rename | omission | Absent |"), "cells, not 4")
+    rejects(
+        "negated marker",
+        swap(NON_GOAL, "| Delete button | omission | Absent | this is not a non-goal, we just have not built it |"),
+        "must *begin* with one of",
+    )
+    rejects(
+        "bare non-goal with no reason",
+        swap(NON_GOAL, "| Local terminal | omission | Absent | non-goal |"),
+        "must *begin* with one of",
+    )
+    rejects(
+        "non-goal colon with no reason",
+        swap(NON_GOAL, "| Local terminal | omission | Absent | non-goal: |"),
+        "must *begin* with one of",
+    )
+    rejects(
+        "marker buried mid-cell",
+        swap(PILL_OWED_ROW, "| Rename | omission | Absent | we will get to it, pill-owed: #101 |"),
+        "must *begin* with one of",
+    )
+    rejects(
+        "non-reason buried mid-cell",
+        swap(ADAPTATION, "| Hover-revealed kebab | mobile-adaptation | Always visible | Always visible because Material does this by default |"),
+        "with no reason",
+    )
+    rejects(
+        "table inside a fence is not a table",
+        page(divergences="```\n" + as_table(*ROWS) + "\n```"),
+        "has no table",
+    )
+    rejects(
+        "pending inside a fence is not a report",
+        page(report="## Visual report\n\n```\n- pending: #43\n```\n"),
+        "names neither a report nor a pending issue",
+    )
 
     with tempfile.TemporaryDirectory() as temporary:
         root = pathlib.Path(temporary)
