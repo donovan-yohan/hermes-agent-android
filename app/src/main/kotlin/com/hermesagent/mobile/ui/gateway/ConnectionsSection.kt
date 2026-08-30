@@ -33,7 +33,6 @@ import com.hermesagent.mobile.data.connections.connectionMatchesQuery
 import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
-import com.hermesagent.mobile.ui.common.COMING_SOON
 import com.hermesagent.mobile.ui.common.ChoiceButton
 import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.ConfirmSheet
@@ -51,6 +50,8 @@ import com.hermesagent.mobile.ui.common.SearchField
 import com.hermesagent.mobile.ui.common.SettingsListRow
 import com.hermesagent.mobile.ui.common.SettingsSectionHeading
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
+import com.hermesagent.mobile.ui.common.WipPill
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
@@ -280,11 +281,15 @@ private fun ConnectionRow(
  * Desktop's row action cluster, in Desktop's order.
  *
  * Desktop renders these inline rather than behind an overflow menu
- * (`connections-registry.tsx:586-625`), and so does this — but a phone row is
- * narrower than a Desktop one, so the cluster wraps instead of overflowing.
+ * (`connections-registry.tsx:586-625`), and so does this. A phone row is
+ * narrower than a Desktop one, so the `FlowRow` is the floor rather than the
+ * plan: at 411dp inside the page inset the whole cluster fits on one line, and
+ * `ConnectionRowActionsLayoutTest` measures that it still does. It wrapping is
+ * a regression, not a layout — two 48dp lines per row is how this shipped when
+ * the marker beside each unbuilt action was wider than the action itself.
  *
  * Two of Desktop's four are here disabled behind a
- * [com.hermesagent.mobile.ui.common.COMING_SOON]
+ * [com.hermesagent.mobile.ui.common.WIP_PILL]
  * pill rather than left out: `Test` has no route-independent reachability probe
  * on Android yet, and `Make primary` needs the launch-mode registry field this
  * app does not persist. Showing them dimmed says the surface is unfinished;
@@ -394,8 +399,11 @@ private fun ConnectionEditor(
                         enabled = choice.kind != null,
                         onClick = { choice.kind?.let(actions.onEditKind) },
                         modifier = Modifier.fillMaxWidth(),
+                        // Drawn by the pill, spoken by the button — see
+                        // `WipPill`.
+                        status = if (choice.kind == null) WIP_SPOKEN else null,
                         trailing = if (choice.kind == null) {
-                            { Pill(COMING_SOON) }
+                            { WipPill() }
                         } else {
                             null
                         },
@@ -525,7 +533,7 @@ private fun SavedConnection.summary(): String {
  * (`connections-registry.tsx:652-665` @ `f82f2dba`).
  *
  * [kind] is `null` for a kind Desktop offers that a row here cannot be. Like
- * the mode cards above, it renders anyway — disabled, behind a "coming soon"
+ * the mode cards above, it renders anyway — disabled, behind a `WIP`
  * pill — because the gate's rule is that unsupported is disabled rather than
  * absent, and a `null` kind is unselectable by construction.
  */

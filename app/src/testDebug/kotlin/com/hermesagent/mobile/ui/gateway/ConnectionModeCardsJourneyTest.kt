@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -17,7 +18,8 @@ import androidx.compose.ui.unit.Dp
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
-import com.hermesagent.mobile.ui.common.COMING_SOON
+import com.hermesagent.mobile.ui.common.WIP_PILL
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -115,7 +117,14 @@ class ConnectionModeCardsJourneyTest {
         val cloud = compose.onNodeWithText(GatewayModeCopy.CLOUD_TITLE).performScrollTo()
         cloud.assertIsDisplayed()
         cloud.assertIsNotEnabled()
-        compose.onNodeWithText(COMING_SOON).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(WIP_PILL, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        // The whole announcement, not just the marker: the card merges its
+        // descendants, so a marker that spoke for itself would replace this
+        // card's name rather than follow it, and asserting on the marker alone
+        // would not notice. Seen as an initialism, said as the words.
+        compose.onNodeWithContentDescription(
+            "${GatewayModeCopy.CLOUD_TITLE}. ${GatewayModeCopy.CLOUD_DESC}. $WIP_SPOKEN",
+        ).assertExists()
 
         cloud.performClick()
         compose.waitForIdle()

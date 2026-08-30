@@ -56,7 +56,7 @@ enum class HermesIcon(val glyph: String) {
      * Desktop's `cloud` connection kind and Hermes Cloud mode glyph
      * (`connections-registry.tsx:27`, `gateway-settings.tsx:1061` @ `f82f2dba`).
      * This app has no Hermes Cloud sign-in yet, so the control it marks ships
-     * visible and disabled behind a "coming soon" pill rather than absent.
+     * visible and disabled behind a `WIP` pill rather than absent.
      */
     Cloud("\uEBAA"),
     Trash("\uEA81"),

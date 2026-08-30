@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -27,7 +28,8 @@ import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.ui.ConnectionsActions
-import com.hermesagent.mobile.ui.common.COMING_SOON
+import com.hermesagent.mobile.ui.common.WIP_PILL
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.ssh.SshUiState
@@ -542,12 +544,12 @@ class ConnectionsJourneyTest {
         // surface that never had the feature (`connections-registry.tsx:589-603`).
         compose.onNodeWithText(ConnectionsCopy.TEST_CONNECTION).performScrollTo().assertExists()
         compose.onNodeWithText(ConnectionsCopy.MAKE_PRIMARY).performScrollTo().assertExists()
-        compose.onAllNodesWithText(COMING_SOON).assertCountEquals(2)
+        compose.onAllNodesWithTag(WIP_PILL, useUnmergedTree = true).assertCountEquals(2)
         compose.onNodeWithContentDescription(
-            "${ConnectionsCopy.TEST_CONNECTION}. ${COMING_SOON}",
+            "${ConnectionsCopy.TEST_CONNECTION}. ${WIP_SPOKEN}",
         ).assertExists()
         compose.onNodeWithContentDescription(
-            "${ConnectionsCopy.MAKE_PRIMARY}. ${COMING_SOON}",
+            "${ConnectionsCopy.MAKE_PRIMARY}. ${WIP_SPOKEN}",
         ).assertExists()
     }
 

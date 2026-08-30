@@ -22,16 +22,16 @@ import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
-import com.hermesagent.mobile.ui.common.COMING_SOON
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.ModeCard
 import com.hermesagent.mobile.ui.common.ModeCardGrid
-import com.hermesagent.mobile.ui.common.Pill
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.SecureScreenLifetime
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
+import com.hermesagent.mobile.ui.common.WipPill
 import com.hermesagent.mobile.ui.ssh.SshScreen
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -42,7 +42,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
  *
  * [mode] is `null` for a mode Desktop offers and this app cannot be on. That
- * is not an absence: the card still renders, disabled, behind a "coming soon"
+ * is not an absence: the card still renders, disabled, behind a `WIP`
  * pill, because the parity gate's rule is that an unsupported Desktop control
  * ships visible and disabled rather than quietly missing
  * (`docs/workflows/review-desktop-parity.md`, "Classify every divergence").
@@ -161,8 +161,12 @@ fun GatewayScreen(
                         val mode = card.mode
                         if (mode != null && state.loaded) gatewayActions.onModeChange(mode)
                     },
+                    // The chip is drawn by one and spoken by the other: the
+                    // card merges its descendants, so a pill that named itself
+                    // would replace this card's name instead of following it.
+                    status = if (card.mode == null) WIP_SPOKEN else null,
                     trailing = if (card.mode == null) {
-                        { Pill(COMING_SOON) }
+                        { WipPill() }
                     } else {
                         null
                     },
