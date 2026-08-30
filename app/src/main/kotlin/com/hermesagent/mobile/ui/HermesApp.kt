@@ -5,11 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Text
@@ -149,6 +152,35 @@ fun HermesApp(
  * A destination that drills deeper still gets exactly one header — it says so
  * through [backDescription] and its own `onBack`, rather than forking this
  * chrome or stacking a second back arrow inside it.
+ *
+ * ## The keyboard rule
+ *
+ * This is where the app's one soft-keyboard pattern lives, so state it here.
+ * The activity is edge to edge ([androidx.activity.enableEdgeToEdge]), which
+ * means `adjustResize` no longer resizes anything: the keyboard arrives as
+ * [WindowInsets.ime] and draws *over* whatever is on screen. A surface that
+ * ignores that inset does not merely look wrong — the part of it under the
+ * keyboard becomes unreachable, because its scroll container still believes it
+ * owns the full height and so has nothing left to scroll.
+ *
+ * The rule, one line: **the surface that owns the window pads for the IME at
+ * its root, outside the scroll modifier.** Here that is
+ * `windowInsetsPadding(imeInsets)` above `navigationBarsPadding()` — the
+ * keyboard inset is consumed first, so the navigation-bar pass adds only what
+ * is left rather than both. Every route in [HermesApp] but Chat is inside this
+ * column, so none of them re-states it. The two surfaces outside it answer for
+ * themselves, because neither is inside this window: Chat pads its composer
+ * directly (`ComposerPane`), and a `ModalBottomSheet` is its own window —
+ * created with `SOFT_INPUT_ADJUST_NOTHING` from API 30 up (material3 1.4.0,
+ * `ModalBottomSheetDialogWrapper`: `SDK_INT >= 30 ? ADJUST_NOTHING :
+ * ADJUST_RESIZE`), so nothing moves on its own — which is why every sheet pads
+ * its own content root and why `scripts/check-repo-invariants.sh` fails a sheet
+ * that forgets. Below 30 the sheet window still resizes and the inset reads
+ * zero, so the same modifier is simply inert there.
+ *
+ * Nesting is safe rather than forbidden: `windowInsetsPadding` *consumes* what
+ * it applies, so a child that also calls `imePadding()` — `SshScreen`, which is
+ * hosted standalone in tests — measures zero here instead of padding twice.
  */
 @Composable
 internal fun OverlayScaffold(
@@ -159,6 +191,8 @@ internal fun OverlayScaffold(
     subtitle: String? = null,
     /** What back means here, when it is not simply leaving the destination. */
     backDescription: String = "Back",
+    /** Injectable only for layout tests; production uses the device keyboard. */
+    imeInsets: WindowInsets = WindowInsets.ime,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -166,6 +200,7 @@ internal fun OverlayScaffold(
         modifier
             .fillMaxSize()
             .background(tokens.chatSurface)
+            .windowInsetsPadding(imeInsets)
             .navigationBarsPadding(),
     ) {
         Row(

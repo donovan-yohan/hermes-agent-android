@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,9 +27,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
@@ -128,194 +131,216 @@ fun SessionList(
     var projectCreateVisible by rememberSaveable { mutableStateOf(false) }
     val searchIsVisible = searchVisible || query.isNotBlank()
 
-    Column(modifier.fillMaxSize().background(tokens.sidebarSurface)) {
-        header()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    BoxWithConstraints(modifier.fillMaxSize().background(tokens.sidebarSurface)) {
+        // A landscape rail with the keyboard up is shorter than this pane's own
+        // fixed chrome: the switcher, the title row and the search field
+        // together outgrow it before the list is even asked for. A Column
+        // overflows in silence, so what actually happened on a device was the
+        // focused search field clipped to a sliver, the weighted list measured
+        // at zero, and nothing on screen that scrolled — the covered part of
+        // the pane was unreachable in the same way the keyboard makes a page
+        // unreachable. Below that height the pane scrolls as one and the list
+        // takes a fixed floor rather than the remainder, which is also what
+        // gives the focused field a scrollable ancestor to bring itself into
+        // view within. Above it nothing changes, so the drawer and the
+        // portrait rail keep the layout they have.
+        val cramped = maxHeight < RAIL_SCROLLS_BELOW
+        Column(
+            Modifier
+                .fillMaxSize()
+                .then(if (cramped) Modifier.verticalScroll(rememberScrollState()) else Modifier),
         ) {
+            // Exact, not a minimum: a cramped pane measures its children with an
+            // unbounded height, and a LazyColumn given one throws.
+            val listSlot = if (cramped) Modifier.height(CRAMPED_LIST_HEIGHT) else Modifier.weight(1f)
+            header()
             Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DitherMark(tokens.accent)
-                Text(
-                    text = title.uppercase(),
-                    style = HermesTheme.type.panelLabel,
-                    color = tokens.accent,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            HermesIconButton(
-                icon = HermesIcon.Add,
-                contentDescription = if (showingProjectOverview) "New project" else "New session",
-                onClick = {
-                    if (showingProjectOverview) projectCreateVisible = true else onCreate()
-                },
-                enabled = canCreate && (!showingProjectOverview || projectsAvailable == true),
-            )
-            if (selectedProject != null) {
-                HermesIconButton(
-                    icon = HermesIcon.ListUnordered,
-                    contentDescription = "All projects",
-                    onClick = onExitProject,
-                )
-            }
-            Box {
-                HermesIconButton(
-                    icon = HermesIcon.ListFilter,
-                    contentDescription = "Filters",
-                    onClick = { menuVisible = !menuVisible },
-                    active = menuVisible || query.isNotBlank() || sidebarGrouping != SidebarGrouping.Date,
-                )
-                SidebarViewMenu(
-                    expanded = menuVisible,
-                    grouping = sidebarGrouping,
-                    projectGroupingAvailable = projectsAvailable != false,
-                    searchVisible = searchIsVisible,
-                    searchesProjects = showingProjectOverview,
-                    onDismiss = { menuVisible = false },
-                    onGroupingChange = { grouping ->
-                        menuVisible = false
-                        onSidebarGroupingChange(grouping)
-                    },
-                    onToggleSearch = {
-                        menuVisible = false
-                        searchVisible = !searchIsVisible
-                        if (searchIsVisible) onQueryChange("")
-                    },
-                )
-            }
-        }
-
-        if (searchIsVisible) {
-            SearchField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = if (showingProjectOverview) "Search projects" else "Search sessions",
-                modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
-            )
-        }
-
-        if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == null) {
-            Text(
-                text = if (canCreate) "Loading projects…" else "Connect to a Gateway to load projects.",
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.textTertiary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
-        } else if (sidebarGrouping == SidebarGrouping.Project && projectScope != ProjectProfileScope.Own) {
-            // The catalog is one profile's either way; only the next action
-            // differs between browsing everything and standing in another
-            // profile, where there is nothing here to browse.
-            Text(
-                text = when (projectScope) {
-                    ProjectProfileScope.Unified ->
-                        "Projects come from one profile on this Gateway, not from every profile in view."
-                    else ->
-                        "Projects come from one profile on this Gateway. Switch to the default profile to browse them."
-                },
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.textTertiary,
                 modifier = Modifier
-                    .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp)
-                    .testTag(PROJECT_PROFILE_SCOPE_NOTE),
-            )
-        } else if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == false) {
-            Text(
-                text = "Project views aren’t available on this Gateway.",
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.textTertiary,
-                modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
-            )
-        }
-
-        when {
-            showingProjectOverview && !projectScope.showsCatalog -> Spacer(Modifier.weight(1f))
-
-            showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
-                title = if (query.isBlank()) "No projects" else "Nothing matches",
-                description = when {
-                    query.isNotBlank() -> "No project or recent session contains “$query”."
-                    canCreate -> "Create a project with the + above."
-                    else -> "No projects were returned by this Gateway."
-                },
-                modifier = Modifier.weight(1f),
-            )
-
-            showingProjectOverview -> LazyColumn(
-                modifier = Modifier.weight(1f).testTag("Project list"),
-                contentPadding = PaddingValues(bottom = 12.dp),
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 4.dp, top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                items(items = projects, key = { "project-${it.id}" }) { project ->
-                    ProjectRow(
-                        project = project,
-                        activeSessionId = activeSessionId,
-                        onOpen = { onSelectProject(project.id) },
-                        onSelectSession = onSelect,
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DitherMark(tokens.accent)
+                    Text(
+                        text = title.uppercase(),
+                        style = HermesTheme.type.panelLabel,
+                        color = tokens.accent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HermesIconButton(
+                    icon = HermesIcon.Add,
+                    contentDescription = if (showingProjectOverview) "New project" else "New session",
+                    onClick = {
+                        if (showingProjectOverview) projectCreateVisible = true else onCreate()
+                    },
+                    enabled = canCreate && (!showingProjectOverview || projectsAvailable == true),
+                )
+                if (selectedProject != null) {
+                    HermesIconButton(
+                        icon = HermesIcon.ListUnordered,
+                        contentDescription = "All projects",
+                        onClick = onExitProject,
+                    )
+                }
+                Box {
+                    HermesIconButton(
+                        icon = HermesIcon.ListFilter,
+                        contentDescription = "Filters",
+                        onClick = { menuVisible = !menuVisible },
+                        active = menuVisible || query.isNotBlank() || sidebarGrouping != SidebarGrouping.Date,
+                    )
+                    SidebarViewMenu(
+                        expanded = menuVisible,
+                        grouping = sidebarGrouping,
+                        projectGroupingAvailable = projectsAvailable != false,
+                        searchVisible = searchIsVisible,
+                        searchesProjects = showingProjectOverview,
+                        onDismiss = { menuVisible = false },
+                        onGroupingChange = { grouping ->
+                            menuVisible = false
+                            onSidebarGroupingChange(grouping)
+                        },
+                        onToggleSearch = {
+                            menuVisible = false
+                            searchVisible = !searchIsVisible
+                            if (searchIsVisible) onQueryChange("")
+                        },
                     )
                 }
             }
 
-            projectLoading -> EmptyState(
-                title = "Opening project…",
-                description = "Hermes is loading this project’s session history.",
-                modifier = Modifier.weight(1f),
-            )
+            if (searchIsVisible) {
+                SearchField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = if (showingProjectOverview) "Search projects" else "Search sessions",
+                    modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+                )
+            }
 
-            rows.isEmpty() -> EmptyState(
-                title = when {
-                    query.isBlank() -> "No sessions"
-                    else -> "Nothing matches"
-                },
-                description = when {
-                    query.isNotBlank() -> "No session title or preview contains “$query”."
-                    canCreate -> "Start one with the + above."
-                    else -> "Connect to a Gateway to start a session."
-                },
-                modifier = Modifier.weight(1f),
-            )
+            if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == null) {
+                Text(
+                    text = if (canCreate) "Loading projects…" else "Connect to a Gateway to load projects.",
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.textTertiary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            } else if (sidebarGrouping == SidebarGrouping.Project && projectScope != ProjectProfileScope.Own) {
+                // The catalog is one profile's either way; only the next action
+                // differs between browsing everything and standing in another
+                // profile, where there is nothing here to browse.
+                Text(
+                    text = when (projectScope) {
+                        ProjectProfileScope.Unified ->
+                            "Projects come from one profile on this Gateway, not from every profile in view."
+                        else ->
+                            "Projects come from one profile on this Gateway. Switch to the default profile to browse them."
+                    },
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.textTertiary,
+                    modifier = Modifier
+                        .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp)
+                        .testTag(PROJECT_PROFILE_SCOPE_NOTE),
+                )
+            } else if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == false) {
+                Text(
+                    text = "Project views aren’t available on this Gateway.",
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.textTertiary,
+                    modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
+                )
+            }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).testTag("Session list"),
+            when {
+                showingProjectOverview && !projectScope.showsCatalog -> Spacer(listSlot)
+
+                showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
+                    title = if (query.isBlank()) "No projects" else "Nothing matches",
+                    description = when {
+                        query.isNotBlank() -> "No project or recent session contains “$query”."
+                        canCreate -> "Create a project with the + above."
+                        else -> "No projects were returned by this Gateway."
+                    },
+                    modifier = listSlot,
+                )
+
+                showingProjectOverview -> LazyColumn(
+                    modifier = listSlot.testTag("Project list"),
                     contentPadding = PaddingValues(bottom = 12.dp),
                 ) {
-                    items(items = rows, key = { it.key() }) { row ->
-                        when (row) {
-                            is SessionListRow.Divider -> SectionLabel(
-                                text = row.bucket.label(),
-                                modifier = Modifier.padding(
-                                    start = HermesTheme.spacing.pageInset,
-                                    top = 14.dp,
-                                    bottom = 4.dp,
-                                ),
-                            )
+                    items(items = projects, key = { "project-${it.id}" }) { project ->
+                        ProjectRow(
+                            project = project,
+                            activeSessionId = activeSessionId,
+                            onOpen = { onSelectProject(project.id) },
+                            onSelectSession = onSelect,
+                        )
+                    }
+                }
 
-                            is SessionListRow.Row -> SessionRow(
-                                session = row.session,
-                                active = row.session.id == activeSessionId,
-                                onClick = { onSelect(row.session.id) },
-                                // A single-profile scope already says which
-                                // profile every row belongs to, so the tag only
-                                // earns its place in the unified view.
-                                owner = if (profileRail.scope.isAll) {
-                                    profileRail.owner(row.session.remoteProfile)
-                                } else {
-                                    null
-                                },
-                            )
+                projectLoading -> EmptyState(
+                    title = "Opening project…",
+                    description = "Hermes is loading this project’s session history.",
+                    modifier = listSlot,
+                )
+
+                rows.isEmpty() -> EmptyState(
+                    title = when {
+                        query.isBlank() -> "No sessions"
+                        else -> "Nothing matches"
+                    },
+                    description = when {
+                        query.isNotBlank() -> "No session title or preview contains “$query”."
+                        canCreate -> "Start one with the + above."
+                        else -> "Connect to a Gateway to start a session."
+                    },
+                    modifier = listSlot,
+                )
+
+                else -> {
+                    LazyColumn(
+                        modifier = listSlot.testTag("Session list"),
+                        contentPadding = PaddingValues(bottom = 12.dp),
+                    ) {
+                        items(items = rows, key = { it.key() }) { row ->
+                            when (row) {
+                                is SessionListRow.Divider -> SectionLabel(
+                                    text = row.bucket.label(),
+                                    modifier = Modifier.padding(
+                                        start = HermesTheme.spacing.pageInset,
+                                        top = 14.dp,
+                                        bottom = 4.dp,
+                                    ),
+                                )
+
+                                is SessionListRow.Row -> SessionRow(
+                                    session = row.session,
+                                    active = row.session.id == activeSessionId,
+                                    onClick = { onSelect(row.session.id) },
+                                    // A single-profile scope already says which
+                                    // profile every row belongs to, so the tag only
+                                    // earns its place in the unified view.
+                                    owner = if (profileRail.scope.isAll) {
+                                        profileRail.owner(row.session.remoteProfile)
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        ProfileRail(state = profileRail, actions = profileRailActions)
+            ProfileRail(state = profileRail, actions = profileRailActions)
+        }
     }
 
     if (projectCreateVisible) {
@@ -456,6 +481,13 @@ private fun ProjectCreateDialog(
                 .widthIn(max = 420.dp)
                 .fillMaxWidth()
                 .background(tokens.cardSurface, RoundedCornerShape(10.dp))
+                // A dialog is its own window and keeps `decorFitsSystemWindows`,
+                // so the keyboard resizes it rather than drawing over it — the
+                // IME inset here is always zero and padding for it would be a
+                // lie. What the resize can do is leave the window shorter than
+                // two fields and two buttons, so the content scrolls instead of
+                // putting "Create project" out of reach.
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -648,6 +680,19 @@ private fun SessionRow(
         )
     }
 }
+
+/**
+ * Below this the sidebar pane scrolls as one instead of pinning its chrome.
+ *
+ * It is what the pane needs to hold everything at once — roughly the switcher,
+ * the title row and the search field, plus [CRAMPED_LIST_HEIGHT] and the foot
+ * rail — so the two numbers move together. A landscape rail with the keyboard
+ * open lands far below it; a phone in portrait with the keyboard open does not.
+ */
+private val RAIL_SCROLLS_BELOW = 360.dp
+
+/** What the list is worth once the pane scrolls: a few rows, not a sliver. */
+private val CRAMPED_LIST_HEIGHT = 180.dp
 
 private val SessionRowShape = RoundedCornerShape(6.dp)
 

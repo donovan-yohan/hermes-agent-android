@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -231,7 +232,12 @@ internal fun CodingReviewSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                // Inside the cap, not outside it: the keyboard's height comes
+                // out of the sheet's own maximum rather than being added to it,
+                // so sheet plus keyboard cannot outgrow a short screen whatever
+                // height the sheet hands down.
                 .heightIn(max = REVIEW_SHEET_MAX_HEIGHT)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),

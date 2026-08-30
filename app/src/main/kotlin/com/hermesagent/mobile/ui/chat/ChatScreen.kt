@@ -18,11 +18,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -111,14 +113,23 @@ fun ChatScreen(
     onOpenProfiles: () -> Unit = {},
     /** Injectable only for layout tests; production uses the device navigation bars. */
     wideRailInsets: WindowInsets = WindowInsets.navigationBars,
+    /**
+     * The keyboard, which the sidebar needs as much as the composer does: its
+     * search field is the app's other text input, and both the drawer and the
+     * rail put the session list directly under it. Injectable only for layout
+     * tests; production uses the device keyboard. `OverlayScaffold` states the
+     * whole rule — Chat is the one route that is not inside that scaffold, so
+     * it answers for itself here.
+     */
+    imeInsets: WindowInsets = WindowInsets.ime,
     /** Rail chrome above the session header — the connection switcher. */
     sidebarHeader: @Composable () -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, wideRailInsets, sidebarHeader)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, wideRailInsets, imeInsets, sidebarHeader)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, sidebarHeader)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, imeInsets, sidebarHeader)
         }
     }
 }
@@ -134,6 +145,7 @@ private fun CompactLayout(
     actions: ChatActions,
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
+    imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -153,7 +165,12 @@ private fun CompactLayout(
                     state = state,
                     actions = actions,
                     header = sidebarHeader,
-                    modifier = Modifier.statusBarsPadding(),
+                    // The drawer still does not inherit the rail's navigation-bar
+                    // inset, which is a deliberate difference. The keyboard is
+                    // not that: search is at the top of this pane and the list
+                    // it filters runs to the bottom edge, so without this the
+                    // matches the search just produced are the part covered.
+                    modifier = Modifier.statusBarsPadding().windowInsetsPadding(imeInsets),
                     onSelectSession = { id ->
                         actions.onSelectSession(id)
                         scope.launch { drawerState.close() }
@@ -195,6 +212,7 @@ private fun WideLayout(
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
     railInsets: WindowInsets,
+    imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -212,7 +230,10 @@ private fun WideLayout(
                 // changes the content area inside it.
                 .testTag(WIDE_RAIL_TAG)
                 .background(HermesTheme.tokens.sidebarSurface)
-                .windowInsetsPadding(railInsets),
+                // `union`, not a second padding pass: the keyboard draws over
+                // the navigation bar rather than stacking on top of it, so the
+                // rail owes the taller of the two and never their sum.
+                .windowInsetsPadding(railInsets.union(imeInsets)),
             onManageProfiles = onOpenProfiles,
         )
         VerticalHairline(Modifier.fillMaxHeight())

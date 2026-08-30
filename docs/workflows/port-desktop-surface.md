@@ -201,8 +201,14 @@ Replace, and say so in the PR:
 | Pane visible → poll | Surface resumed → poll; `LifecycleResumeEffect`, never a bare timer |
 
 Non-negotiables on this side: 48dp touch targets, a `contentDescription` on
-every icon-only control, `imePadding()` where a composer meets the keyboard,
-and no state that depends on an animation running.
+every icon-only control, and no state that depends on an animation running.
+
+The keyboard is one of them too, and it is not a composer-only concern: the app
+is edge to edge, so the IME draws over the page instead of resizing it, and any
+surface that ignores the inset puts whatever it covers out of reach — a form
+field as surely as a composer. A route inherits this from `OverlayScaffold`; a
+`ModalBottomSheet` is its own window and pads its own content root. The rule and
+its consumption behaviour are written out on `OverlayScaffold` in `HermesApp.kt`.
 
 ## 5. Prove it
 

@@ -261,4 +261,77 @@ else
   fi
 fi
 
+# A bottom sheet is its own window, created with SOFT_INPUT_ADJUST_NOTHING from
+# API 30 up (material3 1.4.0's ModalBottomSheetDialogWrapper picks it over
+# ADJUST_RESIZE when SDK_INT >= 30), so it inherits nothing from OverlayScaffold
+# and the keyboard draws straight over it. Every route already gets this from
+# that one scaffold; a sheet is the one surface that has to ask, and asking is a
+# single modifier that is trivially forgotten. The rule is written on
+# OverlayScaffold in HermesApp.kt; this is the part of it that can fail.
+#
+# Two things are checked per file that calls ModalBottomSheet: that it holds at
+# least as many real imePadding() calls as sheets, and that none of them sits
+# after verticalScroll in the same modifier chain — padding inside the scroll
+# pads the scrolled content instead of shrinking the viewport, which looks
+# right and reaches nothing.
+#
+# Chains are found by awk as either one line, or a run of lines beginning with
+# "." (comment lines inside a run are neutral, since this repo's chains carry
+# them). Stated so it is not mistaken for more: a chain written some third way
+# is counted but not order-checked, and the whole check only ever looks at
+# files that already call ModalBottomSheet. It is a floor, not a proof.
+sheet_files="$(grep -rl 'ModalBottomSheet(' app/src/main/kotlin --include='*.kt' | LC_ALL=C sort || true)"
+if [[ -z "$sheet_files" ]]; then
+  problem "no ModalBottomSheet call sites found; this invariant is watching nothing."
+  note "fix: if sheets really are gone, delete this check rather than leaving it green by vacancy."
+else
+  sheet_gap=""
+  sheet_misplaced=""
+  while IFS= read -r sheet_file; do
+    read -r sheets padded misplaced < <(awk '
+      function isComment(l) { return (l ~ /^[[:space:]]*(\/\/|\*|\/\*)/) }
+      {
+        if (isComment($0)) next
+        if ($0 ~ /ModalBottomSheet\(/) sheets++
+        hasIme = ($0 ~ /\.imePadding\(\)/)
+        hasScroll = ($0 ~ /\.verticalScroll\(/)
+        if (hasIme) padded++
+        if (hasIme && hasScroll && index($0, ".imePadding()") > index($0, ".verticalScroll(")) {
+          bad = bad NR ","
+        }
+        if ($0 ~ /^[[:space:]]*\./) {
+          if (hasIme && chainScroll) bad = bad NR ","
+          if (hasScroll) chainScroll = 1
+        } else {
+          chainScroll = (hasScroll ? 1 : 0)
+        }
+      }
+      END { printf "%d %d %s\n", sheets, padded, (bad == "" ? "-" : bad) }
+    ' "$sheet_file")
+    if (( padded < sheets )); then
+      sheet_gap+="  $sheet_file: $sheets sheets, $padded imePadding()"$'\n'
+    fi
+    if [[ "$misplaced" != "-" ]]; then
+      sheet_misplaced+="  $sheet_file: imePadding() after verticalScroll at line(s) ${misplaced%,}"$'\n'
+    fi
+  done <<< "$sheet_files"
+  if [[ -n "$sheet_gap" ]]; then
+    problem "a bottom sheet does not pad its content root for the keyboard:"
+    note "$(printf '%s' "$sheet_gap")"
+    note "fix: add imePadding() to the sheet's content root, above navigationBarsPadding()"
+    note "     and outside any scroll modifier, or whatever the sheet's own covered part"
+    note "     is will be unreachable rather than merely hidden."
+  fi
+  if [[ -n "$sheet_misplaced" ]]; then
+    problem "a bottom sheet pads for the keyboard inside its own scroll:"
+    note "$(printf '%s' "$sheet_misplaced")"
+    note "fix: move imePadding() above verticalScroll. Inside it the padding travels"
+    note "     with the scrolled content and the viewport keeps its full height, so the"
+    note "     covered part still cannot be reached."
+  fi
+  if [[ -z "$sheet_gap" && -z "$sheet_misplaced" ]]; then
+    ok "every bottom sheet pads its content root for the keyboard, outside its scroll"
+  fi
+fi
+
 exit $fail
