@@ -360,3 +360,34 @@ device is S35's, not this slice's.
 | Syntax highlighting | Explicit non-goal of #71: a size and cold-start decision of its own | Not scheduled |
 | Tappable search-hit links | D9 | Not scheduled |
 | Technical-mode raw args/result disclosure (`fallback.tsx:114-139`) | Android has no tool view mode toggle | Not scheduled |
+
+## Divergences
+
+Classified for `scripts/check-parity-evidence.py`; D0-D12 above carry the
+argument and the citations.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Each payload sits in a `max-h-16`/`max-h-20` box that scrolls internally (`terminal-output.tsx:14,45-58`) | mobile-adaptation | Rendered inline, clamped by lines and characters; the transcript's own follow discipline supplies the tail rule | A nested vertical scroller inside a `LazyColumn` competes with the transcript's drag on touch — the gesture ambiguity #56 already deferred once |
+| `clampForDisplay` caps at 20,000 characters | mobile-adaptation | The same 20,000-character cap plus a 200-line cap, whichever bites first | A phone has less room and less memory than a window; the cut lands past the last kept newline and a truncation smaller than its own notice is not announced |
+| Copy appears on hover, absolutely positioned over the payload | mobile-adaptation | Always mounted, right-aligned above the payload, scaffold-meta ink, 48 dp target | Touch has no hover; the precedent `ReplyActions` and `CodingStatusRow` already set |
+| Long lines wrap (`whitespace-pre-wrap wrap-anywhere`) | mobile-adaptation | Horizontal scroll per payload block | A 360 dp column turns a wrapped log line into a wall |
+| `GlyphSpinner` replaces the tool icon while running (`fallback.tsx:184-192`) | mobile-adaptation | The tool glyph tinted with the accent, beside the live elapsed timer | The disclosure row has no spinner slot, and #71 says to extend that row rather than replace it; the timer already says "running" |
+| Status glyphs are aria-labelled Running / Error / Recovered / Done | mobile-adaptation | The same four words lower-cased into `"Tool ⟨title⟩, ⟨state⟩"`, plus `stopped` | The Android row is one merged semantics node, so the state has to arrive inside the sentence |
+| Search hit titles are `PrettyLink`s that open externally (D9) | drift | Title, URL and snippet as quiet structured text | Leaving a transcript for a browser is a new surface with its own consent question; not scheduled under #71 |
+| Windowed diff rendering, `+/-` gutters, `@@` headers, the 2 px gutter accent | drift | Absent | #71 S34 |
+| `stripAnsi` before `InlineDiffPanel` (`fallback-model/index.ts:781-789`) | drift | `inlineDiff` is rendered raw | The diff surface is S34's and the strip belongs with it; #71 S34 |
+| Long-press selection of tool payloads, and the select / horizontal-scroll / collapse-tap arbitration | drift | Not selectable | Needs real-device evidence; #71 S35, tracked as #56 |
+| A Copy control on an inline diff | omission | Absent | deferred: #71 — `InlineDiffPanel` owns that surface and S35 is where its affordances land |
+| `dynamicTitle` / `toolSubtitle` / `titleAction` (D8) | omission | Absent | deferred: #71 — Android's title grammar is the disclosure row's, and no slice is scheduled |
+| Technical-mode raw args/result disclosure (`fallback.tsx:114-139`) | omission | Absent | non-goal: Android has no tool view mode toggle to hang it from |
+| Inline image results (`imageUrl`) and artifact preview targets (`previewTarget`) | omission | Absent | non-goal: explicit non-goals of #71 |
+| Syntax highlighting | omission | Absent | non-goal: an explicit non-goal of #71, being a size and cold-start decision of its own |
+
+## Visual report
+
+- pending: #71
+
+Every colour on this page is derived and asserted offline by the tests above.
+The rendered side-by-side — ANSI ladder, status glyphs, truncation notice and
+the clamped payload at phone width — is owed by #71's device pass.

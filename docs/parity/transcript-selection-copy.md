@@ -42,3 +42,28 @@ So selecting inside a live turn's last paragraph is not a usable gesture. **The 
 ## Not covered
 
 What a *drag* selection actually copies, which would pin the `DisableSelection` half of the marker contract. No device or emulator capture; the floating toolbar chrome is Android's ActionMode.
+
+## Divergences
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Native browser selection is the whole copy story | mobile-adaptation | Selection **plus** an explicit per-reply copy control | Two handles and a scroll gesture are a poor way to grab several screens of prose on a phone; the system Copy still covers "copy this sentence" |
+| Action bar is `opacity-0`, revealed on `group-hover` | mobile-adaptation | Always mounted, always quiet: scaffold-meta ink inside a 48 dp target | There is no hover on touch |
+| Bar is mounted from the first frame of a turn | mobile-adaptation | The control appears with the reply's first visible text | A control that copies nothing is worse than one that arrives a token late; the shift is one row at the start of a turn |
+| Clipboard writes are silent | mobile-adaptation | Copy → Check on the control, no toast | Android 13+ raises a system clipboard notice, and a second confirmation would be the app talking over the platform |
+| `<li>` markers are not text nodes, so a drag skips them | mobile-adaptation | `DisableSelection` on bullet/number markers and the fence language tag | Drag-selection matches the browser; whole-reply copy keeps markers, because it is copying structure rather than a drag |
+| `CopyButton` hands over the markdown **source** (`assistant-message.tsx:286` → `:135` → `content.ts:17-23`) | mobile-adaptation | `replyPlainText()` hands over **rendered** plain text | A phone pastes into chat, notes and message composers, where `**bold**` and a bare fence line are syntax the reader has to decode; Desktop's paste target is usually an editor that re-renders it |
+| No selection handles exist | mobile-adaptation | Handle colour is `tokens.accent` | An Android affordance with no Desktop equivalent, so it wears the brand stroke |
+| `*::selection` is global | mobile-adaptation | `LocalTextSelectionColors` provided app-wide inside `MaterialTheme` | Matches the global rule, and stops Material seeding selection from `colorScheme.primary` per skin |
+| `data-selectable-text` on `terminal-output.tsx` and `log-view.tsx` | drift | Tool output, inline diffs and reasoning text are not selectable | Their own container interacts with `horizontalScroll` and the disclosure row's collapse tap; #56 |
+| A fence's or table's `horizontalScroll` inside a selectable subtree | drift | Unverified on device | Compose's selection/scroll arbitration is modelled badly on a host JVM; #56 |
+| `ReadAloudButton`, `Reload` and `branchInNewChat` in the action bar | omission | Absent; the bar here has one control | pill-owed: #101 — Desktop renders all three, so each owes a disabled "coming soon" control (rewind is #69) |
+| A reply whose only content is a standalone `@image:` line | omission | The control is mounted but disabled, with no TalkBack action | coming soon is not the case here: the strip empties the projection, so the control is honestly dead rather than absent; the defect underneath is the transcript drawing a wire-format line as prose (#56) |
+
+## Visual report
+
+- pending: #72
+
+No device or emulator capture: the floating toolbar is Android's own ActionMode
+chrome, and what a *drag* selection actually copies — the `DisableSelection`
+half of the marker contract — is the part only a device can show.

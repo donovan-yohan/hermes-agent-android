@@ -149,3 +149,33 @@ that SHA.
 Rendered visual capture against a Desktop dev renderer has **not** been done for
 this slice; the surface is evidenced by the Compose journeys and this ledger.
 That is an omission, recorded here rather than implied away.
+
+## Divergences
+
+Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the
+argument.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| `DropdownMenu` + `DropdownMenuRadioGroup` anchored to the rail trigger | mobile-adaptation | `ModalBottomSheet` with 48dp radio rows | Pointer menus are brittle on a phone; order, checkmark and search threshold are unchanged |
+| `ConfirmDialog` | mobile-adaptation | `ConfirmSheet` | Same touch reason; same title, description, destructive confirm and cancel |
+| Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | mobile-adaptation | Endpoint under the label in the sheet, and in the settings row description | Touch has no hover, so the information is shown rather than hidden |
+| Icon-only ghost `Pencil`/`Trash2` with `aria-label` | mobile-adaptation | Same glyphs in 48dp targets, `contentDescription` "Edit ⟨label⟩" / "Remove ⟨label⟩" | Touch floor, and a list of rows needs the label to tell two identical buttons apart |
+| Searchable list capped at `h-48` (`connection-switcher.tsx:208`) | mobile-adaptation | `heightIn(max = 320.dp)` on a `LazyColumn` | Same intent, phone-scaled |
+| `local` is the runtime the app manages: `Monitor` glyph, at most one ever | mobile-adaptation | A Termux Hermes the person runs: `DeviceMobile` glyph, one row per loopback address | The word is Desktop's and the ownership is not; two Termux servers on two ports are two Gateways |
+| No-results text carries `role="status"` (`connection-switcher.tsx:216-221`) | drift | Plain `Text` | Not a live region here; #85 |
+| A separator sits between the search field and the radio group (`:202`) | drift | No separator; the hairline sits below the list | #85 |
+| Unread markers survive a source switch (`gateway-switch.ts:70-76`) | drift | Unread is a cached row field, and the cache is cleared | No durable unread store exists yet; #66 |
+| `Test`, `Update all instances`, launch-mode toggle, extra-header editor | omission | Absent | pill-owed: #101 — Desktop renders them, so each owes a disabled "coming soon" row (#85, #100) |
+| `Make primary` | omission | Absent | non-goal: one active connection makes "primary" meaningless |
+| `cloud` kind | omission | Absent | non-goal: there is no Android Hermes Cloud sign-in |
+| Plain-text-keyring consent | omission | Absent | non-goal: every secret here is a Keystore slot, so there is nothing to consent to |
+
+## Visual report
+
+- pending: #85
+
+`capture-desktop-reference.mjs` needs a disposable pinned Desktop dev renderer
+with CDP and `capture-android-reference.py` needs an attached device. Neither
+was available for this slice, so the report is recorded as owed rather than
+fabricated; #85 carries the device re-run of the switch path.
