@@ -171,9 +171,12 @@ fun HermesApp(
  * column, so none of them re-states it. The two surfaces outside it answer for
  * themselves, because neither is inside this window: Chat pads its composer
  * directly (`ComposerPane`), and a `ModalBottomSheet` is its own window —
- * created with `SOFT_INPUT_ADJUST_NOTHING` on API 30+, so nothing moves on its
- * own — which is why every sheet pads its own content root and why
- * `scripts/check-repo-invariants.sh` fails a sheet that forgets.
+ * created with `SOFT_INPUT_ADJUST_NOTHING` from API 30 up (material3 1.4.0,
+ * `ModalBottomSheetDialogWrapper`: `SDK_INT >= 30 ? ADJUST_NOTHING :
+ * ADJUST_RESIZE`), so nothing moves on its own — which is why every sheet pads
+ * its own content root and why `scripts/check-repo-invariants.sh` fails a sheet
+ * that forgets. Below 30 the sheet window still resizes and the inset reads
+ * zero, so the same modifier is simply inert there.
  *
  * Nesting is safe rather than forbidden: `windowInsetsPadding` *consumes* what
  * it applies, so a child that also calls `imePadding()` — `SshScreen`, which is

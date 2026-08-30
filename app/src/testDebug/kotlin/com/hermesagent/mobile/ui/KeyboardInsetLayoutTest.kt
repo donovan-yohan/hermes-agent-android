@@ -2,7 +2,9 @@ package com.hermesagent.mobile.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -11,11 +13,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.session.SessionListRow
+import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.ui.chat.ChatScreen
+import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.GatewayScreen
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
@@ -35,8 +44,9 @@ import org.robolectric.annotation.Config
  * Robolectric cannot raise a real IME, so the inset comes through
  * [OverlayScaffold]'s test seam — the technique `ChatAccessibilityLayoutTest`
  * already uses for the wide rail's navigation-bar inset. That covers every
- * route that goes through the scaffold, which is all of them but Chat — Chat
- * pads its own composer and `ChatAccessibilityLayoutTest` holds that end.
+ * route that goes through the scaffold, which is all of them but Chat. Chat's
+ * own seam is here too, because its sidebar carries the app's other text field
+ * and neither the drawer nor the rail is inside the scaffold.
  * It deliberately does not cover the bottom sheets: a
  * `ModalBottomSheet` is its own window and reads the real `WindowInsets.ime`,
  * which is always zero under Robolectric. Their `imePadding()` is held instead
@@ -45,7 +55,7 @@ import org.robolectric.annotation.Config
  * pass.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w411dp-h800dp")
+@Config(sdk = [34], qualifiers = "w900dp-h700dp")
 class KeyboardInsetLayoutTest {
 
     @get:Rule
@@ -142,11 +152,88 @@ class KeyboardInsetLayoutTest {
         )
     }
 
+    @Test
+    fun `the compact sessions drawer lifts its list above the keyboard`() {
+        var ime by mutableStateOf(WindowInsets(bottom = 0))
+        launchChat(imeInsets = { ime }, modifier = Modifier.width(411.dp).fillMaxHeight())
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.waitForIdle()
+        val closed = compose.onNodeWithTag(SESSION_LIST).fetchSemanticsNode().boundsInRoot
+
+        ime = WindowInsets(bottom = IME_PX)
+        compose.waitForIdle()
+        val open = compose.onNodeWithTag(SESSION_LIST).fetchSemanticsNode().boundsInRoot
+
+        assertEquals(
+            "the drawer's session list must end where the keyboard starts, or search hides its own matches",
+            closed.bottom - IME_PX,
+            open.bottom,
+            tolerancePx(),
+        )
+    }
+
+    @Test
+    fun `the wide sessions rail owes the taller of the keyboard and the navigation bar`() {
+        var ime by mutableStateOf(WindowInsets(bottom = 0))
+        launchChat(
+            imeInsets = { ime },
+            // A rail already holding a navigation-bar inset, so this also
+            // settles that the two are unioned rather than summed.
+            wideRailInsets = WindowInsets(bottom = RAIL_NAV_PX),
+        )
+        val closed = compose.onNodeWithTag(SESSION_LIST).fetchSemanticsNode().boundsInRoot
+
+        ime = WindowInsets(bottom = IME_PX)
+        compose.waitForIdle()
+        val open = compose.onNodeWithTag(SESSION_LIST).fetchSemanticsNode().boundsInRoot
+
+        assertEquals(
+            "the rail owes max(navigation bar, keyboard) — the keyboard draws over the bar, it does not stack on it",
+            closed.bottom - (IME_PX - RAIL_NAV_PX),
+            open.bottom,
+            tolerancePx(),
+        )
+    }
+
+    private fun launchChat(
+        imeInsets: () -> WindowInsets,
+        wideRailInsets: WindowInsets = WindowInsets(bottom = 0),
+        modifier: Modifier = Modifier,
+    ) {
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(
+                    state = ChatUiState(
+                        sessionRows = listOf(
+                            SessionListRow.Row(
+                                SessionSummary(
+                                    id = "s-keyboard",
+                                    title = "Keyboard session",
+                                    preview = "",
+                                    lastActiveAtMillis = NOW,
+                                ),
+                            ),
+                        ),
+                    ),
+                    actions = ChatActions(),
+                    onOpenSettings = {},
+                    modifier = modifier,
+                    wideRailInsets = wideRailInsets,
+                    imeInsets = imeInsets(),
+                )
+            }
+        }
+        compose.waitForIdle()
+    }
+
     private fun tolerancePx(): Float = compose.density.density
 
     private companion object {
         const val PAGE = "Overlay page content"
+        const val SESSION_LIST = "Session list"
         const val CONNECT = "Sign in and connect"
         const val IME_PX = 320
+        const val RAIL_NAV_PX = 40
+        const val NOW = 1_755_600_000_000L
     }
 }
