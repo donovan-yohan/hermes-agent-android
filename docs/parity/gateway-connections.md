@@ -259,7 +259,7 @@ argument.
 ## Visual report
 
 - report: docs/parity/visual/gateway-connection-mode/ (`reference.png` + `contract.json`, 45 nodes)
-- commit: b2d591a
+- commit: 47d03b3
 
 **Desktop half only.** There is a real capture of Desktop's mode grid at the
 pin now, but no Android capture beside it, so no side-by-side was built and
