@@ -34,6 +34,16 @@ internal data class GatewayEvent(
     val payload: JsonElement,
 )
 
+/** One logcat tag for the whole gateway package: connections and the sign-in that opens them. */
+internal const val GATEWAY_LOG_TAG = "HermesGateway"
+
+/**
+ * Prefix every cancellation this module raises on purpose. It marks a message
+ * as one of our own fixed phrases, so a breadcrumb can quote it without risking
+ * a value from somewhere else reaching logcat.
+ */
+internal const val GATEWAY_CANCELLED_BY_PREFIX = "Cancelled by "
+
 internal class GatewayRpcException(
     message: String,
     /** True when the frame was sent and a lost response cannot prove rejection. */
@@ -347,7 +357,7 @@ internal class OkHttpGatewayRpcClient private constructor(
             }
         }
 
-        private const val LOG_TAG = "HermesGateway"
+        private const val LOG_TAG = GATEWAY_LOG_TAG
     }
 
     internal class SocketWire : GatewayRpcWire {

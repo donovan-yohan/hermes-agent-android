@@ -5,8 +5,33 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!--
+        Android 17 blocks a cached app's uid from the network and destroys its
+        live sockets, which kills a sign-in the moment the person leaves for
+        their browser. A dataSync foreground service is the sanctioned way to
+        say that work outlives the screen; it is held for one sign-in only.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+        Package visibility for the sign-in hand-off only. Android 11+ hides other
+        packages by default, and without these two the app cannot see that a
+        Custom Tabs provider exists: `CustomTabsClient.getPackageName` returns
+        null, the binding that keeps this process out of the cached-app freezer
+        is never made, and the loopback callback is frozen out. Nothing here is
+        read for any other purpose.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".HermesApplication"
@@ -33,6 +58,10 @@
             android:name=".data.voice.WakeWordForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <service
+            android:name=".data.gateway.SignInForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!--
             Approve / Reject from the shade. Never exported: the only sender is
             a PendingIntent this app built, with every field already fixed.

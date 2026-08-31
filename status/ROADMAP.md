@@ -30,6 +30,24 @@ limitations, and likely next slices behind that table.
   encrypts endpoint-scoped tokens with Android Keystore, obtains a fresh
   single-use WebSocket ticket, and proves JSON-RPC readiness before reporting a
   connection.
+- **The PKCE hand-off is fixed but not yet accepted on a device.** Sign-in opens
+  in a Custom Tab whose service binding is held for the whole flow, so the
+  loopback callback listener is not frozen out of a cached process; the listener
+  is owned by the process rather than by the Gateways screen, so it survives an
+  Activity being destroyed behind the browser; the callback's `state` is checked
+  before anything is written back to the browser; and state mismatch, an
+  authorization code the Gateway will not redeem, a listener that closed, and an
+  abandoned flow each surface a distinct message with a next step. That is JVM
+  and Robolectric evidence only. An emulator repro against a mock Gateway
+  established two independent sufficient causes on the pre-fix build: a valid
+  callback delivered while the app was backgrounded served its "Signed in" page
+  and then produced no token request at all, while a refusal delivered the same
+  way still reached the UI; and a Home press for sixty seconds left the process
+  cached with callback connections accepted by the kernel and never read. Both
+  are addressed here, but neither fix has been re-run on that emulator lane, and
+  the case only a phone can answer — screen-off, a real doze window, and a
+  delayed return from a real provider on a physical Pixel — remains open
+  ([#114](https://github.com/donovan-yohan/hermes-agent-android/issues/114)).
 - A Remote Gateway is host-owned. Mobile never starts, adopts, stops, or reaps
   its `hermes serve` process. This is the safe route for sharing one Hermes
   profile between Desktop and mobile.
@@ -215,7 +233,7 @@ lifecycle.
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
 | Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
-| Device evidence | An instrumented emulator lane runs on every CI build and covers what an emulator is green on: 48 dp touch targets at the real display density, the chat chrome arriving in the platform accessibility tree in the window under test, a real input method binding to the composer, a real orientation change, and the open destination surviving a real Activity destroy and rebuild. It is not physical acceptance and does not stand in for it: PKCE browser hand-off, real radio, network handoff, TalkBack, media, an enlarged font scale, the keyboard's own window under the composer, a system-initiated process kill, and the label and touch-size audit of what that accessibility tree publishes ([#91](https://github.com/donovan-yohan/hermes-agent-android/issues/91)) remain unproven, and exact-head physical Pixel acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
+| Device evidence | An instrumented emulator lane runs on every CI build and covers what an emulator is green on: 48 dp touch targets at the real display density, the chat chrome arriving in the platform accessibility tree in the window under test, a real input method binding to the composer, a real orientation change, and the open destination surviving a real Activity destroy and rebuild. It is not physical acceptance and does not stand in for it: the PKCE browser hand-off (freezer-proofed and covered by JVM/Robolectric tests, never yet run screen-off on a physical device), real radio, network handoff, TalkBack, media, an enlarged font scale, the keyboard's own window under the composer, a system-initiated process kill, and the label and touch-size audit of what that accessibility tree publishes ([#91](https://github.com/donovan-yohan/hermes-agent-android/issues/91)) remain unproven, and exact-head physical Pixel acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
 
 ## Roadmap direction
 
@@ -224,9 +242,11 @@ and Android acceptance boundaries are known.
 
 ### 1. Close the shipping slice
 
-- Run exact-head physical Pixel acceptance for Remote Gateway browser PKCE,
-  reconnect and network handoff, session/turn flows, attachments, voice, IME,
-  TalkBack, and process death.
+- Run exact-head physical Pixel acceptance for Remote Gateway browser PKCE —
+  including screen-off and a three-minute delay before finishing provider auth,
+  which is the case the freezer fix exists for — plus reconnect and network
+  handoff, session/turn flows, attachments, voice, IME, TalkBack, and process
+  death.
 - Finish attachment and voice recovery paths found by that matrix.
 - Define and verify a production signing, versioning, distribution, and upgrade
   path. Keep the rolling debug artifact as a development channel.

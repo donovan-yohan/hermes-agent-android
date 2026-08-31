@@ -191,6 +191,11 @@ class ActiveConnectionFollowerTest {
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             error("SSH is never dialled by the follower")
 
+        override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) =
+            error("interactive sign-in is never started by the follower")
+
+        override fun cancelRemoteSignIn() = Unit
+
         override suspend fun connectRemote(
             profile: RemoteGatewayProfile,
             browser: GatewayBrowserLauncher,

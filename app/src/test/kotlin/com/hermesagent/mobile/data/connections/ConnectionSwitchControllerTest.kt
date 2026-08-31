@@ -355,6 +355,11 @@ class ConnectionSwitchControllerTest {
         override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
             GatewayConnectResult.Connected
 
+        /** No sign-in in this test; the pair exists so the Connect button cannot silently no-op. */
+        override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) = Unit
+
+        override fun cancelRemoteSignIn() = Unit
+
         override suspend fun connectRemote(
             profile: RemoteGatewayProfile,
             browser: GatewayBrowserLauncher,

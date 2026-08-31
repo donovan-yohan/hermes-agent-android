@@ -16,9 +16,13 @@ import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.SshCredential
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +62,19 @@ import org.junit.Test
 class GatewaySettingsViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
+    private val processScopes = mutableListOf<CoroutineScope>()
+
+    /**
+     * Stands in for the process-scoped connection layer, which is where an
+     * interactive sign-in runs now that a destroyed screen must not take it
+     * ([GatewaySettingsViewModel.connectRemote]).
+     *
+     * Deliberately not `backgroundScope`: `advanceUntilIdle` does not drive
+     * background work, and what this scope does when it is cancelled is the
+     * very thing these tests assert on.
+     */
+    private fun processScope(): CoroutineScope = CoroutineScope(dispatcher + Job())
+        .also { processScopes += it }
 
     @Before
     fun useVirtualMain() {
@@ -66,6 +83,8 @@ class GatewaySettingsViewModelTest {
 
     @After
     fun releaseMain() {
+        processScopes.forEach { it.cancel() }
+        processScopes.clear()
         Dispatchers.resetMain()
     }
 
@@ -76,7 +95,7 @@ class GatewaySettingsViewModelTest {
                 ConnectionKind.Local,
                 local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
             )
-            val gateway = RecordingGateway()
+            val gateway = RecordingGateway(processScope())
             val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
             backgroundScope.launch { subject.uiState.collect { } }
             advanceUntilIdle()
@@ -95,7 +114,7 @@ class GatewaySettingsViewModelTest {
     @Test
     fun `switching between the routes that own no session token erases nothing`() = runTest(dispatcher) {
         val store = oneRow(ConnectionKind.Remote, remote = RemoteGatewayProfile(baseUrl = "https://alpha.test"))
-        val gateway = RecordingGateway()
+        val gateway = RecordingGateway(processScope())
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
         backgroundScope.launch { subject.uiState.collect { } }
         advanceUntilIdle()
@@ -113,7 +132,7 @@ class GatewaySettingsViewModelTest {
     @Test
     fun `the Local route dials only an address this app can use`() = runTest(dispatcher) {
         val store = oneRow(ConnectionKind.Local)
-        val gateway = RecordingGateway()
+        val gateway = RecordingGateway(processScope())
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
         backgroundScope.launch { subject.uiState.collect { } }
         advanceUntilIdle()
@@ -136,7 +155,7 @@ class GatewaySettingsViewModelTest {
             ConnectionKind.Local,
             local = LocalGatewayProfile(baseUrl = "http://127.0.0.1:9119"),
         )
-        val gateway = RecordingGateway()
+        val gateway = RecordingGateway(processScope())
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
         backgroundScope.launch { subject.uiState.collect { } }
         advanceUntilIdle()
@@ -166,7 +185,7 @@ class GatewaySettingsViewModelTest {
         runTest(dispatcher) {
             val store = twoRows()
             store.switchTo("row-ssh")
-            val gateway = RecordingGateway()
+            val gateway = RecordingGateway(processScope())
             val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
             backgroundScope.launch { subject.uiState.collect { } }
             advanceUntilIdle()
@@ -204,7 +223,7 @@ class GatewaySettingsViewModelTest {
     @Test
     fun `a switch drops the unsaved edit that belonged to the row it left`() = runTest(dispatcher) {
         val store = twoRows()
-        val gateway = RecordingGateway()
+        val gateway = RecordingGateway(processScope())
         val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
         backgroundScope.launch { subject.uiState.collect { } }
         advanceUntilIdle()
@@ -244,7 +263,7 @@ class GatewaySettingsViewModelTest {
     fun `a dial aimed at the row a switch left is abandoned rather than landing under the new one`() =
         runTest(dispatcher) {
             val store = twoRows()
-            val gateway = RecordingGateway(holdRemoteDial = true)
+            val gateway = RecordingGateway(processScope(), holdRemoteDial = true)
             val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
             backgroundScope.launch { subject.uiState.collect { } }
             advanceUntilIdle()
@@ -264,6 +283,44 @@ class GatewaySettingsViewModelTest {
         }
 
     /**
+     * The failure this whole slice exists to remove, from the other side.
+     *
+     * The person taps Connect, leaves for the browser, and Android destroys the
+     * Activity behind them. When they come back the screen is rebuilt — a new
+     * ViewModel over the same store, whose first projection has no row yet. If
+     * that first projection is treated as a switch, the screen coming back kills
+     * the process-scoped sign-in it was rebuilt to show the result of, and the
+     * person watches their completed sign-in turn into "cancelled".
+     */
+    @Test
+    fun `a screen rebuilt behind the browser does not abandon the sign-in`() = runTest(dispatcher) {
+        val store = twoRows()
+        val gateway = RecordingGateway(processScope(), holdRemoteDial = true)
+        val screen = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { screen.uiState.collect { } }
+        advanceUntilIdle()
+
+        screen.connectRemote { }
+        advanceUntilIdle()
+        assertEquals(listOf("https://alpha.test"), gateway.remoteDials.map { it.baseUrl })
+
+        // The Activity is destroyed under the open browser and rebuilt.
+        val rebuilt = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { rebuilt.uiState.collect { } }
+        advanceUntilIdle()
+
+        assertTrue(
+            "a screen coming back is not a decision to abandon a sign-in",
+            gateway.abandonedRemoteDials.isEmpty(),
+        )
+        assertEquals(
+            "and the rebuilt pane still shows the row that sign-in is for",
+            "https://alpha.test",
+            rebuilt.uiState.value.remote.baseUrl,
+        )
+    }
+
+    /**
      * The switch window: the marker has moved and this pane has not been told
      * yet, so what it is showing — and anything typed into it — belongs to the
      * row that is already behind it.
@@ -272,7 +329,7 @@ class GatewaySettingsViewModelTest {
     fun `a keystroke racing a switch is dropped, and the pane still lands on the row switched to`() =
         runTest(dispatcher) {
             val store = twoRows()
-            val gateway = RecordingGateway()
+            val gateway = RecordingGateway(processScope())
             val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
             backgroundScope.launch { subject.uiState.collect { } }
             advanceUntilIdle()
@@ -314,7 +371,7 @@ class GatewaySettingsViewModelTest {
                     SavedConnection("row-ssh", "Beta", ConnectionKind.Ssh),
                 ),
             )
-            val gateway = RecordingGateway()
+            val gateway = RecordingGateway(processScope())
             val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
             backgroundScope.launch { subject.uiState.collect { } }
             advanceUntilIdle()
@@ -428,9 +485,18 @@ class GatewaySettingsViewModelTest {
     }
 
     private class RecordingGateway(
+        /**
+         * Where an interactive sign-in actually runs now: the process, not the
+         * screen. The ViewModel hands the flow over
+         * ([GatewaySettingsViewModel.connectRemote]) precisely so a destroyed
+         * Activity cannot take it, so the fake has to own a scope the way the
+         * connection layer does.
+         */
+        private val scope: CoroutineScope,
         /** Holds the dial open, the way a browser sign-in does, so a cancel is observable. */
         private val holdRemoteDial: Boolean = false,
     ) : GatewayConnectionController {
+        private var signIn: Job? = null
         private val _state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Disconnected))
         override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
 
@@ -462,6 +528,15 @@ class GatewaySettingsViewModelTest {
                 }
             }
             return GatewayConnectResult.Connected
+        }
+
+        override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) {
+            signIn = scope.launch(start = CoroutineStart.UNDISPATCHED) { connectRemote(profile, browser) }
+        }
+
+        override fun cancelRemoteSignIn() {
+            signIn?.cancel()
+            signIn = null
         }
 
         override suspend fun connectLocal(profile: LocalGatewayProfile): GatewayConnectResult {

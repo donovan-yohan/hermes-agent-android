@@ -131,6 +131,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.datastore.preferences)
+    // Custom Tabs, for the native sign-in hand-off only. The warmed service
+    // binding is the part that matters: it raises this process's importance
+    // so the loopback callback listener is still running when the browser
+    // redirects back to it.
+    implementation(libs.androidx.browser)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
