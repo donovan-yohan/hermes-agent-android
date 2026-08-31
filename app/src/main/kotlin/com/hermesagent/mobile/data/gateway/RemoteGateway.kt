@@ -12,8 +12,10 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -251,6 +253,24 @@ internal enum class GatewaySignInStep(private val label: String) {
  * a throwable's *message* routinely carries a hostname, a path or a URL, and
  * this reaches logcat.
  */
+/**
+ * Whether this throwable is *this* coroutine being cancelled, rather than a
+ * `CancellationException` something downstream raised as a value.
+ *
+ * The two are the same type and mean opposite things. This package throws
+ * `CancellationException` deliberately, as an "abandon this attempt" signal
+ * decoupled from any `Job.cancel()` (`GatewayConnection.kt`: the abort paths
+ * around `openRemote` and the reconnect loop), so a catch that reads the type
+ * alone cannot tell "the person abandoned this" from "the thing I called gave
+ * up". Only the context answers it: a coroutine that is genuinely being
+ * cancelled is no longer active.
+ *
+ * Structured concurrency requires the first kind to propagate. The second is an
+ * ordinary failure and belongs to whatever the catch site does with those.
+ */
+internal suspend fun Throwable.cancelsThisCoroutine(): Boolean =
+    this is CancellationException && !currentCoroutineContext().isActive
+
 internal fun throwableChain(failure: Throwable, limit: Int = THROWABLE_CHAIN_LIMIT): String {
     val names = mutableListOf<String>()
     val seen = mutableSetOf<Throwable>()
@@ -609,9 +629,15 @@ internal class NativeGatewayAuthenticator(
         log.step(GatewaySignInStep.TokensStored)
         try {
             launcher.returnToApp()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
         } catch (failure: Throwable) {
+            // Only a cancellation of *this* coroutine is allowed past here: it
+            // is a decision, and something abandoned the sign-in. A
+            // `CancellationException` a launcher raised on its own, while this
+            // job is perfectly alive, is a post-persist failure of the
+            // *courtesy* — and rethrowing on the type discarded a sign-in
+            // already spent and on disk, leaving the person reading
+            // "cancelled" about something that had finished.
+            if (failure.cancelsThisCoroutine()) throw failure
             // A blocked launch is the ordinary case, not an error worth showing
             // anyone: the sign-in is already done and saved.
             log.failed(GatewaySignInStep.ReturnBlocked, failure)

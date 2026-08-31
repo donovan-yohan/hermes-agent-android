@@ -414,6 +414,11 @@ private fun RemoteGatewayScreen(
                 color = if (connection.status == GatewayConnectionStatus.NeedsAttention) tokens.destructive else tokens.textSecondary,
             )
         }
+        // A sign-in this pane declined to start dialled nothing, so the line
+        // above has nothing to say about it (`GatewaySettingsViewModel`).
+        state.signInNotice?.let { notice ->
+            Text(notice, style = HermesTheme.type.caption, color = tokens.destructive)
+        }
 
         when (connection.status) {
             GatewayConnectionStatus.Connected -> {

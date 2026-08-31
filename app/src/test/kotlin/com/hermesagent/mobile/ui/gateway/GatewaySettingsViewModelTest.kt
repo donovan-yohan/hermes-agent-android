@@ -39,6 +39,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -388,6 +389,62 @@ class GatewaySettingsViewModelTest {
                 gateway.forgottenLocal.isEmpty(),
             )
             assertEquals(GatewayConnectionMode.Ssh, subject.uiState.value.mode)
+        }
+
+    /**
+     * S-U5 (#116). The same switch window as the two above, at the pane's most
+     * expensive control.
+     *
+     * A dropped keystroke costs a character. A sign-in composed against the row
+     * this app has already left opens a browser at the previous Gateway and, if
+     * the person completes it, mints a credential for it — so the tap carries
+     * the row it was composed against and the store, which is the only thing
+     * that knows which row is active now, is what answers.
+     *
+     * The second half is the teeth: the guard has to be a stamp check and not a
+     * refusal to connect, so the same tap once the pane has caught up signs in.
+     */
+    @Test
+    fun `a sign-in racing a switch is dropped rather than opening a browser at the row it left`() =
+        runTest(dispatcher) {
+            val store = twoRows()
+            val gateway = RecordingGateway(processScope())
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+            var browsersOpened = 0
+
+            // The marker moves, and this pane has not been told yet: the tap is
+            // composed against Alpha while Beta is the connection this app is on.
+            store.switchTo("row-beta")
+            subject.connectRemote { browsersOpened += 1 }
+            advanceUntilIdle()
+
+            assertTrue(
+                "no sign-in was started, so nothing could reach the Gateway it left",
+                gateway.remoteDials.isEmpty(),
+            )
+            assertEquals("and no browser was opened at all", 0, browsersOpened)
+            assertEquals(
+                "a drop the person can see, since nothing was dialled for the connection state to report",
+                SIGN_IN_CONNECTION_CHANGED,
+                subject.uiState.value.signInNotice,
+            )
+            assertEquals(
+                "the pane is showing the row it landed on, which is what the notice points at",
+                "https://beta.test",
+                subject.uiState.value.remote.baseUrl,
+            )
+
+            subject.connectRemote { browsersOpened += 1 }
+            advanceUntilIdle()
+
+            assertEquals(
+                "the same tap, once the pane has caught up, signs in to the row on screen",
+                listOf("https://beta.test"),
+                gateway.remoteDials.map { it.baseUrl },
+            )
+            assertNull("and the notice goes with the act that answered it", subject.uiState.value.signInNotice)
         }
 
     private fun oneRow(

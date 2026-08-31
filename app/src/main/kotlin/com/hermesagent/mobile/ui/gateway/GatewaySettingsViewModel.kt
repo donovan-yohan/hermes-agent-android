@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -33,6 +34,13 @@ data class GatewaySettingsUiState(
     val local: LocalGatewayProfile = LocalGatewayProfile(),
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val loaded: Boolean = false,
+    /**
+     * What this pane has to say about a sign-in it declined to start, which the
+     * live connection cannot say for it: nothing was dialled, so
+     * [connection] is still whatever it was. Null the rest of the time, and
+     * cleared by the next thing the person does here.
+     */
+    val signInNotice: String? = null,
 ) {
     val remoteUrlError: String?
         get() = if (remote.baseUrl.isBlank() || remote.isValid) null else "Enter an HTTPS Gateway URL."
@@ -48,6 +56,19 @@ data class GatewaySettingsUiState(
     val canConnectLocal: Boolean
         get() = local.isValid && connection.status != GatewayConnectionStatus.Connecting
 }
+
+/**
+ * Said when a sign-in is aimed at a connection this app has already left.
+ *
+ * It names the act and where to look — the pane re-projects onto whichever row
+ * is now active, so "shown here" is the Gateway the person can see — and stops
+ * there. Which row moved, and that anything was stamped at all, are this app's
+ * business; the person's business is that nothing was signed into and the same
+ * button is still the way to.
+ */
+internal const val SIGN_IN_CONNECTION_CHANGED =
+    "The active connection changed before sign-in started. " +
+        "Check the Gateway shown here, then sign in and connect."
 
 internal class GatewaySettingsViewModel(
     private val store: RemoteGatewayProfileStore,
@@ -76,6 +97,17 @@ internal class GatewaySettingsViewModel(
     /** The row [_uiState] is currently a projection of. */
     private var activeRowId: String? = null
     private var connectJob: Job? = null
+
+    /**
+     * A tap on Connect between reading the row it was composed against and
+     * handing the sign-in to the process — see [connectRemote].
+     *
+     * Deliberately not [connectJob]: [project] cancels that one, and a switch
+     * landing inside this window is the very case this job exists to report.
+     * Only a person doing something else cancels it
+     * ([cancelConnectionAttempt]).
+     */
+    private var signInStartJob: Job? = null
 
     init {
         // Collected rather than read once, and read as one value rather than
@@ -191,24 +223,65 @@ internal class GatewaySettingsViewModel(
      * Both the offer and the target come from the same projected row, so a tap
      * can only ever dial the connection whose address is on screen. A tap that
      * lands in the instant before a switch is the one case where those two come
-     * apart, and it is caught on the way out rather than on the way in: [project]
-     * cancels the attempt when the active row moves, and the switch itself has
-     * already put the old endpoint down and cleared what it told us
-     * (`ConnectionSwitchController.kt:84,150-151`).
+     * apart — this pane is a projection, and a projection can be behind. What
+     * follows is stamped for exactly that: the row the tap was composed against
+     * is carried to the store, which is the only thing that knows which row is
+     * active *now*, and a stamp that no longer matches ends the tap here. It is
+     * the rule the route form and the mode selector already write under
+     * (`RemoteGatewayProfileStore.saveRemoteGatewayProfile`,
+     * `saveGatewayConnectionMode`), and a sign-in is the most expensive place
+     * to get it wrong: the cheapest failure is a browser opened against the
+     * Gateway the person has just left, and the dearest is a credential minted
+     * for it. A blank stamp is a caller with no row in mind — a pre-registry
+     * install — and dials wherever the marker points, which is that store rule
+     * as well.
      *
-     * Deliberately not this ViewModel's coroutine. A sign-in sends the person
-     * to a browser, and Android may destroy this screen while they are there;
-     * a flow in [viewModelScope] would die with it, taking its loopback
-     * callback listener along and leaving the person to come back to an app
-     * that never noticed. The connection layer is process-scoped and owns it
-     * instead — this pane keeps the right to *abandon* it
+     * A drop is said rather than swallowed ([SIGN_IN_CONNECTION_CHANGED]).
+     * Nothing was dialled, so the connection state has nothing to report and
+     * this pane has to.
+     *
+     * The stamp is compared against the **store**, and deliberately not against
+     * [activeRowId]. That field and `remote.secretSlotId` are written by
+     * [project] from one value, in one line of each other, so they are the same
+     * answer twice: a check between them is `x == x` and cannot fail, least of
+     * all in the window where this pane is behind — which is the only window
+     * this guard exists for. The store is the one participant that is never a
+     * projection.
+     *
+     * That read is not gapless, and does not need to be. It closes the window
+     * that costs something — nothing reaches a browser or a token endpoint
+     * until the answer is in — and a switch that lands *after* it is already
+     * covered, reactively, by [project] cancelling the sign-in it finds running
+     * against the row it left. A gapless version would have to arbitrate inside
+     * the process-scoped connection layer, which would need the store injected
+     * there; that is a deeper change than this failure is worth, and it is
+     * filed rather than smuggled in here.
+     *
+     * The *sign-in* is deliberately not this ViewModel's coroutine. It sends
+     * the person to a browser, and Android may destroy this screen while they
+     * are there; a flow in [viewModelScope] would die with it, taking its
+     * loopback callback listener along and leaving the person to come back to
+     * an app that never noticed. The connection layer is process-scoped and
+     * owns it instead — this pane keeps the right to *abandon* it
      * ([cancelConnectionAttempt]), which is not the same as being destroyed.
+     * Only the stamp check above is this screen's, and it is over in one
+     * store read: a tap whose screen is destroyed inside that window never
+     * opened a browser and has nothing to survive.
      */
     fun connectRemote(browser: GatewayBrowserLauncher) {
         val state = _uiState.value
         if (state.mode != GatewayConnectionMode.Remote || !state.canConnectRemote) return
+        val intended = state.remote
         cancelConnectionAttempt()
-        gateway.startRemoteSignIn(state.remote, browser)
+        signInStartJob = viewModelScope.launch {
+            val active = store.activeGatewayRoute.first()
+            val stamp = intended.secretSlotId
+            if (stamp.isNotBlank() && stamp != active.connectionId) {
+                _uiState.update { it.copy(signInNotice = SIGN_IN_CONNECTION_CHANGED) }
+                return@launch
+            }
+            gateway.startRemoteSignIn(intended, browser)
+        }
     }
 
     /**
@@ -275,6 +348,13 @@ internal class GatewaySettingsViewModel(
     private fun cancelConnectionAttempt() {
         connectJob?.cancel()
         connectJob = null
+        signInStartJob?.cancel()
+        signInStartJob = null
+        // Every caller is the person acting on this pane, and acting is what
+        // answers a notice about the last thing they did. Unconditional: a copy
+        // that changes nothing is equal to what is there, and a StateFlow does
+        // not re-emit that.
+        _uiState.update { it.copy(signInNotice = null) }
         gateway.cancelRemoteSignIn()
     }
 
@@ -288,6 +368,7 @@ internal class GatewaySettingsViewModel(
     override fun onCleared() {
         connectJob?.cancel()
         connectJob = null
+        signInStartJob = null
         super.onCleared()
     }
 

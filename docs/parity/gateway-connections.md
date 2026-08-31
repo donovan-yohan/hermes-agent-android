@@ -146,6 +146,7 @@ that SHA.
   `SHA-256("connection" + U+0000 + id)`; and end to end, a re-addressed row
   presents no bearer minted for the gateway it left — `ticket()` asks for a
   sign-in instead.
+- `GatewaySettingsViewModelTest` — the pane as a projection: a switch re-projects the route, its fields and what Connect would dial; a keystroke, a route tap and a sign-in that race the switch are each dropped against the row they were composed for, the sign-in without opening a browser and with a line the person can read.
 - `ChatEndpointSwitchTest` — a changed endpoint drops the open session, the
   search and the project drill-in, then lands on the new endpoint's most
   recently active session; two SSH remote profiles on one host are treated as
@@ -276,6 +277,8 @@ argument.
 | `cloudAddHint` under the kind chooser (`en.ts:758-759`) | omission | Absent | deferred: #100 — a hint, not a control: it renders only while the editor's kind *is* cloud, which a disabled Cloud button makes unreachable, and it returns with the sign-in the card above is waiting on |
 | `envOverride` disabling every mode card (`gateway-settings.tsx:1052`, `en.ts:773-775`) | omission | Absent | non-goal: `HERMES_DESKTOP_REMOTE_URL`/`_TOKEN` are desktop-process environment variables, and an Android app has no shell environment to be overridden by |
 | Plain-text-keyring consent | omission | Absent | non-goal: every secret here is a Keystore slot, so there is nothing to consent to |
+| Settings and the sidebar switcher share one window, so a sign-in cannot be composed against a connection the switcher has already left (`connection-switcher.tsx:127`, `gateway-settings.tsx:1044-1089` @ `f82f2dba`) | mobile-adaptation | The sign-in carries the row the tap was composed against; a stamp the store no longer calls active drops the tap, says so in one line, and opens no browser | No Desktop equivalent to port. This pane is a *projection* of the active row, and on a phone the switcher that moves the marker lives on another surface entirely — the sessions drawer — so the pane can be one store read behind it. That window costs a character on the route form and a browser opened at the gateway the person just left here, which is why the sign-in writes under the same stamp rule the form does. `GatewaySettingsViewModelTest` drives the window, and asserts the same tap signs in once the pane has caught up |
+| Native sign-in returns into the window it left, so there is nowhere else to land (`hermes_cli/dashboard_auth/native_flow.py:89` @ `f82f2dba`) | mobile-adaptation | The hand-back Intent carries which surface the sign-in started from, and one started in the sessions drawer lands back on sessions rather than in Settings | Android hands the person to a *separate browser task* and back through a fresh Intent, which resumes whichever surface was last on screen. The owner's Scenario A is a drawer switch to a signed-out gateway: without this the person finishes signing in and is left one destination away from the sessions they were reaching for. `GatewaySignInBrowserTest` pins the value surviving the Intent, `SignInHandBackJourneyTest` the drawer marking the journey and the hand-back landing on sessions |
 
 ## Visual report
 
