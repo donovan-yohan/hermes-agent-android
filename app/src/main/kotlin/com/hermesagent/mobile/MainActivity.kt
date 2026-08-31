@@ -476,12 +476,14 @@ class MainActivity : ComponentActivity() {
      * recreate does not re-navigate away from wherever the user has since gone.
      *
      * The sign-in hand-back also arrives here, because it resumes this instance
-     * rather than starting a second one ([GatewaySignInBrowser.returnIntent]).
-     * It carries no action and no extras and is therefore ignored below, which
-     * is the whole intent: come forward, change nothing. [setIntent] is what
-     * keeps that true — without it `getIntent()` would still answer the
-     * notification intent that launched this Activity, and the next thing to
-     * read it would act on a navigation the person already consumed.
+     * rather than starting a second one (`GatewaySignInBrowser.returnIntent`).
+     * It carries no action, and one optional extra: where the sign-in started.
+     * Without that extra — every hand-back before #116, and every one from the
+     * Gateways pane — it is still ignored below, which was the whole intent:
+     * come forward, change nothing. [setIntent] is what keeps that true —
+     * without it `getIntent()` would still answer the notification intent that
+     * launched this Activity, and the next thing to read it would act on a
+     * navigation the person already consumed.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

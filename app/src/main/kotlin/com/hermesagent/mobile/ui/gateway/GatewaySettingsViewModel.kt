@@ -119,7 +119,20 @@ internal class GatewaySettingsViewModel(
             store.activeGatewayRoute.collect(::project)
         }
         viewModelScope.launch {
-            gateway.state.collect { connection -> _uiState.update { it.copy(connection = connection) } }
+            gateway.state.collect { connection ->
+                // A line saying nothing was signed into is answered by a
+                // connection that is up, or on its way: what it tells the
+                // person to do is already happening. Without this the switch
+                // that raced the tap goes on to connect and the pane renders a
+                // destructive "then sign in and connect" directly above
+                // `Disconnect` — and this ViewModel is Activity-scoped, so that
+                // contradiction outlives leaving the pane and coming back.
+                val dialled = connection.status == GatewayConnectionStatus.Connected ||
+                    connection.status == GatewayConnectionStatus.Connecting
+                _uiState.update { state ->
+                    state.copy(connection = connection, signInNotice = state.signInNotice.takeUnless { dialled })
+                }
+            }
         }
         // Collected rather than read once: this route's address is a projection
         // of the active registry row, so editing that row below has to reach the
@@ -165,6 +178,10 @@ internal class GatewaySettingsViewModel(
             connectJob?.cancel()
             connectJob = null
             if (switched) gateway.cancelRemoteSignIn()
+            // The notice points at "the Gateway shown here", so it dies with
+            // the row it was pointing at. A drop raised *by* this switch is
+            // set after this runs, on the row that replaced it, and stands.
+            _uiState.update { it.copy(signInNotice = null) }
         }
         if (edited) return
         _uiState.update { it.copy(mode = route.mode, remote = route.remote, loaded = true) }
@@ -250,12 +267,22 @@ internal class GatewaySettingsViewModel(
      *
      * That read is not gapless, and does not need to be. It closes the window
      * that costs something — nothing reaches a browser or a token endpoint
-     * until the answer is in — and a switch that lands *after* it is already
+     * until the answer is in — and a switch that lands *after* it is mostly
      * covered, reactively, by [project] cancelling the sign-in it finds running
-     * against the row it left. A gapless version would have to arbitrate inside
-     * the process-scoped connection layer, which would need the store injected
-     * there; that is a deeper change than this failure is worth, and it is
-     * filed rather than smuggled in here.
+     * against the row it left.
+     *
+     * *Mostly*, and the exception is worth naming rather than implying. The
+     * cancel is a lost-update race: [project] runs on Main and cancels whatever
+     * `signInJob` holds, so a switch that lands while this coroutine is still
+     * between its store read and [GatewayConnectionController.startRemoteSignIn]
+     * finds that reference null, cancels nothing, and the start it did not see
+     * then claims the intent on IO. The read makes it a narrow window rather
+     * than a wide one, and the residue is a sign-in against a row this app just
+     * left — the same failure, smaller. Closing it properly means arbitrating
+     * inside the process-scoped connection layer, where the claim and the
+     * marker could be read under one lock; that needs the store injected there,
+     * which is a deeper change than this failure is worth, and it is filed
+     * rather than smuggled in here.
      *
      * The *sign-in* is deliberately not this ViewModel's coroutine. It sends
      * the person to a browser, and Android may destroy this screen while they

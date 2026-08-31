@@ -447,6 +447,67 @@ class GatewaySettingsViewModelTest {
             assertNull("and the notice goes with the act that answered it", subject.uiState.value.signInNotice)
         }
 
+    /**
+     * The notice is a transient about a tap, not a property of the pane, so it
+     * has to die of something. Two things answer it, and both are the ordinary
+     * end of the story it tells.
+     *
+     * This one is the shape review caught (#116 P2): the switch that raced the
+     * tap goes on to dial, and a destructive "then sign in and connect" would
+     * otherwise sit directly above `Disconnect` on a live connection — and this
+     * ViewModel is Activity-scoped, so it would survive leaving the pane and
+     * coming back.
+     */
+    @Test
+    fun `the drop notice goes when the connection it warned about comes up`() = runTest(dispatcher) {
+        val store = twoRows()
+        val gateway = RecordingGateway(processScope())
+        val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        store.switchTo("row-beta")
+        subject.connectRemote { }
+        advanceUntilIdle()
+        assertEquals(SIGN_IN_CONNECTION_CHANGED, subject.uiState.value.signInNotice)
+
+        // The switch that raced the tap finishes its own dial.
+        gateway.publish(GatewayConnectionStatus.Connected)
+        advanceUntilIdle()
+
+        assertNull(
+            "a live connection contradicts a line saying nothing was signed into",
+            subject.uiState.value.signInNotice,
+        )
+    }
+
+    /**
+     * And the other end: the notice says "the Gateway shown here", so it cannot
+     * outlive the row it is pointing at.
+     */
+    @Test
+    fun `the drop notice belongs to the row it was raised on`() = runTest(dispatcher) {
+        val store = twoRows()
+        val gateway = RecordingGateway(processScope())
+        val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        store.switchTo("row-beta")
+        subject.connectRemote { }
+        advanceUntilIdle()
+        assertEquals(SIGN_IN_CONNECTION_CHANGED, subject.uiState.value.signInNotice)
+
+        store.switchTo("row-alpha")
+        advanceUntilIdle()
+
+        assertNull(
+            "the pane is pointing somewhere else now, so the line pointing at it goes",
+            subject.uiState.value.signInNotice,
+        )
+        assertEquals("https://alpha.test", subject.uiState.value.remote.baseUrl)
+    }
+
     private fun oneRow(
         kind: ConnectionKind,
         remote: RemoteGatewayProfile = RemoteGatewayProfile(),
