@@ -79,7 +79,7 @@ class HermesApplication : Application() {
         )
     }
     internal val gatewayConnection: GatewayConnectionManager by lazy {
-        val authApi = OkHttpGatewayNativeAuthApi(http)
+        val authApi = OkHttpGatewayNativeAuthApi(http, log = AndroidGatewaySignInLog)
         // One store, two credential shapes: a Remote row's sign-in and a Local
         // row's session token share the slot machinery that names a file after
         // the connection and binds its contents to the address that minted them.

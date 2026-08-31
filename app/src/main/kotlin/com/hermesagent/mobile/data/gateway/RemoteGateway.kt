@@ -8,6 +8,7 @@ import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -216,7 +217,14 @@ internal enum class GatewaySignInStep(private val label: String) {
     CallbackRefused("callback reported a refusal"),
     StateMismatch("callback state did not match"),
     ListenerClosed("callback listener closed early"),
+    ExchangeStarting("token exchange starting"),
+    ExchangeDispatched("token exchange reached the wire thread"),
+    ExchangeRequesting("token exchange request going out"),
+    ExchangeAnswered("token exchange answered"),
     ExchangeRefused("token exchange refused"),
+    ExchangeRetrying("token exchange retrying, unanswered"),
+    ExchangeTimedOut("token exchange timed out"),
+    ExchangeFailed("token exchange failed"),
     TokensStored("sign-in stored"),
     ReturnBlocked("could not bring the app forward"),
     ;
@@ -328,6 +336,17 @@ internal interface GatewaySessionTokenStore {
     /** Erases whatever this slot holds. Addressable by row id alone. */
     suspend fun clearSessionToken(slot: GatewaySecretSlot)
 }
+
+/**
+ * The Gateway never answered: the call failed before any response existed —
+ * name resolution, connect, or the call timeout expiring with nothing back.
+ *
+ * The distinction is the whole reason this type exists. An authorization code
+ * is single use, so it may only be presented a second time when it is certain
+ * it was never presented at all. Anything thrown once a response is in hand is
+ * an ordinary failure and is never retried.
+ */
+internal class GatewayUnansweredException(cause: Throwable) : IOException(cause)
 
 internal class GatewayAuthException(
     message: String,
@@ -557,8 +576,31 @@ internal class NativeGatewayAuthenticator(
 
 /** Bounded OkHttp implementation of the native-auth REST contract. */
 internal class OkHttpGatewayNativeAuthApi(
-    private val http: OkHttpClient,
+    http: OkHttpClient,
+    private val log: GatewaySignInLog = GatewaySignInLog {},
+    callTimeoutMillis: Long = AUTH_CALL_TIMEOUT_MILLIS,
 ) : GatewayNativeAuthApi {
+    /**
+     * The shared client with a *call* timeout, and this is the bound that
+     * matters.
+     *
+     * `connectTimeout` does not cover name resolution: OkHttp's `Dns.SYSTEM` is
+     * `InetAddress.getAllByName`, which blocks in the platform resolver with no
+     * timeout of its own. A backgrounded process whose default network was
+     * re-evaluated underneath it can sit in that call indefinitely — no bytes
+     * sent, no exception, nothing to report — which is exactly what a device
+     * showed for 96 s with every breadcrumb around it clean. `callTimeout`
+     * covers the whole call including that leg, and a coroutine-side `withTimeout`
+     * cannot substitute for it: cancelling a coroutine does not unblock a thread
+     * already inside a blocking socket or resolver call.
+     *
+     * Derived with `newBuilder` so it keeps the shared connection pool and
+     * dispatcher; only these short auth legs get the bound.
+     */
+    private val http: OkHttpClient = http.newBuilder()
+        .callTimeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
+        .build()
+
     override suspend fun status(baseUrl: String): GatewayAuthStatus {
         val body = requestJson(endpoint(baseUrl, "api/status"), null, null)
         val flows = (body["auth_flows"] as? JsonArray)
@@ -585,6 +627,38 @@ internal class OkHttpGatewayNativeAuthApi(
      * fresh sign-in can produce another code, and a retry loop cannot.
      */
     override suspend fun exchange(baseUrl: String, code: String, verifier: String): GatewayNativeTokens = try {
+        // (a) Before the dispatch. If this is the last thing a device shows, the
+        // coroutine never reached the wire thread at all.
+        log.step(GatewaySignInStep.ExchangeStarting)
+        redeem(baseUrl, code, verifier, retryUnanswered = true)
+    } catch (failure: GatewayAuthException) {
+        if (failure.statusCode == 400) throw GatewayAuthException(GatewaySignInCopy.EXPIRED_CODE)
+        throw failure
+    }
+
+    /**
+     * One presentation of the code, retried exactly once when the Gateway never
+     * answered.
+     *
+     * The stall this exists for is name resolution on a connection handle the
+     * default-network re-evaluation killed, seconds after the person left for
+     * the browser. By the time the call timeout expires the new network resolves
+     * immediately, so the retry is not a hope — it is the same request on a
+     * working network, and it turns the scenario into a sign-in instead of a
+     * polite failure. The code's 120 s life leaves room for both attempts.
+     *
+     * It is safe even in the case it cannot distinguish. If the request did
+     * reach the Gateway and only its answer was lost, the code is spent and the
+     * retry gets a 400 — which surfaces as "sign in again", exactly what the
+     * un-retried timeout would have surfaced. The retry can turn a failure into
+     * a success and cannot turn a success into a failure.
+     */
+    private suspend fun redeem(
+        baseUrl: String,
+        code: String,
+        verifier: String,
+        retryUnanswered: Boolean,
+    ): GatewayNativeTokens = try {
         parseTokens(
             requestJson(
                 endpoint(baseUrl, "auth/native/token"),
@@ -593,11 +667,13 @@ internal class OkHttpGatewayNativeAuthApi(
                     put("code_verifier", JsonPrimitive(verifier))
                 },
                 null,
+                trace = true,
             ),
         )
-    } catch (failure: GatewayAuthException) {
-        if (failure.statusCode == 400) throw GatewayAuthException(GatewaySignInCopy.EXPIRED_CODE)
-        throw failure
+    } catch (unanswered: GatewayUnansweredException) {
+        if (!retryUnanswered) throw unanswered
+        log.step(GatewaySignInStep.ExchangeRetrying)
+        redeem(baseUrl, code, verifier, retryUnanswered = false)
     }
 
     override suspend fun refresh(
@@ -628,8 +704,21 @@ internal class OkHttpGatewayNativeAuthApi(
         if (failure.statusCode == 401 || failure.statusCode == 403) null else throw failure
     }
 
-    private suspend fun requestJson(url: HttpUrl, body: JsonObject?, bearer: String?): JsonObject =
+    /**
+     * [trace] instruments the one leg that has gone dark on a device. The other
+     * legs share this body but not its breadcrumbs, because a status probe
+     * failing is loud already.
+     */
+    private suspend fun requestJson(
+        url: HttpUrl,
+        body: JsonObject?,
+        bearer: String?,
+        trace: Boolean = false,
+    ): JsonObject =
         withContext(Dispatchers.IO) {
+            // (b) First line inside the dispatch. Reaching this and not (c)
+            // separates "the continuation never ran" from "the call blocked".
+            if (trace) log.step(GatewaySignInStep.ExchangeDispatched)
             val builder = Request.Builder().url(url)
             bearer?.let { builder.header("Authorization", "Bearer $it") }
             if (body == null) {
@@ -637,7 +726,22 @@ internal class OkHttpGatewayNativeAuthApi(
             } else {
                 builder.post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             }
-            http.newCall(builder.build()).execute().use { response ->
+            // (c) About to execute. Everything past here is OkHttp: name
+            // resolution, connect, write, read.
+            if (trace) log.step(GatewaySignInStep.ExchangeRequesting)
+            // Only `execute()` is wrapped. Everything it throws happened before
+            // a response existed; everything thrown inside `use` happened after
+            // one did, and that difference decides whether a single-use code may
+            // be presented again.
+            val call = http.newCall(builder.build())
+            val answer = try {
+                call.execute()
+            } catch (unanswered: IOException) {
+                throw GatewayUnansweredException(unanswered)
+            }
+            answer.use { response ->
+                // (d) Something came back.
+                if (trace) log.step(GatewaySignInStep.ExchangeAnswered)
                 if (!response.isSuccessful) {
                     throw GatewayAuthException(
                         when (response.code) {
@@ -675,10 +779,20 @@ internal class OkHttpGatewayNativeAuthApi(
         )
     }
 
-    private companion object {
+    /** What the whole call is bounded by, so a test can pin that it is bounded at all. */
+    internal val callTimeoutMillis: Int get() = http.callTimeoutMillis
+
+    internal companion object {
         val JSON = Json { ignoreUnknownKeys = true }
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val MAX_AUTH_BODY_BYTES = 64 * 1024
+
+        /**
+         * Every auth leg is one small request and one small response. Nothing
+         * here may hang: a stuck sign-in costs a single-use code with a 120 s
+         * life, so the whole call is bounded well inside that.
+         */
+        const val AUTH_CALL_TIMEOUT_MILLIS = 15_000L
     }
 }
 
@@ -703,6 +817,10 @@ internal object GatewaySignInCopy {
         "The sign-in took too long to finish, so Hermes would not accept it. Sign in again."
     const val CANCELLED =
         "Sign-in was cancelled before it finished. Sign in again when you are ready."
+    const val EXCHANGE_TIMED_OUT =
+        "Finishing sign-in took too long to reach the Gateway. Sign in again."
+    const val EXCHANGE_FAILED =
+        "Hermes could not finish sign-in with the Gateway. Sign in again."
     const val INTERRUPTED =
         "Sign-in was interrupted before Hermes could finish it. Sign in again."
     const val NO_BROWSER =
@@ -764,6 +882,12 @@ internal class LoopbackGatewayNativeLogin(
      * minutes.
      */
     private val loginTimeoutMillis: Long = LOGIN_TIMEOUT_MILLIS,
+    /**
+     * Bounds everything after the code is in hand. A person waits minutes for a
+     * browser; a Gateway answering a token POST does not get minutes, and the
+     * code it is redeeming expires in 120 s anyway.
+     */
+    private val exchangeTimeoutMillis: Long = EXCHANGE_TIMEOUT_MILLIS,
 ) : GatewayNativeLogin {
     override suspend fun login(
         profile: RemoteGatewayProfile,
@@ -845,10 +969,26 @@ internal class LoopbackGatewayNativeLogin(
             // succeeded. Whoever owns persistence owns coming forward, and does
             // it afterwards — see [NativeGatewayAuthenticator.signIn].
             try {
-                api.exchange(baseUrl, code, verifier)
-            } catch (failure: GatewayAuthException) {
+                // A second bound, above OkHttp's own. This one cannot unstick a
+                // thread already blocked inside a socket or resolver call — only
+                // `callTimeout` can — but it does bound everything else on this
+                // leg and it is what turns a stall into a message.
+                withTimeout(exchangeTimeoutMillis) { api.exchange(baseUrl, code, verifier) }
+            } catch (timedOut: TimeoutCancellationException) {
+                log.step(GatewaySignInStep.ExchangeTimedOut)
+                throw GatewayAuthException(GatewaySignInCopy.EXCHANGE_TIMED_OUT)
+            } catch (refused: GatewayAuthException) {
                 log.step(GatewaySignInStep.ExchangeRefused)
-                throw failure
+                throw refused
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                // Anything else on this leg — a resolver failure, a socket
+                // timeout, a malformed reply — used to reach the UI as "check
+                // the host", which is not what a spent authorization code needs
+                // to say.
+                log.failed(GatewaySignInStep.ExchangeFailed, failure)
+                throw GatewayAuthException(GatewaySignInCopy.EXCHANGE_FAILED)
             }
         } catch (cancelled: CancellationException) {
             // Someone else ended this. Whoever it was names itself at its own
@@ -991,6 +1131,13 @@ internal class LoopbackGatewayNativeLogin(
 
     internal companion object {
         const val LOGIN_TIMEOUT_MILLIS = 5 * 60 * 1_000L
+        /**
+         * Covers both attempts of [GatewayNativeAuthApi.exchange] plus slack, and
+         * is deliberately well above the per-call bound so OkHttp's own timeout
+         * fires first — a coroutine timeout produces no retry, because it cannot
+         * tell whether the Gateway answered.
+         */
+        const val EXCHANGE_TIMEOUT_MILLIS = 60_000L
         const val MAX_REQUEST_LINE_BYTES = 8 * 1024
 
         val SIGNED_IN_RESPONSE = htmlResponse(

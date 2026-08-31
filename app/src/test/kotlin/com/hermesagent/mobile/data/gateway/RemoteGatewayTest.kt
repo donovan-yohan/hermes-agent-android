@@ -405,8 +405,10 @@ class RemoteGatewayTest {
 
     @Test
     fun `an authorization code the Gateway will not redeem says so and does not retry`() = runTest {
+        var calls = 0
         val refusing = OkHttpGatewayNativeAuthApi(
             OkHttpClient.Builder().addInterceptor { chain ->
+                calls += 1
                 Response.Builder()
                     .request(chain.request())
                     .protocol(Protocol.HTTP_1_1)
@@ -423,6 +425,9 @@ class RemoteGatewayTest {
 
         assertTrue(failure is GatewayAuthException)
         assertEquals(GatewaySignInCopy.EXPIRED_CODE, failure?.message)
+        // The Gateway answered, so the code is spent. Presenting it again could
+        // only ever be refused again.
+        assertEquals("a refusal is never retried", 1, calls)
         // Only a fresh sign-in mints another code, so the redial loop must stop.
         assertFalse(requireNotNull(failure).isRetryableRemoteConnectionFailure())
     }
@@ -1148,6 +1153,159 @@ class RemoteGatewayTest {
         assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
         assertNotNull("a spent sign-in must not end in silence", manager.state.value.message)
         attempt.cancel()
+    }
+
+    /**
+     * r6's dark window, lit. The device sequence ended
+     * `callback accepted -> authorization code in hand -> nothing, 96 s`, with
+     * no cancellation and no freeze: the exchange itself stalled with no bytes
+     * sent and no exception. These four steps say which half of it stalled.
+     */
+    @Test
+    fun `the token exchange reports every step it passes through`() = runTest {
+        val trace = SignInTrace()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(
+                    """{"access_token":"a","refresh_token":"r","expires_at":9000,"provider":"p","user_id":"u"}"""
+                        .toResponseBody("application/json".toMediaType()),
+                )
+                .build()
+        }.build()
+
+        OkHttpGatewayNativeAuthApi(http, log = trace.asLog())
+            .exchange("https://gateway.example/hermes", "code", "verifier")
+
+        assertEquals(
+            listOf(
+                GatewaySignInStep.ExchangeStarting.toString(),
+                GatewaySignInStep.ExchangeDispatched.toString(),
+                GatewaySignInStep.ExchangeRequesting.toString(),
+                GatewaySignInStep.ExchangeAnswered.toString(),
+            ),
+            trace.snapshot(),
+        )
+    }
+
+    /**
+     * The bound that actually stops a stall. `connectTimeout` does not cover
+     * name resolution — `Dns.SYSTEM` is `InetAddress.getAllByName`, which blocks
+     * in the platform resolver with no timeout of its own — so a client with
+     * OkHttp's defaults can sit in one call forever. It did.
+     */
+    @Test
+    fun `the auth wire bounds the whole call, not just the connect`() {
+        assertEquals(
+            "OkHttp's own default is unbounded, which is the bug",
+            0,
+            OkHttpClient().callTimeoutMillis,
+        )
+        assertEquals(
+            OkHttpGatewayNativeAuthApi.AUTH_CALL_TIMEOUT_MILLIS.toInt(),
+            OkHttpGatewayNativeAuthApi(OkHttpClient()).callTimeoutMillis,
+        )
+    }
+
+    @Test
+    fun `an exchange that never answers ends in a message, not silence`() = runBlocking {
+        val trace = SignInTrace()
+        val login = LoopbackGatewayNativeLogin(
+            ParkingExchangeApi(),
+            log = trace.asLog(),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+            exchangeTimeoutMillis = 200L,
+        )
+        val callbackThread = AtomicReference<Thread>()
+
+        val failure = runCatching {
+            login.login(PROFILE, GatewayBrowserLauncher { url ->
+                val parsed = requireNotNull(url.toHttpUrlOrNull())
+                val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+                val state = requireNotNull(parsed.queryParameter("state"))
+                callbackThread.set(
+                    Thread { readCallback("$redirect?code=code-parked&state=$state") }.also(Thread::start),
+                )
+            })
+        }.exceptionOrNull()
+        callbackThread.get()?.join(15_000)
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(GatewaySignInCopy.EXCHANGE_TIMED_OUT, failure?.message)
+        val steps = trace.snapshot()
+        assertTrue(steps.contains(GatewaySignInStep.CodeReceived.toString()))
+        assertTrue("the silence has to end in a named step", steps.contains(GatewaySignInStep.ExchangeTimedOut.toString()))
+    }
+
+    /** An exchange that parks forever, the way a stalled resolver does. */
+    private class ParkingExchangeApi : GatewayNativeAuthApi {
+        override suspend fun status(baseUrl: String) =
+            GatewayAuthStatus(authRequired = true, authFlows = setOf("native_pkce"))
+
+        override suspend fun exchange(baseUrl: String, code: String, verifier: String): GatewayNativeTokens =
+            awaitCancellation()
+
+        override suspend fun refresh(
+            baseUrl: String,
+            refreshToken: String,
+            provider: String,
+        ): GatewayNativeTokens = error("a parked exchange never rotates")
+
+        override suspend fun mintWebSocketTicket(baseUrl: String, accessToken: String) = "ticket-parked"
+    }
+
+    /**
+     * The r6 stall, turned into a sign-in instead of a polite failure.
+     *
+     * The first attempt dies before the Gateway ever answers — name resolution
+     * on a handle the default-network re-evaluation killed. By the time the call
+     * timeout expires the new network resolves immediately, so the same request
+     * simply works, and the code still has most of its 120 s left.
+     */
+    @Test
+    fun `an exchange that never reached the Gateway is presented once more`() = runTest {
+        val trace = SignInTrace()
+        var calls = 0
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            calls += 1
+            if (calls == 1) throw java.net.SocketTimeoutException("timeout")
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(
+                    """{"access_token":"access-retried","refresh_token":"r","expires_at":9000,"provider":"p","user_id":"u"}"""
+                        .toResponseBody("application/json".toMediaType()),
+                )
+                .build()
+        }.build()
+
+        val tokens = OkHttpGatewayNativeAuthApi(http, log = trace.asLog())
+            .exchange("https://gateway.example/hermes", "code-unanswered", "verifier")
+
+        assertEquals(2, calls)
+        assertEquals("access-retried", tokens.accessToken)
+        assertTrue(trace.snapshot().contains(GatewaySignInStep.ExchangeRetrying.toString()))
+    }
+
+    @Test
+    fun `an exchange the Gateway never answers twice gives up rather than looping`() = runTest {
+        var calls = 0
+        val http = OkHttpClient.Builder().addInterceptor { _ ->
+            calls += 1
+            throw java.net.SocketTimeoutException("timeout")
+        }.build()
+
+        val failure = runCatching {
+            OkHttpGatewayNativeAuthApi(http).exchange("https://gateway.example/hermes", "code", "verifier")
+        }.exceptionOrNull()
+
+        assertEquals("exactly one retry, never a loop", 2, calls)
+        assertTrue(failure is GatewayUnansweredException)
     }
 
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
