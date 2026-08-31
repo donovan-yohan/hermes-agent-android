@@ -3,11 +3,15 @@ package com.hermesagent.mobile.data.gateway
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.MainActivity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -123,27 +127,86 @@ class GatewaySignInBrowserTest {
         assertTrue(resumed.flags and Intent.FLAG_ACTIVITY_REORDER_TO_FRONT != 0)
     }
 
+    @Test
+    fun `every platform call is made from the main thread`() = runBlocking {
+        val platform = RecordingPlatform(provider = BROWSER_PACKAGE)
+        val browser = GatewaySignInBrowser(context, MainActivity::class.java, platform)
+
+        browser.bindForSignIn()
+        browser.open(AUTHORIZE_URL)
+        browser.returnToApp()
+
+        // Resolve the provider, bind it, launch the tab, come back: four calls,
+        // and the sign-in that makes them runs on IO.
+        assertEquals(4, platform.loopers.size)
+        assertTrue(platform.loopers.all { it === Looper.getMainLooper() })
+    }
+
+    /**
+     * The gate above is only worth having if it can fail, and a test that runs
+     * on the main thread anyway would pass whether or not the hop exists.
+     */
+    @Test
+    fun `the main-thread gate has teeth`() = runBlocking {
+        val platform = RecordingPlatform(provider = BROWSER_PACKAGE, requireMainThread = false)
+        val offMain = GatewaySignInBrowser(
+            context,
+            MainActivity::class.java,
+            platform,
+            platformContext = Dispatchers.IO,
+        )
+
+        offMain.open(AUTHORIZE_URL)
+
+        assertNotSame(Looper.getMainLooper(), platform.loopers.single())
+    }
+
     private class RecordingPlatform(
         private val provider: String?,
         private val refusePackaged: Boolean = false,
         private val refuseAll: Boolean = false,
         /** The provider exists but will not let this app bind its service. */
         private val refuseBind: Boolean = false,
+        /** Off only for the test that proves the main-thread gate can fail. */
+        private val requireMainThread: Boolean = true,
     ) : SignInBrowserPlatform {
         val started = mutableListOf<Intent>()
         val bound = mutableListOf<String>()
+        val loopers = mutableListOf<Looper?>()
         var unbinds = 0
             private set
 
-        override fun customTabsProvider(): String? = provider
+        /**
+         * `bindService` and `startActivity` must reach the platform on the main
+         * thread — see [AndroidSignInBrowserPlatform]. Asserting it here means
+         * every test in this class gates it, so a future hop back onto the
+         * process-scoped IO thread fails in Robolectric instead of on a phone.
+         */
+        private fun observeThread() {
+            loopers += Looper.myLooper()
+            if (requireMainThread) {
+                assertSame(
+                    "platform calls must be made from the main thread",
+                    Looper.getMainLooper(),
+                    Looper.myLooper(),
+                )
+            }
+        }
+
+        override fun customTabsProvider(): String? {
+            observeThread()
+            return provider
+        }
 
         override fun bindCustomTabs(packageName: String): CustomTabsBinding? {
+            observeThread()
             bound += packageName
             if (refuseBind) return null
             return CustomTabsBinding(packageName) { unbinds += 1 }
         }
 
         override fun startActivity(intent: Intent) {
+            observeThread()
             started += intent
             if (refuseAll || (refusePackaged && intent.`package` != null)) {
                 throw ActivityNotFoundException("no activity for ${intent.action}")

@@ -173,9 +173,15 @@ internal class GatewaySignInBrowser(
 }
 
 /**
- * The real platform. Deliberately not on the main thread: these are `Context`
- * calls, not view calls, and the sign-in flow is process-scoped rather than
- * bound to any Activity's thread.
+ * The real platform.
+ *
+ * Every method here is called on the main thread, and callers must keep it that
+ * way — [GatewaySignInBrowser.platformContext] is what guarantees it. `bindService`
+ * and `startActivity` are the two calls this class exists to make, and the shape
+ * proven on a device makes both from the main thread; moving them onto the
+ * process-scoped IO thread is an unforced change to the one part of the sign-in
+ * that was known to work, and #114 was spent failing to localize the result.
+ * Nothing here may be "optimised" back onto an arbitrary thread.
  */
 internal class AndroidSignInBrowserPlatform(
     private val context: Context,

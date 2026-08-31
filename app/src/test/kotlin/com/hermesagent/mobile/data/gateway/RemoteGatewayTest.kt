@@ -676,7 +676,7 @@ class RemoteGatewayTest {
         assertNull(api.exchangedCode)
         // And the one line a device run needs: the step, and the type that broke it.
         assertEquals(
-            listOf("${GatewaySignInStep.SignInStartFailed} (BindException)"),
+            listOf("${GatewaySignInStep.SignInStartFailed} (java.net.BindException)"),
             trace.snapshot(),
         )
     }
@@ -707,7 +707,7 @@ class RemoteGatewayTest {
             listOf(
                 GatewaySignInStep.ListenerBound.toString(),
                 GatewaySignInStep.BrowserUnbound.toString(),
-                "${GatewaySignInStep.BrowserLaunchFailed} (IllegalStateException)",
+                "${GatewaySignInStep.BrowserLaunchFailed} (java.lang.IllegalStateException)",
             ),
             trace.snapshot(),
         )
@@ -745,7 +745,7 @@ class RemoteGatewayTest {
         assertEquals("the sign-in completes unprotected rather than not at all", VALID_TOKENS, tokens)
         assertEquals("code-unbound", api.exchangedCode)
         val steps = trace.snapshot()
-        assertTrue(steps.contains("${GatewaySignInStep.BrowserBindFailed} (SecurityException)"))
+        assertTrue(steps.contains("${GatewaySignInStep.BrowserBindFailed} (java.lang.SecurityException)"))
         assertTrue(steps.contains(GatewaySignInStep.BrowserUnbound.toString()))
         assertTrue(steps.contains(GatewaySignInStep.CallbackAccepted.toString()))
     }
@@ -830,7 +830,9 @@ class RemoteGatewayTest {
             override fun step(step: GatewaySignInStep) = record(step)
 
             override fun failed(step: GatewaySignInStep, cause: Throwable) =
-                record("$step (${cause.javaClass.simpleName})")
+                // The shipped breadcrumb logs the qualified name
+                // (`AndroidGatewaySignInLog.failed`); assert what ships.
+                record("$step (${cause.javaClass.name})")
         }
 
         @Synchronized
