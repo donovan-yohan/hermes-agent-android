@@ -79,6 +79,19 @@ object NotificationCopy {
     const val SIGN_IN_BODY = "Keeping the connection open until your browser comes back."
 
     /**
+     * Android-only turn-protection foreground service notification strings.
+     * Kept alive while a turn is running or waiting for input.
+     */
+    const val TURN_PROTECTION_CHANNEL_NAME = "Active turn"
+
+    const val TURN_PROTECTION_CHANNEL_DESCRIPTION =
+        "Shown while Hermes is working on a turn or waiting for input."
+
+    const val TURN_PROTECTION_TITLE = "Hermes is working"
+
+    const val TURN_PROTECTION_BODY = "Keeping the connection open until your turn finishes."
+
+    /**
      * Android-only, shown before the system permission dialog. Desktop asks
      * nothing — Electron notifications need no runtime grant — so this reuses
      * the settings panel's own vocabulary (`en.ts:431`, `en.ts:434`) rather
