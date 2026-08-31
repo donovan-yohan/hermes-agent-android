@@ -52,6 +52,49 @@ internal class CustomTabsBinding(
     }
 }
 
+/**
+ * Where a sign-in was started, so finishing it in the browser finishes where
+ * the person was.
+ *
+ * A sign-in is the one journey in this app that leaves it: the person is handed
+ * to a browser and comes back through a fresh Intent, which by itself resumes
+ * whatever surface was last on screen — the Gateways pane, even when the whole
+ * reason they were there was a session they could not reach. Desktop has no
+ * equivalent to port; its native sign-in returns into the same window it left.
+ *
+ * Deliberately two values and not a destination. This says where the journey
+ * began; what that means for navigation belongs to the shell that owns the
+ * destinations (`MainActivity`, `HermesApp`), and a data layer that named a
+ * screen would be deciding it.
+ */
+enum class SignInOrigin {
+    /** The Gateways pane itself: the person is already where the result shows. */
+    Gateways,
+
+    /** The sessions surface — the drawer, its switcher, or a failure raised there. */
+    Sessions,
+}
+
+/**
+ * The origin on a hand-back Intent. Namespaced, because this app's own
+ * Activity is the only thing meant to read it.
+ */
+internal const val EXTRA_SIGN_IN_ORIGIN = "com.hermesagent.mobile.extra.SIGN_IN_ORIGIN"
+
+/**
+ * What an incoming Intent says about where its sign-in started, or null when it
+ * says nothing.
+ *
+ * By enum *name*, and an unrecognised name is null rather than a guess: this
+ * value only ever asks for navigation, so the safe reading of "I do not know
+ * this" is the behaviour an unstamped hand-back already has — come forward,
+ * change nothing.
+ */
+internal fun signInOriginFrom(intent: Intent?): SignInOrigin? {
+    val named = intent?.getStringExtra(EXTRA_SIGN_IN_ORIGIN) ?: return null
+    return SignInOrigin.entries.firstOrNull { it.name == named }
+}
+
 /** Everything the sign-in hand-off asks of the platform, in one injectable seam. */
 internal interface SignInBrowserPlatform {
     /** The package of a browser that serves Custom Tabs, or null when none does. */
@@ -144,6 +187,23 @@ internal class GatewaySignInBrowser(
     }
 
     /**
+     * The same launcher, carrying where this sign-in started.
+     *
+     * A delegate rather than a second [GatewaySignInBrowser]: the warmed
+     * Custom Tabs binding is per instance, and a copy would bind its own and
+     * leave the process one binding richer than it can close. Only the
+     * hand-back differs, and only in what its Intent says.
+     */
+    fun startedFrom(origin: SignInOrigin): GatewayBrowserLauncher {
+        val opener = this
+        return object : GatewayBrowserLauncher by opener {
+            override suspend fun returnToApp() {
+                withContext(platformContext) { platform.startActivity(returnIntent(origin)) }
+            }
+        }
+    }
+
+    /**
      * A Custom Tab into the warmed provider when there is one, and a plain
      * `ACTION_VIEW` when there is not — a device with no Custom Tabs provider
      * still signs in, it just has no protection against the freezer.
@@ -173,12 +233,23 @@ internal class GatewaySignInBrowser(
      * task instead of creating one, `SINGLE_TOP` keeps the instance that is
      * already there, and `REORDER_TO_FRONT` brings that task forward from the
      * browser.
+     *
+     * [origin] is what turns "come forward" into "come back to where you
+     * started" — read by `MainActivity` and consumed there, so a later
+     * Activity recreate does not re-navigate a journey the person has already
+     * finished.
      */
-    internal fun returnIntent(): Intent = Intent(context, mainActivity).addFlags(
-        Intent.FLAG_ACTIVITY_NEW_TASK or
-            Intent.FLAG_ACTIVITY_SINGLE_TOP or
-            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
-    )
+    internal fun returnIntent(origin: SignInOrigin? = null): Intent =
+        Intent(context, mainActivity)
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+            )
+            // Null is a launcher nobody told where the person started: it comes
+            // forward and changes nothing, which is what this Intent did before
+            // it could carry an origin at all.
+            .apply { origin?.let { putExtra(EXTRA_SIGN_IN_ORIGIN, it.name) } }
 
     private fun viewIntent(target: Uri): Intent =
         Intent(Intent.ACTION_VIEW, target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -39,6 +39,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -389,6 +390,123 @@ class GatewaySettingsViewModelTest {
             )
             assertEquals(GatewayConnectionMode.Ssh, subject.uiState.value.mode)
         }
+
+    /**
+     * S-U5 (#116). The same switch window as the two above, at the pane's most
+     * expensive control.
+     *
+     * A dropped keystroke costs a character. A sign-in composed against the row
+     * this app has already left opens a browser at the previous Gateway and, if
+     * the person completes it, mints a credential for it — so the tap carries
+     * the row it was composed against and the store, which is the only thing
+     * that knows which row is active now, is what answers.
+     *
+     * The second half is the teeth: the guard has to be a stamp check and not a
+     * refusal to connect, so the same tap once the pane has caught up signs in.
+     */
+    @Test
+    fun `a sign-in racing a switch is dropped rather than opening a browser at the row it left`() =
+        runTest(dispatcher) {
+            val store = twoRows()
+            val gateway = RecordingGateway(processScope())
+            val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+            var browsersOpened = 0
+
+            // The marker moves, and this pane has not been told yet: the tap is
+            // composed against Alpha while Beta is the connection this app is on.
+            store.switchTo("row-beta")
+            subject.connectRemote { browsersOpened += 1 }
+            advanceUntilIdle()
+
+            assertTrue(
+                "no sign-in was started, so nothing could reach the Gateway it left",
+                gateway.remoteDials.isEmpty(),
+            )
+            assertEquals("and no browser was opened at all", 0, browsersOpened)
+            assertEquals(
+                "a drop the person can see, since nothing was dialled for the connection state to report",
+                SIGN_IN_CONNECTION_CHANGED,
+                subject.uiState.value.signInNotice,
+            )
+            assertEquals(
+                "the pane is showing the row it landed on, which is what the notice points at",
+                "https://beta.test",
+                subject.uiState.value.remote.baseUrl,
+            )
+
+            subject.connectRemote { browsersOpened += 1 }
+            advanceUntilIdle()
+
+            assertEquals(
+                "the same tap, once the pane has caught up, signs in to the row on screen",
+                listOf("https://beta.test"),
+                gateway.remoteDials.map { it.baseUrl },
+            )
+            assertNull("and the notice goes with the act that answered it", subject.uiState.value.signInNotice)
+        }
+
+    /**
+     * The notice is a transient about a tap, not a property of the pane, so it
+     * has to die of something. Two things answer it, and both are the ordinary
+     * end of the story it tells.
+     *
+     * This one is the shape review caught (#116 P2): the switch that raced the
+     * tap goes on to dial, and a destructive "then sign in and connect" would
+     * otherwise sit directly above `Disconnect` on a live connection — and this
+     * ViewModel is Activity-scoped, so it would survive leaving the pane and
+     * coming back.
+     */
+    @Test
+    fun `the drop notice goes when the connection it warned about comes up`() = runTest(dispatcher) {
+        val store = twoRows()
+        val gateway = RecordingGateway(processScope())
+        val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        store.switchTo("row-beta")
+        subject.connectRemote { }
+        advanceUntilIdle()
+        assertEquals(SIGN_IN_CONNECTION_CHANGED, subject.uiState.value.signInNotice)
+
+        // The switch that raced the tap finishes its own dial.
+        gateway.publish(GatewayConnectionStatus.Connected)
+        advanceUntilIdle()
+
+        assertNull(
+            "a live connection contradicts a line saying nothing was signed into",
+            subject.uiState.value.signInNotice,
+        )
+    }
+
+    /**
+     * And the other end: the notice says "the Gateway shown here", so it cannot
+     * outlive the row it is pointing at.
+     */
+    @Test
+    fun `the drop notice belongs to the row it was raised on`() = runTest(dispatcher) {
+        val store = twoRows()
+        val gateway = RecordingGateway(processScope())
+        val subject = GatewaySettingsViewModel(store, gateway) { gateway.disconnect() }
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        store.switchTo("row-beta")
+        subject.connectRemote { }
+        advanceUntilIdle()
+        assertEquals(SIGN_IN_CONNECTION_CHANGED, subject.uiState.value.signInNotice)
+
+        store.switchTo("row-alpha")
+        advanceUntilIdle()
+
+        assertNull(
+            "the pane is pointing somewhere else now, so the line pointing at it goes",
+            subject.uiState.value.signInNotice,
+        )
+        assertEquals("https://alpha.test", subject.uiState.value.remote.baseUrl)
+    }
 
     private fun oneRow(
         kind: ConnectionKind,

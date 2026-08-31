@@ -19,7 +19,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.hermesagent.mobile.data.gateway.EXTRA_SIGN_IN_ORIGIN
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.SignInOrigin
+import com.hermesagent.mobile.data.gateway.signInOriginFrom
 import com.hermesagent.mobile.data.notifications.ACTION_OPEN_SESSION
 import com.hermesagent.mobile.data.notifications.ANDROID_TIRAMISU
 import com.hermesagent.mobile.data.notifications.EXTRA_DURABLE_SESSION_ID
@@ -34,12 +37,14 @@ import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
+import com.hermesagent.mobile.ui.HermesNavigationAsk
 import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.common.NotificationPermissionPrompt
 import com.hermesagent.mobile.ui.gateway.ConnectionsViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
+import com.hermesagent.mobile.ui.handBackDestination
 import com.hermesagent.mobile.ui.relay.RelayChannelReader
 import com.hermesagent.mobile.data.relay.RelayMessageFormat
 import com.hermesagent.mobile.ui.relay.RelayPoster
@@ -140,6 +145,31 @@ class MainActivity : ComponentActivity() {
     private var pendingPickerToken: Long? = null
 
     /**
+     * Which surface the next sign-in would be starting from, reported by the
+     * shell as the person moves through it ([HermesApp]).
+     *
+     * Read at the tap and baked into the launcher handed over there, because
+     * the sign-in outlives this Activity: by the time the browser hands back,
+     * this field may belong to a second instance that was rebuilt behind it.
+     *
+     * Deliberately *not* in [onSaveInstanceState], unlike
+     * [notificationRationaleDismissed]. This is a mirror, not an owner: the
+     * composition holds the saved copy and reports it on first composition, and
+     * the only thing that reads this field is a tap on a composed screen. There
+     * is no moment where it can be read before the value that fills it has
+     * arrived, and a second saved copy would be a second lifecycle to keep in
+     * step with the first.
+     */
+    private var signInOrigin = SignInOrigin.Gateways
+
+    /**
+     * The hand-back's ask to go back where the journey started, and a counter
+     * so a second one is a second ask ([HermesNavigationAsk]).
+     */
+    private var navigationAsk by mutableStateOf<HermesNavigationAsk?>(null)
+    private var navigationAsks = 0L
+
+    /**
      * Shown once, when a live Gateway first makes the grant worth anything.
      * The result is deliberately ignored: Android refuses a second request
      * after two refusals, so re-asking would be a dialog that does nothing.
@@ -207,6 +237,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         notificationRationaleDismissed = savedInstanceState?.getBoolean(STATE_RATIONALE_DISMISSED) == true
         openSessionFromIntent(intent)
+        returnFromSignIn(intent)
         followVisibleSession()
         followNotificationPermissionNeed()
         // Attachment grants are read on IO; only bytes enter the ViewModel.
@@ -377,7 +408,9 @@ class MainActivity : ComponentActivity() {
                     onProviderChange = gatewaySettingsViewModel::setProvider,
                     // Process-scoped: the sign-in it starts outlives this Activity, so the
                     // launcher must not hold it.
-                    onConnectRemote = { gatewaySettingsViewModel.connectRemote(app.signInBrowser) },
+                    onConnectRemote = {
+                        gatewaySettingsViewModel.connectRemote(app.signInBrowser.startedFrom(signInOrigin))
+                    },
                     onConnectLocal = gatewaySettingsViewModel::connectLocal,
                     onDisconnect = gatewaySettingsViewModel::disconnect,
                     onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
@@ -386,6 +419,8 @@ class MainActivity : ComponentActivity() {
                 relayActions = relayActions,
                 connectionsState = connectionsState,
                 connectionsActions = connectionsActions,
+                navigationAsk = navigationAsk,
+                onSignInOriginChange = { signInOrigin = it },
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,
                     onRemoteProfileChange = sshViewModel::setRemoteHermesProfile,
@@ -441,17 +476,40 @@ class MainActivity : ComponentActivity() {
      * recreate does not re-navigate away from wherever the user has since gone.
      *
      * The sign-in hand-back also arrives here, because it resumes this instance
-     * rather than starting a second one ([GatewaySignInBrowser.returnIntent]).
-     * It carries no action and no extras and is therefore ignored below, which
-     * is the whole intent: come forward, change nothing. [setIntent] is what
-     * keeps that true — without it `getIntent()` would still answer the
-     * notification intent that launched this Activity, and the next thing to
-     * read it would act on a navigation the person already consumed.
+     * rather than starting a second one (`GatewaySignInBrowser.returnIntent`).
+     * It carries no action, and one optional extra: where the sign-in started.
+     * Without that extra — every hand-back before #116, and every one from the
+     * Gateways pane — it is still ignored below, which was the whole intent:
+     * come forward, change nothing. [setIntent] is what keeps that true —
+     * without it `getIntent()` would still answer the notification intent that
+     * launched this Activity, and the next thing to read it would act on a
+     * navigation the person already consumed.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         openSessionFromIntent(intent)
+        returnFromSignIn(intent)
+    }
+
+    /**
+     * A sign-in that started in the sessions drawer finishes there.
+     *
+     * The hand-back Intent is the only thing that survives the round trip with
+     * that knowledge — the person may have been in a browser for minutes, and
+     * this Activity may have been destroyed and rebuilt behind them — so the
+     * origin travels on it (`GatewaySignInBrowser.returnIntent`). A hand-back
+     * that says Gateways, or says nothing, keeps what it has always done: come
+     * forward, change nothing.
+     *
+     * The extra is consumed for the same reason the notification one is: an
+     * Activity recreate must not re-navigate a journey already finished.
+     */
+    private fun returnFromSignIn(intent: Intent?) {
+        val destination = handBackDestination(signInOriginFrom(intent)) ?: return
+        intent?.removeExtra(EXTRA_SIGN_IN_ORIGIN)
+        navigationAsks += 1
+        navigationAsk = HermesNavigationAsk(destination, navigationAsks)
     }
 
     private fun openSessionFromIntent(intent: Intent?) {

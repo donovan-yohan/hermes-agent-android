@@ -10,6 +10,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -19,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -912,6 +915,93 @@ class RemoteGatewayTest {
         // "stored" is irreversible work on a deadline; what follows is a
         // courtesy that is allowed to fail.
         assertEquals(listOf("exchanged", "stored", "came forward"), order.snapshot())
+    }
+
+    /**
+     * S-U7 (#116). The last shape of the post-persist swallow: a launcher that
+     * raises a `CancellationException` of its own — a bound it set itself, a
+     * platform call that reports abandonment that way — while this sign-in's
+     * job is perfectly alive.
+     *
+     * Caught on the type alone, that discarded a sign-in that was already spent
+     * and on disk and reported "cancelled" for something that had finished. The
+     * tokens are the evidence it finished; the breadcrumb is what says the
+     * return did not.
+     */
+    @Test
+    fun `a post-persist cancellation this sign-in never asked for still finishes it`() = runTest {
+        val trace = SignInTrace()
+        val store = MemoryTokenStore(null)
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = store,
+            login = GatewayNativeLogin { _, _ -> VALID_TOKENS },
+            nowSeconds = { 1_000L },
+            log = trace.asLog(),
+        )
+
+        val ticket = authenticator.ticket(
+            PROFILE,
+            object : GatewayBrowserLauncher {
+                override suspend fun open(url: String) = Unit
+
+                override suspend fun returnToApp(): Unit =
+                    throw CancellationException("the launcher gave up on coming forward")
+            },
+        )
+
+        assertEquals("the connection still comes up", "ticket-1", ticket)
+        assertEquals("and the sign-in is on disk", VALID_TOKENS, store.tokens)
+        assertEquals(
+            listOf(
+                GatewaySignInStep.TokensStored.toString(),
+                "${GatewaySignInStep.ReturnBlocked} (java.util.concurrent.CancellationException)",
+            ),
+            trace.snapshot(),
+        )
+    }
+
+    /**
+     * And the teeth for it: a cancellation of *this* coroutine is still a
+     * cancellation. Structured concurrency requires it to propagate, and the
+     * guard above would be worthless if it did not — a sign-in that swallowed
+     * its own abandonment would keep running behind a screen that let it go.
+     *
+     * The tokens are still on disk, which is the point of the ordering: the
+     * next connect spends no browser round trip.
+     */
+    @Test
+    fun `a cancellation of the sign-in itself is not mistaken for a blocked return`() = runTest {
+        val trace = SignInTrace()
+        val store = MemoryTokenStore(null)
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = store,
+            login = GatewayNativeLogin { _, _ -> VALID_TOKENS },
+            nowSeconds = { 1_000L },
+            log = trace.asLog(),
+        )
+
+        val outcome = runCatching {
+            withTimeout(1_000L) {
+                authenticator.ticket(
+                    PROFILE,
+                    object : GatewayBrowserLauncher {
+                        override suspend fun open(url: String) = Unit
+
+                        // Suspended in the return when the whole attempt is cut.
+                        override suspend fun returnToApp() = awaitCancellation()
+                    },
+                )
+            }
+        }
+
+        assertTrue(
+            "the abandonment propagates rather than being logged as a blocked return",
+            outcome.exceptionOrNull() is TimeoutCancellationException,
+        )
+        assertEquals("what was already spent is still stored", VALID_TOKENS, store.tokens)
+        assertEquals(listOf(GatewaySignInStep.TokensStored.toString()), trace.snapshot())
     }
 
     /**

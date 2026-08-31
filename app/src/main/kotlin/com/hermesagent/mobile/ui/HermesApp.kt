@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.gateway.SignInOrigin
 import com.hermesagent.mobile.ui.appearance.AppearanceScreen
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
@@ -49,6 +51,33 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  */
 enum class HermesDestination { Chat, Settings, Appearance, Gateways, Relay, Profiles }
 
+/**
+ * A navigation ask from outside the composition — today, a sign-in coming back
+ * from the browser into the surface it was started from.
+ *
+ * [token] is what makes two identical asks two asks. Without it a second
+ * hand-back to a destination the person has since navigated away from would be
+ * the same value as the first and change nothing, which is the failure this
+ * exists to fix rather than a smaller version of it.
+ */
+data class HermesNavigationAsk(val destination: HermesDestination, val token: Long)
+
+/**
+ * What a finished sign-in asks the shell for, or null when it asks for nothing.
+ *
+ * The whole navigation rule of the hand-back, in one place that can be read and
+ * failed. A sign-in started in the sessions drawer is a journey towards a
+ * session, so finishing it belongs at [HermesDestination.Chat]; one started on
+ * the Gateways pane already ends where its result is shown, and an unstamped
+ * hand-back is every build before this one — both keep "come forward, change
+ * nothing", which is the behaviour a person who navigated somewhere else in the
+ * meantime expects.
+ */
+internal fun handBackDestination(origin: SignInOrigin?): HermesDestination? = when (origin) {
+    SignInOrigin.Sessions -> HermesDestination.Chat
+    SignInOrigin.Gateways, null -> null
+}
+
 @Composable
 fun HermesApp(
     chatState: ChatUiState,
@@ -63,13 +92,44 @@ fun HermesApp(
     relayActions: RelayActions,
     connectionsState: ConnectionsUiState = ConnectionsUiState(),
     connectionsActions: ConnectionsActions = ConnectionsActions(),
+    /** Honoured once per [HermesNavigationAsk.token]; see that type. */
+    navigationAsk: HermesNavigationAsk? = null,
+    /**
+     * Told which surface a sign-in started from, because the launcher that has
+     * to stamp that on its hand-back Intent is wired outside this composition
+     * and the entry points are inside it.
+     */
+    onSignInOriginChange: (SignInOrigin) -> Unit = {},
 ) {
     var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
 
+    /**
+     * Where a sign-in started, which is where the Gateways pane was entered
+     * from: reaching it from the sessions drawer is a sessions journey that
+     * happens to pass through settings, and a person who finishes signing in
+     * belongs back at the sessions they were trying to reach. Reaching it
+     * through Settings is not, and keeps the behaviour it has.
+     *
+     * Saved, because the browser round trip is exactly when Android is free to
+     * destroy this Activity: a rebuilt shell that forgot would send the next
+     * sign-in back to the wrong place.
+     */
+    var signInOrigin by rememberSaveable { mutableStateOf(SignInOrigin.Gateways) }
+    LaunchedEffect(signInOrigin) { onSignInOriginChange(signInOrigin) }
+    LaunchedEffect(navigationAsk) { navigationAsk?.let { destination = it.destination } }
+
     val onBack = { destination = destination.backDestination() }
     // Four surfaces name this one destination: the sidebar's "Manage gateways…",
-    // Settings, Relay, and the chat chrome's connection line.
-    val onOpenGateways = { destination = HermesDestination.Gateways }
+    // Settings, Relay, and the chat chrome's connection line. They divide by
+    // *journey*, not by destination: the two that leave from the sessions
+    // surface are a person heading for a session, and a sign-in they lead to
+    // finishes there rather than on the pane it passed through.
+    val openGateways = { origin: SignInOrigin ->
+        signInOrigin = origin
+        destination = HermesDestination.Gateways
+    }
+    val onOpenGateways = { openGateways(SignInOrigin.Gateways) }
+    val onOpenGatewaysFromSessions = { openGateways(SignInOrigin.Sessions) }
     BackHandler(enabled = destination != HermesDestination.Chat) {
         onBack()
     }
@@ -84,13 +144,16 @@ fun HermesApp(
                 // The chat chrome's connection line is the failure site; this
                 // is the same destination its sidebar's "Manage gateways…"
                 // reaches, so both routes out of a broken connection land in
-                // one place rather than two.
-                onOpenGateways = onOpenGateways,
+                // one place rather than two. Both leave from sessions, so both
+                // mark the journey as one: this is the owner's Scenario A —
+                // a drawer switch to a signed-out gateway, and the sign-in it
+                // leads to belongs back here.
+                onOpenGateways = onOpenGatewaysFromSessions,
                 sidebarHeader = {
                     ConnectionSwitcherBar(
                         state = connectionsState,
                         actions = connectionsActions,
-                        onManage = onOpenGateways,
+                        onManage = onOpenGatewaysFromSessions,
                     )
                 },
             )

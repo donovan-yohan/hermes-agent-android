@@ -133,6 +133,74 @@ class GatewaySignInBrowserTest {
         assertTrue(resumed.flags and Intent.FLAG_ACTIVITY_REORDER_TO_FRONT != 0)
     }
 
+    /**
+     * S-U6 (#116). A sign-in started in the sessions drawer is a journey
+     * towards a session; the hand-back is the only thing that crosses the
+     * browser round trip, so what it carries is where the person started.
+     *
+     * The origin travels by enum *name*, and the Activity that reads it is the
+     * one that decides what it means — this half is only that the value
+     * survives the Intent intact.
+     */
+    @Test
+    fun `a sign-in started in sessions hands back an intent that says so`() = runBlocking {
+        val platform = RecordingPlatform(provider = null)
+        val browser = GatewaySignInBrowser(context, MainActivity::class.java, platform)
+
+        browser.startedFrom(SignInOrigin.Sessions).returnToApp()
+
+        val resumed = platform.started.single()
+        assertEquals(MainActivity::class.java.name, resumed.component?.className)
+        // Still the instance the person left, brought forward — the origin adds
+        // to that Intent rather than replacing what makes it work.
+        assertTrue(resumed.flags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
+        assertTrue(resumed.flags and Intent.FLAG_ACTIVITY_REORDER_TO_FRONT != 0)
+        assertEquals(SignInOrigin.Sessions, signInOriginFrom(resumed))
+    }
+
+    @Test
+    fun `a hand-back with no origin, or one this build does not know, asks for nothing`() = runBlocking {
+        val platform = RecordingPlatform(provider = null)
+        val browser = GatewaySignInBrowser(context, MainActivity::class.java, platform)
+
+        // The unaimed launcher: what every hand-back was before it could carry
+        // an origin at all.
+        browser.returnToApp()
+
+        assertNull("an unstamped hand-back comes forward and changes nothing", signInOriginFrom(platform.started.single()))
+        assertNull(signInOriginFrom(null))
+        assertNull(
+            "a name from some other build is not a destination to guess at",
+            signInOriginFrom(Intent().putExtra(EXTRA_SIGN_IN_ORIGIN, "Somewhere")),
+        )
+        assertEquals(
+            "and a Gateways journey says so rather than saying nothing",
+            SignInOrigin.Gateways,
+            signInOriginFrom(browser.returnIntent(SignInOrigin.Gateways)),
+        )
+    }
+
+    /**
+     * The aimed launcher is a delegate, not a second browser. If it were a copy
+     * it would hold its own Custom Tabs binding — the tab below would launch
+     * unwarmed, and the binding this app took would have no handle to give
+     * back.
+     */
+    @Test
+    fun `the launcher that carries an origin is the same launcher, binding and all`() = runBlocking {
+        val platform = RecordingPlatform(provider = BROWSER_PACKAGE)
+        val browser = GatewaySignInBrowser(context, MainActivity::class.java, platform)
+        val aimed = browser.startedFrom(SignInOrigin.Sessions)
+
+        val binding = aimed.bindForSignIn()
+        aimed.open(AUTHORIZE_URL)
+
+        assertEquals(listOf(BROWSER_PACKAGE), platform.bound)
+        assertEquals("the tab goes to the provider this launcher warmed", BROWSER_PACKAGE, platform.started.single().`package`)
+        binding?.close()
+        assertEquals(1, platform.unbinds)
+    }
+
     @Test
     fun `every platform call is made from the main thread`() = runBlocking {
         val platform = RecordingPlatform(provider = BROWSER_PACKAGE)
