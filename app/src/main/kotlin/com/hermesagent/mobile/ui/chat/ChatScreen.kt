@@ -94,7 +94,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Chat is the home surface (`apps/desktop/DESIGN.md:48-49` @ `f82f2dba`).
+ * Chat is the home surface (`apps/desktop/DESIGN.md:48-49` @ `936b970e`).
  *
  * Two layouts, one content:
  * - **compact** (< 720dp wide): top bar + transcript + composer, with sessions

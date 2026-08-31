@@ -56,7 +56,7 @@ internal const val PROFILE_ROSTER_TAG = "Profile roster"
  * The profiles roster: Desktop's manage overlay, read-only.
  *
  * Port of `apps/desktop/src/app/profiles/index.tsx:105-268` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`, whose `Panel*` grammar maps onto
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, whose `Panel*` grammar maps onto
  * this app's `SectionLabel`/`SearchField`/`EmptyState` primitives. Desktop's own
  * panel stacks the list above the detail once the card narrows
  * (`app/overlays/panel.tsx:88-98,126-128`), which is the phone shape, so the

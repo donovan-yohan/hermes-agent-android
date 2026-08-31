@@ -187,7 +187,7 @@ data class BackgroundPendingInput(
  *
  * `projects.tree` and `projects.project_sessions` take no `profile` and resolve
  * through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`), so the catalog is always one
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`), so the catalog is always one
  * profile's. Desktop never has to say so: its backend is per profile.
  */
 enum class ProjectProfileScope {

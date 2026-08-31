@@ -22,7 +22,7 @@ Use another route instead when:
 > **Support tier.** Upstream maintains Android/Termux on a best-effort basis:
 > "Termux (Android) is a Tier 2 platform … Commits to `main` may break these
 > packages at any point in time"
-> (`website/docs/getting-started/termux.md:9-11` @ `f82f2db`). Android may also
+> (`website/docs/getting-started/termux.md:9-11` @ `936b970`). Android may also
 > suspend Termux background jobs, so a phone-hosted Gateway is a workstation you
 > tend, not a service.
 
@@ -126,7 +126,7 @@ pkg update
 ## 2. Install Hermes in Termux
 
 Upstream documents two tested Android bundles, `.[termux]` and
-`.[termux-all]` (`website/docs/getting-started/termux.md:277` @ `f82f2db`).
+`.[termux-all]` (`website/docs/getting-started/termux.md:277` @ `936b970`).
 The steps below install the smaller `.[termux]` one along upstream's explicit
 manual path (`termux.md:103-162`); the one-line installer in the note below
 tries `.[termux-all]` first and falls back to it (`termux.md:93`).
@@ -166,7 +166,7 @@ Three of those lines are deviations from upstream's manual path, and each one is
 a build that fails without it:
 
 - **`python3.11`, not `python`.** Termux now ships Python 3.14, and Hermes pins
-  `requires-python = ">=3.11,<3.14"` (`pyproject.toml:15` @ `f82f2db`), so the
+  `requires-python = ">=3.11,<3.14"` (`pyproject.toml:15` @ `936b970`), so the
   default interpreter is refused outright. 3.13 does not work either: PEP 738
   makes `sys.platform` report `android` from 3.13 onwards, and the pinned
   `psutil==7.2.2` (`pyproject.toml:108`) answers that with `platform android is
@@ -213,7 +213,7 @@ install — and without one, connecting works but every turn ends in an error.
 `hermes serve` authenticates every request against a single static token. It
 reads `HERMES_DASHBOARD_SESSION_TOKEN` if the environment supplies one, and
 otherwise mints a fresh random token on **every start**
-(`hermes_cli/web_server.py:499-500` @ `f82f2db`). A token you did not choose
+(`hermes_cli/web_server.py:499-500` @ `936b970`). A token you did not choose
 changes each time you restart the server, and the one saved in the app stops
 working — so set it yourself.
 
@@ -233,7 +233,7 @@ and no host key, and any app on the phone can open a loopback socket without
 asking for a permission, so the token is the only thing standing between them
 and your agent. Treat it like a password — it is compared against the
 `X-Hermes-Session-Token` header (or `Authorization: Bearer`) on every gated
-request (`hermes_cli/web_server.py:567-584` @ `f82f2db`). Do not paste it into
+request (`hermes_cli/web_server.py:567-584` @ `936b970`). Do not paste it into
 a chat, an issue or a screenshot.
 
 ## 4. Start the Gateway
@@ -243,14 +243,14 @@ hermes serve --host 127.0.0.1 --port 9119
 ```
 
 Both values are already the defaults
-(`hermes_cli/subcommands/dashboard.py:26-31` @ `f82f2db`); writing them out
+(`hermes_cli/subcommands/dashboard.py:26-31` @ `936b970`); writing them out
 makes it obvious what the app is dialling. `--host 127.0.0.1` is the part worth
 keeping: it binds the server to this device only, so nothing else on your Wi-Fi
 can reach it.
 
 `serve` is the headless backend — it boots the same JSON-RPC/WebSocket gateway
 as `hermes dashboard` but never opens or serves the web UI
-(`dashboard.py:136-170` @ `f82f2db`). That is what the app wants, and it is also
+(`dashboard.py:136-170` @ `936b970`). That is what the app wants, and it is also
 why the app cannot read the token off a dashboard page: you have to save it.
 
 To see what is running, from any Termux shell:
@@ -294,7 +294,7 @@ Three settings, in the order worth trying:
    system update.
 
 Even with all three, upstream calls gateway persistence on Android
-"best-effort rather than a normal managed service" (`termux.md:43` @ `f82f2db`).
+"best-effort rather than a normal managed service" (`termux.md:43` @ `936b970`).
 Expect to restart `hermes serve` sometimes.
 
 > **Not verified.** This step is the one part of this guide the device pass could
@@ -335,16 +335,16 @@ Two rules worth knowing before you type:
 
 | Symptom | What is happening | Fix |
 |---|---|---|
-| The app says *"Session token was refused. Save the token Hermes is running with, then connect."* | The token the app holds is not the token the running server has — usually because `hermes serve` restarted without `HERMES_DASHBOARD_SESSION_TOKEN` set and minted a new random one (`web_server.py:499-500` @ `f82f2db`). The refusal comes from the WebSocket upgrade, not the readiness check: `/api/health` needs no token at the pinned Hermes (`dashboard_auth/public_paths.py:33-38`), so the socket is where a wrong token is caught. The app does not retry it. | Export the token as in step 3, restart `hermes serve`, then re-save the token on the connection. |
+| The app says *"Session token was refused. Save the token Hermes is running with, then connect."* | The token the app holds is not the token the running server has — usually because `hermes serve` restarted without `HERMES_DASHBOARD_SESSION_TOKEN` set and minted a new random one (`web_server.py:499-500` @ `936b970`). The refusal comes from the WebSocket upgrade, not the readiness check: `/api/health` needs no token at the pinned Hermes (`dashboard_auth/public_paths.py:33-38`), so the socket is where a wrong token is caught. The app does not retry it. | Export the token as in step 3, restart `hermes serve`, then re-save the token on the connection. |
 | The app says *"Hermes is not answering on this device. Start it, then connect."* | Nothing is answering on that port: `hermes serve` exited, or Android suspended or killed it in the background. This is the sentence for both halves of that — pressing **Connect** when the server is not running, and a connection that was live until the server went away — and the app offers **Connect** again rather than retrying by itself, because the only thing that starts that process is you. | Run `hermes serve --status` in Termux. If it lists nothing, start it again, then press **Connect**. A server that dies minutes after you switch apps is the phantom-process killer or battery optimisation, not Hermes — work through step 5. |
-| The app says *"Save this Gateway's session token, then connect."* | The row has no token saved. `hermes serve` is headless and serves no web UI, so there is no page for the app to read one from (`dashboard.py:166-170` @ `f82f2db`). | Edit the connection and paste the token from step 3. |
+| The app says *"Save this Gateway's session token, then connect."* | The row has no token saved. `hermes serve` is headless and serves no web UI, so there is no page for the app to read one from (`dashboard.py:166-170` @ `936b970`). | Edit the connection and paste the token from step 3. |
 | The app connects, but every turn ends with *"That turn failed — Hermes ended this turn unexpectedly. Check the Gateway, then try again."* | The Gateway is running and answering; the turn is what failed. On a fresh Termux install that is usually a missing provider key, so Hermes has no model to run the turn with. | Run `hermes doctor` in Termux. If it reports a missing `~/.hermes/.env` or an unconfigured provider, add the key and run `hermes model`, then restart `hermes serve`. |
-| `hermes serve` exits at startup complaining the address is in use | Another Hermes — or another app — already holds port 9119. | `hermes serve --status` lists running Hermes servers and `hermes serve --stop` stops them (`dashboard.py:75-84` @ `f82f2db`). If something else owns the port, start Hermes on another one (`--port 9130`), then change the address on the saved row and save the token again. |
+| `hermes serve` exits at startup complaining the address is in use | Another Hermes — or another app — already holds port 9119. | `hermes serve --status` lists running Hermes servers and `hermes serve --stop` stops them (`dashboard.py:75-84` @ `936b970`). If something else owns the port, start Hermes on another one (`--port 9130`), then change the address on the saved row and save the token again. |
 
 ## What Termux does not give you
 
 Upstream's tested Android bundle is deliberately narrower than the
-desktop/server install (`termux.md:35-45`, `:272-277` @ `f82f2db`):
+desktop/server install (`termux.md:35-45`, `:272-277` @ `936b970`):
 
 - `.[all]` is not supported on Android;
 - local voice transcription is unavailable — the `voice` extra needs
@@ -359,7 +359,7 @@ automation needs an explicit `agent-browser` install (`termux.md:188-207`).
 ## Sources
 
 Hermes claims above are read from `NousResearch/hermes-agent` at
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`, cited as `path:line`.
+`936b970e281d5d28e930c5698f36bc4ebb54c7ba`, cited as `path:line`.
 
 Android and Termux behaviour is community-documented rather than upstream, and
 is not verified by this repository's gates:

@@ -25,7 +25,7 @@ first and come back here for review.
    export from step 2, not out of `~/.hermes/hermes-agent` — that checkout is
    read-only and its `HEAD` is neither pin. Name the `path:line` of the component, its
    i18n keys, and its tests, each against the SHA you actually read: the UI pin
-   `f82f2db` for structure and copy, the theme ledger's `45fcaaa` for colour
+   `936b970` for structure and copy, the theme ledger's `45fcaaa` for colour
    values, or a per-surface pin where the page declares one (#103). If Desktop
    has no equivalent, say so explicitly — that is a finding, not an absence
    of one.

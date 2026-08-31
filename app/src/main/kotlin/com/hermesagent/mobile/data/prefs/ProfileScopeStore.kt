@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * The active profile scope is UI-only authority that outlives the screen, so it
  * is a saved view preference exactly like the sidebar grouping — Desktop stores
  * its own half in `localStorage` (`apps/desktop/src/store/profile.ts:433-439` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). It is never Gateway truth and
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`). It is never Gateway truth and
  * never project or session authority.
  */
 interface ProfileScopeStore {

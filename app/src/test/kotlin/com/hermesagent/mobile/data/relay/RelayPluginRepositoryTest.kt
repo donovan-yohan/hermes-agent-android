@@ -17,7 +17,7 @@ import org.junit.Test
  * Every wire fixture here is the shape a pinned source actually produces:
  * hermes-plugin-relay @ `563a8c846ab997dc965c20080787f46b4f644b29` for the
  * plugin's own bodies, hermes-agent @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` for the Gateway auth gate's. A
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba` for the Gateway auth gate's. A
  * fixture without a citation is a guess about the wire, and a parser tested
  * against a guess proves nothing — so each one names its `path:line`. The one
  * exception is the nested lane envelope, which is deliberately a shape no
@@ -618,7 +618,7 @@ private fun refusal(statusCode: Int, envelope: String) = GatewayHttpResult.Rejec
 
 /**
  * Verbatim from the Gateway auth gate, hermes-agent @
- * f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+ * 936b970e281d5d28e930c5698f36bc4ebb54c7ba,
  * `hermes_cli/dashboard_auth/middleware.py:144-163` — a bearer that was
  * presented and did not verify (`:356-373`).
  */

@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 /**
  * The registry's kind chooser, rendered
  * (`apps/desktop/src/app/settings/connections-registry.tsx:648-671` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
  *
  * Desktop draws this one as a plain button grid, not as the mode cards above
  * it, and offers all four kinds on create. Kept in its own file so the kind

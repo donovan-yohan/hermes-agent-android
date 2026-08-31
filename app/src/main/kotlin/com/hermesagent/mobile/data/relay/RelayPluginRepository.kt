@@ -413,7 +413,7 @@ private fun parseAvailability(bytes: ByteArray): RelayAvailability {
  *   runtime gate's envelope-less 404 as the only honest "not on this Gateway".
  * - The **Gateway's auth gate** answers `{"error":"session_expired"` or
  *   `"unauthenticated","reason":…}` (hermes-agent @
- *   `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+ *   `936b970e281d5d28e930c5698f36bc4ebb54c7ba`,
  *   `hermes_cli/dashboard_auth/middleware.py:112-163`; a presented bearer that
  *   did not verify takes the `invalid_or_expired_session` branch at
  *   `:356-373`). That is this client's credential, and only it may cost a
@@ -683,7 +683,7 @@ private const val GATE_SESSION_EXPIRED = "session_expired"
  * Gate reasons meaning a credential existed and lapsed, not that none was sent.
  *
  * Only the reasons `_unauth_response` actually puts on the wire belong here:
- * at hermes-agent @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` those are
+ * at hermes-agent @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba` those are
  * `invalid_or_expired_session` (`hermes_cli/dashboard_auth/middleware.py:373`,
  * `:507`) and `no_cookie` (`:202`, `:388`), and only the first means a
  * credential was presented. `refresh_expired` (`:565-572`) is an audit-log

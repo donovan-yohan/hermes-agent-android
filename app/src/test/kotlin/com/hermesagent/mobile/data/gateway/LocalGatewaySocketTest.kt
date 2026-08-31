@@ -30,7 +30,7 @@ import org.robolectric.annotation.Config
  *
  * `/api/health` is on the Gateway's public allowlist at the pin
  * (`hermes_cli/dashboard_auth/public_paths.py:33-38` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`), so a wrong session token passes
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`), so a wrong session token passes
  * it with a 200 exactly as a right one does. `/api/ws` is where the token is
  * actually compared (`web_server.py:15925-15931`), and the handler closes
  * *before* accepting (`:17017-17025`) — which ASGI turns into a failed

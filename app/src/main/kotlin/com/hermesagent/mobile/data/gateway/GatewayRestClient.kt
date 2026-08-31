@@ -27,7 +27,7 @@ internal enum class GatewayRestVerb { GET, PATCH, DELETE }
 /**
  * `archived` on the session list: hide soft-archived sessions, return only
  * them, or return both (hermes-agent @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`,
  * `hermes_cli/web_routers/sessions.py:61,72-75`; the route 400s anything else
  * at `:85-89`).
  */
@@ -96,7 +96,7 @@ sealed interface GatewayRestResult<out T> {
  * fails the whole page rather than rendering a half-truth.
  *
  * Envelope shape: `{"sessions": [...], "total": N, "limit": L, "offset": O}`
- * (`sessions.py:159` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ * (`sessions.py:159` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
  */
 data class GatewaySessionPage(
     val rows: List<JsonObject>,
@@ -570,7 +570,7 @@ private fun messagesResponseBound(limit: Int?): Long =
  *
  * `read_file` returns up to `file_read_max_chars` = 100,000 characters per call
  * (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) — twice `tool_output.max_bytes`,
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`) — twice `tool_output.max_bytes`,
  * the 50,000-char terminal cap this bound used to be derived from. The value is
  * host-configurable (`file_tools.py:63,82`), so it is the number to move when a
  * host raises its cap, and everything below moves with it.

@@ -47,7 +47,7 @@ import org.robolectric.annotation.Config
  * and that the Copy control hands over the output the display had to truncate.
  *
  * Desktop's own renderer is `assistant-ui/tool/fallback.tsx:597-744` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w360dp-h844dp")

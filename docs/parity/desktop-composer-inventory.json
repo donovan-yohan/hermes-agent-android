@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "desktop_repository": "NousResearch/hermes-agent",
-  "desktop_sha": "f82f2dbabd9e66b714f2b4f8a40447fe0c13e732",
+  "desktop_sha": "936b970e281d5d28e930c5698f36bc4ebb54c7ba",
   "purpose": "Offline immutable source/test path and line-count ledger for composer citations. Refresh only from the pinned git object, never from a mutable branch.",
   "path_line_counts": {
     "apps/desktop/e2e/batch-clarify.spec.ts": 86,

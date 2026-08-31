@@ -122,12 +122,12 @@ concurrent multi-controller policy is not claimed.
 implemented, and verified against a real Termux Gateway on an emulator — a live
 turn and physical-device keep-alive are still open
 **Authority:** `NousResearch/hermes-agent` @
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
+`936b970e281d5d28e930c5698f36bc4ebb54c7ba`
 
 ### Context
 
 A person can run Hermes on the phone itself, inside Termux
-(`website/docs/getting-started/termux.md` @ `f82f2db`). That is a host-owned
+(`website/docs/getting-started/termux.md` @ `936b970`). That is a host-owned
 Gateway where the host happens to be this device, so the decision above already
 covers it — but the transport does not look like either existing route, and the
 difference is worth writing down rather than inferring.
@@ -152,7 +152,7 @@ endpoint is a loopback address on this device.
 - **Authentication is the static Hermes session token.** On loopback there is
   no TLS, no OAuth gate and no host key, and the server compares an
   `X-Hermes-Session-Token` header against a value fixed for the life of the
-  process (`hermes_cli/web_server.py:499-504`, `:567-584` @ `f82f2db`). That
+  process (`hermes_cli/web_server.py:499-504`, `:567-584` @ `936b970`). That
   token is therefore the entire boundary between this app and every other app
   on the phone, all of which may bind loopback ports without a permission. It
   is stored in the same Keystore-encrypted per-row slot the Remote route's
@@ -183,9 +183,9 @@ endpoint is a loopback address on this device.
   before Connected — the Managed SSH order minus the parts that belong to an
   app-owned process. The health request carries the token but does not test
   it: `/api/health` is on the Gateway's public allowlist at the pin
-  (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `f82f2db`), so it
+  (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `936b970`), so it
   answers 200 to a wrong token. The upgrade is where the token is checked
-  (`web_server.py:17017-17025` @ `f82f2db`), and its 401/403 is read back as a
+  (`web_server.py:17017-17025` @ `936b970`), and its 401/403 is read back as a
   distinct, non-retryable refusal with its own sentence rather than as a
   generic socket failure — a refused token is a wrong token, and retrying it
   or reading a second credential off the same server would turn "fix this"
@@ -205,7 +205,7 @@ endpoint is a loopback address on this device.
 - Keeping the Gateway alive is Android's problem and the person's, not the
   app's: wake lock, battery exemption and the Android 12+ phantom-process
   killer. Upstream calls Termux gateway persistence best-effort
-  (`termux.md:43` @ `f82f2db`). Setup and troubleshooting live in
+  (`termux.md:43` @ `936b970`). Setup and troubleshooting live in
   [the Termux local Gateway guide](../guides/termux-local-gateway.md).
 - Physical validation is still owed: a Pixel pass with Termux `hermes serve`
   and an app Local connection producing a session list and a live turn.

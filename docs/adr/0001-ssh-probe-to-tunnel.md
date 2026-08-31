@@ -4,7 +4,7 @@
 **Amended:** 2026-08-24 — current per-runtime concurrency contract recorded below
 **Source:** `docs/spikes/native-kotlin-ssh-client-scope.md` §5, §7
 **Authority:** `NousResearch/hermes-agent` @
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`
+`936b970e281d5d28e930c5698f36bc4ebb54c7ba`
 
 ## Context
 
@@ -118,7 +118,7 @@ Readiness is ordered:
 6. correlated `session.list` JSON-RPC round trip.
 
 This ordering ports pinned Desktop's served-token contract at
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`,
+`936b970e281d5d28e930c5698f36bc4ebb54c7ba`,
 `apps/desktop/electron/dashboard-token.ts:10-101`,
 `apps/desktop/electron/remote-lifecycle.ts:733-751,920-931`, and
 `hermes_cli/web_server.py:17242-17310`. The public dashboard token may drift

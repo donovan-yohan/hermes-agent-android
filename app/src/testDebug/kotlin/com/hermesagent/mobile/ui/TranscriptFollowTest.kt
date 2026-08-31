@@ -134,7 +134,7 @@ class TranscriptFollowTest {
      *
      * Desktop parks stdout in its own 80 px box that tails only while the reader
      * is already at the bottom (`components/chat/terminal-output.tsx:14,45-52` @
-     * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). Android has no second
+     * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`). Android has no second
      * scroller — the transcript's own follow discipline is that rule — so these
      * two cases are what prove the rule still holds when the thing growing is a
      * tool payload rather than prose.

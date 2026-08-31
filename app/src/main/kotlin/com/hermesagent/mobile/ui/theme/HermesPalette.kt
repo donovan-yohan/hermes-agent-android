@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * The Android counterpart of Desktop's `DesktopThemeColors`
- * (`apps/desktop/src/themes/types.ts:13-48` @ `f82f2dba`).
+ * (`apps/desktop/src/themes/types.ts:13-48` @ `936b970e`).
  *
  * Field names and optionality match the Desktop interface one for one, so a
  * theme sync is a mechanical diff rather than a reinterpretation. Optional

@@ -2651,7 +2651,7 @@ class RemoteGatewayTest {
     fun `two rotations of the same credential spend the one-time refresh token once`() = runTest {
         // `/auth/native/refresh` returns a new access/refresh pair and 401s a
         // refresh token every provider rejects, reuse-detected included
-        // (hermes-agent @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732,
+        // (hermes-agent @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba,
         // `hermes_cli/dashboard_auth/routes.py:1027-1079`). Two callers that
         // POST the same one-time token race each other into a rejection, and
         // race each other's `store.save`. Load, refresh and save are therefore

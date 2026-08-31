@@ -41,7 +41,7 @@ import kotlinx.coroutines.delay
  * The per-session actions menu, ported from Desktop's `SessionActionsMenu`
  * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx` and the
  * `ActionsMenu` kit at `apps/desktop/src/components/ui/actions-menu.tsx`)
- * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
+ * @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
  *
  * This slice ships the container, not the verbs: every session row and the
  * chat header get one 48dp control opening one menu, and the *group order* is

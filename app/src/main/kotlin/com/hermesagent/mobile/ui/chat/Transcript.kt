@@ -120,7 +120,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * The transcript.
  *
  * Grammar taken from Desktop, and the two halves are deliberately asymmetric
- * (`apps/desktop/src/components/assistant-ui/thread/` @ `f82f2dba`):
+ * (`apps/desktop/src/components/assistant-ui/thread/` @ `936b970e`):
  *
  * - **The user speaks in a bubble** — a soft `--dt-user-bubble` fill with a
  *   hairline, aligned to the end (`user-message.tsx:67`).
@@ -199,7 +199,7 @@ internal fun UserTurnBubble(
     /**
      * Whether the message text may be selected. Opt-in, and off for the pinned
      * prompt: Desktop makes the *message* selectable and leaves chrome
-     * `user-select: none` (`styles.css:1176-1194` @ `f82f2dba`), and the pin is
+     * `user-select: none` (`styles.css:1176-1194` @ `936b970e`), and the pin is
      * chrome — it owns a vertical drag and a return tap that a selection
      * gesture would compete with.
      */
@@ -243,7 +243,7 @@ internal fun UserTurnBubble(
             )
         }
         // Desktop selects the user bubble too, and tests it there
-        // (`user-message-selection.test.ts` @ `f82f2dba`): the bubble is a
+        // (`user-message-selection.test.ts` @ `936b970e`): the bubble is a
         // button, so the blanket `button { user-select: none }` is undone for
         // the message text alone (`styles.css:1188-1194`).
         if (selectable) SelectionContainer { text() } else text()
@@ -459,7 +459,7 @@ private fun AssistantProse(turn: AssistantTurn) {
         // One container per turn, which is the whole of Desktop's rule ported:
         // `[data-selectable-text='true']` makes the message subtree — and only
         // that subtree — `user-select: text` (`styles.css:1176-1180` @
-        // `f82f2dba`). A selection may therefore run across this reply's
+        // `936b970e`). A selection may therefore run across this reply's
         // paragraphs, lists and fences and stops at its edge; it can never span
         // two turns or swallow the scaffolding between them, because a sibling
         // turn is a different container and chrome is in none at all.
@@ -517,7 +517,7 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * The per-reply action bar.
  *
  * Desktop mounts one under every assistant message and reveals it on hover
- * (`assistant-message.tsx:245-293` @ `f82f2dba`). A phone has no hover, so the
+ * (`assistant-message.tsx:245-293` @ `936b970e`). A phone has no hover, so the
  * mobile form of "revealed on hover" is "always mounted, always quiet": the
  * control wears the scaffold meta ink and reads as scaffolding until it is
  * touched, and the height it occupies is the height Desktop already reserves.
@@ -728,7 +728,7 @@ private fun DisclosureRow(
 
 /**
  * The expanded tool row: `fallback.tsx:597-707` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`, in Desktop's order — Copy, the
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, in Desktop's order — Copy, the
  * `$` transcript, structured search hits, then exactly one detail form.
  */
 @Composable
@@ -1138,7 +1138,7 @@ private fun InlineDiffPanel(
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
                     // diff-lines.tsx:41-51 @
-                    // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — a changed line
+                    // 936b970e281d5d28e930c5698f36bc4ebb54c7ba — a changed line
                     // is its own tint plus its own ink, from the theme's
                     // green/red and never statusUnread/destructive. Why those
                     // were the wrong semantic: docs/parity/inline-diff-tokens.md.
@@ -1302,7 +1302,7 @@ internal const val MarkdownTableScrollerTag = "markdown_table_scroller"
  * A pipe table rendered as an actual grid.
  *
  * Desktop lets a wide table overflow its message with an inner scroller
- * (`apps/desktop/src/styles.css`, `.md table` @ `f82f2dba`); a phone has less
+ * (`apps/desktop/src/styles.css`, `.md table` @ `936b970e`); a phone has less
  * width still, so the same contract applies as code fences: the block owns its
  * horizontal scroll and the page body never moves sideways. Columns size to
  * their content and shrink toward their widest unbreakable run under a tight

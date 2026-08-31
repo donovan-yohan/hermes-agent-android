@@ -7,7 +7,7 @@ import com.hermesagent.mobile.data.session.SessionSummary
  *
  * Desktop computes this from a persisted "show all" flag over the live
  * gateway's profile (`apps/desktop/src/store/profile.ts:437-448` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). Android talks to one Gateway, so
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`). Android talks to one Gateway, so
  * the concrete half is app state too: UI-only authority, persisted as a
  * preference, never sent to the Gateway as anything but the `profile`
  * parameter below.

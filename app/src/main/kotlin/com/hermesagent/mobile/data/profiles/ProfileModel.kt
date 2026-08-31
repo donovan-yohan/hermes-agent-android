@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.profiles
  * Hermes profiles: independent Hermes environments (config, skills, SOUL.md)
  * that the Gateway can serve from one backend.
  *
- * Ported from Desktop at `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`:
+ * Ported from Desktop at `936b970e281d5d28e930c5698f36bc4ebb54c7ba`:
  * `apps/desktop/src/store/profile.ts:22-33,423` and the row shape
  * `tui_gateway/methods_profiles.py:195-240`.
  *

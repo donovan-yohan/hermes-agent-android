@@ -6,7 +6,7 @@ import java.util.TimeZone
 
 /**
  * Calendar buckets for the session list, ported from Desktop's `calendarBucket`
- * (`apps/desktop/src/lib/time.ts:125-165` @ `f82f2dba`).
+ * (`apps/desktop/src/lib/time.ts:125-165` @ `936b970e`).
  *
  * Desktop additionally leaves the newest *run* of sessions unlabelled above the
  * first divider (`session-date-groups.ts`, `headRunCutoffMs`) — a gap-scoring

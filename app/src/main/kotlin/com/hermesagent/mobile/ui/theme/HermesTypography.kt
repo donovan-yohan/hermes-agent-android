@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.sp
 /**
  * Desktop's conversation type scale, adapted for a phone.
  *
- * Desktop values (`apps/desktop/src/styles.css:440-447` @ `f82f2dba`, 1rem = 16px):
+ * Desktop values (`apps/desktop/src/styles.css:440-447` @ `936b970e`, 1rem = 16px):
  *
  * | Desktop token                     | Desktop | Android |
  * |-----------------------------------|---------|---------|
@@ -91,7 +91,7 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
             fontWeight = FontWeight.Medium,
             letterSpacing = 0.08.em,
         ),
-        // SidebarPanelLabel at f82f2dba: 0.64rem, semibold, uppercase,
+        // SidebarPanelLabel at 936b970e: 0.64rem, semibold, uppercase,
         // tracking 0.16em. The one-sp bump is the phone readability adaptation.
         panelLabel = TextStyle(
             fontFamily = sans,
