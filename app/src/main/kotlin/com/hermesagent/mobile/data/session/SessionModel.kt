@@ -268,10 +268,32 @@ data class AssistantTurn(
     val streaming: Boolean = false,
     /** Set when the turn ended badly. Rendered as an honest error, not a retry spinner. */
     val error: String? = null,
-    /** Set when the user stopped generation. Desktop keeps the partial text. */
-    val stopped: Boolean = false,
+    /**
+     * Why this turn stopped before ordinary completion, if the Gateway made
+     * that fact available. Only [TurnTermination.UserRequested] means this
+     * client sent the stop request; the other values are external endings.
+     */
+    val termination: TurnTermination? = null,
     override val rowId: TranscriptRowId? = null,
 ) : TranscriptEntry
+
+/** A terminal turn cause whose attribution is safe to show in the transcript. */
+enum class TurnTermination {
+    /** This client sent `session.interrupt` for the live runtime. */
+    UserRequested,
+    /** The Gateway reaped the WebSocket-owned runtime after its orphan grace. */
+    WsOrphanReap,
+    /** The Gateway ended an idle runtime. */
+    IdleTimeout,
+    /** The Gateway evicted the runtime under its live-session limit. */
+    LruEvict,
+    /** The Gateway reclaimed the runtime but supplied no recognized reason. */
+    Reclaimed,
+    /** A Gateway state snapshot settled the turn without a completion event. */
+    SessionNoLongerRunning,
+    /** The Gateway reported an interrupted turn this client did not stop. */
+    InterruptedExternally,
+}
 
 /** Provider reasoning, kept separate from answer prose like Desktop's reasoning disclosure. */
 data class ReasoningActivity(

@@ -63,7 +63,8 @@ class HermesApplication : Application() {
     internal val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http by lazy {
         OkHttpClient.Builder()
-            .pingInterval(30, TimeUnit.SECONDS)
+            // Keep this below the Gateway's default 20-second ws_orphan_reap grace.
+            .pingInterval(10, TimeUnit.SECONDS)
             .build()
     }
 

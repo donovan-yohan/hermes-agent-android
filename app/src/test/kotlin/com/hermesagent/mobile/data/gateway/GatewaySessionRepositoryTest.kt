@@ -20,6 +20,7 @@ import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TranscriptRowId
+import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
@@ -2269,6 +2270,7 @@ class GatewaySessionRepositoryTest {
         val assistant = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single()
         assertEquals("partial", assistant.markdown)
         assertFalse(assistant.streaming)
+        assertEquals(TurnTermination.SessionNoLongerRunning, assistant.termination)
         assertEquals(SessionStatus.Idle, cache.session("durable-a")?.status)
 
         repository.submit("durable-a", "second")
@@ -2433,6 +2435,7 @@ class GatewaySessionRepositoryTest {
         val uncertain = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single()
         assertEquals("useful partial", uncertain.markdown)
         assertFalse(uncertain.streaming)
+        assertNull(uncertain.termination)
         assertEquals(ToolState.Stopped, cache.transcript("durable-a").filterIsInstance<ToolActivity>().single().state)
         assertEquals(SessionStatus.Stalled, cache.session("durable-a")?.status)
         assertEquals(0, first.calls.count { it.method == "session.interrupt" })
@@ -2940,6 +2943,40 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `session reclaim reasons end a live turn externally`() = runTest {
+        listOf(
+            "ws_orphan_reap" to TurnTermination.WsOrphanReap,
+            "idle_timeout" to TurnTermination.IdleTimeout,
+            "lru_evict" to TurnTermination.LruEvict,
+        ).forEach { (reason, expectedTermination) ->
+            val cache = SessionCache()
+            val rpc = FakeRpc()
+            val repository = LiveGatewaySessionRepository(
+                cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc),
+                backgroundScope,
+            ) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            repository.submit("durable-a", "keep going")
+            rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+            rpc.emit("message.delta", "runtime-a", """{"delta":"partial"}""")
+            rpc.emit(
+                "session.reclaimed",
+                null,
+                """{"session_id":"runtime-a","stored_session_id":"durable-a","reason":"$reason"}""",
+            )
+            runCurrent()
+
+            val turn = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single()
+            assertFalse(turn.streaming)
+            assertEquals("partial", turn.markdown)
+            assertEquals(expectedTermination, turn.termination)
+        }
+    }
+
+    @Test
     fun `unsent created session stays useful offline then disappears before reconnect authority merges`() = runTest {
         val cache = SessionCache()
         val first = FakeRpc()
@@ -2964,7 +3001,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `message completion maps interrupted and error metadata and seals every unfinished tool`() = runTest {
+    fun `unattributed interrupted completion stays external and seals every unfinished tool`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
@@ -2984,7 +3021,7 @@ class GatewaySessionRepositoryTest {
         runCurrent()
 
         val stopped = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
-        assertTrue(stopped.stopped)
+        assertEquals(TurnTermination.InterruptedExternally, stopped.termination)
         assertEquals("partial", stopped.markdown)
         assertEquals(
             setOf(ToolState.Stopped),
@@ -3007,6 +3044,229 @@ class GatewaySessionRepositoryTest {
         assertEquals("Hermes ended this turn unexpectedly. Check the Gateway, then try again.", failed.error)
         assertEquals("kept partial", failed.markdown)
         assertEquals(ToolState.Failed, cache.transcript("durable-a").filterIsInstance<ToolActivity>().last().state)
+    }
+
+    @Test
+    fun `locally requested interrupt attributes its interrupted completion to the user`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+        rpc.emit("message.delta", "runtime-a", """{"delta":"partial"}""")
+        runCurrent()
+
+        assertEquals(GatewayInterruptOutcome.Interrupted, repository.requestInterrupt("durable-a"))
+        rpc.emit("message.complete", "runtime-a", """{"text":"partial","status":"interrupted"}""")
+        runCurrent()
+
+        val turn = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
+        assertEquals(TurnTermination.UserRequested, turn.termination)
+    }
+
+    @Test
+    fun `local interrupt attributes a running false session settle to the user`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+        rpc.emit("message.delta", "runtime-a", """{"delta":"partial"}""")
+        runCurrent()
+
+        assertEquals(GatewayInterruptOutcome.Interrupted, repository.requestInterrupt("durable-a"))
+        rpc.emit("session.info", "runtime-a", """{"running":false}""")
+        runCurrent()
+
+        val turn = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
+        assertEquals("partial", turn.markdown)
+        assertEquals(TurnTermination.UserRequested, turn.termination)
+    }
+
+    @Test
+    fun `rejected second stop cannot revoke the first confirmed stop attribution`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+        runCurrent()
+
+        assertEquals(GatewayInterruptOutcome.Interrupted, repository.requestInterrupt("durable-a"))
+        rpc.interruptResult = """{"status":"rejected"}"""
+        assertEquals(GatewayInterruptOutcome.Rejected, repository.requestInterrupt("durable-a"))
+        rpc.emit("message.complete", "runtime-a", """{"text":"partial","status":"interrupted"}""")
+        runCurrent()
+
+        assertEquals(
+            TurnTermination.UserRequested,
+            cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last().termination,
+        )
+    }
+
+    @Test
+    fun `new message start clears a stale local interrupt marker`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"first-reply","role":"assistant"}""")
+        runCurrent()
+
+        assertEquals(GatewayInterruptOutcome.Interrupted, repository.requestInterrupt("durable-a"))
+        rpc.emit("message.start", "runtime-a", """{"id":"later-reply","role":"assistant"}""")
+        rpc.emit("message.complete", "runtime-a", """{"text":"later","status":"interrupted"}""")
+        runCurrent()
+
+        assertEquals(
+            TurnTermination.InterruptedExternally,
+            cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last().termination,
+        )
+    }
+
+    @Test
+    fun `interrupted completion during a local interrupt acknowledgement stays user attributed`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { interruptResponse = CompletableDeferred() }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+        runCurrent()
+
+        val interrupt = async { repository.requestInterrupt("durable-a") }
+        runCurrent()
+        assertEquals(1, rpc.calls.count { it.method == "session.interrupt" })
+        rpc.emit("message.complete", "runtime-a", """{"text":"partial","status":"interrupted"}""")
+        runCurrent()
+        assertEquals(
+            TurnTermination.UserRequested,
+            cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last().termination,
+        )
+
+        rpc.interruptResponse?.complete(json("""{"status":"interrupted"}"""))
+        runCurrent()
+        assertEquals(GatewayInterruptOutcome.Interrupted, interrupt.await())
+    }
+
+    @Test
+    fun `unconfirmed interrupt failures do not attribute a later external completion`() = runTest {
+        listOf(
+            GatewayRpcException("acknowledgement lost", requestMayHaveBeenAccepted = true) to
+                GatewayInterruptOutcome.Ambiguous,
+            GatewayRpcException("interruption refused") to GatewayInterruptOutcome.Failed,
+        ).forEach { (failure, expectedOutcome) ->
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply { interruptFailure = failure }
+            val repository = LiveGatewaySessionRepository(
+                cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc),
+                backgroundScope,
+            ) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            repository.submit("durable-a", "stop this")
+            rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+            runCurrent()
+
+            assertEquals(expectedOutcome, repository.requestInterrupt("durable-a"))
+            rpc.emit("message.complete", "runtime-a", """{"text":"partial","status":"interrupted"}""")
+            runCurrent()
+
+            assertEquals(
+                TurnTermination.InterruptedExternally,
+                cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last().termination,
+            )
+        }
+    }
+
+    @Test
+    fun `rejected interrupt does not attribute a later external completion`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { interruptResult = """{"status":"rejected"}""" }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+        runCurrent()
+
+        assertEquals(GatewayInterruptOutcome.Rejected, repository.requestInterrupt("durable-a"))
+        rpc.emit("message.complete", "runtime-a", """{"text":"partial","status":"interrupted"}""")
+        runCurrent()
+
+        assertEquals(
+            TurnTermination.InterruptedExternally,
+            cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last().termination,
+        )
+    }
+
+    @Test
+    fun `cancelled interrupt does not attribute a later external completion`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { interruptResponse = CompletableDeferred() }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.submit("durable-a", "stop this")
+        rpc.emit("message.start", "runtime-a", """{"id":"reply-a","role":"assistant"}""")
+        runCurrent()
+
+        val interrupt = async { repository.requestInterrupt("durable-a") }
+        runCurrent()
+        interrupt.cancelAndJoin()
+        rpc.emit("message.complete", "runtime-a", """{"text":"partial","status":"interrupted"}""")
+        runCurrent()
+
+        assertEquals(
+            TurnTermination.InterruptedExternally,
+            cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last().termination,
+        )
     }
 
     @Test
@@ -4124,6 +4384,7 @@ class GatewaySessionRepositoryTest {
         var steerFailure: Throwable? = null
         var interruptResult = """{"status":"interrupted"}"""
         var interruptFailure: Throwable? = null
+        var interruptResponse: CompletableDeferred<JsonElement>? = null
         var processListResult = """{"processes":[]}"""
         var processListFailure: Throwable? = null
         var processKillResult = "{}"
@@ -4217,7 +4478,7 @@ class GatewaySessionRepositoryTest {
                         interruptFailure = null
                         throw failure
                     }
-                    json(interruptResult)
+                    interruptResponse?.await() ?: json(interruptResult)
                 }
                 "process.list" -> {
                     processListFailure?.let { throw it }

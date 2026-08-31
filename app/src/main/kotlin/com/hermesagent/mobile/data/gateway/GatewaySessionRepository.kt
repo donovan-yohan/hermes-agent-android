@@ -36,6 +36,7 @@ import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TranscriptRowId
+import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.retainingGatewayQueue
 import com.hermesagent.mobile.data.ssh.redact
@@ -493,6 +494,16 @@ internal class LiveGatewaySessionRepository(
     private val interruptEpochByDurableId = mutableMapOf<String, Long>()
     /** Confirmed Stop epochs suppress a queued row whose acknowledgement arrives afterward. */
     private val confirmedInterruptEpochByDurableId = mutableMapOf<String, Long>()
+    /**
+     * Live runtimes for which this connection has dispatched `session.interrupt`
+     * and still awaits the terminal event. The terminal path consumes this
+     * marker exactly once; its request-owner token means a later Stop cannot
+     * remove it. A connection reset cannot transfer it to another socket or
+     * runtime.
+     */
+    private val locallyRequestedInterruptRuntimeIds = mutableMapOf<String, Long>()
+    /** Monotonic owner token so a later rejected Stop cannot revoke an earlier one. */
+    private var nextLocalInterruptMarkerOwner = 0L
     private val assistantByRuntime = mutableMapOf<String, AssistantTurn>()
     private val reasoningByRuntime = mutableMapOf<String, ReasoningActivity>()
     private val toolsByRuntime = mutableMapOf<String, MutableMap<String, ToolActivity>>()
@@ -593,6 +604,7 @@ internal class LiveGatewaySessionRepository(
                     activeRuntimeIds.clear()
                     localSubmitStartedAtByRuntime.clear()
                     liveTurnRuntimeIds.clear()
+                    locallyRequestedInterruptRuntimeIds.clear()
                     // Pending prompts are connection-scoped memory; a new
                     // client rehydrates only through fresh resume responses.
                     // These are stranded, not retired: the requests may still
@@ -1936,23 +1948,47 @@ internal class LiveGatewaySessionRepository(
         binding: SessionBinding,
         connection: ConnectionSnapshot,
         interruptEpoch: Long,
-    ): GatewayInterruptOutcome = try {
-        val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
-            .asObject("session.interrupt")
-        val interrupted = result.string("status") == "interrupted"
-        synchronized(stateLock) {
-            ensureCurrent(connection)
-            if (interrupted) {
-                confirmedInterruptEpochByDurableId[binding.durableId] = maxOf(
-                    interruptEpoch,
-                    confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L,
-                )
-                clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
+    ): GatewayInterruptOutcome {
+        var confirmed = false
+        var markerOwner: Long? = null
+        return try {
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                // Mark before the suspend boundary: a terminal event can arrive
+                // while the RPC acknowledgement is still in flight, and it must
+                // retain the fact that this app dispatched the Stop request. A
+                // prior local Stop owns the marker until it is consumed, so a
+                // second rejected request cannot revoke that attribution.
+                markerOwner = installLocalInterruptMarker(binding.runtimeId)
+            }
+            val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
+                .asObject("session.interrupt")
+            val interrupted = result.string("status") == "interrupted"
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (interrupted) {
+                    confirmedInterruptEpochByDurableId[binding.durableId] = maxOf(
+                        interruptEpoch,
+                        confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L,
+                    )
+                    clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
+                    confirmed = true
+                }
+            }
+            if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
+        } catch (failure: Throwable) {
+            interruptFailureOutcome(failure)
+        } finally {
+            // A dropped, rejected, ambiguous, or cancelled acknowledgement is
+            // not proof that this runtime was stopped by this client. Keep the
+            // marker only after an explicit interrupted reply; an event that
+            // arrived while the RPC was pending has already consumed it.
+            if (!confirmed) {
+                markerOwner?.let { owner ->
+                    synchronized(stateLock) { removeLocalInterruptMarker(binding.runtimeId, owner) }
+                }
             }
         }
-        if (interrupted) GatewayInterruptOutcome.Interrupted else GatewayInterruptOutcome.Rejected
-    } catch (failure: Throwable) {
-        interruptFailureOutcome(failure)
     }
 
     override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome {
@@ -2332,6 +2368,7 @@ internal class LiveGatewaySessionRepository(
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
         if (event.type == "session.reclaimed") {
             val reclaimedRuntime = payload.string("session_id")?.takeIf(String::isNotBlank) ?: return true
+            val termination = reclaimedTurnTermination(payload.string("reason"))
             val mappedDurableId = identities.durableFor(reclaimedRuntime)
             if (mappedDurableId != null) {
                 advanceLiveEventRevision(reclaimedRuntime)
@@ -2339,7 +2376,7 @@ internal class LiveGatewaySessionRepository(
                     ?.takeIf(String::isNotBlank)
                     ?.let { rehomeDurableSession(mappedDurableId, it, reclaimedRuntime) }
                     ?: mappedDurableId
-                settleStoppedRuntime(durableId, reclaimedRuntime)
+                settleStoppedRuntime(durableId, reclaimedRuntime, termination = termination)
                 identities.unbindRuntime(reclaimedRuntime)
             }
             return true
@@ -2409,6 +2446,9 @@ internal class LiveGatewaySessionRepository(
             }
 
             "message.start" -> {
+                // A new turn on this runtime cannot inherit a previous turn's
+                // locally requested Stop attribution.
+                locallyRequestedInterruptRuntimeIds.remove(runtimeId)
                 if ((payload.string("role") ?: "assistant") == "assistant") {
                     consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     val turn = AssistantTurn(
@@ -2714,7 +2754,12 @@ internal class LiveGatewaySessionRepository(
         if (locallySubmitted && runtimeId !in liveTurnRuntimeIds && remainingGrace > 0) {
             return false
         }
-        settleStoppedRuntime(durableId, runtimeId, preserveGatewayQueue)
+        settleStoppedRuntime(
+            durableId,
+            runtimeId,
+            preserveGatewayQueue = preserveGatewayQueue,
+            termination = TurnTermination.SessionNoLongerRunning,
+        )
         return true
     }
 
@@ -2775,10 +2820,16 @@ internal class LiveGatewaySessionRepository(
         durableId: String,
         runtimeId: String,
         preserveGatewayQueue: Boolean = false,
+        termination: TurnTermination,
     ) {
+        val settledTermination = if (consumeLocalInterruptMarker(runtimeId)) {
+            TurnTermination.UserRequested
+        } else {
+            termination
+        }
         clearPendingInputsForRuntime(runtimeId)
         assistantByRuntime.remove(runtimeId)?.let { partial ->
-            cache.putEntry(durableId, partial.copy(streaming = false, stopped = true))
+            cache.putEntry(durableId, partial.copy(streaming = false, termination = settledTermination))
         }
         sealReasoning(durableId, runtimeId, ToolState.Stopped)
         sealTools(durableId, runtimeId, ToolState.Stopped)
@@ -2793,6 +2844,14 @@ internal class LiveGatewaySessionRepository(
         releaseRuntimeGuard(runtimeId)
     }
 
+    /** Convert Gateway-only lifecycle strings into an exhaustive UI-safe model. */
+    private fun reclaimedTurnTermination(reason: String?): TurnTermination = when (reason) {
+        "ws_orphan_reap" -> TurnTermination.WsOrphanReap
+        "idle_timeout" -> TurnTermination.IdleTimeout
+        "lru_evict" -> TurnTermination.LruEvict
+        else -> TurnTermination.Reclaimed
+    }
+
     private fun clearUnscopedRuntime() {
         unscopedRuntimeId = null
         localSubmitStartedAtMillis = null
@@ -2804,6 +2863,7 @@ internal class LiveGatewaySessionRepository(
         activeRuntimeIds.remove(runtimeId)
         localSubmitStartedAtByRuntime.remove(runtimeId)
         liveTurnRuntimeIds.remove(runtimeId)
+        locallyRequestedInterruptRuntimeIds.remove(runtimeId)
         if (unscopedRuntimeId == runtimeId || unscopedRuntimeId == null) {
             // Exactly one remaining locally submitted runtime inherits the
             // identifier-less event pin, so its stream keeps flowing after the
@@ -2826,6 +2886,15 @@ internal class LiveGatewaySessionRepository(
         val finalText = payload.contentText()
         val status = payload.string("status")?.lowercase()
         val interrupted = status == "interrupted" || payload.boolean("interrupted") == true
+        val termination = if (interrupted) {
+            if (consumeLocalInterruptMarker(runtimeId)) {
+                TurnTermination.UserRequested
+            } else {
+                TurnTermination.InterruptedExternally
+            }
+        } else {
+            null
+        }
         val errorText = if (status == "error") {
             safeGatewayTerminalError(
                 payload.string("error") ?: payload.string("message") ?: finalText,
@@ -2846,7 +2915,7 @@ internal class LiveGatewaySessionRepository(
             },
             streaming = false,
             error = errorText,
-            stopped = interrupted,
+            termination = termination,
         )
         cache.putEntry(durableId, completed)
         sealReasoning(durableId, runtimeId, if (errorText != null) ToolState.Failed else ToolState.Done)
@@ -3160,7 +3229,30 @@ internal class LiveGatewaySessionRepository(
         addAll(progressRuntimeIds)
         addAll(composerStatusRuntimeIds)
         addAll(queuedPromptDrainReadyBatchIdsByRuntime.keys)
+        addAll(locallyRequestedInterruptRuntimeIds.keys)
     }
+
+    /**
+     * Installs one attribution owner for a live runtime. A second Stop may
+     * still reach the Gateway, but it must not own or remove the first marker.
+     */
+    private fun installLocalInterruptMarker(runtimeId: String): Long? {
+        if (runtimeId in locallyRequestedInterruptRuntimeIds) return null
+        return (++nextLocalInterruptMarkerOwner).also { owner ->
+            locallyRequestedInterruptRuntimeIds[runtimeId] = owner
+        }
+    }
+
+    /** Removes only the marker installed by this request, never another Stop's. */
+    private fun removeLocalInterruptMarker(runtimeId: String, owner: Long) {
+        if (locallyRequestedInterruptRuntimeIds[runtimeId] == owner) {
+            locallyRequestedInterruptRuntimeIds.remove(runtimeId)
+        }
+    }
+
+    /** Terminal and settle paths consume attribution exactly once. */
+    private fun consumeLocalInterruptMarker(runtimeId: String): Boolean =
+        locallyRequestedInterruptRuntimeIds.remove(runtimeId) != null
 
     private fun settleConnectionLoss(durableId: String, runtimeId: String) {
         assistantByRuntime[runtimeId]?.let { partial ->
