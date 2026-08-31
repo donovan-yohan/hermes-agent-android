@@ -36,6 +36,7 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -737,8 +738,21 @@ internal class GatewayConnectionManager(
     override suspend fun connectRemote(
         profile: RemoteGatewayProfile,
         browser: GatewayBrowserLauncher,
+    ): GatewayConnectResult =
+        runRemoteSignIn(profile, browser, beginConnectIntent(currentCoroutineContext()[Job]))
+
+    /**
+     * The sign-in itself, once its connect intent is claimed.
+     *
+     * Split from [connectRemote] so [startRemoteSignIn] can claim that intent on
+     * the caller's thread and then get off it before any of this runs — see the
+     * `yield` there, which is load-bearing.
+     */
+    private suspend fun runRemoteSignIn(
+        profile: RemoteGatewayProfile,
+        browser: GatewayBrowserLauncher,
+        intent: ConnectIntent,
     ): GatewayConnectResult {
-        val intent = beginConnectIntent(currentCoroutineContext()[Job])
         // Whether the person was actually sent to a browser is the difference
         // between "this attempt stopped" and "your sign-in was abandoned
         // half-way through", and only this seam can see it.
@@ -764,10 +778,36 @@ internal class GatewayConnectionManager(
     }
 
     override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) {
-        // UNDISPATCHED so the connect intent is claimed on the caller's thread,
-        // before this returns: the screen that asked is entitled to know the
-        // attempt it superseded is already superseded.
-        val started = scope.launch(start = CoroutineStart.UNDISPATCHED) { connectRemote(profile, browser) }
+        val started = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            // UNDISPATCHED so the connect intent is claimed on the caller's
+            // thread, before this returns: the screen that asked is entitled to
+            // know the attempt it superseded is already superseded.
+            val intent = beginConnectIntent(currentCoroutineContext()[Job])
+            try {
+                // And then off that thread, which is the *only* thing that gets
+                // this work off it. [scope] names Dispatchers.IO, but
+                // UNDISPATCHED means this coroutine is still physically on the
+                // caller's thread — the main thread, for a tap — and
+                // `withContext` compares interceptors, not threads. So every
+                // `withContext(Dispatchers.IO)` downstream, including the one
+                // wrapping OkHttp in `OkHttpGatewayNativeAuthApi.requestJson`,
+                // finds the interceptor it already has and runs inline. The
+                // first network leg of a sign-in then executed on the main
+                // thread and died with NetworkOnMainThreadException before a
+                // single request left the device. `yield` dispatches, because
+                // Dispatchers.IO always needs one; the old shape was immune only
+                // because it ran on `viewModelScope`, whose Main interceptor
+                // made those `withContext` calls real hops.
+                yield()
+                runRemoteSignIn(profile, browser, intent)
+            } finally {
+                // Cancelled between the claim and the hop leaves a dead job in
+                // the intent, and a dead job there blocks every later reconnect
+                // nudge. Harmless once `openRemote` has released it: the
+                // generation check makes a second release a no-op.
+                releaseConnectIntent(intent)
+            }
+        }
         // Claim first, then arm: `invokeOnCompletion` fires inline for a job that
         // already finished, and if it ran before the swap its compare-and-set
         // would miss and strand a dead job in the reference.
