@@ -325,7 +325,7 @@ internal object ConnectionsCopy {
 
     /**
      * The word for what a row is asking for. Policy — which kinds ask at all —
-     * is [SavedConnection.attentionAction]'s; this is only the wording, and
+     * is [ConnectionKind.attentionAction]'s; this is only the wording, and
      * both words are Desktop's.
      */
     fun attentionActionLabel(action: ConnectionAttentionAction): String = when (action) {

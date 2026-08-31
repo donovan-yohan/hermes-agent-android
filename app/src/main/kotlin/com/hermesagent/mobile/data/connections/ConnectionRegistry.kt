@@ -71,7 +71,7 @@ enum class ConnectionKind {
 
 /**
  * What a row asks for when this device is not up on the gateway it is marked
- * `Current` on. See [SavedConnection.attentionAction].
+ * `Current` on. See [ConnectionKind.attentionAction].
  */
 enum class ConnectionAttentionAction { SignIn, Connect }
 
