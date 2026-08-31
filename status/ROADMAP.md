@@ -190,11 +190,12 @@ lifecycle.
 - OS notifications while a Gateway connection is live, from the same events
   every route delivers, so Remote, Managed SSH and Local behave identically:
   an approval, a question, a sudo or secret prompt, and a finished turn.
-- Desktop's gating rule, unchanged. A blocking prompt for a conversation that
-  is not on screen breaks through even while the app is open; a finished turn
-  arrives only when the app is away and that conversation is the selected one.
-  A four-second quiet window after every socket opens, so a reconnect's replay
-  of an hour-old prompt is not announced as news.
+- Attention kinds break through for off-screen sessions even while the app is
+  open; a finished turn alerts for any session whenever the app is away
+  (foreground is isolated via the in-app unread dot). A four-second quiet window
+  after every socket opens suppresses immediate firing, deferring unannounced
+  prompts until the window closes while deduplicating prompts already announced
+  pre-disconnect (including across multiple outstanding prompts replayed incrementally).
 - An approval can be answered from the shade with Approve or Reject, through
   the same request path as the in-app bar. A persistent grant is not offered
   there. An approval somebody already answered elsewhere disappears without a
@@ -228,7 +229,7 @@ lifecycle.
 | Managed SSH reconnect | A reconnect starts a fresh owned backend; safe lockfile reuse is not implemented. Positively unowned or ambiguous processes are never killed. | Full lock, argv, profile, home, token, HTTP ownership, and RPC readiness proof before reuse. |
 | Session management | Create/open/history work; rename and archive are absent. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
-| Notifications | Connected-only. Notifications arrive while the app holds a live Gateway socket; once that socket is gone, nothing arrives — there is no foreground service holding the connection and no push infrastructure upstream. A prompt parked while the app was disconnected therefore has no notification, and the post-connect quiet window means a reconnect does not retroactively raise one either. The in-app surfaces still show it. `POST_NOTIFICATIONS` is requested once, at the first live Gateway; a refusal is respected rather than re-prompted, and re-enabling is an OS settings action. No physical-device pass has answered a real approval from a real shade. | The background-lifecycle decision above, then a `dataSync` foreground service with Doze and battery honesty; and the emulator pass in [#99](https://github.com/donovan-yohan/hermes-agent-android/issues/99) driving real events through the Termux Local route. |
+| Notifications | Connected-only. Notifications arrive while the app holds a live Gateway socket; once that socket is gone, nothing arrives — there is no foreground service holding the connection and no push infrastructure upstream. Prompts parked while the app was disconnected are replayed on reconnect, deferred during the post-connect quiet window, and raised once the window expires (unless already announced pre-disconnect or answered in-app, preserved across multiple outstanding prompts replayed one event at a time). The in-app surfaces still show it. `POST_NOTIFICATIONS` is requested once, at the first live Gateway; a refusal is respected rather than re-prompted, and re-enabling is an OS settings action. No physical-device pass has answered a real approval from a real shade. | The background-lifecycle decision above, then a `dataSync` foreground service with Doze and battery honesty; and the emulator pass in [#99](https://github.com/donovan-yohan/hermes-agent-android/issues/99) driving real events through the Termux Local route. |
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
 | Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |

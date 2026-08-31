@@ -8,7 +8,9 @@ import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.session.SessionCacheState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -54,9 +56,11 @@ class SessionNotifier(
         data class Turn(val outcome: GatewayTurnOutcome) : Signal
         data class Present(val foregrounded: Boolean, val visibleSessionId: String?) : Signal
         data class Settings(val settings: NotificationSettings) : Signal
+        data class QuietWindowExpired(val generation: Long) : Signal
     }
 
     private var quietUntil = 0L
+    private var quietGeneration = 0L
 
     /**
      * Desktop reads its preferences synchronously and falls back to the
@@ -92,23 +96,19 @@ class SessionNotifier(
     private var shown = mapOf<Pair<String, NotificationKind>, Prompt>()
 
     /**
-     * Requests this socket replayed into the quiet window.
-     *
-     * Desktop dispatches per event, so a replayed prompt it drops is simply
-     * never offered again. This follows a state map instead, where the same
-     * prompt is re-offered on every subsequent change, so the "not news"
-     * verdict has to be remembered rather than implied. Emptied on each socket
-     * open, because the next replay is a different set of old news.
-     *
-     * Keyed by request rather than by (session, kind), and that distinction is
-     * load-bearing. A replayed prompt is suppressed, so it never enters
-     * [shown] — which means when the Gateway later *supersedes* it, there is
-     * nothing to compare against and the supersession cannot be recognised.
-     * Under a (session, kind) key the replacement would inherit the old
-     * request's "old news" verdict and be swallowed for the life of the
-     * connection. Under a request key it is simply a request nobody has seen.
+     * Prompts that have successfully posted a notification to the shade.
+     * Used to deduplicate across reconnects so a prompt already notified
+     * before disconnect is not re-announced when replayed on the new socket.
      */
-    private val replayed = mutableSetOf<PendingInputKey>()
+    private val notified = mutableSetOf<PromptIdentity>()
+
+    /** Latest pending inputs map received from the repository. */
+    private var latestPending = mapOf<PendingInputKey, PendingInputRequest>()
+
+    private val quietExpiries = MutableSharedFlow<Signal.QuietWindowExpired>(extraBufferCapacity = 16)
+    private var quietJob: Job? = null
+    private var runningScope: CoroutineScope? = null
+    private var collectorJob: Job? = null
 
     /**
      * Every signal through one collector, so the quiet window, the throttle map
@@ -117,6 +117,8 @@ class SessionNotifier(
      * the ordering of a reconnect against its own prompt replay a race.
      */
     fun start(scope: CoroutineScope): Job {
+        collectorJob?.let { return it }
+        runningScope = scope
         // Process start is itself a baseline: whatever the socket replays in
         // the next few seconds is state that already existed.
         markBaseline()
@@ -128,16 +130,34 @@ class SessionNotifier(
                 combine(presence.appForegrounded, presence.visibleSessionId, Signal::Present)
                     .distinctUntilChanged(),
                 settingsFlow.map(Signal::Settings),
+                quietExpiries,
             ).collect { signal ->
                 when (signal) {
                     Signal.SocketOpen -> markBaseline()
-                    is Signal.Pending -> applyPending(signal.requests)
+                    is Signal.Pending -> {
+                        val previousPending = latestPending
+                        latestPending = signal.requests
+                        applyPending(signal.requests, previousPending)
+                    }
                     is Signal.Turn -> applyTurn(signal.outcome)
-                    is Signal.Present -> applyPresence(signal.foregrounded, signal.visibleSessionId)
-                    is Signal.Settings -> settings = signal.settings
+                    is Signal.Present -> {
+                        applyPresence(signal.foregrounded, signal.visibleSessionId)
+                        applyPending(latestPending, latestPending)
+                    }
+                    is Signal.Settings -> {
+                        settings = signal.settings
+                        applyPending(latestPending, latestPending)
+                    }
+                    is Signal.QuietWindowExpired -> {
+                        // Ignore stale expiry from a cancelled quiet window that was already buffered.
+                        if (signal.generation == quietGeneration) {
+                            quietUntil = 0L
+                            applyPending(latestPending, latestPending)
+                        }
+                    }
                 }
             }
-        }
+        }.also { collectorJob = it }
     }
 
     /**
@@ -148,12 +168,21 @@ class SessionNotifier(
      * reconnect is a full replay.
      */
     private fun markBaseline() {
+        val scope = runningScope ?: return
+        val generation = ++quietGeneration
         quietUntil = clock() + SEED_QUIET_MS
-        replayed.clear()
+        quietJob?.cancel()
+        quietJob = scope.launch {
+            delay(SEED_QUIET_MS)
+            quietExpiries.emit(Signal.QuietWindowExpired(generation))
+        }
     }
 
-    private fun applyPending(requests: Map<PendingInputKey, PendingInputRequest>) {
-        val desired = mutableMapOf<Pair<String, NotificationKind>, Prompt>()
+    private fun applyPending(
+        requests: Map<PendingInputKey, PendingInputRequest>,
+        previousPending: Map<PendingInputKey, PendingInputRequest> = latestPending,
+    ) {
+        val desired = mutableMapOf<Pair<String, NotificationKind>, Pair<Prompt, PromptIdentity>>()
         for ((key, request) in requests) {
             val kind = key.kind.notificationKind()
             val identity = request.durableSessionId to kind
@@ -164,7 +193,7 @@ class SessionNotifier(
             desired[identity] = Prompt(
                 key = key,
                 approval = (request as? ApprovalPending)?.let { ApprovalTarget(key, it.durableSessionId) },
-            )
+            ) to request.promptIdentity()
         }
 
         for (identity in shown.keys) {
@@ -172,21 +201,19 @@ class SessionNotifier(
         }
 
         val next = shown.filterKeys { it in desired }.toMutableMap()
-        for ((identity, prompt) in desired) {
+        for ((identity, pair) in desired) {
+            val (prompt, promptIdentity) = pair
             // A different request id under the same identity is the Gateway
             // replacing the question, not repeating it. None of the "already
             // dealt with" rules below apply to a request nobody has seen.
             val supersedes = shown[identity]?.key?.let { it != prompt.key } == true
             if (!supersedes) {
                 if (identity in shown) continue
-                // Replayed into the quiet window on this connection. It was
-                // not news then and it does not become news later merely
-                // because some unrelated prompt arrived — which is exactly
-                // what a state diff, unlike Desktop's per-event dispatch,
-                // would otherwise do.
-                if (prompt.key in replayed) continue
+                // Deduplicate across reconnects: if already notified pre-disconnect,
+                // do not re-notify.
+                if (promptIdentity in notified) continue
+                // Suppress immediate firing during quiet window; defer until window closes.
                 if (clock() < quietUntil) {
-                    replayed += prompt.key
                     continue
                 }
             }
@@ -194,13 +221,35 @@ class SessionNotifier(
             // would otherwise keep pointing at a request id the Gateway has
             // already replaced, and pressing one would answer nothing.
             val posted = dispatch(identity.second, identity.first, prompt.approval, bypassThrottle = supersedes)
-            if (posted) next[identity] = prompt else next.remove(identity)
+            if (posted) {
+                next[identity] = prompt
+                notified += promptIdentity
+            } else {
+                next.remove(identity)
+            }
         }
         shown = next
-        // A request that is no longer parked can stop being remembered as old
-        // news. Keyed by request, so superseding a replayed prompt retires the
-        // replayed one and leaves its replacement free to fire.
-        replayed.retainAll(requests.keys)
+
+        // Prune resolved prompts on observed resolution (present in previous pending, absent from current)
+        // rather than set difference against current requests, so incremental replays on reconnect
+        // ({A} -> {A, B}) do not evict un-replayed identities before they arrive.
+        // During disconnects, requests is empty, so we preserve deduplication across reconnects.
+        if (requests.isNotEmpty()) {
+            // Only a disappearance *within one connection generation* is a
+            // resolution. `pendingInputs` is a conflating StateFlow, so a
+            // reconnect's empty-map wipe can be swallowed between collections,
+            // leaving the old generation's keys diffed against the new
+            // generation's replay — where every identity looks resolved, the
+            // whole dedupe set is pruned, and every parked prompt is announced
+            // a second time.
+            val generations = requests.keys.mapTo(mutableSetOf()) { it.connectionGeneration }
+            for ((prevKey, prevReq) in previousPending) {
+                if (prevKey.connectionGeneration !in generations) continue
+                if (prevKey !in requests) {
+                    notified.remove(prevReq.promptIdentity())
+                }
+            }
+        }
     }
 
     private fun applyTurn(outcome: GatewayTurnOutcome) {
@@ -220,6 +269,7 @@ class SessionNotifier(
         // parked when the user leaves again could never be raised a second
         // time, because it would look like it was already showing.
         shown = shown.filterKeys { it.first != visibleSessionId }
+        notified.removeAll { it.durableSessionId == visibleSessionId }
     }
 
     /**
@@ -257,9 +307,10 @@ class SessionNotifier(
      * as "no resumed Activity" and `$activeSessionId` as the conversation the
      * chat surface has open.
      *
-     * Desktop's `global` branch has no mobile equivalent: it exists for the
-     * command center's session-less background runs, which this client cannot
-     * start.
+     * Attention kinds break through for an off-screen session even while focused.
+     * Completion kinds notify for any session when the app is backgrounded,
+     * allowing finishing turns to alert even if the user backgrounded from the
+     * session list or a non-chat surface where no session was visible.
      */
     private fun shouldFire(kind: NotificationKind, durableSessionId: String): Boolean {
         val backgrounded = !presence.appForegrounded.value
@@ -268,9 +319,8 @@ class SessionNotifier(
         // Attention kinds break through for an off-screen session even while focused.
         if (kind in ATTENTION_KINDS) return backgrounded || durableSessionId != visible
 
-        // Completion kinds: only the active session, only while away — so a busy
-        // gateway can't raise one notification per background session.
-        return backgrounded && durableSessionId == visible
+        // Completion kinds notify for any session when backgrounded; suppressed while foregrounded.
+        return backgrounded
     }
 
     /**
@@ -295,6 +345,34 @@ class SessionNotifier(
         return false
     }
 }
+
+/**
+ * Deduplication identity for a pending prompt across reconnects.
+ *
+ * `runtimeSessionId` is excluded because a reconnect replay can carry a fresh
+ * runtime ID for the same underlying prompt request. That deliberately widens
+ * the identity — two prompts differing only by runtime read as one — which is
+ * the trade this dedupe exists to make, and it holds only as far as identities
+ * are pruned when their request is observed to resolve in [applyPending].
+ *
+ * One case is never pruned there. When the *last* outstanding request resolves,
+ * the repository reports an empty map, and an empty map is skipped, because a
+ * disconnect empties it the same way and must not wipe the dedupe set. Nothing
+ * on the pending path removes that identity afterwards: it is cleared only when
+ * the user opens that conversation with the app foregrounded, where
+ * [applyPresence] drops every identity for the visible session. So the leak is
+ * one entry per identity that was the last one outstanding, bounded by the
+ * distinct prompts a connection saw, and its cost is that re-parking that exact
+ * request stays silent until the conversation is read.
+ */
+private data class PromptIdentity(
+    val durableSessionId: String,
+    val requestId: String,
+    val kind: PendingInputKind,
+)
+
+private fun PendingInputRequest.promptIdentity(): PromptIdentity =
+    PromptIdentity(durableSessionId, key.requestId, key.kind)
 
 /**
  * Desktop files clarify, sudo and secret prompts under one `input` kind
