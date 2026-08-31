@@ -206,6 +206,8 @@ fun interface GatewayBrowserLauncher {
 internal enum class GatewaySignInStep(private val label: String) {
     SignInStartFailed("could not start the sign-in"),
     ListenerBound("callback listener bound"),
+    ForegroundHeld("held in the foreground"),
+    ForegroundUnavailable("no foreground hold"),
     BrowserBindFailed("browser service bind failed"),
     BrowserBound("browser service bound"),
     BrowserUnbound("no browser service to bind"),
@@ -262,6 +264,20 @@ internal fun throwableChain(failure: Throwable, limit: Int = THROWABLE_CHAIN_LIM
 }
 
 private const val THROWABLE_CHAIN_LIMIT = 6
+
+/**
+ * Holds this process in the foreground for the length of a sign-in.
+ *
+ * Not an optimisation. Android 17 blocks a cached app's uid from the network
+ * outright (`blocked=APP_BACKGROUND`) and destroys its live sockets, so the
+ * token exchange fails with `UnknownHostException` before it reaches a network
+ * at all — see [SignInForegroundService] for the measurements. Null means the
+ * platform refused the hold; the flow continues, because a sign-in that might
+ * work is better than one that certainly will not.
+ */
+internal fun interface GatewaySignInForeground {
+    fun hold(): AutoCloseable?
+}
 
 /**
  * Waits for the default network to look usable again, bounded.
@@ -953,6 +969,11 @@ internal class LoopbackGatewayNativeLogin(
      * code it is redeeming expires in 120 s anyway.
      */
     private val exchangeTimeoutMillis: Long = EXCHANGE_TIMEOUT_MILLIS,
+    /**
+     * No-op by default; the process wires the real one, the same convention as
+     * [log]. A test has no service to start and must not try.
+     */
+    private val foreground: GatewaySignInForeground = GatewaySignInForeground { null },
 ) : GatewayNativeLogin {
     override suspend fun login(
         profile: RemoteGatewayProfile,
@@ -989,9 +1010,24 @@ internal class LoopbackGatewayNativeLogin(
         // is a request to the window manager, not a guarantee it has happened
         // by the time the exchange needs the process to still be running.
         var binding: AutoCloseable? = null
+        var held: AutoCloseable? = null
         return try {
             val redirectUri = "http://127.0.0.1:${listener.localPort}/callback"
             log.step(GatewaySignInStep.ListenerBound)
+            // Before the browser, and that ordering is not cosmetic: Android 12+
+            // refuses to let a process that is already in the background start a
+            // foreground service, so the one moment this can be claimed is while
+            // the tap that started it still has the app in front.
+            held = try {
+                foreground.hold()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (refused: Throwable) {
+                log.failed(GatewaySignInStep.ForegroundUnavailable, refused)
+                null
+            }
+            if (held != null) log.step(GatewaySignInStep.ForegroundHeld)
+            else log.step(GatewaySignInStep.ForegroundUnavailable)
             // A browser service that will not bind costs the freezer protection
             // and nothing else. It must never cost the sign-in, so this degrades
             // to the same unbound path a device with no provider takes.
@@ -1062,6 +1098,9 @@ internal class LoopbackGatewayNativeLogin(
             throw cancelled
         } finally {
             runCatching { binding?.close() }
+            // Released on every exit — success, refusal, timeout, cancellation —
+            // in the same place the listener it protects is closed.
+            runCatching { held?.close() }
             runCatching { listener.close() }
         }
     }

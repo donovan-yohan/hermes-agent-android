@@ -13,8 +13,10 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
@@ -326,6 +328,9 @@ class RemoteGatewayTest {
         assertEquals(
             listOf(
                 GatewaySignInStep.ListenerBound.toString(),
+                // No platform to hold in a JVM test; the step is logged either
+                // way so a device trace always says which it was.
+                GatewaySignInStep.ForegroundUnavailable.toString(),
                 GatewaySignInStep.BrowserUnbound.toString(),
                 GatewaySignInStep.CallbackReceived.toString(),
                 GatewaySignInStep.CallbackRefused.toString(),
@@ -352,6 +357,7 @@ class RemoteGatewayTest {
         assertEquals(
             listOf(
                 GatewaySignInStep.ListenerBound.toString(),
+                GatewaySignInStep.ForegroundUnavailable.toString(),
                 GatewaySignInStep.BrowserBound.toString(),
                 TracingBrowser.OPENED,
                 GatewaySignInStep.CallbackReceived.toString(),
@@ -718,6 +724,9 @@ class RemoteGatewayTest {
         assertEquals(
             listOf(
                 GatewaySignInStep.ListenerBound.toString(),
+                // No platform to hold in a JVM test; the step is logged either
+                // way so a device trace always says which it was.
+                GatewaySignInStep.ForegroundUnavailable.toString(),
                 GatewaySignInStep.BrowserUnbound.toString(),
                 "${GatewaySignInStep.BrowserLaunchFailed} (java.lang.IllegalStateException)",
             ),
@@ -1387,6 +1396,127 @@ class RemoteGatewayTest {
             shared.connectionPool,
             api.connectionPool,
         )
+    }
+
+    /**
+     * The r8 fix, from the side that has to hold: Android 17 blocks a cached
+     * app's uid from the network entirely, so the hold must be claimed while
+     * the tap still has the app in front — before the browser opens — and it
+     * must be given back on every way out.
+     */
+    @Test
+    fun `the foreground hold is taken before the browser opens and released on success`() = runBlocking {
+        val trace = SignInTrace()
+        val foreground = RecordingForeground(trace)
+        val api = FakeAuthApi()
+        val login = LoopbackGatewayNativeLogin(
+            api,
+            log = trace.asLog(),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+            foreground = foreground,
+        )
+        val callbackThread = AtomicReference<Thread>()
+
+        val tokens = login.login(PROFILE, GatewayBrowserLauncher { url ->
+            trace.record(BROWSER_OPENED)
+            val parsed = requireNotNull(url.toHttpUrlOrNull())
+            val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+            val state = requireNotNull(parsed.queryParameter("state"))
+            callbackThread.set(
+                Thread { readCallback("$redirect?code=code-foreground&state=$state") }.also(Thread::start),
+            )
+        })
+        callbackThread.get()?.join(15_000)
+
+        assertEquals(VALID_TOKENS, tokens)
+        val steps = trace.snapshot()
+        assertTrue(
+            "the hold is worthless once the app is already behind the browser",
+            steps.indexOf(HELD) < steps.indexOf(BROWSER_OPENED),
+        )
+        assertTrue(steps.contains(GatewaySignInStep.ForegroundHeld.toString()))
+        assertEquals(1, foreground.held)
+        assertEquals(1, foreground.released)
+    }
+
+    @Test
+    fun `a refused sign-in releases the foreground hold`() = runBlocking {
+        val foreground = RecordingForeground(SignInTrace())
+        val login = LoopbackGatewayNativeLogin(
+            FakeAuthApi(),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+            foreground = foreground,
+        )
+        val callbackThread = AtomicReference<Thread>()
+
+        val failure = runCatching {
+            login.login(PROFILE, GatewayBrowserLauncher { url ->
+                val parsed = requireNotNull(url.toHttpUrlOrNull())
+                val redirect = requireNotNull(parsed.queryParameter("redirect_uri"))
+                val state = requireNotNull(parsed.queryParameter("state"))
+                callbackThread.set(
+                    Thread { readCallback("$redirect?error=access_denied&state=$state") }.also(Thread::start),
+                )
+            })
+        }.exceptionOrNull()
+        callbackThread.get()?.join(15_000)
+
+        assertEquals(GatewaySignInCopy.REFUSED, (failure as? GatewayAuthException)?.message)
+        assertEquals(1, foreground.released)
+    }
+
+    @Test
+    fun `a sign-in that times out releases the foreground hold`() = runBlocking {
+        val foreground = RecordingForeground(SignInTrace())
+        val login = LoopbackGatewayNativeLogin(
+            FakeAuthApi(),
+            loginTimeoutMillis = 200L,
+            foreground = foreground,
+        )
+
+        val failure = runCatching {
+            login.login(PROFILE, GatewayBrowserLauncher { })
+        }.exceptionOrNull()
+
+        assertTrue(failure is GatewayAuthException)
+        assertEquals(1, foreground.released)
+    }
+
+    @Test
+    fun `an abandoned sign-in releases the foreground hold`() = runBlocking {
+        val foreground = RecordingForeground(SignInTrace())
+        val opened = CompletableDeferred<Unit>()
+        val login = LoopbackGatewayNativeLogin(
+            FakeAuthApi(),
+            loginTimeoutMillis = FIXTURE_LOGIN_TIMEOUT_MILLIS,
+            foreground = foreground,
+        )
+
+        val running = launch(Dispatchers.IO) {
+            runCatching { login.login(PROFILE, GatewayBrowserLauncher { opened.complete(Unit) }) }
+        }
+        opened.await()
+        running.cancelAndJoin()
+
+        assertEquals(1, foreground.held)
+        assertEquals("a cancelled sign-in must not strand a foreground service", 1, foreground.released)
+    }
+
+    /** Records the hold without a platform to hold onto. */
+    private class RecordingForeground(private val trace: SignInTrace) : GatewaySignInForeground {
+        var held = 0
+            private set
+        var released = 0
+            private set
+
+        override fun hold(): AutoCloseable {
+            held += 1
+            trace.record(HELD)
+            return AutoCloseable {
+                released += 1
+                trace.record("foreground released")
+            }
+        }
     }
 
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
@@ -2715,6 +2845,8 @@ class RemoteGatewayTest {
     private companion object {
         /** Production waits five minutes for a person; a fixture must not. */
         const val FIXTURE_LOGIN_TIMEOUT_MILLIS = 15_000L
+        const val HELD = "foreground held"
+        const val BROWSER_OPENED = "browser opened"
         const val FIXTURE_SOCKET_TIMEOUT_MILLIS = 5_000
 
         val PROFILE = RemoteGatewayProfile("https://gateway.example/hermes/", provider = "fixture-provider")

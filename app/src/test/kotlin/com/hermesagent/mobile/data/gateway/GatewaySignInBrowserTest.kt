@@ -1,21 +1,27 @@
 package com.hermesagent.mobile.data.gateway
 
+import android.app.Application
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -159,6 +165,55 @@ class GatewaySignInBrowserTest {
         offMain.open(AUTHORIZE_URL)
 
         assertNotSame(Looper.getMainLooper(), platform.loopers.single())
+    }
+
+    /**
+     * The r8 fix on the platform side. Android 17 blocks a cached app's uid
+     * from the network and destroys its live sockets; a `dataSync` foreground
+     * service is what keeps this process out of that state for the length of a
+     * sign-in.
+     */
+    @Test
+    fun `the sign-in service runs in the foreground while a sign-in is live`() {
+        val controller = Robolectric.buildService(SignInForegroundService::class.java).create()
+        controller.get().onStartCommand(null, 0, 1)
+
+        val shadow = shadowOf(controller.get())
+        assertNotNull("the service has to actually go foreground", shadow.lastForegroundNotification)
+        assertEquals(SignInForegroundService.NOTIFICATION_ID, shadow.lastForegroundNotificationId)
+    }
+
+    @Test
+    fun `the manifest declares the data sync type the uid block needs`() {
+        val info = context.packageManager.getServiceInfo(
+            ComponentName(context, SignInForegroundService::class.java),
+            0,
+        )
+        assertTrue(
+            "a foreground service without a declared type cannot start on modern Android",
+            info.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0,
+        )
+    }
+
+    @Test
+    fun `holding the foreground starts the service, and releasing it stops the same one`() {
+        val app: Application = ApplicationProvider.getApplicationContext()
+        val shadowApp = shadowOf(app)
+
+        val hold = AndroidGatewaySignInForeground(app).hold()
+
+        assertNotNull(hold)
+        assertEquals(
+            SignInForegroundService::class.java.name,
+            shadowApp.nextStartedService?.component?.className,
+        )
+
+        hold?.close()
+
+        assertEquals(
+            SignInForegroundService::class.java.name,
+            shadowApp.nextStoppedService?.component?.className,
+        )
     }
 
     private class RecordingPlatform(

@@ -262,6 +262,23 @@ internal val androidGatewayAppFailureLog: (String) -> Unit = { chain ->
 }
 
 /**
+ * Starts and stops [SignInForegroundService] around one sign-in.
+ *
+ * On API 33+ without a `POST_NOTIFICATIONS` grant the service still runs and
+ * its notification is simply not shown — which is the outcome that matters
+ * here, because the uid's network state is what the service is for. This app
+ * asks for that grant once, at the first live Gateway, and respects a refusal,
+ * so a person who declined still gets a working sign-in.
+ */
+internal class AndroidGatewaySignInForeground(private val context: Context) : GatewaySignInForeground {
+    override fun hold(): AutoCloseable? {
+        val started = runCatching { SignInForegroundService.start(context) }.isSuccess
+        if (!started) return null
+        return AutoCloseable { runCatching { SignInForegroundService.stop(context) } }
+    }
+}
+
+/**
  * Whether the platform thinks there is a working default network yet.
  *
  * Used once, before the single token-exchange retry, so the second attempt can

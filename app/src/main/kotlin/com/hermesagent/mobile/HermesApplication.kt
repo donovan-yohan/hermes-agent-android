@@ -11,6 +11,7 @@ import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
 import com.hermesagent.mobile.data.gateway.AndroidGatewayNetworkGate
+import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInForeground
 import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInLog
 import com.hermesagent.mobile.data.gateway.androidGatewayAppFailureLog
 import com.hermesagent.mobile.data.gateway.androidGatewayConnectEventLog
@@ -92,7 +93,13 @@ class HermesApplication : Application() {
         val authenticator = NativeGatewayAuthenticator(
             api = authApi,
             store = secrets,
-            login = LoopbackGatewayNativeLogin(authApi, log = AndroidGatewaySignInLog),
+            login = LoopbackGatewayNativeLogin(
+                authApi,
+                log = AndroidGatewaySignInLog,
+                // Without this the uid is network-blocked the moment the person
+                // leaves for the browser; see SignInForegroundService.
+                foreground = AndroidGatewaySignInForeground(this),
+            ),
             log = AndroidGatewaySignInLog,
         )
         GatewayConnectionManager(

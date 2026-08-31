@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!--
+        Android 17 blocks a cached app's uid from the network and destroys its
+        live sockets, which kills a sign-in the moment the person leaves for
+        their browser. A dataSync foreground service is the sanctioned way to
+        say that work outlives the screen; it is held for one sign-in only.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -51,6 +58,10 @@
             android:name=".data.voice.WakeWordForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <service
+            android:name=".data.gateway.SignInForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!--
             Approve / Reject from the shade. Never exported: the only sender is
             a PendingIntent this app built, with every field already fixed.

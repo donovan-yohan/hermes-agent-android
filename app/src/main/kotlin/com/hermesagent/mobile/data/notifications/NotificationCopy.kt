@@ -64,6 +64,21 @@ object NotificationCopy {
     const val RESPONSES_CHANNEL_DESCRIPTION = "A turn finished while Hermes was in the background."
 
     /**
+     * Android-only, and not a notification anyone asked for: it is the price of
+     * a foreground service, and the service is what keeps a sign-in's network
+     * working while the person is in their browser. Desktop has no equivalent
+     * because it has no per-app background network block.
+     */
+    const val SIGN_IN_CHANNEL_NAME = "Sign-in"
+
+    const val SIGN_IN_CHANNEL_DESCRIPTION =
+        "Shown only while Hermes finishes signing in to a Gateway in your browser."
+
+    const val SIGN_IN_TITLE = "Finishing sign-in to Hermes"
+
+    const val SIGN_IN_BODY = "Keeping the connection open until your browser comes back."
+
+    /**
      * Android-only, shown before the system permission dialog. Desktop asks
      * nothing — Electron notifications need no runtime grant — so this reuses
      * the settings panel's own vocabulary (`en.ts:431`, `en.ts:434`) rather
