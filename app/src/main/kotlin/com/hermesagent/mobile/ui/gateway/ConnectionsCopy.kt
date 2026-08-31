@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui.gateway
 
+import com.hermesagent.mobile.data.connections.ConnectionAttentionAction
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.SavedConnection
 
@@ -241,6 +242,40 @@ internal object ConnectionsCopy {
      */
     const val REGISTRY_LOCKED = "Saved gateways can’t be changed on this version. Update the app."
 
+    /**
+     * `en.ts:818` (`settings.gateway.signIn`), on the registry row rather than
+     * on the pane.
+     *
+     * Desktop's registry has no per-row status at all: its rows are Test, Make
+     * primary, Edit and Remove, and whether the connection is up is the
+     * statusbar's business. This app switches from the registry, so the row is
+     * where the person is standing when the switch fails — and a row that only
+     * says `Current` about a gateway that never came up is the lie S-U2 is
+     * about. The word is Desktop's own for the act it starts.
+     */
+    const val SIGN_IN = "Sign in"
+
+    /**
+     * The same slot on a Local row, whose credential is a token this app
+     * already holds — there is nothing to sign in to, only a server to reach.
+     * Desktop's own word for the act (`en.ts:18`, `common.connect`), and the
+     * word the pane directly above this list uses on its button.
+     */
+    const val CONNECT = "Connect"
+
+    /**
+     * Puts the switch-failure line away.
+     *
+     * Desktop's failure is a toast that dismisses itself
+     * (`connection-switcher.tsx:127` @ `f82f2dba`). This app has no
+     * notification stack to toast into (#73), so the sentence is an inline line
+     * that stays until it is answered or dismissed — which means it needs a
+     * way to be dismissed. Desktop's own word for that control
+     * (`en.ts` `notifications.dismiss`), minus the noun that names a surface
+     * this app does not have.
+     */
+    const val DISMISS = "Dismiss"
+
     /** `en.ts:1772`. */
     const val MANAGE_GATEWAYS = "Manage gateways…"
 
@@ -287,6 +322,16 @@ internal object ConnectionsCopy {
 
     /** `en.ts:1770`. */
     fun switchConnectionFailed(label: String): String = "Could not connect to $label"
+
+    /**
+     * The word for what a row is asking for. Policy — which kinds ask at all —
+     * is [ConnectionKind.attentionAction]'s; this is only the wording, and
+     * both words are Desktop's.
+     */
+    fun attentionActionLabel(action: ConnectionAttentionAction): String = when (action) {
+        ConnectionAttentionAction.SignIn -> SIGN_IN
+        ConnectionAttentionAction.Connect -> CONNECT
+    }
 
     fun kindLabel(kind: ConnectionKind): String = when (kind) {
         ConnectionKind.Remote -> KIND_REMOTE

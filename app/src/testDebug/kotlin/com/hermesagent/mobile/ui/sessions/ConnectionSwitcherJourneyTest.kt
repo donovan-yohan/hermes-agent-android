@@ -1,5 +1,8 @@
 package com.hermesagent.mobile.ui.sessions
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -17,6 +20,7 @@ import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.ui.ConnectionsActions
+import com.hermesagent.mobile.ui.gateway.ConnectionSwitchFailure
 import com.hermesagent.mobile.ui.gateway.ConnectionsCopy
 import com.hermesagent.mobile.ui.gateway.ConnectionsUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -106,6 +110,76 @@ class ConnectionSwitcherJourneyTest {
         }
 
         compose.onNodeWithText("Connecting…").assertExists()
+    }
+
+    @Test
+    fun `a switch that failed says which gateway, and the line can be put away`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "b",
+            switchFailure = ConnectionSwitchFailure("Bravo", attempt = 1),
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ConnectionSwitcherBar(state = state, actions = ConnectionsActions(), onManage = {})
+            }
+        }
+
+        compose.onNodeWithText(ConnectionsCopy.switchConnectionFailed("Bravo")).assertExists()
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.DISMISS} Bravo").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText(ConnectionsCopy.switchConnectionFailed("Bravo")).assertDoesNotExist()
+    }
+
+    @Test
+    fun `dismissing one report does not silence the next`() {
+        var state by mutableStateOf(
+            ConnectionsUiState(
+                connections = listOf(
+                    remoteConnection("a", "Alpha", "https://alpha.test"),
+                    remoteConnection("b", "Bravo", "https://bravo.test"),
+                ),
+                activeId = "b",
+                switchFailure = ConnectionSwitchFailure("Bravo", attempt = 1),
+            ),
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ConnectionSwitcherBar(state = state, actions = ConnectionsActions(), onManage = {})
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.DISMISS} Bravo").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(ConnectionsCopy.switchConnectionFailed("Bravo")).assertDoesNotExist()
+
+        state = state.copy(switchFailure = ConnectionSwitchFailure("Bravo", attempt = 2))
+        compose.waitForIdle()
+
+        compose.onNodeWithText(ConnectionsCopy.switchConnectionFailed("Bravo")).assertExists()
+    }
+
+    @Test
+    fun `no switch failure means no line`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "a",
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ConnectionSwitcherBar(state = state, actions = ConnectionsActions(), onManage = {})
+            }
+        }
+
+        compose.onNodeWithText(ConnectionsCopy.DISMISS).assertDoesNotExist()
     }
 
     @Test

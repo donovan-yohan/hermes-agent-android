@@ -7,6 +7,7 @@ import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.ConnectionRegistry
 import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
+import com.hermesagent.mobile.data.connections.ConnectionSwitchOutcome
 import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.connections.findDuplicateConnection
 import com.hermesagent.mobile.data.connections.newConnectionId
@@ -14,6 +15,7 @@ import com.hermesagent.mobile.data.connections.normalizeGatewayUrl
 import com.hermesagent.mobile.data.connections.sortConnectionsForDisplay
 import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.LocalGatewayCopy
 import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
@@ -26,6 +28,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -70,6 +74,32 @@ data class ConnectionEditorState(
             "destination=$destination, token=<redacted>, error=$error)"
 }
 
+/**
+ * Which switch outcomes this surface puts a line under.
+ *
+ * A product decision, so it lives with the surface rather than with the
+ * controller: Desktop toasts exactly the case where the target "did not become
+ * active" (`store/connections.ts:198-200` @ `f82f2dba`). A switch nobody asked
+ * for reports nothing, and a row nothing was going to dial already explains
+ * itself on the row.
+ */
+internal val ConnectionSwitchOutcome.isWorthReporting: Boolean
+    get() = this == ConnectionSwitchOutcome.SignInNeeded || this == ConnectionSwitchOutcome.NotConnected
+
+/**
+ * One failed switch, as the surfaces that report it need it.
+ *
+ * [attempt] exists so a person can put the line away: Desktop's toast expires
+ * on its own, and an inline line needs something to compare against a
+ * remembered dismissal. A counter rather than the row id, because the same row
+ * failing twice is two reports — dismissing the first must not silence the
+ * second.
+ */
+data class ConnectionSwitchFailure(
+    val label: String,
+    val attempt: Long,
+)
+
 data class ConnectionsUiState(
     val connections: List<SavedConnection> = emptyList(),
     val activeId: String? = null,
@@ -79,6 +109,15 @@ data class ConnectionsUiState(
     val loaded: Boolean = false,
     /** False when the stored registry belongs to a build this one cannot read. */
     val writable: Boolean = true,
+    /**
+     * The switch that just failed, or null.
+     *
+     * Desktop toasts this and the toast expires
+     * (`connection-switcher.tsx:123-128` @ `f82f2dba`). Here it is state,
+     * because an inline line has to be told when to go: it is cleared by the
+     * next switch, by a connection that does come up, and by the person.
+     */
+    val switchFailure: ConnectionSwitchFailure? = null,
 ) {
     /** One stable order for both the settings list and the session-rail sheet. */
     val ordered: List<SavedConnection> get() = sortConnectionsForDisplay(connections)
@@ -113,6 +152,9 @@ internal class ConnectionsViewModel(
     val uiState: StateFlow<ConnectionsUiState> = _uiState.asStateFlow()
     private var switchJob: Job? = null
 
+    /** Counts reported failures, so two reports about one row are two lines. */
+    private var switchAttempts = 0L
+
     init {
         viewModelScope.launch {
             store.connectionRegistry.collect { registry ->
@@ -129,6 +171,20 @@ internal class ConnectionsViewModel(
             switch.pendingConnectionId.collect { id -> _uiState.update { it.copy(pendingId = id) } }
         }
         viewModelScope.launch {
+            // A gateway that came up settles the question the failure line was
+            // asking, so the line goes with it rather than sitting under a
+            // working connection. The status is not projected any further than
+            // this: the Gateways pane already holds the live connection and
+            // hands the registry what it needs, and a second copy here would be
+            // one fact with two writers.
+            gateway.state
+                .map { it.status == GatewayConnectionStatus.Connected }
+                .distinctUntilChanged()
+                .collect { connected ->
+                    if (connected) _uiState.update { it.copy(switchFailure = null) }
+                }
+        }
+        viewModelScope.launch {
             store.connectionRegistryWritable.collect { writable ->
                 _uiState.update { it.copy(writable = writable) }
             }
@@ -143,7 +199,19 @@ internal class ConnectionsViewModel(
     fun select(id: String) {
         if (switchJob?.isActive == true) return
         if (_uiState.value.activeId == id) return
-        switchJob = viewModelScope.launch { switch.select(id) }
+        val label = _uiState.value.connections.firstOrNull { it.id == id }?.label
+        // The previous failure is about the previous attempt. Clearing it here
+        // rather than on the way out means the line never sits over a switch
+        // that is still in flight.
+        _uiState.update { it.copy(switchFailure = null) }
+        switchJob = viewModelScope.launch {
+            val outcome = switch.select(id)
+            if (outcome.isWorthReporting && label != null) {
+                switchAttempts += 1
+                val failure = ConnectionSwitchFailure(label, switchAttempts)
+                _uiState.update { it.copy(switchFailure = failure) }
+            }
+        }
     }
 
     fun beginAdd() {

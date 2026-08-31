@@ -56,7 +56,9 @@ import com.hermesagent.mobile.ui.chat.composer.VoiceDictationControl
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.StatusAction
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.common.statusAction
 import com.hermesagent.mobile.ui.chat.composer.CompletionPopup
 import com.hermesagent.mobile.ui.chat.composer.ComposerAddControl
 import com.hermesagent.mobile.ui.chat.composer.ModelControl
@@ -147,6 +149,15 @@ fun Composer(
     connected: Boolean,
     modifier: Modifier = Modifier,
     statusLine: String,
+    /**
+     * Where [statusLine] goes when it is naming a problem another surface
+     * fixes, or null when it is only reporting.
+     *
+     * A line that says "sign in before reconnecting" and cannot be tapped is an
+     * instruction with the door left out. Which states have a door, and which
+     * surface it opens, is the caller's — see `ChatUiState.gatewayNeedsAttention`.
+     */
+    statusAction: StatusAction? = null,
     editorIdentity: String? = null,
     codingHeader: (@Composable () -> Unit)? = null,
     fusedStatusAbove: Boolean = false,
@@ -282,7 +293,9 @@ fun Composer(
                                 text = statusLine,
                                 style = HermesTheme.type.scaffoldMeta,
                                 color = tokens.scaffoldMeta,
-                                modifier = Modifier.padding(end = 6.dp),
+                                modifier = Modifier
+                                    .statusAction(statusLine, statusAction)
+                                    .padding(end = 6.dp),
                             )
                         } else {
                             ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast)

@@ -31,6 +31,7 @@ import com.hermesagent.mobile.data.gateway.OkHttpLocalGatewayHealthCheck
 import com.hermesagent.mobile.data.gateway.OkHttpGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.RemoteGatewayConnector
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
+import com.hermesagent.mobile.data.gateway.StoredGatewayCredentials
 import com.hermesagent.mobile.data.notifications.AndroidNotificationPreferences
 import com.hermesagent.mobile.data.notifications.AndroidNotificationSurface
 import com.hermesagent.mobile.data.notifications.NotificationPreferenceStore
@@ -80,19 +81,26 @@ class HermesApplication : Application() {
             initialScope = ComposerQueueScope.forConnectionProfile("bootstrap", "default"),
         )
     }
+    /**
+     * One store, two credential shapes: a Remote row's sign-in and a Local row's
+     * session token share the slot machinery that names a file after the
+     * connection and binds its contents to the address that minted them.
+     *
+     * Hoisted out of [gatewayConnection] because the switch controller asks it a
+     * question of its own — whether a row has a sign-in at all — and building a
+     * second store would be a second view of the same files.
+     */
+    private val gatewaySecrets: AndroidGatewayTokenStore by lazy { AndroidGatewayTokenStore(this) }
+
     internal val gatewayConnection: GatewayConnectionManager by lazy {
         val authApi = OkHttpGatewayNativeAuthApi(
             http,
             log = AndroidGatewaySignInLog,
             networkGate = AndroidGatewayNetworkGate(this),
         )
-        // One store, two credential shapes: a Remote row's sign-in and a Local
-        // row's session token share the slot machinery that names a file after
-        // the connection and binds its contents to the address that minted them.
-        val secrets = AndroidGatewayTokenStore(this)
         val authenticator = NativeGatewayAuthenticator(
             api = authApi,
-            store = secrets,
+            store = gatewaySecrets,
             login = LoopbackGatewayNativeLogin(
                 authApi,
                 log = AndroidGatewaySignInLog,
@@ -116,7 +124,7 @@ class HermesApplication : Application() {
             // leaves no trace anywhere either.
             logConnectEvent = androidGatewayConnectEventLog,
             localConnector = LocalGatewayConnector(
-                tokens = secrets,
+                tokens = gatewaySecrets,
                 health = OkHttpLocalGatewayHealthCheck(http),
                 rpcOpen = { baseUrl, token -> OkHttpGatewayRpcClient.connectLocal(http, baseUrl, token) },
                 scraper = GatewayDashboardTokenResolver(http),
@@ -148,6 +156,7 @@ class HermesApplication : Application() {
             gateway = gatewayConnection,
             cache = cache,
             drafts = draftStore,
+            credentials = StoredGatewayCredentials(gatewaySecrets),
         )
     }
 

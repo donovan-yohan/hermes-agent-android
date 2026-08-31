@@ -240,11 +240,76 @@ def check_divergences(body: list[str] | None, problems: list[str]) -> None:
             )
 
 
+# A delimiter needs at least one `-`; `| | |` is a data row of empty cells,
+# not a separator, and it must be width-checked like any other row.
+DELIMITER = re.compile(r"^\|[\s:|-]*-[\s:|-]*\|$")
+
+
+def check_table_shape(text: str, problems: list[str]) -> None:
+    """Every table row carries exactly its header's column count.
+
+    GFM does not complain about a ragged row: it drops the cells past the
+    header's width and pads a short one. So a four-column divergence pasted into
+    a three-column ledger renders on GitHub with its last cell — the
+    justification, the issue number, the reason the gate exists — simply gone,
+    while the source looks complete in an editor.
+
+    The delimiter row is stricter than the rest, and is checked rather than
+    skipped: GFM only recognises a table at all when the delimiter matches the
+    header's width, so a mismatch there does not lose one cell, it loses the
+    whole block — every row renders as literal pipes.
+
+    Document-wide on purpose. `check_divergences` already counts cells, but only
+    inside the section it was handed; the table that swallows a row is not
+    always the table the gate was looking at.
+    """
+    fenced = False
+    width: int | None = None
+    header_line = 0
+    for number, line in enumerate(text.splitlines(), 1):
+        if FENCE.match(line):
+            fenced = not fenced
+            width = None
+            continue
+        if fenced:
+            continue
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            width = None
+            continue
+        if width is None:
+            width = len(cells(line))
+            header_line = number
+            continue
+        found = len(cells(line))
+        # Only the line directly under the header separates it; further down,
+        # a row of dashes is content.
+        if number == header_line + 1 and DELIMITER.match(stripped):
+            if found != width:
+                problems.append(
+                    f"line {number} has {found} cells, but its table's header at line "
+                    f"{header_line} has {width}. The delimiter row must match the header's "
+                    f"width or GFM renders no table."
+                )
+            continue
+        if found != width:
+            consequence = (
+                "GFM drops the extra cells, so that row renders truncated."
+                if found > width
+                else "GFM pads the short row, so that row renders with empty cells."
+            )
+            problems.append(
+                f"line {number} has {found} cells, but its table's header at line {header_line} "
+                f"has {width}. {consequence}"
+            )
+
+
 def check(text: str) -> list[str]:
     found = sections(text)
     problems: list[str] = []
     check_visual_report(found.get(VISUAL_SECTION), problems)
     check_divergences(found.get(DIVERGENCE_SECTION), problems)
+    check_table_shape(text, problems)
     return problems
 
 
@@ -397,6 +462,34 @@ def self_test() -> None:
         "names neither a report nor a pending issue",
     )
 
+    # A four-column row pasted into a three-column ledger — the shape that put
+    # five divergences on this repo's Gateways page with their evidence cell
+    # invisible on GitHub (#116 review, B1).
+    LEDGER = "## Mobile adaptation ledger\n\n| Desktop | Android | Reason |\n|---|---|---|\n"
+    accepts("a well-formed second table", page() + "\n" + LEDGER + "| Hover kebab | 48dp target | Touch has no hover |\n")
+    rejects(
+        "four-column row in a three-column ledger",
+        page() + "\n" + LEDGER + "| Hover kebab | mobile-adaptation | 48dp target | Touch has no hover |\n",
+        "GFM drops the extra cells",
+    )
+    rejects(
+        "short row in a three-column ledger",
+        page() + "\n" + LEDGER + "| Hover kebab | 48dp target |\n",
+        "GFM pads the short row",
+    )
+    rejects(
+        "delimiter narrower than its header takes the whole table with it",
+        page() + "\n## Ledger\n\n| Desktop | Android | Reason |\n|---|---|\n| a | b | c |\n",
+        "delimiter row must match the header's width",
+    )
+    rejects(
+        "a row of empty cells is data, not a separator",
+        page() + "\n" + LEDGER + "| | |\n",
+        "GFM pads the short row",
+    )
+    accepts("an aligned delimiter is still a delimiter", page() + "\n## Ledger\n\n| A | B |\n|:---|---:|\n| a | b |\n")
+    accepts("a ragged table inside a fence is not a table", page() + "\n```\n| a | b |\n|---|---|\n| c |\n```\n")
+
     with tempfile.TemporaryDirectory() as temporary:
         root = pathlib.Path(temporary)
         parity = root / PARITY_DIR
@@ -416,7 +509,7 @@ def main() -> int:
 
     if args.self_test:
         self_test()
-        print("ok    parity-evidence gate catches a missing report and an unclassified row")
+        print("ok    parity-evidence gate catches a missing report, an unclassified row and a ragged table")
 
     root = pathlib.Path(__file__).resolve().parents[1]
     paths = [pathlib.Path(path) for path in args.paths] or pages(root)

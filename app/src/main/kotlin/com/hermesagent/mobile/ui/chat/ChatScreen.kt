@@ -79,8 +79,11 @@ import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.QuietIconButton
+import com.hermesagent.mobile.ui.common.StatusAction
+import com.hermesagent.mobile.ui.common.statusAction
 import com.hermesagent.mobile.ui.common.scrollToTail
 import com.hermesagent.mobile.ui.common.VerticalHairline
+import com.hermesagent.mobile.ui.gateway.ConnectionsCopy
 import com.hermesagent.mobile.ui.sessions.ProfileRailActions
 import com.hermesagent.mobile.ui.sessions.SessionActionsControl
 import com.hermesagent.mobile.ui.sessions.SessionList
@@ -111,6 +114,16 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     /** "Manage profiles…" leaves the sidebar, so the app shell owns where it goes. */
     onOpenProfiles: () -> Unit = {},
+    /**
+     * The Gateways surface, for the chrome that names it.
+     *
+     * A connection that needs signing in reports itself twice here — in the
+     * header subtitle and on the composer — and until now neither could be
+     * tapped, so the door out of a broken connection was three taps and a
+     * scroll away through Settings. Same destination the sidebar's
+     * "Manage gateways…" reaches, so the shell still owns where it goes.
+     */
+    onOpenGateways: () -> Unit = {},
     /** Injectable only for layout tests; production uses the device navigation bars. */
     wideRailInsets: WindowInsets = WindowInsets.navigationBars,
     /**
@@ -125,11 +138,17 @@ fun ChatScreen(
     /** Rail chrome above the session header — the connection switcher. */
     sidebarHeader: @Composable () -> Unit = {},
 ) {
+    // Derived once, here, because this is where the policy lives: which
+    // connection states are a door, and which surface that door opens. Both
+    // layouts and the composer then carry one nullable rather than re-deriving
+    // the same predicate three times.
+    val gatewayDoor = StatusAction(ConnectionsCopy.MANAGE_GATEWAYS, onOpenGateways)
+        .takeIf { state.gatewayNeedsAttention }
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, wideRailInsets, imeInsets, sidebarHeader)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, imeInsets, sidebarHeader)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader)
         }
     }
 }
@@ -145,6 +164,7 @@ private fun CompactLayout(
     actions: ChatActions,
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
+    gatewayDoor: StatusAction?,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
 ) {
@@ -197,10 +217,11 @@ private fun CompactLayout(
                     scope.launch { drawerState.open() }
                 },
                 onOpenSettings = onOpenSettings,
+                gatewayDoor = gatewayDoor,
                 modifier = Modifier.statusBarsPadding(),
             )
             TranscriptPane(state, Modifier.weight(1f))
-            ComposerPane(state, actions)
+            ComposerPane(state, actions, gatewayDoor)
         }
     }
 }
@@ -211,6 +232,7 @@ private fun WideLayout(
     actions: ChatActions,
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
+    gatewayDoor: StatusAction?,
     railInsets: WindowInsets,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
@@ -244,9 +266,10 @@ private fun WideLayout(
                 sessionId = state.activeSession?.id,
                 onOpenSessions = null,
                 onOpenSettings = onOpenSettings,
+                gatewayDoor = gatewayDoor,
             )
             TranscriptPane(state, Modifier.weight(1f))
-            ComposerPane(state, actions)
+            ComposerPane(state, actions, gatewayDoor)
         }
     }
 }
@@ -537,7 +560,7 @@ private fun JumpToLatestButton(
 }
 
 @Composable
-private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
+private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: StatusAction?) {
     val composerStatus = state.activeSession?.composerStatus
     val hasQueue = state.composer.runtime.queueEntries.isNotEmpty()
     val fuseStatusStack = composerStatusGroupCount(composerStatus, hasQueue) == 1 &&
@@ -620,6 +643,10 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions) {
             canSend = state.canSend,
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             statusLine = state.composerStatus(),
+            // A notice about a project or a profile is reporting, not
+            // directing, and `composerStatus` renders it ahead of the
+            // connection — so it must not inherit the connection's door.
+            statusAction = gatewayDoor.takeIf { state.notice == null },
             editorIdentity = state.activeSession?.id,
             codingHeader = {
                 CodingStatusRow(
@@ -671,6 +698,8 @@ private fun ChatTopBar(
     onOpenSessions: (() -> Unit)?,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Where [subtitle] goes while it names a connection problem; null otherwise. */
+    gatewayDoor: StatusAction? = null,
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
@@ -704,6 +733,7 @@ private fun ChatTopBar(
                     color = tokens.scaffoldMeta,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.statusAction(subtitle, gatewayDoor),
                 )
             }
             // The open session's actions, identical to its sidebar row's:
@@ -720,6 +750,18 @@ private fun ChatTopBar(
         Hairline()
     }
 }
+
+/**
+ * Whether the chrome is currently naming a connection problem the Gateways
+ * surface is the answer to.
+ *
+ * `Connecting` is deliberately not one: it is a report on something already
+ * happening, and a door out of it would be a door out of the thing the person
+ * is waiting for.
+ */
+private val ChatUiState.gatewayNeedsAttention: Boolean
+    get() = connection.status == GatewayConnectionStatus.NeedsAttention ||
+        connection.status == GatewayConnectionStatus.Disconnected
 
 private fun ChatUiState.chromeSubtitle(): String = when {
     connection.status != GatewayConnectionStatus.Connected -> connection.status.label

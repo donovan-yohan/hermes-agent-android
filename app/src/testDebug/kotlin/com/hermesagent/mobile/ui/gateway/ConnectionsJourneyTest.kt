@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.connections.CONNECTION_SEARCH_THRESHOLD
+import com.hermesagent.mobile.data.connections.ConnectionAttentionAction
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.gateway.DEFAULT_LOCAL_GATEWAY_URL
@@ -633,6 +634,212 @@ class ConnectionsJourneyTest {
         compose.onNodeWithText(ConnectionsCopy.SSH_NEEDS_CREDENTIAL).assertDoesNotExist()
         compose.onNodeWithText("Connect").assertDoesNotExist()
         compose.onNodeWithText(ConnectionsCopy.CURRENT_PILL).performScrollTo().assertExists()
+    }
+
+    @Test
+    fun `the pane lagging the switched row offers no action rather than the wrong one`() {
+        // The registry already shows the Remote row as Current; the route pane
+        // is still projecting the Local row it was on. That window is #116
+        // S-U5's to close — until it does, this list must not render `Connect`
+        // wired to the Local route under a Remote row, or `Sign in` that dials
+        // loopback.
+        val connections = ConnectionsUiState(
+            connections = listOf(
+                localConnection("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "b",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                GatewayScreen(
+                    state = GatewaySettingsUiState(
+                        mode = GatewayConnectionMode.Local,
+                        connection = GatewayConnectionState(GatewayConnectionStatus.NeedsAttention),
+                        loaded = true,
+                    ),
+                    gatewayActions = GatewayActions(),
+                    sshState = SshUiState(),
+                    sshActions = SshActions(),
+                    connectionsState = connections,
+                    connectionsActions = ConnectionsActions(),
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Bravo").assertDoesNotExist()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.CONNECT} Bravo").assertDoesNotExist()
+    }
+
+    @Test
+    fun `once the pane agrees with the switched row, the action appears`() {
+        val connections = ConnectionsUiState(
+            connections = listOf(
+                localConnection("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "b",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                GatewayScreen(
+                    state = GatewaySettingsUiState(
+                        mode = GatewayConnectionMode.Remote,
+                        connection = GatewayConnectionState(GatewayConnectionStatus.NeedsAttention),
+                        loaded = true,
+                    ),
+                    gatewayActions = GatewayActions(),
+                    sshState = SshUiState(),
+                    sshActions = SshActions(),
+                    connectionsState = connections,
+                    connectionsActions = ConnectionsActions(),
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Bravo")
+            .performScrollTo()
+            .assertExists()
+    }
+
+    @Test
+    fun `a current Remote row that never came up offers Sign in instead of a bare Current`() {
+        var connects = 0
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "b",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(
+                        state = state,
+                        actions = ConnectionsActions(),
+                        routeAttention = RouteAttention(ConnectionAttentionAction.SignIn) { connects += 1 },
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText(ConnectionsCopy.CURRENT_PILL).performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Bravo")
+            .performScrollTo()
+            .assertExists()
+            .performClick()
+
+        assertEquals("the row presses the Connect the pane above is already showing", 1, connects)
+        // The row being switched *away* from is still a switch target, not a
+        // second sign-in door.
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Alpha").assertDoesNotExist()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SWITCH_CONNECTION} Alpha").assertExists()
+    }
+
+    @Test
+    fun `a current Local row asks to Connect, in the word its pane uses`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                localConnection("local", "This phone", DEFAULT_LOCAL_GATEWAY_URL),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "local",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(
+                        state = state,
+                        actions = ConnectionsActions(),
+                        routeAttention = RouteAttention(ConnectionAttentionAction.Connect) {},
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.CONNECT} This phone")
+            .performScrollTo()
+            .assertExists()
+    }
+
+    @Test
+    fun `a current row asks for nothing when the pane is not offering Connect`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "b",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = ConnectionsActions(), routeAttention = null)
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Bravo").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a row mid-switch is never asked to explain the gateway it is leaving`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "b",
+            pendingId = "b",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(
+                        state = state,
+                        actions = ConnectionsActions(),
+                        routeAttention = RouteAttention(ConnectionAttentionAction.SignIn) {},
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Bravo").assertDoesNotExist()
+        compose.onNodeWithText(ConnectionsCopy.CONNECTING).performScrollTo().assertExists()
+    }
+
+    @Test
+    fun `a Managed SSH row still names the form its credential comes from`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                sshConnection("ssh", "Workstation", "demo-host"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "ssh",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    // What an SSH route asks for is `RouteAttention.forRoute`'s
+                    // to answer, and it answers null — see RouteAttentionTest.
+                    ConnectionsSection(state = state, actions = ConnectionsActions(), routeAttention = null)
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("${ConnectionsCopy.CONNECT} Workstation").assertDoesNotExist()
+        compose.onNodeWithContentDescription("${ConnectionsCopy.SIGN_IN} Workstation").assertDoesNotExist()
+        // Its own sentence still names the form above, which is where the
+        // credential actually comes from.
+        compose.onNodeWithText(ConnectionsCopy.SSH_NEEDS_CREDENTIAL).performScrollTo().assertExists()
     }
 
     private fun localConnection(id: String, label: String, url: String): SavedConnection =
