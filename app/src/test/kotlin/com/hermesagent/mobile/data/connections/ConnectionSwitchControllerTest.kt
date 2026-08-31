@@ -326,6 +326,124 @@ class ConnectionSwitchControllerTest {
     }
 
     @Test
+    fun `a Remote row with no stored sign-in is not waited on, and says why`() = runTest {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(
+            store,
+            gateway,
+            SessionCache(),
+            credentials = { false },
+            settleTimeoutMillis = 20_000,
+        )
+        val startedAt = testScheduler.currentTime
+
+        var outcome: ConnectionSwitchOutcome? = null
+        val switch = launch { outcome = controller.select("two") }
+        switch.join()
+
+        assertEquals(
+            "the dial cannot succeed, so nothing is waited on",
+            startedAt,
+            testScheduler.currentTime,
+        )
+        assertEquals(ConnectionSwitchOutcome.SignInNeeded, outcome)
+        assertNull("and no pending badge is left claiming otherwise", controller.pendingConnectionId.value)
+        assertEquals("the marker still moved", "two", store.connectionRegistry.first().activeId)
+    }
+
+    @Test
+    fun `a Remote row that does hold a sign-in is still waited on`() = runTest {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(
+            store,
+            gateway,
+            SessionCache(),
+            credentials = { true },
+            settleTimeoutMillis = 20_000,
+        )
+
+        var outcome: ConnectionSwitchOutcome? = null
+        val switch = launch { outcome = controller.select("two") }
+        runCurrent()
+        assertEquals("two", controller.pendingConnectionId.value)
+
+        gateway.publish(GatewayConnectionStatus.Connected)
+        switch.join()
+
+        assertEquals(ConnectionSwitchOutcome.Connected, outcome)
+    }
+
+    @Test
+    fun `the credential is only asked about the row being switched to`() = runTest {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val asked = mutableListOf<String>()
+        val controller = ConnectionSwitchController(
+            store,
+            gateway,
+            SessionCache(),
+            credentials = { slot ->
+                asked += slot.connectionId
+                true
+            },
+        )
+        gateway.settleOnConnect()
+
+        controller.select("two")
+        advanceUntilIdle()
+
+        assertEquals(listOf("two"), asked)
+    }
+
+    @Test
+    fun `a settle that never lands reports a switch that did not connect`() = runTest {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, SessionCache(), settleTimeoutMillis = 5_000)
+
+        var outcome: ConnectionSwitchOutcome? = null
+        val switch = launch { outcome = controller.select("two") }
+        advanceTimeBy(5_001)
+        switch.join()
+
+        assertEquals(ConnectionSwitchOutcome.NotConnected, outcome)
+    }
+
+    @Test
+    fun `a row asking for attention is a switch that did not connect`() = runTest {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, SessionCache())
+
+        var outcome: ConnectionSwitchOutcome? = null
+        val switch = launch { outcome = controller.select("two") }
+        runCurrent()
+        gateway.publish(GatewayConnectionStatus.NeedsAttention)
+        switch.join()
+
+        assertEquals(ConnectionSwitchOutcome.NotConnected, outcome)
+    }
+
+    @Test
+    fun `a row nothing was ever going to dial is not reported as a failure`() = runTest {
+        val gateway = RecordingGateway()
+        val rows = listOf(
+            TWO_ROWS.first(),
+            SavedConnection(id = "two", label = "Beta", kind = ConnectionKind.Ssh, host = HostProfile()),
+        )
+        val store = MemoryRegistryStore(rows, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, SessionCache())
+
+        var outcome: ConnectionSwitchOutcome? = null
+        val switch = launch { outcome = controller.select("two") }
+        switch.join()
+
+        assertEquals(ConnectionSwitchOutcome.Unattended, outcome)
+    }
+
+    @Test
     fun `a connection this device has never heard of is ignored`() = runTest {
         val gateway = RecordingGateway()
         val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")

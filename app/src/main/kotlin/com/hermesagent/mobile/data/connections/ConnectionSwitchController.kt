@@ -4,6 +4,8 @@ import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.ConnectionCredentialProbe
+import com.hermesagent.mobile.data.gateway.GatewaySecretSlot
 import com.hermesagent.mobile.data.session.SessionCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,6 +14,43 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * How a switch ended, for the surface that has to say so.
+ *
+ * Desktop reports exactly one of these to the person: `selectConnection` throws
+ * when the target "did not become active" and the switcher toasts
+ * `switchConnectionFailed` (`apps/desktop/src/store/connections.ts:198-200`,
+ * `app/chat/sidebar/connection-switcher.tsx:123-128` @
+ * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`). The cases are separated rather
+ * than collapsed into a boolean because two of them are not failures to report:
+ * a switch nobody asked for, and a row whose own line already explains that
+ * nothing was going to dial it.
+ */
+internal enum class ConnectionSwitchOutcome {
+    /** No such row, or it was already the active one. Nothing happened. */
+    Ignored,
+
+    /**
+     * The row is active now, but nothing dialled it and nothing was going to —
+     * Managed SSH, or a row that no longer names a usable address. The Gateways
+     * list says why on the row itself, so a second sentence would be the same
+     * fact twice.
+     */
+    Unattended,
+
+    /**
+     * A Remote row whose stored sign-in is missing or bound to another Gateway.
+     * The dial cannot succeed, so it is not waited on.
+     */
+    SignInNeeded,
+
+    /** The new endpoint came up. */
+    Connected,
+
+    /** It did not: it asked for attention, or the settle window ran out. */
+    NotConnected,
+}
 
 /**
  * Re-homes this device to one saved connection.
@@ -56,6 +95,11 @@ internal class ConnectionSwitchController(
      * composer under a recycled id.
      */
     private val drafts: SessionDraftStore = TransientSessionDraftStore(),
+    /**
+     * Whether the row being switched to can present a credential at all. See
+     * [ConnectionCredentialProbe]; the default answers yes for every slot.
+     */
+    private val credentials: ConnectionCredentialProbe = ConnectionCredentialProbe { true },
     private val settleTimeoutMillis: Long = SETTLE_TIMEOUT_MILLIS,
 ) {
     private val switching = Mutex()
@@ -73,22 +117,28 @@ internal class ConnectionSwitchController(
      */
     val routeGeneration: StateFlow<Long> = rearm.asStateFlow()
 
-    suspend fun select(id: String) {
+    /**
+     * The outcome is returned rather than swallowed: Desktop's switcher only
+     * knows to toast because `selectConnection` throws
+     * (`connection-switcher.tsx:123-128` @ `f82f2dba`), and a switch that
+     * silently does nothing is the bug this reports.
+     */
+    suspend fun select(id: String): ConnectionSwitchOutcome =
         switching.withLock {
             val registry = store.connectionRegistry.first()
-            val target = registry.connections.firstOrNull { it.id == id } ?: return
-            if (registry.active?.id == target.id) return
+            val target = registry.connections.firstOrNull { it.id == id }
+                ?: return@withLock ConnectionSwitchOutcome.Ignored
+            if (registry.active?.id == target.id) return@withLock ConnectionSwitchOutcome.Ignored
 
             pending.value = target.id
             try {
                 leaveLocked(dropDrafts = true)
                 store.setActiveConnection(target.id)
-                awaitSettle(target)
+                settle(target)
             } finally {
                 pending.value = null
             }
         }
-    }
 
     /**
      * Re-address the connection this device is already on: leave the old
@@ -105,7 +155,7 @@ internal class ConnectionSwitchController(
                 leaveLocked(dropDrafts = true)
                 save()
                 rearm.value += 1
-                awaitSettle(store.connectionRegistry.first().active)
+                store.connectionRegistry.first().active?.let { settle(it) }
             } finally {
                 pending.value = null
             }
@@ -154,17 +204,36 @@ internal class ConnectionSwitchController(
 
     /**
      * Waits, bounded, for the new endpoint to come up — but only where anything
-     * is coming. [SavedConnection.restorable] owns that rule; a row that cannot
-     * self-restore is not waited on, because a pending badge would sit there for
-     * the whole timeout claiming a dial that nobody started.
+     * is coming.
+     *
+     * Two rules decide that, and both are about a dial nobody is going to win.
+     * [SavedConnection.restorable] is the first: a row that cannot self-restore
+     * is not waited on, because a pending badge would sit there for the whole
+     * timeout claiming a dial that nobody started. The stored credential is the
+     * second: a Remote row whose slot is empty, or bound to another Gateway,
+     * fails its restore with a 401 that this app deliberately does not retry
+     * (`GatewayConnection.isRetryableRemoteConnectionFailure`), so the settle
+     * window can only end one way. Holding it anyway is what put a twenty-second
+     * "Connecting…" in front of a sign-in — and, because the window is held
+     * under this class's lock, in front of the Gateways form as well.
      */
-    private suspend fun awaitSettle(target: SavedConnection?) {
-        if (target == null || !target.restorable) return
-        withTimeoutOrNull(settleTimeoutMillis) {
+    private suspend fun settle(target: SavedConnection): ConnectionSwitchOutcome {
+        if (!target.restorable) return ConnectionSwitchOutcome.Unattended
+        val slot = target.restoreCredentialSlot
+        if (slot != null && !credentials.hasCredential(slot)) return ConnectionSwitchOutcome.SignInNeeded
+        val settled = withTimeoutOrNull(settleTimeoutMillis) {
             gateway.state.first { state ->
                 state.status == GatewayConnectionStatus.Connected ||
                     state.status == GatewayConnectionStatus.NeedsAttention
             }
+        }
+        return if (settled?.status == GatewayConnectionStatus.Connected) {
+            ConnectionSwitchOutcome.Connected
+        } else {
+            // Desktop draws no line between "asked for attention" and "never
+            // answered" either: both are `did not become active`
+            // (`store/connections.ts:198-200` @ `f82f2dba`).
+            ConnectionSwitchOutcome.NotConnected
         }
     }
 

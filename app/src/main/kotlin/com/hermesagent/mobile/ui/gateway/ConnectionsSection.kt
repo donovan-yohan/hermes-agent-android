@@ -84,6 +84,15 @@ internal fun ConnectionsSection(
      * problem that is over.
      */
     connectOffered: Boolean = true,
+    /**
+     * What the route pane above this list is asking for and the button that
+     * answers it, or null whenever it is asking for nothing.
+     *
+     * One value rather than a status plus a callback the caller keeps
+     * consistent: offered-but-unpressable is unrepresentable, and so is a word
+     * that disagrees with what pressing it does. See [RouteAttention].
+     */
+    routeAttention: RouteAttention? = null,
 ) {
     val tokens = HermesTheme.tokens
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -150,6 +159,10 @@ internal fun ConnectionsSection(
                     connectOffered = connectOffered,
                     canRemove = state.canRemove,
                     onSelect = { actions.onSelect(connection.id) },
+                    // Never mid-switch: what the connection is asking for then
+                    // is about the gateway being left, not the one being
+                    // reached.
+                    routeAttention = routeAttention.takeIf { state.pendingId == null },
                     onEdit = { actions.onBeginEdit(connection.id) },
                     onRemove = { actions.onRequestRemove(connection.id) },
                 )
@@ -221,6 +234,7 @@ private fun ConnectionRow(
     connectOffered: Boolean,
     canRemove: Boolean,
     onSelect: () -> Unit,
+    routeAttention: RouteAttention?,
     onEdit: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -269,6 +283,7 @@ private fun ConnectionRow(
                     pendingId = pendingId,
                     canRemove = canRemove,
                     onSelect = onSelect,
+                    routeAttention = routeAttention,
                     onEdit = onEdit,
                     onRemove = onRemove,
                 )
@@ -311,6 +326,7 @@ private fun ConnectionRowActions(
     pendingId: String?,
     canRemove: Boolean,
     onSelect: () -> Unit,
+    routeAttention: RouteAttention?,
     onEdit: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -341,6 +357,20 @@ private fun ConnectionRowActions(
                 modifier = Modifier.semantics {
                     contentDescription = "${ConnectionsCopy.SWITCH_CONNECTION} ${connection.label}"
                     if (pending) stateDescription = ConnectionsCopy.CONNECTING
+                },
+            )
+        } else if (routeAttention != null) {
+            // The same slot, once the row has stopped being a switch target:
+            // what this row's connection is asking for. A row that failed to
+            // come up used to render `Current` and nothing else, which said the
+            // device was on a gateway it had never reached — and left the
+            // sign-in three taps and a scroll away.
+            val label = ConnectionsCopy.attentionActionLabel(routeAttention.action)
+            TextButton(
+                label = label,
+                onClick = routeAttention.onConnect,
+                modifier = Modifier.semantics {
+                    contentDescription = "$label ${connection.label}"
                 },
             )
         }

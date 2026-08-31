@@ -208,11 +208,30 @@ fun GatewayScreen(
             // row must stop pointing at it once it is no longer there.
             val connectOffered = state.connection.status != GatewayConnectionStatus.Connected &&
                 state.connection.status != GatewayConnectionStatus.Connecting
+            // The current row's status action presses the Connect this pane is
+            // already showing, rather than owning a second connect path: one
+            // route is active, so there is exactly one button to press, and the
+            // row must never be able to dial a route the pane is not on.
+            //
+            // Gated here, from the live connection this pane already holds, so
+            // the registry is handed one nullable rather than a second copy of
+            // the connection status to keep in step with `connectOffered`.
+            val routeAttention = RouteAttention.forRoute(
+                mode = state.mode,
+                status = state.connection.status,
+                activeKind = connectionsState.active?.kind,
+                onConnect = when (state.mode) {
+                    GatewayConnectionMode.Remote -> gatewayActions.onConnectRemote
+                    GatewayConnectionMode.Local -> gatewayActions.onConnectLocal
+                    GatewayConnectionMode.Ssh -> sshActions.onConnect
+                },
+            )
             val registry: @Composable ColumnScope.() -> Unit = {
                 ConnectionsSection(
                     state = connectionsState,
                     actions = connectionsActions,
                     connectOffered = connectOffered,
+                    routeAttention = routeAttention,
                 )
             }
             when (state.mode) {
@@ -310,7 +329,7 @@ private fun LocalGatewayScreen(
             GatewayConnectionStatus.Disconnected,
             GatewayConnectionStatus.NeedsAttention,
             -> PrimaryButton(
-                "Connect",
+                ConnectionsCopy.CONNECT,
                 actions.onConnectLocal,
                 Modifier.fillMaxWidth(),
                 enabled = state.canConnectLocal,

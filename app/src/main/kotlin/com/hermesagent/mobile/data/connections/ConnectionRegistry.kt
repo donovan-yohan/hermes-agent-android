@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.connections
 
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
+import com.hermesagent.mobile.data.gateway.GatewaySecretSlot
 import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.gateway.normalizeLocalGatewayUrl
@@ -34,6 +35,27 @@ enum class ConnectionKind {
             Local -> GatewayConnectionMode.Local
         }
 
+    /**
+     * What a route of this kind asks the person for when it is up to them to
+     * bring it up, or null where a list row has no honest action to offer.
+     *
+     * On the kind rather than on a saved row because the surface that offers it
+     * derives it from the route pane's own mode, not from the row: a word taken
+     * from the row and a callback taken from the mode can disagree for as long
+     * as the two projections take to agree, and "Sign in" wired to the Local
+     * connect is the shape that produces.
+     *
+     * Managed SSH is null because its credential is typed into the route form,
+     * so a control here would dial with nothing — that row's own sentence names
+     * the form instead.
+     */
+    val attentionAction: ConnectionAttentionAction?
+        get() = when (this) {
+            Remote -> ConnectionAttentionAction.SignIn
+            Local -> ConnectionAttentionAction.Connect
+            Ssh -> null
+        }
+
     companion object {
         fun of(mode: GatewayConnectionMode): ConnectionKind = when (mode) {
             GatewayConnectionMode.Remote -> Remote
@@ -46,6 +68,12 @@ enum class ConnectionKind {
             entries.firstOrNull { it.name == raw } ?: Remote
     }
 }
+
+/**
+ * What a row asks for when this device is not up on the gateway it is marked
+ * `Current` on. See [SavedConnection.attentionAction].
+ */
+enum class ConnectionAttentionAction { SignIn, Connect }
 
 /**
  * One saved connection.
@@ -132,6 +160,29 @@ data class SavedConnection(
             ConnectionKind.Local -> local.isValid
             ConnectionKind.Ssh -> false
         }
+
+    /**
+     * The stored credential a self-restore would present, or null where this
+     * row's route has none to look up.
+     *
+     * The Remote route is the only one with an answer worth asking for: its
+     * sign-in is on disk, and a slot that is empty or bound to another Gateway
+     * means the dial fails with a 401 this app does not retry. Managed SSH's
+     * credential is typed and in memory, and the Local route's session token
+     * has its own store and its own three-answer read, so neither is asked
+     * here — and [restorable] has already excluded SSH before anything reads
+     * this.
+     *
+     * Exhaustive over the kind, beside [restorable], for the reason that one
+     * gives: a `kind ==` chain somewhere else is how the two drift the first
+     * time a kind is added.
+     */
+    internal val restoreCredentialSlot: GatewaySecretSlot?
+        get() = when (kind) {
+            ConnectionKind.Remote -> remoteProfile.secretSlot
+            ConnectionKind.Local, ConnectionKind.Ssh -> null
+        }
+
 
     companion object {
         const val BROWSER_SIGN_IN: String = "Browser sign-in"

@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -769,6 +770,79 @@ class ConnectionsViewModelTest {
             assertNull("and no pending badge is left hanging", subject.uiState.value.pendingId)
         }
 
+    @Test
+    fun `a switch that never connects reports the gateway it could not reach`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        // Nothing publishes a settled state, so the settle window runs out.
+        gateway.settleOnDisconnect = false
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.select("two")
+        advanceUntilIdle()
+
+        assertEquals("Beta", subject.uiState.value.switchFailure?.label)
+    }
+
+    @Test
+    fun `a switch that connects reports nothing`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.select("two")
+        advanceUntilIdle()
+
+        assertNull(subject.uiState.value.switchFailure)
+    }
+
+    @Test
+    fun `the same row failing twice is two reports, so a dismissed one cannot silence the next`() =
+        runTest(dispatcher) {
+            val gateway = RecordingGateway()
+            gateway.settleOnDisconnect = false
+            val store = MemoryRegistryStore(twoRows(), activeId = "one")
+            val subject = buildSubject(store, gateway)
+            backgroundScope.launch { subject.uiState.collect { } }
+            advanceUntilIdle()
+
+            subject.select("two")
+            advanceUntilIdle()
+            val first = subject.uiState.value.switchFailure
+
+            store.setActiveConnection("one")
+            advanceUntilIdle()
+            subject.select("two")
+            advanceUntilIdle()
+            val second = subject.uiState.value.switchFailure
+
+            assertEquals("Beta", second?.label)
+            assertTrue("a second failure is a second report", (second?.attempt ?: 0L) > (first?.attempt ?: 0L))
+        }
+
+    @Test
+    fun `a gateway that comes up puts the failure line away`() = runTest(dispatcher) {
+        val gateway = RecordingGateway()
+        gateway.settleOnDisconnect = false
+        val store = MemoryRegistryStore(twoRows(), activeId = "one")
+        val subject = buildSubject(store, gateway)
+        backgroundScope.launch { subject.uiState.collect { } }
+        advanceUntilIdle()
+
+        subject.select("two")
+        advanceUntilIdle()
+        assertNotNull(subject.uiState.value.switchFailure)
+
+        gateway.publish(GatewayConnectionStatus.Connected)
+        advanceUntilIdle()
+
+        assertNull("the sentence was about a connection that has since come up", subject.uiState.value.switchFailure)
+    }
+
     /** One saved Local row, its slot id stamped the way the registry stamps it. */
     private fun localRow(id: String, label: String, url: String) = SavedConnection(
         id = id,
@@ -858,6 +932,11 @@ class ConnectionsViewModelTest {
             // The real store takes ownership and zeroes; the fake has to too, or
             // a test could pass against a copy production would have wiped.
             token.fill(0)
+        }
+
+        /** Move the live connection, for a test about what the surface then says. */
+        fun publish(status: GatewayConnectionStatus) {
+            _state.value = GatewayConnectionState(status)
         }
 
         override suspend fun disconnect() {

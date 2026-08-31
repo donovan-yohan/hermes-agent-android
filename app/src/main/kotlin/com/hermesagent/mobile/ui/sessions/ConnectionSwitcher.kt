@@ -21,6 +21,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -28,9 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -47,6 +50,7 @@ import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.SearchField
+import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.gateway.ConnectionsCopy
 import com.hermesagent.mobile.ui.gateway.ConnectionsUiState
 import com.hermesagent.mobile.ui.gateway.glyph
@@ -111,33 +115,85 @@ fun ConnectionSwitcherBar(
     val active = state.active ?: return
     val pending = state.pendingId != null
     var sheetVisible by rememberSaveable { mutableStateOf(false) }
+    // Which report has been put away. View-local `rememberSaveable`, the same
+    // shape `ComposerStatusStack` already uses for its dismissible previews:
+    // the failure itself is still true, so it is the *reading* of it that is
+    // being recorded, not a change to what happened. Keyed on the attempt
+    // rather than a boolean so dismissing one report cannot silence the next.
+    //
+    // It would be one writer instead of two if the view model owned it, but
+    // `ConnectionsActions` is assembled in `MainActivity`, which this change
+    // may not touch; #116 S-U5..S-U7 owns that file.
+    var dismissedAttempt by rememberSaveable { mutableLongStateOf(0L) }
+    val failure = state.switchFailure?.takeIf { it.attempt != dismissedAttempt }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = HermesTheme.spacing.touchTarget)
-            .clickable(role = Role.Button) { sheetVisible = true }
-            .semantics {
-                contentDescription = "$title: ${active.label}"
-                if (pending) stateDescription = ConnectionsCopy.CONNECTING
+    Column(modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .clickable(role = Role.Button) { sheetVisible = true }
+                .semantics {
+                    contentDescription = "$title: ${active.label}"
+                    if (pending) stateDescription = ConnectionsCopy.CONNECTING
+                }
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            HermesIconGlyph(active.kind.glyph, color = tokens.textQuaternary, size = 12.sp)
+            Text(
+                text = active.label,
+                style = HermesTheme.type.caption,
+                color = tokens.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (pending) {
+                Text(ConnectionsCopy.CONNECTING, style = HermesTheme.type.scaffold, color = tokens.textTertiary)
             }
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        HermesIconGlyph(active.kind.glyph, color = tokens.textQuaternary, size = 12.sp)
-        Text(
-            text = active.label,
-            style = HermesTheme.type.caption,
-            color = tokens.textSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        if (pending) {
-            Text(ConnectionsCopy.CONNECTING, style = HermesTheme.type.scaffold, color = tokens.textTertiary)
+            HermesIconGlyph(HermesIcon.ChevronDown, color = tokens.textQuaternary, size = 12.sp)
         }
-        HermesIconGlyph(HermesIcon.ChevronDown, color = tokens.textQuaternary, size = 12.sp)
+
+        // Desktop puts this sentence in a toast raised from the same click
+        // handler (`connection-switcher.tsx:123-128` @ `f82f2dba`,
+        // `notifyError`). This app has no notification stack to raise one into
+        // (#73), so it is an inline line under the control that started the
+        // switch — the nearest thing on screen to where Desktop's toast points.
+        // Recorded as an adaptation in `docs/parity/gateway-connections.md`.
+        if (failure != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    // Desktop's toast announces itself by being a toast; an
+                    // inline line that simply appears announces nothing, so a
+                    // screen reader would never learn the switch failed. Same
+                    // politeness `PendingInputSurface` uses for the other
+                    // thing that arrives unasked.
+                    .semantics { liveRegion = LiveRegionMode.Polite }
+                    .padding(start = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = ConnectionsCopy.switchConnectionFailed(failure.label),
+                    style = HermesTheme.type.caption,
+                    color = tokens.destructive,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    label = ConnectionsCopy.DISMISS,
+                    onClick = { dismissedAttempt = failure.attempt },
+                    color = tokens.textTertiary,
+                    modifier = Modifier.semantics {
+                        contentDescription = "${ConnectionsCopy.DISMISS} ${failure.label}"
+                    },
+                )
+            }
+        }
     }
 
     if (sheetVisible) {

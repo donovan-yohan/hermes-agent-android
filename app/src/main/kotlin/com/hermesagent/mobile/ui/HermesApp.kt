@@ -67,6 +67,9 @@ fun HermesApp(
     var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
 
     val onBack = { destination = destination.backDestination() }
+    // Four surfaces name this one destination: the sidebar's "Manage gateways…",
+    // Settings, Relay, and the chat chrome's connection line.
+    val onOpenGateways = { destination = HermesDestination.Gateways }
     BackHandler(enabled = destination != HermesDestination.Chat) {
         onBack()
     }
@@ -78,11 +81,16 @@ fun HermesApp(
                 actions = chatActions,
                 onOpenSettings = { destination = HermesDestination.Settings },
                 onOpenProfiles = { destination = HermesDestination.Profiles },
+                // The chat chrome's connection line is the failure site; this
+                // is the same destination its sidebar's "Manage gateways…"
+                // reaches, so both routes out of a broken connection land in
+                // one place rather than two.
+                onOpenGateways = onOpenGateways,
                 sidebarHeader = {
                     ConnectionSwitcherBar(
                         state = connectionsState,
                         actions = connectionsActions,
-                        onManage = { destination = HermesDestination.Gateways },
+                        onManage = onOpenGateways,
                     )
                 },
             )
@@ -105,7 +113,7 @@ fun HermesApp(
             ) {
                 SettingsScreen(
                     onOpenAppearance = { destination = HermesDestination.Appearance },
-                    onOpenGateways = { destination = HermesDestination.Gateways },
+                    onOpenGateways = onOpenGateways,
                     onOpenRelay = { destination = HermesDestination.Relay },
                     relayAvailable = !relayState.unavailableOnGateway,
                 )
@@ -140,7 +148,7 @@ fun HermesApp(
                 state = relayState,
                 actions = relayActions,
                 onLeave = onBack,
-                onOpenGateways = { destination = HermesDestination.Gateways },
+                onOpenGateways = onOpenGateways,
             )
         }
     }
