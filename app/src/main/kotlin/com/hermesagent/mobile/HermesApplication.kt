@@ -87,6 +87,7 @@ class HermesApplication : Application() {
             api = authApi,
             store = secrets,
             login = LoopbackGatewayNativeLogin(authApi, log = AndroidGatewaySignInLog),
+            log = AndroidGatewaySignInLog,
         )
         GatewayConnectionManager(
             scope = appScope,

@@ -123,11 +123,19 @@ internal class GatewaySignInBrowser(
         }
     }
 
+    /**
+     * Deliberately not swallowed here. The caller
+     * ([NativeGatewayAuthenticator.signIn]) is the only place that knows the
+     * sign-in is already persisted and that a refusal therefore costs nothing,
+     * and it records the breadcrumb. Two guards for one failure meant the outer
+     * one could never be tested.
+     *
+     * Note that the common refusal is not an exception at all: Android logs
+     * "Background activity launch blocked!" and returns normally. Nothing here
+     * can detect that, which is exactly why the sign-in must not depend on it.
+     */
     override suspend fun returnToApp() {
-        withContext(platformContext) {
-            runCatching { platform.startActivity(returnIntent()) }
-                .onFailure { log.step(GatewaySignInStep.ReturnRefused) }
-        }
+        withContext(platformContext) { platform.startActivity(returnIntent()) }
     }
 
     /**

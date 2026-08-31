@@ -215,7 +215,8 @@ internal enum class GatewaySignInStep(private val label: String) {
     StateMismatch("callback state did not match"),
     ListenerClosed("callback listener closed early"),
     ExchangeRefused("token exchange refused"),
-    ReturnRefused("could not bring the app forward"),
+    TokensStored("sign-in stored"),
+    ReturnBlocked("could not bring the app forward"),
     ;
 
     override fun toString(): String = "sign-in: $label"
@@ -356,6 +357,8 @@ internal class NativeGatewayAuthenticator(
     private val store: GatewayTokenStore,
     private val login: GatewayNativeLogin,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
+    /** No-op by default for the same reason [LoopbackGatewayNativeLogin]'s is. */
+    private val log: GatewaySignInLog = GatewaySignInLog {},
 ) {
     /**
      * Serializes load → refresh → save for one process.
@@ -497,14 +500,48 @@ internal class NativeGatewayAuthenticator(
     ): GatewayNativeTokens =
         rotate(requireNotNull(profile.secretSlot), tokens) ?: signIn(profile, browser)
 
+    /**
+     * One interactive sign-in: get the tokens, persist them, and only then try
+     * to bring the app back.
+     *
+     * The order is the whole point. The authorization code is single use and
+     * expires in 120 s, so everything up to persistence is irreversible work on
+     * a deadline; coming forward is a courtesy that can be denied. Android
+     * withdraws an app's background activity-launch grace about ten seconds
+     * after it loses the foreground, which is well inside the time a person
+     * spends typing a password — so the launch this makes is expected to fail
+     * sometimes, and it must cost nothing when it does. A person who never gets
+     * pulled back returns to the app themselves, which is what they were about
+     * to do anyway, and finds it connected.
+     *
+     * The sanctioned way to pull someone back from the background is a
+     * notification, and it is deliberately not done here: [NotificationSurface]
+     * is keyed by durable session and kind across two channels that are both
+     * about a session's work, so this would need a third channel, its own copy,
+     * and its own intent shape — and it would depend on a `POST_NOTIFICATIONS`
+     * grant this app asks for once, at the first live Gateway, and never
+     * re-asks for. That is a change worth making on its own evidence rather
+     * than inside this fix; it is filed on #114.
+     */
     private suspend fun signIn(
         profile: RemoteGatewayProfile,
         browser: GatewayBrowserLauncher?,
-    ): GatewayNativeTokens = login.login(
-        profile,
-        browser ?: throw GatewayAuthException("Sign in to this Gateway before reconnecting.", 401),
-    ).also { tokens ->
+    ): GatewayNativeTokens {
+        val launcher = browser
+            ?: throw GatewayAuthException("Sign in to this Gateway before reconnecting.", 401)
+        val tokens = login.login(profile, launcher)
         store.save(requireNotNull(profile.secretSlot), tokens)
+        log.step(GatewaySignInStep.TokensStored)
+        try {
+            launcher.returnToApp()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            // A blocked launch is the ordinary case, not an error worth showing
+            // anyone: the sign-in is already done and saved.
+            log.failed(GatewaySignInStep.ReturnBlocked, failure)
+        }
+        return tokens
     }
 
     private fun GatewayNativeTokens.needsRefresh(now: Long): Boolean =
@@ -787,7 +824,14 @@ internal class LoopbackGatewayNativeLogin(
             val code = withGatewayLoginTimeout(loginTimeoutMillis) {
                 awaitAuthorizationCode(listener, state)
             }
-            browser.returnToApp()
+            // Deliberately nothing between accepting the callback and spending
+            // it. Coming forward used to happen here, and after ~10 s in the
+            // background Android withdraws this app's activity-launch grace: a
+            // blocked or throwing launch unwound the whole flow between
+            // `CallbackAccepted` and the exchange, so a person who took ten
+            // seconds to type a password lost a sign-in that had already
+            // succeeded. Whoever owns persistence owns coming forward, and does
+            // it afterwards — see [NativeGatewayAuthenticator.signIn].
             try {
                 api.exchange(baseUrl, code, verifier)
             } catch (failure: GatewayAuthException) {

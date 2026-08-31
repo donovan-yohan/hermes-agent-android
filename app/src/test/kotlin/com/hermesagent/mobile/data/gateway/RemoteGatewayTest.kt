@@ -355,11 +355,14 @@ class RemoteGatewayTest {
                 TracingBrowser.OPENED,
                 GatewaySignInStep.CallbackReceived.toString(),
                 GatewaySignInStep.CallbackAccepted.toString(),
-                TracingBrowser.RETURNED,
+                // And straight to the wire. Coming forward belongs after the
+                // tokens are persisted, which is a layer up
+                // ([NativeGatewayAuthenticator.signIn]), never in this window.
                 TracingAuthApi.EXCHANGED,
             ),
             trace.snapshot(),
         )
+        assertFalse("the login driver must not try to come forward", browser.returnedToApp)
         // Same `finally` as the listener: the binding that kept this process
         // runnable is not left behind once the flow is over.
         assertTrue("the browser binding must be released with the listener", browser.bindingClosed)
@@ -779,6 +782,120 @@ class RemoteGatewayTest {
         assertEquals(listOf("java.lang.NullPointerException"), appFailures)
     }
 
+    /**
+     * The r3 blocker: a person who takes ten seconds to type a password.
+     *
+     * By then Android has withdrawn this app's background activity-launch
+     * grace, so bringing it forward fails — and it used to fail *between* the
+     * callback being accepted and the code being spent, which threw away a
+     * sign-in that had already succeeded and left no error behind it. Coming
+     * forward is now the last thing that happens and cannot cost anything.
+     */
+    @Test
+    fun `a blocked return to the app never costs a sign-in that already succeeded`() = runTest {
+        val trace = SignInTrace()
+        val store = MemoryTokenStore(null)
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = store,
+            login = GatewayNativeLogin { _, _ -> VALID_TOKENS },
+            nowSeconds = { 1_000L },
+            log = trace.asLog(),
+        )
+
+        val ticket = authenticator.ticket(
+            PROFILE,
+            object : GatewayBrowserLauncher {
+                override suspend fun open(url: String) = Unit
+
+                override suspend fun returnToApp(): Unit =
+                    throw SecurityException("Background activity launch blocked!")
+            },
+        )
+
+        assertEquals("the connection still comes up", "ticket-1", ticket)
+        assertEquals("and the sign-in is on disk", VALID_TOKENS, store.tokens)
+        assertEquals(
+            listOf(
+                GatewaySignInStep.TokensStored.toString(),
+                "${GatewaySignInStep.ReturnBlocked} (java.lang.SecurityException)",
+            ),
+            trace.snapshot(),
+        )
+    }
+
+    /**
+     * The commoner shape, and the one nothing can detect: Android logs
+     * "Background activity launch blocked!" and `startActivity` returns
+     * normally. There is no failure to handle, so the only defence is that the
+     * sign-in never depended on it.
+     */
+    @Test
+    fun `a return to the app that is silently ignored still finishes the sign-in`() = runTest {
+        val trace = SignInTrace()
+        val store = MemoryTokenStore(null)
+        var attempted = false
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = store,
+            login = GatewayNativeLogin { _, _ -> VALID_TOKENS },
+            nowSeconds = { 1_000L },
+            log = trace.asLog(),
+        )
+
+        val ticket = authenticator.ticket(
+            PROFILE,
+            object : GatewayBrowserLauncher {
+                override suspend fun open(url: String) = Unit
+
+                override suspend fun returnToApp() {
+                    attempted = true
+                }
+            },
+        )
+
+        assertTrue("it is still attempted", attempted)
+        assertEquals("ticket-1", ticket)
+        assertEquals(VALID_TOKENS, store.tokens)
+        assertEquals(listOf(GatewaySignInStep.TokensStored.toString()), trace.snapshot())
+    }
+
+    @Test
+    fun `the sign-in is spent and stored strictly before the app tries to come forward`() = runTest {
+        val order = SignInTrace()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = object : GatewayTokenStore {
+                override suspend fun load(slot: GatewaySecretSlot): GatewayNativeTokens? = null
+
+                override suspend fun save(slot: GatewaySecretSlot, tokens: GatewayNativeTokens) {
+                    order.record("stored")
+                }
+
+                override suspend fun clear(slot: GatewaySecretSlot) = Unit
+            },
+            login = GatewayNativeLogin { _, _ ->
+                order.record("exchanged")
+                VALID_TOKENS
+            },
+            nowSeconds = { 1_000L },
+        )
+
+        authenticator.ticket(
+            PROFILE,
+            object : GatewayBrowserLauncher {
+                override suspend fun open(url: String) = Unit
+
+                override suspend fun returnToApp() = order.record("came forward")
+            },
+        )
+
+        // The code is single use and expires in 120 s. Everything up to
+        // "stored" is irreversible work on a deadline; what follows is a
+        // courtesy that is allowed to fail.
+        assertEquals(listOf("exchanged", "stored", "came forward"), order.snapshot())
+    }
+
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
     private fun rawRequest(port: Int, requestLine: String): String =
         Socket("127.0.0.1", port).use { socket ->
@@ -858,7 +975,11 @@ class RemoteGatewayTest {
             thread.set(Thread { callback(redirect, state) }.also(Thread::start))
         }
 
+        var returnedToApp = false
+            private set
+
         override suspend fun returnToApp() {
+            returnedToApp = true
             trace.record(RETURNED)
         }
 
