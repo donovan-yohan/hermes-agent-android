@@ -211,6 +211,8 @@ internal enum class GatewaySignInStep(private val label: String) {
     BrowserLaunchFailed("browser would not open"),
     CallbackReceived("callback received"),
     CallbackAccepted("callback accepted"),
+    CodeReceived("authorization code in hand"),
+    SignInAbandoned("sign-in abandoned"),
     CallbackRefused("callback reported a refusal"),
     StateMismatch("callback state did not match"),
     ListenerClosed("callback listener closed early"),
@@ -701,6 +703,8 @@ internal object GatewaySignInCopy {
         "The sign-in took too long to finish, so Hermes would not accept it. Sign in again."
     const val CANCELLED =
         "Sign-in was cancelled before it finished. Sign in again when you are ready."
+    const val INTERRUPTED =
+        "Sign-in was interrupted before Hermes could finish it. Sign in again."
     const val NO_BROWSER =
         "This device has no browser to sign in with. Install one, then sign in again."
     const val START_FAILED =
@@ -824,6 +828,14 @@ internal class LoopbackGatewayNativeLogin(
             val code = withGatewayLoginTimeout(loginTimeoutMillis) {
                 awaitAuthorizationCode(listener, state)
             }
+            // Deliberately its own step. `CallbackAccepted` is logged from
+            // inside the blocking accept loop, which completes even when the
+            // coroutine around it has been cancelled — so "accepted, then
+            // nothing" says the callback arrived and tells you nothing about
+            // why it went no further. This one is logged after the resumption,
+            // and it is the line that separates "cancelled while waiting" from
+            // "the exchange itself failed".
+            log.step(GatewaySignInStep.CodeReceived)
             // Deliberately nothing between accepting the callback and spending
             // it. Coming forward used to happen here, and after ~10 s in the
             // background Android withdraws this app's activity-launch grace: a
@@ -838,6 +850,11 @@ internal class LoopbackGatewayNativeLogin(
                 log.step(GatewaySignInStep.ExchangeRefused)
                 throw failure
             }
+        } catch (cancelled: CancellationException) {
+            // Someone else ended this. Whoever it was names itself at its own
+            // call site now; this records that the sign-in is where it landed.
+            log.failed(GatewaySignInStep.SignInAbandoned, cancelled)
+            throw cancelled
         } finally {
             runCatching { binding?.close() }
             runCatching { listener.close() }

@@ -355,6 +355,9 @@ class RemoteGatewayTest {
                 TracingBrowser.OPENED,
                 GatewaySignInStep.CallbackReceived.toString(),
                 GatewaySignInStep.CallbackAccepted.toString(),
+                // Logged after the coroutine resumes, which is what makes
+                // "accepted, then nothing" tell you something on a device.
+                GatewaySignInStep.CodeReceived.toString(),
                 // And straight to the wire. Coming forward belongs after the
                 // tokens are persisted, which is a layer up
                 // ([NativeGatewayAuthenticator.signIn]), never in this window.
@@ -942,6 +945,11 @@ class RemoteGatewayTest {
         manager.networkAvailabilityChanged(true)
         runCurrent()
 
+        // And the same through the coarser seam, which callers that cannot tell
+        // loss from recovery use and which cancels on exactly the same grounds.
+        manager.networkChanged()
+        runCurrent()
+
         // Then they finish typing and the callback lands.
         callbackLanded.complete(Unit)
         runCurrent()
@@ -949,7 +957,11 @@ class RemoteGatewayTest {
         assertEquals("the code must still be spent", "code-across-network-event", api.exchangedCode)
         assertEquals(listOf("session.list"), rpc.calls)
         assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
-        assertEquals("and nothing may have cancelled it on the way", emptyList<String>(), cancels)
+        assertEquals(
+            "nothing may have invalidated or abandoned it on the way",
+            emptyList<String>(),
+            cancels.filter { it.contains("invalidated") || it.contains("abandoned") },
+        )
         manager.disconnect()
     }
 
@@ -987,10 +999,156 @@ class RemoteGatewayTest {
         manager.disconnect()
         runCurrent()
 
-        assertEquals(listOf("connect cancelled by an explicit disconnect"), events)
+        assertTrue(
+            events.contains("connect intent invalidated by an explicit disconnect (live job: true)"),
+        )
     }
 
 
+
+    /**
+     * The exemption is a counter, and a counter that never comes back down is
+     * worse than no exemption at all: every later network edge would be
+     * silently ignored for the life of the process.
+     */
+    @Test
+    fun `the network exemption lifts once the sign-in is over`() = runTest {
+        val events = mutableListOf<String>()
+        val handedOff = CompletableDeferred<Unit>()
+        val callbackLanded = CompletableDeferred<Unit>()
+        val api = FakeAuthApi()
+        val authenticator = NativeGatewayAuthenticator(
+            api = api,
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                callbackLanded.await()
+                VALID_TOKENS
+            },
+            nowSeconds = { 1_000L },
+        )
+        val parked = BlockingReadinessRpc()
+        val rpcs = ArrayDeque(listOf<GatewayRpcClient>(FakeRpc(), parked))
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            // Endless supply, and the real virtual-time backoff: the cancelled
+            // restore below arms a retry loop, and a zero wait plus an exhausted
+            // queue would spin it forever inside `runCurrent`.
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ ->
+                if (rpcs.isEmpty()) FakeRpc() else rpcs.removeFirst()
+            },
+            logConnectEvent = { events += it },
+        )
+
+        // One whole sign-in, so the counter goes up and has to come back down.
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue(handedOff.isCompleted)
+        callbackLanded.complete(Unit)
+        runCurrent()
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+
+        // Now an open that is *not* a sign-in, parked at its readiness round
+        // trip. A counter stuck positive would exempt this too, and the edge
+        // below would cancel nothing.
+        val restore = backgroundScope.launch { manager.restoreRemote(PROFILE) }
+        parked.requestStarted.await()
+        manager.networkAvailabilityChanged(true)
+        runCurrent()
+
+        assertTrue(
+            "a network edge must cancel an ordinary open again",
+            events.contains("connect intent invalidated by a network availability edge (live job: true)"),
+        )
+        parked.releaseRequest.complete(Unit)
+        restore.cancel()
+    }
+
+    /**
+     * The one path that cancelled a sign-in without touching the connect intent,
+     * and therefore without tripping any of the intent instrumentation: the
+     * screen abandoning it. On a device this looked exactly like the flow simply
+     * stopping after `callback accepted`.
+     */
+    @Test
+    fun `a sign-in abandoned by the screen names the screen`() = runTest {
+        val events = mutableListOf<String>()
+        val handedOff = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                awaitCancellation()
+            },
+            nowSeconds = { 1_000L },
+        )
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+            logConnectEvent = { events += it },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue(handedOff.isCompleted)
+
+        manager.cancelRemoteSignIn()
+        runCurrent()
+
+        assertTrue(events.contains("sign-in abandoned by the screen"))
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertEquals(GatewaySignInCopy.CANCELLED, manager.state.value.message)
+    }
+
+    /**
+     * A superseded open publishes nothing, so that a dead attempt cannot
+     * overwrite its replacement — which also meant an interactive sign-in could
+     * be killed by a bare invalidation and say nothing at all. It now speaks
+     * when nothing took over.
+     *
+     * Driven through [GatewayConnectionManager.connectRemote], which does not
+     * claim the sign-in exemption: every invalidator reachable from the app is
+     * exempt now, which is the point, and this is what remains testable.
+     */
+    @Test
+    fun `an interactive open killed by an invalidation is never left silent`() = runTest {
+        val handedOff = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                awaitCancellation()
+            },
+            nowSeconds = { 1_000L },
+        )
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+            logConnectEvent = { events += it },
+        )
+
+        val attempt = backgroundScope.launch { manager.connectRemote(PROFILE, GatewayBrowserLauncher {}) }
+        handedOff.await()
+
+        manager.networkChanged()
+        runCurrent()
+
+        assertTrue(
+            events.any { it.startsWith("connect intent invalidated by a network change") },
+        )
+        assertEquals(GatewayConnectionStatus.NeedsAttention, manager.state.value.status)
+        assertNotNull("a spent sign-in must not end in silence", manager.state.value.message)
+        attempt.cancel()
+    }
 
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
     private fun rawRequest(port: Int, requestLine: String): String =
