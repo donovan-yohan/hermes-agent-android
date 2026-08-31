@@ -452,6 +452,11 @@ internal class GatewayConnectionManager(
      * so the process wires the real one.
      */
     private val logAppFailure: (String) -> Unit = {},
+    /**
+     * Names a connect-lifecycle event. Fixed phrases only, never a value. A
+     * no-op by default for the same reason [logAppFailure] is.
+     */
+    private val logConnectEvent: (String) -> Unit = {},
 ) : Closeable, GatewayConnectionController {
     private val mutex = Mutex()
     private val _state = MutableStateFlow(GatewayConnectionState())
@@ -497,6 +502,21 @@ internal class GatewayConnectionManager(
      * whatever open is in flight.
      */
     private val signInJob = AtomicReference<Job?>(null)
+
+    /**
+     * How many interactive sign-ins are mid-flight, readable without [mutex].
+     *
+     * The same shape as [localConnectsInFlight] and for the same reason: the
+     * network handlers cancel the in-flight connect intent *before* they take
+     * the lock, so nothing they could read under it would help. A browser round
+     * trip is a person typing a password into someone else's login page — it
+     * legitimately outlives network edges, and it is holding an authorization
+     * code that is single use and expires in 120 s.
+     */
+    private val interactiveSignIns = AtomicInteger(0)
+
+    /** Whether a browser round trip is in progress. See [interactiveSignIns]. */
+    private fun signInBusy(): Boolean = interactiveSignIns.get() > 0
     private var desiredRemoteProfile: RemoteGatewayProfile? = null
     private var remoteConnectedAtMillis: Long? = null
     private var remoteReconnectAttempts = 0
@@ -766,14 +786,20 @@ internal class GatewayConnectionManager(
                 browser.open(url)
             }
         }
-        return openRemote(
-            profile,
-            observed,
-            intent,
-            requireForeground = false,
-            abortMessage = { GatewaySignInCopy.CANCELLED.takeIf { handedOff.get() } },
-        ) {
-            claimRemoteRouteLocked(profile)
+        interactiveSignIns.incrementAndGet()
+        return try {
+            openRemote(
+                profile,
+                observed,
+                intent,
+                requireForeground = false,
+                spansUserInteraction = true,
+                abortMessage = { GatewaySignInCopy.CANCELLED.takeIf { handedOff.get() } },
+            ) {
+                claimRemoteRouteLocked(profile)
+            }
+        } finally {
+            interactiveSignIns.decrementAndGet()
         }
     }
 
@@ -864,6 +890,12 @@ internal class GatewayConnectionManager(
         browser: GatewayBrowserLauncher?,
         intent: ConnectIntent,
         requireForeground: Boolean,
+        /**
+         * Whether this open waits on a person. Only the interactive sign-in
+         * does, and it changes what "the network is still the one we admitted
+         * on" can be asked to mean — see [requireRemoteOpenCurrentLocked].
+         */
+        spansUserInteraction: Boolean = false,
         abortMessage: () -> String? = { null },
         prepareAdmissionLocked: () -> RemoteOpenAdmission,
     ): GatewayConnectResult {
@@ -876,7 +908,7 @@ internal class GatewayConnectionManager(
                 }
                 var unavailable: GatewayConnectResult.Failed? = null
                 val connector = mutex.withLock {
-                    requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground)
+                    requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground, spansUserInteraction)
                     val candidate = remoteConnector
                     if (candidate == null) {
                         unavailable = fail(null, "Remote Gateway connections are unavailable in this build.")
@@ -902,7 +934,7 @@ internal class GatewayConnectionManager(
                             // cancellation check, so without this an abandoned
                             // sign-in could still publish a live connection.
                             currentCoroutineContext().ensureActive()
-                            requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground)
+                            requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground, spansUserInteraction)
                             active = ActiveConnection.Remote(rpc, profile)
                             liveRemoteProfile.set(profile)
                             localRouteActive.set(false)
@@ -978,7 +1010,7 @@ internal class GatewayConnectionManager(
             } catch (failure: Throwable) {
                 val failedAdmission = admission ?: throw failure
                 mutex.withLock {
-                    requireRemoteOpenCurrentLocked(intent, profile, failedAdmission, requireForeground)
+                    requireRemoteOpenCurrentLocked(intent, profile, failedAdmission, requireForeground, spansUserInteraction)
                     closeActive()
                     val retryable = failure.isRetryableRemoteConnectionFailure()
                     if (!retryable && desiredRemoteProfile == profile) {
@@ -1105,7 +1137,7 @@ internal class GatewayConnectionManager(
     }
 
     override suspend fun disconnect() {
-        invalidateConnectIntent()
+        invalidateConnectIntent("an explicit disconnect")
         mutex.withLock {
             clearRemoteRouteLocked()
             closeActive()
@@ -1123,7 +1155,16 @@ internal class GatewayConnectionManager(
         // cancellation is skipped as well as the teardown: it is what would
         // abort a dial already in flight.
         val loopback = loopbackRouteBusy()
-        if (!loopback) invalidateConnectIntent()
+        // A sign-in is exempt for the same reason loopback is, and a stronger
+        // one: leaving for the browser is itself what re-evaluates the default
+        // network, so this edge fires *because* the person is signing in. It
+        // used to cancel them about five seconds after they left, silently —
+        // the connect intent's generation moved, so the abort published
+        // nothing at all. A four-second redirect completed and a six-second one
+        // vanished. The sign-in has its own five-minute bound; it does not need
+        // this one.
+        val signIn = signInBusy()
+        if (!loopback && !signIn) invalidateConnectIntent("a network availability edge")
         scope.launch {
             mutex.withLock {
                 if (networkEventGeneration.get() != eventGeneration) return@withLock
@@ -1157,6 +1198,11 @@ internal class GatewayConnectionManager(
                     }
                     return@withLock
                 }
+                // Re-arming underneath a live sign-in would tear down the
+                // route it is opening and, while the app is backgrounded behind
+                // the browser, publish `Disconnected` over its `Connecting` —
+                // which is exactly the "no error, just nothing" the device saw.
+                if (signIn) return@withLock
                 closeActive()
                 // The outage ended; any failure episode from before it is a
                 // different episode. Without the null clock, one post-tunnel
@@ -1170,9 +1216,9 @@ internal class GatewayConnectionManager(
     fun networkChanged() {
         // Same reason as the availability edge: loopback does not travel over
         // the network that just changed, and cancelling here would abort a dial
-        // in flight.
-        if (loopbackRouteBusy()) return
-        val invalidatedIntent = invalidateConnectIntent()
+        // in flight. A browser round trip is exempt on the same grounds.
+        if (loopbackRouteBusy() || signInBusy()) return
+        val invalidatedIntent = invalidateConnectIntent("a network change")
         scope.launch {
             mutex.withLock {
                 if (connectIntent.get().generation != invalidatedIntent.generation) return@withLock
@@ -1459,6 +1505,7 @@ internal class GatewayConnectionManager(
         profile: RemoteGatewayProfile,
         admission: RemoteOpenAdmission,
         requireForeground: Boolean,
+        spansUserInteraction: Boolean = false,
     ) {
         if (
             !isCurrentConnectIntent(intent) ||
@@ -1466,7 +1513,15 @@ internal class GatewayConnectionManager(
             !networkAvailable ||
             desiredRemoteProfile != profile ||
             reconnectGeneration != admission.routeGeneration ||
-            networkEventGeneration.get() != admission.networkGeneration ||
+            // "No network edge happened while this open was running" is a
+            // reasonable thing to demand of an open that takes milliseconds and
+            // a meaningless one to demand of an open that waits for a person to
+            // type a password. Leaving for a browser re-evaluates the default
+            // network by itself, so this would fail every single time on the
+            // one path where failing costs a single-use code. What actually
+            // proves the socket is good is the authenticated round trip that
+            // follows, and it still has to pass.
+            (!spansUserInteraction && networkEventGeneration.get() != admission.networkGeneration) ||
             (requireForeground && !applicationForegroundSignal.get())
         ) {
             throw CancellationException()
@@ -1606,7 +1661,7 @@ internal class GatewayConnectionManager(
         val previous = connectIntent.getAndUpdate { current ->
             ConnectIntent(current.generation + 1, job)
         }
-        previous.job?.takeIf { it !== job }?.cancel()
+        previous.job?.takeIf { it !== job }?.cancel(cancelledBy("a new connect"))
         return ConnectIntent(previous.generation + 1, job)
     }
 
@@ -1620,12 +1675,26 @@ internal class GatewayConnectionManager(
         }
     }
 
-    private fun invalidateConnectIntent(): ConnectIntent {
+    private fun invalidateConnectIntent(reason: String): ConnectIntent {
         val previous = connectIntent.getAndUpdate { current ->
             ConnectIntent(current.generation + 1, null)
         }
-        previous.job?.cancel()
+        previous.job?.cancel(cancelledBy(reason))
         return ConnectIntent(previous.generation + 1, null)
+    }
+
+    /**
+     * Names who cancelled a connect, because nobody did.
+     *
+     * A cancel here bumps the intent generation, which makes the abort path
+     * publish nothing — deliberately, so a superseded attempt cannot overwrite
+     * the state of the one that replaced it. The cost is that killing a connect
+     * from any of these callers is completely invisible, and two device runs
+     * were spent on exactly that. [reason] is a fixed phrase, never a value.
+     */
+    private fun cancelledBy(reason: String): CancellationException {
+        logConnectEvent("connect cancelled by $reason")
+        return CancellationException("Cancelled by $reason.")
     }
 
     private fun isCurrentConnectIntent(intent: ConnectIntent): Boolean =

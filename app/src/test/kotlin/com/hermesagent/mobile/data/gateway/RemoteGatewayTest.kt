@@ -896,6 +896,102 @@ class RemoteGatewayTest {
         assertEquals(listOf("exchanged", "stored", "came forward"), order.snapshot())
     }
 
+    /**
+     * The r4 blocker. Leaving for a Custom Tab makes Android re-evaluate the
+     * default network, and the monitor reports the new one — about five seconds
+     * later, which is why a four-second redirect completed and a six-second one
+     * did not.
+     *
+     * A browser round trip is a person typing a password. It is expected to
+     * span network events, it is bounded by its own five-minute timeout, and the
+     * authorization code it is waiting for is single use with a 120 s life. A
+     * network edge must not spend it.
+     */
+    @Test
+    fun `a network event while the browser is open never cancels the sign-in`() = runTest {
+        val api = FakeAuthApi()
+        val handedOff = CompletableDeferred<Unit>()
+        val callbackLanded = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = api,
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { profile, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                callbackLanded.await()
+                api.exchange(requireNotNull(profile.normalizedBaseUrl), "code-across-network-event", "verifier")
+            },
+            nowSeconds = { 1_000L },
+        )
+        val rpc = FakeRpc()
+        val cancels = mutableListOf<String>()
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> rpc },
+            reconnectWait = {},
+            logConnectEvent = { cancels += it },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue("the flow must have reached the browser", handedOff.isCompleted)
+
+        // The person is in the browser and the default network is re-evaluated.
+        manager.applicationForegroundChanged(false)
+        manager.networkAvailabilityChanged(true)
+        runCurrent()
+
+        // Then they finish typing and the callback lands.
+        callbackLanded.complete(Unit)
+        runCurrent()
+
+        assertEquals("the code must still be spent", "code-across-network-event", api.exchangedCode)
+        assertEquals(listOf("session.list"), rpc.calls)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        assertEquals("and nothing may have cancelled it on the way", emptyList<String>(), cancels)
+        manager.disconnect()
+    }
+
+    /**
+     * A cancel bumps the connect-intent generation, which is what stops a
+     * superseded attempt overwriting the state of the one that replaced it —
+     * and which also means a cancelled connect publishes nothing anywhere. Two
+     * device runs were spent on a cancel nobody could see.
+     */
+    @Test
+    fun `a cancelled connect names who cancelled it`() = runTest {
+        val events = mutableListOf<String>()
+        val handedOff = CompletableDeferred<Unit>()
+        val authenticator = NativeGatewayAuthenticator(
+            api = FakeAuthApi(),
+            store = MemoryTokenStore(null),
+            login = GatewayNativeLogin { _, browser ->
+                browser.open("https://gateway.example/hermes/auth/native/authorize")
+                handedOff.complete(Unit)
+                awaitCancellation()
+            },
+            nowSeconds = { 1_000L },
+        )
+        val manager = GatewayConnectionManager(
+            scope = backgroundScope,
+            installStore = GatewayInstallStore { error("Remote Gateway route has no process ownership") },
+            remoteConnector = RemoteGatewayConnector(authenticator) { _, _ -> FakeRpc() },
+            logConnectEvent = { events += it },
+        )
+
+        manager.startRemoteSignIn(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertTrue(handedOff.isCompleted)
+
+        manager.disconnect()
+        runCurrent()
+
+        assertEquals(listOf("connect cancelled by an explicit disconnect"), events)
+    }
+
+
+
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
     private fun rawRequest(port: Int, requestLine: String): String =
         Socket("127.0.0.1", port).use { socket ->

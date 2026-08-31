@@ -254,3 +254,11 @@ internal object AndroidGatewaySignInLog : GatewaySignInLog {
 internal val androidGatewayAppFailureLog: (String) -> Unit = { type ->
     Log.w(GATEWAY_LOG_TAG, "connect failed inside the app ($type)")
 }
+
+/**
+ * Names a connect-lifecycle event. Fixed phrases only, for the same reason.
+ * This exists because a cancelled connect used to leave nothing behind at all.
+ */
+internal val androidGatewayConnectEventLog: (String) -> Unit = { event ->
+    Log.w(GATEWAY_LOG_TAG, event)
+}

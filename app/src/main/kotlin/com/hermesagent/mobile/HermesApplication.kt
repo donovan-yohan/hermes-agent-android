@@ -12,6 +12,7 @@ import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
 import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInLog
 import com.hermesagent.mobile.data.gateway.androidGatewayAppFailureLog
+import com.hermesagent.mobile.data.gateway.androidGatewayConnectEventLog
 import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
@@ -99,6 +100,9 @@ class HermesApplication : Application() {
             // Without this a crash in this app's own connection plumbing is
             // indistinguishable, on a device, from an unreachable Gateway.
             logAppFailure = androidGatewayAppFailureLog,
+            // A cancelled connect publishes nothing by design; without this it
+            // leaves no trace anywhere either.
+            logConnectEvent = androidGatewayConnectEventLog,
             localConnector = LocalGatewayConnector(
                 tokens = secrets,
                 health = OkHttpLocalGatewayHealthCheck(http),
