@@ -4,6 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Log
 import androidx.browser.customtabs.CustomTabsClient
@@ -14,7 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * A live Custom Tabs service binding, and the session it minted.
@@ -241,9 +246,10 @@ internal object AndroidGatewaySignInLog : GatewaySignInLog {
     }
 
     override fun failed(step: GatewaySignInStep, cause: Throwable) {
-        // The type, never the message: a message routinely carries a host, a
-        // path or a URL.
-        Log.w(GATEWAY_LOG_TAG, "$step (${cause.javaClass.name})")
+        // The whole chain, types only. The outermost name is usually this
+        // codebase's own wrapper and says nothing; what it wrapped is the
+        // answer. Messages are never logged — they carry hosts and paths.
+        Log.w(GATEWAY_LOG_TAG, "$step (${throwableChain(cause)})")
     }
 }
 
@@ -251,8 +257,46 @@ internal object AndroidGatewaySignInLog : GatewaySignInLog {
  * Names the type of a connection failure that came from this app rather than
  * from the network. Type only, for the same reason.
  */
-internal val androidGatewayAppFailureLog: (String) -> Unit = { type ->
-    Log.w(GATEWAY_LOG_TAG, "connect failed inside the app ($type)")
+internal val androidGatewayAppFailureLog: (String) -> Unit = { chain ->
+    Log.w(GATEWAY_LOG_TAG, "connect failed inside the app ($chain)")
+}
+
+/**
+ * Whether the platform thinks there is a working default network yet.
+ *
+ * Used once, before the single token-exchange retry, so the second attempt can
+ * differ from the first instead of repeating it milliseconds later. Resolves
+ * immediately when the network already validates, which is the common case —
+ * this exists for the case where it does not.
+ */
+internal class AndroidGatewayNetworkGate(context: Context) : GatewayNetworkGate {
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+
+    override suspend fun awaitUsable(timeoutMillis: Long) {
+        if (validatedNow()) return
+        val usable = CompletableDeferred<Unit>()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                    usable.complete(Unit)
+                }
+            }
+        }
+        val watching = runCatching { connectivity.registerDefaultNetworkCallback(callback) }.isSuccess
+        // Nothing to wait on is not a reason to stall the retry.
+        if (!watching) return
+        try {
+            withTimeoutOrNull(timeoutMillis) { usable.await() }
+        } finally {
+            runCatching { connectivity.unregisterNetworkCallback(callback) }
+        }
+    }
+
+    private fun validatedNow(): Boolean = runCatching {
+        val active = connectivity.activeNetwork ?: return@runCatching false
+        connectivity.getNetworkCapabilities(active)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    }.getOrDefault(false)
 }
 
 /**

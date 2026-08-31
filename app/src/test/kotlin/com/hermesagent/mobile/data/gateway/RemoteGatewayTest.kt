@@ -41,6 +41,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -1306,6 +1307,86 @@ class RemoteGatewayTest {
 
         assertEquals("exactly one retry, never a loop", 2, calls)
         assertTrue(failure is GatewayUnansweredException)
+    }
+
+    /**
+     * r7 was spent on `failed (GatewayUnansweredException)` — the name of this
+     * codebase's own envelope, which says only "the call failed", which was
+     * already known. The chain is the answer; the messages inside it are never
+     * safe to log.
+     */
+    @Test
+    fun `a failure renders as its whole cause chain, types only`() {
+        val wrapped = GatewayUnansweredException(
+            java.net.SocketException("connect failed to gateway.example:8443"),
+        )
+        assertEquals(
+            "com.hermesagent.mobile.data.gateway.GatewayUnansweredException < java.net.SocketException",
+            throwableChain(wrapped),
+        )
+
+        val deep = IllegalStateException(
+            "outer",
+            java.io.IOException("middle", java.net.SocketException("inner")),
+        )
+        val chain = throwableChain(deep)
+        assertEquals(
+            "java.lang.IllegalStateException < java.io.IOException < java.net.SocketException",
+            chain,
+        )
+        assertFalse("a host must never reach logcat", chain.contains("gateway.example"))
+        assertFalse(chain.contains("outer"))
+
+        // And it is bounded, so a pathological chain cannot become the log.
+        var nested: Throwable = IllegalStateException("deepest")
+        repeat(12) { nested = java.io.IOException("layer", nested) }
+        assertTrue(throwableChain(nested).endsWith("..."))
+    }
+
+    /**
+     * An immediate retry down the same pooled socket is not a second attempt,
+     * it is the same attempt twice — r7 measured 2 ms between them and an
+     * identical failure. The second one has to be able to differ.
+     */
+    @Test
+    fun `the one retry evicts its pool and waits for a usable network first`() = runTest {
+        val order = SignInTrace()
+        val waits = mutableListOf<Long>()
+        var calls = 0
+        val shared = OkHttpClient.Builder().addInterceptor { chain ->
+            calls += 1
+            order.record("attempt-$calls")
+            if (calls == 1) throw java.net.SocketException("never answered")
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(
+                    """{"access_token":"a","refresh_token":"r","expires_at":9000,"provider":"p","user_id":"u"}"""
+                        .toResponseBody("application/json".toMediaType()),
+                )
+                .build()
+        }.build()
+        val api = OkHttpGatewayNativeAuthApi(
+            shared,
+            networkGate = GatewayNetworkGate { millis ->
+                waits += millis
+                order.record("network gate")
+            },
+        )
+
+        api.exchange("https://gateway.example/hermes", "code", "verifier")
+
+        assertEquals(listOf("attempt-1", "network gate", "attempt-2"), order.snapshot())
+        assertEquals(listOf(OkHttpGatewayNativeAuthApi.RETRY_NETWORK_WAIT_MILLIS), waits)
+        // Evicting is only safe because the auth legs own their pool; the shared
+        // one belongs to a live session's RPC and media.
+        assertNotSame(
+            "auth legs must never evict the shared connection pool",
+            shared.connectionPool,
+            api.connectionPool,
+        )
     }
 
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */

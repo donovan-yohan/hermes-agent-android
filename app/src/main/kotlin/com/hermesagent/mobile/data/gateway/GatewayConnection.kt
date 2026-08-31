@@ -1658,7 +1658,7 @@ internal class GatewayConnectionManager(
             failure.message ?: HOST_FAILURE_MESSAGE
 
         failure !is IOException -> {
-            logAppFailure(failure.javaClass.name)
+            logAppFailure(throwableChain(failure))
             APP_FAILURE_MESSAGE
         }
 

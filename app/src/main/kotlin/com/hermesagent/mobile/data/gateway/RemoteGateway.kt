@@ -27,6 +27,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
+import okhttp3.ConnectionPool
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -236,6 +237,43 @@ internal enum class GatewaySignInStep(private val label: String) {
  * Breadcrumbs for the sign-in hand-off, in the one place a silent failure used
  * to be indistinguishable from a hang.
  */
+/**
+ * The whole cause chain of a failure, rendered as types and nothing else.
+ *
+ * A wrapper's own class name is almost never the answer. r7 spent a device run
+ * on `failed (GatewayUnansweredException)` — the name of the envelope this code
+ * puts round every unanswered call, which says only "the call failed", which was
+ * already known. What was needed was what it wrapped.
+ *
+ * Types only, walked through `cause`, deduplicated against cycles and capped:
+ * a throwable's *message* routinely carries a hostname, a path or a URL, and
+ * this reaches logcat.
+ */
+internal fun throwableChain(failure: Throwable, limit: Int = THROWABLE_CHAIN_LIMIT): String {
+    val names = mutableListOf<String>()
+    val seen = mutableSetOf<Throwable>()
+    var current: Throwable? = failure
+    while (current != null && names.size < limit && seen.add(current)) {
+        names += current.javaClass.name
+        current = current.cause
+    }
+    if (current != null) names += "..."
+    return names.joinToString(" < ")
+}
+
+private const val THROWABLE_CHAIN_LIMIT = 6
+
+/**
+ * Waits for the default network to look usable again, bounded.
+ *
+ * A seam because the retry below is worthless if the second attempt is
+ * identical to the first, and because "is there a working network yet" is a
+ * platform question a test must be able to answer instantly.
+ */
+internal fun interface GatewayNetworkGate {
+    suspend fun awaitUsable(timeoutMillis: Long)
+}
+
 internal fun interface GatewaySignInLog {
     fun step(step: GatewaySignInStep)
 
@@ -579,6 +617,12 @@ internal class OkHttpGatewayNativeAuthApi(
     http: OkHttpClient,
     private val log: GatewaySignInLog = GatewaySignInLog {},
     callTimeoutMillis: Long = AUTH_CALL_TIMEOUT_MILLIS,
+    /**
+     * No-op by default, and the process wires the real one — the same
+     * convention as [log], and the same reason: a unit test must not wait on a
+     * platform it does not have.
+     */
+    private val networkGate: GatewayNetworkGate = GatewayNetworkGate { },
 ) : GatewayNativeAuthApi {
     /**
      * The shared client with a *call* timeout, and this is the bound that
@@ -599,6 +643,10 @@ internal class OkHttpGatewayNativeAuthApi(
      */
     private val http: OkHttpClient = http.newBuilder()
         .callTimeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
+        // A pool of its own. The retry below evicts it, and evicting the shared
+        // pool would drop the RPC and media connections of a session that has
+        // nothing to do with signing in.
+        .connectionPool(ConnectionPool())
         .build()
 
     override suspend fun status(baseUrl: String): GatewayAuthStatus {
@@ -673,6 +721,17 @@ internal class OkHttpGatewayNativeAuthApi(
     } catch (unanswered: GatewayUnansweredException) {
         if (!retryUnanswered) throw unanswered
         log.step(GatewaySignInStep.ExchangeRetrying)
+        // An immediate retry down the same pooled socket is not a second
+        // attempt, it is the same attempt twice — r7 measured 2 ms between them
+        // and an identical failure. Evict, then give the platform a bounded
+        // moment to have a usable network, so attempt two can actually differ.
+        // Note this cannot be the whole story on its own: OkHttp's
+        // `retryOnConnectionFailure` is on by default and is not overridden
+        // anywhere here, so it already recovers a stale pooled connection by
+        // itself. If a named cause turns out to be policy rather than plumbing,
+        // this hardening will not help and the name is what drives the fix.
+        withContext(Dispatchers.IO) { runCatching { http.connectionPool.evictAll() } }
+        networkGate.awaitUsable(RETRY_NETWORK_WAIT_MILLIS)
         redeem(baseUrl, code, verifier, retryUnanswered = false)
     }
 
@@ -782,6 +841,9 @@ internal class OkHttpGatewayNativeAuthApi(
     /** What the whole call is bounded by, so a test can pin that it is bounded at all. */
     internal val callTimeoutMillis: Int get() = http.callTimeoutMillis
 
+    /** The auth legs' own pool, so a test can pin that evicting it disturbs nothing else. */
+    internal val connectionPool: ConnectionPool get() = http.connectionPool
+
     internal companion object {
         val JSON = Json { ignoreUnknownKeys = true }
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
@@ -793,6 +855,9 @@ internal class OkHttpGatewayNativeAuthApi(
          * life, so the whole call is bounded well inside that.
          */
         const val AUTH_CALL_TIMEOUT_MILLIS = 15_000L
+
+        /** Bounded wait for a usable network before the one retry. */
+        const val RETRY_NETWORK_WAIT_MILLIS = 3_000L
     }
 }
 

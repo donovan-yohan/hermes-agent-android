@@ -10,6 +10,7 @@ import com.hermesagent.mobile.data.composer.ProfileSwitchingComposerQueueStore
 import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
+import com.hermesagent.mobile.data.gateway.AndroidGatewayNetworkGate
 import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInLog
 import com.hermesagent.mobile.data.gateway.androidGatewayAppFailureLog
 import com.hermesagent.mobile.data.gateway.androidGatewayConnectEventLog
@@ -79,7 +80,11 @@ class HermesApplication : Application() {
         )
     }
     internal val gatewayConnection: GatewayConnectionManager by lazy {
-        val authApi = OkHttpGatewayNativeAuthApi(http, log = AndroidGatewaySignInLog)
+        val authApi = OkHttpGatewayNativeAuthApi(
+            http,
+            log = AndroidGatewaySignInLog,
+            networkGate = AndroidGatewayNetworkGate(this),
+        )
         // One store, two credential shapes: a Remote row's sign-in and a Local
         // row's session token share the slot machinery that names a file after
         // the connection and binds its contents to the address that minted them.
