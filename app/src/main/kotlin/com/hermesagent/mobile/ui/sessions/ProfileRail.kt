@@ -117,7 +117,7 @@ internal const val PROFILE_PICKER_TAG = "Profile picker"
  * The active profile pops in its own colour — the "where am I" cue.
  *
  * Port of `apps/desktop/src/app/chat/sidebar/profile-switcher.tsx:119-345` @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`.
  *
  * Desktop stops scaling the strip past thirteen profiles and collapses to a
  * compact menu (`:49`). A phone's budget is width, not count, so the strip

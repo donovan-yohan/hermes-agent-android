@@ -3,7 +3,7 @@
 ## Pin and source contract
 
 Desktop authority is `NousResearch/hermes-agent` at
-`936b970e281d5d28e930c5698f36bc4ebb54c7ba` (read-only checkout).
+`29112bef099274229cadff79cdff7bf7b99c4b77` (read-only checkout).
 
 | Contract | Desktop source | Android port |
 |---|---|---|
@@ -53,7 +53,7 @@ data was used.
 ## Default-dark sidebar color contract
 
 For Android commit `44b409c610d0c0cb8e21d1856ea2bfaf4b5a81c3` against pinned
-Desktop source `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, the default-dark
+Desktop source `29112bef099274229cadff79cdff7bf7b99c4b77`, the default-dark
 sidebar uses the Nous palette defined in `presets.ts:174-232`: sidebar raw
 `#010409`, accent `#4A84FE`, and outline `#E6EDF3`. The selected sidebar row
 follows `styles.css:308-312`, with active raw `#2084ABFA`; on Android its

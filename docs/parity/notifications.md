@@ -9,7 +9,7 @@ per [`docs/workflows/port-desktop-surface.md`](../workflows/port-desktop-surface
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer, Gateway | `hermes-agent` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer, Gateway | `hermes-agent` @ `29112bef099274229cadff79cdff7bf7b99c4b77` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
@@ -29,9 +29,9 @@ Every `path:line` below is against that SHA.
 | Native titles, bodies and action labels | `apps/desktop/src/i18n/en.ts:174-186` |
 | Per-kind labels and descriptions | `apps/desktop/src/i18n/en.ts:430-473` |
 | `turnDone` dispatch site | `apps/desktop/src/app/session/hooks/use-message-stream/index.ts:772` |
-| `input` dispatch sites (clarify, batch clarify, sudo, secret) | `.../use-message-stream/gateway-event.ts:1228`, `:1279`, `:1366`, `:1393` |
-| `approval` dispatch site, with its two buttons | `.../gateway-event.ts:1344-1354` |
-| `turnError` dispatch site | `.../gateway-event.ts:1661` |
+| `input` dispatch sites (clarify, batch clarify, sudo, secret) | `.../use-message-stream/gateway-event/input-requests.ts:101-106`, `:149-154`, `:282-287`, `:313-318` |
+| `approval` dispatch site, with its two buttons | `.../gateway-event/input-requests.ts:256-265` |
+| `turnError` dispatch site | `.../gateway-event/status.ts:140-145` |
 | The choices the Gateway actually offers | `gateway/platforms/api_server.py:74-77` |
 | `approval.respond` answering `{resolved: N}` | `tui_gateway/methods_prompt.py:1496-1517` |
 | The `approval.received` ack that precedes it | `tui_gateway/methods_prompt.py:1477-1493` |
@@ -84,7 +84,7 @@ given a class they do not deserve.
 |---|---|---|---|
 | One preference per kind, and the OS layer has no notion of a channel | mobile-adaptation | Two channels, `Approvals` and `Responses` | Android importance is a property of a channel and can never be lowered after the OS creates it, so per-kind channels would freeze seven importances on first launch. The names are the issue's own event matrix; the descriptions are Desktop's per-kind sentences (`en.ts:437`, `:441`, `:445`) |
 | No grouping layer: Electron files each notification on its own | mobile-adaptation | A conversation's group summary rides the channel of the *first* notification filed under it | Android needs a summary before it will bundle a group, and a summary has to sit on some channel. `GROUP_ALERT_CHILDREN` keeps the summary silent whichever channel it lands on, so the channel decides nothing the user can hear. Pinning it to `Approvals`, as the first version did, was not harmless: it gave a finished turn an approval's importance |
-| An approval's body is `command \|\| description` (`gateway-event.ts:1346`) | mobile-adaptation | The body is the **session title**, never the command | A phone renders that on a lock screen. #99's security section forbids commands, tool output, sudo prompts and secret names in a notification; the only Gateway text that reaches the shade is a session title, through `redact()` and bounded |
+| An approval's body is `command \|\| description` (`gateway-event/input-requests.ts:261`) | mobile-adaptation | The body is the **session title**, never the command | A phone renders that on a lock screen. #99's security section forbids commands, tool output, sudo prompts and secret names in a notification; the only Gateway text that reaches the shade is a session title, through `redact()` and bounded |
 | No lock screen exists | mobile-adaptation | `VISIBILITY_PRIVATE` with a `publicVersion` carrying only the kind | A locked phone is told "Approval needed" and nothing about which conversation |
 | Clicking the notification body focuses the window; there is no button vocabulary for it | mobile-adaptation | No explicit "Open" action button | Tapping the notification body *is* Open on Android, so a button duplicating the tap target is noise. The exception is the row below, where the buttons are gone and the body says so |
 | The renderer is always there to answer, so an action button always works | mobile-adaptation | "Open to respond." when the connection has moved on, raised on `PendingInputResponse.Retryable` | This app's socket may not be there. A button that silently does nothing is worse than a sentence |
@@ -95,7 +95,7 @@ given a class they do not deserve.
 | A finished turn only alerts if its session is `$activeSessionId` (`:146-147`) | drift | A finished turn notifies for any session when backgrounded; foreground remains isolated | On Android, leaving the app from the session list or non-chat surface leaves `visibleSessionId` null, so completion notifications alert for any background session. Because the throttle key is `kind:session` and grouping is per conversation, N background conversations finishing within the window produce N alerting summaries; #99 |
 | The notification carries the app's own mark | drift | The status-bar glyph is `android.R.drawable.stat_notify_chat` | A monochrome Hermes status-bar mark is undrawn design work, and the launcher icon is a colour bitmap that would render as a white block. Matches the precedent in `WakeWordForegroundService`; #99 |
 | A parked approval keeps its notification across a reconnect | drift | Notifications for an already-notified prompt vanish on disconnect and deduplication prevents re-posting on reconnect | The repository clears its pending map on every client change and the notifier follows it, clearing shade notifications. For prompts already announced pre-disconnect, deduplication refuses re-posting on reconnect replay, so the shade stays clear until in-app interaction or new activity occurs; #99 |
-| `turnError` is dispatched (`gateway-event.ts:1661`) | omission | In the preference store, never dispatched | pill-owed: #101 — its preference row is a control, and S-N5 wires the dispatch alongside the connection-lost row (#99) |
+| `turnError` is dispatched (`gateway-event/status.ts:140-145`) | omission | In the preference store, never dispatched | pill-owed: #101 — its preference row is a control, and S-N5 wires the dispatch alongside the connection-lost row (#99) |
 | `backgroundDone`, `credits` and `plugin` kinds | omission | In the preference store, never dispatched | non-goal: none has a mobile source at all — no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so S-N2's settings screen is a pure UI slice and the disabled rows have something to bind to |
 | Completion-sound picker (`notifications-settings.tsx:65-108`) | omission | Absent | out-of-scope: #99 named it a non-goal of that issue, being Electron-only |
 
@@ -166,7 +166,7 @@ answered or with what choice.
 frames. It exists because `message.complete` and a terminal `error` both settle
 the session to `SessionStatus.Idle`, so the cache alone cannot tell an
 app-scoped follower which happened, and Desktop raises a different kind for
-each (`index.ts:772` against `gateway-event.ts:1661`). It is a signal, not
+each (`index.ts:772` against `gateway-event/status.ts:140-145`). It is a signal, not
 state: nothing renders from it and nothing persists it. It also makes S-N5's
 `turnError` row a wiring change rather than a repository change.
 

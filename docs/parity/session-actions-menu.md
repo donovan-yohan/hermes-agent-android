@@ -14,7 +14,7 @@ tested *now*, so none of those slices can reorder the menu on their way in.
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer and i18n | `hermes-agent` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer and i18n | `hermes-agent` @ `29112bef099274229cadff79cdff7bf7b99c4b77` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 

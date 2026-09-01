@@ -42,7 +42,7 @@ import org.junit.Test
  * The active profile scope as this app's own state: what it shows, what it
  * routes, and what it must never disturb.
  *
- * Desktop reference at `936b970e281d5d28e930c5698f36bc4ebb54c7ba`:
+ * Desktop reference at `29112bef099274229cadff79cdff7bf7b99c4b77`:
  * `apps/desktop/src/store/profile.ts:437-483` and
  * `apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`.
  */

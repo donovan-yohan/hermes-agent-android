@@ -261,7 +261,7 @@ internal fun interface GatewayServedTokenScraper {
  * forward. Fetch or parse failure deliberately falls back to the spawn token,
  * matching pinned Desktop's adoption contract.
  *
- * Source: 936b970e281d5d28e930c5698f36bc4ebb54c7ba,
+ * Source: 29112bef099274229cadff79cdff7bf7b99c4b77,
  * apps/desktop/electron/dashboard-token.ts:10-101 and
  * hermes_cli/web_server.py:17242-17310.
  */

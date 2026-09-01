@@ -135,7 +135,7 @@ internal class OkHttpGatewayHttp(
                     ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
                 // Destructive, and body-less like GET. The routes that delete
                 // scope themselves in the query (hermes-agent @
-                // 936b970e281d5d28e930c5698f36bc4ebb54c7ba,
+                // 29112bef099274229cadff79cdff7bf7b99c4b77,
                 // hermes_cli/web_routers/sessions.py:657-658), so a body on a
                 // DELETE means a caller believes it is sending scope the
                 // Gateway would ignore — and a delete that runs under a scope

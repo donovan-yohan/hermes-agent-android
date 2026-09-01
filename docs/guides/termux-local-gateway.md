@@ -359,7 +359,7 @@ automation needs an explicit `agent-browser` install (`termux.md:188-207`).
 ## Sources
 
 Hermes claims above are read from `NousResearch/hermes-agent` at
-`936b970e281d5d28e930c5698f36bc4ebb54c7ba`, cited as `path:line`.
+`29112bef099274229cadff79cdff7bf7b99c4b77`, cited as `path:line`.
 
 Android and Termux behaviour is community-documented rather than upstream, and
 is not verified by this repository's gates:

@@ -59,7 +59,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 /**
  * The connection switcher — Desktop's `ConnectionSwitcher`
  * (`apps/desktop/src/app/chat/sidebar/connection-switcher.tsx:40-322` @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`).
  *
  * Desktop renders no source chrome at all for a single connection
  * (`:118-120`), and neither does this: a phone rail is short, and a control
@@ -70,7 +70,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * item stays last, below a hairline.
  *
  * Mounted twice. The session rail is Desktop's own home for it — the statusbar
- * (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @ `936b970e`) — and
+ * (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @ `29112bef`) — and
  * the top of the Gateways pane is the owner-approved mobile adaptation
  * recorded in `docs/parity/gateway-connections.md`: a phone's Gateways screen
  * is a destination rather than a pane beside a sidebar that is always there,
@@ -85,7 +85,7 @@ fun ConnectionSwitcherBar(
     /**
      * Where "Manage gateways…" goes, or null on the surface that *is* that
      * destination. Desktop's trailing item navigates to the settings
-     * connections tab (`connection-switcher.tsx:234-236` @ `936b970e`), which
+     * connections tab (`connection-switcher.tsx:234-236` @ `29112bef`), which
      * in this app is the Gateways screen — offering it from that screen would
      * be a door back into the room you are standing in. The hairline above it
      * goes with it, rather than leaving a rule under the last connection with
@@ -99,7 +99,7 @@ fun ConnectionSwitcherBar(
     /**
      * The trigger's accessible name, announced as "⟨title⟩: ⟨connection⟩" —
      * Desktop's own `title` prop and its own composition
-     * (`connection-switcher.tsx:248,264` @ `936b970e`).
+     * (`connection-switcher.tsx:248,264` @ `29112bef`).
      *
      * The default is the value Desktop passes (`:154`), so a mount that says
      * nothing gets Desktop's label rather than losing one — unlike [onManage],
@@ -157,7 +157,7 @@ fun ConnectionSwitcherBar(
         }
 
         // Desktop puts this sentence in a toast raised from the same click
-        // handler (`connection-switcher.tsx:123-128` @ `936b970e`,
+        // handler (`connection-switcher.tsx:123-128` @ `29112bef`,
         // `notifyError`). This app has no notification stack to raise one into
         // (#73), so it is an inline line under the control that started the
         // switch — the nearest thing on screen to where Desktop's toast points.

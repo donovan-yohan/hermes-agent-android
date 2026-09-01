@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * The scope rules, against Desktop's own cases at
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`:
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`:
  * `apps/desktop/src/app/chat/sidebar/profile-scope.test.ts:12-29`.
  */
 class ProfileScopeTest {

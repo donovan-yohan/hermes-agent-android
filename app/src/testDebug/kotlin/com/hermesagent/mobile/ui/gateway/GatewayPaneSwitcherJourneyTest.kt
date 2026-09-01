@@ -43,7 +43,7 @@ import org.robolectric.annotation.Config
  * The Gateways pane's own mount of the connection switcher (S-G4, #110).
  *
  * Desktop mounts `ConnectionSwitcher` in the statusbar and nowhere else
- * (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @ `936b970e`); this
+ * (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @ `29112bef`); this
  * second mount is the owner-approved mobile adaptation, because a phone's
  * Gateways screen is a destination rather than a pane beside an ever-present
  * sidebar. What is under test here is that it is the *same* control — same

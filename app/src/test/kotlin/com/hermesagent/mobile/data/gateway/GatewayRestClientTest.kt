@@ -16,7 +16,7 @@ import org.junit.Test
 
 /**
  * Every wire fixture here is a shape the pinned Gateway actually produces:
- * hermes-agent @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, with the
+ * hermes-agent @ `29112bef099274229cadff79cdff7bf7b99c4b77`, with the
  * `path:line` that builds it named where it is used. A fixture without a
  * citation is a guess about the wire, and a parser tested against a guess
  * proves nothing.

@@ -83,7 +83,7 @@ fun HermesTheme(
     // the brand stroke.
     //
     // App-wide on purpose, not transcript-only: Desktop's `*::selection` rule
-    // is global (`styles.css:767` @ `936b970e`), so the composer and every
+    // is global (`styles.css:767` @ `29112bef`), so the composer and every
     // other text field get the same highlight rather than Material's primary.
     val selectionColors = remember(tokens) {
         TextSelectionColors(

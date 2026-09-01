@@ -8,8 +8,8 @@ package com.hermesagent.mobile.data.gateway
  * cache alone cannot tell an app-scoped follower which of the two happened —
  * and Desktop raises a different notification for each (`turnDone` at
  * `apps/desktop/src/app/session/hooks/use-message-stream/index.ts:772`,
- * `turnError` at `.../gateway-event.ts:1661`, both @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
+ * `turnError` at `.../gateway-event/status.ts:140-145`, both @
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`).
  *
  * It is a signal, not state: nothing renders from it, nothing persists it, and
  * a follower that misses one has missed a notification, not a fact.

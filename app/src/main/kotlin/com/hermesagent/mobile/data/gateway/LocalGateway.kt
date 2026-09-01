@@ -15,7 +15,7 @@ import okhttp3.Request
  *
  * Nothing about that runtime belongs to this app. Upstream ships Android as a
  * Termux install (`website/docs/getting-started/termux.md` @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`), the person starts and stops
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`), the person starts and stops
  * `hermes serve` there, and this app is one more client of it — the same
  * host-owned boundary ADR-0002 draws for the Remote route, with the host
  * happening to be this device. Disconnecting closes a socket and touches no
@@ -25,7 +25,7 @@ import okhttp3.Request
  * the dashboard session token: on loopback there is no TLS, no sign-in and no
  * host key, and the server compares the `X-Hermes-Session-Token` header against
  * a value fixed for the life of the process
- * (`hermes_cli/web_server.py:499-504` and `:567-584` @ `936b970e`). So the
+ * (`hermes_cli/web_server.py:499-504` and `:567-584` @ `29112bef`). So the
  * token is required here, it is kept in the same Keystore-encrypted slot a
  * Remote row's sign-in uses, and it is bound to the address that minted it.
  *
@@ -66,7 +66,7 @@ data class LocalGatewayProfile(
     /**
      * What a row shows: `127.0.0.1:9119`. Desktop's `connectionEndpoint` drops
      * the scheme for the same reason (`connection-display.ts:61-75` @
-     * `936b970e`) — the scheme is the one part of a loopback address that
+     * `29112bef`) — the scheme is the one part of a loopback address that
      * carries no information. The port is never dropped: it is what says
      * *which* server on this device the row is.
      */
@@ -365,7 +365,7 @@ internal class LocalGatewayConnector(
      * The socket, and the refusal it is the only one to see.
      *
      * `/api/health` is on the Gateway's public allowlist at the pin
-     * (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `936b970e`), so the
+     * (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `29112bef`), so the
      * readiness check answers 200 to a wrong token as readily as to a right
      * one. The upgrade is where the token is actually checked
      * (`web_server.py:15925-15931`, `:17017-17025`), and because the handler

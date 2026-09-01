@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
  *
  * A port of Desktop's `dispatchNativeNotification`
  * (`apps/desktop/src/store/native-notifications.ts:190-223` @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`) with its four guards in the same
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`) with its four guards in the same
  * order: preferences (`:193`), the post-connect quiet window (`:197`), the
  * foreground/active-session rule (`:201`, implemented at `:131-148`), then the
  * one-second throttle (`:205`).
@@ -376,7 +376,8 @@ private fun PendingInputRequest.promptIdentity(): PromptIdentity =
 
 /**
  * Desktop files clarify, sudo and secret prompts under one `input` kind
- * (`.../gateway-event.ts:1228`, `:1279`, `:1366`, `:1393` @ the pin), and so
+ * (`.../gateway-event/input-requests.ts:101-106`, `:149-154`, `:282-287`,
+ * `:313-318` @ the pin), and so
  * does this. They are the same question to the user: something is blocked
  * until you answer it in the app.
  */
