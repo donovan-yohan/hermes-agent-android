@@ -55,8 +55,8 @@ over the same socket, and `SessionNotifier` has never heard of any of them.
 
 ## Gating, verbatim
 
-`SessionNotifier.shouldFire` is `native-notifications.ts:131-148` with two
-substitutions:
+`SessionNotifier.shouldFire` is adapted from `native-notifications.ts:131-148` with
+two substitutions:
 
 - `isBackgrounded()` becomes "no resumed Activity", read from
   `ProcessLifecycleOwner` — process lifecycle, so a rotation is not read as
@@ -64,11 +64,10 @@ substitutions:
 - `$activeSessionId` becomes the conversation the chat surface has open,
   published by `MainActivity` from `ChatUiState.activeSession`.
 
-The consequence is Desktop's, unchanged: an approval or a question for an
-**off-screen** session fires even while the app is in the foreground, and a
-finished turn fires only when the app is **away** *and* the session is the
-selected one. The second half is the rule that stops a busy Gateway raising one
-alert per background conversation (`:146-147`).
+The consequence: an approval or a question for an **off-screen** session fires
+even while the app is in the foreground, and a finished turn fires whenever the
+app is **away** for any session. When foregrounded, completion notifications
+remain suppressed (in-app unread dot isolates the foreground).
 
 The four guards run in Desktop's order — preferences, quiet window,
 foreground/active-session, throttle — because the order is observable: a
@@ -92,9 +91,10 @@ given a class they do not deserve.
 | Electron needs no notification grant | mobile-adaptation | A `POST_NOTIFICATIONS` runtime prompt with its own rationale, asked at the first live Gateway, once | No Desktop equivalent to port. The rationale reuses the settings panel's vocabulary (`en.ts:431`) rather than inventing a second description |
 | A clarify is answered in the renderer | mobile-adaptation | No `RemoteInput` reply on a question | Owner decision 3 on #99: a clarify can be a batch of questions with constrained choices (`PendingInput.kt:24-30`), and a single free-text box cannot answer that honestly |
 | The 1 s throttle drops a superseding approval, at the cost of a stale body (`:97-114`) | mobile-adaptation | Same identity with a changed target is exempt from the throttle | Here the notification carries *buttons* bound to a request id, so a throttled supersession would leave the shade able to answer a request the Gateway has already replaced. The exemption is the narrowest that fixes it |
-| Dispatch is per event, so a prompt dropped in the quiet window is simply never offered again (`notify-baseline.ts:1-26`) | mobile-adaptation | A prompt replayed into the quiet window is recorded as old news, and the verdict is cleared on the next socket open | This app follows a state map, where the same prompt is re-offered on every subsequent change, so the drop has to be remembered explicitly or it repeats |
+| Dispatch is per event, so a prompt dropped in the quiet window is simply never offered again (`notify-baseline.ts:1-26`) | mobile-adaptation | Prompts replayed into the 4 s quiet window are deferred until expiry rather than swallowed | On mobile, reconnects wipe repository state and redeliver pending prompts. Deferring unannounced prompts until the quiet window closes prevents permanent swallow while deduplication (including across incremental single-event replays of multiple outstanding prompts) prevents reconnect storms |
+| A finished turn only alerts if its session is `$activeSessionId` (`:146-147`) | drift | A finished turn notifies for any session when backgrounded; foreground remains isolated | On Android, leaving the app from the session list or non-chat surface leaves `visibleSessionId` null, so completion notifications alert for any background session. Because the throttle key is `kind:session` and grouping is per conversation, N background conversations finishing within the window produce N alerting summaries; #99 |
 | The notification carries the app's own mark | drift | The status-bar glyph is `android.R.drawable.stat_notify_chat` | A monochrome Hermes status-bar mark is undrawn design work, and the launcher icon is a colour bitmap that would render as a white block. Matches the precedent in `WakeWordForegroundService`; #99 |
-| A parked approval keeps its notification across a reconnect | drift | Notifications for a session vanish when the socket does, and the 4 s quiet window then suppresses the replay | The repository clears its pending map on every client change and the notifier follows it, so a still-parked approval has no notification until something new happens. The in-app prompt survives; only the OS notification goes. The honest shape of T1, stated in `status/ROADMAP.md`; #99 |
+| A parked approval keeps its notification across a reconnect | drift | Notifications for an already-notified prompt vanish on disconnect and deduplication prevents re-posting on reconnect | The repository clears its pending map on every client change and the notifier follows it, clearing shade notifications. For prompts already announced pre-disconnect, deduplication refuses re-posting on reconnect replay, so the shade stays clear until in-app interaction or new activity occurs; #99 |
 | `turnError` is dispatched (`gateway-event.ts:1661`) | omission | In the preference store, never dispatched | pill-owed: #101 — its preference row is a control, and S-N5 wires the dispatch alongside the connection-lost row (#99) |
 | `backgroundDone`, `credits` and `plugin` kinds | omission | In the preference store, never dispatched | non-goal: none has a mobile source at all — no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so S-N2's settings screen is a pure UI slice and the disabled rows have something to bind to |
 | Completion-sound picker (`notifications-settings.tsx:65-108`) | omission | Absent | out-of-scope: #99 named it a non-goal of that issue, being Electron-only |
@@ -174,7 +174,7 @@ state: nothing renders from it and nothing persists it. It also makes S-N5's
 
 | Claim | Where it is proved |
 |---|---|
-| Gating, throttle, quiet window, grouping, resolve-clears, supersession (including of a replayed prompt), re-raising a prompt the user viewed and left | `app/src/test/kotlin/.../notifications/SessionNotifierTest.kt` (23 tests, virtual time) |
+| Gating, throttle, quiet window, grouping, resolve-clears, supersession (including of a replayed prompt), re-raising a prompt the user viewed and left | `app/src/test/kotlin/.../notifications/SessionNotifierTest.kt` (34 tests, virtual time) |
 | The shade-response outcomes, including a notification outliving its process and a colliding generation, against the live repository | `app/src/test/kotlin/.../notifications/ShadeApprovalTest.kt` (7 tests) |
 | "Retired" against "never seen" at the repository | `app/src/test/kotlin/.../gateway/PendingInputTest.kt` (11 tests) |
 | Desktop's kinds, order and defaults; redaction of a session title | `app/src/test/kotlin/.../notifications/NotificationSettingsTest.kt` |
