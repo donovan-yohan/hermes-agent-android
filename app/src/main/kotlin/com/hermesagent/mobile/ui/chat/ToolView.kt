@@ -19,7 +19,7 @@ import kotlin.math.roundToInt
  *
  * This is Desktop's `ToolView`, ported field for field from
  * `apps/desktop/src/components/assistant-ui/tool/fallback-model/types.ts:32-64`
- * @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, built by the same rules as
+ * @ `29112bef099274229cadff79cdff7bf7b99c4b77`, built by the same rules as
  * `fallback-model/index.ts:1409-1499` (`buildToolView`). The renderer in
  * `Transcript.kt` reads only this, so the question "what does Desktop show
  * here?" is answered in one pure function a unit test can pin, not scattered

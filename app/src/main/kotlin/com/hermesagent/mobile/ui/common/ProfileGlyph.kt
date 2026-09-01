@@ -28,7 +28,7 @@ import com.hermesagent.mobile.ui.theme.mixPremultiplied
  * A profile's mark, in one place.
  *
  * Port of `apps/desktop/src/components/ui/profile-glyph.tsx:10-43` @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`: the default profile is the `home`
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`: the default profile is the `home`
  * codicon — it has no colour of its own and an initial would read as just
  * another named profile — and every other profile is a soft tint of its colour
  * carrying its initial.

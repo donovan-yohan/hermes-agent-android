@@ -12,7 +12,7 @@ Inspect the current clean upstream checkout:
 
 - Repository: `~/.hermes/hermes-agent`
 - Upstream: `NousResearch/hermes-agent`
-- Pinned starting SHA: `936b970e281d5d28e930c5698f36bc4ebb54c7ba`
+- Pinned starting SHA: `29112bef099274229cadff79cdff7bf7b99c4b77`
 - Branch: `main`
 
 Read the repository's `AGENTS.md`, `apps/desktop/AGENTS.md`, `apps/desktop/DESIGN.md`, current official docs, and actual implementation/tests. Do not rely on docs or README claims alone.

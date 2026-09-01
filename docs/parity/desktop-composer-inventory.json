@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "desktop_repository": "NousResearch/hermes-agent",
-  "desktop_sha": "936b970e281d5d28e930c5698f36bc4ebb54c7ba",
+  "desktop_sha": "29112bef099274229cadff79cdff7bf7b99c4b77",
   "purpose": "Offline immutable source/test path and line-count ledger for composer citations. Refresh only from the pinned git object, never from a mutable branch.",
   "path_line_counts": {
     "apps/desktop/e2e/batch-clarify.spec.ts": 86,
@@ -115,7 +115,7 @@
     "apps/desktop/src/app/session/hooks/use-background-queue-drain.ts": 199,
     "apps/desktop/src/app/session/hooks/use-message-stream/approval-mode-event.test.tsx": 102,
     "apps/desktop/src/app/session/hooks/use-message-stream/composer-model-event.test.tsx": 99,
-    "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts": 1717,
+    "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/input-requests.ts": 325,
     "apps/desktop/src/app/session/hooks/use-model-controls.test.tsx": 597,
     "apps/desktop/src/app/session/hooks/use-model-controls.ts": 292,
     "apps/desktop/src/app/session/hooks/use-prompt-actions/index.test.tsx": 5379,
@@ -285,7 +285,7 @@
     "apps/desktop/src/app/session/hooks/use-background-queue-drain.ts": "8573ab9c8aaff916f39484897405cd3b2dc9ab57",
     "apps/desktop/src/app/session/hooks/use-message-stream/approval-mode-event.test.tsx": "a8d7fdb5513a4546e7baa6e552afb43fc6b6af0a",
     "apps/desktop/src/app/session/hooks/use-message-stream/composer-model-event.test.tsx": "7d8e4f69aa2bf203499789267df974d721a9fbc8",
-    "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts": "8a247c82637918c048fd0200ace47539f95907fc",
+    "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/input-requests.ts": "368de696607461c2629780e843e43e980e9eae22",
     "apps/desktop/src/app/session/hooks/use-model-controls.test.tsx": "71296aa8f3d6dffe1842a46ad25f47147ee354b3",
     "apps/desktop/src/app/session/hooks/use-model-controls.ts": "e6a48fabadbff9f16f5655eb0388f6b955ddf08b",
     "apps/desktop/src/app/session/hooks/use-prompt-actions/index.test.tsx": "178627865f55f44924fadc587615b2ffc1d7c6b9",

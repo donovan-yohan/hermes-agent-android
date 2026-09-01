@@ -19,7 +19,7 @@ import kotlin.math.sqrt
  * raw palette fields where Desktop mixes each seed with a per-mode neutral.
  *
  * **Where the expected values come from.** Each one is derived from the pinned
- * Desktop sources (`936b970e281d5d28e930c5698f36bc4ebb54c7ba`), never from
+ * Desktop sources (`29112bef099274229cadff79cdff7bf7b99c4b77`), never from
  * this app's own output, by re-walking the
  * chain by hand:
  *
@@ -149,10 +149,10 @@ class ThemeSemanticParityTest {
     @Test
     fun `the selection highlight is one fixed amber per mode, never the accent`() {
         // styles.css:382 / :root.dark:564 @ DesktopThemeLedger.PINNED_SHA
-        // (936b970e), where every other expectation in this file is read, pins
+        // (29112bef), where every other expectation in this file is read, pins
         // color-mix(in srgb, #ffd24a 55%|38%, transparent) for every skin, so a
         // highlight cannot vanish into a warm palette or follow the brand hue.
-        // Byte-identical at 936b970e (styles.css:386 / :root.dark:564), the SHA
+        // Byte-identical at 29112bef (styles.css:386 / :root.dark:564), the SHA
         // the rest of the port cites, so the two pins do not disagree here.
         for ((dark, expected) in listOf(false to "#8cffd24a", true to "#61ffd24a")) {
             for (preset in BuiltinThemes.ALL) {
@@ -168,7 +168,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `the diff palette derives from desktop's green and red in each mode`() {
         // styles.css:196-199,222-227 and `:root.dark:528-532` @
-        // 936b970e281d5d28e930c5698f36bc4ebb54c7ba — byte-identical at upstream
+        // 29112bef099274229cadff79cdff7bf7b99c4b77 — byte-identical at upstream
         // HEAD, checked 2026-08-26. Desktop names no diff colour of its own: the
         // border IS `--ui-green`/`--ui-red`, the background is that seed at 12%,
         // and the foreground mixes the seed toward the page (70% toward #000 in
@@ -210,7 +210,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `the ansi ladder derives from desktop's named colour set in each mode`() {
         // Desktop maps ANSI to fixed Tailwind classes (`lib/ansi.ts:144-164` @
-        // 936b970e281d5d28e930c5698f36bc4ebb54c7ba). Android cannot: those are a
+        // 29112bef099274229cadff79cdff7bf7b99c4b77). Android cannot: those are a
         // CSS framework's palette tuned against one surface, and this app paints
         // tool output on a per-preset `widgetSurface`. So the ladder is derived
         // from Desktop's *own* named colours — `--ui-red`, `--ui-yellow`,
@@ -425,7 +425,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `running outline uses the desktop bright stop in each rendered mode`() {
         // styles.css:1011-1040,1129-1144 @
-        // 936b970e281d5d28e930c5698f36bc4ebb54c7ba: `.arc-row` keeps
+        // 29112bef099274229cadff79cdff7bf7b99c4b77: `.arc-row` keeps
         // --arc-c1 at --dt-foreground in dark mode and --dt-midground in light.
         for (preset in BuiltinThemes.ALL) {
             for (dark in listOf(false, true)) {
@@ -442,7 +442,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `accent foreground preserves Desktop's independent palette semantic`() {
-        // context.tsx:238-245 @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba:
+        // context.tsx:238-245 @ 29112bef099274229cadff79cdff7bf7b99c4b77:
         // --dt-accent-foreground is c.accentForeground, not the separate
         // c.midgroundForeground token.
         for (preset in BuiltinThemes.ALL) {
@@ -459,7 +459,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `Nous palette and selected-session fill match the Desktop sidebar`() {
-        // `presets.ts:174-277` @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba.
+        // `presets.ts:174-277` @ 29112bef099274229cadff79cdff7bf7b99c4b77.
         assertPalette(
             BuiltinThemes.Nous.colors,
             mapOf(

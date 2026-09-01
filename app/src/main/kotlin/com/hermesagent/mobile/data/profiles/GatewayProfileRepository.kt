@@ -39,7 +39,7 @@ enum class GatewayProfileConnectionState {
  * `profiles.list` over the live Gateway.
  *
  * The handler sits in the Gateway's slow-method lane
- * (`tui_gateway/server.py:263-271` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`)
+ * (`tui_gateway/server.py:263-271` @ `29112bef099274229cadff79cdff7bf7b99c4b77`)
  * because it walks each profile's skill tree and opens each profile's
  * `state.db`. So it gets its own generous budget at the RPC boundary
  * (`gatewayRpcTimeoutMillis`), matching Desktop's own

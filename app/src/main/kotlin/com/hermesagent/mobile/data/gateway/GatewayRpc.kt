@@ -396,7 +396,7 @@ internal fun JsonObject.string(name: String): String? =
  * is already an accepted in-flight turn before its RPC response returns; its
  * terminal result arrives through events.
  *
- * Source: NousResearch/hermes-agent @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba,
+ * Source: NousResearch/hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
  * apps/desktop/src/hermes.ts:85-104 and tui_gateway/methods_prompt.py:714-819.
  */
 internal fun gatewayRpcTimeoutMillis(method: String, defaultTimeoutMillis: Long = 15_000L): Long =

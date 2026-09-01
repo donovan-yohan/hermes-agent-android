@@ -22,7 +22,7 @@ import org.junit.Test
 /**
  * The `profile` parameter on the session RPCs, and the unified view's fan-out.
  *
- * Contract at `936b970e281d5d28e930c5698f36bc4ebb54c7ba`:
+ * Contract at `29112bef099274229cadff79cdff7bf7b99c4b77`:
  * `session.create` (`tui_gateway/methods_session.py:38-43`), `session.list`
  * (`:163-165`) and `session.resume` (`:322-325`) each take an optional
  * `profile`; a blank one resolves to the launch profile

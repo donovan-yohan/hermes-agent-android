@@ -49,7 +49,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Session status | `apps/desktop/src/app/chat/session-status-dot.tsx:22-77` | Six states; colour + fill/hollow, never motion |
 | Running-session row outline | `apps/desktop/src/store/session-dot-state.ts:70-80`; `apps/desktop/src/app/chat/sidebar/session-row.tsx:254-258,404`; `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113,1129-1144,1157-1161`; `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,84-108` | Working and stalled alone own the flush 1.25px travelling outline; needs-input stays live but yields to its amber dot, and reduced motion leaves a static ring |
 | Transcript tail and jump control | `apps/desktop/src/components/assistant-ui/thread/list.tsx:389-398,651-680`; `apps/desktop/src/app/chat/scroll-to-bottom-button.tsx` | Open at the newest content, follow only while parked there, and expose one floating return action after the reader scrolls away |
-| Sticky current user prompt | `apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355`; `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:28-52,321-367`; `apps/desktop/src/styles.css:1538-1569`; `apps/desktop/src/components/assistant-ui/thread/timeline.tsx:113-125` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba` | Group each human turn with the following assistant/tool content; pin that turn's bubble only after its source is fully above, and jump by stable message id without claiming scroll ownership |
+| Sticky current user prompt | `apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355`; `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:28-52,321-367`; `apps/desktop/src/styles.css:1538-1569`; `apps/desktop/src/components/assistant-ui/thread/timeline.tsx:113-125` @ `29112bef099274229cadff79cdff7bf7b99c4b77` | Group each human turn with the following assistant/tool content; pin that turn's bubble only after its source is fully above, and jump by stable message id without claiming scroll ownership |
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
 | Project catalog and selection | `apps/desktop/src/store/projects.ts`; `apps/desktop/src/app/chat/sidebar/index.tsx` | Backend-authored project identity, active project, overview vs drill-in navigation |
@@ -77,7 +77,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Composer model authority | `apps/desktop/src/app/chat/composer/model-pill.tsx:26-173`; `apps/desktop/src/app/session/hooks/use-model-controls.ts:238-286`; `apps/desktop/src/store/session.ts:20-29,616-620` | Catalog/effective state is Gateway truth; a fresh-draft pin is scoped local state, while live deferred model changes remain next-turn intent until `session.info` confirms |
 | Composer completion authority | `apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts:24-153`; `apps/desktop/src/app/chat/composer/hooks/use-slash-completions.ts:61-250`; `apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts:16-214`; `apps/desktop/src/app/chat/composer/url-refs.ts:1-103`; `apps/desktop/src/app/chat/composer/path-refs.ts:1-103` | Fence async results by trigger, text, runtime/cwd and generation; serialize URL/path/session references as canonical text before considering rich chips |
 | Relay channels + transcript | `hermes-plugin-relay` @ `563a8c8`: `desktop/plugin.js:23,109-130,481-497,502-517,1073-1083`; `relay_proxy.py:228-320`; `docs/desktop.md` | Backend-owned channel order, the archived name-line annotation, the three-second visible-page poll and its ready-lane gate, and the projected wire shape. Full ledger: [`docs/parity/relay-channels-surface.md`](../parity/relay-channels-surface.md) |
-| Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event.ts:1159-1390`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
+| Required input | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/input-requests.ts:27-325`; `clarify-tool.tsx`, `tool/approval.tsx`, `prompt-overlays.tsx` | Clarify, approval, sudo, secret, response routing and safe refusal |
 | Profile rail, scope and roster | `apps/desktop/src/app/chat/sidebar/profile-switcher.tsx:119-345`, `profile-scope.ts`; `src/store/profile.ts:22-33,423-483`; `src/lib/profile-color.ts`; `src/components/ui/profile-glyph.tsx`; `src/app/profiles/index.tsx`; `src/app/overlays/panel.tsx`; `tui_gateway/methods_profiles.py`, `methods_session.py`, `server.py:263,1476-1533` | Which profile the sidebar is in, what a switch resets, how a profile is marked, and the one parameter that makes a session RPC profile-scoped. Full ledger: [`docs/parity/profile-switcher.md`](../parity/profile-switcher.md) |
 | Per-session actions menu | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:234,291,344,371,433,465-522`; `apps/desktop/src/components/ui/actions-menu.tsx:37-98`; `session-row.tsx:316-327`; `session-row-gesture.ts:27-50`; `apps/desktop/src/i18n/en.ts:2151-2167` | The fixed open/identity/work/tab/danger group order, which separators are conditional, the codicon vocabulary, and which chords have no touch equivalent. Full ledger: [`docs/parity/session-actions-menu.md`](../parity/session-actions-menu.md) |
 
@@ -93,7 +93,7 @@ public-index read, adopt only the exact injected JSON string, then re-inspect
 the owned child before publishing the positive port and final fingerprint.
 Keep the uploaded artifact fingerprint separate so adoption cannot weaken
 descriptor-guarded cleanup. These lifecycle paths were inspected at pinned SHA
-`936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
+`29112bef099274229cadff79cdff7bf7b99c4b77`.
 
 ## 2. Freeze the rendered visual contract
 
@@ -118,7 +118,7 @@ production demo session to obtain evidence.
 node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
   --name projects-overview \
   --selector '[data-slot="sidebar"]' \
-  --expect-sha 936b970e281d5d28e930c5698f36bc4ebb54c7ba \
+  --expect-sha 29112bef099274229cadff79cdff7bf7b99c4b77 \
   --match 5174
 
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \

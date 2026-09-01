@@ -11,7 +11,7 @@ selection of tool output is S35. Both have rows in the deferral table.
 ## Pin and source contract
 
 Desktop authority is `NousResearch/hermes-agent` at
-`936b970e281d5d28e930c5698f36bc4ebb54c7ba` (read-only checkout; read with
+`29112bef099274229cadff79cdff7bf7b99c4b77` (read-only checkout; read with
 `git -C ~/.hermes/hermes-agent show <sha>:<path>`). Files read for this port:
 
 | Desktop source | What it decides |

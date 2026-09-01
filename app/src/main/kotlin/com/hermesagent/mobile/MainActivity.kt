@@ -523,7 +523,7 @@ class MainActivity : ComponentActivity() {
      * Tells the process-scoped notifier which conversation is on screen — the
      * Android reading of Desktop's `$activeSessionId`
      * (`apps/desktop/src/store/native-notifications.ts:142` @
-     * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
+     * `29112bef099274229cadff79cdff7bf7b99c4b77`).
      */
     private fun followVisibleSession() {
         lifecycleScope.launch {

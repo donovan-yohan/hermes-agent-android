@@ -4,7 +4,7 @@ import com.hermesagent.mobile.data.ssh.redact
 
 /**
  * Every string an OS notification can render, taken from Desktop's own
- * notification copy at `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
+ * notification copy at `29112bef099274229cadff79cdff7bf7b99c4b77`.
  *
  * Titles and action labels are the native block `i18n/en.ts:174-186`; channel
  * descriptions are the settings block `i18n/en.ts:430-473`. Where Desktop has

@@ -172,7 +172,7 @@ sealed interface ProbeResult {
 
 /**
  * Failure kinds, mirroring Desktop's classifier
- * (`apps/desktop/electron/ssh-connection.ts:324-362` @ `936b970e`).
+ * (`apps/desktop/electron/ssh-connection.ts:324-362` @ `29112bef`).
  * `HostKeyChanged` is absent on purpose: on Android that is a typed result,
  * not a string we parse back out of stderr. [TailscaleSshRefused] has no
  * Desktop equivalent at all — Desktop's OpenSSH would simply move on to the

@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.session
  * The shapes the chat surface renders.
  *
  * These are deliberately modelled on what the Hermes gateway is authoritative
- * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `936b970e`),
+ * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `29112bef`),
  * not on UI-local convenience. The live Gateway repository maps protocol data
  * into these types while [SessionCache] preserves backend authority.
  */
@@ -75,7 +75,7 @@ data class SessionSummary(
     val activityStartedAtMillis: Long? = null,
     /**
      * Durable server-side soft-archive flag (`sessions.archived`, exposed as a
-     * real JSON boolean at hermes-agent @ `936b970e`,
+     * real JSON boolean at hermes-agent @ `29112bef`,
      * `hermes_cli/web_routers/sessions.py:154`).
      *
      * Null is not `false`: it means this Gateway's list contract never said.
@@ -217,7 +217,7 @@ data class ComposerPreviewArtifact(
 /**
  * The Gateway's durable address for one persisted message — the `messages.id`
  * it stamps onto a history row when the transcript is read with row ids
- * (NousResearch/hermes-agent @ `936b970e`,
+ * (NousResearch/hermes-agent @ `29112bef`,
  * `tui_gateway/methods_session.py:2597-2606`: "the durable row id is how
  * clients address a specific persisted turn"; the wire value is projected at
  * `tui_gateway/server.py:7640-7646`).

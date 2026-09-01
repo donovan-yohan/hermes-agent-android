@@ -34,7 +34,7 @@ class ColorMathTest {
 
     @Test
     fun `readableOn chooses the higher WCAG contrast candidate`() {
-        // color.ts:62-74 @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba.
+        // color.ts:62-74 @ 29112bef099274229cadff79cdff7bf7b99c4b77.
         assertEquals(Color(0xFF161616), readableOn(Color.White))
         assertEquals(Color(0xFFFFFFFF), readableOn(Color(0xFF0D2F86)))
         // Both colours fall below the former 0.58 luminance threshold, which

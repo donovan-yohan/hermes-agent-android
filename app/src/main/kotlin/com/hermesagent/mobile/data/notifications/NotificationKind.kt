@@ -3,7 +3,7 @@ package com.hermesagent.mobile.data.notifications
 /**
  * Desktop's `NativeNotificationKind`, ported name-for-name and in registry
  * order (`apps/desktop/src/store/native-notifications.ts:15-26` @
- * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
+ * `29112bef099274229cadff79cdff7bf7b99c4b77`).
  *
  * All seven are carried, including the three this client cannot raise yet, for
  * one reason: the preference store is the Desktop settings panel's data model

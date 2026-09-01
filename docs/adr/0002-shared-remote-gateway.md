@@ -122,7 +122,7 @@ concurrent multi-controller policy is not claimed.
 implemented, and verified against a real Termux Gateway on an emulator — a live
 turn and physical-device keep-alive are still open
 **Authority:** `NousResearch/hermes-agent` @
-`936b970e281d5d28e930c5698f36bc4ebb54c7ba`
+`29112bef099274229cadff79cdff7bf7b99c4b77`
 
 ### Context
 
