@@ -6,7 +6,7 @@ import com.hermesagent.mobile.data.connections.SavedConnection
 
 /**
  * The Connections vocabulary, taken from Desktop's `i18n/en.ts` at pinned SHA
- * `29112bef099274229cadff79cdff7bf7b99c4b77` (`settings.connections`,
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3` (`settings.connections`,
  * lines 703-764; `profiles.switchConnectionFailed:1770` and
  * `profiles.connectGateway:1772`).
  *
@@ -25,7 +25,7 @@ internal object ConnectionsCopy {
      *
      * Desktop names that trigger with the registry's own section title
      * (`connection-switcher.tsx:154,248,264` passes `t.settings.connections.title`
-     * @ `29112bef`), and the rail's mount still does — there the two never meet,
+     * @ `3ca096de`), and the rail's mount still does — there the two never meet,
      * because the switcher is in the statusbar and the registry is a settings
      * page. On this app's Gateways screen they are on one surface, so that name
      * reaches a screen reader twice: once as this control, once as the heading
@@ -267,7 +267,7 @@ internal object ConnectionsCopy {
      * Puts the switch-failure line away.
      *
      * Desktop's failure is a toast that dismisses itself
-     * (`connection-switcher.tsx:127` @ `29112bef`). This app has no
+     * (`connection-switcher.tsx:127` @ `3ca096de`). This app has no
      * notification stack to toast into (#73), so the sentence is an inline line
      * that stays until it is answered or dismissed — which means it needs a
      * way to be dismissed. Desktop's own word for that control
@@ -348,8 +348,8 @@ internal object ConnectionsCopy {
 
 /**
  * The **Connection mode** cards' vocabulary, from Desktop's `settings.gateway`
- * i18n block at pinned SHA `29112bef099274229cadff79cdff7bf7b99c4b77`
- * (`apps/desktop/src/i18n/en.ts:776-783`, `:865-868`), as rendered by
+ * i18n block at pinned SHA `3ca096de5f8183cb2e0ec23673f294d5978656a3`
+ * (`apps/desktop/src/i18n/en.ts:777-784`, `:865-868`), as rendered by
  * `apps/desktop/src/app/settings/gateway-settings.tsx:1044-1084`.
  *
  * Separate from [ConnectionsCopy], which is the `settings.connections` block

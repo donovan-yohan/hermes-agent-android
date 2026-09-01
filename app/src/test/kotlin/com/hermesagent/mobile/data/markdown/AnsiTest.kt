@@ -10,7 +10,7 @@ import kotlin.system.measureTimeMillis
  * The ANSI parser's contract, in two halves.
  *
  * The first half is Desktop's own fixture set — `apps/desktop/src/lib/
- * ansi.test.ts` @ `29112bef099274229cadff79cdff7bf7b99c4b77` — ported case for
+ * ansi.test.ts` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` — ported case for
  * case, so a drift in the rule set is a red test here rather than a colour that
  * quietly stops appearing on a phone.
  *

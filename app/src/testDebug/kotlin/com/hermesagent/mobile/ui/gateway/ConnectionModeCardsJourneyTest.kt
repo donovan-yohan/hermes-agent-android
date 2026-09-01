@@ -34,7 +34,7 @@ import org.robolectric.annotation.Config
 /**
  * Desktop's **Connection mode** cards, rendered
  * (`apps/desktop/src/app/settings/gateway-settings.tsx:1044-1084` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`).
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  *
  * [GatewayScreenTest] gates the data — order, words, totality — without a
  * frame. This gates what the frame does with it: which card is lit, that the

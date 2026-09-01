@@ -78,8 +78,8 @@ import kotlinx.serialization.json.buildJsonObject
  *
  * `session.create` (`tui_gateway/methods_session.py:42`), `session.list`
  * (`:163`) and `session.resume` (`:324`) all accept a `profile` parameter at
- * `29112bef099274229cadff79cdff7bf7b99c4b77`; a blank or absent one resolves to
- * the profile the Gateway launched with (`tui_gateway/server.py:1519-1533`).
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`; a blank or absent one resolves to
+ * the profile the Gateway launched with (`tui_gateway/server.py:1599-1613`).
  *
  * @param activeProfile what a new chat is created in; null keeps the Gateway's own.
  * @param listProfiles which `profile` values one refresh must cover. One entry
@@ -265,7 +265,7 @@ data class SessionRehome(
  * How far through the backend's session list this connection has read.
  *
  * Paging is explicit here for the same reason it is on Desktop: the list foot
- * carries a control the user presses (`load-more-row.tsx:15` @ `29112bef`),
+ * carries a control the user presses (`load-more-row.tsx:15` @ `3ca096de`),
  * never a scroll that quietly asks for more. So this describes a button, and
  * the three things a button needs to know — whether pressing it would do
  * anything, whether a press is in flight, and how many rows are still out
@@ -303,7 +303,7 @@ private enum class GatewayOptionalCapability {
      * nothing except that this backend lacks it, which is a capability rather
      * than a failure — Desktop remembers it the same way instead of re-probing
      * a known-dead endpoint once per refresh
-     * (`apps/desktop/src/hermes.ts:609-616,639-642` @ `29112bef`). Only a 404
+     * (`apps/desktop/src/hermes.ts:609-616,639-642` @ `3ca096de`). Only a 404
      * sets it: a timeout, a 5xx or a refused connection is a blip, and letting
      * one blip permanently demote a Gateway to the older contract would cost
      * the user pin, archive and unread for the rest of the session.
@@ -762,7 +762,7 @@ internal class LiveGatewaySessionRepository(
                 //
                 // A profile the Gateway cannot resolve is not an error there:
                 // `_profile_home` answers None and `_profile_db` hands back the
-                // launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so
+                // launch handle (`tui_gateway/server.py:1556-1571,1599-1613`), so
                 // the named leg can return the launch profile's own rows. Rows the
                 // launch leg already answered with are therefore left alone — the
                 // fan-out asks for it first (`sessionListProfiles`), and stamping
@@ -777,12 +777,12 @@ internal class LiveGatewaySessionRepository(
                     // the request named none: `row_profile = profile_name or
                     // _cron_default_profile()`, written onto each row as
                     // `s["profile"]` (`hermes_cli/web_routers/sessions.py:146,152`
-                    // @ `29112bef099274229cadff79cdff7bf7b99c4b77`). That
+                    // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). That
                     // fallback resolves the Gateway process's *own* active
                     // profile, and answers `"default"` only when that profile
                     // is literally `default` or `custom` — otherwise the
                     // launch profile's real name
-                    // (`hermes_cli/web_server.py:12438-12455`).
+                    // (`hermes_cli/web_server.py:12461-12478`).
                     //
                     // So on a Gateway launched under a named profile the
                     // unscoped leg's rows come back stamped with that name,
@@ -817,7 +817,7 @@ internal class LiveGatewaySessionRepository(
                         // this leg asked for — `profile_name` is resolved from
                         // the query value and an unknown one is a `404`, never
                         // a fallback (`sessions.py:95-97,146` via
-                        // `web_server.py:12464-12470`) — so the stamp and the
+                        // `web_server.py:12487-12493`) — so the stamp and the
                         // parameter agree and this is a no-op there. It is the
                         // RPC lane that answers out of the launch handle when a
                         // profile will not resolve, and its compact rows carry
@@ -891,7 +891,7 @@ internal class LiveGatewaySessionRepository(
                     // returned. A page can carry *more* rows than its limit: the
                     // route back-fills pinned conversations that the LIMIT/OFFSET
                     // window left out (`include_pinned=True`, `sessions.py:139`,
-                    // implemented at `hermes_state.py:8711-8718`). Counting those
+                    // implemented at `hermes_state.py:9092-9099`). Counting those
                     // extras into the next offset would step past rows that were
                     // never read, and they would simply never appear.
                     val window = page.limit?.toInt()?.takeIf { it in 1..MAX_SESSION_PAGE }
@@ -960,8 +960,8 @@ internal class LiveGatewaySessionRepository(
      * root onto the live tip this page named.
      *
      * The list projects a compression chain forward to its latest continuation
-     * and reports the original root separately (`hermes_state.py:9002-9011` @
-     * `29112bef`), so the same conversation can arrive under a different id than
+     * and reports the original root separately (`hermes_state.py:9383-9392` @
+     * `3ca096de`), so the same conversation can arrive under a different id than
      * the one an earlier refresh or resume filed it under. Two rows for one
      * conversation is the failure this prevents.
      *
@@ -1140,7 +1140,7 @@ internal class LiveGatewaySessionRepository(
             // Resume in the profile that owns the row, not the scope the
             // sidebar happens to be in — the unified view lists other
             // profiles' sessions and opening one must reach its state.db
-            // (`methods_session.py:322-325`).
+            // (`methods_session.py:327-330`).
             val owningProfile = synchronized(stateLock) { owningProfileParam(durableId) }
             liveSnapshot = connection.client.request(
                 "session.resume",
@@ -1437,7 +1437,7 @@ internal class LiveGatewaySessionRepository(
                         // submitted text. The gateway already holds the bytes
                         // via image.attach_bytes and persists the `@image:`
                         // refs itself at turn end (`_build_persist_message_with_image_refs`,
-                        // tui_gateway/server.py @ 29112bef). The attach response's
+                        // tui_gateway/server.py @ 3ca096de). The attach response's
                         // `text` field is placeholder prose for the model and
                         // must never be echoed into the user-visible turn.
                         is OutgoingAttachment.Image -> {
@@ -1945,9 +1945,9 @@ internal class LiveGatewaySessionRepository(
         // thread, so the submit handler finishes before the interrupt frame is
         // read at all. Neither prompt.submit nor session.interrupt is in
         // _LONG_HANDLERS; this ordering does NOT hold for methods that are.
-        // Source: NousResearch/hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
+        // Source: NousResearch/hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
         // tui_gateway/ws.py:339 (loop), :341 (receive_text), :392 (dispatch);
-        // tui_gateway/server.py:198-328 (_LONG_HANDLERS), :2110-2147 (dispatch).
+        // tui_gateway/server.py:198-362 (_LONG_HANDLERS), :2110-2147 (dispatch).
         return ordered ?: requestInterruptNow(binding, connection, interruptEpoch)
     }
 
@@ -2738,7 +2738,7 @@ internal class LiveGatewaySessionRepository(
      * first so the previous idle heartbeat cannot re-open the send guard before
      * the backend reports the new turn live.
      *
-     * Source: NousResearch/hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
+     * Source: NousResearch/hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
      * apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/session-info.ts:317-377.
      */
     private fun settleStoppedSessionInfo(
@@ -3339,9 +3339,9 @@ internal class LiveGatewaySessionRepository(
      * Gateway's `inflight` projection, plus events that raced ahead of that
      * snapshot on this same connection, may extend it.
      *
-     * Source: NousResearch/hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
+     * Source: NousResearch/hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
      * apps/desktop/src/app/session/hooks/use-session-actions/utils.ts:699-924 and
-     * tui_gateway/server.py:8813-8874.
+     * tui_gateway/server.py:8925-8986.
      */
     private fun reconcileAuthoritativeTranscript(
         history: List<TranscriptEntry>,
@@ -3997,16 +3997,16 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
 
 /**
  * One row of `GET /api/sessions` (hermes-agent @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`).
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  *
  * The keys are the `sessions` table's own columns as
  * `SessionDB.list_sessions_rich` projects them
  * (`hermes_state_portability.py:33-43`, chain projection at
- * `hermes_state.py:9002-9020`), plus what the route stamps on top:
+ * `hermes_state.py:9383-9401`), plus what the route stamps on top:
  * `profile`/`is_default_profile`, and `archived`/`pinned` coerced from SQLite's
  * 0/1 into real JSON booleans (`hermes_cli/web_routers/sessions.py:145-156`).
  * `unread` is derived per surfaced conversation from the read watermark
- * (`hermes_state.py:9019-9020`).
+ * (`hermes_state.py:9400-9401`).
  *
  * Every field this contract adds is optional here. A Gateway predating a column
  * omits it, and the answer to "was this archived?" on such a backend is *not
@@ -4081,9 +4081,9 @@ private fun objectParams(name: String, value: String): JsonObject =
  * `include_row_ids` hedge.
  *
  * Be honest about what this flag does today: nothing. At
- * NousResearch/hermes-agent @ `29112bef099274229cadff79cdff7bf7b99c4b77` the
+ * NousResearch/hermes-agent @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` the
  * handler hardcodes `include_row_ids=True` on its own read and never looks at
- * request params (`tui_gateway/methods_session.py:2597-2606`), so the pinned
+ * request params (`tui_gateway/methods_session.py:2611-2620`), so the pinned
  * Gateway stamps every persisted row with its `messages.id` whether or not we
  * ask. The flag is sent so that a Gateway which one day makes the stamped read
  * opt-in still answers a stamped transcript, because that stamp is the only
@@ -4092,11 +4092,11 @@ private fun objectParams(name: String, value: String): JsonObject =
  *
  * Sending it is safe on the pinned Gateway for a narrow, method-specific
  * reason, not a protocol guarantee: dispatch only type-checks that `params` is
- * an object (`tui_gateway/server.py:2064-2081`) and this handler then reads
+ * an object (`tui_gateway/server.py:2144-2161`) and this handler then reads
  * `session_id` alone (`_sess_nowait`, `server.py:2518-2520`), so an extra key
  * is inert here. Handlers validate their own params and do refuse requests —
  * `message.react` answers 4023 when its row address is missing
- * (`methods_session.py:1252-1260`) — so this tolerance must be re-checked per
+ * (`methods_session.py:1266-1274`) — so this tolerance must be re-checked per
  * method, never assumed.
  *
  * Either way [durableRowId] reports no durable identity when a response
@@ -4567,7 +4567,7 @@ internal fun JsonObject.boolean(name: String): Boolean? = (this[name] as? JsonPr
 
 private fun JsonObject.timestamp(fallback: Long): Long {
     // Desktop sorts by last activity and falls back to creation:
-    // NousResearch/hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
+    // NousResearch/hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
     // apps/desktop/src/app/chat/sidebar/projects/workspace-groups.ts:134-135.
     val value = this["last_active"] ?: this["started_at"] ?: this["created_at"] ?: this["timestamp"] ?: return fallback
     val text = (value as? JsonPrimitive)?.content ?: return fallback
@@ -4617,7 +4617,7 @@ internal val NO_ACTIVE_TURNS: StateFlow<Set<String>> = MutableStateFlow(emptySet
 /**
  * One page of the session list, matching Desktop's own sidebar page
  * (`SIDEBAR_SESSIONS_PAGE_SIZE = 50`, `apps/desktop/src/store/layout.ts:25` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`) and well inside the route's
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and well inside the route's
  * `le=100` cap. The `session.list` fallback keeps its own historical `limit`
  * of 100 — that call has no second page, so shrinking it would lose rows.
  */

@@ -56,7 +56,7 @@ internal const val PROFILE_ROSTER_TAG = "Profile roster"
  * The profiles roster: Desktop's manage overlay, read-only.
  *
  * Port of `apps/desktop/src/app/profiles/index.tsx:105-268` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`, whose `Panel*` grammar maps onto
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, whose `Panel*` grammar maps onto
  * this app's `SectionLabel`/`SearchField`/`EmptyState` primitives. Desktop's own
  * panel stacks the list above the detail once the card narrows
  * (`app/overlays/panel.tsx:88-98,126-128`), which is the phone shape, so the
@@ -289,7 +289,7 @@ internal fun displayPath(raw: String): String {
     return if (slash < 0) "~" else "~" + rest.substring(slash)
 }
 
-// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1755-1809.
+// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1773-1827.
 internal const val NO_PROFILES = "No profiles yet."
 internal const val SEARCH_PROFILES = "Search profiles..."
 internal const val LOADING_PROFILES = "Loading profiles..."

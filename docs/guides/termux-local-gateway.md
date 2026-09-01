@@ -126,7 +126,7 @@ pkg update
 ## 2. Install Hermes in Termux
 
 Upstream documents two tested Android bundles, `.[termux]` and
-`.[termux-all]` (`website/docs/getting-started/termux.md:277` @ `936b970`).
+`.[termux-all]` (`website/docs/getting-started/termux.md:293` @ `936b970`).
 The steps below install the smaller `.[termux]` one along upstream's explicit
 manual path (`termux.md:103-162`); the one-line installer in the note below
 tries `.[termux-all]` first and falls back to it (`termux.md:93`).
@@ -359,7 +359,7 @@ automation needs an explicit `agent-browser` install (`termux.md:188-207`).
 ## Sources
 
 Hermes claims above are read from `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77`, cited as `path:line`.
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`, cited as `path:line`.
 
 Android and Termux behaviour is community-documented rather than upstream, and
 is not verified by this repository's gates:

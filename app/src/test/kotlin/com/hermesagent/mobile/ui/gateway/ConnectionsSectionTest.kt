@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * The registry's kind chooser, against Desktop's at
  * `connections-registry.tsx:648-671` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`.
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
  *
  * Order and labels are Desktop's; the fourth entry is the one this app cannot
  * be, kept visible and disabled rather than dropped.

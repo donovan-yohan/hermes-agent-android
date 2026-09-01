@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * The scope rules, against Desktop's own cases at
- * `29112bef099274229cadff79cdff7bf7b99c4b77`:
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
  * `apps/desktop/src/app/chat/sidebar/profile-scope.test.ts:12-29`.
  */
 class ProfileScopeTest {
@@ -62,7 +62,7 @@ class ProfileScopeTest {
     @Test
     fun `the fan-out asks the launch profile first`() {
         // Load-bearing order: a profile the Gateway cannot resolve falls back
-        // to the launch handle (`tui_gateway/server.py:1476-1491,1519-1533`),
+        // to the launch handle (`tui_gateway/server.py:1556-1571,1599-1613`),
         // so the refresh has to know which rows the launch profile claimed
         // before it stamps anything with a named owner.
         val roster = listOf(profile("work"), profile("default", isDefault = true), profile("lab"))

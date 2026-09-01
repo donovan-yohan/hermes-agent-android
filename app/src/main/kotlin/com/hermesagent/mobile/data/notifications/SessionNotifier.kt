@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
  *
  * A port of Desktop's `dispatchNativeNotification`
  * (`apps/desktop/src/store/native-notifications.ts:190-223` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`) with its four guards in the same
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) with its four guards in the same
  * order: preferences (`:193`), the post-connect quiet window (`:197`), the
  * foreground/active-session rule (`:201`, implemented at `:131-148`), then the
  * one-second throttle (`:205`).

@@ -396,14 +396,14 @@ internal fun JsonObject.string(name: String): String? =
  * is already an accepted in-flight turn before its RPC response returns; its
  * terminal result arrives through events.
  *
- * Source: NousResearch/hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
- * apps/desktop/src/hermes.ts:85-104 and tui_gateway/methods_prompt.py:714-819.
+ * Source: NousResearch/hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
+ * apps/desktop/src/hermes.ts:85-104 and tui_gateway/methods_prompt.py:731-836.
  */
 internal fun gatewayRpcTimeoutMillis(method: String, defaultTimeoutMillis: Long = 15_000L): Long =
     when (method) {
         "prompt.submit" -> 1_800_000L
         // profiles.list rides the Gateway's slow-method lane
-        // (tui_gateway/server.py:263-271): it walks each profile's skill tree
+        // (tui_gateway/server.py:297-305): it walks each profile's skill tree
         // and opens each profile's state.db, which is seconds-scale on a cold
         // disk. Desktop gives the same call its own 60s boot budget rather
         // than the generic one (apps/desktop/src/hermes.ts:77-88).

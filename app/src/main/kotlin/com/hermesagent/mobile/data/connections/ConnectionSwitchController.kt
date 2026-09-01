@@ -22,7 +22,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * when the target "did not become active" and the switcher toasts
  * `switchConnectionFailed` (`apps/desktop/src/store/connections.ts:198-200`,
  * `app/chat/sidebar/connection-switcher.tsx:123-128` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`). The cases are separated rather
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The cases are separated rather
  * than collapsed into a boolean because two of them are not failures to report:
  * a switch nobody asked for, and a row whose own line already explains that
  * nothing was going to dial it.
@@ -57,7 +57,7 @@ internal enum class ConnectionSwitchOutcome {
  *
  * The order is the whole point, and it is Desktop’s
  * (`apps/desktop/src/store/connections.ts:153-225` and
- * `store/gateway-switch.ts:47-96` @ `29112bef099274229cadff79cdff7bf7b99c4b77`):
+ * `store/gateway-switch.ts:47-96` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`):
  *
  * 1. **Leave the old endpoint through the door it came in.** The existing
  *    [GatewayConnectionController.disconnect] is what tears the socket down, so
@@ -120,7 +120,7 @@ internal class ConnectionSwitchController(
     /**
      * The outcome is returned rather than swallowed: Desktop's switcher only
      * knows to toast because `selectConnection` throws
-     * (`connection-switcher.tsx:123-128` @ `29112bef`), and a switch that
+     * (`connection-switcher.tsx:123-128` @ `3ca096de`), and a switch that
      * silently does nothing is the bug this reports.
      */
     suspend fun select(id: String): ConnectionSwitchOutcome =
@@ -232,7 +232,7 @@ internal class ConnectionSwitchController(
         } else {
             // Desktop draws no line between "asked for attention" and "never
             // answered" either: both are `did not become active`
-            // (`store/connections.ts:198-200` @ `29112bef`).
+            // (`store/connections.ts:198-200` @ `3ca096de`).
             ConnectionSwitchOutcome.NotConnected
         }
     }

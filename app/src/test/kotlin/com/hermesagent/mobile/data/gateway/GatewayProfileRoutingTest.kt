@@ -22,11 +22,11 @@ import org.junit.Test
 /**
  * The `profile` parameter on the session RPCs, and the unified view's fan-out.
  *
- * Contract at `29112bef099274229cadff79cdff7bf7b99c4b77`:
+ * Contract at `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
  * `session.create` (`tui_gateway/methods_session.py:38-43`), `session.list`
  * (`:163-165`) and `session.resume` (`:322-325`) each take an optional
  * `profile`; a blank one resolves to the launch profile
- * (`tui_gateway/server.py:1519-1533`).
+ * (`tui_gateway/server.py:1599-1613`).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GatewayProfileRoutingTest {
@@ -123,7 +123,7 @@ class GatewayProfileRoutingTest {
         val rpc = FakeProfileRpc()
         // `_profile_home` answers None for an unresolvable profile and
         // `_profile_db` hands back the launch handle
-        // (`tui_gateway/server.py:1476-1491,1519-1533`), so the named leg
+        // (`tui_gateway/server.py:1556-1571,1599-1613`), so the named leg
         // returns exactly the launch profile's rows rather than failing.
         rpc.sessionListByProfile = mapOf(
             null to listOf("launch-row"),

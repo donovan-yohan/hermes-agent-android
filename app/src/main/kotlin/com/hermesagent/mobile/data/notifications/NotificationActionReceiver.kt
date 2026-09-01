@@ -58,8 +58,8 @@ private val SHADE_CHOICES = setOf(CHOICE_APPROVE, CHOICE_DENY)
 /**
  * Android-free so every outcome can be tested without a device.
  *
- * `approval.respond` answers `{resolved: N}` (`tui_gateway/methods_prompt.py:1496-1517`
- * @ `29112bef099274229cadff79cdff7bf7b99c4b77`) and carries no `status`, so
+ * `approval.respond` answers `{resolved: N}` (`tui_gateway/methods_prompt.py:1513-1534`
+ * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and carries no `status`, so
  * `resolved == 0` — the request was answered somewhere else — arrives here as
  * [PendingInputResponse.Resolved]. That is the intended reading: withdraw the
  * notification without saying anything.

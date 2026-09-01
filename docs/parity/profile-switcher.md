@@ -8,7 +8,7 @@ scope (`data/profiles/`), and the read-only roster (`ui/profiles/`), ported per
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer, Gateway, CLI | `hermes-agent` @ `29112bef099274229cadff79cdff7bf7b99c4b77` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer, Gateway, CLI | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
@@ -28,14 +28,14 @@ Every `path:line` below is against that SHA.
 | The roster panel | `apps/desktop/src/app/profiles/index.tsx:105-268` |
 | Panel grammar (header, list, row, pill, meta, empty) | `apps/desktop/src/app/overlays/panel.tsx:68-142,170-211,295-372` |
 | Panel narrow layout: list above detail | `apps/desktop/src/app/overlays/panel.tsx:88-98,126-128` |
-| Copy | `apps/desktop/src/i18n/en.ts:1752-1809,2175` |
-| Roster rows over JSON-RPC | `tui_gateway/methods_profiles.py:22-33,183-246` |
-| `profiles.list` is a slow-lane method | `tui_gateway/server.py:263-271` |
-| `profile` on the session RPCs | `tui_gateway/methods_session.py:38-43,163-165,236-238,322-325` |
-| A blank profile means the launch profile | `tui_gateway/server.py:1476-1503,1519-1533` |
-| `profile_name` echoed on session payloads | `tui_gateway/methods_session.py:157`; `tui_gateway/server.py:1494-1503` |
+| Copy | `apps/desktop/src/i18n/en.ts:1770-1827,2193` |
+| Roster rows over JSON-RPC | `tui_gateway/methods_profiles.py:22-33,190-255` |
+| `profiles.list` is a slow-lane method | `tui_gateway/server.py:297-305` |
+| `profile` on the session RPCs | `tui_gateway/methods_session.py:38-43,163-165,241-243,327-330` |
+| A blank profile means the launch profile | `tui_gateway/server.py:1556-1583,1599-1613` |
+| `profile_name` echoed on session payloads | `tui_gateway/methods_session.py:157`; `tui_gateway/server.py:1574-1583` |
 | Desktop's cross-profile session union (REST only) | `apps/desktop/src/hermes.ts:520-559` |
-| `.env` presence is REST-only | `hermes_cli/web_server.py:14475` |
+| `.env` presence is REST-only | `hermes_cli/web_server.py:14498` |
 
 ## What is preserved
 
@@ -83,7 +83,7 @@ including the Default badge living on the detail rather than the row.
 | Per-profile project catalog (its backend resolves `projects.tree` under that profile's home) | The catalog is the launch profile's, and the Project grouping says so in every scope that is not it: the unified view keeps the catalog under that line, a named scope hides it and names the way back | `projects.tree` and `projects.project_sessions` take no `profile` and resolve through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135`). Silently showing one profile's projects while every profile is in view reads as "these are all of them", and showing them under another profile's scope reads as that profile's |
 | Roster is `$profiles`, a renderer atom | `ProfileRosterCache`, with the same epoch guard | Same invariant, this app's authority model |
 | `plug` pill beside Manage deep-linking to the Gateways page while only one connection exists (`profile-switcher.tsx:334-341`) | Not ported | Gateway identity is a separate surface here: PR #76 owns the connections registry and its switcher at the sidebar head. A second route to it from the foot would give this app two answers to "where do I change Gateway" |
-| — | One `profiles.list` answer replaces the roster; a failed one keeps the last good | `profiles.list` enumerates every profile and emits every field of each row (`methods_profiles.py:194-246`), so layering fields could only resurrect a model, colour or display name the host cleared. The "merge, never clobber" rule is carried by the failure path and the epoch guard, which is where it is actually load-bearing |
+| — | One `profiles.list` answer replaces the roster; a failed one keeps the last good | `profiles.list` enumerates every profile and emits every field of each row (`methods_profiles.py:203-255`), so layering fields could only resurrect a model, colour or display name the host cleared. The "merge, never clobber" rule is carried by the failure path and the epoch guard, which is where it is actually load-bearing |
 
 ## Deviation ledger
 
@@ -97,8 +97,8 @@ changes rarely.
 
 **The `.env` pill is implemented and dark at this pin.**
 Desktop's roster shows `.env` from `profile.has_env` (`app/profiles/index.tsx:237`),
-which only the REST route serves (`hermes_cli/web_server.py:14475`);
-`profiles.list` never sends it (`methods_profiles.py:196-240`).
+which only the REST route serves (`hermes_cli/web_server.py:14498`);
+`profiles.list` never sends it (`methods_profiles.py:205-249`).
 *Reason:* the field is parsed and rendered when a Gateway offers it, so the shape
 stays covered by tests, but at the pinned Gateway it never appears. Reading the
 roster over REST instead would have made the surface depend on a route only one
@@ -106,7 +106,7 @@ of this app's two connection legs reaches.
 
 **One `ui_meta` key is read; the rest is retained by the server and ignored.**
 The pinned backend fixes no `ui_meta` vocabulary — it stores whatever
-`profile.yaml` holds (`methods_profiles.py:212-227`) — and Desktop's rail colour
+`profile.yaml` holds (`methods_profiles.py:221-236`) — and Desktop's rail colour
 is a local pick, not `ui_meta`.
 *Reason:* a server-offered `ui_meta.color` is honoured because a roster served to
 several clients should paint the same; anything else would be an invented
@@ -133,7 +133,7 @@ Desktop's scope follows a live gateway it just opened, so it cannot name a
 profile that does not exist.
 *Reason:* this app persists the scope, and the Gateway does not refuse an
 unresolvable name — `_profile_home` answers None and `_profile_db` hands back the
-launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so a stale scope
+launch handle (`tui_gateway/server.py:1556-1571,1599-1613`), so a stale scope
 would quietly list the launch profile's rows under a name that is gone. Once
 `profiles.list` has actually answered, a scope it does not contain returns to the
 Gateway's own profile with `That profile is no longer available.`; a roster that
@@ -180,7 +180,7 @@ Not deviations — things this slice does not ship, stated rather than hidden.
   deliberately never called.
 - **`session.most_recent`.** This client does not call it; the sidebar chooses
   the newest row it already holds. The `profile` parameter it accepts
-  (`methods_session.py:236-238`) is therefore untouched here.
+  (`methods_session.py:241-243`) is therefore untouched here.
 - **Cron and messaging slices.** Desktop scopes those by profile too; this app
   ships neither.
 - **The default profile's rows in the unified view when the Gateway launched
@@ -224,7 +224,7 @@ above carry the argument.
 | `profiles.list` re-pulls on window focus or visibility (`profile-switcher.tsx:179`) | mobile-adaptation | Asked on a connection edge | Mobile lifecycle: `profiles.list` is a slow-lane call, and putting it on every foreground would spend seconds of a cold backend's time on a roster that changes rarely |
 | `DropdownMenu` rail trigger and roster page | mobile-adaptation | Rail plus a bottom sheet, 48 dp rows | Pointer menus are brittle on a phone; order and checkmark are unchanged |
 | Manage is always rendered, because the renderer only runs inside a connected app | mobile-adaptation | The rail is absent until a Gateway answers, and stays after that | This app can be looking at no Gateway at all, and before the first answer a rail has nothing to switch between; once one `profiles.list` has answered it stays, because it is the only way out of a profile scope |
-| The `.env` pill reads `profile.has_env`, served only by the REST route (`hermes_cli/web_server.py:14475`) | mobile-adaptation | Parsed and rendered when a Gateway offers it; dark at this pin | Reading the roster over REST would tie the surface to a route only one of this app's two connection legs reaches |
+| The `.env` pill reads `profile.has_env`, served only by the REST route (`hermes_cli/web_server.py:14498`) | mobile-adaptation | Parsed and rendered when a Gateway offers it; dark at this pin | Reading the roster over REST would tie the surface to a route only one of this app's two connection legs reaches |
 | Scope follows a live gateway, so it cannot name a profile that does not exist | drift | A stale persisted scope stamps the launch profile's rows with the missing name until each is opened | #81 |
 | Profile create, rename, delete, export/import, and the SOUL.md editor | omission | Absent | non-goal: the roster is read-only |
 | Avatars (`profiles.get_asset`) | omission | `has_avatar` is parsed; the asset is never fetched | non-goal: a read-only roster does not fetch profile assets |

@@ -16,7 +16,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  * Which endpoint shape a saved connection is.
  *
  * Desktop registers four kinds (`apps/desktop/src/app/settings/connections-registry.tsx:26-31`
- * @ `29112bef099274229cadff79cdff7bf7b99c4b77`). Android ships three: `cloud`
+ * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Android ships three: `cloud`
  * has no Android sign-in. `local` means something different here than it does
  * on Desktop — Desktop's local runtime is the one its own app manages, while
  * this one is a Hermes the person runs in Termux on this same phone and this
@@ -117,7 +117,7 @@ data class SavedConnection(
 
     /**
      * Human-readable, non-secret endpoint — Desktop's `connectionEndpoint`
-     * (`apps/desktop/src/lib/connection-display.ts:61-75` @ `29112bef`).
+     * (`apps/desktop/src/lib/connection-display.ts:61-75` @ `3ca096de`).
      * Null when this row has not been given an endpoint yet.
      */
     val endpoint: String?
@@ -233,12 +233,12 @@ interface ConnectionRegistryStore {
     suspend fun setActiveConnection(id: String)
 }
 
-/** Desktop shows search once a registry gets long (`connection-display.ts:3` @ `29112bef`). */
+/** Desktop shows search once a registry gets long (`connection-display.ts:3` @ `3ca096de`). */
 const val CONNECTION_SEARCH_THRESHOLD: Int = 8
 
 /**
  * Dedupe key for a Gateway URL — Desktop's `normalizeGatewayUrl`
- * (`connections-registry.tsx:90-92` @ `29112bef`): trim, drop trailing
+ * (`connections-registry.tsx:90-92` @ `3ca096de`): trim, drop trailing
  * slashes, lowercase. Deliberately looser than
  * `normalizeRemoteGatewayUrl`, which additionally refuses anything that is not
  * a usable HTTPS origin: two rows still collide before either is valid.
@@ -247,7 +247,7 @@ fun normalizeGatewayUrl(url: String): String = url.trim().trimEnd('/').lowercase
 
 /**
  * Dedupe key for the one SSH destination field — Desktop's `sshCompositeKey`
- * (`connections-registry.tsx:99-118` @ `29112bef`): normalized to
+ * (`connections-registry.tsx:99-118` @ `3ca096de`): normalized to
  * `user@host:port` with the default port made explicit, so `box` and `box:22`
  * collide.
  */
@@ -271,7 +271,7 @@ private const val DEFAULT_SSH_PORT = "22"
  *
  * Desktop allows exactly one local connection because its local runtime is the
  * one its own app manages (`connections-registry.tsx` `duplicateLocal`,
- * `en.ts:753` @ `29112bef`). Here the person can run more than one
+ * `en.ts:753` @ `3ca096de`). Here the person can run more than one
  * `hermes serve` on this phone, on different ports, so the rule is per address
  * instead — but `127.0.0.1`, `localhost` and `[::1]` on one port are one
  * server, and collapsing them is what stops the same Hermes being saved three
@@ -286,7 +286,7 @@ fun localGatewayKey(url: String): String {
 /**
  * The row [candidate] collides with, or null.
  *
- * Desktop's rule (`connections-registry.tsx:120-168` @ `29112bef`), minus the
+ * Desktop's rule (`connections-registry.tsx:120-168` @ `3ca096de`), minus the
  * kinds Android does not ship: remote rows are duplicates when their normalized
  * URLs match; SSH rows are duplicates on `user@host:port` plus the remote
  * Hermes profile; Local rows are duplicates on the loopback address, which is
@@ -341,7 +341,7 @@ fun findDuplicateConnection(
 
 /**
  * One stable, human-readable order — Desktop's `sortConnectionsForDisplay`
- * (`connection-display.ts:11-23` @ `29112bef`), Local anchor included now that
+ * (`connection-display.ts:11-23` @ `3ca096de`), Local anchor included now that
  * a Local row can be created: a Hermes on *this* device sorts above every
  * gateway that is somewhere else, whatever either is called, because it is the
  * one row whose reachability the person controls from the phone in their hand.
@@ -359,7 +359,7 @@ fun sortConnectionsForDisplay(connections: List<SavedConnection>): List<SavedCon
 /**
  * Search the non-secret details a person can see or remember about a gateway —
  * Desktop's `connectionMatchesQuery` (`connection-display.ts:29-58` @
- * `29112bef`). Every whitespace-separated needle must match.
+ * `3ca096de`). Every whitespace-separated needle must match.
  */
 fun connectionMatchesQuery(
     connection: SavedConnection,

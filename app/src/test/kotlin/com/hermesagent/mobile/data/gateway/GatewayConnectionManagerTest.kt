@@ -526,7 +526,7 @@ class GatewayHttpVerifierTest {
         assertTrue(failure is GatewayConnectionException)
     }
 
-    // Pinned Desktop contract: 29112bef099274229cadff79cdff7bf7b99c4b77
+    // Pinned Desktop contract: 3ca096de5f8183cb2e0ec23673f294d5978656a3
     // hermes_cli/web_server.py:3445-3450.
     private fun verifierFor(requests: MutableList<Request>, vararg responses: String): GatewayHttpVerifier {
         val pending = ArrayDeque(responses.toList())

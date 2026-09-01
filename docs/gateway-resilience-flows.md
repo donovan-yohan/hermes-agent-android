@@ -1,7 +1,7 @@
 # Gateway resilience: mobile flow map
 
 Authority for Desktop behavior:
-`NousResearch/hermes-agent` @ `29112bef099274229cadff79cdff7bf7b99c4b77`
+`NousResearch/hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`
 (`apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts`,
 `apps/desktop/src/lib/reconnect-backoff.ts`). Inspected read-only.
 

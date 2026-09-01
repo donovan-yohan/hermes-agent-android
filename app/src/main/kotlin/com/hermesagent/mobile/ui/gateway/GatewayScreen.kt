@@ -40,7 +40,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 /**
  * One of Desktop's four **Connection mode** cards
  * (`apps/desktop/src/app/settings/gateway-settings.tsx:1049-1082` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`).
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  *
  * [mode] is `null` for a mode Desktop offers and this app cannot be on. That
  * is not an absence: the card still renders, disabled, behind a `WIP`
@@ -60,7 +60,7 @@ internal data class GatewayModeCard(
 
 /**
  * The four cards, in Desktop's order: Local gateway, Hermes Cloud, Remote
- * gateway, Connect via SSH (`gateway-settings.tsx:1049-1082` @ `29112bef`).
+ * gateway, Connect via SSH (`gateway-settings.tsx:1049-1082` @ `3ca096de`).
  *
  * Total over [GatewayConnectionMode], and asserted to be. The old segmented
  * control could render a `selected` value that was not among its `options` —
@@ -124,7 +124,7 @@ fun GatewayScreen(
     // lifetime, before the window stops being secure.
     SecureScreenLifetime(onLeave = connectionsActions.onLeaveScreen)
     // Desktop keeps the mode grid in the page's own scroll, above the panel
-    // for the chosen mode (`gateway-settings.tsx:1044-1089` @ `29112bef`).
+    // for the chosen mode (`gateway-settings.tsx:1044-1089` @ `3ca096de`).
     // This used to be a pinned header, which a single segmented control could
     // afford; four cards one-per-row on a phone cannot — they would leave the
     // route's own form a sliver of what is left. So the chooser travels into
@@ -132,7 +132,7 @@ fun GatewayScreen(
     val chooser: @Composable ColumnScope.() -> Unit = {
         // Desktop mounts its `ConnectionSwitcher` in the statusbar and nowhere
         // else (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @
-        // `29112bef`); this second mount is the owner-approved mobile
+        // `3ca096de`); this second mount is the owner-approved mobile
         // adaptation of 2026-08-30, argued in `docs/parity/gateway-connections.md`.
         // The same composable, not a copy: a forked trigger is how two
         // switchers end up disagreeing about which gateway you are on. It
@@ -198,7 +198,7 @@ fun GatewayScreen(
         Box(Modifier.weight(1f)) {
             // Desktop puts the registry at the foot of this same page, below the
             // window connection controls (`gateway-settings.tsx:1499-1502` @
-            // `29112bef`). On a phone the page is one scroll per route, so the
+            // `3ca096de`). On a phone the page is one scroll per route, so the
             // section travels into whichever route is showing rather than
             // becoming a second, separately-scrolling band.
             // Whether the pane above this footer is offering Connect right now.
@@ -239,7 +239,7 @@ fun GatewayScreen(
                     state = state,
                     actions = gatewayActions,
                     // The registry's own save path rejects a duplicate outright
-                    // (`connections-registry.tsx:120-168` @ `29112bef`). This
+                    // (`connections-registry.tsx:120-168` @ `3ca096de`). This
                     // form autosaves while someone is still typing, so the same
                     // rule surfaces as a warning beside the field instead.
                     duplicateOf = connectionsState.duplicateRemoteLabel(state.remote.baseUrl),

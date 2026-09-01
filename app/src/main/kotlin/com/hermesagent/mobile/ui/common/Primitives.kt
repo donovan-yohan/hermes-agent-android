@@ -67,7 +67,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
  * The shared primitives. DESIGN.md's rule is "one primitive per concern"
- * (`apps/desktop/DESIGN.md:32-34` @ `29112bef`), and these are the concerns
+ * (`apps/desktop/DESIGN.md:32-34` @ `3ca096de`), and these are the concerns
  * this slice actually has. Anything that needs a padding or a colour override
  * at the call site belongs here instead, as a variant.
  */
@@ -543,7 +543,7 @@ fun VerticalHairline(modifier: Modifier = Modifier) {
 
 /**
  * Desktop's shared card emphasis, `selectableCardClass({ active, prominent })`
- * (`apps/desktop/src/lib/selectable-card.ts:22-31` @ `29112bef`).
+ * (`apps/desktop/src/lib/selectable-card.ts:22-31` @ `3ca096de`).
  *
  * Three tiers there, two of them used here: `active` is the strongest —
  * `border-primary bg-primary/[0.06] ring-2 ring-primary/20`; `prominent` is
@@ -552,7 +552,7 @@ fun VerticalHairline(modifier: Modifier = Modifier) {
  *
  * One colour role is **not** matched, and it is a divergence rather than a
  * translation. Desktop's `--ui-bg-quinary` is a translucent accent-tinted wash
- * (`styles.css:288-292` @ `29112bef`: an accent mix over 3% of the base); the
+ * (`styles.css:288-292` @ `3ca096de`: an accent mix over 3% of the base); the
  * nearest thing this app's token layer has is `widgetSurface`, which is opaque
  * and derived from the card fill. The port skill's rule is to add the missing
  * token with its Desktop provenance rather than reach past the layer — but the
@@ -580,7 +580,7 @@ private val ModeCardShape = RoundedCornerShape(10.dp)
 
 /**
  * Desktop's `ModeCard` (`apps/desktop/src/app/settings/gateway-settings.tsx:88-135`
- * @ `29112bef`): a selectable card carrying an icon, a medium-weight title, an
+ * @ `3ca096de`): a selectable card carrying an icon, a medium-weight title, an
  * optional hint, a check when it is the active one, and a description.
  *
  * Two mechanics change and nothing else does.
@@ -716,7 +716,7 @@ fun ModeCard(
  * Desktop's mode grid steps at `sm` (40rem / 640px) and `min-[72rem]`
  * (1152px), and both are **viewport** media queries — not the container query
  * its registry kind chooser uses (`gateway-settings.tsx:1048` versus
- * `connections-registry.tsx:648` @ `29112bef`). So this reads the window too.
+ * `connections-registry.tsx:648` @ `3ca096de`). So this reads the window too.
  *
  * `640px` lands on 600dp because that is Android's own compact/medium boundary
  * — the platform's "this is no longer a phone" line, and the nearest standard
@@ -742,7 +742,7 @@ internal const val MODE_CARD_WIDE_DP = 720
 
 /**
  * `grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4`
- * (`gateway-settings.tsx:1048` @ `29112bef`).
+ * (`gateway-settings.tsx:1048` @ `3ca096de`).
  *
  * `auto-rows-fr` is what makes every card in a row the same height regardless
  * of how long its description is; `IntrinsicSize.Min` plus `fillMaxHeight` is
@@ -780,7 +780,7 @@ fun <T> ModeCardGrid(
 /**
  * Desktop's `Button` in the two variants its registry kind chooser uses:
  * `variant="default"` for the chosen kind and `variant="outline"` for the rest
- * (`connections-registry.tsx:653-664` @ `29112bef`).
+ * (`connections-registry.tsx:653-664` @ `3ca096de`).
  *
  * Not a [ModeCard]: Desktop deliberately renders the *registry* chooser as a
  * plain button row, and the mode cards only on the Gateways page above it.
@@ -812,7 +812,7 @@ fun ChoiceButton(
             .background(
                 // Desktop's `variant="default"` is a solid `bg-primary`, not a
                 // wash (`components/ui/button.tsx` via
-                // `connections-registry.tsx:661` @ `29112bef`). This app's
+                // `connections-registry.tsx:661` @ `3ca096de`). This app's
                 // segmented control uses a 16% accent tint for *its* selected
                 // segment, but that is a different control; matching Desktop
                 // here costs nothing and removes a divergence.

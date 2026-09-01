@@ -55,7 +55,7 @@ Source contract:
 
 - `apps/desktop/electron/native-oauth.ts`
 - `apps/desktop/electron/native-oauth-login.ts`
-- `hermes_cli/dashboard_auth/routes.py:248-423,927-961,965-1097`
+- `hermes_cli/dashboard_auth/routes.py:266-440,942-976,980-1112`
 - `tests/hermes_cli/test_dashboard_auth_native_flow.py`
 
 all at authority `59795c40fff95b3029b8f2b02164da892429070f`.
@@ -122,7 +122,7 @@ concurrent multi-controller policy is not claimed.
 implemented, and verified against a real Termux Gateway on an emulator — a live
 turn and physical-device keep-alive are still open
 **Authority:** `NousResearch/hermes-agent` @
-`29112bef099274229cadff79cdff7bf7b99c4b77`
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`
 
 ### Context
 
@@ -185,7 +185,7 @@ endpoint is a loopback address on this device.
   it: `/api/health` is on the Gateway's public allowlist at the pin
   (`hermes_cli/dashboard_auth/public_paths.py:33-38` @ `936b970`), so it
   answers 200 to a wrong token. The upgrade is where the token is checked
-  (`web_server.py:17017-17025` @ `936b970`), and its 401/403 is read back as a
+  (`web_server.py:17040-17048` @ `936b970`), and its 401/403 is read back as a
   distinct, non-retryable refusal with its own sentence rather than as a
   generic socket failure — a refused token is a wrong token, and retrying it
   or reading a second credential off the same server would turn "fix this"

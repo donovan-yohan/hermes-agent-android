@@ -94,7 +94,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Chat is the home surface (`apps/desktop/DESIGN.md:48-49` @ `29112bef`).
+ * Chat is the home surface (`apps/desktop/DESIGN.md:48-49` @ `3ca096de`).
  *
  * Two layouts, one content:
  * - **compact** (< 720dp wide): top bar + transcript + composer, with sessions
@@ -324,7 +324,7 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
     var hasUnseenActivity by remember(state.activeSession?.id) { mutableStateOf(false) }
     // This remains UI-local. The authoritative transcript supplies the turn
     // owning the visible response; following only describes this reader's
-    // viewport. Desktop: apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355
+    // viewport. Desktop: apps/desktop/src/components/assistant-ui/thread/list.tsx:194-232,350-372
     // @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
     var following by remember(state.activeSession?.id) { mutableStateOf(true) }
 
@@ -450,7 +450,7 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
 /**
  * Mobile form of Desktop's sticky human-turn continuity. It retains the user
  * bubble grammar and returns to its source without owning transcript state.
- * Desktop: `apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355`,
+ * Desktop: `apps/desktop/src/components/assistant-ui/thread/list.tsx:194-232,350-372`,
  * `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:28-52,321-367`, and
  * `apps/desktop/src/styles.css:1538-1569` @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
  */

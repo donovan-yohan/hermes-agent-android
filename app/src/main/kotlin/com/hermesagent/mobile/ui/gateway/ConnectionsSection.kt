@@ -57,7 +57,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 /**
  * The saved-connections registry, ported from Desktop's
  * `ConnectionsRegistrySection` (`apps/desktop/src/app/settings/connections-registry.tsx:221-888`
- * @ `29112bef099274229cadff79cdff7bf7b99c4b77`), which lives at the foot of the
+ * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), which lives at the foot of the
  * same Gateways page there (`gateway-settings.tsx:1499-1502`).
  *
  * Same grammar: a `SectionHeading` over `ListRow`s, one kind glyph per row,
@@ -415,7 +415,7 @@ private fun ConnectionEditor(
     ) {
         if (editor.id == null) {
             // Desktop's `grid grid-cols-2 gap-2 @2xl:grid-cols-4`
-            // (`connections-registry.tsx:648` @ `29112bef`). That one *is* a
+            // (`connections-registry.tsx:648` @ `3ca096de`). That one *is* a
             // container query — unlike the mode grid above, which is a viewport
             // query — so this reads the editor's own width, not the window's.
             BoxWithConstraints {
@@ -500,7 +500,7 @@ private fun ConnectionEditor(
             // The address and the one credential this route has. Desktop's
             // Local connection needs no credential at all — it is the runtime
             // its own app manages — so this pairs Desktop's *remote* token
-            // field (`connections-registry.tsx:721-733` @ `29112bef`) with the
+            // field (`connections-registry.tsx:721-733` @ `3ca096de`) with the
             // loopback address, which is what the route actually is.
             ConnectionKind.Local -> {
                 LabelledField(
@@ -560,7 +560,7 @@ private fun SavedConnection.summary(): String {
 
 /**
  * One button in Desktop's registry kind chooser
- * (`connections-registry.tsx:652-665` @ `29112bef`).
+ * (`connections-registry.tsx:652-665` @ `3ca096de`).
  *
  * [kind] is `null` for a kind Desktop offers that a row here cannot be. Like
  * the mode cards above, it renders anyway — disabled, behind a `WIP`
@@ -574,7 +574,7 @@ internal data class ConnectionKindChoice(
 
 /**
  * The four kinds Desktop offers on create, in Desktop's order: local, cloud,
- * remote, ssh (`connections-registry.tsx:652` @ `29112bef`).
+ * remote, ssh (`connections-registry.tsx:652` @ `3ca096de`).
  *
  * Total over [ConnectionKind], and asserted to be. The chooser used to be a
  * `SegmentedControl`, which has no way to render a `selected` value that is

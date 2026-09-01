@@ -4,9 +4,9 @@ package com.hermesagent.mobile.data.profiles
  * Hermes profiles: independent Hermes environments (config, skills, SOUL.md)
  * that the Gateway can serve from one backend.
  *
- * Ported from Desktop at `29112bef099274229cadff79cdff7bf7b99c4b77`:
+ * Ported from Desktop at `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
  * `apps/desktop/src/store/profile.ts:22-33,423` and the row shape
- * `tui_gateway/methods_profiles.py:195-240`.
+ * `tui_gateway/methods_profiles.py:204-249`.
  *
  * Desktop's own switch mechanism is a per-profile Electron backend pool
  * (`store/profile.ts:303`) and does not port. The portable equivalent is the
@@ -30,9 +30,9 @@ fun normalizeProfileKey(name: String?): String = (name ?: "").trim().ifEmpty { D
 /**
  * One roster row.
  *
- * Field names follow `profiles.list` (`tui_gateway/methods_profiles.py:196-240`).
+ * Field names follow `profiles.list` (`tui_gateway/methods_profiles.py:205-249`).
  * [hasEnv] is deliberately kept even though that handler never sends it: only
- * the REST twin does (`hermes_cli/web_server.py:14475`), and parsing a field the
+ * the REST twin does (`hermes_cli/web_server.py:14498`), and parsing a field the
  * pinned RPC omits keeps its shape covered rather than inventing one later.
  */
 data class HermesProfile(
@@ -49,7 +49,7 @@ data class HermesProfile(
     /**
      * The one `ui_meta` key this client reads. The pinned backend fixes no
      * `ui_meta` vocabulary — it stores whatever `profile.yaml` holds
-     * (`methods_profiles.py:212-227`) — so anything else is retained by the
+     * (`methods_profiles.py:221-236`) — so anything else is retained by the
      * server and ignored here rather than guessed at.
      */
     val uiMetaColor: String? = null,

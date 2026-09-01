@@ -16,7 +16,7 @@ import org.junit.Test
 
 /**
  * Every wire fixture here is a shape the pinned Gateway actually produces:
- * hermes-agent @ `29112bef099274229cadff79cdff7bf7b99c4b77`, with the
+ * hermes-agent @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`, with the
  * `path:line` that builds it named where it is used. A fixture without a
  * citation is a guess about the wire, and a parser tested against a guess
  * proves nothing.
@@ -436,7 +436,7 @@ class GatewayRestClientTest {
     fun `a one-message page can hold the largest row the host will emit`() = runTest {
         // The widest single tool result the pinned host produces is a
         // `read_file` at `file_read_max_chars` = 100,000 characters
-        // (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65`).
+        // (`hermes_cli/config_defaults.py:592`, `tools/file_tools.py:65`).
         // Characters are not bytes — four per character in UTF-8, six under
         // JSON escaping — so a bound sized to the character count refuses a
         // legitimate page *after* the host has already run the query.

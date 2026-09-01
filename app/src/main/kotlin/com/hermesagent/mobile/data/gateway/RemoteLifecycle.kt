@@ -189,10 +189,10 @@ internal class RemoteHermesLifecycle(
             // exception. The child, ownership lock, log, and orphan reaper
             // must instead share the explicitly selected effective Hermes
             // home. NousResearch/
-            // hermes-agent @ 29112bef099274229cadff79cdff7bf7b99c4b77,
-            // hermes_cli/main.py:510-518,664-689,10947-11021,
-            // hermes_cli/profiles.py:2458-2492, and
-            // hermes_cli/dashboard_procs.py:733-738,786-801.
+            // hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
+            // hermes_cli/main.py:538-546,692-717,11032-11106,
+            // hermes_cli/profiles.py:2540-2574, and
+            // hermes_cli/dashboard_procs.py:747-752,800-815.
             val configuredHermesHome = requiredText(
                 "bash -lc " + posixQuote("printf '%s' \"\${HERMES_HOME:-\$HOME/.hermes}\""),
                 "Hermes home",
@@ -257,7 +257,7 @@ internal class RemoteHermesLifecycle(
             // Keep the shared lock at port=0 until the loopback forward has
             // passed authenticated readiness, the served dashboard token has
             // been resolved, and the exact child is inspected again. Pinned
-            // Desktop ordering: 29112bef099274229cadff79cdff7bf7b99c4b77,
+            // Desktop ordering: 3ca096de5f8183cb2e0ec23673f294d5978656a3,
             // apps/desktop/electron/remote-lifecycle.ts:905-931.
             return RemoteBackend(port, token, process, this)
         } catch (failure: Throwable) {
@@ -289,7 +289,7 @@ internal class RemoteHermesLifecycle(
 
     private suspend fun discoverExecutable(home: String): String {
         // Pinned Desktop uses a login shell because a non-interactive SSH PATH
-        // misses per-user installs. 29112bef099274229cadff79cdff7bf7b99c4b77,
+        // misses per-user installs. 3ca096de5f8183cb2e0ec23673f294d5978656a3,
         // apps/desktop/electron/remote-lifecycle.ts:136-205.
         val commandPath = execText("bash -lc ${posixQuote("command -v hermes")} 2>/dev/null || true")
             .lineSequence()
@@ -335,7 +335,7 @@ internal class RemoteHermesLifecycle(
 
     private suspend fun uploadToken(tokenPath: String, token: ByteArray) {
         // Descriptor-relative exclusive creation is the pinned Desktop seam:
-        // 29112bef099274229cadff79cdff7bf7b99c4b77,
+        // 3ca096de5f8183cb2e0ec23673f294d5978656a3,
         // apps/desktop/electron/remote-lifecycle.ts:606-634. The read is bounded
         // to the exact 64-byte hex token so a cut-off SSH stdin unlinks partial data.
         val script = """
@@ -728,7 +728,7 @@ internal fun ownsProcess(process: OwnedRemoteProcess, argv: List<String>): Boole
     // some installs leave neither known path in argv. Match Desktop's alternate
     // spawn proof without weakening the exact, unique serve/owner/token/profile
     // shape. NousResearch/hermes-agent @
-    // 29112bef099274229cadff79cdff7bf7b99c4b77,
+    // 3ca096de5f8183cb2e0ec23673f294d5978656a3,
     // apps/desktop/electron/remote-lifecycle.ts:400-465.
     val expectedEntrypoints = setOf(
         process.executable,
@@ -807,9 +807,9 @@ private fun OwnedRemoteProcess.lockLogPath(): String {
 
 private fun OwnedRemoteProcess.lockJson(): String = buildJsonObject {
     // Exact shared ownership record. Pinned validators:
-    // 29112bef099274229cadff79cdff7bf7b99c4b77,
+    // 3ca096de5f8183cb2e0ec23673f294d5978656a3,
     // apps/desktop/electron/remote-lifecycle.ts:292-370 and
-    // hermes_cli/dashboard_procs.py:722-783.
+    // hermes_cli/dashboard_procs.py:736-797.
     put("schemaVersion", JsonPrimitive(2))
     put("protocolVersion", JsonPrimitive(1))
     put("ownershipId", JsonPrimitive(ownershipId))

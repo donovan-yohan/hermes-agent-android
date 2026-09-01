@@ -27,7 +27,7 @@ internal enum class GatewayRestVerb { GET, PATCH, DELETE }
 /**
  * `archived` on the session list: hide soft-archived sessions, return only
  * them, or return both (hermes-agent @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`,
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`,
  * `hermes_cli/web_routers/sessions.py:61,72-75`; the route 400s anything else
  * at `:85-89`).
  */
@@ -96,7 +96,7 @@ sealed interface GatewayRestResult<out T> {
  * fails the whole page rather than rendering a half-truth.
  *
  * Envelope shape: `{"sessions": [...], "total": N, "limit": L, "offset": O}`
- * (`sessions.py:159` @ `29112bef099274229cadff79cdff7bf7b99c4b77`).
+ * (`sessions.py:159` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  */
 data class GatewaySessionPage(
     val rows: List<JsonObject>,
@@ -173,7 +173,7 @@ data class GatewaySessionDeletion(val alreadyAbsent: Boolean)
  * - **Nothing the Gateway wrote is shown.** Failures carry the transport's
  *   fixed sentence or this client's own. Desktop summarises a backend error and
  *   falls back when it is long or unreadable
- *   (`apps/desktop/src/store/notifications.ts:142,147-155` @ the pin); this
+ *   (`apps/desktop/src/store/notifications.ts:146,151-159` @ the pin); this
  *   goes further and never carries backend text out at all, because on this app
  *   a response body can hold a token, a host name or a fingerprint.
  */
@@ -197,7 +197,7 @@ class GatewayRestClient(private val http: () -> GatewayHttp?) {
      * replace of its in-memory list would otherwise make a chat that is
      * mid-first-response vanish the moment any other chat finishes
      * (`apps/desktop/src/hermes.ts:501-517`, reasoned at
-     * `apps/desktop/src/store/session.ts:379-386`). The default here is the
+     * `apps/desktop/src/store/session.ts:419-426`). The default here is the
      * route's own `0` rather than Desktop's `1`: what a caller should ask for
      * depends on whether its list can evict, and that is the caller's fact to
      * know, not this client's to assume.
@@ -569,8 +569,8 @@ private fun messagesResponseBound(limit: Int?): Long =
  * The widest single tool result the pinned host will emit, in **characters**.
  *
  * `read_file` returns up to `file_read_max_chars` = 100,000 characters per call
- * (`hermes_cli/config_defaults.py:569`, `tools/file_tools.py:65` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`) — twice `tool_output.max_bytes`,
+ * (`hermes_cli/config_defaults.py:592`, `tools/file_tools.py:65` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) — twice `tool_output.max_bytes`,
  * the 50,000-char terminal cap this bound used to be derived from. The value is
  * host-configurable (`file_tools.py:63,82`), so it is the number to move when a
  * host raises its cap, and everything below moves with it.

@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
  * from this phone are re-staged on the gateway's disk (`image.attach_bytes`),
  * so transcript thumbnails are fetched back over the gateway's authenticated
  * filesystem route — the same contract Desktop's `gatewayMediaDataUrl` uses
- * (`apps/desktop/src/lib/media.ts` @ `29112bef`). Callers never see a token,
+ * (`apps/desktop/src/lib/media.ts` @ `3ca096de`). Callers never see a token,
  * origin, or ticket: the implementation resolves credentials per active leg,
  * exactly like the voice transport.
  */

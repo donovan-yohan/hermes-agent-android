@@ -28,7 +28,7 @@ import com.hermesagent.mobile.ui.theme.mixPremultiplied
  * A profile's mark, in one place.
  *
  * Port of `apps/desktop/src/components/ui/profile-glyph.tsx:10-43` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`: the default profile is the `home`
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`: the default profile is the `home`
  * codicon — it has no colour of its own and an initial would read as just
  * another named profile — and every other profile is a soft tint of its colour
  * carrying its initial.
@@ -126,7 +126,7 @@ fun ProfileTag(
 }
 
 /**
- * `t.sidebar.row.ownedByProfile` (`apps/desktop/src/i18n/en.ts:2175`), asserted
+ * `t.sidebar.row.ownedByProfile` (`apps/desktop/src/i18n/en.ts:2193`), asserted
  * verbatim by Desktop's own `profile-tag.test.tsx:27,34,47`. Desktop labels the
  * chip with the canonical key rather than the display name, so this one does
  * too — the caller passes [HermesProfile.key].

@@ -7,7 +7,7 @@ import com.hermesagent.mobile.data.attachments.ImageRefLines
  *
  * Desktop has a copy control and it copies markdown **source**. Its hover
  * action bar mounts `<CopyButton … text={getMessageText} />`
- * (`assistant-message.tsx:286` @ `29112bef099274229cadff79cdff7bf7b99c4b77`),
+ * (`assistant-message.tsx:286` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`),
  * `getMessageText` is `messageContentText(messageRuntime.getState().content)`
  * (`:135`), and `messageContentText` joins the message's raw text parts
  * (`thread/content.ts:17-23`). No DOM is read; the markdown arrives on the
