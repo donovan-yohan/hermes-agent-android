@@ -91,6 +91,7 @@ import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
+import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.ui.common.EmptyState
@@ -484,9 +485,7 @@ private fun AssistantProse(turn: AssistantTurn) {
         // Deliberately outside the container. Desktop keeps every control
         // `user-select: none` (`styles.css:1182-1186`), and a stop notice or a
         // failure banner is chrome about the turn, not the reply's words.
-        if (turn.stopped) {
-            ScaffoldRow(label = "Stopped by you")
-        }
+        turn.termination?.let { termination -> ScaffoldRow(label = terminationNotice(termination)) }
 
         turn.error?.let { message ->
             ErrorState(title = "That turn failed", description = message)
@@ -500,6 +499,18 @@ private fun AssistantProse(turn: AssistantTurn) {
             ReplyActions(reply)
         }
     }
+}
+
+/** Copy stays separate from Gateway lifecycle reason strings, which are not product copy. */
+internal fun terminationNotice(termination: TurnTermination): String = when (termination) {
+    TurnTermination.UserRequested -> "Stopped by you"
+    TurnTermination.IdleTimeout,
+    TurnTermination.LruEvict,
+    TurnTermination.Reclaimed,
+    TurnTermination.SessionNoLongerRunning,
+    TurnTermination.InterruptedExternally,
+    TurnTermination.WsOrphanReap
+    -> "The Gateway ended this turn. You can try again."
 }
 
 /**
