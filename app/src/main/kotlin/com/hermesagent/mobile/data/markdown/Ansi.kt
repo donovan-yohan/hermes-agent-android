@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.markdown
  * The ANSI SGR parser behind terminal-shaped tool output.
  *
  * Port of Desktop's `apps/desktop/src/lib/ansi.ts` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` — the same rule set, the same
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba` — the same rule set, the same
  * fixture set (`lib/ansi.test.ts` @ the same SHA), the same deliberate
  * omissions: colour, bold and reset are honoured; cursor motion, erase and
  * every other CSI final byte is consumed so it cannot leak into the rendered

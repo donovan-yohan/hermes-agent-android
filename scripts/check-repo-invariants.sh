@@ -144,7 +144,7 @@ fi
 # different semantic that merely happened to be green and red, and that moves
 # with the palette. Desktop derives every diff surface from `--ui-green` /
 # `--ui-red` instead (`styles.css:222-227` @
-# f82f2dbabd9e66b714f2b4f8a40447fe0c13e732).
+# 936b970e281d5d28e930c5698f36bc4ebb54c7ba).
 transcript="app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt"
 panel="$(sed -n '/fun InlineDiffPanel(/,/^}$/p' "$transcript" 2>/dev/null || true)"
 

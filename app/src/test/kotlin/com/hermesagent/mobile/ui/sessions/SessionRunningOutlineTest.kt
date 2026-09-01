@@ -10,7 +10,7 @@ import org.junit.Test
 /**
  * Desktop parity for `showsRunningArc` in
  * `apps/desktop/src/store/session-dot-state.ts:70-80` @
- * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`.
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
  */
 class SessionRunningOutlineTest {
 

@@ -86,7 +86,7 @@ import kotlin.math.abs
  * On a phone this is a drawer; on a wide screen it is the persistent rail.
  * Same composable either way — the layout decides where it lives, not what it
  * is, which is what keeps "switching context is a re-home, not a reboot"
- * (`apps/desktop/AGENTS.md` @ `f82f2dba`) true on both.
+ * (`apps/desktop/AGENTS.md` @ `936b970e`) true on both.
  *
  * Flat by construction: dividers only where the calendar bucket changes, no
  * per-row card, no nested rounded boxes. The active row is marked by fill and
@@ -600,7 +600,7 @@ private fun SessionRow(
                 .testTag("Session row ${session.id}")
                 .background(
                     // `--ui-row-active-background` at styles.css:308-312 @
-                    // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8. This must be
+                    // 936b970e281d5d28e930c5698f36bc4ebb54c7ba. This must be
                     // a semantic token: all skins use the same Desktop mix.
                     color = if (active) tokens.sessionRowActiveSurface else tokens.sidebarSurface,
                     shape = SessionRowShape,
@@ -715,7 +715,7 @@ internal fun SessionStatus.showsRunningOutline(): Boolean = this == SessionStatu
 
 /**
  * Paint-only Android port of Desktop's `.arc-border.arc-row` at
- * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`:
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`:
  * `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113,1129-1144`.
  *
  * The 300%-sized, 160-degree gradient travels from -10% to -50% over 2.23s,

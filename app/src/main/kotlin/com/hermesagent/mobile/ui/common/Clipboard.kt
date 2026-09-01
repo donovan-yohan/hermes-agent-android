@@ -11,7 +11,7 @@ import androidx.compose.ui.platform.LocalContext
  * How long a clipboard control shows its own confirmation before going quiet.
  *
  * Desktop's `COPIED_RESET_MS` (`apps/desktop/src/components/ui/copy-button.tsx:15`
- * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) to the millisecond, and the same
+ * @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`) to the millisecond, and the same
  * 1.5s every clipboard control in this app already used. It lives here, beside
  * the write itself, because three surfaces now share both.
  */

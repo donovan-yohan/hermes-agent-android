@@ -24,7 +24,7 @@ import org.junit.Test
 /**
  * `profiles.list` parsing and the roster's authority rules, over the payload
  * `tui_gateway/methods_profiles.py:196-246` builds at
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
  *
  * Every path or name in these fixtures is invented; nothing here corresponds to
  * a real host, profile or person.

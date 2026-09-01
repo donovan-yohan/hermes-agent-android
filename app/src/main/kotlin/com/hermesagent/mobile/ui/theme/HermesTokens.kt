@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
  *
  * Every value is derived, not invented, and the derivation is Desktop's own.
  * Provenance (upstream `NousResearch/hermes-agent` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`):
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`):
  *
  *  - `apps/desktop/src/styles.css:192-193` — `--ui-base` is the theme
  *    foreground, `--ui-accent` the theme midground. Every ladder below is a
@@ -66,8 +66,8 @@ data class HermesTokens(
     /**
      * The highlight painted behind selected transcript text
      * (`--ui-selection-background`, `styles.css:382` / `:root.dark:564` @
-     * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`, the theme ledger's pin;
-     * unchanged at `f82f2dba`, `styles.css:368` / `545`). Like inline code, this is a
+     * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, the theme ledger's pin;
+     * confirmed at `936b970e`, `styles.css:386` / `564`). Like inline code, this is a
      * *fixed* ink per mode rather than the theme accent, so a highlight reads
      * the same in every skin and never disappears into a warm palette.
      */
@@ -152,7 +152,7 @@ data class HermesTokens(
             )
 
             // styles.css:196-199,528-529 @
-            // f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — `--ui-green` /
+            // 936b970e281d5d28e930c5698f36bc4ebb54c7ba — `--ui-green` /
             // `--ui-red` are fixed per mode, so a diff reads the same in every
             // skin. They are also the diff *border* seeds (`:222,225`).
             val diffAdded = if (dark) Color(0xFF55A583) else Color(0xFF1F8A65)
@@ -181,7 +181,7 @@ data class HermesTokens(
             // `bright` follows Desktop's direction rather than an intuition
             // about what "bright" ought to mean. For the six hues this serves
             // — `lib/ansi.ts:149-154` against their bright rungs at `:157-162`
-            // @ f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 — Desktop steps the
+            // @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba — Desktop steps the
             // bright rung one Tailwind step *lighter* in both modes, never a
             // step darker: `red-700 → rose-600` (`:149` → `:157`) in light,
             // `emerald-300 → emerald-200` (`:150` → `:158`) in dark. Android
@@ -224,7 +224,7 @@ data class HermesTokens(
                 // never shows.
                 sidebarSurface = palette.sidebarBackground ?: palette.background,
                 // `--ui-row-active-background` at styles.css:308-312 @
-                // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: keep the
+                // 936b970e281d5d28e930c5698f36bc4ebb54c7ba: keep the
                 // Desktop nested color-mix expression rather than resolving a
                 // Nous-only literal at the session-row call site.
                 sessionRowActiveSurface = mixPremultiplied(
@@ -252,12 +252,12 @@ data class HermesTokens(
                 accent = accent,
                 // `--dt-accent-foreground` is a palette semantic of its own;
                 // it must not inherit the distinct midground foreground.
-                // context.tsx:233-240 @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
+                // context.tsx:238-245 @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba.
                 accentForeground = palette.accentForeground,
                 statusNeedsInput = Amber500,
                 statusWorking = accent,
                 // `styles.css:1011-1040,1129-1144` @
-                // 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8: the sidebar
+                // 936b970e281d5d28e930c5698f36bc4ebb54c7ba: the sidebar
                 // outline's bright stop is --dt-foreground in dark mode and
                 // --dt-midground in light mode.
                 sessionRunningOutline = if (dark) palette.foreground else accent,
@@ -372,7 +372,7 @@ private data class ModeKnobs(
  *
  * Desktop maps the ANSI palette to fixed Tailwind classes
  * (`apps/desktop/src/lib/ansi.ts:144-164` @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`) — `red-700 dark:red-300` and so
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`) — `red-700 dark:red-300` and so
  * on, with a note that they are "tuned for legibility against the muted
  * bg-(--ui-bg-tertiary) surface" and that pure `#000`/`#fff` are avoided
  * because they disappear into it.

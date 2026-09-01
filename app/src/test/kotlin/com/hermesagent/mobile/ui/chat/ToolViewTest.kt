@@ -11,7 +11,7 @@ import org.junit.Test
 /**
  * The `ToolView` projection, against Desktop's `buildToolView`
  * (`apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:1409-1499`
- * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ * @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
  *
  * Every case names the upstream rule it is holding, because the point of this
  * file is that a phone shows what Desktop shows — not that this particular

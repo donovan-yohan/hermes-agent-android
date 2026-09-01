@@ -12,7 +12,7 @@ import org.junit.Test
 
 /**
  * The **Connection mode** cards, against Desktop at
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
  *
  * Three things are gated here and none of them need a device: the card *order*
  * (`gateway-settings.tsx:1049-1082`), the *words* (`en.ts:776-783`, `:865-868`

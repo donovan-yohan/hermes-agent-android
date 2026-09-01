@@ -29,7 +29,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 /**
  * The settings grammar Desktop's `app/settings/primitives.tsx` defines
  * (`SectionHeading:31-52`, `ListRow:108-155`, and `Badge`-backed `Pill:27-29`
- * @ `f82fdba…` — pinned SHA `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`),
+ * @ `936b970e…` — pinned SHA `936b970e281d5d28e930c5698f36bc4ebb54c7ba`),
  * rendered for a phone.
  *
  * `ListRow` is a container query, not a viewport one: it puts the control

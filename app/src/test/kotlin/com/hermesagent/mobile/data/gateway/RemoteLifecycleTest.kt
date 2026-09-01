@@ -487,7 +487,7 @@ class RemoteLifecycleTest {
     }
 
     private fun assertPinnedLock(lock: JsonObject, port: Int) {
-        // Exact shared schema from f82f2dbabd9e66b714f2b4f8a40447fe0c13e732:
+        // Exact shared schema from 936b970e281d5d28e930c5698f36bc4ebb54c7ba:
         // hermes_cli/dashboard_procs.py:741-783 and
         // apps/desktop/electron/remote-lifecycle.test.ts:43-58.
         assertEquals(

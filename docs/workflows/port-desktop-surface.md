@@ -49,7 +49,7 @@ disagree, the component is the current contract and the doc is a bug.
 | Session status | `apps/desktop/src/app/chat/session-status-dot.tsx:22-77` | Six states; colour + fill/hollow, never motion |
 | Running-session row outline | `apps/desktop/src/store/session-dot-state.ts:70-80`; `apps/desktop/src/app/chat/sidebar/session-row.tsx:254-258,404`; `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113,1129-1144,1157-1161`; `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,84-108` | Working and stalled alone own the flush 1.25px travelling outline; needs-input stays live but yields to its amber dot, and reduced motion leaves a static ring |
 | Transcript tail and jump control | `apps/desktop/src/components/assistant-ui/thread/list.tsx:389-398,651-680`; `apps/desktop/src/app/chat/scroll-to-bottom-button.tsx` | Open at the newest content, follow only while parked there, and expose one floating return action after the reader scrolls away |
-| Sticky current user prompt | `apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355`; `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:28-52,321-367`; `apps/desktop/src/styles.css:1538-1569`; `apps/desktop/src/components/assistant-ui/thread/timeline.tsx:113-125` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8` | Group each human turn with the following assistant/tool content; pin that turn's bubble only after its source is fully above, and jump by stable message id without claiming scroll ownership |
+| Sticky current user prompt | `apps/desktop/src/components/assistant-ui/thread/list.tsx:178-215,333-355`; `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:28-52,321-367`; `apps/desktop/src/styles.css:1538-1569`; `apps/desktop/src/components/assistant-ui/thread/timeline.tsx:113-125` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba` | Group each human turn with the following assistant/tool content; pin that turn's bubble only after its source is fully above, and jump by stable message id without claiming scroll ownership |
 | Session grouping | `apps/desktop/src/lib/time.ts:125-165` | Today / Yesterday / This week / Last week / This month / older |
 | Grouping vs ranking | `apps/desktop/src/app/chat/sidebar/order.ts:147-159` | Order applies *within* a group, never across |
 | Project catalog and selection | `apps/desktop/src/store/projects.ts`; `apps/desktop/src/app/chat/sidebar/index.tsx` | Backend-authored project identity, active project, overview vs drill-in navigation |
@@ -93,7 +93,7 @@ public-index read, adopt only the exact injected JSON string, then re-inspect
 the owned child before publishing the positive port and final fingerprint.
 Keep the uploaded artifact fingerprint separate so adoption cannot weaken
 descriptor-guarded cleanup. These lifecycle paths were inspected at pinned SHA
-`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`.
+`936b970e281d5d28e930c5698f36bc4ebb54c7ba`.
 
 ## 2. Freeze the rendered visual contract
 
@@ -118,7 +118,7 @@ production demo session to obtain evidence.
 node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
   --name projects-overview \
   --selector '[data-slot="sidebar"]' \
-  --expect-sha f82f2dbabd9e66b714f2b4f8a40447fe0c13e732 \
+  --expect-sha 936b970e281d5d28e930c5698f36bc4ebb54c7ba \
   --match 5174
 
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \

@@ -315,7 +315,7 @@ class GatewaySessionRepositoryTest {
         repository.openSession("durable-a")
 
         // The pinned Gateway stamps its own read and never looks at this param
-        // (tui_gateway/methods_session.py:2597-2606 @ f82f2dba). The flag is the
+        // (tui_gateway/methods_session.py:2597-2606 @ 936b970e). The flag is the
         // hedge for a Gateway that ever makes the stamped read opt-in, and it
         // costs nothing here because this handler reads only `session_id`.
         assertEquals(JsonPrimitive(true), rpc.call("session.history").params["include_row_ids"])
@@ -3838,7 +3838,7 @@ class GatewaySessionRepositoryTest {
     // -----------------------------------------------------------------------
     // The REST session list (#64 S11). Every fixture below is the shape
     // `GET /api/sessions` actually returns at hermes-agent @
-    // `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`: the `sessions` columns as
+    // `936b970e281d5d28e930c5698f36bc4ebb54c7ba`: the `sessions` columns as
     // `list_sessions_rich` projects them (`hermes_state_portability.py:33-43`,
     // `hermes_state.py:9002-9020`) plus what the route stamps
     // (`hermes_cli/web_routers/sessions.py:145-159`).

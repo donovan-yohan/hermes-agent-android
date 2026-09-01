@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * The stop-phrase half is a port of Desktop's
  * `apps/desktop/src/lib/voice-stop-word.ts:1-105` and the phrase-list resolution
  * in `apps/desktop/src/store/voice-prefs.ts:15-38`
- * @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`. Pure functions only: nothing
+ * @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. Pure functions only: nothing
  * here logs, and a transcript never leaves the call it arrived on.
  */
 object VoicePolicy {

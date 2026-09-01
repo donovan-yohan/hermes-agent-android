@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Color
 /**
  * Built-in Hermes themes, ported from Desktop's registry at
  * `apps/desktop/src/themes/presets.ts` (upstream `NousResearch/hermes-agent`
- * @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`).
+ * @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
  *
  * **Adding a theme is a data edit.** Append to [ALL] and nothing else changes:
  * the picker enumerates this list, components read semantic tokens, and
@@ -18,10 +18,10 @@ import androidx.compose.ui.graphics.Color
  */
 object BuiltinThemes {
 
-    // presets.ts:187,195-198 @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8
+    // presets.ts:187,195-198 @ 936b970e281d5d28e930c5698f36bc4ebb54c7ba
     private val NousBlue = Color(0xFF0053FD)
 
-    /** `presets.ts:174-277` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    /** `presets.ts:174-277` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. */
     val Nous = HermesThemePreset(
         name = "nous",
         label = "Nous",
@@ -87,7 +87,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** `presets.ts:56-159` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    /** `presets.ts:56-159` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. */
     val Github = HermesThemePreset(
         name = "github",
         label = "GitHub",
@@ -126,7 +126,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** `presets.ts:280-382` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    /** `presets.ts:280-382` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. */
     val Catppuccin = HermesThemePreset(
         name = "catppuccin",
         label = "Catppuccin",
@@ -163,7 +163,7 @@ object BuiltinThemes {
         ),
     )
 
-    /** `presets.ts:385-485` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    /** `presets.ts:385-485` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. */
     val Everforest = HermesThemePreset(
         name = "everforest",
         label = "Everforest",
@@ -200,7 +200,7 @@ object BuiltinThemes {
         ),
     )
 
-    /** `presets.ts:488-588` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    /** `presets.ts:488-588` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. */
     val Solarized = HermesThemePreset(
         name = "solarized",
         label = "Solarized",
@@ -237,7 +237,7 @@ object BuiltinThemes {
         ),
     )
 
-    /** `presets.ts:601-664` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. */
+    /** `presets.ts:601-664` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. */
     val NousAlt = HermesThemePreset(
         name = "nous-alt",
         label = "Nous Alt",
@@ -276,7 +276,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** `presets.ts:670-704` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
+    /** `presets.ts:670-704` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. Dark-first. */
     val Midnight = HermesThemePreset(
         name = "midnight",
         label = "Midnight",
@@ -307,11 +307,11 @@ object BuiltinThemes {
             userBubble = Color(0xFF14143A),
             userBubbleBorder = Color(0xFF242466),
         ),
-        // presets.ts:130-133 — "JetBrains Mono" via Google Fonts; substituted.
+        // presets.ts:700-702 — "JetBrains Mono" via Google Fonts; substituted.
         fonts = HermesFontChoice(),
     )
 
-    /** `presets.ts:706-740` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
+    /** `presets.ts:706-740` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. Dark-first. */
     val Ember = HermesThemePreset(
         name = "ember",
         label = "Ember",
@@ -342,11 +342,11 @@ object BuiltinThemes {
             userBubble = Color(0xFF2A1000),
             userBubbleBorder = Color(0xFF4A2010),
         ),
-        // presets.ts:167-170 — "IBM Plex Mono" via Google Fonts; substituted.
+        // presets.ts:736-738 — "IBM Plex Mono" via Google Fonts; substituted.
         fonts = HermesFontChoice(),
     )
 
-    /** `presets.ts:743-773` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
+    /** `presets.ts:743-773` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. Dark-first. */
     val Mono = HermesThemePreset(
         name = "mono",
         label = "Mono",
@@ -380,7 +380,7 @@ object BuiltinThemes {
     )
 
     /**
-     * `presets.ts:776-810` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. The one preset whose typography changes
+     * `presets.ts:776-810` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. Dark-first. The one preset whose typography changes
      * the whole UI: upstream sets `fontSans` *and* `fontMono` to Courier, so
      * body text goes monospace. That behaviour survives the substitution.
      */
@@ -417,7 +417,7 @@ object BuiltinThemes {
         fonts = HermesFontChoice(sans = HermesFontFamily.Mono, mono = HermesFontFamily.Mono),
     )
 
-    /** `presets.ts:813-846` @ `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`. Dark-first. */
+    /** `presets.ts:813-846` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba`. Dark-first. */
     val Slate = HermesThemePreset(
         name = "slate",
         label = "Slate",
@@ -448,7 +448,7 @@ object BuiltinThemes {
             userBubble = Color(0xFF1E2A38),
             userBubbleBorder = Color(0xFF2E4060),
         ),
-        // presets.ts:274-276 — "JetBrains Mono" without a font URL; substituted.
+        // presets.ts:843-845 — "JetBrains Mono" without a font URL; substituted.
         fonts = HermesFontChoice(),
     )
 

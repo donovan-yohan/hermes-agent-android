@@ -9,7 +9,7 @@ package com.hermesagent.mobile.data.gateway
  * and Desktop raises a different notification for each (`turnDone` at
  * `apps/desktop/src/app/session/hooks/use-message-stream/index.ts:772`,
  * `turnError` at `.../gateway-event.ts:1661`, both @
- * `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`).
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`).
  *
  * It is a signal, not state: nothing renders from it, nothing persists it, and
  * a follower that misses one has missed a notification, not a fact.

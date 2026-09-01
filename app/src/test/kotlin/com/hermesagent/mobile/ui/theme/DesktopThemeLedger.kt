@@ -4,8 +4,8 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8`, file
- * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-24 from the
+ * `936b970e281d5d28e930c5698f36bc4ebb54c7ba`, file
+ * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-31 from the
  * read-only checkout at `~/.hermes/hermes-agent`.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
@@ -21,7 +21,7 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8"
+    const val PINNED_SHA = "936b970e281d5d28e930c5698f36bc4ebb54c7ba"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** `presets.ts:864-865` — `DEFAULT_SKIN_NAME`. */

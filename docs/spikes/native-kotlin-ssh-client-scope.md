@@ -6,7 +6,7 @@
 
 **Spike type:** research-only architecture scope. No production code was written.
 **Date:** 2026-08-19.
-**Upstream pin:** `NousResearch/hermes-agent` @ `f82f2dbabd9e66b714f2b4f8a40447fe0c13e732` (branch `main`, local read-only checkout `~/.hermes/hermes-agent`, verified clean before and after research).
+**Upstream pin:** `NousResearch/hermes-agent` @ `936b970e281d5d28e930c5698f36bc4ebb54c7ba` (branch `main`, local read-only checkout `~/.hermes/hermes-agent`, verified clean before and after research).
 All `path:line` citations in this document are relative to that repository at that SHA unless prefixed otherwise.
 
 ---
@@ -45,7 +45,7 @@ Key answers to the task's questions:
 
 | # | Source | Kind | Pin | State at survey (2026-08-19) |
 |---|---|---|---|---|
-| S1 | `NousResearch/hermes-agent` | local checkout, read-only | **`f82f2dbabd9e66b714f2b4f8a40447fe0c13e732`**, branch `main`, upstream version `0.20.4` (`hermes_cli/__init__.py:17`) | Clean before and after research; no git mutations performed. MIT (`LICENSE`). |
+| S1 | `NousResearch/hermes-agent` | local checkout, read-only | **`936b970e281d5d28e930c5698f36bc4ebb54c7ba`**, branch `main`, upstream version `0.20.6` (`hermes_cli/__init__.py:17`) | Clean before and after research; no git mutations performed. MIT (`LICENSE`). |
 | S2 | `rusty4444/hermes-android` | shallow clone (prior art) | `aa6b71060a2e4f53616778a2a7117162611dcd97` | Active (last commit 2026-08-14), 201★. Flutter, **no LICENSE file** (`gh api` license: null; own `NOTICE.md` disclaims a grant) — treated as unlicensed, patterns only. |
 | S3 | `HenWorks/Hermes-agent-android-PC-companion-app` | shallow clone (prior art) | `6ce9eb4bef3ba219dcd2c232c2853d7a4a57c7ab` | Python PC-side companion (not an Android app). **AGPL-3.0** — patterns only, reimplemented independently. |
 | S4 | Upstream PR #49834 (Capacitor Android thin client) | `gh pr view` (no local fetch) | head `46a7b0f75d9b758eeb9465a675df38ab4ea33566` | **OPEN**, unmerged, `needs-decision`, maintainer sweep verdict `salvageability=low`. |
@@ -641,5 +641,3 @@ Suitable for direct conversion to GitHub issues; dependencies flow top to bottom
 - Lane dossiers carry ~10 explicitly `UNVERIFIED`-tagged minor claims (e.g., exact javadoc wording for two Android APIs, the current dev home of legacy sshlib 2.2.x); none are load-bearing for the recommendation.
 - Estimates are ranges with stated assumptions (§10); they are calibrated against the inventory and prior-art feature lists, not against a delivered comparable, because **no native Hermes client exists anywhere** — this project would be the first.
 - Research working files retained under `/tmp/hermes-mobile-native-scope/` are limited to the six lane dossiers; all shallow prior-art clones and other scratch files were removed. The dossiers are corroborating evidence, not part of the deliverable.
-
-
