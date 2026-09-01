@@ -532,7 +532,9 @@ internal class GatewayConnectionManager(
     private var remoteReconnectEscalated = false
     private var networkAvailable = true
     private val networkAvailableSignal = AtomicBoolean(true)
-    /** Automatic redials are foreground-only; explicit opens remain user-owned. */
+    private val foregroundLock = Any()
+    private var activityForeground = true
+    private var turnProtectionActive = false
     private val applicationForegroundSignal = AtomicBoolean(true)
     private var reconnectGeneration = 0L
     private val networkEventGeneration = AtomicLong()
@@ -1511,11 +1513,38 @@ internal class GatewayConnectionManager(
     /**
      * Process lifecycle gate for automatic Remote Gateway redials. A retry
      * already inside a bounded network call may finish after backgrounding,
-     * but no later automatic attempt is admitted until foreground resume.
+     * but no later automatic attempt is admitted until foreground resume or
+     * turn-scoped protection is active.
      */
     fun applicationForegroundChanged(foreground: Boolean) {
-        applicationForegroundSignal.set(foreground)
-        if (foreground) nudgeRemoteReconnect()
+        val becameEffective: Boolean
+        synchronized(foregroundLock) {
+            activityForeground = foreground
+            val effective = activityForeground || turnProtectionActive
+            val previous = applicationForegroundSignal.getAndSet(effective)
+            becameEffective = !previous && effective
+        }
+        if (foreground || becameEffective) {
+            nudgeRemoteReconnect()
+        }
+    }
+
+    /**
+     * Informs the connection that turn-scoped foreground protection is active.
+     * While protection is active, automatic redials are permitted even when
+     * the Activity is backgrounded.
+     */
+    fun turnProtectionActiveChanged(active: Boolean) {
+        val becameEffective: Boolean
+        synchronized(foregroundLock) {
+            turnProtectionActive = active
+            val effective = activityForeground || turnProtectionActive
+            val previous = applicationForegroundSignal.getAndSet(effective)
+            becameEffective = !previous && effective
+        }
+        if (becameEffective) {
+            nudgeRemoteReconnect()
+        }
     }
 
     /**
@@ -1527,16 +1556,20 @@ internal class GatewayConnectionManager(
     fun nudgeRemoteReconnect() {
         scope.launch {
             mutex.withLock {
-                if (!applicationForegroundSignal.get()) return@withLock
-                // Any open already in flight outranks the nudge: bumping the
-                // generation here could cancel an interactive connect and then
-                // claim its released intent non-interactively.
-                if (connectIntent.get().job != null) return@withLock
-                val profile = desiredRemoteProfile ?: return@withLock
-                if (remoteRouteLiveLocked(profile) && active == null) {
-                    armRemoteReconnectLocked(profile, failingSinceMillis = null)
-                }
+                nudgeRemoteReconnectLocked()
             }
+        }
+    }
+
+    private fun nudgeRemoteReconnectLocked() {
+        if (!applicationForegroundSignal.get()) return
+        // Any open already in flight outranks the nudge: bumping the
+        // generation here could cancel an interactive connect and then
+        // claim its released intent non-interactively.
+        if (connectIntent.get().job != null) return
+        val profile = desiredRemoteProfile ?: return
+        if (remoteRouteLiveLocked(profile) && active == null) {
+            armRemoteReconnectLocked(profile, failingSinceMillis = null)
         }
     }
 

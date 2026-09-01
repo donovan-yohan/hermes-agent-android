@@ -1974,6 +1974,107 @@ class RemoteGatewayTest {
     }
 
     @Test
+    fun `turn protection active permits automatic redial while activity is backgrounded`() = runTest {
+        val first = FailingAtReadinessRpc()
+        val recovered = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        var attempts = 0
+        val manager = remoteManager(
+            reconnectWait = { retryPermits.receive() },
+            reconnectJitter = { 0.0 },
+        ) { _, _ ->
+            attempts += 1
+            if (attempts == 1) first else recovered
+        }
+        // Activity is backgrounded
+        manager.applicationForegroundChanged(false)
+
+        val result = manager.restoreRemote(PROFILE)
+        runCurrent()
+        assertTrue(result is GatewayConnectResult.Failed)
+        assertEquals(1, attempts)
+        assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
+
+        // Turn protection becomes active while Activity remains backgrounded
+        manager.turnProtectionActiveChanged(true)
+        runCurrent()
+        assertEquals(GatewayConnectionStatus.Connecting, manager.state.value.status)
+        retryPermits.send(Unit)
+        runCurrent()
+
+        assertEquals(2, attempts)
+        assertTrue(manager.client.value === recovered)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+
+        // Dropping connection while protection is inactive and Activity is backgrounded refuses redial
+        manager.turnProtectionActiveChanged(false)
+        recovered.failFromServer()
+        runCurrent()
+        assertEquals(2, attempts)
+        assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
+
+        manager.disconnect()
+    }
+
+    @Test
+    fun `returning to foreground nudges reconnect unconditionally even while turn protection is active`() = runTest {
+        val first = FakeRpc()
+        val secondFailing = FailingAtReadinessRpc()
+        val recovered = FakeRpc()
+        val retryPermits = Channel<Unit>(Channel.UNLIMITED)
+        val observedDelays = mutableListOf<Long>()
+        var attempts = 0
+        val manager = remoteManager(
+            reconnectWait = { millis ->
+                observedDelays += millis
+                retryPermits.receive()
+            },
+            reconnectJitter = { 0.5 },
+        ) { _, _ ->
+            attempts += 1
+            when (attempts) {
+                1 -> first
+                2 -> secondFailing
+                else -> recovered
+            }
+        }
+        manager.connectRemote(PROFILE, GatewayBrowserLauncher {})
+        runCurrent()
+        assertEquals(1, attempts)
+
+        // Turn protection is active, but app is backgrounded
+        manager.turnProtectionActiveChanged(true)
+        manager.applicationForegroundChanged(false)
+        runCurrent()
+
+        // Socket drops while backgrounded; first retry is attempted and fails
+        first.failFromServer()
+        runCurrent()
+        retryPermits.send(Unit)
+        runCurrent()
+        assertEquals(2, attempts)
+
+        // Second retry is now scheduled with escalated backoff (300ms delay)
+        runCurrent()
+        assertEquals(listOf(150L, 300L), observedDelays)
+
+        // Returning to app Activity foreground=true must unconditionally nudge reconnect & reset backoff ladder to 150ms
+        manager.applicationForegroundChanged(true)
+        runCurrent()
+
+        // The nudge cancelled the escalated (300ms) job and armed a fresh attempt at 150ms
+        assertEquals(listOf(150L, 300L, 150L), observedDelays)
+
+        retryPermits.send(Unit)
+        runCurrent()
+        assertEquals(3, attempts)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        assertTrue(manager.client.value === recovered)
+
+        manager.disconnect()
+    }
+
+    @Test
     fun `foreground resume re-arms while a fenced retry intent unwinds`() = runTest {
         val first = FakeRpc()
         val recovered = FakeRpc()

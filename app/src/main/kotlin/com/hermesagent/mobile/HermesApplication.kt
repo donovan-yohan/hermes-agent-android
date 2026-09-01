@@ -32,6 +32,9 @@ import com.hermesagent.mobile.data.gateway.OkHttpGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.RemoteGatewayConnector
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
 import com.hermesagent.mobile.data.gateway.StoredGatewayCredentials
+import com.hermesagent.mobile.data.gateway.TurnForegroundService
+import com.hermesagent.mobile.data.gateway.TurnProtectionController
+import com.hermesagent.mobile.data.gateway.TurnProtectionServiceHost
 import com.hermesagent.mobile.data.notifications.AndroidNotificationPreferences
 import com.hermesagent.mobile.data.notifications.AndroidNotificationSurface
 import com.hermesagent.mobile.data.notifications.NotificationPreferenceStore
@@ -281,6 +284,7 @@ class HermesApplication : Application() {
             },
         )
         startSessionNotifier()
+        startTurnProtection()
         appScope.launch {
             followActiveConnection(
                 connections = preferences,
@@ -311,6 +315,24 @@ class HermesApplication : Application() {
             settingsFlow = notificationPreferences.notificationSettings,
             surface = notificationSurface,
             clock = System::currentTimeMillis,
+        ).start(appScope)
+    }
+
+    private fun startTurnProtection() {
+        TurnProtectionController(
+            activeTurns = sessionRepository.activeTurns,
+            sessions = cache.state,
+            pendingInputs = sessionRepository.pendingInputs,
+            connectionState = gatewayConnection.state,
+            appForegrounded = notificationPresence.appForegrounded,
+            serviceHost = object : TurnProtectionServiceHost {
+                override fun startService(): Boolean = TurnForegroundService.start(this@HermesApplication)
+                override fun stopService() = TurnForegroundService.stop(this@HermesApplication)
+                override fun onServiceRefused(callback: () -> Unit) {
+                    TurnForegroundService.onServiceFailure = callback
+                }
+            },
+            onProtectionActiveChanged = gatewayConnection::turnProtectionActiveChanged,
         ).start(appScope)
     }
 }

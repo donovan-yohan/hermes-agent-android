@@ -108,6 +108,9 @@ interface GatewaySessionRepository {
      */
     val turnOutcomes: Flow<GatewayTurnOutcome> get() = emptyFlow()
 
+    /** Active turns submitted or live on this client, keyed by durable session ID. */
+    val activeTurns: StateFlow<Set<String>> get() = NO_ACTIVE_TURNS
+
     suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
         error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
@@ -449,6 +452,8 @@ internal class LiveGatewaySessionRepository(
     private val mutablePendingInputs =
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
     override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
+    private val mutableActiveTurns = MutableStateFlow<Set<String>>(emptySet())
+    override val activeTurns: StateFlow<Set<String>> = mutableActiveTurns
 
     /**
      * Requests *this* connection retired: answered, expired, superseded, or
@@ -613,6 +618,7 @@ internal class LiveGatewaySessionRepository(
                     mutablePendingInputs.value = emptyMap()
                     retiredKeys.clear()
                     clearUnscopedRuntime()
+                    updateActiveTurnsLocked()
                     val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
                     if (next != null) ephemeralSessions.clear()
                     ConnectionReset(
@@ -1645,6 +1651,7 @@ internal class LiveGatewaySessionRepository(
             activeRuntimeIds += binding.runtimeId
             localSubmitStartedAtByRuntime[binding.runtimeId] = now
             liveTurnRuntimeIds -= binding.runtimeId
+            updateActiveTurnsLocked()
             val previousSession = cache.session(binding.durableId)
             val previousTranscript = cache.transcript(binding.durableId)
             val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", optimisticText, now)
@@ -2774,6 +2781,7 @@ internal class LiveGatewaySessionRepository(
         if (unscopedRuntimeId == runtimeId) {
             unscopedTurnIsLive = true
         }
+        updateActiveTurnsLocked()
     }
 
     /** Session-info heartbeats contain state, not a complete session row. */
@@ -2879,6 +2887,24 @@ internal class LiveGatewaySessionRepository(
                 clearUnscopedRuntime()
             }
         }
+        updateActiveTurnsLocked()
+    }
+
+    private fun updateActiveTurnsLocked() {
+        val active = buildSet {
+            unscopedRuntimeId?.let { runtimeId ->
+                if (localSubmitStartedAtMillis != null || unscopedTurnIsLive) {
+                    identities.durableFor(runtimeId)?.let(::add)
+                }
+            }
+            for (runtimeId in localSubmitStartedAtByRuntime.keys) {
+                identities.durableFor(runtimeId)?.let(::add)
+            }
+            for (runtimeId in liveTurnRuntimeIds) {
+                identities.durableFor(runtimeId)?.let(::add)
+            }
+        }
+        mutableActiveTurns.value = active
     }
 
     private fun completeMessage(durableId: String, runtimeId: String, payload: JsonObject) {
@@ -4586,6 +4612,7 @@ private const val STOP_DISPATCH_WAIT_MILLIS = 2_000L
 private const val IMAGE_ONLY_PROMPT = "What do you see in this image?"
 private val NO_IMAGE_LOADER: MutableStateFlow<GatewayImageLoader?> = MutableStateFlow(null)
 internal val NO_SESSION_PAGING: StateFlow<SessionListPaging> = MutableStateFlow(SessionListPaging())
+internal val NO_ACTIVE_TURNS: StateFlow<Set<String>> = MutableStateFlow(emptySet())
 
 /**
  * One page of the session list, matching Desktop's own sidebar page
@@ -4611,7 +4638,7 @@ private val CONTINUING_GOAL_STATUS = Regex("^↻ Continuing toward goal\\b", Reg
 private val PARKED_GOAL_STATUS = Regex("^⏳ Goal parked\\b", RegexOption.IGNORE_CASE)
 private val PAUSED_GOAL_NOTICE = Regex("^⏸ Goal paused\\b", RegexOption.IGNORE_CASE)
 private val ACHIEVED_GOAL_STATUS = Regex("^✓ Goal achieved\\b", RegexOption.IGNORE_CASE)
-private val RESUMED_BUSY_STATUSES = setOf(
+internal val RESUMED_BUSY_STATUSES = setOf(
     SessionStatus.Working,
     SessionStatus.Stalled,
     SessionStatus.NeedsInput,
