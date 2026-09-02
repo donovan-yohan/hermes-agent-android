@@ -67,6 +67,7 @@ import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.isUnread
 import com.hermesagent.mobile.data.session.label
 import com.hermesagent.mobile.data.profiles.HermesProfile
+import com.hermesagent.mobile.ui.chat.ArchivedPoolState
 import com.hermesagent.mobile.ui.chat.ProjectProfileScope
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -124,6 +125,8 @@ fun SessionList(
     onSetSessionArchived: ((String, Boolean) -> Unit)? = null,
     /** Desktop's `Archived` filter: the list is a view of the archived set instead. */
     archivedVisible: Boolean = false,
+    /** What that set's own read has said. `Nothing archived` waits on it. */
+    archivedPool: ArchivedPoolState = ArchivedPoolState.Idle,
     onArchivedVisibleChange: (Boolean) -> Unit = {},
     /** Loaded rows that are still unread; Desktop hides the action at zero. */
     unreadCount: Int = 0,
@@ -319,15 +322,49 @@ fun SessionList(
                     modifier = listSlot,
                 )
 
-                // Desktop's archived empty state, verbatim
-                // (`i18n/en.ts:1154-1155` @ `3ca096de`). The Archived view is
-                // its own set, so "no sessions" would be the wrong sentence:
-                // there are sessions, none of them archived.
-                rows.isEmpty() && archivedVisible && query.isBlank() -> EmptyState(
-                    title = "Nothing archived",
-                    description = "Archive a chat to hide it here.",
-                    modifier = listSlot.testTag(ARCHIVED_EMPTY_STATE),
-                )
+                // The archived set is read on its own, and until that read has
+                // answered nothing here knows whether the account has archived
+                // chats. `Nothing archived` is a claim about the account, so it
+                // waits — exactly as the project slot above waits on its own
+                // load. Desktop keeps the same marker but spends it only on
+                // re-entry (`store/sidebar-archive.ts:12,19,28` @ `3ca096de`:
+                // `$archivedSessionsLoading` gates the fetch and nothing
+                // renders it), and its `catch` sets the set to `[]` — so on
+                // Desktop a failed read reads as an empty account. On a phone,
+                // where the Gateway is across a network that drops, that is the
+                // sentence this app refuses to write; see
+                // `docs/parity/session-list-sections.md`.
+                rows.isEmpty() && archivedVisible && query.isBlank() -> when (archivedPool) {
+                    ArchivedPoolState.Idle, ArchivedPoolState.Loading -> EmptyState(
+                        title = "Loading archived chats…",
+                        description = "Hermes is loading the chats you archived.",
+                        modifier = listSlot.testTag(ARCHIVED_LOADING_STATE),
+                    )
+
+                    // The Gateway cannot be asked at all, so the honest sentence
+                    // is about the Gateway rather than about the account.
+                    ArchivedPoolState.Unsupported -> EmptyState(
+                        title = "Archived chats unavailable",
+                        description = "Archived chats need a newer Hermes on this Gateway.",
+                        modifier = listSlot.testTag(ARCHIVED_UNSUPPORTED_STATE),
+                    )
+
+                    ArchivedPoolState.Failed -> EmptyState(
+                        title = "Couldn’t load archived chats",
+                        description = "Check the Gateway, then turn Archived off and on again.",
+                        modifier = listSlot.testTag(ARCHIVED_FAILED_STATE),
+                    )
+
+                    // Desktop's archived empty state, verbatim
+                    // (`i18n/en.ts:1154-1155` @ `3ca096de`). The Archived view
+                    // is its own set, so "no sessions" would be the wrong
+                    // sentence: there are sessions, none of them archived.
+                    ArchivedPoolState.Loaded -> EmptyState(
+                        title = "Nothing archived",
+                        description = "Archive a chat to hide it here.",
+                        modifier = listSlot.testTag(ARCHIVED_EMPTY_STATE),
+                    )
+                }
 
                 rows.isEmpty() -> EmptyState(
                     title = when {
@@ -751,6 +788,9 @@ internal const val PINNED_SECTION_TAG = "Pinned section"
 
 /** The Archived view with nothing in it. */
 internal const val ARCHIVED_EMPTY_STATE = "Archived empty state"
+internal const val ARCHIVED_LOADING_STATE = "Archived loading state"
+internal const val ARCHIVED_FAILED_STATE = "Archived failed state"
+internal const val ARCHIVED_UNSUPPORTED_STATE = "Archived unsupported state"
 
 @Composable
 private fun SessionRow(

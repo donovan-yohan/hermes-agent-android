@@ -115,7 +115,7 @@ data class SessionSummary(
      *
      * Null is not `false`: it means this Gateway's list contract never said.
      * The `session.list` RPC an older Gateway answers carries no such column
-     * (`tui_gateway/methods_session.py:204-214`), and a surface that read a
+     * (`tui_gateway/methods_session.py:267-282`), and a surface that read a
      * silent contract as "not archived" would draw an affordance that does
      * nothing. Absent, so the affordance can stay absent.
      */

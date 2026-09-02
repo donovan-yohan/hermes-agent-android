@@ -104,6 +104,11 @@ lifecycle.
   profile, the way Desktop does — rather than filtering the live page. It is a
   lookup of the newest 100 archived chats, not a pager, and a Gateway too old to
   serve the session-list REST route says so instead of showing an empty list.
+  `Nothing archived` is only said once that read has answered: while it is in
+  flight, when it fails, and when the Gateway cannot be asked, the view says
+  which of those happened. The set is re-read when the connection or the
+  profile scope changes under it, because it belongs to one backend in one
+  scope.
 - `Mark all as read` writes one request per unread row, serially, with no
   batching and no cancellation, and reports the count that refused.
 - Pinned rows are ordered by activity, not by hand: there is no drag reorder on

@@ -42,6 +42,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -5070,8 +5071,13 @@ class GatewaySessionRepositoryTest {
     @Test
     fun `a fenced pin survives the row arriving under its compression tip`() = runTest {
         val cache = SessionCache()
+        // The connection bootstrap reads one page of its own before this test
+        // says anything, and the claim here is about the page that arrives
+        // *after* the write. So the tip page is armed only once the row is
+        // filed and pinned; until then the Gateway has nothing to say.
+        var page = REST_EMPTY_PAGE
         val http = FakeGatewayRest { request ->
-            if (request.method == "PATCH") restPage("""{"ok":true,"title":"Tip"}""") else restPage(REST_TIP_ID_PAGE)
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"Tip"}""") else restPage(page)
         }
         val repository = liveRepository(cache, http)
         runCurrent()
@@ -5081,6 +5087,7 @@ class GatewaySessionRepositoryTest {
 
         // The page names the conversation by its new tip, says the root it came
         // from, and carries the pre-write value.
+        page = REST_TIP_ID_PAGE
         repository.refreshSessions()
 
         assertNull(cache.session("root-a"))
@@ -5131,19 +5138,95 @@ class GatewaySessionRepositoryTest {
         val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
         runCurrent()
         repository.refreshSessions()
-        val beforeWrite = http.requests.size
+        val readsBeforeWrite = http.requests.count { it.method == "GET" }
 
         repository.setSessionUnread("durable-a", false)
         advanceTimeBy(10_001L)
         runCurrent()
         advanceUntilIdle()
 
-        // The PATCH, and at least one list read nobody asked for: the guard
-        // lapsed on a write no page had confirmed, so the repository went back
-        // to the Gateway rather than leaving its own value in the cache. What
-        // the answer then says is the other test's claim (`a fence past the
-        // guard lets the server win`).
-        assertTrue(http.requests.size >= beforeWrite + 2)
+        // A list read nobody asked for: the guard lapsed on a write no page had
+        // confirmed, so the repository went back to the Gateway rather than
+        // leaving its own value in the cache. What the answer then says is the
+        // other test's claim (`a fence past the guard lets the server win`).
+        //
+        // Named precisely, so that a background poller added later on any timer
+        // cannot stand in for it: a live-pool GET, from the top of the list.
+        assertTrue(http.requests.count { it.method == "GET" } > readsBeforeWrite)
+        val rescan = http.requests.last()
+        assertEquals("GET", rescan.method)
+        assertEquals("exclude", rescan.query["archived"])
+        assertEquals("0", rescan.query["offset"])
+    }
+
+    /**
+     * And every fence gets its own wake-up, not just the first.
+     *
+     * The reconcile is one job, so a second write made inside the first write's
+     * window used to inherit its deadline and nothing else: the job fired at
+     * the first fence's expiry, pruned that entry, and left the newer fence to
+     * lapse with nothing scheduled — this client's value in the
+     * backend-authoritative cache with nothing to correct it, which is the hole
+     * `armFlagWriteReconcile` exists to close.
+     */
+    @Test
+    fun `a second write inside the first write's window gets its own wake-up`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"First"}""") else restPage(REST_PAGE_ONE)
+        }
+        val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
+        runCurrent()
+        repository.refreshSessions()
+
+        // Two rows, so the two fences are two entries rather than one merged
+        // entry whose window the second write would simply extend.
+        repository.setSessionPinned("durable-a", true)
+        advanceTimeBy(5_000L)
+        runCurrent()
+        repository.setSessionPinned("durable-b", true)
+        val readsBeforeGuards = http.requests.count { it.method == "GET" }
+
+        // The first fence's ten seconds.
+        advanceTimeBy(5_001L)
+        runCurrent()
+        val readsAfterFirstGuard = http.requests.count { it.method == "GET" }
+        assertTrue(readsAfterFirstGuard > readsBeforeGuards)
+
+        // …and the second fence's own, five seconds later. Without the re-arm
+        // nothing is scheduled here at all.
+        advanceTimeBy(5_000L)
+        runCurrent()
+        assertTrue(http.requests.count { it.method == "GET" } > readsAfterFirstGuard)
+    }
+
+    /**
+     * An archive arms nothing, because nothing it could ask for would answer.
+     *
+     * The live list is permanently `archived=exclude`, so once the row is filed
+     * no page the rescan can request will mention it again: the fence could
+     * only ever expire, and the wake-up would be one full list read per profile
+     * leg that cannot change anything. The archived pool's own read is what
+     * confirms that fence.
+     */
+    @Test
+    fun `an archive schedules no live rescan that could never confirm it`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"First"}""") else restPage(REST_PAGE_ONE)
+        }
+        val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
+        runCurrent()
+        repository.refreshSessions()
+        val readsBeforeWrite = http.requests.count { it.method == "GET" }
+
+        repository.setSessionArchived("durable-a", true)
+        advanceTimeBy(30_000L)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals(readsBeforeWrite, http.requests.count { it.method == "GET" })
+        assertEquals(true, cache.session("durable-a")?.archived)
     }
 
     /**
@@ -5152,10 +5235,10 @@ class GatewaySessionRepositoryTest {
      */
     @Test
     fun `a pin survives an auto-compression re-home`() = runTest {
+        // No Gateway: the re-home is [SessionCache]'s own, and the claim is
+        // about what the cache and the grouping do with it. A live repository
+        // here would only add its bootstrap's rows to the list being asserted.
         val cache = SessionCache()
-        val http = FakeGatewayRest { restPage(REST_EMPTY_PAGE) }
-        val repository = liveRepository(cache, http)
-        runCurrent()
         cache.upsertSession(SessionSummary("root-a", "Long chat", "", CLOCK, pinned = true))
 
         val row = cache.session("root-a")!!
@@ -5264,6 +5347,12 @@ class GatewaySessionRepositoryTest {
         backgroundScope,
         http = { http },
         clock = clock,
+        // The REST leg's production home is `Dispatchers.IO` — a real thread,
+        // which a virtual-time test cannot schedule. Left at the default, the
+        // connection bootstrap's first list read lands whenever that pool got
+        // round to it, so whether `runCurrent()` has drained it is a property
+        // of the machine: locally it had not, and on CI it had.
+        restContext = EmptyCoroutineContext,
     )
 
     private fun GatewayHttpRequest.readBody(): String {

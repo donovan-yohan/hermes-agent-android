@@ -37,6 +37,20 @@ class SessionCache {
     private val _state = MutableStateFlow(SessionCacheState())
     val state: StateFlow<SessionCacheState> = _state.asStateFlow()
 
+    private val _endpointGeneration = MutableStateFlow(0L)
+
+    /**
+     * Which backend this cache holds, bumped by [resetForEndpointSwitch] and by
+     * nothing else.
+     *
+     * It is not part of [SessionCacheState] because it is not a row: it says
+     * *whose* rows these are. A reader that keeps its own endpoint-scoped copy
+     * of backend truth — the Archived view's capped `archived=only` pool is the
+     * one — needs to learn that the copy it holds is now about a different
+     * machine, and this is the same seam saying so rather than a second one.
+     */
+    val endpointGeneration: StateFlow<Long> = _endpointGeneration.asStateFlow()
+
     fun upsertSessions(rows: List<SessionSummary>) {
         if (rows.isEmpty()) return
         _state.update { current ->
@@ -142,6 +156,7 @@ class SessionCache {
      */
     internal fun resetForEndpointSwitch() {
         _state.update { current -> if (current == SessionCacheState()) current else SessionCacheState() }
+        _endpointGeneration.update { it + 1 }
     }
 
     /** A new Gateway generation must not paint the previous profile's project catalog. */

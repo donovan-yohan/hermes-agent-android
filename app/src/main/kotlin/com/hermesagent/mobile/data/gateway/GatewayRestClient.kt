@@ -14,6 +14,7 @@ import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import kotlin.coroutines.CoroutineContext
 
 /**
  * The verbs this client may put on the wire.
@@ -342,7 +343,22 @@ data class GatewayRestartStart(val name: String, val pid: Long?)
  *   goes further and never carries backend text out at all, because on this app
  *   a response body can hold a token, a host name or a fingerprint.
  */
-class GatewayRestClient(private val http: () -> GatewayHttp?) {
+class GatewayRestClient(
+    /**
+     * Where [send] does its blocking work.
+     *
+     * `GatewayHttp.execute` is a blocking OkHttp call, so production keeps it
+     * on [Dispatchers.IO]. That is a *real* thread, and a test driving this
+     * client on virtual time cannot see it: the hop lands the transport call on
+     * a pool thread that races the test's own `runCurrent`, so whether a
+     * background read has landed by the next assertion depends on the machine
+     * rather than on the schedule. A test injects the scheduler it is already
+     * driving — or [kotlin.coroutines.EmptyCoroutineContext], which keeps the
+     * call on the caller's coroutine — and gets one answer every run.
+     */
+    private val ioContext: CoroutineContext = Dispatchers.IO,
+    private val http: () -> GatewayHttp?,
+) {
 
     /**
      * One page of sessions from `GET /api/sessions` (`sessions.py:53` @ the
@@ -678,7 +694,7 @@ class GatewayRestClient(private val http: () -> GatewayHttp?) {
         timeoutMillis: Long,
         maxResponseBytes: Long,
         parse: (ByteArray) -> T?,
-    ): GatewayRestResult<T> = withContext(Dispatchers.IO) {
+    ): GatewayRestResult<T> = withContext(ioContext) {
         val transport = http()
             ?: return@withContext GatewayRestResult.Failed(0, RECONNECT_MESSAGE)
         val request = GatewayHttpRequest(

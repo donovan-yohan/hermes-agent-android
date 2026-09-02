@@ -50,6 +50,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -78,6 +79,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlin.coroutines.CoroutineContext
 
 /**
  * How this connection's session RPCs are scoped to a Hermes profile.
@@ -437,6 +439,18 @@ private data class PendingFlagWrite(
         (pinned == null || row.pinned == pinned) &&
             (unread == null || row.unread == unread) &&
             (archived == null || row.archived == archived)
+
+    /**
+     * Whether a *live* list page could ever bring this write's value back.
+     *
+     * A row filed as archived leaves the only pool the live list reads —
+     * `archived=exclude` never mentions one ([readSessionLeg]) — so no page the
+     * rescan could ask for will name the row again, however long it waits. The
+     * archived pool's own read is what confirms that fence; scheduling a live
+     * rescan for it would be one full list read per profile leg that cannot
+     * change anything.
+     */
+    val confirmableByLivePage: Boolean get() = archived != true
 }
 
 /**
@@ -541,6 +555,12 @@ internal class LiveGatewaySessionRepository(
      * that was never asked.
      */
     private val http: () -> GatewayHttp? = { null },
+    /**
+     * Where the REST leg does its blocking work. See [GatewayRestClient]: the
+     * default is a real thread pool, so a test that drives this repository on
+     * virtual time injects its own scheduler instead of racing one.
+     */
+    restContext: CoroutineContext = Dispatchers.IO,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
@@ -656,7 +676,7 @@ internal class LiveGatewaySessionRepository(
     private var profileRouting = ProfileRouting()
 
     /** Session REST routes over the connection-owned transport; holds no credential. */
-    private val rest = GatewayRestClient(http)
+    private val rest = GatewayRestClient(restContext, http)
 
     /** Per profile leg, how far this connection's list has read. Cleared with it. */
     private val sessionPageCursors = mutableMapOf<String?, SessionPageCursor>()
@@ -914,7 +934,7 @@ internal class LiveGatewaySessionRepository(
                 answered = true
                 val parsed = leg.rows
                 // `session.list`'s compact rows carry no owning profile at the pin
-                // (`methods_session.py:204-214`), so a row listed out of a named
+                // (`tui_gateway/methods_session.py:267-282`), so a row listed out of a named
                 // profile's own state.db is stamped with the profile that was
                 // asked for. The launch-profile leg is left unstamped, which is
                 // the `default` bucket by the same rule Desktop filters with
@@ -1096,11 +1116,14 @@ internal class LiveGatewaySessionRepository(
                 }
             }
         }
-        // The older `session.list` contract has no archived filter at all
-        // (`hermes_cli/rpc/methods_session.py:204-214` @ `3ca096de`), so a
-        // backend that only serves it cannot answer this question. An empty
-        // pool would render `Nothing archived`, which is a claim about the
-        // account rather than about the Gateway, so this says so instead.
+        // The older `session.list` contract has no archived filter at all: it
+        // reads `limit` and `include_hidden` and nothing else
+        // (`tui_gateway/methods_session.py:246-266` @ `3ca096de`), and the rows
+        // it emits carry `id/title/preview/started_at/message_count/source`
+        // with no `archived` field to read back (`:267-282`). A backend that
+        // only serves it cannot answer this question. An empty pool would
+        // render `Nothing archived`, which is a claim about the account rather
+        // than about the Gateway, so this says so instead.
         if (pool == SessionPool.Archived) throw GatewayRpcException(ARCHIVED_UNSUPPORTED)
         // The older contract has no offset and no total: one call returns what
         // it returns. Reporting that as exhausted is the honest answer — there
@@ -2741,21 +2764,55 @@ internal class LiveGatewaySessionRepository(
      * write the Gateway acknowledged but has never echoed in a list page would
      * otherwise sit there as this client's own opinion with nothing scheduled
      * to correct it. One rescan when the guard expires is that schedule.
+     *
+     * Two rules keep that schedule honest:
+     *
+     * - **The job re-arms; it is not one-shot.** A second write made inside the
+     *   first write's window used to get no wake-up of its own: the running job
+     *   fired at the *first* fence's expiry, pruned that entry and rescanned,
+     *   and the newer fence then lapsed with nothing scheduled — which is the
+     *   hole this function exists to close. So it wakes at the earliest fence
+     *   still outstanding, and re-arms from whatever is left when it is done.
+     * - **Only for a write a live page can bring back.** See
+     *   [PendingFlagWrite.confirmableByLivePage]: an archive can only expire,
+     *   so arming for it would spend one list read per profile leg on an answer
+     *   that cannot mention the row.
      */
     private fun armFlagWriteReconcile() {
-        synchronized(stateLock) {
-            if (flagWriteReconcileJob?.isActive == true) return
-            flagWriteReconcileJob = scope.launch {
-                delay(FLAG_WRITE_GUARD_MILLIS)
-                // Only when something was still unconfirmed when the guard ran
-                // out: a fence a page already agreed with retired itself, and a
-                // refresh nobody asked for is a request nobody needed.
-                val unconfirmed = synchronized(stateLock) {
-                    val outstanding = pendingFlagWrites.isNotEmpty()
-                    pruneExpiredFlagWrites()
-                    outstanding
+        synchronized(stateLock) { armFlagWriteReconcileLocked() }
+    }
+
+    private fun armFlagWriteReconcileLocked() {
+        if (flagWriteReconcileJob?.isActive == true) return
+        val now = clock()
+        val due = pendingFlagWrites.values
+            .filter(PendingFlagWrite::confirmableByLivePage)
+            .minOfOrNull { it.atMillis + FLAG_WRITE_GUARD_MILLIS - now }
+        if (due == null) {
+            flagWriteReconcileJob = null
+            return
+        }
+        flagWriteReconcileJob = scope.launch {
+            delay(due.coerceAtLeast(0L))
+            // Only when something was still unconfirmed when the guard ran
+            // out: a fence a page already agreed with retired itself, and a
+            // refresh nobody asked for is a request nobody needed.
+            val unconfirmed = synchronized(stateLock) {
+                val outstanding = pendingFlagWrites.values.any(PendingFlagWrite::confirmableByLivePage)
+                pruneExpiredFlagWrites()
+                outstanding
+            }
+            if (unconfirmed) runCatching { rescanSessions() }
+            // Only this job may retire this job. A connection change cancels and
+            // nulls the field under the same lock, and a write made after that
+            // arms a fresh one — clearing the field blind would orphan it and
+            // schedule a second rescan for the same fence.
+            val self = coroutineContext[Job]
+            synchronized(stateLock) {
+                if (flagWriteReconcileJob === self) {
+                    flagWriteReconcileJob = null
+                    armFlagWriteReconcileLocked()
                 }
-                if (unconfirmed) runCatching { rescanSessions() }
             }
         }
     }
@@ -5315,8 +5372,12 @@ private const val UNREAD_FAILED = "Could not update unread state"
  * What a Gateway too old to be asked says. The `session.list` RPC has no
  * archived filter, so the honest answer is about this Gateway rather than an
  * empty `Nothing archived` about the account.
+ *
+ * Shared rather than private: the Archived view has to tell this refusal apart
+ * from an ordinary read failure, because the two say different things on
+ * screen, and one sentence in one place is what keeps them from drifting.
  */
-private const val ARCHIVED_UNSUPPORTED = "Archived chats need a newer Hermes on this Gateway."
+internal const val ARCHIVED_UNSUPPORTED = "Archived chats need a newer Hermes on this Gateway."
 private const val PIN_FAILED = "Could not update pin. Check the Gateway and try again."
 private const val ARCHIVE_FAILED = "Could not archive that chat. Check the Gateway and try again."
 private const val UNARCHIVE_FAILED = "Could not restore that chat. Check the Gateway and try again."

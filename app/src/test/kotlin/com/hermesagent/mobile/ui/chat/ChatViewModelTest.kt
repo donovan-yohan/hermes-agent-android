@@ -15,6 +15,7 @@ import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
 import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.SessionComposerControls
+import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
@@ -1704,28 +1705,187 @@ class ChatViewModelTest {
      */
     @Test
     fun `a flag write survives the row that started it leaving the screen`() = runTest(dispatcher) {
+        // All three verbs, because all three move the row: an archive leaves
+        // the live pool, a pin moves into the Pinned section, and marking read
+        // is what the unread section is grouped by.
+        val verbs = listOf<Pair<String, (String, Boolean) -> Unit>>(
+            "archived" to viewModel::setSessionArchivedAsync,
+            "pinned" to viewModel::setSessionPinnedAsync,
+            "unread" to viewModel::setSessionUnreadAsync,
+        )
         collectState()
-        cache.upsertSession(summary("session-a", 2_000))
-        runCurrent()
-        // The PATCH is in flight and has not answered yet.
-        val inFlight = kotlinx.coroutines.CompletableDeferred<Unit>()
-        repository.holdFlagWrites = inFlight
-
-        // The row's own composition scope: the tap runs here.
-        val rowScope = kotlinx.coroutines.CoroutineScope(dispatcher)
-        rowScope.launch { viewModel.setSessionArchivedAsync("session-a", true) }
         runCurrent()
 
-        // Archiving takes the row out of the live pool, so it leaves
-        // composition on the next frame and its scope is cancelled.
-        rowScope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
-        runCurrent()
-        inFlight.complete(Unit)
+        for ((flag, write) in verbs) {
+            val id = "session-$flag"
+            cache.upsertSession(summary(id, 2_000))
+            runCurrent()
+            // The PATCH is in flight and has not answered yet.
+            val inFlight = CompletableDeferred<Unit>()
+            repository.holdFlagWrites = inFlight
+
+            // The row's own composition scope: the tap runs here.
+            val rowScope = kotlinx.coroutines.CoroutineScope(dispatcher)
+            rowScope.launch { write(id, true) }
+            runCurrent()
+
+            // The write takes the row off the list it was pressed on, so the row
+            // leaves composition on the next frame and its scope is cancelled.
+            rowScope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+            runCurrent()
+            inFlight.complete(Unit)
+            repository.holdFlagWrites = null
+            runCurrent()
+
+            assertTrue(
+                "$flag was never written",
+                Triple(flag, id, true) in repository.flagWrites,
+            )
+            assertNull(viewModel.uiState.value.notice)
+        }
+
+        assertEquals(true, cache.session("session-archived")?.archived)
+        assertEquals(true, cache.session("session-pinned")?.pinned)
+        assertEquals(true, cache.session("session-unread")?.unread)
+    }
+
+    /**
+     * The archived set is one backend's, and a connection switch is a different
+     * machine. `SessionCache.resetForEndpointSwitch()` already wipes every row
+     * (`ConnectionSwitchController.kt:223`); what used to survive it was this
+     * view's *belief* that it had already read the pool, so the Archived list
+     * sat on the new Gateway showing `Nothing archived` — false about both
+     * backends — until the reader toggled the filter off and on again.
+     */
+    @Test
+    fun `the Archived view re-reads its pool after a connection switch`() = runTest(dispatcher) {
+        collectState()
+        repository.archivedPoolRows = listOf(summary("alpha-archived", 900).copy(archived = true))
         runCurrent()
 
-        assertEquals(listOf(Triple("archived", "session-a", true)), repository.flagWrites)
-        assertEquals(true, cache.session("session-a")?.archived)
-        assertNull(viewModel.uiState.value.notice)
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+        assertEquals(1, repository.archivedLoads)
+        assertEquals(listOf("alpha-archived"), viewModel.uiState.value.sessionRows.rowIds())
+
+        // The switch: the one wholesale clear, and a different machine's rows.
+        cache.resetForEndpointSwitch()
+        repository.archivedPoolRows = listOf(summary("beta-archived", 800).copy(archived = true))
+        runCurrent()
+
+        assertEquals(2, repository.archivedLoads)
+        assertEquals(ArchivedPoolState.Loaded, viewModel.uiState.value.archivedPool)
+        assertEquals(listOf("beta-archived"), viewModel.uiState.value.sessionRows.rowIds())
+    }
+
+    /**
+     * And it does not paint the previous backend's answer while the new one is
+     * being read: the marker goes back to "nothing has answered", which is
+     * never `Nothing archived`.
+     */
+    @Test
+    fun `an endpoint switch stops the Archived view claiming anything about the new backend`() =
+        runTest(dispatcher) {
+            collectState()
+            runCurrent()
+            viewModel.setArchivedVisible(true)
+            runCurrent()
+            assertEquals(ArchivedPoolState.Loaded, viewModel.uiState.value.archivedPool)
+
+            val nextBackend = CompletableDeferred<Unit>()
+            repository.holdArchivedLoads = nextBackend
+            cache.resetForEndpointSwitch()
+            runCurrent()
+
+            assertEquals(ArchivedPoolState.Loading, viewModel.uiState.value.archivedPool)
+
+            nextBackend.complete(Unit)
+            runCurrent()
+            assertEquals(ArchivedPoolState.Loaded, viewModel.uiState.value.archivedPool)
+        }
+
+    /**
+     * `Nothing archived` is a claim about the account, so it waits for the
+     * Gateway to have actually answered. The archived pool deliberately does
+     * not publish through the live list's pager
+     * (`GatewaySessionRepository.readSessionPages`), so this marker is the only
+     * thing that can hold that sentence back. Desktop keeps the same marker
+     * (`$archivedSessionsLoading`, `store/sidebar-archive.ts:12,19,28` @
+     * `3ca096de`) but renders nothing with it.
+     */
+    @Test
+    fun `the Archived view is loading until its pool answers`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val answer = CompletableDeferred<Unit>()
+        repository.holdArchivedLoads = answer
+
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+
+        assertEquals(ArchivedPoolState.Loading, viewModel.uiState.value.archivedPool)
+
+        answer.complete(Unit)
+        runCurrent()
+
+        // Answered, and the answer really was "nothing".
+        assertEquals(ArchivedPoolState.Loaded, viewModel.uiState.value.archivedPool)
+        assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
+    }
+
+    /** A read that failed is not an account with nothing archived. */
+    @Test
+    fun `a failed archived read is reported as a failure, not as an empty set`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.archivedFailure =
+            com.hermesagent.mobile.data.gateway.GatewayRpcException("Could not reach the Gateway.")
+
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+
+        assertEquals(ArchivedPoolState.Failed, viewModel.uiState.value.archivedPool)
+        assertEquals("Could not reach the Gateway.", viewModel.uiState.value.notice)
+    }
+
+    /**
+     * And a Gateway that cannot be asked at all is its own answer: the
+     * `session.list` RPC has no archived filter, so the honest sentence is
+     * about this Gateway rather than about the account.
+     */
+    @Test
+    fun `a Gateway that cannot list archived chats says so`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.archivedFailure =
+            com.hermesagent.mobile.data.gateway.GatewayRpcException(ARCHIVED_UNSUPPORTED)
+
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+
+        assertEquals(ArchivedPoolState.Unsupported, viewModel.uiState.value.archivedPool)
+        assertEquals(ARCHIVED_UNSUPPORTED, viewModel.uiState.value.notice)
+    }
+
+    /**
+     * The notice slot is product-facing. A Gateway refusal carries app copy —
+     * `safeMessage` is redacted by contract — but a parse or state failure
+     * carries an implementation sentence, and that must never reach the screen.
+     */
+    @Test
+    fun `an archived read that fails outside the Gateway contract shows product copy`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.archivedFailure = IllegalStateException("kotlinx.serialization: unexpected JSON token")
+
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+
+        assertEquals(ArchivedPoolState.Failed, viewModel.uiState.value.archivedPool)
+        assertEquals(
+            "Could not load archived chats. Check the Gateway and try again.",
+            viewModel.uiState.value.notice,
+        )
     }
 
     private fun List<com.hermesagent.mobile.data.session.SessionListRow>.rowIds(): List<String> =
@@ -1854,8 +2014,20 @@ class ChatViewModelTest {
         override suspend fun setSessionUnread(durableId: String, unread: Boolean) =
             writeFlag("unread", durableId, unread)
 
+        /** What the `archived=only` pool answers with on the next read. */
+        var archivedPoolRows: List<SessionSummary> = emptyList()
+
+        /** Parks the archived read, so a test can look at the view mid-flight. */
+        var holdArchivedLoads: CompletableDeferred<Unit>? = null
+
+        /** What the archived read raises instead of answering. */
+        var archivedFailure: Throwable? = null
+
         override suspend fun loadArchivedSessions() {
             archivedLoads++
+            holdArchivedLoads?.await()
+            archivedFailure?.let { throw it }
+            cache.upsertSessions(archivedPoolRows)
         }
 
         override suspend fun openProject(projectId: String) {

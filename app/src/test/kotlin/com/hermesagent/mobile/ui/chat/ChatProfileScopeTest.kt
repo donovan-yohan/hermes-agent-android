@@ -343,6 +343,13 @@ class ChatProfileScopeTest {
             listed += routing
         }
 
+        /** Every routing the archived pool was read under, in order. */
+        val archivedReads = mutableListOf<ProfileRouting>()
+
+        override suspend fun loadArchivedSessions() {
+            archivedReads += routing
+        }
+
         override suspend fun openSession(durableId: String): String = durableId
 
         override suspend fun createSession(workspacePath: String?): String = "created"
@@ -353,6 +360,43 @@ class ChatProfileScopeTest {
         override suspend fun interrupt(durableId: String) {
             interrupted += durableId
         }
+    }
+
+    /**
+     * The archived pool is one profile scope's set exactly as the live list is,
+     * and only the live list is re-listed on a scope change. Without a re-read
+     * the Archived view keeps showing the scope the reader just left — or
+     * `Nothing archived`, which is then false about both — until the filter is
+     * toggled off and on again.
+     */
+    @Test
+    fun `changing the profile scope re-reads the archived pool under the new scope`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+        assertEquals(listOf(ProfileRouting()), repository.archivedReads)
+
+        viewModel.selectProfile("work")
+        runCurrent()
+
+        assertEquals(2, repository.archivedReads.size)
+        assertEquals("work", repository.archivedReads.last().activeProfile)
+        assertEquals(ArchivedPoolState.Loaded, viewModel.uiState.value.archivedPool)
+    }
+
+    /** A scope change with the filter off asks for nothing: nobody is looking. */
+    @Test
+    fun `changing the profile scope reads no archived pool nobody is looking at`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.selectProfile("work")
+        runCurrent()
+
+        assertEquals(emptyList<ProfileRouting>(), repository.archivedReads)
+        assertEquals(ArchivedPoolState.Idle, viewModel.uiState.value.archivedPool)
     }
 
     private companion object {

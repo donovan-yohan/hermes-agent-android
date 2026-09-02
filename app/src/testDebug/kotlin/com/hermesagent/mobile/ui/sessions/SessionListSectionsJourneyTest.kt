@@ -20,6 +20,7 @@ import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.buildSessionRows
+import com.hermesagent.mobile.ui.chat.ArchivedPoolState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -199,14 +200,59 @@ class SessionListSectionsJourneyTest {
         assertEquals(0, compose.nodesWithText("Archive"))
     }
 
-    /** Desktop's archived empty state, verbatim (`i18n/en.ts:1154-1155`). */
+    /**
+     * Desktop's archived empty state, verbatim (`i18n/en.ts:1154-1155`) — and
+     * only once the pool has actually answered.
+     */
     @Test
     fun `an empty Archived view says nothing is archived rather than no sessions`() {
-        launch(sessions = emptyList(), archivedVisible = true)
+        launch(sessions = emptyList(), archivedVisible = true, archivedPool = ArchivedPoolState.Loaded)
 
         compose.onNodeWithTag(ARCHIVED_EMPTY_STATE).assertIsDisplayed()
         compose.onNodeWithText("Nothing archived").assertIsDisplayed()
         compose.onNodeWithText("Archive a chat to hide it here.").assertIsDisplayed()
+    }
+
+    /**
+     * `Nothing archived` is a claim about the account, so an unanswered pool
+     * must not make it. Desktop keeps the same marker but renders nothing with
+     * it (`$archivedSessionsLoading`, `store/sidebar-archive.ts:12,19,28` @ the
+     * pin); this list waits, exactly as it already waits on a project
+     * drill-in.
+     */
+    @Test
+    fun `an Archived view whose pool has not answered says it is loading`() {
+        launch(sessions = emptyList(), archivedVisible = true, archivedPool = ArchivedPoolState.Loading)
+
+        compose.onNodeWithTag(ARCHIVED_LOADING_STATE).assertIsDisplayed()
+        compose.onNodeWithText("Loading archived chats…").assertIsDisplayed()
+        assertEquals(0, compose.nodesWithText("Nothing archived"))
+    }
+
+    /** A read that failed is not an account with nothing archived. */
+    @Test
+    fun `an Archived view whose pool failed says so and offers the way back`() {
+        launch(sessions = emptyList(), archivedVisible = true, archivedPool = ArchivedPoolState.Failed)
+
+        compose.onNodeWithTag(ARCHIVED_FAILED_STATE).assertIsDisplayed()
+        compose.onNodeWithText("Couldn’t load archived chats").assertIsDisplayed()
+        compose.onNodeWithText("Check the Gateway, then turn Archived off and on again.").assertIsDisplayed()
+        assertEquals(0, compose.nodesWithText("Nothing archived"))
+    }
+
+    /**
+     * And a Gateway serving only `session.list` — which has no archived filter
+     * (`tui_gateway/methods_session.py:246-266,267-282` @ the pin) — gets the
+     * sentence about the Gateway, never the one about the account.
+     */
+    @Test
+    fun `an Archived view on a Gateway that cannot answer says so`() {
+        launch(sessions = emptyList(), archivedVisible = true, archivedPool = ArchivedPoolState.Unsupported)
+
+        compose.onNodeWithTag(ARCHIVED_UNSUPPORTED_STATE).assertIsDisplayed()
+        compose.onNodeWithText("Archived chats unavailable").assertIsDisplayed()
+        compose.onNodeWithText("Archived chats need a newer Hermes on this Gateway.").assertIsDisplayed()
+        assertEquals(0, compose.nodesWithText("Nothing archived"))
     }
 
     /**
@@ -294,6 +340,43 @@ class SessionListSectionsJourneyTest {
         assertEquals(listOf("s-1" to true), writes)
     }
 
+    /**
+     * The other half of "a flag write survives the row leaving the screen": the
+     * control itself must not own the write.
+     *
+     * Each of these verbs takes the row off the list it was pressed on, so a
+     * coroutine started in the row's own composition scope is cancelled
+     * mid-`PATCH`. The press therefore has to *return* with the write already
+     * handed on — which is what a non-suspending callback guarantees, and what
+     * this asserts by reading the recorder before Compose is pumped at all. A
+     * `suspend` callback launched into a `rememberCoroutineScope` would still
+     * be sitting on the frame dispatcher here.
+     */
+    @Test
+    fun `the row menu hands off each write before the press returns`() {
+        val pins = mutableListOf<Pair<String, Boolean>>()
+        val unreads = mutableListOf<Pair<String, Boolean>>()
+        val archives = mutableListOf<Pair<String, Boolean>>()
+        launch(
+            sessions = listOf(session("s-1", "Ordinary chat")),
+            onSetSessionPinned = { id, value -> pins += id to value },
+            onSetSessionUnread = { id, value -> unreads += id to value },
+            onSetSessionArchived = { id, value -> archives += id to value },
+        )
+
+        openFirstRowMenu()
+        compose.onNodeWithText("Pin").performClick()
+        assertEquals(listOf("s-1" to true), pins)
+
+        openFirstRowMenu()
+        compose.onNodeWithText("Mark as unread").performClick()
+        assertEquals(listOf("s-1" to true), unreads)
+
+        openFirstRowMenu()
+        compose.onNodeWithText("Archive").performClick()
+        assertEquals(listOf("s-1" to true), archives)
+    }
+
     private fun openFirstRowMenu() {
         compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
         compose.waitForIdle()
@@ -307,6 +390,7 @@ class SessionListSectionsJourneyTest {
     private fun launch(
         sessions: List<SessionSummary>,
         archivedVisible: Boolean = false,
+        archivedPool: ArchivedPoolState = ArchivedPoolState.Loaded,
         unreadCount: Int = 0,
         onArchivedVisibleChange: (Boolean) -> Unit = {},
         onMarkAllRead: () -> Unit = {},
@@ -339,6 +423,7 @@ class SessionListSectionsJourneyTest {
                     onSetSessionUnread = onSetSessionUnread,
                     onSetSessionArchived = onSetSessionArchived,
                     archivedVisible = archivedVisible,
+                    archivedPool = archivedPool,
                     onArchivedVisibleChange = onArchivedVisibleChange,
                     unreadCount = unreadCount,
                     onMarkAllRead = onMarkAllRead,
