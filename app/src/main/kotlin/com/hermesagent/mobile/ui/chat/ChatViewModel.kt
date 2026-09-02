@@ -114,7 +114,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -346,6 +348,27 @@ internal class ChatViewModel(
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
+
+    /**
+     * Whether the debounced backend search is still in flight. It is UI state,
+     * never cache truth, and it only ever chooses between two empty states —
+     * see [buildSessionRows].
+     */
+    private val searchPendingState = MutableStateFlow(false)
+
+    /**
+     * What the Gateway's own index last answered for the live query, or null
+     * when it was never asked, could not be asked, or refused. Null and empty
+     * are different facts: only the second one means "nothing matched".
+     *
+     * Search stubs never reach [SessionCache]. A stub carries an id, a lineage
+     * root and a snippet and nothing else the row contract wants
+     * (`apps/desktop/src/app/chat/sidebar/index.tsx:272-293` @ `3ca096de`), so
+     * filing one under backend authority would make an invented row
+     * indistinguishable from a listed one — and it would outlive the query.
+     */
+    private val searchResults = MutableStateFlow<List<SessionSummary>?>(null)
+
     private val draft = MutableStateFlow("")
     /** Locally acquired attachment drafts, occurrence-scoped and memory-only. */
     private val attachments = MutableStateFlow<List<ComposerAttachmentDraft>>(emptyList())
@@ -474,7 +497,7 @@ internal class ChatViewModel(
 
     val uiState: StateFlow<ChatUiState> = combine(
         cache.state,
-        query,
+        combine(query, searchPendingState, searchResults, ::SearchStateBundle),
         draft,
         activeSessionId,
         combine(
@@ -507,7 +530,7 @@ internal class ChatViewModel(
                 ComposerBundle(composerState, voiceState, navigation, meterBundle, chrome)
             },
         ) { windowBundle, composerBundle -> composerBundle to windowBundle },
-    ) { cacheState, queryText, draftText, activeId, bundle ->
+    ) { cacheState, searchState, draftText, activeId, bundle ->
         val composerBundle = bundle.first
         val imageLoader = bundle.second.imageLoader
         val navigation = composerBundle.navigation
@@ -554,7 +577,7 @@ internal class ChatViewModel(
                         profileScopeState.key,
                     ),
                 )
-            }.filter { it.matchesProjectQuery(queryText) }
+            }.filter { it.matchesProjectQuery(searchState.query) }
         } else {
             emptyList()
         }
@@ -641,7 +664,9 @@ internal class ChatViewModel(
             sessionRows = buildSessionRows(
                 sessions = scopedSessions,
                 nowMillis = clock(),
-                query = queryText,
+                query = searchState.query,
+                searchPending = searchState.pending,
+                serverMatches = searchState.results,
                 archivedView = navigation.sidebarView.archivedVisible,
             ),
             archivedVisible = navigation.sidebarView.archivedVisible,
@@ -670,7 +695,7 @@ internal class ChatViewModel(
             projectLoading = selectedProject != null && navigation.loadingProjectId == selectedProject.id,
             activeSession = active,
             transcript = displayedActiveId?.let(cacheState.transcripts::get).orEmpty(),
-            query = queryText,
+            query = searchState.query,
             draft = draftText,
             isStreaming = active?.status in STREAMING_STATUSES,
             runningCount = running,
@@ -694,6 +719,77 @@ internal class ChatViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
+        // Desktop's sidebar search, and its reason: "Full-text search across
+        // *all* sessions (not just the loaded page) so 699 sessions stay
+        // findable. Debounced; loaded sessions are matched instantly
+        // client-side and merged ahead of the server hits."
+        // (`apps/desktop/src/app/chat/sidebar/index.tsx:619-653` @ `3ca096de`).
+        //
+        // Three things scope the answer that Desktop's effect does not have to
+        // think about, and all three belong in the key rather than in the body:
+        // the profile the rail is standing in, which backend this is, and
+        // whether the rail is showing sessions at all. See [SessionSearchKey].
+        viewModelScope.launch {
+            var lastScope: SessionSearchScope? = null
+            combine(
+                query,
+                profileScope,
+                cache.endpointGeneration,
+                sidebarGrouping,
+                selectedProjectId,
+            ) { raw, scope, endpoint, grouping, projectId ->
+                SessionSearchKey(
+                    query = raw.trim(),
+                    scope = SessionSearchScope(
+                        // The unified view has no union to ask for: the route
+                        // opens exactly one profile's database
+                        // (`hermes_cli/web_routers/sessions.py:227` @
+                        // `3ca096de`), so sending the *active* profile there
+                        // would merge one profile's server hits into an
+                        // all-profile list. Send none, which is the launch
+                        // profile — the same leg `sessionListProfiles` asks
+                        // first — and say so in the ledger.
+                        profile = if (scope.isAll) null else scope.sessionProfileParam,
+                        endpoint = endpoint,
+                    ),
+                    // The project overview reuses this same field as a filter
+                    // over projects and renders no session rows at all
+                    // (`ui/sessions/SessionList.kt`), so a backend session
+                    // search there costs a request per settled keystroke for an
+                    // answer nothing draws.
+                    sessionsView = grouping != SidebarGrouping.Project || projectId != null,
+                )
+            }
+                .distinctUntilChanged()
+                // Before the debounce, not after it. A scope change means a
+                // different set of conversations, and an endpoint change means
+                // a different machine that can recycle the same durable ids
+                // (`SessionCache.resetForEndpointSwitch`) — so the previous
+                // scope's stubs stop being an answer the moment the scope
+                // moves, not 200 ms and a round trip later. `collectLatest`
+                // below cancels the request that was in flight for them.
+                .onEach { key ->
+                    if (lastScope != null && lastScope != key.scope) searchResults.value = null
+                    lastScope = key.scope
+                }
+                .collectLatest { key ->
+                    if (key.query.isEmpty() || !key.sessionsView) {
+                        searchResults.value = null
+                        searchPendingState.value = false
+                        return@collectLatest
+                    }
+                    searchPendingState.value = true
+                    // `collectLatest` cancels this wait when the next keystroke
+                    // arrives, which is the whole debounce: the request is only
+                    // ever issued for a query that stood still.
+                    delay(SESSION_SEARCH_DEBOUNCE_MILLIS)
+                    // Null on refusal, on an absent route and on failure — the
+                    // list falls back to its client-side matches with no error
+                    // banner, exactly as Desktop swallows its own (`:641`).
+                    searchResults.value = repository.searchSessions(key.query, key.scope.profile)
+                    searchPendingState.value = false
+                }
+        }
         // The breakdown is a *transition* reader, not a poller. Desktop's effect
         // re-runs only when the focused session or `busy` changes
         // (`apps/desktop/src/app/shell/hooks/use-context-breakdown.ts:31-57` @
@@ -3175,7 +3271,49 @@ internal class ChatViewModel(
         val sessionsWithEarlierMessages: Set<String>,
     )
 
+    /**
+     * The three facts about search that the row builder reads together: what
+     * was typed, whether the backend is still answering it, and what it said.
+     * Bundled because `combine` takes a fixed arity and this state moves as one.
+     */
+    private data class SearchStateBundle(
+        val query: String,
+        val pending: Boolean,
+        val results: List<SessionSummary>?,
+    )
+
+    /**
+     * Which conversations a search answer would be *about*.
+     *
+     * Kept apart from the query because it is the half that invalidates an
+     * answer already on screen: a stub carries a durable id, and the next
+     * backend can recycle one (`SessionCache.resetForEndpointSwitch`), so a hit
+     * from the previous Gateway is not a narrower answer here — it is a row
+     * that may open a different conversation entirely.
+     */
+    private data class SessionSearchScope(val profile: String?, val endpoint: Long)
+
+    /**
+     * Everything the debounced search effect re-keys on: what was typed, whose
+     * conversations it is about, and whether the rail is showing sessions at
+     * all rather than the project overview, where the same field filters
+     * projects and no session row is drawn.
+     */
+    private data class SessionSearchKey(
+        val query: String,
+        val scope: SessionSearchScope,
+        val sessionsView: Boolean,
+    )
+
     companion object {
+        /**
+         * Desktop's own sidebar-search debounce, `setTimeout(…, 200)`
+         * (`apps/desktop/src/app/chat/sidebar/index.tsx:647` @ `3ca096de`).
+         * There is no minimum query length: one character is a legitimate
+         * search, and the wait is what keeps it from being a request per
+         * keystroke.
+         */
+        internal const val SESSION_SEARCH_DEBOUNCE_MILLIS = 200L
         private const val DRAFT_DEBOUNCE_MILLIS = 400L
         private const val COMPLETION_DEBOUNCE_MILLIS = 120L
         /** A slash directive may include arguments; @ and : stay one token. */

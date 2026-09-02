@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +64,8 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ALL_PINNED_NOTE
 import com.hermesagent.mobile.data.session.PINNED_SECTION_LABEL
+import com.hermesagent.mobile.data.session.RESULTS_SECTION_LABEL
+import com.hermesagent.mobile.data.session.noSessionsMatch
 import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.isUnread
 import com.hermesagent.mobile.data.session.label
@@ -248,10 +251,19 @@ fun SessionList(
             }
 
             if (searchIsVisible) {
+                // Desktop's own field, verbatim: placeholder `Search sessions…`
+                // with the ellipsis (`i18n/en.ts:2201`), spoken as `Search
+                // sessions` (`:2200`), behind the leading search glyph
+                // (`components/ui/search-field.tsx:69`) — all @ `3ca096de`.
+                // `Search projects` is this app's own: Desktop has no
+                // project-overview search field to copy, and the ledger in
+                // `docs/parity/session-search.md` says so.
                 SearchField(
                     value = query,
                     onValueChange = onQueryChange,
-                    placeholder = if (showingProjectOverview) "Search projects" else "Search sessions",
+                    placeholder = if (showingProjectOverview) "Search projects" else "Search sessions…",
+                    spokenName = if (showingProjectOverview) "Search projects" else "Search sessions",
+                    leadingGlyph = HermesIcon.Search,
                     modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
                 )
             }
@@ -366,15 +378,26 @@ fun SessionList(
                     )
                 }
 
+                // Reachable with a live query only inside the Archived view,
+                // where the list stays a local filter over its own pool and so
+                // renders no `Results` section to hold the sentence. Desktop
+                // says the same thing either way, so this is the same note the
+                // `Results` section draws — one sentence and no second line,
+                // exactly as Desktop's search empty has none
+                // (`sidebar/index.tsx:1618-1622` @ `3ca096de`). It is the
+                // section's own note rather than a shared [EmptyState], so the
+                // centring the wrapped sentence needs stays here instead of
+                // reaching every other empty state in the app.
+                rows.isEmpty() && query.isNotBlank() -> Box(listSlot) {
+                    NoResultsNote(query.trim())
+                }
+
                 rows.isEmpty() -> EmptyState(
-                    title = when {
-                        query.isBlank() -> "No sessions"
-                        else -> "Nothing matches"
-                    },
-                    description = when {
-                        query.isNotBlank() -> "No session title or preview contains “$query”."
-                        canCreate -> "Start one with the + above."
-                        else -> "Connect to a Gateway to start a session."
+                    title = "No sessions",
+                    description = if (canCreate) {
+                        "Start one with the + above."
+                    } else {
+                        "Connect to a Gateway to start a session."
                     },
                     modifier = listSlot,
                 )
@@ -415,6 +438,21 @@ fun SessionList(
                                         vertical = 12.dp,
                                     ),
                                 )
+
+                                is SessionListRow.ResultsLabel -> SectionLabel(
+                                    text = RESULTS_SECTION_LABEL,
+                                    modifier = Modifier
+                                        .padding(
+                                            start = HermesTheme.spacing.pageInset,
+                                            top = 14.dp,
+                                            bottom = 4.dp,
+                                        )
+                                        .testTag(RESULTS_SECTION_TAG),
+                                )
+
+                                is SessionListRow.NoResultsNote -> NoResultsNote(row.query)
+
+                                is SessionListRow.SearchSkeletons -> SearchSkeletons()
 
                                 is SessionListRow.Row -> SessionRow(
                                     session = row.session,
@@ -514,6 +552,7 @@ private fun SidebarViewMenu(
                     contentDescription = when {
                         searchVisible -> "Hide search"
                         searchesProjects -> "Search projects"
+                        // `Search sessions` (`i18n/en.ts:2200` @ `3ca096de`).
                         else -> "Search sessions"
                     }
                 }
@@ -780,17 +819,92 @@ private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.Divider -> "divider-${bucket.name}"
     is SessionListRow.PinnedLabel -> "divider-pinned"
     is SessionListRow.AllPinnedNote -> "note-all-pinned"
+    is SessionListRow.ResultsLabel -> "label-results"
+    is SessionListRow.NoResultsNote -> "note-no-results-${query}"
+    is SessionListRow.SearchSkeletons -> "search-skeletons"
     is SessionListRow.Row -> session.id
 }
 
 /** The leading `Pinned` section label. */
 internal const val PINNED_SECTION_TAG = "Pinned section"
 
+/** The one section a live query renders, in place of Pinned and Recents. */
+internal const val RESULTS_SECTION_TAG = "Results section"
+
+/** The placeholder rows shown while the backend search is still in flight. */
+internal const val SEARCH_SKELETON_TAG = "Search skeletons"
+
 /** The Archived view with nothing in it. */
 internal const val ARCHIVED_EMPTY_STATE = "Archived empty state"
 internal const val ARCHIVED_LOADING_STATE = "Archived loading state"
 internal const val ARCHIVED_FAILED_STATE = "Archived failed state"
 internal const val ARCHIVED_UNSUPPORTED_STATE = "Archived unsupported state"
+
+/**
+ * Desktop's `SidebarSessionSkeletons`, at this rail's scale
+ * (`apps/desktop/src/app/chat/sidebar/section-states.tsx:12-24` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): five placeholder rows, each a
+ * short title bar and a trailing action square, in the session row's own
+ * chrome. The widths are Desktop's five — `w-32 w-40 w-28 w-36 w-24`, which is
+ * Tailwind's 8/10/7/9/6 rem — so the ragged edge that says "these are
+ * placeholders, not content" is the same ragged edge.
+ *
+ * Hidden from the accessibility tree, exactly as Desktop hides it
+ * (`aria-hidden` at `:14`): there is nothing here to read out, and the
+ * surrounding `Results` label already says what is happening.
+ */
+@Composable
+private fun SearchSkeletons() {
+    val tokens = HermesTheme.tokens
+    Column(Modifier.testTag(SEARCH_SKELETON_TAG).clearAndSetSemantics {}) {
+        SKELETON_WIDTHS.forEach { width ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 2.dp)
+                    .heightIn(min = 32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .height(12.dp)
+                        .width(width)
+                        .background(tokens.strokeQuaternary, RoundedCornerShape(2.dp)),
+                )
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .background(tokens.strokeQuaternary.copy(alpha = 0.6f), RoundedCornerShape(2.dp)),
+                )
+            }
+        }
+    }
+}
+
+/** Desktop's `w-32 w-40 w-28 w-36 w-24` (`section-states.tsx:15` @ the pin). */
+private val SKELETON_WIDTHS = listOf(128.dp, 160.dp, 112.dp, 144.dp, 96.dp)
+
+/**
+ * The `Results` section settled on nothing: `No sessions match “{query}”.`
+ * (`i18n/en.ts:2203`, chosen at `sidebar/index.tsx:1618-1622` @ `3ca096de`).
+ *
+ * Centred, because the sentence quotes the reader's own query and a long one
+ * wraps; centring it here rather than in the shared `EmptyState` keeps the
+ * change inside the surface that needs it.
+ */
+@Composable
+private fun NoResultsNote(query: String) {
+    Text(
+        text = noSessionsMatch(query),
+        style = HermesTheme.type.scaffoldMeta,
+        color = HermesTheme.tokens.textTertiary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
+    )
+}
 
 @Composable
 private fun SessionRow(
