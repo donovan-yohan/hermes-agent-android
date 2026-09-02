@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -423,6 +424,17 @@ class HermesPreferences(private val context: Context) :
         context.hermesDataStore.edit { prefs -> prefs.remove(composerControlsKey(scope)) }
     }
 
+    override fun visibleModels(scope: ComposerControlsScope): Flow<Set<String>?> =
+        context.hermesDataStore.data.map { prefs ->
+            ModelVisibilityCodec.decode(prefs[modelVisibilityKeyFor(scope)])
+        }
+
+    override suspend fun saveVisibleModels(scope: ComposerControlsScope, keys: Set<String>) {
+        context.hermesDataStore.edit { prefs ->
+            prefs[modelVisibilityKeyFor(scope)] = ModelVisibilityCodec.encode(keys)
+        }
+    }
+
     /** Per-install ownership namespace; excluded from backup with the DataStore. */
     override suspend fun ownershipId(): String {
         var resolved: String? = null
@@ -540,6 +552,40 @@ class HermesPreferences(private val context: Context) :
 
 private fun composerControlsKey(scope: ComposerControlsScope) =
     stringPreferencesKey("composer.controls.v1.${scope.storageKey()}")
+
+private fun modelVisibilityKeyFor(scope: ComposerControlsScope) =
+    stringPreferencesKey("composer.visibleModels.v1.${scope.storageKey()}")
+
+/**
+ * The stored shortlist: a versioned document holding `provider::model` keys and
+ * the hide-all sentinels that go with them.
+ *
+ * Closed the same way [ComposerControlsCodec] is — a malformed or future
+ * document decodes to null, which is "never customised", so a downgrade shows
+ * the curated default rather than an arbitrary subset. An empty array is
+ * meaningful and is **not** null: it is "every provider hidden", which is a
+ * choice the sentinels exist to preserve.
+ */
+internal object ModelVisibilityCodec {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun encode(keys: Set<String>): String = json.encodeToString(
+        JsonObject(
+            mapOf(
+                "version" to JsonPrimitive("1"),
+                "keys" to JsonArray(keys.sorted().map { JsonPrimitive(it) }),
+            ),
+        ),
+    )
+
+    fun decode(raw: String?): Set<String>? = runCatching {
+        if (raw.isNullOrBlank()) return null
+        val root = json.parseToJsonElement(raw).jsonObject
+        if (root["version"]?.jsonPrimitive?.content != "1") return null
+        val keys = root["keys"] as? JsonArray ?: return null
+        keys.mapNotNull { (it as? JsonPrimitive)?.takeIf { primitive -> primitive.isString }?.content }.toSet()
+    }.getOrNull()
+}
 
 /** A closed, versioned value: malformed or future data fails closed to Gateway defaults. */
 internal object ComposerControlsCodec {

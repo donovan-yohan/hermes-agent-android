@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ModelCatalog
@@ -49,6 +50,8 @@ import com.hermesagent.mobile.data.composer.ModelOption
 import com.hermesagent.mobile.data.composer.ModelProvider
 import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
 import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.composer.effectiveVisibleKeys
+import com.hermesagent.mobile.data.composer.visibleModelGroups
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -71,8 +74,13 @@ internal fun ModelControl(
     modifier: Modifier = Modifier,
     /** Collapsed control renders one line: model · provider · effort/fast. */
     singleLine: Boolean = false,
+    /** The saved shortlist; null while it has never been customised. */
+    visibleModels: Set<String>? = null,
+    onToggleModelVisible: (provider: String, model: String) -> Unit = { _, _ -> },
+    onSetProviderModelsVisible: (provider: String, visible: Boolean) -> Unit = { _, _ -> },
 ) {
     var open by remember { mutableStateOf(false) }
+    var editingModels by remember { mutableStateOf(false) }
     val tokens = HermesTheme.tokens
     val selection = controls.selection ?: catalog?.effectiveSelection
     val selectedProvider = catalog?.providers?.firstOrNull { it.id == selection?.provider }
@@ -172,6 +180,7 @@ internal fun ModelControl(
             error = error,
             isSaving = isSaving,
             isDeferred = isDeferred,
+            visibleModels = visibleModels,
             onDismiss = {
                 open = false
                 onDismiss()
@@ -179,6 +188,28 @@ internal fun ModelControl(
             onSelectModel = onSelectModel,
             onSelectReasoning = onSelectReasoning,
             onSelectFast = onSelectFast,
+            // Two modal sheets cannot be stacked, so curation replaces the
+            // picker rather than opening inside it; dismissing it returns the
+            // person to the composer, which is where Desktop's own dialog
+            // leaves them (`model-visibility-dialog.tsx:82`).
+            onEditModels = {
+                open = false
+                editingModels = true
+            },
+        )
+    }
+
+    if (editingModels) {
+        ModelVisibilitySheet(
+            catalog = catalog,
+            visibleModels = visibleModels,
+            isLoading = isLoading,
+            onToggleModel = onToggleModelVisible,
+            onSetProviderVisible = onSetProviderModelsVisible,
+            onDismiss = {
+                editingModels = false
+                onDismiss()
+            },
         )
     }
 }
@@ -192,10 +223,12 @@ private fun ModelControlSheet(
     error: String?,
     isSaving: Boolean,
     isDeferred: Boolean,
+    visibleModels: Set<String>?,
     onDismiss: () -> Unit,
     onSelectModel: (ComposerModelSelection) -> Unit,
     onSelectReasoning: (ReasoningEffort) -> Unit,
     onSelectFast: (FastMode) -> Unit,
+    onEditModels: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     var modelQuery by remember { mutableStateOf("") }
@@ -256,14 +289,25 @@ private fun ModelControlSheet(
                 Text("Model choices are unavailable. Reconnect to the Gateway and try again.", style = HermesTheme.type.body, color = tokens.textTertiary,
                     modifier = Modifier.heightIn(min = HermesTheme.spacing.touchTarget).padding(vertical = 12.dp))
             } else {
-                val visibleProviders = catalog.providers.mapNotNull { provider ->
-                    val query = modelQuery.trim()
-                    val models = provider.models.filter { option ->
-                        query.isBlank() || option.label.contains(query, ignoreCase = true) ||
-                            option.id.contains(query, ignoreCase = true) || provider.label.contains(query, ignoreCase = true)
-                    }
-                    provider.takeIf { models.isNotEmpty() }?.copy(models = models)
-                }
+                // Collapsed, the picker shows the chosen models (or the
+                // curated default); typing spans every family regardless of
+                // visibility, and the current model is always kept. All three
+                // rules are `visibleModelGroups`, ported from Desktop's own
+                // `groupModels` (`model-catalog-menu.tsx:546-601` @ `3ca096de`).
+                //
+                // Resolved here, against the catalog actually fetched, exactly
+                // as Desktop resolves `shownKeys` before calling `groupModels`
+                // (`:179-188`): the shortlist reaching the picker is never the
+                // raw stored set, so the curated default honours the host's
+                // `featured_models` and a provider added since the last
+                // customisation is expanded rather than silently dropped.
+                val shownKeys = effectiveVisibleKeys(visibleModels, catalog.providers)
+                val visibleProviders = visibleModelGroups(
+                    providers = catalog.providers,
+                    query = modelQuery,
+                    visible = shownKeys,
+                    current = selected,
+                )
                 LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     visibleProviders.forEach { provider ->
                         item(key = "provider:${provider.id}") {
@@ -286,6 +330,11 @@ private fun ModelControlSheet(
                         modifier = Modifier.heightIn(min = HermesTheme.spacing.touchTarget).padding(vertical = 12.dp))
                 }
             }
+            // Desktop closes the catalog with a separator and this one row
+            // (`model-catalog-menu.tsx:527-535`): wherever a model can be
+            // picked, which models are on offer can be said.
+            HorizontalDivider(color = tokens.strokeTertiary)
+            EditModelsRow(onClick = onEditModels)
             HorizontalDivider(color = tokens.strokeTertiary)
             Text("Reasoning", style = HermesTheme.type.sectionLabel, color = tokens.textTertiary)
             val reasoningSupported = selectedOption?.supportsReasoning == true
@@ -359,6 +408,24 @@ private fun ModelControlSheet(
 }
 
 @Composable
+private fun EditModelsRow(onClick: () -> Unit) {
+    val tokens = HermesTheme.tokens
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag(EDIT_MODELS_TAG)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HermesIconGlyph(HermesIcon.SettingsGear, color = tokens.textTertiary, size = 12.sp)
+        Text(EDIT_MODELS, style = HermesTheme.type.body, color = tokens.textTertiary)
+    }
+}
+
+@Composable
 private fun ModelOptionRow(
     provider: ModelProvider,
     option: ModelOption,
@@ -367,7 +434,11 @@ private fun ModelOptionRow(
     onSelect: (ComposerModelSelection) -> Unit,
 ) {
     val tokens = HermesTheme.tokens
-    val chosen = provider.id == selected?.provider && option.id == selected.model
+    // A `-fast` sibling is collapsed into its base row, so a session running
+    // the fast variant still lights the family it belongs to — the same
+    // family lookup Desktop's `groupModels` pin uses (`:584-587` @ `3ca096de`).
+    val chosen = provider.id == selected?.provider &&
+        (option.id == selected.model || "${option.id}-fast".equals(selected.model, ignoreCase = true))
     Row(
         Modifier
             .fillMaxWidth()

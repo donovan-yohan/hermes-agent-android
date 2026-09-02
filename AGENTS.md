@@ -205,4 +205,6 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |
 | `docs/parity/profile-switcher.md` | Profile rail, active-profile scope, and the read-only roster: pin, adaptation, deviations |
 | `docs/parity/system-panel.md` | System panel and the backend updates sheet: pin, HTTP contract, adaptation, deviations |
+| `docs/parity/approval-mode.md` | The Manual/Smart/Off control: `approvals.mode` contract, profile scoping, optimistic write and rollback |
+| `docs/parity/model-visibility.md` | The model shortlist and the Models sheet: stored keys, sentinels, family collapse, picker filtering |
 | `docs/guides/termux-local-gateway.md` | Standing up a Termux `hermes serve` on the phone and adding it as a Local connection |

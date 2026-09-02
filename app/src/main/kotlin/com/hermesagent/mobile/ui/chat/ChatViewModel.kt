@@ -32,7 +32,10 @@ import com.hermesagent.mobile.data.composer.ComposerReference
 import com.hermesagent.mobile.data.composer.ControlMutationResult
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ModelCatalog
+import com.hermesagent.mobile.data.composer.ModelProvider
 import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
+import com.hermesagent.mobile.data.composer.setProviderVisibility
+import com.hermesagent.mobile.data.composer.toggleModelVisibility
 import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.SessionComposerControls
@@ -47,7 +50,11 @@ import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
+import com.hermesagent.mobile.data.gateway.APPROVAL_MODE_REJECTED
 import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
+import com.hermesagent.mobile.data.gateway.ApprovalMode
+import com.hermesagent.mobile.data.gateway.ApprovalModeOutcome
+import com.hermesagent.mobile.data.gateway.ApprovalModeState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.gateway.ProfileRouting
@@ -155,6 +162,13 @@ data class ComposerUiState(
     val runtime: ComposerRuntimeUiState = ComposerRuntimeUiState(),
     val codingContext: CodingContext = CodingContext.Unavailable,
     val codingReview: CodingReviewUiState = CodingReviewUiState.Closed,
+    /**
+     * The person's saved `provider::model` shortlist, or null while they have
+     * never customised it — in which case the curated default applies
+     * (`apps/desktop/src/store/model-visibility.ts:87-89` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     */
+    val visibleModels: Set<String>? = null,
 )
 
 /** Local, durable-queue-aware composer behavior projected alongside Gateway truth. */
@@ -291,6 +305,13 @@ data class ChatUiState(
      * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
      */
     val canShowEarlierMessages: Boolean = false,
+    /**
+     * How often this host asks before it acts, or null while that is not known
+     * or the Gateway is not connected — Desktop hides its own statusbar item on
+     * exactly the second condition (`use-statusbar-items.tsx:568-572` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     */
+    val approvalMode: ApprovalMode? = null,
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
@@ -332,6 +353,9 @@ internal class ChatViewModel(
     private val attachmentThumbnails = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
     private val activeSessionId = MutableStateFlow<String?>(null)
     private val activeContextBreakdown = MutableStateFlow<ContextBreakdown?>(null)
+    /** The saved model shortlist for the bound scope; null = never customised. */
+    private val visibleModels = MutableStateFlow<Set<String>?>(null)
+    private var visibleModelsLoad: Job? = null
     private val contextBreakdownLoading = MutableStateFlow(false)
     private var contextBreakdownJob: Job? = null
 
@@ -440,6 +464,14 @@ internal class ChatViewModel(
         )
     }
 
+    /**
+     * The two facts the chat chrome reads that are neither cache truth nor
+     * composer state: the host's approval posture, and the saved model
+     * shortlist. Bundled because the state assembly below is already at
+     * `combine`'s arity.
+     */
+    private val chromeState = combine(repository.approvalMode, visibleModels, ::ChromeBundle)
+
     val uiState: StateFlow<ChatUiState> = combine(
         cache.state,
         query,
@@ -470,8 +502,9 @@ internal class ChatViewModel(
                     localComposerState,
                 ) { navigation, local -> navigation.copy(localComposer = local) },
                 combine(activeContextBreakdown, contextBreakdownLoading, ::ContextMeterBundle),
-            ) { composerState, voiceState, navigation, meterBundle ->
-                ComposerBundle(composerState, voiceState, navigation, meterBundle)
+                chromeState,
+            ) { composerState, voiceState, navigation, meterBundle, chrome ->
+                ComposerBundle(composerState, voiceState, navigation, meterBundle, chrome)
             },
         ) { windowBundle, composerBundle -> composerBundle to windowBundle },
     ) { cacheState, queryText, draftText, activeId, bundle ->
@@ -644,11 +677,19 @@ internal class ChatViewModel(
             backgroundPendingInput = backgroundPending,
             connection = navigation.connection,
             notice = navigation.notice,
-            composer = composerBundle.composer.copy(runtime = runtime),
+            composer = composerBundle.composer.copy(
+                runtime = runtime,
+                visibleModels = composerBundle.chrome.visibleModels,
+            ),
             imageLoader = imageLoader,
             contextMeter = contextMeter,
             canShowEarlierMessages = displayedActiveId != null &&
                 displayedActiveId in bundle.second.sessionsWithEarlierMessages,
+            // Desktop hides the item unless the gateway socket is open
+            // (`use-statusbar-items.tsx:569`); this app hides it until the mode
+            // is also *known*, because it shows no optimistic default.
+            approvalMode = composerBundle.chrome.approval.mode
+                ?.takeIf { navigation.connection.status == GatewayConnectionStatus.Connected },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -815,6 +856,16 @@ internal class ChatViewModel(
                     // below. Invalidated *after* the routing is installed, so
                     // the re-read carries the scope the reader just chose.
                     if (!first) invalidateArchivedPool()
+                    // `approvals.mode` is read and written through a
+                    // `@_profile_scoped` handler (`tui_gateway/methods_config.py:181-182`,
+                    // `tui_gateway/server.py:14225-14226` @ `3ca096de`), so a
+                    // scope change is a change of subject: re-read it. The
+                    // first routing is the connection collector's to read.
+                    if (!first &&
+                        repository.connectionState.value.status == GatewayConnectionStatus.Connected
+                    ) {
+                        launch { runCatching { repository.refreshApprovalMode() } }
+                    }
                     // A scope that has not moved off the Gateway's own profile
                     // is what the connection's own bootstrap already listed;
                     // asking again at every launch would be a second
@@ -878,6 +929,9 @@ internal class ChatViewModel(
                     // profiles.list is a slow-lane call with its own budget, so
                     // it rides its own job and never delays the composer.
                     launch { runCatching { profileRepository.refreshProfiles() } }
+                    // The approval control shows nothing until this answers, so
+                    // it must not wait behind the composer's own reads.
+                    launch { runCatching { repository.refreshApprovalMode() } }
                 }
             }
         }
@@ -987,6 +1041,17 @@ internal class ChatViewModel(
                     newDraftPreference = preference
                     if (activeSessionId.value == null) publishFreshDraftControls()
                 }
+            }
+        }
+        // The shortlist is this endpoint's: another Gateway is another catalog,
+        // and its keys would name models this one does not serve. Cleared
+        // before the new scope's own document arrives.
+        visibleModels.value = null
+        visibleModelsLoad?.cancel()
+        visibleModelsLoad = viewModelScope.launch {
+            composerControlsStore.visibleModels(scope).collect { keys ->
+                if (!isComposerScopeBound(scope, hermesProfile)) return@collect
+                visibleModels.value = keys
             }
         }
         refreshComposer(activeSessionId.value)
@@ -1158,6 +1223,67 @@ internal class ChatViewModel(
         draftWrite = viewModelScope.launch {
             delay(DRAFT_DEBOUNCE_MILLIS)
             if (revision == draftRevision && id == activeSessionId.value) persistDraft(id, value)
+        }
+    }
+
+    /**
+     * Write the host's approval mode. Optimism, confirmation and rollback all
+     * belong to the repository, which owns the value; this only reports a
+     * refusal, because a control that silently springs back explains nothing.
+     */
+    fun selectApprovalMode(mode: ApprovalMode) {
+        if (repository.approvalMode.value.mode == mode) return
+        viewModelScope.launch {
+            val outcome = runCatching { repository.setApprovalMode(mode) }.getOrElse { failure ->
+                if (failure is CancellationException) throw failure
+                ApprovalModeOutcome.Rejected(APPROVAL_MODE_REJECTED)
+            }
+            if (outcome is ApprovalModeOutcome.Rejected) notice.value = outcome.safeMessage
+        }
+    }
+
+    /**
+     * Show or hide one model in the picker. The arithmetic — including the
+     * hide-all sentinel a provider's last model leaves behind — is
+     * `data/composer/ModelVisibility.kt`, ported from Desktop's own store.
+     */
+    fun toggleModelVisible(providerId: String, model: String) {
+        val providers = catalogProviders()
+        persistVisibleModels(toggleModelVisibility(visibleModels.value, providers, providerId, model))
+    }
+
+    /** Flip one provider's master switch, enabling or hiding every family it has. */
+    fun setProviderModelsVisible(providerId: String, visible: Boolean) {
+        val providers = catalogProviders()
+        persistVisibleModels(setProviderVisibility(visibleModels.value, providers, providerId, visible))
+    }
+
+    private fun catalogProviders(): List<ModelProvider> =
+        (composer.value.catalog as? ComposerCatalogUiState.Ready)?.catalog?.providers.orEmpty()
+
+    /**
+     * Publish first, then persist. The sheet is a run of rapid toggles and the
+     * DataStore write is asynchronous; waiting for disk would make every switch
+     * lag behind the finger, and the store's own emission re-publishes the same
+     * value when it lands.
+     *
+     * With no bound scope there is no disk slot, so the choice would be lost at
+     * the next bind with nothing on screen to say so. That is the same outcome
+     * as a failed write and it says the same sentence, and nothing is painted:
+     * a switch that springs back is worse than one that never moved.
+     */
+    private fun persistVisibleModels(keys: Set<String>) {
+        val scope = composerScope
+        if (scope == null) {
+            notice.value = MODEL_VISIBILITY_NOT_SAVED
+            return
+        }
+        visibleModels.value = keys
+        viewModelScope.launch {
+            runCatching { composerControlsStore.saveVisibleModels(scope, keys) }.onFailure { failure ->
+                if (failure is CancellationException) throw failure
+                notice.value = MODEL_VISIBILITY_NOT_SAVED
+            }
         }
     }
 
@@ -3030,11 +3156,17 @@ internal class ChatViewModel(
         val loading: Boolean = false,
     )
 
+    private data class ChromeBundle(
+        val approval: ApprovalModeState,
+        val visibleModels: Set<String>?,
+    )
+
     private data class ComposerBundle(
         val composer: ComposerUiState,
         val voice: VoiceUiState,
         val navigation: NavigationState,
         val contextMeter: ContextMeterBundle,
+        val chrome: ChromeBundle,
     )
 
     /** Connection-owned transcript projections: the image loader and the window. */
@@ -3115,3 +3247,10 @@ private const val UNREAD_FAILED = "Could not update unread state"
 
 /** What the Archived view says when its own read did not come back. */
 private const val ARCHIVED_LOAD_FAILED = "Could not load archived chats. Check the Gateway and try again."
+
+/**
+ * What a shortlist that never reached disk says. Desktop's own store writes to
+ * `localStorage` and reports nothing (`store/model-visibility.ts:91-99`); this
+ * app says which action did not stick and what to do next.
+ */
+private const val MODEL_VISIBILITY_NOT_SAVED = "That model list could not be saved. Try again."

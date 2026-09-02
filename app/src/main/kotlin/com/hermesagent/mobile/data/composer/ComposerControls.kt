@@ -82,6 +82,16 @@ data class ModelProvider(
     val id: String,
     val label: String = id,
     val models: List<ModelOption> = emptyList(),
+    /**
+     * The backend's curated shortlist for this provider — one flagship per lab,
+     * so an aggregator serving dozens of models does not flood the default
+     * picker (`hermes_cli/inventory.py:513-568`, `apps/desktop/src/types/
+     * hermes.ts:391-395` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Empty
+     * for a provider with no manifest entry, which is what makes
+     * [com.hermesagent.mobile.data.composer.DEFAULT_VISIBLE_PER_PROVIDER] the
+     * fallback rather than the rule.
+     */
+    val featured: List<String> = emptyList(),
 )
 
 data class ModelCatalog(

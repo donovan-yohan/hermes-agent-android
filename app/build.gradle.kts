@@ -70,6 +70,13 @@ android {
         animationsDisabled = true
         unitTests {
             isIncludeAndroidResources = true
+            // Gradle's default test JVM is 512m, and the Robolectric suite runs
+            // in one process: every Compose journey class it loads stays
+            // resident, so the ceiling is a function of how many there are, not
+            // of any one test. The suite crossed 512m here and the failure is
+            // not a readable one — the executor dies mid-class with an
+            // OutOfMemoryError attributed to whichever test was unlucky.
+            all { it.maxHeapSize = "1536m" }
             // Deliberately NOT isReturnDefaultValues: it stubs every method on
             // the mockable android.jar — including the java.* classes Android
             // ships — so a real call like CharArray.fill() silently becomes a

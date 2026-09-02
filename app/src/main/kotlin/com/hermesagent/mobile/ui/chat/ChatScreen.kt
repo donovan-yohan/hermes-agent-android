@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.attachments.ImageRefLines
+import com.hermesagent.mobile.data.gateway.ApprovalMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
@@ -248,6 +249,8 @@ private fun CompactLayout(
                 sessionArchived = state.activeSession?.archived == true,
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
+                approvalMode = state.approvalMode,
+                onSelectApprovalMode = actions.onSelectApprovalMode,
                 modifier = Modifier.statusBarsPadding(),
             )
             TranscriptPane(state, actions.onShowEarlierMessages, Modifier.weight(1f))
@@ -308,6 +311,8 @@ private fun WideLayout(
                 sessionArchived = state.activeSession?.archived == true,
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
+                approvalMode = state.approvalMode,
+                onSelectApprovalMode = actions.onSelectApprovalMode,
             )
             TranscriptPane(state, actions.onShowEarlierMessages, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
@@ -826,6 +831,8 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
             onSelectModel = actions.onSelectModel,
             onSelectReasoning = actions.onSelectReasoning,
             onSelectFast = actions.onSelectFast,
+            onToggleModelVisible = actions.onToggleModelVisible,
+            onSetProviderModelsVisible = actions.onSetProviderModelsVisible,
             onEditorSelectionChange = actions.onEditorSelectionChange,
             onCompletionSelected = actions.onCompletionSelected,
             onInsertText = actions.onInsertText,
@@ -878,6 +885,8 @@ private fun ChatTopBar(
     sessionArchived: Boolean = false,
     contextMeter: ContextMeterState? = null,
     onOpenContextUsage: () -> Unit = {},
+    approvalMode: ApprovalMode? = null,
+    onSelectApprovalMode: (ApprovalMode) -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
@@ -918,12 +927,23 @@ private fun ChatTopBar(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).statusAction(subtitle, gatewayDoor),
                     )
+                    // Desktop's right-hand statusbar array is ordered
+                    // `context-usage`, `session-timer`, then `approval-mode`
+                    // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:547-572`
+                    // @ `3ca096de`) and is laid out in a plain flex row, so
+                    // array order is left to right
+                    // (`apps/desktop/src/app/shell/statusbar-controls.tsx:119-123`):
+                    // Approvals sits *after* the meter, and the subtitle row
+                    // keeps that order.
                     if (contextMeter != null && contextMeter.label.isNotEmpty()) {
                         ContextMeter(
                             label = contextMeter.label,
                             detail = contextMeter.detail,
                             onClick = onOpenContextUsage,
                         )
+                    }
+                    if (approvalMode != null) {
+                        ApprovalModeChip(mode = approvalMode, onSelect = onSelectApprovalMode)
                     }
                 }
             }

@@ -192,6 +192,18 @@ lifecycle.
 - Top-bar context meter with live token usage and percentage glyph bar, opening a
   detailed Context Usage bottom sheet with localized category breakdowns,
   swatches, and compact token numbers.
+- Top-bar approval-mode control: Manual, Smart or Off, read and written per
+  active profile over `config.get`/`config.set approvals.mode`. The chosen mode
+  paints immediately and rolls back to the host's last confirmed answer if the
+  write is refused; nothing is shown until the host has actually answered, and a
+  profile switch hides it again until the new scope answers for itself. The
+  YOLO bypass toggle and a Settings safety section are not ported.
+- A per-connection model shortlist: the picker offers the chosen models (or the
+  backend's own curated default), typing still searches the whole catalog, the
+  session's current model is always offered, and an `Edit models…` row opens a
+  Models sheet with per-provider bulk switches. The shortlist never leaves the
+  device. Adding a provider is not ported and ships disabled behind the marker
+  chip.
 
 ### Coding and agent status
 

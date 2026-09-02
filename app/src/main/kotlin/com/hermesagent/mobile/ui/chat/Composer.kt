@@ -165,6 +165,8 @@ fun Composer(
     onSelectModel: (ComposerModelSelection) -> Unit = {},
     onSelectReasoning: (ReasoningEffort) -> Unit = {},
     onSelectFast: (FastMode) -> Unit = {},
+    onToggleModelVisible: (provider: String, model: String) -> Unit = { _, _ -> },
+    onSetProviderModelsVisible: (provider: String, visible: Boolean) -> Unit = { _, _ -> },
     onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },
     onCompletionSelected: (CompletionItem) -> Unit = {},
     onInsertText: (String) -> Unit = {},
@@ -298,7 +300,14 @@ fun Composer(
                                     .padding(end = 6.dp),
                             )
                         } else {
-                            ComposerModelControl(controls, onSelectModel, onSelectReasoning, onSelectFast)
+                            ComposerModelControl(
+                                controls,
+                                onSelectModel,
+                                onSelectReasoning,
+                                onSelectFast,
+                                onToggleModelVisible,
+                                onSetProviderModelsVisible,
+                            )
                         }
                         VoiceActionCluster(
                             voiceState = voiceState,
@@ -323,6 +332,8 @@ private fun ComposerModelControl(
     onSelectModel: (ComposerModelSelection) -> Unit,
     onSelectReasoning: (ReasoningEffort) -> Unit,
     onSelectFast: (FastMode) -> Unit,
+    onToggleModelVisible: (provider: String, model: String) -> Unit,
+    onSetProviderModelsVisible: (provider: String, visible: Boolean) -> Unit,
 ) {
     ModelControl(
         catalog = (controls.catalog as? ComposerCatalogUiState.Ready)?.catalog,
@@ -337,6 +348,9 @@ private fun ComposerModelControl(
         onSelectReasoning = onSelectReasoning,
         onSelectFast = onSelectFast,
         singleLine = true,
+        visibleModels = controls.visibleModels,
+        onToggleModelVisible = onToggleModelVisible,
+        onSetProviderModelsVisible = onSetProviderModelsVisible,
     )
 }
 

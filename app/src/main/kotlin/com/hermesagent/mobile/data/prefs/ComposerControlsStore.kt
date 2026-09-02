@@ -6,6 +6,7 @@ import com.hermesagent.mobile.data.composer.ReasoningEffort
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 /**
@@ -44,6 +45,20 @@ interface ComposerControlsStore {
 
     suspend fun saveManual(scope: ComposerControlsScope, preference: NewDraftComposerPreference)
     suspend fun clearManual(scope: ComposerControlsScope)
+
+    /**
+     * Which `provider::model` keys the picker offers, or null while the person
+     * has never customised the list — in which case the curated default
+     * applies. Desktop keeps the same nullable set in one `localStorage` entry
+     * (`apps/desktop/src/store/model-visibility.ts:6,87-89` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`); it is scoped per connection
+     * here for the same reason a saved model pick is — two Gateways are two
+     * catalogs, and a shortlist that crossed between them would name models the
+     * other host does not have.
+     */
+    fun visibleModels(scope: ComposerControlsScope): Flow<Set<String>?> = flowOf(null)
+
+    suspend fun saveVisibleModels(scope: ComposerControlsScope, keys: Set<String>) = Unit
 }
 
 /** Small in-memory implementation for ViewModel and pure persistence tests. */
@@ -51,8 +66,16 @@ internal class TransientComposerControlsStore(
     initialScope: ComposerControlsScope = ComposerControlsScope("transient", "default"),
 ) : ComposerControlsStore {
     private val state = MutableStateFlow<Map<ComposerControlsScope, NewDraftComposerPreference>>(emptyMap())
+    private val visible = MutableStateFlow<Map<ComposerControlsScope, Set<String>>>(emptyMap())
     private val scope = MutableStateFlow(initialScope)
     override val activeScope: Flow<ComposerControlsScope> = scope
+
+    override fun visibleModels(scope: ComposerControlsScope): Flow<Set<String>?> =
+        visible.map { it[scope] }
+
+    override suspend fun saveVisibleModels(scope: ComposerControlsScope, keys: Set<String>) {
+        visible.value = visible.value + (scope to keys.toSet())
+    }
 
     override fun preference(scope: ComposerControlsScope): Flow<NewDraftComposerPreference?> =
         state.map { it[scope] }

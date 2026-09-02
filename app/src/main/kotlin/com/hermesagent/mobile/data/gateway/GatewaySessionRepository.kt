@@ -123,6 +123,25 @@ interface GatewaySessionRepository {
     /** Active turns submitted or live on this client, keyed by durable session ID. */
     val activeTurns: StateFlow<Set<String>> get() = NO_ACTIVE_TURNS
 
+    /**
+     * How often this host asks before it acts, for the profile the app is
+     * scoped to. [ApprovalModeState.mode] is null until [refreshApprovalMode]
+     * has been answered; a repository with no approval leg stays null forever,
+     * which is what hides the control rather than showing a guess.
+     */
+    val approvalMode: StateFlow<ApprovalModeState> get() = noApprovalMode()
+
+    /**
+     * Read `config.get {key: "approvals.mode"}` for the active profile. Call it
+     * on connect and whenever the profile scope moves; failure is silent and
+     * leaves the last known answer, because this is a status read.
+     */
+    suspend fun refreshApprovalMode() = Unit
+
+    /** Write `config.set {key: "approvals.mode"}`; rolls back on refusal. */
+    suspend fun setApprovalMode(mode: ApprovalMode): ApprovalModeOutcome =
+        ApprovalModeOutcome.Rejected(APPROVAL_MODE_REJECTED)
+
     suspend fun respondToPendingInput(key: PendingInputKey, action: PendingInputAction): PendingInputResponse =
         error("Pending input responses are not implemented by this repository.")
     suspend fun refreshSessions()
@@ -717,6 +736,7 @@ internal class LiveGatewaySessionRepository(
     override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
     private val mutableActiveTurns = MutableStateFlow<Set<String>>(emptySet())
     override val activeTurns: StateFlow<Set<String>> = mutableActiveTurns
+    override val approvalMode: StateFlow<ApprovalModeState> get() = approvalModeFlow
 
     /**
      * Requests *this* connection retired: answered, expired, superseded, or
@@ -876,6 +896,23 @@ internal class LiveGatewaySessionRepository(
     private val localSubmitStartedAtByRuntime = mutableMapOf<String, Long>()
     private val liveTurnRuntimeIds = mutableSetOf<String>()
     private val contextBreakdownBySession = mutableMapOf<String, ContextBreakdown>()
+    private val approvalModeFlow = MutableStateFlow(ApprovalModeState())
+
+    /**
+     * The last answer this connection was actually given, as opposed to the
+     * optimistic one on screen. A refused write rolls back to this rather than
+     * to a default, mirroring Desktop's `confirmedModes`
+     * (`apps/desktop/src/store/approval-mode.ts:8,90-95` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     */
+    private var confirmedApprovalMode: ApprovalMode? = null
+
+    /**
+     * Desktop's `revisions` fence (`store/approval-mode.ts:7,16-21`): a read or
+     * a write that has been overtaken publishes nothing, so a slow `config.get`
+     * cannot land on top of a newer `config.set`.
+     */
+    private var approvalModeRevision = 0L
 
     init {
         scope.launch {
@@ -907,6 +944,12 @@ internal class LiveGatewaySessionRepository(
                     composerStatusRuntimeIds.clear()
                     queuedPromptDrainReadyBatchIdsByRuntime.clear()
                     contextBreakdownBySession.clear()
+                    // The next backend is a different host with its own
+                    // approvals config; nothing read from the previous one may
+                    // survive, and nothing may be shown until it answers.
+                    approvalModeRevision++
+                    confirmedApprovalMode = null
+                    approvalModeFlow.value = ApprovalModeState()
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
@@ -994,8 +1037,28 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    /**
+     * Install the profile scope every session RPC is routed under.
+     *
+     * A change of `activeProfile` is a change of subject for `approvals.mode`:
+     * both handlers are `@_profile_scoped` (`tui_gateway/methods_config.py:181-182`,
+     * `tui_gateway/server.py:14225-14226` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so the answer this app is
+     * holding belongs to the profile it just left. It is dropped here — flow,
+     * confirmed value and revision fence together, the way the endpoint switch
+     * drops them — so the chip shows nothing until the new scope's own
+     * `config.get` answers, and keeps showing nothing if that read fails. A
+     * control that names a security posture must never name another profile's.
+     */
     override fun setProfileRouting(routing: ProfileRouting) {
-        synchronized(stateLock) { profileRouting = routing }
+        synchronized(stateLock) {
+            val previous = profileRouting.activeProfile
+            profileRouting = routing
+            if (previous == routing.activeProfile) return
+            approvalModeRevision++
+            confirmedApprovalMode = null
+            approvalModeFlow.value = ApprovalModeState()
+        }
     }
 
     override suspend fun refreshSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.Refresh) }
@@ -2025,6 +2088,144 @@ internal class LiveGatewaySessionRepository(
             contextBreakdownBySession[trimmed] = parsed
         }
         return parsed
+    }
+
+    /**
+     * `config.get {key: "approvals.mode", profile}`
+     * (`tui_gateway/methods_config.py:290-294` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     *
+     * Desktop sends no `profile` (`store/approval-mode.ts:56`) and therefore
+     * always reads the launch profile's config. This app sends the profile the
+     * rail is scoped to, because the handler is `@_profile_scoped`
+     * (`methods_config.py:181-182`, `server.py:2463-2482`) and every other
+     * session RPC here is already scoped that way — reading one profile's
+     * approvals while writing another's would be worse than either.
+     *
+     * A status read: a failure keeps the last confirmed answer rather than
+     * blanking a control the person may be looking at.
+     */
+    override suspend fun refreshApprovalMode() {
+        val connection = connectionSnapshot()
+        val revision = synchronized(stateLock) { ++approvalModeRevision }
+        val mode = try {
+            val response = connection.client.request("config.get", approvalModeParams()).asObject("config.get")
+            // Inside the `try` so the whole read is silent: an endpoint switch
+            // mid-flight makes [ensureCurrent] throw, and that is a stale
+            // answer to drop rather than an error to raise.
+            synchronized(stateLock) { ensureCurrent(connection) }
+            ApprovalMode.fromWire(response.string("value"))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return
+        }
+        publishApprovalMode(mode, revision)
+    }
+
+    /**
+     * `config.set {key: "approvals.mode", value, profile}`
+     * (`tui_gateway/server.py:14584-14598` @ the same SHA).
+     *
+     * Optimistic, the way Desktop's `setApprovalModeForProfile` is
+     * (`store/approval-mode.ts:67-97`): the chosen mode paints immediately, the
+     * Gateway's echoed value confirms it, and a refusal — `4002` for a value
+     * outside `manual|smart|off`, or a transport failure — rolls back to the
+     * last confirmed mode. The Gateway also re-emits `session.info` for every
+     * live session on success (`:14594-14597`), which reconciles the same value
+     * through [applyStreamedApprovalMode] for any other client on this host.
+     */
+    override suspend fun setApprovalMode(mode: ApprovalMode): ApprovalModeOutcome {
+        val connection = connectionSnapshot()
+        // The paint happens inside the same critical section that produced the
+        // fence it is guarded by, so a concurrent publish cannot be overwritten
+        // by an optimistic value from between the bump and the assignment.
+        val revision = synchronized(stateLock) {
+            val fence = ++approvalModeRevision
+            approvalModeFlow.value = approvalModeFlow.value.copy(mode = mode)
+            fence
+        }
+        return try {
+            val response = connection.client.request(
+                "config.set",
+                buildJsonObject {
+                    put("key", JsonPrimitive(APPROVALS_MODE_KEY))
+                    put("value", JsonPrimitive(mode.wireValue))
+                    activeProfileParam()?.let { put("profile", JsonPrimitive(it)) }
+                },
+            ).asObject("config.set")
+            synchronized(stateLock) { ensureCurrent(connection) }
+            // The echo is `{"key": …, "value": raw}` (`server.py:14598`), and it
+            // is what confirms the write. An echo that carries no `value` at all
+            // confirms the mode the host just accepted rather than resolving a
+            // null through `fromWire` to Manual, which would silently revert a
+            // write that landed. Desktop normalises the same null to `manual`
+            // (`store/approval-mode.ts:82`); on a phone this chip is the only
+            // place the posture is named, so an unasked-for reversion is worse.
+            publishApprovalMode(response.string("value")?.let(ApprovalMode::fromWire) ?: mode, revision)
+            ApprovalModeOutcome.Applied
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            synchronized(stateLock) {
+                if (approvalModeRevision == revision) {
+                    approvalModeFlow.value = approvalModeFlow.value.copy(mode = confirmedApprovalMode)
+                }
+            }
+            ApprovalModeOutcome.Rejected(APPROVAL_MODE_REJECTED)
+        }
+    }
+
+    private fun approvalModeParams(): JsonObject = buildJsonObject {
+        put("key", JsonPrimitive(APPROVALS_MODE_KEY))
+        activeProfileParam()?.let { put("profile", JsonPrimitive(it)) }
+    }
+
+    private fun activeProfileParam(): String? =
+        synchronized(stateLock) { profileRouting }.activeProfile
+
+    private fun publishApprovalMode(mode: ApprovalMode, revision: Long) {
+        synchronized(stateLock) {
+            if (approvalModeRevision != revision) return
+            confirmedApprovalMode = mode
+            approvalModeFlow.value = approvalModeFlow.value.copy(mode = mode)
+        }
+    }
+
+    /**
+     * Reconcile the `approval_mode` / `yolo` pair a streamed `session.info`
+     * carries (`tui_gateway/server.py:7659-7660` @ `3ca096de`).
+     *
+     * **Only while the app is scoped to the Gateway's launch profile.** Those
+     * two fields come from `_load_approval_mode()`, which resolves under
+     * whichever `HERMES_HOME` is bound when the event is emitted
+     * (`server.py:5953-5971`). The `config.set` handler emits inside its own
+     * `@_profile_scoped` binding, so that one reports the profile that was
+     * written; every other emit — a turn start, a turn end, a resume — happens
+     * outside any binding and reports the *launch* profile's config. Accepting
+     * those while scoped elsewhere would flip the control to another profile's
+     * posture, so a named scope takes its answer from the scoped `config.get`
+     * and `config.set` echo alone.
+     */
+    private fun applyStreamedApprovalMode(payload: JsonObject) {
+        if ("approval_mode" !in payload && "yolo" !in payload) return
+        if (activeProfileParam() != null) return
+        synchronized(stateLock) {
+            // This is an authoritative answer, so it also fences any read or
+            // write still in flight: whatever they were told is older.
+            approvalModeRevision++
+            val next = if ("approval_mode" in payload) {
+                confirmedApprovalMode = ApprovalMode.fromWire(payload.string("approval_mode"))
+                approvalModeFlow.value.copy(mode = confirmedApprovalMode)
+            } else {
+                approvalModeFlow.value
+            }
+            approvalModeFlow.value = if ("yolo" in payload) {
+                next.copy(bypassActive = payload.boolean("yolo") == true)
+            } else {
+                next
+            }
+        }
     }
 
     override suspend fun setLiveModel(
@@ -3532,6 +3733,7 @@ internal class LiveGatewaySessionRepository(
                     }
                 }
                 reconcileSessionInfo(durableId, runtimeId, running, payload.status())
+                applyStreamedApprovalMode(payload)
                 projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
                 // The Gateway emits this settled snapshot after a turn ends but
                 // before its queued next-turn prompt drains. Preserve the queue
@@ -4901,6 +5103,17 @@ internal fun parseModelCatalog(result: JsonElement): ModelCatalog {
             id = id,
             label = provider.string("name")?.trim()?.takeIf(String::isNotEmpty) ?: id,
             models = models,
+            // The backend's own shortlist, when it ships one
+            // (`hermes_cli/inventory.py:513-568` @ `3ca096de`). It decides what
+            // the Models sheet shows before anyone customises it, so an
+            // aggregator's hundred rows are not the default view.
+            // Strings only, kept verbatim: the field is typed `string[]`
+            // (`apps/desktop/src/types/hermes.ts:391-395`) and is matched with
+            // `featured.includes(family.id)` (`store/model-visibility.ts:127`),
+            // which neither coerces a number nor trims whitespace.
+            featured = (provider["featured_models"] as? JsonArray).orEmpty().mapNotNull { featured ->
+                (featured as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf(String::isNotEmpty)
+            },
         )
     }
     return ModelCatalog(
