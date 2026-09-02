@@ -91,7 +91,7 @@ lifecycle.
 - Per-session drafts, running-turn isolation, and concurrent sends to distinct
   idle sessions. Identifier-less events stay on one safe runtime pin rather
   than being painted into whichever session is visible.
-- Session rename and archive do not have mobile product surfaces yet. Search is
+- Session archive does not have a mobile product surface yet. Search is
   local filtering rather than a backend query.
 
 ### Profiles

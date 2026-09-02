@@ -14,6 +14,7 @@ import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ComposerTodoState
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ToolActivity
@@ -4336,6 +4337,390 @@ class GatewaySessionRepositoryTest {
         assertEquals(SessionStatus.Working, cache.session("tip-a")?.status)
     }
 
+    @Test
+    fun `renameSession with live runtime id calls session_title RPC and updates cache`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Old Title", "", CLOCK, status = SessionStatus.Working))
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        val result = repository.renameSession("durable-a", "New Custom Title")
+
+        assertEquals("New Custom Title", result)
+        assertEquals("session.title", rpc.calls.last().method)
+        assertEquals("runtime-a", rpc.calls.last().params.string("session_id"))
+        assertEquals("New Custom Title", rpc.calls.last().params.string("title"))
+        assertEquals("New Custom Title", cache.session("durable-a")?.title)
+        assertEquals(SessionStatus.Idle, cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `renameSession without live runtime id calls REST PATCH and updates cache`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            assertEquals("PATCH", request.method)
+            assertEquals("api/sessions/durable-b", request.path)
+            restPage("""{"ok":true,"title":"New REST Title"}""")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-b", "Old Title", "", CLOCK, remoteProfile = "work"))
+
+        val result = repository.renameSession("durable-b", "New REST Title")
+
+        assertEquals("New REST Title", result)
+        assertEquals("New REST Title", cache.session("durable-b")?.title)
+    }
+
+    @Test
+    fun `renameSession with empty string clears title via REST PATCH even when runtime bound`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        var patchCalled = false
+        val http = FakeGatewayRest { request ->
+            patchCalled = true
+            assertEquals("PATCH", request.method)
+            assertEquals("api/sessions/durable-a", request.path)
+            restPage("""{"ok":true,"title":""}""")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Old Title", "", CLOCK))
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        val result = repository.renameSession("durable-a", "   ")
+
+        assertTrue(patchCalled)
+        assertEquals("", result)
+        assertEquals("", cache.session("durable-a")?.title)
+    }
+
+    /**
+     * An RPC refusal is not the end of the rename. Desktop catches it and goes
+     * to REST instead
+     * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:86-92` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): the socket can simply be
+     * mid-reconnect, and `PATCH /api/sessions/{id}` still renames any row that
+     * already has a persisted one.
+     */
+    @Test
+    fun `renameSession falls back to REST PATCH when the session_title RPC refuses`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val patched = mutableListOf<String>()
+        val http = FakeGatewayRest { request ->
+            assertEquals("PATCH", request.method)
+            assertEquals("api/sessions/durable-a", request.path)
+            val buffer = okio.Buffer()
+            request.body?.writeTo(buffer)
+            patched += buffer.readUtf8()
+            restPage("""{"ok":true,"title":"New Title"}""")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Old Title", "", CLOCK))
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        rpc.titleFailure = GatewayRpcError(5007, "Internal error")
+        val result = repository.renameSession("durable-a", "New Title")
+
+        // The live lane was tried first, and the same title went out over REST.
+        assertEquals("New Title", rpc.call("session.title").params.string("title"))
+        assertEquals(listOf("""{"title":"New Title"}"""), patched)
+        assertEquals("New Title", result)
+        assertEquals("New Title", cache.session("durable-a")?.title)
+    }
+
+    /**
+     * And when REST cannot do it either, what the person is told is REST's
+     * answer — the last thing that actually failed — rather than the refusal
+     * from a lane the app silently moved off.
+     */
+    @Test
+    fun `renameSession reports the REST failure when the RPC and REST both refuse`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        var statusCode = 400
+        val http = FakeGatewayRest { GatewayHttpResult.Rejected(statusCode, "error") }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Old Title", "", CLOCK))
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        rpc.titleFailure = GatewayRpcError(4021, "Title is required")
+        try {
+            repository.renameSession("durable-a", "New Title")
+            org.junit.Assert.fail("expected error")
+        } catch (e: GatewayRpcException) {
+            assertEquals("Rename failed. Try a different title.", e.message)
+        }
+
+        statusCode = 404
+        rpc.titleFailure = GatewayRpcError(4001, "Session not found")
+        try {
+            repository.renameSession("durable-a", "New Title")
+            org.junit.Assert.fail("expected error")
+        } catch (e: GatewayRpcException) {
+            assertEquals("Rename failed. That session is no longer available.", e.message)
+        }
+
+        // Nothing was written on the way through, either.
+        assertEquals("Old Title", cache.session("durable-a")?.title)
+    }
+
+    /**
+     * A rename and a `session.list` refresh overlap all the time: the refresh is
+     * on a timer and the rename is a tap. What makes the overlap safe is the
+     * cache's own rule (`AGENTS.md`, "Backend-authoritative data merges, never
+     * clobbers") — a listed row *layers* over what is already known, so it
+     * cannot take away the live status and progress the list contract never
+     * carried, and the rename's own upsert moves the title and nothing else.
+     *
+     * The page that lands here is the Gateway as it was *before* the rename:
+     * still `First`, and silent about the running turn. It is server truth for
+     * as long as it is the newest thing this client has been told, and the
+     * rename — which the Gateway has since persisted — lands on top of it
+     * rather than under it.
+     */
+    @Test
+    fun `renameSession outlives a session list refresh that lands mid-rename`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { restPage(REST_PAGE_ONE) }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        runCurrent()
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+        // A live turn on the row being renamed, and one row nothing touches.
+        cache.upsertSession(
+            cache.session("durable-a")!!.copy(
+                status = SessionStatus.Working,
+                progress = SessionProgress("thinking", "Reading the diff"),
+            ),
+        )
+        val untouched = cache.session("durable-b")!!
+
+        // The rename is in flight when the refresh's page arrives.
+        val held = CompletableDeferred<JsonElement>()
+        rpc.titleResponse = held
+        val rename = async { repository.renameSession("durable-a", "New Custom Title") }
+        runCurrent()
+        repository.refreshSessions()
+        runCurrent()
+
+        // The page is pre-rename truth, and it carries no live turn.
+        assertEquals("First", cache.session("durable-a")?.title)
+        assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+
+        held.complete(json("""{"title":"New Custom Title"}"""))
+        assertEquals("New Custom Title", rename.await())
+
+        assertEquals("New Custom Title", cache.session("durable-a")?.title)
+        assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+        assertEquals(
+            SessionProgress("thinking", "Reading the diff"),
+            cache.session("durable-a")?.progress,
+        )
+        // A row neither of them mentioned is the same instance it was: a no-op
+        // upsert does not recompose the list.
+        assertSame(untouched, cache.session("durable-b"))
+    }
+
+    @Test
+    fun `renameSession maps REST 400 and 404 to safe user-facing errors`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        var statusCode = 400
+        val http = FakeGatewayRest {
+            GatewayHttpResult.Rejected(statusCode, "error")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+
+        try {
+            repository.renameSession("durable-b", "New Title")
+            org.junit.Assert.fail("expected error")
+        } catch (e: GatewayRpcException) {
+            assertEquals("Rename failed. Try a different title.", e.message)
+        }
+
+        statusCode = 404
+        try {
+            repository.renameSession("durable-b", "New Title")
+            org.junit.Assert.fail("expected error")
+        } catch (e: GatewayRpcException) {
+            assertEquals("Rename failed. That session is no longer available.", e.message)
+        }
+    }
+
+    @Test
+    fun `deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "To delete", "", CLOCK))
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        repository.deleteSession("durable-a")
+
+        assertEquals("session.delete", rpc.calls.last().method)
+        assertEquals("runtime-a", rpc.calls.last().params.string("session_id"))
+        assertNull(cache.session("durable-a"))
+    }
+
+    @Test
+    fun `deleteSession refuses deletion of running session with 4023 safe error`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Running chat", "", CLOCK))
+        rpc.resumeA = RESUME_RUNNING
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        try {
+            repository.deleteSession("durable-a")
+            org.junit.Assert.fail("expected refusal")
+        } catch (e: GatewayRpcException) {
+            assertEquals("Cannot delete a running session. Stop the turn first and try again.", e.message)
+        }
+        assertEquals("Running chat", cache.session("durable-a")?.title)
+    }
+
+    @Test
+    fun `deleteSession handles RPC 4007 not found as already deleted`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "To delete", "", CLOCK))
+        repository.loadComposerControls("durable-a")
+        runCurrent()
+
+        rpc.deleteFailure = GatewayRpcError(4007, "Session not found")
+        repository.deleteSession("durable-a")
+
+        assertNull(cache.session("durable-a"))
+    }
+
+    @Test
+    fun `deleteSession without live runtime id calls REST DELETE and removes session from cache`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        var deleteCalled = false
+        val http = FakeGatewayRest { request ->
+            deleteCalled = true
+            assertEquals("DELETE", request.method)
+            assertEquals("api/sessions/durable-b", request.path)
+            assertEquals("work", request.query["profile"])
+            restPage("""{"ok":true,"already_absent":false}""")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-b", "To delete", "", CLOCK, remoteProfile = "work"))
+
+        repository.deleteSession("durable-b")
+
+        assertTrue(deleteCalled)
+        assertNull(cache.session("durable-b"))
+    }
+
+    @Test
+    fun `deleteSession handles REST 404 as success and removes session from cache`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest {
+            GatewayHttpResult.Rejected(404, "not found")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-b", "To delete", "", CLOCK))
+
+        repository.deleteSession("durable-b")
+
+        assertNull(cache.session("durable-b"))
+    }
+
     /**
      * A [GatewayHttp] that answers the session-list route from a script and
      * remembers every attempt.
@@ -4407,6 +4792,9 @@ class GatewaySessionRepositoryTest {
         var imageAttachResponse: CompletableDeferred<JsonElement>? = null
         val detachResults = ArrayDeque<Boolean>()
         var eventOverflowed = false
+        var titleFailure: Throwable? = null
+        var titleResponse: CompletableDeferred<JsonElement>? = null
+        var deleteFailure: Throwable? = null
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
@@ -4519,6 +4907,21 @@ class GatewaySessionRepositoryTest {
                         throw failure
                     }
                     json("""{"attached":true,"name":"notes.txt","path":"/gw/notes.txt","ref_text":"@file:`notes.txt`","uploaded":true}""")
+                }
+                "session.title" -> {
+                    titleFailure?.let { failure ->
+                        titleFailure = null
+                        throw failure
+                    }
+                    val t = params.string("title") ?: "Renamed title"
+                    titleResponse?.await() ?: json("""{"title":"$t"}""")
+                }
+                "session.delete" -> {
+                    deleteFailure?.let { failure ->
+                        deleteFailure = null
+                        throw failure
+                    }
+                    json("{}")
                 }
                 else -> error("unexpected method $method")
             }

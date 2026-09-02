@@ -111,6 +111,8 @@ fun SessionList(
     onSelect: (String) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
+    onRenameSession: (suspend (String, String) -> Unit)? = null,
+    onDeleteSession: (suspend (String) -> Unit)? = null,
     /**
      * Rail chrome above the section header — the connection switcher. A slot
      * rather than a parameter block so this list keeps knowing only about
@@ -332,6 +334,8 @@ fun SessionList(
                                     } else {
                                         null
                                     },
+                                    onRename = onRenameSession?.let { rename -> { newTitle -> rename(row.session.id, newTitle) } },
+                                    onDelete = onDeleteSession?.let { delete -> { delete(row.session.id) } },
                                 )
                             }
                         }
@@ -585,6 +589,8 @@ private fun SessionRow(
     onClick: () -> Unit,
     /** The owning profile's chip, or null when the scope already names it. */
     owner: HermesProfile? = null,
+    onRename: (suspend (String) -> Unit)? = null,
+    onDelete: (suspend () -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
     val dot = session.status.dot(tokens)
@@ -676,7 +682,10 @@ private fun SessionRow(
         // above keeps the one authoritative spoken label it already owns.
         SessionActionsControl(
             sessionId = session.id,
+            sessionTitle = session.title,
             modifier = Modifier.align(Alignment.CenterEnd),
+            onRename = onRename,
+            onDelete = onDelete,
         )
     }
 }

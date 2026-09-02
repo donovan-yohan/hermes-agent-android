@@ -96,7 +96,7 @@ class SessionActionsMenuTest {
         // … and within a group the caller's own order survives, so a later
         // slice controls where its verb sits among its neighbours.
         assertEquals(
-            listOf("Copy ID", "Mark as unread", "Pin", "Rename"),
+            listOf("Copy ID", "Mark as unread", "Pin", "Rename…"),
             plan.split()[1].map { it.label },
         )
     }
@@ -143,12 +143,14 @@ class SessionActionsMenuTest {
     }
 
     @Test
-    fun `this build offers only the verb it can actually perform`() {
-        // Rename (S14) and Delete (S15) append themselves here. A permanently
-        // disabled item would be the menu lying about the app.
-        assertEquals(listOf("Copy ID"), sessionActionItems("s-1").map { it.label })
+    fun `this build offers only the verbs it can actually perform`() {
+        assertEquals(listOf("Rename…", "Copy ID", "Delete"), sessionActionItems("s-1").map { it.label })
         assertEquals(
-            listOf(SessionActionsGroup.Identity),
+            listOf(
+                SessionActionsGroup.Identity,
+                SessionActionsGroup.Identity,
+                SessionActionsGroup.Danger,
+            ),
             sessionActionItems("s-1").map { it.group },
         )
     }
@@ -161,8 +163,8 @@ class SessionActionsMenuTest {
 
     @Test
     fun `the copy verb confirms in place rather than raising a notice`() {
-        val idle = sessionActionItems("s-1").single()
-        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied).single()
+        val idle = sessionActionItems("s-1")[1]
+        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied)[1]
 
         assertEquals("Copy ID", idle.label)
         assertEquals(HermesIcon.Copy, idle.icon)
@@ -176,7 +178,7 @@ class SessionActionsMenuTest {
 
     @Test
     fun `a refused clip says so in the item's own slot`() {
-        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed).single()
+        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed)[1]
 
         // en.ts:2166, the message Desktop attaches to this exact item
         // (session-actions-menu.tsx:482).
@@ -191,13 +193,13 @@ class SessionActionsMenuTest {
     }
 
     @Test
-    fun `every copy state stays one item in the identity slot`() {
+    fun `every copy state keeps the menu structure`() {
         // Whatever the clipboard did, the menu keeps its shape: the item must
         // not appear twice, vanish, or move group under a confirmation.
         SessionIdCopyStatus.entries.forEach { status ->
             val items = sessionActionItems("s-1", status)
-            assertEquals(status.name, 1, items.size)
-            assertEquals(status.name, SessionActionsGroup.Identity, items.single().group)
+            assertEquals(status.name, 3, items.size)
+            assertEquals(status.name, SessionActionsGroup.Identity, items[1].group)
             assertEquals(status.name, emptyList<SessionActionItem>(), sessionActionItems("", status))
         }
     }
@@ -240,7 +242,7 @@ class SessionActionsMenuTest {
             SessionActionItem(SessionActionsGroup.Open, NO_ANDROID_GLYPH, "Open in new tab"),
             SessionActionItem(SessionActionsGroup.Open, NO_ANDROID_GLYPH, "New window"),
             SessionActionItem(SessionActionsGroup.Open, NO_ANDROID_GLYPH, "Open in terminal"),
-            SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Edit, "Rename"),
+            SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Edit, "Rename…"),
             SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, "Pin"),
             SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Mail, "Mark as unread"),
             COPY_ID_ITEM,

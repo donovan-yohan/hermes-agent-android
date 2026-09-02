@@ -196,6 +196,10 @@ interface GatewaySessionRepository {
     suspend fun killProcess(durableId: String, processId: String): GatewayProcessKillOutcome =
         GatewayProcessKillOutcome.Unsupported
     suspend fun goalStatus(durableId: String): GatewayGoalStatusOutcome = GatewayGoalStatusOutcome.Unsupported
+    suspend fun renameSession(durableId: String, title: String): String =
+        error("Session renaming is not implemented by this repository.")
+    suspend fun deleteSession(durableId: String): Unit =
+        error("Session deletion is not implemented by this repository.")
 }
 
 sealed interface GatewaySubmitOutcome {
@@ -2215,6 +2219,152 @@ internal class LiveGatewaySessionRepository(
                 GatewayGoalStatusOutcome.Unsupported
             } else {
                 GatewayGoalStatusOutcome.Failed
+            }
+        }
+    }
+
+    override suspend fun renameSession(durableId: String, title: String): String {
+        require(durableId.isNotBlank()) { "Cannot rename a session without a durable id." }
+        val trimmed = title.trim()
+        val runtimeId = synchronized(stateLock) { identities.runtimeFor(durableId) }
+        val client = clientFlow.value
+
+        // Resolution rule:
+        // Live runtime id -> session.title RPC
+        // Persisted row (or empty title to clear) -> REST PATCH /api/sessions/{id}
+        if (runtimeId != null && trimmed.isNotEmpty() && client != null) {
+            try {
+                val params = buildJsonObject {
+                    put("session_id", JsonPrimitive(runtimeId))
+                    put("title", JsonPrimitive(trimmed))
+                }
+                val result = client.request("session.title", params)
+                val resolvedTitle = (result as? JsonObject)?.string("title") ?: trimmed
+                val existing = cache.session(durableId)
+                if (existing != null) {
+                    cache.upsertSession(existing.copy(title = resolvedTitle))
+                } else {
+                    cache.upsertSession(
+                        SessionSummary(
+                            id = durableId,
+                            title = resolvedTitle,
+                            preview = "",
+                            lastActiveAtMillis = clock(),
+                        ),
+                    )
+                }
+                return resolvedTitle
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                // Fall through to the REST path rather than report the RPC's
+                // refusal. Desktop does exactly this, and says why
+                // (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:86-92`
+                // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`): the socket can
+                // simply be mid-reconnect, and REST still renames any row that
+                // already has a persisted one. The rename the person asked for
+                // is what matters; which lane carried it is not. If REST cannot
+                // do it either, what they are told is REST's answer — the last
+                // thing that actually failed — mapped below.
+            }
+        }
+
+        val profile = cache.session(durableId)?.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
+        val result = rest.updateSession(
+            sessionId = durableId,
+            title = trimmed,
+            profile = profile,
+        )
+        return when (result) {
+            is GatewayRestResult.Success -> {
+                val resolvedTitle = result.value.title
+                val existing = cache.session(durableId)
+                if (existing != null) {
+                    cache.upsertSession(existing.copy(title = resolvedTitle))
+                } else {
+                    cache.upsertSession(
+                        SessionSummary(
+                            id = durableId,
+                            title = resolvedTitle,
+                            preview = "",
+                            lastActiveAtMillis = clock(),
+                        ),
+                    )
+                }
+                resolvedTitle
+            }
+            is GatewayRestResult.Failed -> {
+                val safeMessage = when (result.statusCode) {
+                    400 -> "Rename failed. Try a different title."
+                    404 -> "Rename failed. That session is no longer available."
+                    else -> "Rename failed. Check the Gateway and try again."
+                }
+                throw GatewayRpcException(safeMessage, statusCode = result.statusCode)
+            }
+        }
+    }
+
+    override suspend fun deleteSession(durableId: String) {
+        require(durableId.isNotBlank()) { "Cannot delete a session without a durable id." }
+        val runtimeId = synchronized(stateLock) { identities.runtimeFor(durableId) }
+        val client = clientFlow.value
+        val profile = cache.session(durableId)?.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
+
+        if (runtimeId != null && client != null) {
+            val isRunning = synchronized(stateLock) {
+                liveTurnRuntimeIds.contains(runtimeId) || activeRuntimeIds.contains(runtimeId)
+            }
+            if (isRunning) {
+                throw GatewayRpcException("Cannot delete a running session. Stop the turn first and try again.")
+            }
+            try {
+                val params = buildJsonObject {
+                    put("session_id", JsonPrimitive(runtimeId))
+                    if (profile != null) put("profile", JsonPrimitive(profile))
+                }
+                client.request("session.delete", params)
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                if (failure is GatewayRpcError) {
+                    if (failure.code == 4023) {
+                        throw GatewayRpcException("Cannot delete a running session. Stop the turn first and try again.")
+                    }
+                    if (failure.code != 4007) {
+                        throw GatewayRpcException("Delete failed. Check the Gateway and try again.")
+                    }
+                } else if (failure is GatewayRpcException) {
+                    throw failure
+                } else {
+                    throw GatewayRpcException("Delete failed. Check the Gateway and try again.")
+                }
+            }
+            synchronized(stateLock) {
+                identities.unbindRuntime(runtimeId)
+                assistantByRuntime.remove(runtimeId)
+                reasoningByRuntime.remove(runtimeId)
+                toolsByRuntime.remove(runtimeId)
+                progressRuntimeIds.remove(runtimeId)
+                activeRuntimeIds.remove(runtimeId)
+                liveTurnRuntimeIds.remove(runtimeId)
+                localSubmitStartedAtByRuntime.remove(runtimeId)
+                ephemeralSessions.remove(durableId)
+                branchByDurableId.remove(durableId)
+                worktreeByDurableId.remove(durableId)
+            }
+            cache.removeSession(durableId)
+            return
+        }
+
+        val result = rest.deleteSession(sessionId = durableId, profile = profile)
+        when (result) {
+            is GatewayRestResult.Success -> {
+                cache.removeSession(durableId)
+            }
+            is GatewayRestResult.Failed -> {
+                if (result.statusCode == 404) {
+                    cache.removeSession(durableId)
+                } else {
+                    throw GatewayRpcException("Delete failed. Check the Gateway and try again.", statusCode = result.statusCode)
+                }
             }
         }
     }

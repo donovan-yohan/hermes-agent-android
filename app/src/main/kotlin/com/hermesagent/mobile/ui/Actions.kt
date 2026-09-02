@@ -28,6 +28,8 @@ class ChatActions(
     val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
     val onSelectSession: (String) -> Unit = {},
     val onCreateSession: () -> Unit = {},
+    val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
+    val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
     /** Scope the sidebar to one Hermes profile and start fresh there. */
     val onSelectProfile: (String) -> Unit = {},
     /** Desktop's opt-in unified view; it does not change which profile is active. */

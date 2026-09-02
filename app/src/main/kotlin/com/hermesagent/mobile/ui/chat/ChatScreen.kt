@@ -218,6 +218,8 @@ private fun CompactLayout(
                 },
                 onOpenSettings = onOpenSettings,
                 gatewayDoor = gatewayDoor,
+                onRenameSession = actions.onRenameSession,
+                onDeleteSession = actions.onDeleteSession,
                 modifier = Modifier.statusBarsPadding(),
             )
             TranscriptPane(state, Modifier.weight(1f))
@@ -267,6 +269,8 @@ private fun WideLayout(
                 onOpenSessions = null,
                 onOpenSettings = onOpenSettings,
                 gatewayDoor = gatewayDoor,
+                onRenameSession = actions.onRenameSession,
+                onDeleteSession = actions.onDeleteSession,
             )
             TranscriptPane(state, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
@@ -302,6 +306,8 @@ private fun SessionsPane(
         onSelect = onSelectSession,
         onCreate = onCreateSession,
         modifier = modifier,
+        onRenameSession = actions.onRenameSession,
+        onDeleteSession = actions.onDeleteSession,
         header = header,
         profileRail = state.profileRail,
         projectScope = state.projectScope,
@@ -700,6 +706,8 @@ private fun ChatTopBar(
     modifier: Modifier = Modifier,
     /** Where [subtitle] goes while it names a connection problem; null otherwise. */
     gatewayDoor: StatusAction? = null,
+    onRenameSession: (suspend (String, String) -> Unit)? = null,
+    onDeleteSession: (suspend (String) -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
@@ -739,7 +747,13 @@ private fun ChatTopBar(
             // The open session's actions, identical to its sidebar row's:
             // both read the one item list in `sessionActionItems`.
             if (sessionId != null) {
-                SessionActionsControl(sessionId = sessionId, tint = tokens.textSecondary)
+                SessionActionsControl(
+                    sessionId = sessionId,
+                    sessionTitle = title,
+                    tint = tokens.textSecondary,
+                    onRename = onRenameSession?.let { rename -> { newTitle -> rename(sessionId, newTitle) } },
+                    onDelete = onDeleteSession?.let { delete -> { delete(sessionId) } },
+                )
             }
             QuietIconButton(
                 icon = Icons.Filled.Settings,

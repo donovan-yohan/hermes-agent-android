@@ -25,10 +25,10 @@ Every `path:line` below is against that SHA.
 | Group order and the separator rule | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:234,291,344,371,433,465-522` |
 | The menu kit both surfaces share | `apps/desktop/src/components/ui/actions-menu.tsx:37-98,119-146` |
 | Codicon vocabulary | `session-actions-menu.tsx:292,304,317,345,357,435,444`; trigger glyph at `session-row.tsx:326` |
-| Trigger placement and spoken name | `session-row.tsx:316-327`; `apps/desktop/src/i18n/en.ts:2185` |
-| Item labels | `apps/desktop/src/i18n/en.ts:2169-2185` |
+| Trigger placement and spoken name | `session-row.tsx:316-327`; `apps/desktop/src/i18n/en.ts:2319` |
+| Item labels | `apps/desktop/src/i18n/en.ts:2303-2336` |
 | Copy-ID behaviour inside a menu | `apps/desktop/src/components/ui/copy-button.tsx:92-140,166-181` |
-| The words the item swaps to | `copy-button.tsx:142,147-151,161-164`; `apps/desktop/src/i18n/en.ts:21,29,2184` |
+| The words the item swaps to | `copy-button.tsx:142,147-151,161-164`; `apps/desktop/src/i18n/en.ts:21,29,2318` |
 | How long the swap lasts | `copy-button.tsx:15` (`COPIED_RESET_MS`), `:115-123,128-136` |
 | What the Copy ID row is handed | `session-actions-menu.tsx:479-488` |
 | Modifier chords with no touch equivalent | `apps/desktop/src/app/chat/sidebar/session-row-gesture.ts:27-50` |
@@ -42,10 +42,10 @@ literally, so reordering two constants fails the build.
 | # | Group | Desktop | What it holds | Ships here |
 |---|---|---|---|---|
 | 1 | `Open` | `openItems` (`:234`) | Open in new tab, New window, Open in terminal | **Never** — Android has no tabs, no second window, and no local terminal. The slot exists only to keep the numbering honest. |
-| 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13). Rename in S14. |
+| 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13), **Rename** (S14, #65) — proved by `GatewaySessionRepositoryTest.renameSession with live runtime id calls session_title RPC and updates cache`, `.renameSession without live runtime id calls REST PATCH and updates cache`, `.renameSession falls back to REST PATCH when the session_title RPC fails` and `SessionActionsMenuJourneyTest.renaming a session seeds the dialog with current title and saves on confirm`. Pin / unread in #66. |
 | 3 | `Work` | `workItems` (`:344`) + Move to project (`:491-499`) | Branch, Export, Move to project | Not yet |
 | 4 | `Tab` | `tabItems` (`:371`) | Reload, Close, Close others / to the right / all | **Never** — no tab strip on a phone |
-| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | Delete in S15 |
+| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. Archive in #66. |
 
 ### Does Desktop render a separator for an empty group?
 
@@ -135,9 +135,10 @@ menu, so S15 cannot quietly redden Archive too.
 | Copy ID `event.preventDefault()` keeps the menu open (`copy-button.tsx:94-97`) | Same: the item swaps in place and the menu stays up | Also this app's established clipboard grammar (`Transcript.kt`, `CodingStatusRow.kt`): Android 13+ already raises a system clipboard notice, and a second app-level notice would be talking over the platform. |
 | Confirmation reads `t.common.copied` (`copy-button.tsx:147-148`; `en.ts:21`) | **Same**: `Copied` | Verbatim. This row previously read `Session ID copied`, which was this port's own phrasing rather than Desktop's word. |
 | Confirmation clears itself after `COPIED_RESET_MS` = 1500 (`copy-button.tsx:15,120-123,133-136`) | **Same**: `LaunchedEffect` + `COPY_CONFIRM_MILLIS`, which is 1500 | Verbatim, including the repeat press: Desktop clears its pending timeout before setting a new one, so a second press restarts the beat rather than inheriting the first one's remainder. The constant is the one `Transcript.kt` and `CodingStatusRow.kt` already share, moved to `ui/common/Clipboard.kt` beside the write itself. |
-| Copy failure raises a notification *and* swaps the item to `X` + `t.common.failed`, with `copyIdFailed` on its tooltip and `aria-label` (`copy-button.tsx:142,149-151,161-164`; `session-actions-menu.tsx:482,486`) | One slot: the item swaps to `Close` + `Could not copy session ID` (`en.ts:2166`) for the same 1500ms | Touch has no hover, so the tooltip has nowhere to go, and this build has no notification centre. Desktop's three surfaces collapse to the one the phone has — and the specific message goes there rather than the bare `Failed`, because it is the half that says what did not happen. |
+| Copy failure raises a notification *and* swaps the item to `X` + `t.common.failed`, with `copyIdFailed` on its tooltip and `aria-label` (`copy-button.tsx:142,149-151,161-164`; `session-actions-menu.tsx:482,486`) | One slot: the item swaps to `Close` + `Could not copy session ID` (`en.ts:2318`) for the same 1500ms | Touch has no hover, so the tooltip has nowhere to go, and this build has no notification centre. Desktop's three surfaces collapse to the one the phone has — and the specific message goes there rather than the bare `Failed`, because it is the half that says what did not happen. |
 | Copy failure is **not** tinted: the row is handed `text-current` and no variant (`session-actions-menu.tsx:483`) | **Same**: the failure row keeps `textSecondary` | Deliberate, and against the reviewer's suggestion: destructive-red is Delete's alone here. Reddening a transient, self-clearing failure would make a message that resolves itself in a second and a permanently destructive verb read alike. |
 | Nested `Appearance` and `Move to project` submenus (`:470-478,491-499`) | Not ported | The port workflow's standing rule: nested pointer submenus are brittle on a phone. When those verbs land they flatten into their group. |
+| Rename input seeded with the raw session title (`session-actions-menu.tsx:637-720`) | **Same**: the field shows the real title, and it is the one title across these two dialogs that is not passed through `redact()` | It is the text being *edited*, not text describing something. A redacted seed would either be saved back over the real title or have to be reversed before it was sent, and neither is safer than showing someone a title they already own. The delete confirmation only *describes* a title, and that one is redacted (`DeleteSessionDialog.kt:54`). |
 
 ### Deviation the reviewer should weigh explicitly
 
@@ -173,9 +174,9 @@ One verb, honestly:
 
 | Item | Group | Glyph | Label | Source |
 |---|---|---|---|---|
-| Copy ID | Identity | `Copy` | `Copy ID` | `en.ts:2156`; `session-actions-menu.tsx:479-488` |
+| Copy ID | Identity | `Copy` | `Copy ID` | `en.ts:2308`; `session-actions-menu.tsx:479-488` |
 | …once copied | Identity | `Check` | `Copied` | `copy-button.tsx:142,147-148`; `en.ts:21` |
-| …if the clipboard refuses | Identity | `Close` | `Could not copy session ID` | `copy-button.tsx:142,161-164`; `en.ts:2166` |
+| …if the clipboard refuses | Identity | `Close` | `Could not copy session ID` | `copy-button.tsx:142,161-164`; `en.ts:2318` |
 
 All three are the same item in the same slot: the icon and the label change, the
 group does not, and the last two settle back to the first after 1500ms.
@@ -199,6 +200,8 @@ Everything else in the table above is absent, and its group slot is present.
 | Every `HermesIcon` code point resolves in the shipped `codicon.ttf`, and the reader that says so is not simply saying yes | `app/src/test/kotlin/com/hermesagent/mobile/ui/common/HermesIconFontTest.kt` |
 | A refused clip is reported rather than thrown, and an accepted one lands under its own label | `app/src/test/kotlin/com/hermesagent/mobile/ui/common/ClipboardTest.kt` |
 | 48dp control, reserved end inset, unfragmented row label, tap-not-long-press, clipboard write, confirmation and its 1500ms settle, refusal in place, no control for a blank id, destructive ink, chat-header parity | `app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenuJourneyTest.kt` |
+| Rename and delete resolution: the `session.title` RPC for a live runtime, REST `PATCH` for a persisted row or a clear, the fall-through to REST when the RPC refuses, the mapped failures, `session.delete` with its 4023 refusal and 4007 already-deleted, REST `DELETE` with 404 as success, and a rename that outlives a `session.list` refresh in flight | `app/src/test/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepositoryTest.kt` |
+| Dialogs as a reader meets them: the rename field seeded, cleared and committed, the delete confirmation's redacted body, the in-flight and inline-failure states, and the three ways out (Cancel, system back, a tap outside) that are never a confirm | `app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenuJourneyTest.kt` |
 
 Shared helpers this slice extracted rather than re-spelled:
 `ui/common/copyToClipboard` now backs all three clipboard controls
@@ -247,8 +250,10 @@ carries the argument and the citations.
 | `w-40` (160 px) content | mobile-adaptation | `widthIn(min = 220.dp)` | The phone type scale is ~1.15× Desktop's, and this matches the sidebar's existing dropdown so the two menus read as one system |
 | `aria-label="Session actions"` on `DropdownMenuContent` | mobile-adaptation | The **trigger** carries the `contentDescription`; the content carries only a test tag | On Android a description on the menu container merges its children and swallows the item labels |
 | Copy failure raises a notification *and* swaps the item, with a tooltip (`copy-button.tsx:142,149-164`) | mobile-adaptation | One slot: the item swaps to `Close` + `Could not copy session ID` for the same 1500 ms | Touch has no hover so the tooltip has nowhere to go, and this build has no notification centre |
-| Unavailable verbs stay mounted and **disabled** | omission | Absent | pill-owed: #101 — this page previously argued for omitting them; the standing rule is now a visible disabled row with a "coming soon" pill, and #65/#66 carry the verbs |
-| Rename, delete, pin, mark read/unread, branch, export, move to project, archive, colour | omission | Absent | pill-owed: #101 — rename and delete are #65, pin/archive/unread are #66 |
+| Desktop `Renamed` toast (`en.ts:2328`) | omission | Inline failure on refusal, dialog dismiss on success | deferred: #73 (in-app-notification-stack) |
+| Desktop `Session deleted` toast (`en.ts:2336`) | omission | Rendered via chat `notice` banner | deferred: #73 (in-app-notification-stack) |
+| Unavailable verbs stay mounted and **disabled** | omission | Absent | pill-owed: #101 — this page previously argued for omitting them; the standing rule is now a visible disabled row with a "coming soon" pill, and #66 carries pin/archive/unread |
+| Pin, mark read/unread, branch, export, move to project, archive, colour | omission | Absent | pill-owed: #101 — pin/archive/unread are #66 |
 | Nested `Appearance` and `Move to project` submenus (`:470-478,491-499`) | omission | Absent | pill-owed: #101 — they flatten into their group when their verbs land; nested pointer submenus are not what ships |
 | Right-click `SessionContextMenu` (`session-actions-menu.tsx:621-639`) | omission | Absent | non-goal: long-press belongs to text selection on a phone, and binding the menu to it would fight the transcript's gesture |
 | ⇧-click pin, ⌥⇧-click archive (`session-row-gesture.ts:33,45`) | omission | Absent | non-goal: a soft keyboard has no modifier keys |
@@ -256,10 +261,10 @@ carries the argument and the citations.
 
 ## Visual report
 
-- pending: #72
+- pending: #65
 
 Not captured. The Desktop reference capture in the port workflow needs a
 disposable pinned dev renderer with CDP, which was not available for this slice;
 the menu's geometry, colour roles and glyph vocabulary are pinned against source
-and the shipped font instead. A capture pass belongs with S14/S15, when the menu
+and the shipped font instead. A capture pass belongs with #65, when the menu
 has enough items for a screenshot to be worth comparing.
