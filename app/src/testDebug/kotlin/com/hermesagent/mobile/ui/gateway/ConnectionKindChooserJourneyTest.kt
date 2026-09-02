@@ -9,8 +9,9 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hermesagent.mobile.data.connections.ConnectionKind
@@ -98,7 +99,10 @@ class ConnectionKindChooserJourneyTest {
         val cloud = compose.onNodeWithText(ConnectionsCopy.KIND_CLOUD)
         cloud.assertIsDisplayed()
         cloud.assertIsNotEnabled()
-        compose.onNodeWithTag(WIP_PILL, useUnmergedTree = true).assertIsDisplayed()
+        // Two chips on this pane: this one, and the launch-mode toggle's at the
+        // foot of the section. The Cloud choice's own is pinned by the merged
+        // description below rather than by being the only chip on screen.
+        compose.onAllNodesWithTag(WIP_PILL, useUnmergedTree = true).assertCountEquals(2)
         // The kind's own name has to survive the merge — see the mode cards.
         compose.onNodeWithContentDescription(
             "${ConnectionsCopy.KIND_CLOUD}. $WIP_SPOKEN",

@@ -58,7 +58,7 @@ class SessionActionsMenuTest {
 
         assertEquals(3, plan.count { it is SessionMenuNode.Separator })
         assertEquals(
-            listOf(3, 4, 2, 2),
+            listOf(3, 5, 3, 2),
             plan.split().map { it.size },
         )
         assertEquals(
@@ -96,7 +96,7 @@ class SessionActionsMenuTest {
         // … and within a group the caller's own order survives, so a later
         // slice controls where its verb sits among its neighbours.
         assertEquals(
-            listOf("Copy ID", "Mark as unread", "Pin", "Rename…"),
+            listOf("Copy ID", "Appearance", "Mark as unread", "Pin", "Rename…"),
             plan.split()[1].map { it.label },
         )
     }
@@ -122,6 +122,7 @@ class SessionActionsMenuTest {
             "pin" to (HermesIcon.Pin to 0xEB2B),
             "mail" to (HermesIcon.Mail to 0xEB1C),
             "mail-read" to (HermesIcon.MailRead to 0xEB1B),
+            "symbol-color" to (HermesIcon.SymbolColor to 0xEB5C),
             "copy" to (HermesIcon.Copy to 0xEBCC),
             "repo-forked" to (HermesIcon.RepoForked to 0xEA63),
             "cloud-download" to (HermesIcon.CloudDownload to 0xEAC2),
@@ -142,10 +143,26 @@ class SessionActionsMenuTest {
         }
     }
 
+    /**
+     * Desktop's row menu, verb for verb, with the four this build cannot
+     * perform rendered rather than dropped (#101). Only the open and tab
+     * groups are absent, and those are platform non-goals.
+     */
     @Test
-    fun `this build offers only the verbs it can actually perform`() {
+    fun `the menu offers Desktop's verbs, marking the ones this build cannot perform`() {
         assertEquals(
-            listOf("Rename…", "Pin", "Mark as unread", "Copy ID", "Archive", "Delete"),
+            listOf(
+                "Rename…",
+                "Pin",
+                "Mark as unread",
+                "Appearance",
+                "Copy ID",
+                "Branch",
+                "Export",
+                "Move to project",
+                "Archive",
+                "Delete",
+            ),
             sessionActionItems("s-1").map { it.label },
         )
         assertEquals(
@@ -154,10 +171,21 @@ class SessionActionsMenuTest {
                 SessionActionsGroup.Identity,
                 SessionActionsGroup.Identity,
                 SessionActionsGroup.Identity,
+                SessionActionsGroup.Identity,
+                SessionActionsGroup.Work,
+                SessionActionsGroup.Work,
+                SessionActionsGroup.Work,
                 SessionActionsGroup.Danger,
                 SessionActionsGroup.Danger,
             ),
             sessionActionItems("s-1").map { it.group },
+        )
+        // The unbuilt four, and only those: everything else is a verb this
+        // build performs, and a fifth appearing here without a slice behind it
+        // would be a menu advertising something that does nothing.
+        assertEquals(
+            listOf("Appearance", "Branch", "Export", "Move to project"),
+            sessionActionItems("s-1").filterNot { it.available }.map { it.label },
         )
     }
 
@@ -174,12 +202,17 @@ class SessionActionsMenuTest {
         val desktopDanger = DESKTOP_ROW_MENU
             .filter { it.group == SessionActionsGroup.Danger }
             .map { it.label }
+        val desktopWork = DESKTOP_ROW_MENU
+            .filter { it.group == SessionActionsGroup.Work }
+            .map { it.label }
         val plan = sessionActionsMenuPlan(sessionActionItems("s-1")).split()
 
         assertEquals(desktopIdentity, plan[0].map { it.label })
-        assertEquals(desktopDanger, plan[1].map { it.label })
-        // Two populated groups, one rule between them and none at either end.
-        assertEquals(1, sessionActionsMenuPlan(sessionActionItems("s-1")).count { it is SessionMenuNode.Separator })
+        assertEquals(desktopWork, plan[1].map { it.label })
+        assertEquals(desktopDanger, plan[2].map { it.label })
+        // Three populated groups, two rules between them and none at either
+        // end — the open and tab groups are the platform non-goals.
+        assertEquals(2, sessionActionsMenuPlan(sessionActionItems("s-1")).count { it is SessionMenuNode.Separator })
     }
 
     /**
@@ -224,8 +257,8 @@ class SessionActionsMenuTest {
      */
     @Test
     fun `an archived row offers the restore in the same slot`() {
-        val archive = sessionActionItems("s-1")[4]
-        val unarchive = sessionActionItems("s-1", archived = true)[4]
+        val archive = sessionActionItems("s-1")[8]
+        val unarchive = sessionActionItems("s-1", archived = true)[8]
 
         assertEquals("Archive", archive.label)
         assertEquals("Unarchive", unarchive.label)
@@ -244,7 +277,7 @@ class SessionActionsMenuTest {
                 listOf(false, true).forEach { archived ->
                     val label = "pinned=$pinned unread=$unread archived=$archived"
                     val items = sessionActionItems("s-1", pinned = pinned, unread = unread, archived = archived)
-                    assertEquals(label, 6, items.size)
+                    assertEquals(label, 10, items.size)
                     assertEquals(label, listOf("Delete"), items.filter { it.destructive }.map { it.label })
                     assertEquals(
                         label,
@@ -253,6 +286,10 @@ class SessionActionsMenuTest {
                             SessionActionsGroup.Identity,
                             SessionActionsGroup.Identity,
                             SessionActionsGroup.Identity,
+                            SessionActionsGroup.Identity,
+                            SessionActionsGroup.Work,
+                            SessionActionsGroup.Work,
+                            SessionActionsGroup.Work,
                             SessionActionsGroup.Danger,
                             SessionActionsGroup.Danger,
                         ),
@@ -271,8 +308,8 @@ class SessionActionsMenuTest {
 
     @Test
     fun `the copy verb confirms in place rather than raising a notice`() {
-        val idle = sessionActionItems("s-1")[3]
-        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied)[3]
+        val idle = sessionActionItems("s-1")[4]
+        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied)[4]
 
         assertEquals("Copy ID", idle.label)
         assertEquals(HermesIcon.Copy, idle.icon)
@@ -286,7 +323,7 @@ class SessionActionsMenuTest {
 
     @Test
     fun `a refused clip says so in the item's own slot`() {
-        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed)[3]
+        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed)[4]
 
         // en.ts:2166, the message Desktop attaches to this exact item
         // (session-actions-menu.tsx:482).
@@ -306,8 +343,8 @@ class SessionActionsMenuTest {
         // not appear twice, vanish, or move group under a confirmation.
         SessionIdCopyStatus.entries.forEach { status ->
             val items = sessionActionItems("s-1", status)
-            assertEquals(status.name, 6, items.size)
-            assertEquals(status.name, SessionActionsGroup.Identity, items[3].group)
+            assertEquals(status.name, 10, items.size)
+            assertEquals(status.name, SessionActionsGroup.Identity, items[4].group)
             assertEquals(status.name, emptyList<SessionActionItem>(), sessionActionItems("", status))
         }
     }
@@ -353,9 +390,15 @@ class SessionActionsMenuTest {
             SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Edit, "Rename…"),
             SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, "Pin"),
             SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Mail, "Mark as unread"),
+            // The `Appearance` submenu trigger, between the read-state row and
+            // Copy ID (:467-475).
+            SessionActionItem(SessionActionsGroup.Identity, HermesIcon.SymbolColor, "Appearance"),
             COPY_ID_ITEM,
             SessionActionItem(SessionActionsGroup.Work, HermesIcon.RepoForked, "Branch"),
             SessionActionItem(SessionActionsGroup.Work, HermesIcon.CloudDownload, "Export"),
+            // The `Move to project` submenu trigger, after the work verbs and
+            // before the tab group (:488-496), so it is a work item.
+            SessionActionItem(SessionActionsGroup.Work, HermesIcon.Folder, "Move to project"),
             SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Archive, "Archive"),
             SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Trash, "Delete", destructive = true),
         )

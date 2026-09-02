@@ -16,13 +16,17 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -38,6 +42,7 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -69,7 +74,11 @@ import org.robolectric.annotation.GraphicsMode
  * Android's, and asserting its pixels would be asserting the platform.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], shadows = [ShadowSelectionMagnifier::class])
+// A phone-width screen, because the reply action bar is a fixed row of four
+// 48dp targets carrying three chips and the only way it can fail is by running
+// off the right edge. Robolectric's default screen is narrower than any device
+// this ships to, which would have made that assertion untestable.
+@Config(sdk = [34], qualifiers = "w411dp-h891dp", shadows = [ShadowSelectionMagnifier::class])
 // A live selection draws Compose's two vector handles. Robolectric's legacy
 // graphics pipeline hands the vector rasteriser a null Bitmap and the draw
 // pass dies, so this class renders natively; nothing here asserts pixels.
@@ -392,6 +401,54 @@ class TranscriptSelectionTest {
             )
     }
 
+    /**
+     * Desktop mounts four controls under every assistant reply, in this order:
+     * Branch, Copy, Read aloud, Refresh
+     * (`assistant-message.tsx:625-642` @ `3ca096de`). Three have no
+     * implementation here, so they ship visible, disabled and marked rather
+     * than absent (#101).
+     */
+    @Test
+    fun `the action bar renders Desktop's other three controls, disabled and marked`() {
+        launch()
+
+        val floor = HermesSpacing().touchTarget
+        DESKTOP_ACTION_BAR.forEach { name ->
+            compose.onNodeWithContentDescription(name)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertHeightIsAtLeast(floor)
+        }
+        UNBUILT_ACTIONS.forEach { name ->
+            // Whole, not matched: `onNodeWithContentDescription` tests the
+            // description list with `any { }`, so a control that also named
+            // itself into the merge would announce twice and still be found.
+            compose.onNodeWithContentDescription(name)
+                .assertIsNotEnabled()
+                .assertContentDescriptionEquals(name)
+        }
+
+        // Desktop's order, left to right.
+        val boxes = DESKTOP_ACTION_BAR.map {
+            compose.onNodeWithContentDescription(it).getUnclippedBoundsInRoot()
+        }
+        boxes.zipWithNext().forEach { (left, right) ->
+            assertTrue("the bar must keep Desktop's order", right.left > left.left)
+        }
+        // The bar is a `Row`, which cannot wrap, so what four targets and three
+        // chips can actually do at 411dp is overrun the screen. Assert the
+        // right edge of the last control is still on it.
+        val screenRight = compose.onRoot().getUnclippedBoundsInRoot().right
+        val rightmost = boxes.maxOf { it.right }
+        assertTrue(
+            "the bar overran the screen: its right edge is $rightmost of $screenRight",
+            rightmost <= screenRight,
+        )
+        // And a wrap would still be caught if the bar ever became a `FlowRow`.
+        val spread = boxes.maxOf { it.top } - boxes.minOf { it.top }
+        assertTrue("the bar wrapped: its controls span $spread of height", spread <= BASELINE_SLACK)
+    }
+
     @Test
     fun `a reply with nothing to copy grows no copy control`() {
         launch(
@@ -467,7 +524,25 @@ class TranscriptSelectionTest {
     private companion object {
         const val SESSION = "s-selection"
         const val NOW = 1_755_600_000_000L
+
+        /**
+         * The bar's four spoken names in Desktop's order. `Copy reply` is this
+         * app's own word for Desktop's `Copy` — a rendered-text projection
+         * rather than the markdown source, ledgered on the parity page.
+         */
+        val DESKTOP_ACTION_BAR = listOf(
+            "Branch in new chat. Work in progress.",
+            "Copy reply",
+            "Read aloud. Work in progress.",
+            "Refresh. Work in progress.",
+        )
+
+        /** The three of those this build cannot perform. */
+        val UNBUILT_ACTIONS = DESKTOP_ACTION_BAR.filter { it.endsWith(WIP_SPOKEN) }
         const val FIRST_PARAGRAPH = "First paragraph of the reply."
+
+        /** Layout rounds to whole pixels, and a wrap would cost a whole target. */
+        val BASELINE_SLACK = 2.dp
         val REPLY_MARKDOWN = """
             First paragraph of the reply.
 

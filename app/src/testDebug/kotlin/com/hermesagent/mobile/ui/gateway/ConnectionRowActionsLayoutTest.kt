@@ -137,12 +137,14 @@ class ConnectionRowActionsLayoutTest {
 
     @Test
     fun `the marker is a compact pill, not a run of text`() {
-        // One per unbuilt action. Unmerged, so these are the pill nodes
-        // themselves rather than the actions they are merged into.
+        // One per unbuilt control on the pane: the row's `Test` and
+        // `Make primary`, plus the launch-mode toggle at the foot of the
+        // section. Unmerged, so these are the pill nodes themselves rather than
+        // the actions they are merged into.
         val pills = compose.onAllNodesWithTag(WIP_PILL, useUnmergedTree = true)
-        assertEquals(2, pills.fetchSemanticsNodes().size)
+        assertEquals(3, pills.fetchSemanticsNodes().size)
 
-        repeat(2) { index ->
+        repeat(3) { index ->
             val box = pills[index].getUnclippedBoundsInRoot()
             val width = box.right - box.left
             assertTrue("a WIP pill is $width wide, wide enough to be a sentence", width <= 40.dp)

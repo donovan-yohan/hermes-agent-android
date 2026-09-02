@@ -93,6 +93,18 @@ enum class RelayNoticeAction {
     Retry,
 
     /**
+     * Desktop's `Authorize Relay` (`desktop/plugin.js:384-388` @ `563a8c8`,
+     * the SHA this page pins the Relay plugin at), which redeems the host's
+     * one-time grant through `POST /connection/authorize`.
+     *
+     * This app has no write path to Relay yet — #38 owns it — so the control
+     * renders visible, disabled and marked rather than absent: the banner
+     * already says authorization is required, and a banner that names the
+     * problem and hides the button Desktop offers is the less honest half.
+     */
+    Authorize,
+
+    /**
      * Open the Gateways screen. Deliberately not named for signing in: it is
      * where a remote leg signs in *and* where a managed SSH leg reconnects,
      * and the availability layer's sentence already says which one this is.
@@ -247,6 +259,7 @@ private fun RelayChannelsStatus.laneNotice(detail: String?): RelayNotice? = when
         title = "Authorization required",
         description = "Relay needs authorization on the Gateway host before channels can update.",
         detail = detail,
+        action = RelayNoticeAction.Authorize,
     )
 
     RelayLaneState.ERROR -> RelayNotice(

@@ -9,9 +9,12 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -27,6 +30,7 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -276,6 +280,54 @@ class ToolRowFidelityTest {
             .assertHeightIsAtLeast(TOUCH_FLOOR)
     }
 
+    // ── Inline diff ──────────────────────────────────────────────────────────
+
+    /**
+     * The Copy control Desktop puts over a diff payload, shipped disabled.
+     *
+     * `InlineDiffPanel` owns this surface and #71 S35 lands its real
+     * affordances; until then the control is visible, dimmed and marked rather
+     * than absent, in the slot `ToolCopyControl` already occupies for an
+     * ordinary payload — right-aligned above the body.
+     *
+     * `Copy file` is Desktop's own label for this payload: `toolCopyPayload`
+     * resolves a file-edit tool holding an inline diff to `copy.file`
+     * (`fallback-model/index.ts:1253-1256`, `en.ts:3340` @ `3ca096de`), not to
+     * the generic `common.copy`.
+     */
+    @Test
+    fun `an inline diff carries the Copy control it has not built yet`() {
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "apply_patch",
+                argsText = """{"path":"notes.md"}""",
+                inlineDiff = DIFF,
+                startedAtMillis = NOW,
+            ),
+        )
+
+        // A diff panel opens itself, so the control is on screen with no tap.
+        // The name is asserted whole rather than matched: the finders test the
+        // description list with `any { }`, so a second entry — the inner
+        // button naming itself into the merge — would pass unseen.
+        val copy = compose.onNodeWithContentDescription("Copy file. $WIP_SPOKEN")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assertContentDescriptionEquals("Copy file. $WIP_SPOKEN")
+            .assertWidthIsAtLeast(TOUCH_FLOOR)
+            .assertHeightIsAtLeast(TOUCH_FLOOR)
+            .getUnclippedBoundsInRoot()
+
+        val firstLine = compose.onNodeWithText(REMOVED_LINE, useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        assertTrue("the control belongs above the diff body", copy.top < firstLine.top)
+    }
+
     // ── Web search ───────────────────────────────────────────────────────────
 
     @Test
@@ -344,5 +396,15 @@ class ToolRowFidelityTest {
         /** The JSON escape for `ESC`, so no control byte sits in this source. */
         const val ESC = "\\u001B"
         val TOUCH_FLOOR = 48.dp
+
+        const val REMOVED_LINE = "-old line"
+
+        /** One hunk with both markers, so the panel has a body to draw. */
+        val DIFF = """
+            --- a/notes.md
+            +++ b/notes.md
+            $REMOVED_LINE
+            +new line
+        """.trimIndent()
     }
 }

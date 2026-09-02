@@ -7,14 +7,21 @@ import com.hermesagent.mobile.data.connections.SavedConnection
 /**
  * The Connections vocabulary, taken from Desktop's `i18n/en.ts` at pinned SHA
  * `3ca096de5f8183cb2e0ec23673f294d5978656a3` (`settings.connections`,
- * lines 703-764; `profiles.switchConnectionFailed:1770` and
- * `profiles.connectGateway:1772`).
+ * lines 761-822; `profiles.switchConnectionFailed` and
+ * `profiles.connectGateway`).
  *
  * Kept in one object so the parity of this surface's words can be audited
  * against those lines without reading five composables. Where a sentence names
  * something Android does not ship — Hermes Cloud, a Local runtime, cron jobs —
  * it is shortened rather than reworded, and the deviation is recorded in
  * `docs/parity/gateway-connections.md`.
+ *
+ * The block range above is the anchor a reader should trust. Several
+ * per-constant line numbers below it were written against an older upstream pin
+ * and sit about 58 lines above the string they name; they are corrected as each
+ * constant is touched rather than in one sweep that would touch every line of
+ * this file for no change in behaviour. Every constant this surface's current
+ * work added or moved carries a verified `@ 3ca096de` number.
  */
 internal object ConnectionsCopy {
     /** `en.ts:704`. */
@@ -118,8 +125,34 @@ internal object ConnectionsCopy {
      */
     const val NEEDS_CONNECT = "This gateway did not reconnect on its own. Check its address above, then Connect."
 
-    /** `en.ts:716`. */
+    /** `en.ts:774` @ `3ca096de`. */
     const val ADD_CONNECTION = "Add connection"
+
+    /**
+     * `en.ts:786` @ `3ca096de`, rendered disabled behind
+     * [com.hermesagent.mobile.ui.common.WIP_PILL].
+     *
+     * Desktop fans an update out over every registered instance through its
+     * main process (`connections-registry.tsx:969-987`). This app has no
+     * multi-instance update path — the System panel updates the one backend it
+     * is connected to — so the button is here and dark. Desktop's own gate is
+     * kept: it renders only once there is more than one connection, because a
+     * fan-out over a list of one is the update the row already offers.
+     */
+    const val UPDATE_ALL = "Update all instances"
+
+    /**
+     * `en.ts:766-767` @ `3ca096de`, the launch-mode toggle, rendered disabled
+     * behind the same chip.
+     *
+     * `registry.launchMode` and `registry.primary` are Desktop registry fields
+     * this app does not persist — the same absence that keeps `Make primary`
+     * dark — so there is no stored value for the switch to report. Showing it
+     * half-lit would be a claim about a preference that is not saved anywhere.
+     */
+    const val LAUNCH_MODE_TITLE = "At startup, return to Sessions on the last-used gateway"
+
+    const val LAUNCH_MODE_DESC = "When off, Sessions opens on the Primary gateway."
 
     /** `en.ts:717`. */
     const val EDIT_CONNECTION = "Edit"
@@ -141,6 +174,19 @@ internal object ConnectionsCopy {
 
     /** `en.ts:744`. */
     const val URL_TITLE = "Gateway URL"
+
+    /**
+     * Desktop's own placeholder (`connections-registry.tsx:803` @ `3ca096de`),
+     * with its scheme narrowed.
+     *
+     * Upstream writes `http://homelab.lan:9119`; this app refuses a plain-HTTP
+     * Gateway URL, so a placeholder in that scheme would demonstrate a value
+     * the form is about to reject. #85 asked for the HTTPS narrowing *and* the
+     * homelab vocabulary: a placeholder's job is to show the shape of the
+     * answer, and "a machine on your LAN, on Hermes' port" is the shape, which
+     * `hermes.example.com` — a hostname nobody's gateway has — did not teach.
+     */
+    const val URL_PLACEHOLDER = "https://homelab.lan:9119"
 
     /** `en.ts:745`. */
     const val SSH_HOST_TITLE = "SSH host"
@@ -219,13 +265,13 @@ internal object ConnectionsCopy {
     const val LOCAL_INTRO =
         "Connect to a Hermes you run on this phone in Termux. This app never starts or stops it, and nothing on this route leaves the device."
 
-    /** `en.ts:760`. */
+    /** `en.ts:818` @ `3ca096de`. */
     const val SAVE = "Save connection"
 
-    /** `en.ts:762`. */
+    /** `en.ts:820` @ `3ca096de`. */
     const val CANCEL = "Cancel"
 
-    /** `en.ts:763`. */
+    /** `en.ts:821` @ `3ca096de`. */
     const val EMPTY = "No connections registered yet."
 
     /**

@@ -1,14 +1,12 @@
 package com.hermesagent.mobile.ui.gateway
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -19,7 +17,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -35,6 +32,8 @@ import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.common.ChoiceButton
 import com.hermesagent.mobile.ui.common.ComingSoonAction
+import com.hermesagent.mobile.ui.common.ComingSoonOutlineAction
+import com.hermesagent.mobile.ui.common.ComingSoonToggleRow
 import com.hermesagent.mobile.ui.common.ConfirmSheet
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -43,6 +42,7 @@ import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.LabelledField
 import com.hermesagent.mobile.ui.common.ModeCardGrid
+import com.hermesagent.mobile.ui.common.OutlineButton
 import com.hermesagent.mobile.ui.common.Pill
 import com.hermesagent.mobile.ui.common.PillTone
 import com.hermesagent.mobile.ui.common.PrimaryButton
@@ -63,9 +63,9 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Same grammar: a `SectionHeading` over `ListRow`s, one kind glyph per row,
  * an `EmptyState` when there is nothing (or nothing matching), search once the
  * list is long, an inline editor, and a destructive confirm before a removal.
- * Desktop's Cloud kind, its update fan-out, its launch-mode toggle and its
- * proxy-header editor are deliberately absent, and its per-row `Test` and
- * `Make primary` are present but disabled — see
+ * Desktop's proxy-header editor is deliberately absent; its Cloud kind, its
+ * per-row `Test` and `Make primary`, its `Update all instances` fan-out and its
+ * launch-mode toggle are all present and disabled behind the `WIP` chip — see
  * `docs/parity/gateway-connections.md`.
  */
 @Composable
@@ -180,23 +180,50 @@ internal fun ConnectionsSection(
 
         val editor = state.editor
         if (editor == null) {
-            // Desktop's outline button carries a Plus glyph before its label
-            // (`connections-registry.tsx:819-829`); the glyph and the label
-            // stay one target here rather than becoming two.
-            Row(
-                Modifier
-                    .heightIn(min = HermesTheme.spacing.touchTarget)
-                    .clickable(role = Role.Button, onClick = actions.onBeginAdd)
-                    .semantics { contentDescription = ConnectionsCopy.ADD_CONNECTION }
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // Desktop's `mt-4 flex items-center gap-2` foot: a bordered
+            // `size="sm" variant="outline"` Add carrying a Plus glyph, and
+            // beside it the update fan-out — the same treatment, disabled
+            // (`connections-registry.tsx:957-988` @ `3ca096de`). The glyph and
+            // the label stay one target rather than becoming two.
+            //
+            // A `FlowRow` for the same reason the row cluster is one: at 411dp
+            // inside the page inset both actions fit on one line and
+            // `ConnectionEditorLayoutTest` measures that they do, but a wider
+            // label or a larger font scale should wrap rather than run off.
+            FlowRow(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                HermesIconGlyph(HermesIcon.Add, color = tokens.accent)
-                Text(ConnectionsCopy.ADD_CONNECTION, style = HermesTheme.type.caption, color = tokens.accent)
+                OutlineButton(
+                    label = ConnectionsCopy.ADD_CONNECTION,
+                    onClick = actions.onBeginAdd,
+                    icon = HermesIcon.Add,
+                )
+                // Desktop's own gate, kept: the fan-out appears only once there
+                // is more than one instance to fan out to
+                // (`connections-registry.tsx:968`).
+                if (ordered.size > 1) {
+                    ComingSoonOutlineAction(HermesIcon.Refresh, ConnectionsCopy.UPDATE_ALL)
+                }
             }
         } else {
             ConnectionEditor(editor, actions)
+        }
+
+        // Desktop's launch-mode block: its own bordered section below the list,
+        // the editor and the add row (`connections-registry.tsx:992-1006` @
+        // `3ca096de`), and deliberately *not* gated on the connection count —
+        // upstream's own comment there says a registry that drifted down to one
+        // row is exactly where someone needs to see this. Held back until the
+        // registry has loaded, like the list above it, so the section does not
+        // flash in over an empty pane.
+        if (state.loaded) {
+            Hairline(Modifier.padding(top = 12.dp))
+            ComingSoonToggleRow(
+                label = ConnectionsCopy.LAUNCH_MODE_TITLE,
+                description = ConnectionsCopy.LAUNCH_MODE_DESC,
+            )
         }
     }
 
@@ -466,7 +493,7 @@ private fun ConnectionEditor(
                 LabelledField(
                     label = ConnectionsCopy.URL_TITLE,
                     value = editor.url,
-                    placeholder = "https://hermes.example.com",
+                    placeholder = ConnectionsCopy.URL_PLACEHOLDER,
                     onValueChange = actions.onEditUrl,
                     keyboardType = KeyboardType.Uri,
                 )
@@ -536,18 +563,23 @@ private fun ConnectionEditor(
             )
         }
 
+        // Desktop's `flex justify-end gap-2`: Cancel first as a quiet ghost,
+        // then the filled Save at the right edge, disabled while the name is
+        // blank (`connections-registry.tsx:947-954` @ `3ca096de`; `en.ts:818`
+        // save, `:820` cancel). This shipped reversed — a full-width Save on
+        // the left, Cancel to its right — which put the commit under the thumb
+        // that was reaching for the way out (#85).
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            TextButton(ConnectionsCopy.CANCEL, actions.onCancelEditor, color = tokens.textTertiary)
             PrimaryButton(
                 label = ConnectionsCopy.SAVE,
                 onClick = actions.onSaveEditor,
-                modifier = Modifier.weight(1f),
                 enabled = editor.canSave,
             )
-            TextButton(ConnectionsCopy.CANCEL, actions.onCancelEditor, color = tokens.textTertiary)
         }
     }
 }
@@ -614,7 +646,18 @@ internal val OFFERED_CONNECTION_KINDS = CONNECTION_KIND_CHOICES.mapNotNull { it.
  */
 private val KIND_CHOOSER_FOUR_COLUMN = 672.dp
 
-/** Desktop's `KIND_ICONS`, restricted to the kinds Android ships (`connections-registry.tsx:26-31`). */
+/**
+ * Desktop's `KIND_ICONS`, restricted to the kinds Android ships
+ * (`connections-registry.tsx:42-47` @ `3ca096de`).
+ *
+ * Desktop disagrees with itself about the remote kind: the registry maps it to
+ * `Globe` (`:45`) while the sidebar's own `ConnectionGlyph` maps it to
+ * `Network` (`components/connection-glyph.tsx:19-26`). This app draws `Globe`
+ * in both places — the registry's mapping, on both surfaces — because the rail
+ * and this list are one surface apart on a phone and a kind that changed shape
+ * between them would read as two kinds. Ledgered in
+ * `docs/parity/gateway-connections.md`.
+ */
 internal val ConnectionKind.glyph: HermesIcon
     get() = when (this) {
         ConnectionKind.Remote -> HermesIcon.Globe
