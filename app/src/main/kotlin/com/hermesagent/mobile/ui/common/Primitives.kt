@@ -59,7 +59,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -208,14 +207,18 @@ fun StatusDot(
  *
  * Desktop's `SearchField` carries a leading search glyph and a trailing clear
  * button (`apps/desktop/src/components/ui/search-field.tsx:69,90-100` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`); both are Codicons, and the
- * clear button is `close`. It also lets the caller name the field for a screen
- * reader separately from the placeholder (`:71`), which is why [spokenName]
- * exists: the sessions rail speaks `Search sessions` while the field shows
- * `Search sessions…`.
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Only the clear button is a
+ * Codicon (`close`, `:98`); the leading glyph is Tabler's `IconSearch`
+ * (`apps/desktop/src/lib/icons.ts:102`), so [HermesIcon.Search] stands in for
+ * it the way [HermesIcon.Globe] stands in for its lucide original. It also
+ * lets the caller name the field for a screen reader separately from the
+ * placeholder (`:71`), which is why [spokenName] exists: the sessions rail
+ * speaks `Search sessions` while the field shows `Search sessions…`.
  *
  * @param leadingGlyph Desktop's leading glyph. Null keeps the plain field the
- *   surfaces that predate it already render.
+ *   surfaces that predate it already render — ledgered in
+ *   `docs/parity/session-search.md`, because Desktop's own field always draws
+ *   one.
  */
 @Composable
 fun SearchField(
@@ -480,15 +483,7 @@ fun TextButton(
     }
 }
 
-/**
- * Plain-body empty state. Centered, no icon pile, no card.
- *
- * The block is centered, so its text is too: a title long enough to wrap —
- * a search sentence quoting the reader's own query, say — would otherwise sit
- * left-aligned inside a centered column and read as a layout fault. A blank
- * [description] renders nothing rather than an empty line, because some of
- * these states are one sentence and Desktop gives them no second one.
- */
+/** Plain-body empty state. Centered, no icon pile, no card. */
 @Composable
 fun EmptyState(title: String, description: String, modifier: Modifier = Modifier) {
     Column(
@@ -496,21 +491,13 @@ fun EmptyState(title: String, description: String, modifier: Modifier = Modifier
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        Text(title, style = HermesTheme.type.bodyStrong, color = HermesTheme.tokens.textSecondary)
         Text(
-            title,
-            style = HermesTheme.type.bodyStrong,
-            color = HermesTheme.tokens.textSecondary,
-            textAlign = TextAlign.Center,
+            description,
+            style = HermesTheme.type.caption,
+            color = HermesTheme.tokens.textTertiary,
+            modifier = Modifier.padding(horizontal = 8.dp),
         )
-        if (description.isNotBlank()) {
-            Text(
-                description,
-                style = HermesTheme.type.caption,
-                color = HermesTheme.tokens.textTertiary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-        }
     }
 }
 

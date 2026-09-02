@@ -490,6 +490,59 @@ class SessionGroupingTest {
         )
     }
 
+    /**
+     * Desktop's `Results` section is not gated on the archived toggle
+     * (`sidebar/index.tsx:1611` @ `3ca096de`, over the pool swap at
+     * `:491-495`), so a query there answers over the archived pool *and* the
+     * server's hits. This app's archived pool is its own capped read and the
+     * search contract carries no `archived` field
+     * (`types/hermes.ts:1193-1208`), so a query inside that view stays a local
+     * filter: no `Results` label, and no live server row smuggled into the
+     * archived set. Ledgered in `docs/parity/session-search.md`.
+     */
+    @Test
+    fun `a query inside the archived view stays a local filter and ignores server hits`() {
+        val sessions = listOf(
+            session("live-tunnel", now, title = "Tunnel probe"),
+            session("filed-tunnel", now - HOUR, title = "Tunnel notes", archived = true),
+            session("filed-other", now - 2 * HOUR, title = "Themes", archived = true),
+        )
+        val server = listOf(session("server-tunnel", now, title = "Server tunnel hit"))
+
+        val rows = buildSessionRows(
+            sessions = sessions,
+            nowMillis = now,
+            query = "tunnel",
+            searchPending = true,
+            serverMatches = server,
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertEquals(listOf("row:filed-tunnel"), rows.map(::describe))
+    }
+
+    /**
+     * And with nothing in the archived pool matching, the view renders no rows
+     * at all rather than falling through to the server's — the sentence is the
+     * surface's own (`SessionList.kt`), not a `Results` section.
+     */
+    @Test
+    fun `an archived query that matches nothing locally renders no rows at all`() {
+        val rows = buildSessionRows(
+            sessions = listOf(session("filed-other", now, title = "Themes", archived = true)),
+            nowMillis = now,
+            query = "tunnel",
+            serverMatches = listOf(session("server-tunnel", now, title = "Server tunnel hit")),
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertTrue(rows.isEmpty())
+    }
+
     private fun session(
         id: String,
         at: Long,

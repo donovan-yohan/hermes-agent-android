@@ -119,7 +119,10 @@ lifecycle.
   this list. There is no Archived Chats settings page, no auto-archive setting,
   and no bulk selection. Search answers from the backend index and the loaded
   rows together; inside the Archived view it stays a local filter over that
-  pool, and it does not search across profiles.
+  pool, and it does not search across profiles — the search route opens one
+  profile's index, so the unified view asks it for the Gateway's launch profile
+  only. Typing `untitled` does not find a nameless chat the way Desktop does,
+  because this rail shows no such label to match on.
 
 ### Profiles
 

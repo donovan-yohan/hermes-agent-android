@@ -2674,6 +2674,190 @@ class ChatViewModelTest {
         assertNull(cache.session("session-z"))
     }
 
+    /**
+     * A stub carries a durable id and nothing that says whose it is. The rail
+     * standing in another profile is a different set of conversations, so the
+     * previous scope's stubs stop being an answer the moment the scope moves —
+     * not 200 ms and a round trip later.
+     */
+    @Test
+    fun `a profile switch drops the previous scope's stubs and re-asks for the new one`() =
+        runTest(dispatcher) {
+            repository.searchAnswer = listOf(stub("session-z", "a tunnel"))
+            collectState()
+            runCurrent()
+
+            viewModel.setQuery("tunnel")
+            runCurrent()
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+            runCurrent()
+            assertEquals(listOf("session-z"), viewModel.uiState.value.sessionRows.rowIds())
+
+            repository.searchAnswer = listOf(stub("session-y", "another tunnel"))
+            viewModel.selectProfile("research")
+            runCurrent()
+
+            // Immediately: gone. And nothing new has been asked for yet, so
+            // this is the clear rather than a fresh answer arriving.
+            assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
+            assertEquals(listOf("tunnel" to null), repository.searches)
+
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+            runCurrent()
+
+            // Re-asked for the new scope, and only for the new scope.
+            assertEquals(listOf("tunnel" to null, "tunnel" to "research"), repository.searches)
+            assertEquals(listOf("session-y"), viewModel.uiState.value.sessionRows.rowIds())
+        }
+
+    /**
+     * The endpoint half of the same key. The next backend is a different
+     * machine that can recycle the same durable ids — which is why
+     * `SessionCache.resetForEndpointSwitch()` exists — so a stub from the
+     * previous one is not a narrower answer, it is a row that may open a
+     * different conversation.
+     */
+    @Test
+    fun `a connection switch drops the previous Gateway's stubs and re-asks`() = runTest(dispatcher) {
+        repository.searchAnswer = listOf(stub("session-z", "a tunnel"))
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("session-z"), viewModel.uiState.value.sessionRows.rowIds())
+
+        repository.searchAnswer = listOf(stub("session-y", "another tunnel"))
+        cache.resetForEndpointSwitch()
+        runCurrent()
+
+        assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
+        assertEquals(listOf("tunnel" to null), repository.searches)
+
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(listOf("tunnel" to null, "tunnel" to null), repository.searches)
+        assertEquals(listOf("session-y"), viewModel.uiState.value.sessionRows.rowIds())
+    }
+
+    /**
+     * The unified browse view has no union to ask for: the route opens exactly
+     * one profile's database (`hermes_cli/web_routers/sessions.py:227` @
+     * `3ca096de`). Sending the active profile there would merge one profile's
+     * server hits into an all-profile list, so it sends none — ledgered in
+     * `docs/parity/session-search.md`.
+     */
+    @Test
+    fun `the unified profile view searches with no profile at all`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.selectProfile("research")
+        runCurrent()
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("tunnel" to "research"), repository.searches)
+
+        viewModel.showAllProfiles()
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(listOf("tunnel" to "research", "tunnel" to null), repository.searches)
+    }
+
+    /**
+     * The project overview reuses this same field as a filter over projects and
+     * draws no session row at all, so a backend session search there would be a
+     * request per settled keystroke for an answer nothing renders.
+     */
+    @Test
+    fun `the project overview does not ask the Gateway for sessions`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.setSidebarGrouping(SidebarGrouping.Project)
+        runCurrent()
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(emptyList<Pair<String, String?>>(), repository.searches)
+
+        viewModel.setSidebarGrouping(SidebarGrouping.Date)
+        runCurrent()
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(listOf("tunnel" to null), repository.searches)
+    }
+
+    /**
+     * Desktop's `.catch(() => undefined)` leaves the previous query's hits on
+     * screen (`sidebar/index.tsx:641`); this drops them, because on a phone the
+     * Gateway is across a network that drops and a stale answer under a new
+     * query is a claim about the wrong words. The local matches — what Desktop
+     * is really protecting — are untouched. Ledgered.
+     */
+    @Test
+    fun `a failure after an answer empties the server half and keeps the local matches`() =
+        runTest(dispatcher) {
+            cache.upsertSessions(listOf(summary("session-a", 2_000).copy(title = "Tunnel probe")))
+            repository.searchAnswer = listOf(stub("session-z", "a tunnel"))
+            collectState()
+            runCurrent()
+
+            viewModel.setQuery("tunnel")
+            runCurrent()
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+            runCurrent()
+            assertEquals(
+                listOf("session-a", "session-z"),
+                viewModel.uiState.value.sessionRows.rowIds(),
+            )
+
+            repository.searchAnswer = null
+            viewModel.setQuery("tunnel probe")
+            runCurrent()
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+            runCurrent()
+
+            assertEquals(listOf("session-a"), viewModel.uiState.value.sessionRows.rowIds())
+            assertNull(viewModel.uiState.value.notice)
+        }
+
+    /**
+     * The whole point of a stub row: the conversation it names is one this app
+     * has never paged in, so selecting it has to reach the Gateway rather than
+     * look the id up in the cache.
+     */
+    @Test
+    fun `selecting a search stub opens the session it names`() = runTest(dispatcher) {
+        repository.searchAnswer = listOf(stub("session-z", "a tunnel"))
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("session-z"), viewModel.uiState.value.sessionRows.rowIds())
+        assertNull(cache.session("session-z"))
+
+        viewModel.selectSession("session-z")
+        runCurrent()
+
+        assertTrue("session-z" in repository.opened)
+    }
+
     /** A search hit built the way the repository builds one. */
     private fun stub(id: String, preview: String) = SessionSummary(
         id = id,

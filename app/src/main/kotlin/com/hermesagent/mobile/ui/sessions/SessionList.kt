@@ -381,15 +381,23 @@ fun SessionList(
                 // Reachable with a live query only inside the Archived view,
                 // where the list stays a local filter over its own pool and so
                 // renders no `Results` section to hold the sentence. Desktop
-                // says the same thing either way, so the sentence is the same
-                // one — and it is the whole state: Desktop's search empty has
-                // no second line (`sidebar/index.tsx:1618-1622` @ `3ca096de`).
+                // says the same thing either way, so this is the same note the
+                // `Results` section draws — one sentence and no second line,
+                // exactly as Desktop's search empty has none
+                // (`sidebar/index.tsx:1618-1622` @ `3ca096de`). It is the
+                // section's own note rather than a shared [EmptyState], so the
+                // centring the wrapped sentence needs stays here instead of
+                // reaching every other empty state in the app.
+                rows.isEmpty() && query.isNotBlank() -> Box(listSlot) {
+                    NoResultsNote(query.trim())
+                }
+
                 rows.isEmpty() -> EmptyState(
-                    title = if (query.isBlank()) "No sessions" else noSessionsMatch(query.trim()),
-                    description = when {
-                        query.isNotBlank() -> ""
-                        canCreate -> "Start one with the + above."
-                        else -> "Connect to a Gateway to start a session."
+                    title = "No sessions",
+                    description = if (canCreate) {
+                        "Start one with the + above."
+                    } else {
+                        "Connect to a Gateway to start a session."
                     },
                     modifier = listSlot,
                 )
@@ -442,18 +450,7 @@ fun SessionList(
                                         .testTag(RESULTS_SECTION_TAG),
                                 )
 
-                                is SessionListRow.NoResultsNote -> Text(
-                                    text = noSessionsMatch(row.query),
-                                    style = HermesTheme.type.scaffoldMeta,
-                                    color = tokens.textTertiary,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(
-                                            horizontal = HermesTheme.spacing.pageInset,
-                                            vertical = 12.dp,
-                                        ),
-                                )
+                                is SessionListRow.NoResultsNote -> NoResultsNote(row.query)
 
                                 is SessionListRow.SearchSkeletons -> SearchSkeletons()
 
@@ -887,6 +884,27 @@ private fun SearchSkeletons() {
 
 /** Desktop's `w-32 w-40 w-28 w-36 w-24` (`section-states.tsx:15` @ the pin). */
 private val SKELETON_WIDTHS = listOf(128.dp, 160.dp, 112.dp, 144.dp, 96.dp)
+
+/**
+ * The `Results` section settled on nothing: `No sessions match “{query}”.`
+ * (`i18n/en.ts:2203`, chosen at `sidebar/index.tsx:1618-1622` @ `3ca096de`).
+ *
+ * Centred, because the sentence quotes the reader's own query and a long one
+ * wraps; centring it here rather than in the shared `EmptyState` keeps the
+ * change inside the surface that needs it.
+ */
+@Composable
+private fun NoResultsNote(query: String) {
+    Text(
+        text = noSessionsMatch(query),
+        style = HermesTheme.type.scaffoldMeta,
+        color = HermesTheme.tokens.textTertiary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp),
+    )
+}
 
 @Composable
 private fun SessionRow(

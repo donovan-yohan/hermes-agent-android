@@ -116,6 +116,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -724,20 +725,55 @@ internal class ChatViewModel(
         // client-side and merged ahead of the server hits."
         // (`apps/desktop/src/app/chat/sidebar/index.tsx:619-653` @ `3ca096de`).
         //
-        // Two things scope the answer that Desktop's effect does not have to
-        // think about, and both belong in the key rather than in the body: the
-        // profile the rail is standing in, and which backend this is. A scope
-        // change means a different set of conversations; an endpoint change
-        // means a different machine that can recycle the same durable ids
-        // (`SessionCache.resetForEndpointSwitch`), so a stub from the previous
-        // one must not survive into the next.
+        // Three things scope the answer that Desktop's effect does not have to
+        // think about, and all three belong in the key rather than in the body:
+        // the profile the rail is standing in, which backend this is, and
+        // whether the rail is showing sessions at all. See [SessionSearchKey].
         viewModelScope.launch {
-            combine(query, profileScope, cache.endpointGeneration) { raw, scope, endpoint ->
-                Triple(raw.trim(), scope.sessionProfileParam, endpoint)
+            var lastScope: SessionSearchScope? = null
+            combine(
+                query,
+                profileScope,
+                cache.endpointGeneration,
+                sidebarGrouping,
+                selectedProjectId,
+            ) { raw, scope, endpoint, grouping, projectId ->
+                SessionSearchKey(
+                    query = raw.trim(),
+                    scope = SessionSearchScope(
+                        // The unified view has no union to ask for: the route
+                        // opens exactly one profile's database
+                        // (`hermes_cli/web_routers/sessions.py:227` @
+                        // `3ca096de`), so sending the *active* profile there
+                        // would merge one profile's server hits into an
+                        // all-profile list. Send none, which is the launch
+                        // profile — the same leg `sessionListProfiles` asks
+                        // first — and say so in the ledger.
+                        profile = if (scope.isAll) null else scope.sessionProfileParam,
+                        endpoint = endpoint,
+                    ),
+                    // The project overview reuses this same field as a filter
+                    // over projects and renders no session rows at all
+                    // (`ui/sessions/SessionList.kt`), so a backend session
+                    // search there costs a request per settled keystroke for an
+                    // answer nothing draws.
+                    sessionsView = grouping != SidebarGrouping.Project || projectId != null,
+                )
             }
                 .distinctUntilChanged()
-                .collectLatest { (trimmedQuery, profile, _) ->
-                    if (trimmedQuery.isEmpty()) {
+                // Before the debounce, not after it. A scope change means a
+                // different set of conversations, and an endpoint change means
+                // a different machine that can recycle the same durable ids
+                // (`SessionCache.resetForEndpointSwitch`) — so the previous
+                // scope's stubs stop being an answer the moment the scope
+                // moves, not 200 ms and a round trip later. `collectLatest`
+                // below cancels the request that was in flight for them.
+                .onEach { key ->
+                    if (lastScope != null && lastScope != key.scope) searchResults.value = null
+                    lastScope = key.scope
+                }
+                .collectLatest { key ->
+                    if (key.query.isEmpty() || !key.sessionsView) {
                         searchResults.value = null
                         searchPendingState.value = false
                         return@collectLatest
@@ -750,7 +786,7 @@ internal class ChatViewModel(
                     // Null on refusal, on an absent route and on failure — the
                     // list falls back to its client-side matches with no error
                     // banner, exactly as Desktop swallows its own (`:641`).
-                    searchResults.value = repository.searchSessions(trimmedQuery, profile)
+                    searchResults.value = repository.searchSessions(key.query, key.scope.profile)
                     searchPendingState.value = false
                 }
         }
@@ -3244,6 +3280,29 @@ internal class ChatViewModel(
         val query: String,
         val pending: Boolean,
         val results: List<SessionSummary>?,
+    )
+
+    /**
+     * Which conversations a search answer would be *about*.
+     *
+     * Kept apart from the query because it is the half that invalidates an
+     * answer already on screen: a stub carries a durable id, and the next
+     * backend can recycle one (`SessionCache.resetForEndpointSwitch`), so a hit
+     * from the previous Gateway is not a narrower answer here — it is a row
+     * that may open a different conversation entirely.
+     */
+    private data class SessionSearchScope(val profile: String?, val endpoint: Long)
+
+    /**
+     * Everything the debounced search effect re-keys on: what was typed, whose
+     * conversations it is about, and whether the rail is showing sessions at
+     * all rather than the project overview, where the same field filters
+     * projects and no session row is drawn.
+     */
+    private data class SessionSearchKey(
+        val query: String,
+        val scope: SessionSearchScope,
+        val sessionsView: Boolean,
     )
 
     companion object {

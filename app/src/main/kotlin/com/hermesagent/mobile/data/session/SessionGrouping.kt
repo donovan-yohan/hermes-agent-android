@@ -258,12 +258,19 @@ private fun searchRows(
 }
 
 /**
- * Desktop's `sessionMatchesSearch`, field for field
- * (`apps/desktop/src/lib/session-search.ts:7-23` @ `3ca096de`): the durable id,
- * the compression lineage root, the title, the preview, the working directory
- * and the git branch, plus every term the row's source answers to. Substring,
- * case-insensitive, on the same normalised needle — `trim().toLowerCase()`
- * (`apps/desktop/src/lib/text.ts:11`).
+ * Desktop's `sessionMatchesSearch` (`apps/desktop/src/lib/session-search.ts:7-23`
+ * @ `3ca096de`): the durable id, the compression lineage root, the title, the
+ * preview, the working directory and the git branch, plus every term the row's
+ * source answers to. Substring, case-insensitive, on the same normalised needle
+ * — `trim().toLowerCase()` (`apps/desktop/src/lib/text.ts:11`).
+ *
+ * One field is read differently, and it is ledgered
+ * (`docs/parity/session-search.md`): Desktop reads `sessionTitle(session)`,
+ * which is `title || preview || 'Untitled session'`
+ * (`apps/desktop/src/lib/chat-runtime.ts:51-53`), so typing `untitled` there
+ * finds every nameless row. This reads the raw title, because this rail draws
+ * the raw title too — matching a row on a label it does not show would be a
+ * hit the reader cannot see.
  *
  * Widening this is what makes the local half of search worth having: pasting a
  * session id, or typing a branch name, finds the conversation without a round
@@ -328,17 +335,29 @@ private val SOURCE_ALIASES: Map<String, List<String>> = mapOf(
 private val SOURCE_WORD_BREAK = Regex("[_-]+")
 
 /**
+ * Desktop's own `\b\w`: the first word character after any non-word one. Both
+ * JavaScript's and Java's `\w` are ASCII `[A-Za-z0-9_]` without a Unicode
+ * flag, and both define `\b` from it, so this is the same boundary Desktop
+ * uppercases at — including the separators the `[_-]` pass leaves behind, such
+ * as `.` or `/`.
+ */
+private val SOURCE_WORD_START = Regex("\\b\\w")
+
+/**
  * Desktop's `sessionSourceLabel` fallback for a source it has no label for:
- * word-break on `_`/`-`, then title-case each word
+ * word-break on `_`/`-`, then uppercase every word start
  * (`session-source.ts:111-119`, `lib/text.ts:7` @ `3ca096de`). An unknown
  * source is still searchable under the name the row shows.
+ *
+ * The casing itself cannot change a match — [sessionSourceSearchTerms] feeds a
+ * case-insensitive comparison — so there is no test that can tell the two
+ * boundaries apart. It is Desktop's boundary anyway, because the day this term
+ * is *rendered* rather than only matched, a narrower rule would be a different
+ * label.
  */
 private fun prettySourceName(id: String): String =
     id.replace(SOURCE_WORD_BREAK, " ")
-        .split(' ')
-        .joinToString(" ") { word ->
-            word.replaceFirstChar { first -> first.titlecase(Locale.ROOT) }
-        }
+        .replace(SOURCE_WORD_START) { match -> match.value.uppercase(Locale.ROOT) }
 
 /**
  * Desktop's `sessionSourceSearchTerms` (`session-source.ts:121-130` @

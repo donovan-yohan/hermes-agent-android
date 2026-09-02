@@ -66,6 +66,14 @@ enum class HermesIcon(val glyph: String) {
     Cloud("\uEBAA"),
     Trash("\uEA81"),
     SettingsGear("\uEB51"),
+    /**
+     * The search field's leading glyph. Desktop's is Tabler `IconSearch`
+     * (`components/ui/search-field.tsx:69` renders `Search` from
+     * `apps/desktop/src/lib/icons.ts:102` @ `3ca096de`), not a Codicon — only
+     * that field's clear button is one (`close`, `:98`). This is the Codicon
+     * of the same shape, the same substitution [Globe] and [Monitor] already
+     * record, and it is ledgered in `docs/parity/session-search.md`.
+     */
     Search("\uEA6D"),
     Clock("\uEA82"),
     Terminal("\uEA85"),

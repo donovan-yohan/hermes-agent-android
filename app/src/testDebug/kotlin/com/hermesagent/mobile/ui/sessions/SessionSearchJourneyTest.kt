@@ -26,6 +26,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * The sessions rail's search as a reader meets it: the field's own chrome, the
@@ -203,6 +205,11 @@ class SessionSearchJourneyTest {
             query = query,
             searchPending = searchPending,
             serverMatches = serverMatches,
+            // Fixed clock, fixed zone, fixed locale: the empty-query journeys
+            // go through the calendar-bucket path, and a row that lands in a
+            // different bucket on the machine running the test is not a test.
+            timeZone = ZONE,
+            locale = LOCALE,
         )
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
@@ -255,5 +262,9 @@ class SessionSearchJourneyTest {
     private companion object {
         /** Wednesday 2026-08-19, 12:00 UTC. */
         const val NOW = 1_787_140_800_000L
+        val ZONE: TimeZone = TimeZone.getTimeZone("UTC")
+
+        /** Week starts Monday, so the bucket arithmetic is the JVM suite's. */
+        val LOCALE: Locale = Locale.UK
     }
 }
