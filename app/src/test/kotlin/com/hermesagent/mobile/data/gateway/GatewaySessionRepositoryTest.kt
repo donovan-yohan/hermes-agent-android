@@ -12,8 +12,10 @@ import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
 import com.hermesagent.mobile.data.session.ComposerGoalState
 import com.hermesagent.mobile.data.session.ComposerTodoState
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -23,6 +25,7 @@ import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.session.buildSessionRows
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,10 +36,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -4721,6 +4727,640 @@ class GatewaySessionRepositoryTest {
         assertNull(cache.session("durable-b"))
     }
 
+    // -----------------------------------------------------------------------
+    // Pin, archive and the durable unread watermark (#66). All three are the
+    // same `PATCH /api/sessions/{id}` contract
+    // (`hermes_cli/web_routers/sessions.py:825-832` @
+    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and the same
+    // optimistic-then-honest shape Desktop uses
+    // (`apps/desktop/src/store/session-unread-remote.ts:37-63`).
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `setSessionPinned writes the pin with the row's own profile and paints it first`() = runTest {
+        val cache = SessionCache()
+        val bodies = mutableListOf<String>()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                bodies += request.readBody()
+                restPage("""{"ok":true,"title":"Pin me","pinned":true}""")
+            } else {
+                restPage(REST_EMPTY_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Pin me", "", CLOCK, remoteProfile = "work"))
+
+        repository.setSessionPinned("durable-a", true)
+
+        assertEquals("api/sessions/durable-a", http.requests.last().path)
+        assertEquals("PATCH", http.requests.last().method)
+        // The route scopes itself through the BODY, not the query
+        // (`sessions.py:686,696`), and every mutation carries the profile.
+        assertEquals(listOf("""{"pinned":true,"profile":"work"}"""), bodies)
+        assertEquals(true, cache.session("durable-a")?.pinned)
+    }
+
+    @Test
+    fun `a refused pin repaints the row it optimistically pinned`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") GatewayHttpResult.Rejected(500, "nope") else restPage(REST_EMPTY_PAGE)
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Pin me", "", CLOCK, pinned = false))
+
+        val failure = runCatching { repository.setSessionPinned("durable-a", true) }.exceptionOrNull()
+        assertTrue(failure is GatewayRpcException)
+
+        assertEquals("Could not update pin. Check the Gateway and try again.", failure?.message)
+        assertEquals(false, cache.session("durable-a")?.pinned)
+    }
+
+    /**
+     * Archiving is reversible, so the flag moves and the row does not.
+     * `removeSession` is the cache's one tombstone and it means *gone* — it
+     * takes the rehome alias, the transcript and the project membership with it
+     * (`SessionCache.kt:183-203`), none of which a rollback could restore. The
+     * live list stops showing the row because `buildSessionRows` filters its
+     * pool, which is where Desktop draws the same line too.
+     */
+    @Test
+    fun `setSessionArchived files the row in place and off the live list`() = runTest {
+        val cache = SessionCache()
+        val bodies = mutableListOf<String>()
+        var archivedDuringWrite: Boolean? = null
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                bodies += request.readBody()
+                archivedDuringWrite = cache.session("durable-a")?.archived
+                restPage("""{"ok":true,"title":"File me","archived":true}""")
+            } else {
+                restPage(REST_EMPTY_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "File me", "", CLOCK))
+        cache.appendEntry("durable-a", UserTurn("u-1", "hello", CLOCK))
+
+        repository.setSessionArchived("durable-a", true)
+
+        assertEquals(listOf("""{"archived":true}"""), bodies)
+        // Painted before the write, not after it.
+        assertEquals(true, archivedDuringWrite)
+        assertEquals(true, cache.session("durable-a")?.archived)
+        assertEquals(1, cache.transcript("durable-a").size)
+        // Off the live list, on the archived one.
+        assertFalse("durable-a" in liveRowIds(cache))
+        assertEquals(listOf("durable-a"), archivedRowIds(cache))
+    }
+
+    @Test
+    fun `a refused archive puts the row and its conversation back`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") GatewayHttpResult.Rejected(500, "nope") else restPage(REST_EMPTY_PAGE)
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "File me", "", CLOCK, status = SessionStatus.Background))
+        cache.appendEntry("durable-a", UserTurn("u-1", "hello", CLOCK))
+
+        val failure = runCatching { repository.setSessionArchived("durable-a", true) }.exceptionOrNull()
+        assertTrue(failure is GatewayRpcException)
+
+        assertEquals("Could not archive that chat. Check the Gateway and try again.", failure?.message)
+        assertEquals(SessionStatus.Background, cache.session("durable-a")?.status)
+        assertNull(cache.session("durable-a")?.archived)
+        assertEquals(1, cache.transcript("durable-a").size)
+    }
+
+    /**
+     * And it puts back everything a tombstone would have taken: the compression
+     * rehome alias the open screen resolves through
+     * (`ui/chat/ChatViewModel.kt:405`) and the project lane the row belongs to.
+     * A rollback that restores only the summary is a silent, permanent loss.
+     */
+    @Test
+    fun `a refused archive keeps the rehome alias and the project membership`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") GatewayHttpResult.Rejected(500, "nope") else restPage(REST_EMPTY_PAGE)
+        }
+        // The connection bootstrap re-reads the project tree and replaces the
+        // membership map wholesale, which would restore what this test is
+        // watching for. Held open, so the catalog under test is only ever the
+        // one seeded here.
+        val rpc = FakeRpc().apply { projectTreeResponse = CompletableDeferred() }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("root-a", "Long chat", "", CLOCK))
+        cache.rehomeSession(
+            "root-a",
+            SessionSummary("tip-a", "Long chat", "", CLOCK, lineageRootId = "root-a"),
+            listOf(UserTurn("u-1", "hello", CLOCK)),
+        )
+        cache.replaceProjectDetails(
+            ProjectSummary("proj-1", "Pager", "/srv/pager"),
+            listOf(cache.session("tip-a")!!),
+        )
+
+        runCatching { repository.setSessionArchived("tip-a", true) }
+
+        assertEquals("tip-a", cache.state.value.rehomes["root-a"])
+        assertEquals(listOf("tip-a"), cache.state.value.projects.memberships["proj-1"])
+        assertEquals(1, cache.transcript("tip-a").size)
+        assertNull(cache.session("tip-a")?.archived)
+    }
+
+    /**
+     * The archive flag is fenced like the other two. A page issued before the
+     * PATCH answers `archived:false`, and `mergeListedSession` lets a real
+     * `false` overwrite — without the fence the row is repainted back into
+     * recents for a whole refresh cycle.
+     */
+    @Test
+    fun `a page that predates the archive cannot put the row back in recents`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                restPage("""{"ok":true,"title":"Stale"}""")
+            } else {
+                restPage(REST_STALE_FLAGS_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        repository.refreshSessions()
+        assertEquals(false, cache.session("durable-a")?.archived)
+
+        repository.setSessionArchived("durable-a", true)
+        repository.refreshSessions()
+
+        assertEquals(true, cache.session("durable-a")?.archived)
+    }
+
+    @Test
+    fun `restoring an archived row clears the flag in place`() = runTest {
+        val cache = SessionCache()
+        val bodies = mutableListOf<String>()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                bodies += request.readBody()
+                restPage("""{"ok":true,"title":"Back","archived":false}""")
+            } else {
+                restPage(REST_EMPTY_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Back", "", CLOCK, archived = true))
+
+        repository.setSessionArchived("durable-a", false)
+
+        assertEquals(listOf("""{"archived":false}"""), bodies)
+        assertEquals(false, cache.session("durable-a")?.archived)
+    }
+
+    @Test
+    fun `setSessionUnread arms the durable watermark`() = runTest {
+        val cache = SessionCache()
+        val bodies = mutableListOf<String>()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                bodies += request.readBody()
+                restPage("""{"ok":true,"title":"Mark me","unread":true}""")
+            } else {
+                restPage(REST_EMPTY_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Mark me", "", CLOCK, unread = false))
+
+        repository.setSessionUnread("durable-a", true)
+
+        // `set_session_read(sid, read = not body.unread)` (`sessions.py:831-832`).
+        assertEquals(listOf("""{"unread":true}"""), bodies)
+        assertEquals(true, cache.session("durable-a")?.unread)
+    }
+
+    /**
+     * Both unread sources move in one action, in Desktop's order
+     * (`app/chat/sidebar/session-actions-menu.tsx:316-332` @ `3ca096de`): the
+     * transient finished-turn dot is cleared *with* the watermark, not after
+     * it, so nothing in between can repaint what was just dismissed.
+     */
+    @Test
+    fun `marking read clears the watermark and the finished-turn dot together`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                restPage("""{"ok":true,"title":"Mark me","unread":false}""")
+            } else {
+                restPage(REST_EMPTY_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(
+            SessionSummary("durable-a", "Mark me", "", CLOCK, status = SessionStatus.Unread, unread = true),
+        )
+
+        repository.setSessionUnread("durable-a", false)
+
+        assertEquals(false, cache.session("durable-a")?.unread)
+        assertEquals(SessionStatus.Idle, cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `a refused unread write repaints both sources`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") GatewayHttpResult.Rejected(500, "nope") else restPage(REST_EMPTY_PAGE)
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(
+            SessionSummary("durable-a", "Mark me", "", CLOCK, status = SessionStatus.Unread, unread = true),
+        )
+
+        val failure = runCatching { repository.setSessionUnread("durable-a", false) }.exceptionOrNull()
+        assertTrue(failure is GatewayRpcException)
+
+        // `unreadFailed` verbatim (`apps/desktop/src/i18n/en.ts:2307`).
+        assertEquals("Could not update unread state", failure?.message)
+        assertEquals(true, cache.session("durable-a")?.unread)
+        assertEquals(SessionStatus.Unread, cache.session("durable-a")?.status)
+    }
+
+    /**
+     * The failure the epic names: a list page already in flight when the PATCH
+     * went answers with the OLD flag, and merging it would visibly undo the
+     * write for a refresh cycle. Desktop fences both flags the same way
+     * (`store/session-unread-remote.ts:28-31`, `sidebar/session-index.ts:51-56`).
+     */
+    @Test
+    fun `a list page that predates the write cannot resurrect the dot or drop the pin`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") {
+                restPage("""{"ok":true,"title":"Stale"}""")
+            } else {
+                restPage(REST_STALE_FLAGS_PAGE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        repository.refreshSessions()
+        assertEquals(true, cache.session("durable-a")?.unread)
+
+        repository.setSessionUnread("durable-a", false)
+        repository.setSessionPinned("durable-a", true)
+        repository.refreshSessions()
+
+        assertEquals(false, cache.session("durable-a")?.unread)
+        assertEquals(true, cache.session("durable-a")?.pinned)
+    }
+
+    /**
+     * And the fence retires itself. A page that agrees drops it, so the very
+     * next disagreeing page is believed — the guard protects one refresh cycle,
+     * not this client's opinion forever.
+     */
+    @Test
+    fun `the fence retires the moment a page agrees with it`() = runTest {
+        val cache = SessionCache()
+        var page = REST_STALE_FLAGS_PAGE
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"Stale"}""") else restPage(page)
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        repository.refreshSessions()
+
+        repository.setSessionUnread("durable-a", false)
+        page = REST_READ_FLAGS_PAGE
+        repository.refreshSessions()
+        assertEquals(false, cache.session("durable-a")?.unread)
+
+        // The Gateway is authoritative again: a genuine unread from another
+        // client now lands.
+        page = REST_STALE_FLAGS_PAGE
+        repository.refreshSessions()
+        assertEquals(true, cache.session("durable-a")?.unread)
+    }
+
+    /**
+     * A pin fenced under the id the row is filed by is also fenced under the
+     * compression lineage root, because the next page can surface the same
+     * conversation under a *different* id — the REST list projects a chain
+     * forward to its latest continuation and reports the root separately
+     * (`hermes_state.py:11596-11603` @ `3ca096de`). A fence that only knew the
+     * id it was written against would lose the pin on the first compression.
+     */
+    @Test
+    fun `a fenced pin survives the row arriving under its compression tip`() = runTest {
+        val cache = SessionCache()
+        // The connection bootstrap reads one page of its own before this test
+        // says anything, and the claim here is about the page that arrives
+        // *after* the write. So the tip page is armed only once the row is
+        // filed and pinned; until then the Gateway has nothing to say.
+        var page = REST_EMPTY_PAGE
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"Tip"}""") else restPage(page)
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        cache.upsertSession(SessionSummary("root-a", "Tip", "", CLOCK, pinned = false))
+
+        repository.setSessionPinned("root-a", true)
+
+        // The page names the conversation by its new tip, says the root it came
+        // from, and carries the pre-write value.
+        page = REST_TIP_ID_PAGE
+        repository.refreshSessions()
+
+        assertNull(cache.session("root-a"))
+        // One row for the conversation, not one under each id it has worn.
+        assertEquals(1, cache.state.value.sessions.values.count { it.title == "Tip" })
+        assertEquals(true, cache.session("tip-a")?.pinned)
+    }
+
+    /**
+     * The guard is not decoration. Past ten seconds the fence retires itself
+     * and the Gateway is authoritative again, even though no page ever agreed
+     * (`FLAG_WRITE_GUARD_MILLIS`, Desktop's `UNREAD_WRITE_GUARD_MS`
+     * `store/session-unread-remote.ts:28` @ `3ca096de`).
+     */
+    @Test
+    fun `a fence past the guard lets the server win`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"Stale"}""") else restPage(REST_STALE_FLAGS_PAGE)
+        }
+        var now = CLOCK
+        val repository = liveRepository(cache, http) { now }
+        runCurrent()
+        repository.refreshSessions()
+
+        repository.setSessionUnread("durable-a", false)
+        // Inside the window the write still outranks the stale page.
+        repository.refreshSessions()
+        assertEquals(false, cache.session("durable-a")?.unread)
+
+        now += 10_000L
+        repository.refreshSessions()
+
+        assertEquals(true, cache.session("durable-a")?.unread)
+    }
+
+    /**
+     * And a write the Gateway acknowledged but has never echoed does not sit in
+     * the backend-authoritative cache forever as this client's opinion: the
+     * fence arms one rescan for when its guard lapses.
+     */
+    @Test
+    fun `an unconfirmed write asks the Gateway again when its guard expires`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"Stale"}""") else restPage(REST_STALE_FLAGS_PAGE)
+        }
+        val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
+        runCurrent()
+        repository.refreshSessions()
+        val readsBeforeWrite = http.requests.count { it.method == "GET" }
+
+        repository.setSessionUnread("durable-a", false)
+        advanceTimeBy(10_001L)
+        runCurrent()
+        advanceUntilIdle()
+
+        // A list read nobody asked for: the guard lapsed on a write no page had
+        // confirmed, so the repository went back to the Gateway rather than
+        // leaving its own value in the cache. What the answer then says is the
+        // other test's claim (`a fence past the guard lets the server win`).
+        //
+        // Named precisely, so that a background poller added later on any timer
+        // cannot stand in for it: a live-pool GET, from the top of the list.
+        assertTrue(http.requests.count { it.method == "GET" } > readsBeforeWrite)
+        val rescan = http.requests.last()
+        assertEquals("GET", rescan.method)
+        assertEquals("exclude", rescan.query["archived"])
+        assertEquals("0", rescan.query["offset"])
+    }
+
+    /**
+     * And every fence gets its own wake-up, not just the first.
+     *
+     * The reconcile is one job, so a second write made inside the first write's
+     * window used to inherit its deadline and nothing else: the job fired at
+     * the first fence's expiry, pruned that entry, and left the newer fence to
+     * lapse with nothing scheduled — this client's value in the
+     * backend-authoritative cache with nothing to correct it, which is the hole
+     * `armFlagWriteReconcile` exists to close.
+     */
+    @Test
+    fun `a second write inside the first write's window gets its own wake-up`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"First"}""") else restPage(REST_PAGE_ONE)
+        }
+        val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
+        runCurrent()
+        repository.refreshSessions()
+
+        // Two rows, so the two fences are two entries rather than one merged
+        // entry whose window the second write would simply extend.
+        repository.setSessionPinned("durable-a", true)
+        advanceTimeBy(5_000L)
+        runCurrent()
+        repository.setSessionPinned("durable-b", true)
+        val readsBeforeGuards = http.requests.count { it.method == "GET" }
+
+        // The first fence's ten seconds.
+        advanceTimeBy(5_001L)
+        runCurrent()
+        val readsAfterFirstGuard = http.requests.count { it.method == "GET" }
+        assertTrue(readsAfterFirstGuard > readsBeforeGuards)
+
+        // …and the second fence's own, five seconds later. Without the re-arm
+        // nothing is scheduled here at all.
+        advanceTimeBy(5_000L)
+        runCurrent()
+        assertTrue(http.requests.count { it.method == "GET" } > readsAfterFirstGuard)
+    }
+
+    /**
+     * An archive arms nothing, because nothing it could ask for would answer.
+     *
+     * The live list is permanently `archived=exclude`, so once the row is filed
+     * no page the rescan can request will mention it again: the fence could
+     * only ever expire, and the wake-up would be one full list read per profile
+     * leg that cannot change anything. The archived pool's own read is what
+     * confirms that fence.
+     */
+    @Test
+    fun `an archive schedules no live rescan that could never confirm it`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.method == "PATCH") restPage("""{"ok":true,"title":"First"}""") else restPage(REST_PAGE_ONE)
+        }
+        val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
+        runCurrent()
+        repository.refreshSessions()
+        val readsBeforeWrite = http.requests.count { it.method == "GET" }
+
+        repository.setSessionArchived("durable-a", true)
+        advanceTimeBy(30_000L)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals(readsBeforeWrite, http.requests.count { it.method == "GET" })
+        assertEquals(true, cache.session("durable-a")?.archived)
+    }
+
+    /**
+     * A pin is a property of the conversation, not of the id it currently
+     * lives under: a compression re-home carries it whole.
+     */
+    @Test
+    fun `a pin survives an auto-compression re-home`() = runTest {
+        // No Gateway: the re-home is [SessionCache]'s own, and the claim is
+        // about what the cache and the grouping do with it. A live repository
+        // here would only add its bootstrap's rows to the list being asserted.
+        val cache = SessionCache()
+        cache.upsertSession(SessionSummary("root-a", "Long chat", "", CLOCK, pinned = true))
+
+        val row = cache.session("root-a")!!
+        cache.rehomeSession("root-a", row.copy(id = "tip-a", lineageRootId = "root-a"), emptyList())
+
+        assertNull(cache.session("root-a"))
+        assertEquals(true, cache.session("tip-a")?.pinned)
+        assertEquals(
+            listOf("tip-a"),
+            buildSessionRows(cache.state.value.sessions.values, CLOCK)
+                .filterIsInstance<SessionListRow.Row>()
+                .map { it.session.id },
+        )
+        assertTrue(buildSessionRows(cache.state.value.sessions.values, CLOCK).first() is SessionListRow.PinnedLabel)
+    }
+
+    /**
+     * The Archived view is its own pool, read with its own request: Desktop's
+     * `listAllProfileSessions(ARCHIVED_FETCH_LIMIT, 0, 'only')`
+     * (`store/sidebar-archive.ts:7-30` @ `3ca096de` — "Archived rows are
+     * excluded from the sessions query, so the Archived view has to fetch its
+     * own set. Capped: it's a lookup surface, not a feed."). The live list
+     * keeps asking `exclude`, which is where its pager's offsets live.
+     */
+    @Test
+    fun `the Archived view reads its own archived-only pool`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { restPage(REST_EMPTY_PAGE) }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        repository.refreshSessions()
+        assertEquals("exclude", http.requests.last().query["archived"])
+        assertEquals("50", http.requests.last().query["limit"])
+
+        repository.loadArchivedSessions()
+
+        assertEquals("GET", http.requests.last().method)
+        assertEquals("only", http.requests.last().query["archived"])
+        assertEquals("0", http.requests.last().query["offset"])
+        // Desktop asks for 200 through a route that caps at 500; this app reads
+        // one profile leg through `/api/sessions`, which caps at 100
+        // (`hermes_cli/web_routers/sessions.py:91-94` @ `3ca096de`).
+        assertEquals("100", http.requests.last().query["limit"])
+
+        // And the pool it reads never becomes the live list's page: a later
+        // refresh is `exclude` again, from offset zero.
+        repository.refreshSessions()
+        assertEquals("exclude", http.requests.last().query["archived"])
+        assertEquals("0", http.requests.last().query["offset"])
+    }
+
+    /**
+     * The failure the `include` shape had: one 50-row window of the combined
+     * set, ordered by recency, shows nothing archived to anyone whose newest
+     * page is all live conversations — and `Nothing archived` is then a
+     * statement about the account that is simply false.
+     */
+    @Test
+    fun `an archived row outside the live page still reaches the Archived view`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            if (request.query["archived"] == "only") {
+                restPage(REST_ARCHIVED_ONLY_PAGE)
+            } else {
+                restPage(REST_PAGE_ONE)
+            }
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+        repository.refreshSessions()
+        // The live page is full of live rows and never mentions the archived one.
+        assertNull(cache.session("durable-z"))
+
+        repository.loadArchivedSessions()
+
+        assertEquals(listOf("durable-z"), archivedRowIds(cache))
+        // And the live list is untouched by the lookup.
+        assertTrue(liveRowIds(cache).containsAll(listOf("durable-a", "durable-b")))
+        assertFalse("durable-z" in liveRowIds(cache))
+    }
+
+    private fun liveRowIds(cache: SessionCache) =
+        buildSessionRows(cache.state.value.sessions.values, CLOCK)
+            .filterIsInstance<SessionListRow.Row>()
+            .map { it.session.id }
+
+    private fun archivedRowIds(cache: SessionCache) =
+        buildSessionRows(cache.state.value.sessions.values, CLOCK, archivedView = true)
+            .filterIsInstance<SessionListRow.Row>()
+            .map { it.session.id }
+
+    /**
+     * The default clock is the fixed [CLOCK]; a test about the write fence's
+     * ten-second guard passes one that actually moves, because a constant clock
+     * makes `clock() - write.atMillis` zero forever and the expiry branch
+     * unreachable.
+     */
+    private fun TestScope.liveRepository(
+        cache: SessionCache,
+        http: GatewayHttp,
+        clock: () -> Long = { CLOCK },
+    ) = LiveGatewaySessionRepository(
+        cache,
+        MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+        MutableStateFlow<GatewayRpcClient?>(FakeRpc()),
+        backgroundScope,
+        http = { http },
+        clock = clock,
+        // The REST leg's production home is `Dispatchers.IO` — a real thread,
+        // which a virtual-time test cannot schedule. Left at the default, the
+        // connection bootstrap's first list read lands whenever that pool got
+        // round to it, so whether `runCurrent()` has drained it is a property
+        // of the machine: locally it had not, and on CI it had.
+        restContext = EmptyCoroutineContext,
+    )
+
+    private fun GatewayHttpRequest.readBody(): String {
+        val buffer = okio.Buffer()
+        body?.writeTo(buffer)
+        return buffer.readUtf8()
+    }
+
     /**
      * A [GatewayHttp] that answers the session-list route from a script and
      * remembers every attempt.
@@ -4960,6 +5600,41 @@ class GatewaySessionRepositoryTest {
              "git_repo_root":"/srv/worktrees/session-list","archived":false,"pinned":true,"unread":true,
              "is_active":false,"profile":"work","is_default_profile":false}
         ],"total":1,"limit":50,"offset":0}"""
+        const val REST_EMPTY_PAGE = """{"sessions":[],"total":0,"limit":50,"offset":0}"""
+
+        /** One row whose flags predate this client's own write. */
+        const val REST_STALE_FLAGS_PAGE = """{"sessions":[
+            {"id":"durable-a","title":"Stale","preview":"","started_at":1700000100,"last_active":1700000100,
+             "message_count":1,"source":"desktop","archived":false,"pinned":false,"unread":true,
+             "profile":"default","is_default_profile":true}
+        ],"total":1,"limit":50,"offset":0}"""
+
+        /** The same row once the Gateway agrees the conversation was read. */
+        const val REST_READ_FLAGS_PAGE = """{"sessions":[
+            {"id":"durable-a","title":"Stale","preview":"","started_at":1700000100,"last_active":1700000100,
+             "message_count":1,"source":"desktop","archived":false,"pinned":false,"unread":false,
+             "profile":"default","is_default_profile":true}
+        ],"total":1,"limit":50,"offset":0}"""
+
+        /**
+         * The same conversation projected forward onto a fresh compression tip,
+         * in the shape the REST list actually emits: the tip's id, with the
+         * root reported separately (`hermes_state.py:11596-11603` @ `3ca096de`).
+         */
+        const val REST_TIP_ID_PAGE = """{"sessions":[
+            {"id":"tip-a","_lineage_root_id":"root-a","title":"Tip","preview":"",
+             "started_at":1700000100,"last_active":1700000100,
+             "message_count":1,"source":"desktop","archived":false,"pinned":false,"unread":false,
+             "profile":"default","is_default_profile":true}
+        ],"total":1,"limit":50,"offset":0}"""
+
+        /** What `archived=only` answers: the archived set and nothing else. */
+        const val REST_ARCHIVED_ONLY_PAGE = """{"sessions":[
+            {"id":"durable-z","title":"Filed","preview":"","started_at":1699000000,"last_active":1699000000,
+             "message_count":4,"source":"desktop","archived":true,"pinned":false,"unread":false,
+             "profile":"default","is_default_profile":true}
+        ],"total":1,"limit":100,"offset":0}"""
+
         const val REST_PAGE_ONE = """{"sessions":[
             {"id":"durable-a","title":"First","preview":"a","started_at":1700000100,"last_active":1700000100,
              "message_count":7,"source":"desktop","archived":false,"pinned":false,"unread":false,

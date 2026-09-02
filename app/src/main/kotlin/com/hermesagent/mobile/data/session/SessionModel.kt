@@ -35,6 +35,41 @@ enum class SessionStatus {
 }
 
 /**
+ * The one dot a row paints, resolved from every source that claims it.
+ *
+ * Unread has two sources and Desktop resolves them in one place rather than at
+ * each call site, so the sidebar, the tabs and the switcher cannot disagree
+ * (`apps/desktop/src/store/session-dot-state.ts:19-23,131-158` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): this client's transient
+ * finished-turn marker ([SessionStatus.Unread]) and the backend's durable read
+ * watermark ([SessionSummary.unread]). Both claim the same tier — "there is
+ * something here you haven't opened" — and everything louder (a background
+ * process, a live turn, a blocking prompt) claims over both, which is why the
+ * watermark only speaks for a row that is otherwise idle.
+ *
+ * A row whose payload omits `unread` is read. Null is "this Gateway never
+ * said", never "unread".
+ */
+fun SessionSummary.displayStatus(): SessionStatus =
+    if (status == SessionStatus.Idle && unread == true) SessionStatus.Unread else status
+
+/**
+ * Whether either unread source claims this row — the question the read-state
+ * menu item asks, which is **not** the question the dot asks.
+ *
+ * Desktop reads the two sources raw for the item: `unread || isUnread`, where
+ * `unread` is the row's own flag and `isUnread` is membership of
+ * `$unreadFinishedSessionIds`
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:314-315,319` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). [displayStatus] is the dot's
+ * question, where a louder state outranks unread; using it here would leave a
+ * row that is working, backgrounded or waiting on input offering `Mark as
+ * unread` while its watermark already says unread — and no way to clear it.
+ */
+fun SessionSummary?.isUnread(): Boolean =
+    this != null && (unread == true || status == SessionStatus.Unread)
+
+/**
  * A row in the session list.
  *
  * @param id the durable identity — what navigation, persistence and the
@@ -80,7 +115,7 @@ data class SessionSummary(
      *
      * Null is not `false`: it means this Gateway's list contract never said.
      * The `session.list` RPC an older Gateway answers carries no such column
-     * (`tui_gateway/methods_session.py:204-214`), and a surface that read a
+     * (`tui_gateway/methods_session.py:267-282`), and a surface that read a
      * silent contract as "not archived" would draw an affordance that does
      * nothing. Absent, so the affordance can stay absent.
      */

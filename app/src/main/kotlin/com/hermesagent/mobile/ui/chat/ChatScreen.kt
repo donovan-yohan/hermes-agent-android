@@ -76,6 +76,7 @@ import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.buildSessionRows
+import com.hermesagent.mobile.data.session.isUnread
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
@@ -238,6 +239,12 @@ private fun CompactLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession,
                 onDeleteSession = actions.onDeleteSession,
+                onSetSessionPinned = actions.onSetSessionPinned,
+                onSetSessionUnread = actions.onSetSessionUnread,
+                onSetSessionArchived = actions.onSetSessionArchived,
+                sessionPinned = state.activeSession?.pinned == true,
+                sessionUnread = state.activeSession.isUnread(),
+                sessionArchived = state.activeSession?.archived == true,
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
                 modifier = Modifier.statusBarsPadding(),
@@ -292,6 +299,12 @@ private fun WideLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession,
                 onDeleteSession = actions.onDeleteSession,
+                onSetSessionPinned = actions.onSetSessionPinned,
+                onSetSessionUnread = actions.onSetSessionUnread,
+                onSetSessionArchived = actions.onSetSessionArchived,
+                sessionPinned = state.activeSession?.pinned == true,
+                sessionUnread = state.activeSession.isUnread(),
+                sessionArchived = state.activeSession?.archived == true,
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
             )
@@ -331,6 +344,14 @@ private fun SessionsPane(
         modifier = modifier,
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,
+        onSetSessionPinned = actions.onSetSessionPinned,
+        onSetSessionUnread = actions.onSetSessionUnread,
+        onSetSessionArchived = actions.onSetSessionArchived,
+        archivedVisible = state.archivedVisible,
+        archivedPool = state.archivedPool,
+        onArchivedVisibleChange = actions.onArchivedVisibleChange,
+        unreadCount = state.unreadCount,
+        onMarkAllRead = actions.onMarkAllSessionsRead,
         header = header,
         profileRail = state.profileRail,
         projectScope = state.projectScope,
@@ -731,6 +752,13 @@ private fun ChatTopBar(
     gatewayDoor: StatusAction? = null,
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
+    onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
+    onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
+    onSetSessionArchived: ((String, Boolean) -> Unit)? = null,
+    /** The open session's own durable flags, so the header menu says the same words its row does. */
+    sessionPinned: Boolean = false,
+    sessionUnread: Boolean = false,
+    sessionArchived: Boolean = false,
     contextMeter: ContextMeterState? = null,
     onOpenContextUsage: () -> Unit = {},
 ) {
@@ -789,8 +817,14 @@ private fun ChatTopBar(
                     sessionId = sessionId,
                     sessionTitle = title,
                     tint = tokens.textSecondary,
+                    pinned = sessionPinned,
+                    unread = sessionUnread,
+                    archived = sessionArchived,
                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(sessionId, newTitle) } },
                     onDelete = onDeleteSession?.let { delete -> { delete(sessionId) } },
+                    onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(sessionId, pinned) } },
+                    onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(sessionId, unread) } },
+                    onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(sessionId, archived) } },
                 )
             }
             QuietIconButton(

@@ -48,7 +48,7 @@ internal interface GatewaySystemApi {
  * survive the backend restarting itself.
  */
 internal class RestGatewaySystemApi(private val http: () -> GatewayHttp?) : GatewaySystemApi {
-    private val rest = GatewayRestClient(http)
+    private val rest = GatewayRestClient(http = http)
 
     override suspend fun status() = rest.status()
 

@@ -47,6 +47,7 @@ import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
+import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayImageLoader
 import com.hermesagent.mobile.data.gateway.ProfileRouting
@@ -90,6 +91,7 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.buildSessionRows
+import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.matchesProjectQuery
 import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import kotlinx.coroutines.CancellationException
@@ -209,12 +211,55 @@ enum class ProjectProfileScope {
     val showsCatalog: Boolean get() = this != Other
 }
 
+/**
+ * What the `archived=only` pool has said, for the endpoint and profile scope
+ * the sidebar is standing in.
+ *
+ * Desktop keeps `$archivedSessionsLoading` beside `$archivedSessions`
+ * (`apps/desktop/src/store/sidebar-archive.ts:12,19,28` @ `3ca096de`) but only
+ * to refuse a second concurrent fetch; nothing renders it, and its `catch`
+ * publishes an empty set (`:25-27`). Here the marker is rendered, because
+ * `Nothing archived` is a statement about the *account* — and a read in
+ * flight, a read that failed, and a Gateway that cannot be asked at all are
+ * none of them that.
+ */
+enum class ArchivedPoolState {
+    /** Nothing has been asked yet on this endpoint, in this scope. */
+    Idle,
+
+    /** Asked; the Gateway has not answered. */
+    Loading,
+
+    /** Answered. An empty pool now really does mean nothing is archived. */
+    Loaded,
+
+    /** The read failed. What is on screen is not "nothing archived". */
+    Failed,
+
+    /**
+     * This Gateway serves only the `session.list` RPC, which has no archived
+     * filter — so the question cannot be asked here at all.
+     */
+    Unsupported,
+
+    ;
+
+    /** Whether a re-read would tell us anything we do not already know. */
+    val needsRead: Boolean get() = this == Idle || this == Failed
+}
+
 data class ChatUiState(
     val voice: VoiceUiState = VoiceUiState.Idle,
     val sessionRows: List<SessionListRow> = emptyList(),
     val projects: List<ProjectSummary> = emptyList(),
     val projectsAvailable: Boolean? = null,
     val sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
+    /** Desktop's `Archived` filter: the list is a view of the archived set instead. */
+    val archivedVisible: Boolean = false,
+    /** What the archived pool has said; the empty state waits on it. */
+    val archivedPool: ArchivedPoolState = ArchivedPoolState.Idle,
+    /** Loaded, non-archived rows that are still unread, by either source. */
+    val unreadCount: Int = 0,
     /** The foot rail: this Gateway's profiles and the scope the sidebar is in. */
     val profileRail: ProfileRailState = ProfileRailState(),
     /** How the project catalog relates to the profile scope the sidebar is in. */
@@ -299,6 +344,21 @@ internal class ChatViewModel(
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
+
+    /**
+     * Desktop's `Archived` filter. A view choice, so it lives here and never in
+     * [SessionCache]: the cache holds what the Gateway said, not what the
+     * reader is currently looking at.
+     */
+    private val archivedVisible = MutableStateFlow(false)
+
+    /**
+     * What the archived pool has answered on the endpoint and scope it was read
+     * under. Endpoint- and scope-scoped, so it is reset — never assumed — when
+     * either moves; see [invalidateArchivedPool].
+     */
+    private val archivedPool = MutableStateFlow(ArchivedPoolState.Idle)
+    private var archivedPoolJob: Job? = null
     /** UI-only authority, restored from and saved to a preference. */
     private val profileScope = MutableStateFlow(ProfileScope())
     private val composer = MutableStateFlow(ComposerUiState())
@@ -387,7 +447,14 @@ internal class ChatViewModel(
                         notice,
                         selectedProjectId,
                         projectLoadingId,
-                        combine(sidebarGrouping, profileScope, profileRepository.roster, ::SidebarViewState),
+                        combine(
+                            sidebarGrouping,
+                            profileScope,
+                            profileRepository.roster,
+                            archivedVisible,
+                            archivedPool,
+                            ::SidebarViewState,
+                        ),
                     ) { connection, message, projectId, loadingId, sidebarView ->
                         NavigationState(connection, message, projectId, loadingId, sidebarView)
                     },
@@ -533,7 +600,16 @@ internal class ChatViewModel(
                 sessions = scopedSessions,
                 nowMillis = clock(),
                 query = queryText,
+                archivedView = navigation.sidebarView.archivedVisible,
             ),
+            archivedVisible = navigation.sidebarView.archivedVisible,
+            archivedPool = navigation.sidebarView.archivedPool,
+            // Desktop counts listed, non-archived rows whose resolved dot is
+            // unread (`store/session-dot-state.ts:186-200` @ `3ca096de`) and
+            // hides the mark-all action at zero.
+            unreadCount = scopedSessions.count {
+                it.archived != true && it.displayStatus() == SessionStatus.Unread
+            },
             projects = projects,
             projectsAvailable = cacheState.projects.available,
             sidebarGrouping = navigation.sidebarView.grouping,
@@ -723,6 +799,11 @@ internal class ChatViewModel(
                     val first = !seenRouting
                     seenRouting = true
                     repository.setProfileRouting(routing)
+                    // The archived pool is one profile scope's set exactly as
+                    // the live list is, and only the live list is re-listed
+                    // below. Invalidated *after* the routing is installed, so
+                    // the re-read carries the scope the reader just chose.
+                    if (!first) invalidateArchivedPool()
                     // A scope that has not moved off the Gateway's own profile
                     // is what the connection's own bootstrap already listed;
                     // asking again at every launch would be a second
@@ -730,6 +811,29 @@ internal class ChatViewModel(
                     if (first && routing == ProfileRouting()) return@collect
                     if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return@collect
                     runCatching { repository.refreshSessions() }
+                }
+        }
+        // The other half of the archived pool's scope: which backend it came
+        // from. `SessionCache.resetForEndpointSwitch()` is this app's one
+        // wholesale clear and the switch already calls it
+        // (`ConnectionSwitchController.kt:223`), so the generation it bumps is
+        // the same seam telling this reader that the set it holds belongs to a
+        // machine it is no longer talking to. The connection status is folded
+        // in because the new endpoint is not up at the moment of the switch:
+        // the read is issued when there is finally a Gateway to ask.
+        viewModelScope.launch {
+            var generation = cache.endpointGeneration.value
+            combine(cache.endpointGeneration, repository.connectionState) { endpoint, connection ->
+                endpoint to (connection.status == GatewayConnectionStatus.Connected)
+            }
+                .distinctUntilChanged()
+                .collect { (endpoint, _) ->
+                    if (endpoint != generation) {
+                        generation = endpoint
+                        invalidateArchivedPool()
+                    } else {
+                        reloadArchivedPoolWhenReady()
+                    }
                 }
         }
         viewModelScope.launch {
@@ -1388,6 +1492,181 @@ internal class ChatViewModel(
             startFreshSessionInScope()
         }
         notice.value = "Session deleted"
+    }
+
+    /**
+     * Pin, archive and read-state all go the same way: the repository paints
+     * the row, writes `PATCH /api/sessions/{id}` and repaints on refusal, and
+     * what the person is told is the message it raised. The notice slot is this
+     * app's one outcome surface, so the failure is reported here rather than
+     * twice.
+     *
+     * All three run on [viewModelScope] and none of them suspends its caller.
+     * The press comes from a row's own menu, and every one of these verbs takes
+     * that row off the list it was pressed on — an archive leaves the live
+     * pool, a pin moves into the Pinned section. A coroutine owned by the
+     * composable that is being removed would be cancelled mid-flight: the
+     * Gateway never told, and neither the success nor the rollback branch run.
+     */
+    fun setSessionPinnedAsync(id: String, pinned: Boolean) {
+        viewModelScope.launch {
+            reportingFailure("Could not update pin. Check the Gateway and try again.") {
+                repository.setSessionPinned(id, pinned)
+            }
+        }
+    }
+
+    fun setSessionArchivedAsync(id: String, archived: Boolean) {
+        viewModelScope.launch {
+            reportingFailure("Could not update that chat. Check the Gateway and try again.") {
+                repository.setSessionArchived(id, archived)
+                if (archived && activeSessionId.value == id) startFreshSessionInScope()
+            }
+        }
+    }
+
+    fun setSessionUnreadAsync(id: String, unread: Boolean) {
+        viewModelScope.launch {
+            reportingFailure(UNREAD_FAILED) { repository.setSessionUnread(id, unread) }
+        }
+    }
+
+    /**
+     * Desktop's `Archived` toggle: swap the pool the list draws from, and read
+     * the archived set every time it is asked for.
+     *
+     * The read happens on the way *in* only, exactly as Desktop's
+     * `useEffect(… if (showArchived) void loadArchivedSessions(), [showArchived])`
+     * does (`app/chat/sidebar/index.tsx:1352-1358` @ `3ca096de`): turning the
+     * view off changes nothing about what the Gateway was asked, because the
+     * live list was never the thing carrying these rows.
+     */
+    fun setArchivedVisible(visible: Boolean) {
+        if (archivedVisible.value == visible) return
+        archivedVisible.value = visible
+        if (visible) loadArchivedPool()
+    }
+
+    /**
+     * Read the `archived=only` pool, and say so while it is being read.
+     *
+     * The pool has no paging flow of its own to publish `loading` through
+     * (`GatewaySessionRepository.readSessionPages` deliberately leaves the live
+     * list's pager alone for it), so the marker lives here. Until it says
+     * [ArchivedPoolState.Loaded] the list must not paint `Nothing archived`:
+     * that sentence is a claim about the account, and a read in flight, a read
+     * that failed, and a Gateway that cannot answer at all are three different
+     * things — none of them "nothing is archived".
+     *
+     * Desktop keeps the same marker (`$archivedSessionsLoading`,
+     * `store/sidebar-archive.ts:12,19,28` @ `3ca096de`) but spends it on
+     * re-entry alone, and its `catch` sets the archived set to `[]`
+     * (`:25-27`) — so there a failed read renders as an empty account. That is
+     * the divergence this ships, ledgered in
+     * `docs/parity/session-list-sections.md`.
+     */
+    private fun loadArchivedPool() {
+        archivedPoolJob?.cancel()
+        archivedPool.value = ArchivedPoolState.Loading
+        archivedPoolJob = viewModelScope.launch {
+            try {
+                repository.loadArchivedSessions()
+                archivedPool.value = ArchivedPoolState.Loaded
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                archivedPool.value = when {
+                    e is GatewayRpcException && e.message == ARCHIVED_UNSUPPORTED ->
+                        ArchivedPoolState.Unsupported
+                    else -> ArchivedPoolState.Failed
+                }
+                // Only a Gateway refusal carries product copy: what a
+                // `GatewayRpcException` raises here is either this app's own
+                // sentence or a `safeMessage`, which by contract never carries a
+                // byte the Gateway wrote (`GatewayRestClient.kt:103-110`). A
+                // parse or state failure would put an implementation sentence in
+                // a slot that is product-facing, so it gets the fallback.
+                notice.value = (e as? GatewayRpcException)?.message?.takeIf(String::isNotBlank)
+                    ?: ARCHIVED_LOAD_FAILED
+            }
+        }
+    }
+
+    /**
+     * Forget what the archived pool said, and read it again if it is on screen.
+     *
+     * Two things scope that pool and neither of them is in it: the endpoint it
+     * was read from, and the profile routing it was read under. A connection
+     * switch clears every row through [SessionCache.resetForEndpointSwitch]
+     * (`ConnectionSwitchController.kt:223`) and a profile change re-lists the
+     * live pool only — so without this the Archived view sits on the previous
+     * backend's answer, or on `Nothing archived`, which is then false about
+     * both. The reader's *choice* to be in the Archived view survives; only
+     * what this app believes about the set does not.
+     */
+    private fun invalidateArchivedPool() {
+        archivedPoolJob?.cancel()
+        archivedPoolJob = null
+        archivedPool.value = ArchivedPoolState.Idle
+        reloadArchivedPoolWhenReady()
+    }
+
+    /** Re-issue the read only where there is something to ask and someone looking. */
+    private fun reloadArchivedPoolWhenReady() {
+        if (!archivedVisible.value) return
+        if (!archivedPool.value.needsRead) return
+        if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return
+        loadArchivedPool()
+    }
+
+    /**
+     * Mark every loaded unread row read: one PATCH each, and an honest count
+     * when some of them refuse.
+     *
+     * Desktop's own control does the same fan-out
+     * (`app/chat/sidebar/index.tsx:1735-1741` @ `3ca096de`) and has no string
+     * for a partial failure, so the outcome is this app's own: the number that
+     * did not move, never a blanket success.
+     */
+    fun markAllSessionsRead() {
+        val ids = unreadSessionsInScope().map(SessionSummary::id)
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            for (id in ids) {
+                try {
+                    repository.setSessionUnread(id, false)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    failed++
+                }
+            }
+            if (failed > 0) notice.value = "$UNREAD_FAILED for $failed of ${ids.size} chats."
+        }
+    }
+
+    /**
+     * The loaded, in-scope, non-archived rows the sidebar is currently counting
+     * as unread. Read from the cache rather than from `uiState`, which is
+     * `WhileSubscribed` and answers with its initial value when nothing is
+     * collecting — the count in the menu and the rows this acts on have to be
+     * the same set.
+     */
+    private fun unreadSessionsInScope(): List<SessionSummary> =
+        filterSessionsByProfileScope(
+            cache.state.value.sessions.values.toList(),
+            profileScope.value.key,
+        ).filter { it.archived != true && it.displayStatus() == SessionStatus.Unread }
+
+    private suspend fun reportingFailure(fallback: String, action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            notice.value = e.message ?: fallback
+        }
     }
 
     private fun rehome(id: String?) {
@@ -2654,9 +2933,19 @@ internal class ChatViewModel(
         null
     }
 
+    /**
+     * Opening a session clears both unread sources, in Desktop's order: the
+     * transient finished-turn dot here and now, and the durable watermark
+     * best-effort behind it (`store/session-unread-remote.ts:65-79` @
+     * `3ca096de` — "a failed PATCH is healed by the next honest refresh", and
+     * it is not worth a notice for something the reader did not ask for).
+     */
     private fun markRead(id: String) {
         val session = cache.session(id) ?: return
         if (session.status == SessionStatus.Unread) cache.upsertSession(session.copy(status = SessionStatus.Idle))
+        if (session.unread == true) {
+            viewModelScope.launch { runCatching { repository.setSessionUnread(id, false) } }
+        }
     }
 
     /** The sidebar's saved view choices plus the roster the rail paints from. */
@@ -2664,6 +2953,10 @@ internal class ChatViewModel(
         val grouping: SidebarGrouping = SidebarGrouping.Date,
         val profileScope: ProfileScope = ProfileScope(),
         val roster: ProfileRosterState = ProfileRosterState(),
+        /** Whether the list is showing the archived set instead of the live one. */
+        val archivedVisible: Boolean = false,
+        /** What that set's own read has said, if anything. */
+        val archivedPool: ArchivedPoolState = ArchivedPoolState.Idle,
     )
 
     private data class NavigationState(
@@ -2783,3 +3076,9 @@ private fun transientQueueController(): ComposerQueueController = ComposerQueueC
 
 /** Slash commands follow their own capability path; only ordinary text can redirect a live turn. */
 private fun String.isRedirectEligible(): Boolean = trim().isNotEmpty() && !trimStart().startsWith('/')
+
+/** `Could not update unread state` (`apps/desktop/src/i18n/en.ts:2307` @ `3ca096de`). */
+private const val UNREAD_FAILED = "Could not update unread state"
+
+/** What the Archived view says when its own read did not come back. */
+private const val ARCHIVED_LOAD_FAILED = "Could not load archived chats. Check the Gateway and try again."

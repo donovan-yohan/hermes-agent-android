@@ -66,6 +66,28 @@ const val RENAME = "Rename…"
 /** `Delete` (`i18n/en.ts:24` @ `3ca096de`). */
 const val DELETE = "Delete"
 
+/** `Pin` / `Unpin` (`i18n/en.ts:2303-2304` @ `3ca096de`). */
+const val PIN = "Pin"
+const val UNPIN = "Unpin"
+
+/** `Mark as unread` / `Mark as read` (`i18n/en.ts:2305-2306` @ `3ca096de`). */
+const val MARK_UNREAD = "Mark as unread"
+const val MARK_READ = "Mark as read"
+
+/** `Archive` (`i18n/en.ts:2312` @ `3ca096de`). */
+const val ARCHIVE = "Archive"
+
+/**
+ * `Unarchive` (`i18n/en.ts:1156` @ `3ca096de`).
+ *
+ * Desktop's row menu never says this word: its restore lives on the Archived
+ * Chats settings page (`app/settings/sessions-settings.tsx:148-154`), which is
+ * a non-goal here. With that page absent the row's own menu is the only place a
+ * restore can live, so the verb moves — and it moves with Desktop's own word
+ * rather than a new one.
+ */
+const val UNARCHIVE = "Unarchive"
+
 /**
  * The copy confirmation. Desktop's `CopyButton` swaps the item's own icon and
  * label rather than raising a notice, and the label it swaps in is
@@ -187,15 +209,27 @@ fun sessionActionsMenuPlan(items: List<SessionActionItem>): List<SessionMenuNode
 fun sessionActionItems(
     sessionId: String,
     copyStatus: SessionIdCopyStatus = SessionIdCopyStatus.Idle,
+    /** The backend's durable pin (`sessions.pinned`); it decides which word this row says. */
+    pinned: Boolean = false,
+    /** Either unread source: the durable watermark or this client's finished-turn dot. */
+    unread: Boolean = false,
+    /** The backend's durable soft-archive; an archived row offers the way back. */
+    archived: Boolean = false,
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
         Rename,
+        if (pinned) Unpin else Pin,
+        // One item, both unread sources, Desktop's own pairing: the label and
+        // the glyph both name the *action*, so `Mark as read` carries the open
+        // envelope (`session-actions-menu.tsx:310-333` @ `3ca096de`).
+        if (unread) MarkRead else MarkUnread,
         when (copyStatus) {
             SessionIdCopyStatus.Idle -> CopyId
             SessionIdCopyStatus.Copied -> CopyIdCopied
             SessionIdCopyStatus.Failed -> CopyIdFailed
         },
+        if (archived) Unarchive else Archive,
         Delete,
     )
 }
@@ -212,6 +246,36 @@ internal fun hasSessionActions(sessionId: String): Boolean = sessionId.isNotBlan
  * @ `3ca096de`).
  */
 private val Rename = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Edit, RENAME)
+
+/**
+ * `Pin` / `Unpin` in the identity group, one slot below Rename
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:297-305` @
+ * `3ca096de`). One glyph for both states, as upstream: the label carries the
+ * direction.
+ */
+private val Pin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, PIN)
+
+private val Unpin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, UNPIN)
+
+/**
+ * The read-state row (`session-actions-menu.tsx:310-333` @ `3ca096de`).
+ *
+ * Codicon has no `mail-unread` glyph, which is why closed `mail` and open
+ * `mail-read` are the pair upstream chose — and why inventing a third would
+ * break the vocabulary rather than complete it.
+ */
+private val MarkRead = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.MailRead, MARK_READ)
+
+private val MarkUnread = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Mail, MARK_UNREAD)
+
+/**
+ * `Archive` in the danger group *above* Delete and deliberately not
+ * destructive-red (`session-actions-menu.tsx:431-440,441-459` @ `3ca096de`):
+ * putting a chat away and destroying it must not read alike.
+ */
+private val Archive = SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Archive, ARCHIVE)
+
+private val Unarchive = SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Archive, UNARCHIVE)
 
 /**
  * `Delete` in the danger group, destructive-styled (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:441-459`
@@ -255,8 +319,27 @@ internal fun SessionActionsControl(
     modifier: Modifier = Modifier,
     tint: Color = HermesTheme.tokens.textTertiary,
     writeClipboard: ClipboardWriter = rememberClipboardWriter(),
+    /** The backend's durable pin for this row. */
+    pinned: Boolean = false,
+    /** Either unread source: the durable watermark or the finished-turn dot. */
+    unread: Boolean = false,
+    /** The backend's durable soft-archive for this row. */
+    archived: Boolean = false,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
+    /**
+     * Pin, read-state and archive, all deliberately **not** `suspend`.
+     *
+     * Every one of these verbs takes the row off the list it was pressed on:
+     * an archive leaves the live pool, a pin moves into the Pinned section. A
+     * coroutine launched on this composable's own scope would be cancelled on
+     * the next frame, mid-`PATCH` — the Gateway never told, and neither the
+     * success nor the rollback branch reached. The write belongs to a scope
+     * that outlives the row, so these hand it off and return.
+     */
+    onSetPinned: ((Boolean) -> Unit)? = null,
+    onSetUnread: ((Boolean) -> Unit)? = null,
+    onSetArchived: ((Boolean) -> Unit)? = null,
 ) {
     // A menu with nothing in it is chrome that lies about the app. This asks the
     // rule `sessionActionItems` itself applies, so the control and its contents
@@ -271,6 +354,16 @@ internal fun SessionActionsControl(
     // as Desktop clears its pending timeout before setting a new one
     // (`copy-button.tsx:115-123,128-136`).
     var copyPress by remember(sessionId) { mutableIntStateOf(0) }
+
+    // Pin, archive and read-state are one PATCH each with no dialog in front of
+    // them, so the press dismisses the menu and hands the write off. The
+    // *outcome* is the caller's: these lambdas are optimistic-and-honest at the
+    // repository, and the failure they raise is already reported on the chat's
+    // own notice slot, so re-raising it here would say the same thing twice.
+    fun mutate(action: ((Boolean) -> Unit)?, value: Boolean) {
+        expanded = false
+        action?.invoke(value)
+    }
 
     // Desktop settles both the copied and the failed state back to idle after
     // `COPIED_RESET_MS` (`copy-button.tsx:120-123,133-136`); the constant this
@@ -298,7 +391,7 @@ internal fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, copyStatus) },
+            items = { sessionActionItems(sessionId, copyStatus, pinned, unread, archived) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
@@ -320,6 +413,18 @@ internal fun SessionActionsControl(
                             SessionIdCopyStatus.Failed
                         }
                     }
+
+                    Pin -> mutate(onSetPinned, true)
+
+                    Unpin -> mutate(onSetPinned, false)
+
+                    MarkRead -> mutate(onSetUnread, false)
+
+                    MarkUnread -> mutate(onSetUnread, true)
+
+                    Archive -> mutate(onSetArchived, true)
+
+                    Unarchive -> mutate(onSetArchived, false)
 
                     Delete -> {
                         expanded = false

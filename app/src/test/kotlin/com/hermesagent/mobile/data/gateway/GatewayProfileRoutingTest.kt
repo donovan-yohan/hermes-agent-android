@@ -106,7 +106,7 @@ class GatewayProfileRoutingTest {
         )
         val rpc = FakeProfileRpc()
         // The launch-profile leg stamps nothing, and `session.list`'s compact
-        // rows carry no profile (`methods_session.py:204-214`), so this row
+        // rows carry no profile (`methods_session.py:267-282`), so this row
         // would lose its owner if the merge did not keep it.
         rpc.sessionListByProfile = mapOf(null to listOf("known-row"))
         val repository = repository(cache, rpc, backgroundScope)
@@ -293,7 +293,7 @@ class GatewayProfileRoutingTest {
 
         override fun close() = eventChannel.close().let { }
 
-        /** Exactly the fields `methods_session.py:204-214` emits, and no others. */
+        /** Exactly the fields `methods_session.py:267-282` emits, and no others. */
         private fun sessionListJson(ids: List<String>): String {
             val body = ids.joinToString(",") { id ->
                 """{"id":"$id","title":"$id","preview":"","started_at":0,"message_count":1,"source":"desktop"}"""
