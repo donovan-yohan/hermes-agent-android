@@ -144,15 +144,123 @@ class SessionActionsMenuTest {
 
     @Test
     fun `this build offers only the verbs it can actually perform`() {
-        assertEquals(listOf("Rename…", "Copy ID", "Delete"), sessionActionItems("s-1").map { it.label })
+        assertEquals(
+            listOf("Rename…", "Pin", "Mark as unread", "Copy ID", "Archive", "Delete"),
+            sessionActionItems("s-1").map { it.label },
+        )
         assertEquals(
             listOf(
                 SessionActionsGroup.Identity,
                 SessionActionsGroup.Identity,
+                SessionActionsGroup.Identity,
+                SessionActionsGroup.Identity,
+                SessionActionsGroup.Danger,
                 SessionActionsGroup.Danger,
             ),
             sessionActionItems("s-1").map { it.group },
         )
+    }
+
+    /**
+     * Desktop's slots, in Desktop's order: Rename, Pin, read-state, Copy ID in
+     * identity; Archive above Delete in danger
+     * (`session-actions-menu.tsx:285-334,431-460` @ `3ca096de`).
+     */
+    @Test
+    fun `the ported menu sits in Desktop's slots`() {
+        val desktopIdentity = DESKTOP_ROW_MENU
+            .filter { it.group == SessionActionsGroup.Identity }
+            .map { it.label }
+        val desktopDanger = DESKTOP_ROW_MENU
+            .filter { it.group == SessionActionsGroup.Danger }
+            .map { it.label }
+        val plan = sessionActionsMenuPlan(sessionActionItems("s-1")).split()
+
+        assertEquals(desktopIdentity, plan[0].map { it.label })
+        assertEquals(desktopDanger, plan[1].map { it.label })
+        // Two populated groups, one rule between them and none at either end.
+        assertEquals(1, sessionActionsMenuPlan(sessionActionItems("s-1")).count { it is SessionMenuNode.Separator })
+    }
+
+    /**
+     * One slot, one glyph, both directions — the label carries the direction
+     * (`session-actions-menu.tsx:297-305` @ `3ca096de`).
+     */
+    @Test
+    fun `a pinned row offers the way back out of the section`() {
+        val pin = sessionActionItems("s-1")[1]
+        val unpin = sessionActionItems("s-1", pinned = true)[1]
+
+        assertEquals("Pin", pin.label)
+        assertEquals("Unpin", unpin.label)
+        assertEquals(HermesIcon.Pin, pin.icon)
+        assertEquals(HermesIcon.Pin, unpin.icon)
+        assertEquals(pin.group, unpin.group)
+        assertFalse(unpin.destructive)
+    }
+
+    /**
+     * Desktop's envelope pair names the *action*, not the state: `Mark as read`
+     * carries the open envelope (`session-actions-menu.tsx:314-315`). Codicon
+     * has no `mail-unread`, which is why there are only two.
+     */
+    @Test
+    fun `the read-state row is one slot naming the action it performs`() {
+        val read = sessionActionItems("s-1")[2]
+        val unread = sessionActionItems("s-1", unread = true)[2]
+
+        assertEquals("Mark as unread", read.label)
+        assertEquals(HermesIcon.Mail, read.icon)
+        assertEquals("Mark as read", unread.label)
+        assertEquals(HermesIcon.MailRead, unread.icon)
+        assertEquals(read.group, unread.group)
+    }
+
+    /**
+     * Archive shares the danger group with Delete and is deliberately not
+     * destructive-red (`session-actions-menu.tsx:431-440,441-459`). `Unarchive`
+     * is Desktop's own word for the restore (`i18n/en.ts:1156`), moved here
+     * because the Archived Chats settings page it lives on is a non-goal.
+     */
+    @Test
+    fun `an archived row offers the restore in the same slot`() {
+        val archive = sessionActionItems("s-1")[4]
+        val unarchive = sessionActionItems("s-1", archived = true)[4]
+
+        assertEquals("Archive", archive.label)
+        assertEquals("Unarchive", unarchive.label)
+        assertEquals(HermesIcon.Archive, archive.icon)
+        assertEquals(HermesIcon.Archive, unarchive.icon)
+        assertEquals(SessionActionsGroup.Danger, unarchive.group)
+        assertFalse(archive.destructive)
+        assertFalse(unarchive.destructive)
+    }
+
+    /** Whatever the row's flags say, the menu keeps its shape and its slots. */
+    @Test
+    fun `every flag combination keeps the menu structure`() {
+        listOf(false, true).forEach { pinned ->
+            listOf(false, true).forEach { unread ->
+                listOf(false, true).forEach { archived ->
+                    val label = "pinned=$pinned unread=$unread archived=$archived"
+                    val items = sessionActionItems("s-1", pinned = pinned, unread = unread, archived = archived)
+                    assertEquals(label, 6, items.size)
+                    assertEquals(label, listOf("Delete"), items.filter { it.destructive }.map { it.label })
+                    assertEquals(
+                        label,
+                        listOf(
+                            SessionActionsGroup.Identity,
+                            SessionActionsGroup.Identity,
+                            SessionActionsGroup.Identity,
+                            SessionActionsGroup.Identity,
+                            SessionActionsGroup.Danger,
+                            SessionActionsGroup.Danger,
+                        ),
+                        items.map { it.group },
+                    )
+                }
+            }
+        }
     }
 
     @Test
@@ -163,8 +271,8 @@ class SessionActionsMenuTest {
 
     @Test
     fun `the copy verb confirms in place rather than raising a notice`() {
-        val idle = sessionActionItems("s-1")[1]
-        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied)[1]
+        val idle = sessionActionItems("s-1")[3]
+        val done = sessionActionItems("s-1", SessionIdCopyStatus.Copied)[3]
 
         assertEquals("Copy ID", idle.label)
         assertEquals(HermesIcon.Copy, idle.icon)
@@ -178,7 +286,7 @@ class SessionActionsMenuTest {
 
     @Test
     fun `a refused clip says so in the item's own slot`() {
-        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed)[1]
+        val failed = sessionActionItems("s-1", SessionIdCopyStatus.Failed)[3]
 
         // en.ts:2166, the message Desktop attaches to this exact item
         // (session-actions-menu.tsx:482).
@@ -198,8 +306,8 @@ class SessionActionsMenuTest {
         // not appear twice, vanish, or move group under a confirmation.
         SessionIdCopyStatus.entries.forEach { status ->
             val items = sessionActionItems("s-1", status)
-            assertEquals(status.name, 3, items.size)
-            assertEquals(status.name, SessionActionsGroup.Identity, items[1].group)
+            assertEquals(status.name, 6, items.size)
+            assertEquals(status.name, SessionActionsGroup.Identity, items[3].group)
             assertEquals(status.name, emptyList<SessionActionItem>(), sessionActionItems("", status))
         }
     }

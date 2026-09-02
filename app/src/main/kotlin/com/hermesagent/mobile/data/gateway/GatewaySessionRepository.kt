@@ -228,6 +228,45 @@ interface GatewaySessionRepository {
         error("Session renaming is not implemented by this repository.")
     suspend fun deleteSession(durableId: String): Unit =
         error("Session deletion is not implemented by this repository.")
+
+    /**
+     * Pin or unpin one conversation through `PATCH /api/sessions/{id}`
+     * (`hermes_cli/web_routers/sessions.py:829-830` @ `3ca096de`). Optimistic:
+     * the row is painted first and repainted if the write is refused.
+     */
+    suspend fun setSessionPinned(durableId: String, pinned: Boolean): Unit =
+        error("Session pinning is not implemented by this repository.")
+
+    /**
+     * Archive or restore one conversation (`sessions.py:825-826` @ `3ca096de`).
+     * Archiving evicts the row through the cache's explicit tombstone and puts
+     * it back if the write is refused; restoring clears the flag in place.
+     */
+    suspend fun setSessionArchived(durableId: String, archived: Boolean): Unit =
+        error("Session archiving is not implemented by this repository.")
+
+    /**
+     * Arm or retire the backend read watermark (`sessions.py:831-832`, which
+     * writes `set_session_read(read = !unread)` @ `3ca096de`). Marking read
+     * also clears this client's transient finished-turn dot, in Desktop's order
+     * (`app/chat/sidebar/session-actions-menu.tsx:316-332` @ `3ca096de`), so a
+     * later list page cannot repaint what was just dismissed.
+     */
+    suspend fun setSessionUnread(durableId: String, unread: Boolean): Unit =
+        error("Session read state is not implemented by this repository.")
+
+    /**
+     * Read the archived set as its own pool.
+     *
+     * Archived rows are excluded from the session list itself, so the Archived
+     * view has to fetch its own set rather than filter the live one — Desktop's
+     * `loadArchivedSessions` (`apps/desktop/src/store/sidebar-archive.ts:7-30` @
+     * `3ca096de`: "Archived rows are excluded from the sessions query, so the
+     * Archived view has to fetch its own set. Capped: it's a lookup surface, not
+     * a feed."). One `archived=only` request per profile leg, capped, layered
+     * into the cache and never mixed into the live page's window.
+     */
+    suspend fun loadArchivedSessions() = Unit
 }
 
 sealed interface GatewaySubmitOutcome {
@@ -354,6 +393,60 @@ private enum class SessionPageRead {
     /** `Load more`: the next page of every leg that has one. */
     More,
 }
+
+/**
+ * Which set of rows a list pass reads.
+ *
+ * Two pools, because the Gateway keeps them apart: `archived=exclude` — the
+ * route's own default — never mentions an archived row, so the Archived view
+ * cannot be a filter over the live page. Desktop draws the same line, fetching
+ * its archived set with a second `archived: 'only'` query into a store of its
+ * own (`apps/desktop/src/store/sidebar-archive.ts:7-30` @ `3ca096de`).
+ */
+private enum class SessionPool {
+    /** The live list: paged, and the only pool `Load more` walks. */
+    Live,
+
+    /**
+     * The archived lookup: one capped request per leg, no paging, and no
+     * cursors — Desktop calls it "a lookup surface, not a feed".
+     */
+    Archived,
+}
+
+/**
+ * One optimistic row-flag write this client has made and the Gateway has not
+ * echoed back yet. A null field is a flag this write said nothing about.
+ */
+private data class PendingFlagWrite(
+    val pinned: Boolean? = null,
+    val unread: Boolean? = null,
+    val archived: Boolean? = null,
+    val atMillis: Long,
+) {
+    /** Fold a second write for the same row into this one, newest wins per flag. */
+    fun merge(other: PendingFlagWrite) = PendingFlagWrite(
+        pinned = other.pinned ?: pinned,
+        unread = other.unread ?: unread,
+        archived = other.archived ?: archived,
+        atMillis = other.atMillis,
+    )
+
+    /** Whether a listed row now agrees with everything this write claimed. */
+    fun isConfirmedBy(row: SessionSummary): Boolean =
+        (pinned == null || row.pinned == pinned) &&
+            (unread == null || row.unread == unread) &&
+            (archived == null || row.archived == archived)
+}
+
+/**
+ * How long a fenced write outranks a list page, matching Desktop's
+ * `UNREAD_WRITE_GUARD_MS` (`apps/desktop/src/store/session-unread-remote.ts:28`
+ * @ `3ca096de`). The fence normally clears the moment a page confirms it; the
+ * expiry is what stops a backend that never agrees from making this client
+ * permanently disbelieve it.
+ */
+private const val FLAG_WRITE_GUARD_MILLIS = 10_000L
 
 /** Where one profile leg's paging stands. Meaningless across a connection change. */
 private data class SessionPageCursor(
@@ -567,6 +660,26 @@ internal class LiveGatewaySessionRepository(
 
     /** Per profile leg, how far this connection's list has read. Cleared with it. */
     private val sessionPageCursors = mutableMapOf<String?, SessionPageCursor>()
+
+    /**
+     * Row flags this client has written and the Gateway has not yet echoed.
+     *
+     * A list page already in flight when the PATCH lands answers with the OLD
+     * value, and merging that page would visibly undo the write for a refresh
+     * cycle — a pin that drops back out of the Pinned section, a dot that comes
+     * back the moment it was dismissed. Desktop fences the same two flags the
+     * same way (`apps/desktop/src/store/session-unread-remote.ts:28-31` and the
+     * `unconfirmedPinWrites` fence honoured at
+     * `app/chat/sidebar/session-index.ts:51-56,83-88` @ `3ca096de`).
+     *
+     * Keyed under the live id *and* the compression lineage root, because a
+     * page can name the same conversation under either and a pin that only
+     * knows the tip vanishes the moment the chat auto-compresses.
+     */
+    private val pendingFlagWrites = mutableMapOf<String, PendingFlagWrite>()
+
+    /** The single pending [armFlagWriteReconcile] wake-up, if one is armed. */
+    private var flagWriteReconcileJob: Job? = null
     private val sessionPagingFlow = MutableStateFlow(SessionListPaging())
     override val sessionPaging: StateFlow<SessionListPaging> = sessionPagingFlow.asStateFlow()
 
@@ -637,6 +750,13 @@ internal class LiveGatewaySessionRepository(
                     // Offsets are facts about one backend's rows, cleared with
                     // that backend's capabilities just above.
                     sessionPageCursors.clear()
+                    // A fence outranks a page from the backend it was written
+                    // against. A new connection's pages are not that backend's,
+                    // so the fence goes with the offsets — and so does the
+                    // reconciliation that was waiting to retire it.
+                    pendingFlagWrites.clear()
+                    flagWriteReconcileJob?.cancel()
+                    flagWriteReconcileJob = null
                     sessionPagingFlow.value = SessionListPaging()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
@@ -741,19 +861,24 @@ internal class LiveGatewaySessionRepository(
      *
      * All three layer; none replaces.
      */
-    private suspend fun readSessionPages(mode: SessionPageRead) {
+    private suspend fun readSessionPages(mode: SessionPageRead, pool: SessionPool = SessionPool.Live) {
         val connection = connectionSnapshot()
         val profiles = synchronized(stateLock) {
             val inScope = profileRouting.listProfiles.distinct().ifEmpty { listOf(null) }
-            when (mode) {
-                SessionPageRead.Refresh -> sessionPageCursors.clear()
-                // A rescan keeps its cursors instead of rebuilding them, so a
-                // leg that has left the scope has to be dropped by name — its
-                // offsets are no longer part of any total this list can show.
-                SessionPageRead.Rescan -> sessionPageCursors.keys.retainAll(inScope.toSet())
-                SessionPageRead.More -> Unit
+            // The archived pool has no pager and no cursors: it is one capped
+            // lookup per leg, so it must not touch — or be reported by — the
+            // live list's offsets.
+            if (pool == SessionPool.Live) {
+                when (mode) {
+                    SessionPageRead.Refresh -> sessionPageCursors.clear()
+                    // A rescan keeps its cursors instead of rebuilding them, so a
+                    // leg that has left the scope has to be dropped by name — its
+                    // offsets are no longer part of any total this list can show.
+                    SessionPageRead.Rescan -> sessionPageCursors.keys.retainAll(inScope.toSet())
+                    SessionPageRead.More -> Unit
+                }
+                sessionPagingFlow.value = sessionPagingFlow.value.copy(loading = true)
             }
-            sessionPagingFlow.value = sessionPagingFlow.value.copy(loading = true)
             inScope
         }
         var firstFailure: Throwable? = null
@@ -767,14 +892,15 @@ internal class LiveGatewaySessionRepository(
             for (profile in profiles) {
                 // A leg with no cursor has never answered, and a leg past its end
                 // has nothing to add; neither is a failure, so neither is asked.
-                val offset = when (mode) {
-                    SessionPageRead.Refresh, SessionPageRead.Rescan -> 0
-                    SessionPageRead.More -> synchronized(stateLock) {
+                val offset = when {
+                    pool == SessionPool.Archived -> 0
+                    mode == SessionPageRead.More -> synchronized(stateLock) {
                         sessionPageCursors[profile]?.takeIf { !it.exhausted }?.nextOffset
                     }
+                    else -> 0
                 } ?: continue
                 val leg = try {
-                    readSessionLeg(connection, profile, offset)
+                    readSessionLeg(connection, profile, offset, pool)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Throwable) {
@@ -866,21 +992,27 @@ internal class LiveGatewaySessionRepository(
                 }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
-                    sessionPageCursors[profile] = when (mode) {
-                        // `More` replaces too: its own page is the deeper one,
-                        // and a leg that fell back to `session.list` mid-read
-                        // reports a terminal cursor that must not be overridden.
-                        SessionPageRead.Refresh, SessionPageRead.More -> leg.cursor
-                        SessionPageRead.Rescan -> leg.cursor.keepingDepthOf(sessionPageCursors[profile])
+                    if (pool == SessionPool.Live) {
+                        sessionPageCursors[profile] = when (mode) {
+                            // `More` replaces too: its own page is the deeper one,
+                            // and a leg that fell back to `session.list` mid-read
+                            // reports a terminal cursor that must not be overridden.
+                            SessionPageRead.Refresh, SessionPageRead.More -> leg.cursor
+                            SessionPageRead.Rescan -> leg.cursor.keepingDepthOf(sessionPageCursors[profile])
+                        }
                     }
                     // Aliasing runs before the merge so the merge finds the row it
-                    // is layering over under the id this page actually named.
-                    cache.upsertSessions(rows.map { mergeListedSession(alignLineage(it)) })
+                    // is layering over under the id this page actually named,
+                    // and the fence runs last so an unconfirmed write of ours
+                    // outranks a page that was already in flight when it went.
+                    cache.upsertSessions(
+                        rows.map { applyPendingFlagWrites(mergeListedSession(alignLineage(it))) },
+                    )
                 }
             }
             if (!answered) firstFailure?.let { throw it }
         } finally {
-            publishSessionPaging()
+            if (pool == SessionPool.Live) publishSessionPaging()
         }
     }
 
@@ -899,12 +1031,13 @@ internal class LiveGatewaySessionRepository(
         connection: ConnectionSnapshot,
         profile: String?,
         offset: Int,
+        pool: SessionPool = SessionPool.Live,
     ): SessionLegPage {
         val restUsable = http() != null &&
             !isCapabilityUnsupported(GatewayOptionalCapability.SessionListRest, connection)
         if (restUsable) {
             val result = rest.listSessions(
-                limit = SESSION_PAGE_SIZE,
+                limit = if (pool == SessionPool.Archived) ARCHIVED_POOL_SIZE else SESSION_PAGE_SIZE,
                 offset = offset,
                 // The route's own default, not Desktop's `1`. Desktop asks for
                 // 1 because its sidebar hard-replaces and a chat mid-first-
@@ -913,7 +1046,17 @@ internal class LiveGatewaySessionRepository(
                 // transfer — and asking for 1 here would hide a just-created
                 // session that the RPC contract shows today.
                 minMessages = 0,
-                archived = GatewaySessionArchivedFilter.Exclude,
+                // Desktop reads its archived view out of a second `only` query
+                // into a store of its own (`store/sidebar-archive.ts:7-30` @
+                // `3ca096de`), and so does this. The live page is what decides
+                // whether an archived row is *present at all*: `exclude` never
+                // mentions one, and folding them into the same LIMIT window
+                // would make the Archived view empty for anyone whose newest
+                // page is all live conversations.
+                archived = when (pool) {
+                    SessionPool.Live -> GatewaySessionArchivedFilter.Exclude
+                    SessionPool.Archived -> GatewaySessionArchivedFilter.Only
+                },
                 order = GatewaySessionOrder.Recent,
                 profile = profile,
             )
@@ -953,6 +1096,12 @@ internal class LiveGatewaySessionRepository(
                 }
             }
         }
+        // The older `session.list` contract has no archived filter at all
+        // (`hermes_cli/rpc/methods_session.py:204-214` @ `3ca096de`), so a
+        // backend that only serves it cannot answer this question. An empty
+        // pool would render `Nothing archived`, which is a claim about the
+        // account rather than about the Gateway, so this says so instead.
+        if (pool == SessionPool.Archived) throw GatewayRpcException(ARCHIVED_UNSUPPORTED)
         // The older contract has no offset and no total: one call returns what
         // it returns. Reporting that as exhausted is the honest answer — there
         // is no second page to ask for, so `Load more` must not offer one.
@@ -2441,6 +2590,192 @@ internal class LiveGatewaySessionRepository(
                 }
             }
         }
+    }
+
+    /**
+     * Pin or unpin, addressed by the id the row currently carries.
+     *
+     * Either id would do. `set_session_pinned` flips the whole compression
+     * lineage as a unit — "the whole compression chain is flipped as a unit, so
+     * pinning the surfaced tip protects the root (and vice-versa) no matter
+     * which id the caller holds" (`hermes_state.py:10877-10888` @ `3ca096de`)
+     * — and the list projects the *root's* `pinned` onto the tip it surfaces
+     * (`:11596-11603`, where `pinned` is not among the fields the tip replaces).
+     * Desktop happens to PATCH the root (`store/session.ts:352-356`); this
+     * PATCHes whatever the row is filed under, which is the id the reader
+     * pressed on. What actually has to know about the lineage is the fence,
+     * and it is keyed under both.
+     */
+    override suspend fun setSessionPinned(durableId: String, pinned: Boolean) {
+        require(durableId.isNotBlank()) { "Cannot pin a session without a durable id." }
+        val previous = cache.session(durableId)
+            ?: throw GatewayRpcException(PIN_FAILED)
+        fenceFlagWrite(previous, PendingFlagWrite(pinned = pinned, atMillis = clock()))
+        cache.upsertSession(previous.copy(pinned = pinned))
+        val result = rest.updateSession(
+            sessionId = durableId,
+            pinned = pinned,
+            profile = mutationProfile(durableId),
+        )
+        if (result is GatewayRestResult.Failed) {
+            releaseFlagWrite(previous)
+            cache.upsertSession(previous)
+            throw GatewayRpcException(PIN_FAILED, statusCode = result.statusCode)
+        }
+    }
+
+    /**
+     * Archive or restore in place.
+     *
+     * The flag moves; the row does not. `SessionCache.removeSession` is the
+     * cache's one tombstone and it means *gone* — it also drops the row's
+     * rehome alias, its transcript and its project membership
+     * (`data/session/SessionCache.kt:183-203`), none of which a reversible
+     * verb may destroy and none of which a rollback could put back. The live
+     * list stops showing an archived row because `buildSessionRows` filters
+     * the pool it draws from (`data/session/SessionGrouping.kt:112`), which is
+     * where Desktop draws the same line (`sidebar/index.tsx:488-495` @
+     * `3ca096de`: "Archived is a view of its own set rather than a filter over
+     * this one").
+     */
+    override suspend fun setSessionArchived(durableId: String, archived: Boolean) {
+        require(durableId.isNotBlank()) { "Cannot archive a session without a durable id." }
+        val previous = cache.session(durableId)
+            ?: throw GatewayRpcException(if (archived) ARCHIVE_FAILED else UNARCHIVE_FAILED)
+        fenceFlagWrite(previous, PendingFlagWrite(archived = archived, atMillis = clock()))
+        cache.upsertSession(previous.copy(archived = archived))
+        val result = rest.updateSession(
+            sessionId = durableId,
+            archived = archived,
+            profile = mutationProfile(durableId),
+        )
+        if (result is GatewayRestResult.Failed) {
+            releaseFlagWrite(previous)
+            cache.upsertSession(previous)
+            throw GatewayRpcException(
+                if (archived) ARCHIVE_FAILED else UNARCHIVE_FAILED,
+                statusCode = result.statusCode,
+            )
+        }
+    }
+
+    override suspend fun setSessionUnread(durableId: String, unread: Boolean) {
+        require(durableId.isNotBlank()) { "Cannot mark a session without a durable id." }
+        val previous = cache.session(durableId)
+            ?: throw GatewayRpcException(UNREAD_FAILED)
+        fenceFlagWrite(previous, PendingFlagWrite(unread = unread, atMillis = clock()))
+        // Both unread sources move in one action, in Desktop's order: the
+        // transient finished-turn dot is cleared with the watermark rather than
+        // after it (`session-actions-menu.tsx:316-332` @ `3ca096de`), so no
+        // refresh in between can repaint what was just dismissed.
+        cache.upsertSession(
+            previous.copy(
+                unread = unread,
+                status = when {
+                    !unread && previous.status == SessionStatus.Unread -> SessionStatus.Idle
+                    else -> previous.status
+                },
+            ),
+        )
+        val result = rest.updateSession(
+            sessionId = durableId,
+            unread = unread,
+            profile = mutationProfile(durableId),
+        )
+        if (result is GatewayRestResult.Failed) {
+            releaseFlagWrite(previous)
+            cache.upsertSession(previous)
+            throw GatewayRpcException(UNREAD_FAILED, statusCode = result.statusCode)
+        }
+    }
+
+    override suspend fun loadArchivedSessions() =
+        refreshMutex.withLock { readSessionPages(SessionPageRead.Refresh, SessionPool.Archived) }
+
+    /**
+     * The `profile` a row's own mutation rides: its owner, or the scope the
+     * sidebar is standing in when nothing is known about the row. The same rule
+     * rename and delete already apply.
+     */
+    private fun mutationProfile(durableId: String): String? =
+        cache.session(durableId)?.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
+
+    /**
+     * Record an optimistic flag write under every id a page can name this row
+     * by, and arm the reconciliation that retires it.
+     *
+     * Expired entries are swept here as well as at merge time: a compression
+     * re-home leaves the old tip's key behind — [applyPendingFlagWrites] only
+     * ever sees the ids of a row a page actually named — and without a sweep
+     * the map would grow by one entry per compression until the connection
+     * changed.
+     */
+    private fun fenceFlagWrite(row: SessionSummary, write: PendingFlagWrite) {
+        synchronized(stateLock) {
+            pruneExpiredFlagWrites()
+            row.flagWriteKeys().forEach { key ->
+                pendingFlagWrites[key] = pendingFlagWrites[key]?.merge(write) ?: write
+            }
+        }
+        armFlagWriteReconcile()
+    }
+
+    /** Drop a fence whose write was refused: the backend kept the old value. */
+    private fun releaseFlagWrite(row: SessionSummary) {
+        synchronized(stateLock) { row.flagWriteKeys().forEach(pendingFlagWrites::remove) }
+    }
+
+    private fun pruneExpiredFlagWrites() {
+        val now = clock()
+        pendingFlagWrites.entries.removeAll { now - it.value.atMillis >= FLAG_WRITE_GUARD_MILLIS }
+    }
+
+    /**
+     * Ask the Gateway again once the guard lapses.
+     *
+     * Desktop keeps its guard as a read-side projection
+     * (`store/session-dot-state.ts:142-156`, `sidebar/session-index.ts:83-88` @
+     * `3ca096de`), so when the window closes the row it renders is the server's
+     * again with nothing further to do. This fence writes through to
+     * [SessionCache] instead, which is the backend-authoritative store — so a
+     * write the Gateway acknowledged but has never echoed in a list page would
+     * otherwise sit there as this client's own opinion with nothing scheduled
+     * to correct it. One rescan when the guard expires is that schedule.
+     */
+    private fun armFlagWriteReconcile() {
+        synchronized(stateLock) {
+            if (flagWriteReconcileJob?.isActive == true) return
+            flagWriteReconcileJob = scope.launch {
+                delay(FLAG_WRITE_GUARD_MILLIS)
+                // Only when something was still unconfirmed when the guard ran
+                // out: a fence a page already agreed with retired itself, and a
+                // refresh nobody asked for is a request nobody needed.
+                val unconfirmed = synchronized(stateLock) {
+                    val outstanding = pendingFlagWrites.isNotEmpty()
+                    pruneExpiredFlagWrites()
+                    outstanding
+                }
+                if (unconfirmed) runCatching { rescanSessions() }
+            }
+        }
+    }
+
+    /**
+     * Let an unconfirmed write of ours outrank a list page that predates it,
+     * and retire the fence the moment a page agrees or the guard expires.
+     */
+    private fun applyPendingFlagWrites(row: SessionSummary): SessionSummary {
+        val keys = row.flagWriteKeys()
+        val write = keys.firstNotNullOfOrNull { pendingFlagWrites[it] } ?: return row
+        if (write.isConfirmedBy(row) || clock() - write.atMillis >= FLAG_WRITE_GUARD_MILLIS) {
+            keys.forEach(pendingFlagWrites::remove)
+            return row
+        }
+        return row.copy(
+            pinned = write.pinned ?: row.pinned,
+            unread = write.unread ?: row.unread,
+            archived = write.archived ?: row.archived,
+        )
     }
 
     private fun isCapabilityUnsupported(
@@ -4965,7 +5300,48 @@ internal val NO_ACTIVE_TURNS: StateFlow<Set<String>> = MutableStateFlow(emptySet
  * `le=100` cap. The `session.list` fallback keeps its own historical `limit`
  * of 100 — that call has no second page, so shrinking it would lose rows.
  */
+/**
+ * What a refused flag write says.
+ *
+ * Desktop has one such string, `unreadFailed` (`apps/desktop/src/i18n/en.ts:2307`
+ * @ `3ca096de`), and it is used verbatim. It has no counterpart for pin or
+ * archive — a failed pin there raises the generic action-failed notice — so
+ * those two follow this app's own error rule instead: what did not happen, and
+ * a safe next step, never the transport's own words.
+ */
+private const val UNREAD_FAILED = "Could not update unread state"
+
+/**
+ * What a Gateway too old to be asked says. The `session.list` RPC has no
+ * archived filter, so the honest answer is about this Gateway rather than an
+ * empty `Nothing archived` about the account.
+ */
+private const val ARCHIVED_UNSUPPORTED = "Archived chats need a newer Hermes on this Gateway."
+private const val PIN_FAILED = "Could not update pin. Check the Gateway and try again."
+private const val ARCHIVE_FAILED = "Could not archive that chat. Check the Gateway and try again."
+private const val UNARCHIVE_FAILED = "Could not restore that chat. Check the Gateway and try again."
+
+/**
+ * Every id a list page can name this conversation by: the live tip and the
+ * compression lineage root it was filed under before.
+ */
+private fun SessionSummary.flagWriteKeys(): List<String> =
+    listOfNotNull(id, lineageRootId?.takeIf { it.isNotBlank() && it != id })
+
 private const val SESSION_PAGE_SIZE = 50
+
+/**
+ * How many archived rows one lookup asks for.
+ *
+ * Desktop asks for 200 (`store/sidebar-archive.ts:9`), which its route allows:
+ * `/api/profiles/sessions` caps at 500 precisely because "real desktop callers
+ * use limit=200" (`hermes_cli/web_routers/profiles.py:222-228` @ `3ca096de`).
+ * This app reads one profile leg at a time through `/api/sessions`, which caps
+ * at 100 (`hermes_cli/web_routers/sessions.py:91-94`), so 100 is the whole
+ * window that route will give — and the same cap this client already enforces
+ * (`MAX_SESSION_PAGE`).
+ */
+private const val ARCHIVED_POOL_SIZE = MAX_SESSION_PAGE
 
 /** The one status that means "this backend does not have that route". */
 private const val HTTP_NOT_FOUND = 404

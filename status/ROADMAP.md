@@ -91,8 +91,24 @@ lifecycle.
 - Per-session drafts, running-turn isolation, and concurrent sends to distinct
   idle sessions. Identifier-less events stay on one safe runtime pin rather
   than being painted into whichever session is visible.
-- Session archive does not have a mobile product surface yet. Search is
-  local filtering rather than a backend query.
+- Per-session actions in Desktop's own menu: rename, delete, pin/unpin, mark as
+  read/unread, and archive/restore. Each is one optimistic
+  `PATCH /api/sessions/{id}` that repaints the row if the Gateway refuses it,
+  and each carries the active profile.
+- A leading `Pinned` section above the date buckets, an `Archived` view behind
+  the list's filter menu, and `Mark all as read` beside it. Unread is now
+  durable: the backend read watermark lights the same dot a turn finishing
+  off-screen does, and marking read clears both in one action so a list refresh
+  cannot repaint what was just dismissed.
+- The `Archived` view reads its own set — one capped `archived=only` request per
+  profile, the way Desktop does — rather than filtering the live page. It is a
+  lookup of the newest 100 archived chats, not a pager, and a Gateway too old to
+  serve the session-list REST route says so instead of showing an empty list.
+- `Mark all as read` writes one request per unread row, serially, with no
+  batching and no cancellation, and reports the count that refused.
+- Pinned rows are ordered by activity, not by hand: there is no drag reorder on
+  this list. There is no Archived Chats settings page, no auto-archive setting,
+  and no bulk selection. Search is local filtering rather than a backend query.
 
 ### Profiles
 
@@ -266,7 +282,7 @@ lifecycle.
 | Android background lifecycle | Automatic Remote Gateway redials pause while the app is backgrounded and resume on foreground return. A turn-scoped `dataSync` foreground service (`TurnForegroundService`) and persistent notification now keep the process unfrozen and permit automatic redials during active turns or pending approvals this client submitted or is streaming, stopping after a 5-second linger grace upon completion. Android may suspend or stop the app, so uninterrupted background connectivity is not claimed; socket retention across backgrounding and Doze on physical devices remains unproven on device/emulator hardware. | A justified Android lifecycle design with notification, power, privacy, reconnect, and process-death acceptance evidence, plus physical device validation for turn background retention. |
 | Local route on Termux | A device pass on a Pixel 10 Pro emulator (Android 17, arm64, 16 KB pages) ran the route end to end against a real Termux `hermes serve` at `f82f2db`: install, token gating, connect, a Gateway-sourced session list and repository, launch restore after a force-stop, the token-refusal negative, and no token in `logcat`. The stopped-server negative is what that pass *caught*: it answered with the Remote route's "check the host" wording, fixed in [#98](https://github.com/donovan-yohan/hermes-agent-android/pull/98) and covered by unit tests against a real refused loopback connection rather than by a device re-run. Two things that pass does not claim. A **live turn**: no provider key was on the device, so every turn ended in the app's turn-failure copy — correct for the condition, and no evidence about turns. And **keep-alive on a physical phone**: an emulator with the app foregrounded proves nothing about a pocket, so wake lock, battery exemption and the Android 12+ phantom-process killer remain community advice, and upstream calls Termux gateway persistence best-effort. The route still carries no automatic redial after a failure: nothing loops behind a refusal or a stopped server, and a reconnect is an explicit action. The launch restore is the one unattended dial, and it happens before any failure, on a token the row already holds. The install itself needed three documented deviations from upstream's manual path — see the [Termux local Gateway guide](../docs/guides/termux-local-gateway.md). | A physical Pixel pass in [#93](https://github.com/donovan-yohan/hermes-agent-android/issues/93): a provider-backed live turn, and `hermes serve` surviving a screen-off background period. |
 | Managed SSH reconnect | A reconnect starts a fresh owned backend; safe lockfile reuse is not implemented. Positively unowned or ambiguous processes are never killed. | Full lock, argv, profile, home, token, HTTP ownership, and RPC readiness proof before reuse. |
-| Session management | Create/open/history work; rename and archive are absent. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
+| Session management | Create, open, history, rename, delete, pin, archive/restore and read-state all go through authoritative Gateway routes. Branch, export and move-to-project are still absent, and there is no bulk selection or archived-chats settings page. Search is local. | Authoritative Gateway methods and mobile journeys for every exposed action. |
 | Attachments | Files and images work; folder acquisition, clipboard images, drag/drop, robust reconnect reacquisition, and in-place retry/detach cleanup are incomplete. | Bounded Android acquisition/recovery flows plus Gateway and physical-device evidence. |
 | Notifications | Connected-only. Notifications arrive while the app holds a live Gateway socket; once that socket is gone, nothing arrives — there is no foreground service holding the connection and no push infrastructure upstream. Prompts parked while the app was disconnected are replayed on reconnect, deferred during the post-connect quiet window, and raised once the window expires (unless already announced pre-disconnect or answered in-app, preserved across multiple outstanding prompts replayed one event at a time). The in-app surfaces still show it. `POST_NOTIFICATIONS` is requested once, at the first live Gateway; a refusal is respected rather than re-prompted, and re-enabling is an OS settings action. No physical-device pass has answered a real approval from a real shade. | The background-lifecycle decision above, then a `dataSync` foreground service with Doze and battery honesty; and the emulator pass in [#99](https://github.com/donovan-yohan/hermes-agent-android/issues/99) driving real events through the Termux Local route. |
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
@@ -294,7 +310,9 @@ and Android acceptance boundaries are known.
 
 ### 2. Finish daily-driver gaps
 
-- Add authoritative session rename/archive rather than local-only mutations.
+- Add the remaining per-session verbs — branch, export and move to project —
+  behind the same authoritative routes rename, delete, pin, archive and
+  read-state already use.
 - Adopt Gateway multi-client fan-out before claiming simultaneous control of one
   running session from Desktop and mobile.
 - Extend the authenticated coding surface from status metadata to diff contents

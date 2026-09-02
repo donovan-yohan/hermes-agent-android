@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,6 +61,10 @@ import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.ALL_PINNED_NOTE
+import com.hermesagent.mobile.data.session.PINNED_SECTION_LABEL
+import com.hermesagent.mobile.data.session.displayStatus
+import com.hermesagent.mobile.data.session.isUnread
 import com.hermesagent.mobile.data.session.label
 import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.chat.ProjectProfileScope
@@ -113,6 +118,16 @@ fun SessionList(
     modifier: Modifier = Modifier,
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
+    /** Not `suspend`: the row that owns the press leaves the list it was on. */
+    onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
+    onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
+    onSetSessionArchived: ((String, Boolean) -> Unit)? = null,
+    /** Desktop's `Archived` filter: the list is a view of the archived set instead. */
+    archivedVisible: Boolean = false,
+    onArchivedVisibleChange: (Boolean) -> Unit = {},
+    /** Loaded rows that are still unread; Desktop hides the action at zero. */
+    unreadCount: Int = 0,
+    onMarkAllRead: () -> Unit = {},
     /**
      * Rail chrome above the section header — the connection switcher. A slot
      * rather than a parameter block so this list keeps knowing only about
@@ -196,7 +211,8 @@ fun SessionList(
                         icon = HermesIcon.ListFilter,
                         contentDescription = "Filters",
                         onClick = { menuVisible = !menuVisible },
-                        active = menuVisible || query.isNotBlank() || sidebarGrouping != SidebarGrouping.Date,
+                        active = menuVisible || query.isNotBlank() || archivedVisible ||
+                            sidebarGrouping != SidebarGrouping.Date,
                     )
                     SidebarViewMenu(
                         expanded = menuVisible,
@@ -204,6 +220,16 @@ fun SessionList(
                         projectGroupingAvailable = projectsAvailable != false,
                         searchVisible = searchIsVisible,
                         searchesProjects = showingProjectOverview,
+                        archivedVisible = archivedVisible,
+                        unreadCount = unreadCount,
+                        // Desktop's option rows deliberately keep the menu open
+                        // (`filter-menu.tsx:124-126` @ `3ca096de`); only the
+                        // actions at the bottom dismiss it.
+                        onToggleArchived = { onArchivedVisibleChange(!archivedVisible) },
+                        onMarkAllRead = {
+                            menuVisible = false
+                            onMarkAllRead()
+                        },
                         onDismiss = { menuVisible = false },
                         onGroupingChange = { grouping ->
                             menuVisible = false
@@ -293,6 +319,16 @@ fun SessionList(
                     modifier = listSlot,
                 )
 
+                // Desktop's archived empty state, verbatim
+                // (`i18n/en.ts:1154-1155` @ `3ca096de`). The Archived view is
+                // its own set, so "no sessions" would be the wrong sentence:
+                // there are sessions, none of them archived.
+                rows.isEmpty() && archivedVisible && query.isBlank() -> EmptyState(
+                    title = "Nothing archived",
+                    description = "Archive a chat to hide it here.",
+                    modifier = listSlot.testTag(ARCHIVED_EMPTY_STATE),
+                )
+
                 rows.isEmpty() -> EmptyState(
                     title = when {
                         query.isBlank() -> "No sessions"
@@ -322,6 +358,27 @@ fun SessionList(
                                     ),
                                 )
 
+                                is SessionListRow.PinnedLabel -> SectionLabel(
+                                    text = PINNED_SECTION_LABEL,
+                                    modifier = Modifier
+                                        .padding(
+                                            start = HermesTheme.spacing.pageInset,
+                                            top = 14.dp,
+                                            bottom = 4.dp,
+                                        )
+                                        .testTag(PINNED_SECTION_TAG),
+                                )
+
+                                is SessionListRow.AllPinnedNote -> Text(
+                                    text = ALL_PINNED_NOTE,
+                                    style = HermesTheme.type.scaffoldMeta,
+                                    color = tokens.textTertiary,
+                                    modifier = Modifier.padding(
+                                        horizontal = HermesTheme.spacing.pageInset,
+                                        vertical = 12.dp,
+                                    ),
+                                )
+
                                 is SessionListRow.Row -> SessionRow(
                                     session = row.session,
                                     active = row.session.id == activeSessionId,
@@ -336,6 +393,9 @@ fun SessionList(
                                     },
                                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(row.session.id, newTitle) } },
                                     onDelete = onDeleteSession?.let { delete -> { delete(row.session.id) } },
+                                    onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(row.session.id, pinned) } },
+                                    onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(row.session.id, unread) } },
+                                    onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(row.session.id, archived) } },
                                 )
                             }
                         }
@@ -368,6 +428,10 @@ private fun SidebarViewMenu(
     onDismiss: () -> Unit,
     onGroupingChange: (SidebarGrouping) -> Unit,
     onToggleSearch: () -> Unit,
+    archivedVisible: Boolean = false,
+    unreadCount: Int = 0,
+    onToggleArchived: () -> Unit = {},
+    onMarkAllRead: () -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     DropdownMenu(
@@ -428,8 +492,106 @@ private fun SidebarViewMenu(
                 modifier = Modifier.weight(1f),
             )
         }
+        // Desktop's own checkbox row and its own bare label, at the foot of the
+        // filter group (`app/chat/sidebar/filter-menu.tsx:393-397` @
+        // `3ca096de`) — the word is a literal there, not an i18n key, and the
+        // option carries no glyph: `OptionGlyph` returns `null` without an
+        // `icon` or a `dot` (`:116-122`).
+        SidebarToggleOption(
+            label = ARCHIVED_FILTER,
+            checked = archivedVisible,
+            onClick = onToggleArchived,
+            testTag = ARCHIVED_FILTER_OPTION,
+        )
+        // Desktop's own item, in Desktop's own place: last, after the rule that
+        // closes the option group, plain, no glyph, and *disabled* rather than
+        // hidden at zero unread (`filter-menu.tsx:404,411-413` @ `3ca096de`).
+        Hairline()
+        SidebarActionOption(
+            label = MARK_ALL_READ,
+            enabled = unreadCount > 0,
+            onClick = onMarkAllRead,
+            testTag = MARK_ALL_READ_OPTION,
+        )
     }
 }
+
+/**
+ * A checkbox row in the filter menu: Desktop's `OptionCheckbox`
+ * (`filter-menu.tsx:128-141` @ `3ca096de`). Selecting one deliberately leaves
+ * the menu open — `keepOpen` (`:124-126`: "Every option row … leaves the menu
+ * open, so a whole view can be set up in one pass. Only the actions at the
+ * bottom dismiss it").
+ */
+@Composable
+private fun SidebarToggleOption(
+    label: String,
+    checked: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+) {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onClick() })
+            .testTag(testTag)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = label,
+            style = HermesTheme.type.scaffold,
+            color = tokens.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        if (checked) HermesIconGlyph(HermesIcon.Check, color = tokens.accent, size = 13.sp)
+    }
+}
+
+/**
+ * A plain action row at the foot of the filter menu: Desktop's
+ * `DropdownMenuItem` (`filter-menu.tsx:411-413` @ `3ca096de`). No glyph, and it
+ * stays mounted when it cannot act — a control that vanishes at zero teaches
+ * nobody it exists.
+ */
+@Composable
+private fun SidebarActionOption(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+) {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .testTag(testTag)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = label,
+            style = HermesTheme.type.scaffold,
+            color = if (enabled) tokens.textSecondary else tokens.textQuaternary,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** Desktop's own literal for the archived filter (`filter-menu.tsx:396` @ `3ca096de`). */
+private const val ARCHIVED_FILTER = "Archived"
+
+/** `Mark all as read` (`i18n/en.ts:2356` @ `3ca096de`). */
+private const val MARK_ALL_READ = "Mark all as read"
+
+internal const val ARCHIVED_FILTER_OPTION = "Archived filter option"
+internal const val MARK_ALL_READ_OPTION = "Mark all as read option"
 
 @Composable
 private fun SidebarGroupingOption(
@@ -579,8 +741,16 @@ internal const val PROJECT_PROFILE_SCOPE_NOTE = "Project profile scope note"
 
 private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.Divider -> "divider-${bucket.name}"
+    is SessionListRow.PinnedLabel -> "divider-pinned"
+    is SessionListRow.AllPinnedNote -> "note-all-pinned"
     is SessionListRow.Row -> session.id
 }
+
+/** The leading `Pinned` section label. */
+internal const val PINNED_SECTION_TAG = "Pinned section"
+
+/** The Archived view with nothing in it. */
+internal const val ARCHIVED_EMPTY_STATE = "Archived empty state"
 
 @Composable
 private fun SessionRow(
@@ -591,9 +761,21 @@ private fun SessionRow(
     owner: HermesProfile? = null,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
+    onSetPinned: ((Boolean) -> Unit)? = null,
+    onSetUnread: ((Boolean) -> Unit)? = null,
+    onSetArchived: ((Boolean) -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
-    val dot = session.status.dot(tokens)
+    val archived = session.archived == true
+    val status = session.displayStatus()
+    val dot = status.dot(tokens)
+    // The dot is the *resolved* state, where a louder one outranks unread; the
+    // menu item reads the two raw sources instead, exactly as Desktop does
+    // (`session-actions-menu.tsx:314-315,319` @ `3ca096de` — `unread ||
+    // isUnread`, the row's own flag or membership of the finished-unread set).
+    // A row that is working and carries the watermark is still unread, and must
+    // still offer `Mark as read`.
+    val unread = session.isUnread()
 
     // The outline is paint-only. Keeping it as a sibling layer means it cannot
     // change the row's size, click target, or one authoritative spoken label.
@@ -625,7 +807,7 @@ private fun SessionRow(
                 )
                 .semantics {
                     selected = active
-                    contentDescription = "${session.title}. ${dot.description}"
+                    contentDescription = "${session.title}. ${if (archived) ARCHIVED_ROW_STATE else dot.description}"
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -641,12 +823,26 @@ private fun SessionRow(
                     ),
             )
 
-            StatusDot(
-                color = dot.color,
-                filled = dot.filled,
-                contentDescription = null,
-                size = if (session.status == SessionStatus.Idle) 6.dp else 7.dp,
-            )
+            // An archived session has no live status to paint, so the archive
+            // glyph takes the lead slot the dot would occupy rather than adding
+            // a column of its own — Desktop's own rule and its own ink
+            // (`apps/desktop/src/app/chat/sidebar/session-row.tsx:284-290` @
+            // `3ca096de`, `--ui-text-quaternary`).
+            if (archived) {
+                HermesIconGlyph(
+                    HermesIcon.Archive,
+                    color = tokens.textQuaternary,
+                    size = 11.sp,
+                    modifier = Modifier.testTag(ARCHIVED_ROW_MARK),
+                )
+            } else {
+                StatusDot(
+                    color = dot.color,
+                    filled = dot.filled,
+                    contentDescription = null,
+                    size = if (status == SessionStatus.Idle) 6.dp else 7.dp,
+                )
+            }
 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
@@ -670,7 +866,7 @@ private fun SessionRow(
             if (owner != null) ProfileTag(profile = owner)
         }
 
-        if (session.status.showsRunningOutline()) {
+        if (status.showsRunningOutline()) {
             RunningSessionOutline(Modifier.matchParentSize())
         }
 
@@ -684,8 +880,14 @@ private fun SessionRow(
             sessionId = session.id,
             sessionTitle = session.title,
             modifier = Modifier.align(Alignment.CenterEnd),
+            pinned = session.pinned == true,
+            unread = unread,
+            archived = archived,
             onRename = onRename,
             onDelete = onDelete,
+            onSetPinned = onSetPinned,
+            onSetUnread = onSetUnread,
+            onSetArchived = onSetArchived,
         )
     }
 }
@@ -704,6 +906,12 @@ private val RAIL_SCROLLS_BELOW = 360.dp
 private val CRAMPED_LIST_HEIGHT = 180.dp
 
 private val SessionRowShape = RoundedCornerShape(6.dp)
+
+/** The archived row's lead mark, in place of the status dot. */
+internal const val ARCHIVED_ROW_MARK = "Archived session mark"
+
+/** What an archived row says in place of a live status. */
+private const val ARCHIVED_ROW_STATE = "Archived"
 
 /** CSS 160deg in Android's y-down coordinate space. */
 internal val SessionRunningOutlineDirection = Offset(0.34202015f, 0.9396926f)

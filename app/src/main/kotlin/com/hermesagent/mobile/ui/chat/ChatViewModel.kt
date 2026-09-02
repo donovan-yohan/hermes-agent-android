@@ -90,6 +90,7 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.buildSessionRows
+import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.matchesProjectQuery
 import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import kotlinx.coroutines.CancellationException
@@ -215,6 +216,10 @@ data class ChatUiState(
     val projects: List<ProjectSummary> = emptyList(),
     val projectsAvailable: Boolean? = null,
     val sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
+    /** Desktop's `Archived` filter: the list is a view of the archived set instead. */
+    val archivedVisible: Boolean = false,
+    /** Loaded, non-archived rows that are still unread, by either source. */
+    val unreadCount: Int = 0,
     /** The foot rail: this Gateway's profiles and the scope the sidebar is in. */
     val profileRail: ProfileRailState = ProfileRailState(),
     /** How the project catalog relates to the profile scope the sidebar is in. */
@@ -299,6 +304,13 @@ internal class ChatViewModel(
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
+
+    /**
+     * Desktop's `Archived` filter. A view choice, so it lives here and never in
+     * [SessionCache]: the cache holds what the Gateway said, not what the
+     * reader is currently looking at.
+     */
+    private val archivedVisible = MutableStateFlow(false)
     /** UI-only authority, restored from and saved to a preference. */
     private val profileScope = MutableStateFlow(ProfileScope())
     private val composer = MutableStateFlow(ComposerUiState())
@@ -387,7 +399,13 @@ internal class ChatViewModel(
                         notice,
                         selectedProjectId,
                         projectLoadingId,
-                        combine(sidebarGrouping, profileScope, profileRepository.roster, ::SidebarViewState),
+                        combine(
+                            sidebarGrouping,
+                            profileScope,
+                            profileRepository.roster,
+                            archivedVisible,
+                            ::SidebarViewState,
+                        ),
                     ) { connection, message, projectId, loadingId, sidebarView ->
                         NavigationState(connection, message, projectId, loadingId, sidebarView)
                     },
@@ -533,7 +551,15 @@ internal class ChatViewModel(
                 sessions = scopedSessions,
                 nowMillis = clock(),
                 query = queryText,
+                archivedView = navigation.sidebarView.archivedVisible,
             ),
+            archivedVisible = navigation.sidebarView.archivedVisible,
+            // Desktop counts listed, non-archived rows whose resolved dot is
+            // unread (`store/session-dot-state.ts:186-200` @ `3ca096de`) and
+            // hides the mark-all action at zero.
+            unreadCount = scopedSessions.count {
+                it.archived != true && it.displayStatus() == SessionStatus.Unread
+            },
             projects = projects,
             projectsAvailable = cacheState.projects.available,
             sidebarGrouping = navigation.sidebarView.grouping,
@@ -1388,6 +1414,119 @@ internal class ChatViewModel(
             startFreshSessionInScope()
         }
         notice.value = "Session deleted"
+    }
+
+    /**
+     * Pin, archive and read-state all go the same way: the repository paints
+     * the row, writes `PATCH /api/sessions/{id}` and repaints on refusal, and
+     * what the person is told is the message it raised. The notice slot is this
+     * app's one outcome surface, so the failure is reported here rather than
+     * twice.
+     *
+     * All three run on [viewModelScope] and none of them suspends its caller.
+     * The press comes from a row's own menu, and every one of these verbs takes
+     * that row off the list it was pressed on — an archive leaves the live
+     * pool, a pin moves into the Pinned section. A coroutine owned by the
+     * composable that is being removed would be cancelled mid-flight: the
+     * Gateway never told, and neither the success nor the rollback branch run.
+     */
+    fun setSessionPinnedAsync(id: String, pinned: Boolean) {
+        viewModelScope.launch {
+            reportingFailure("Could not update pin. Check the Gateway and try again.") {
+                repository.setSessionPinned(id, pinned)
+            }
+        }
+    }
+
+    fun setSessionArchivedAsync(id: String, archived: Boolean) {
+        viewModelScope.launch {
+            reportingFailure("Could not update that chat. Check the Gateway and try again.") {
+                repository.setSessionArchived(id, archived)
+                if (archived && activeSessionId.value == id) startFreshSessionInScope()
+            }
+        }
+    }
+
+    fun setSessionUnreadAsync(id: String, unread: Boolean) {
+        viewModelScope.launch {
+            reportingFailure(UNREAD_FAILED) { repository.setSessionUnread(id, unread) }
+        }
+    }
+
+    /**
+     * Desktop's `Archived` toggle: swap the pool the list draws from, and read
+     * the archived set the first time it is asked for.
+     *
+     * The read happens on the way *in* only, exactly as Desktop's
+     * `useEffect(… if (showArchived) void loadArchivedSessions(), [showArchived])`
+     * does (`app/chat/sidebar/index.tsx:1352-1358` @ `3ca096de`): turning the
+     * view off changes nothing about what the Gateway was asked, because the
+     * live list was never the thing carrying these rows.
+     */
+    fun setArchivedVisible(visible: Boolean) {
+        if (archivedVisible.value == visible) return
+        archivedVisible.value = visible
+        if (!visible) return
+        viewModelScope.launch {
+            try {
+                repository.loadArchivedSessions()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                notice.value = e.message
+                    ?: "Could not load archived chats. Check the Gateway and try again."
+            }
+        }
+    }
+
+    /**
+     * Mark every loaded unread row read: one PATCH each, and an honest count
+     * when some of them refuse.
+     *
+     * Desktop's own control does the same fan-out
+     * (`app/chat/sidebar/index.tsx:1735-1741` @ `3ca096de`) and has no string
+     * for a partial failure, so the outcome is this app's own: the number that
+     * did not move, never a blanket success.
+     */
+    fun markAllSessionsRead() {
+        val ids = unreadSessionsInScope().map(SessionSummary::id)
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            for (id in ids) {
+                try {
+                    repository.setSessionUnread(id, false)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    failed++
+                }
+            }
+            if (failed > 0) notice.value = "$UNREAD_FAILED for $failed of ${ids.size} chats."
+        }
+    }
+
+    /**
+     * The loaded, in-scope, non-archived rows the sidebar is currently counting
+     * as unread. Read from the cache rather than from `uiState`, which is
+     * `WhileSubscribed` and answers with its initial value when nothing is
+     * collecting — the count in the menu and the rows this acts on have to be
+     * the same set.
+     */
+    private fun unreadSessionsInScope(): List<SessionSummary> =
+        filterSessionsByProfileScope(
+            cache.state.value.sessions.values.toList(),
+            profileScope.value.key,
+        ).filter { it.archived != true && it.displayStatus() == SessionStatus.Unread }
+
+    private suspend fun reportingFailure(fallback: String, action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            notice.value = e.message ?: fallback
+        }
     }
 
     private fun rehome(id: String?) {
@@ -2654,9 +2793,19 @@ internal class ChatViewModel(
         null
     }
 
+    /**
+     * Opening a session clears both unread sources, in Desktop's order: the
+     * transient finished-turn dot here and now, and the durable watermark
+     * best-effort behind it (`store/session-unread-remote.ts:65-79` @
+     * `3ca096de` — "a failed PATCH is healed by the next honest refresh", and
+     * it is not worth a notice for something the reader did not ask for).
+     */
     private fun markRead(id: String) {
         val session = cache.session(id) ?: return
         if (session.status == SessionStatus.Unread) cache.upsertSession(session.copy(status = SessionStatus.Idle))
+        if (session.unread == true) {
+            viewModelScope.launch { runCatching { repository.setSessionUnread(id, false) } }
+        }
     }
 
     /** The sidebar's saved view choices plus the roster the rail paints from. */
@@ -2664,6 +2813,8 @@ internal class ChatViewModel(
         val grouping: SidebarGrouping = SidebarGrouping.Date,
         val profileScope: ProfileScope = ProfileScope(),
         val roster: ProfileRosterState = ProfileRosterState(),
+        /** Whether the list is showing the archived set instead of the live one. */
+        val archivedVisible: Boolean = false,
     )
 
     private data class NavigationState(
@@ -2783,3 +2934,6 @@ private fun transientQueueController(): ComposerQueueController = ComposerQueueC
 
 /** Slash commands follow their own capability path; only ordinary text can redirect a live turn. */
 private fun String.isRedirectEligible(): Boolean = trim().isNotEmpty() && !trimStart().startsWith('/')
+
+/** `Could not update unread state` (`apps/desktop/src/i18n/en.ts:2307` @ `3ca096de`). */
+private const val UNREAD_FAILED = "Could not update unread state"

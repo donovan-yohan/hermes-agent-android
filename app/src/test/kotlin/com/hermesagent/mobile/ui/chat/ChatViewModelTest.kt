@@ -1517,6 +1517,220 @@ class ChatViewModelTest {
         assertEquals(listOf("older user turn", "newest user turn"), cache.transcript("session-a").filterIsInstance<UserTurn>().map(UserTurn::text))
     }
 
+    // -----------------------------------------------------------------------
+    // Durable unread, pin and archive (#66).
+    // -----------------------------------------------------------------------
+
+    /**
+     * Opening a session retires both unread sources: the transient dot here and
+     * now, and the durable watermark behind it — Desktop's `clearUnreadOnOpen`
+     * (`apps/desktop/src/store/session-unread-remote.ts:65-79` @ `3ca096de`),
+     * best-effort because the reader did not ask for it.
+     */
+    @Test
+    fun `opening a session retires the durable watermark as well as the dot`() = runTest(dispatcher) {
+        collectState()
+        cache.upsertSession(
+            summary("session-b", 1_000).copy(status = SessionStatus.Unread, unread = true),
+        )
+        runCurrent()
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+
+        assertEquals(listOf(Triple("unread", "session-b", false)), repository.flagWrites)
+        assertEquals(SessionStatus.Idle, cache.session("session-b")?.status)
+        assertEquals(false, cache.session("session-b")?.unread)
+    }
+
+    /** A row the backend never called unread is not marked read on open. */
+    @Test
+    fun `opening a read session writes nothing`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+
+        assertTrue(repository.flagWrites.isEmpty())
+    }
+
+    @Test
+    fun `the unread count sees both sources and ignores archived rows`() = runTest(dispatcher) {
+        collectState()
+        cache.upsertSessions(
+            listOf(
+                summary("session-a", 2_000).copy(unread = true),
+                summary("session-b", 1_000).copy(status = SessionStatus.Unread),
+                summary("session-c", 900).copy(unread = true, archived = true),
+                summary("session-d", 800),
+            ),
+        )
+        runCurrent()
+
+        assertEquals(2, viewModel.uiState.value.unreadCount)
+    }
+
+    /**
+     * Desktop's mark-all fans out one write per row
+     * (`app/chat/sidebar/index.tsx:1735-1741` @ `3ca096de`) and has no string
+     * for a partial failure, so the outcome is this app's own: the number that
+     * did not move, never a blanket success.
+     */
+    @Test
+    fun `mark all as read walks the unread rows and reports what refused`() = runTest(dispatcher) {
+        collectState()
+        cache.upsertSessions(
+            listOf(
+                summary("session-a", 2_000).copy(unread = true),
+                summary("session-b", 1_000).copy(status = SessionStatus.Unread),
+            ),
+        )
+        runCurrent()
+        repository.refuseFlagWritesFor += "session-b"
+
+        viewModel.markAllSessionsRead()
+        runCurrent()
+
+        assertEquals(
+            listOf(Triple("unread", "session-a", false), Triple("unread", "session-b", false)),
+            repository.flagWrites,
+        )
+        assertEquals(false, cache.session("session-a")?.unread)
+        // `unreadFailed` verbatim (`i18n/en.ts:2307`) plus the honest count.
+        assertEquals("Could not update unread state for 1 of 2 chats.", viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `mark all as read says nothing when every row moves`() = runTest(dispatcher) {
+        collectState()
+        cache.upsertSession(summary("session-a", 2_000).copy(unread = true))
+        runCurrent()
+
+        viewModel.markAllSessionsRead()
+        runCurrent()
+
+        assertEquals(1, repository.flagWrites.size)
+        assertNull(viewModel.uiState.value.notice)
+        assertEquals(0, viewModel.uiState.value.unreadCount)
+    }
+
+    /**
+     * The `Archived` filter is a view choice: turning it on reads the archived
+     * pool and the list renders that set instead of the live one. Turning it
+     * back off asks for nothing — the live list was never carrying these rows,
+     * which is Desktop's own shape (`sidebar/index.tsx:1352-1358` @ `3ca096de`,
+     * `if (showArchived) void loadArchivedSessions()`).
+     */
+    @Test
+    fun `the Archived filter swaps the pool and reads the archived set`() = runTest(dispatcher) {
+        collectState()
+        cache.upsertSessions(
+            listOf(
+                summary("session-a", 2_000),
+                summary("session-c", 900).copy(archived = true),
+            ),
+        )
+        runCurrent()
+
+        assertEquals(
+            listOf("session-a", "session-b"),
+            viewModel.uiState.value.sessionRows.rowIds(),
+        )
+
+        viewModel.setArchivedVisible(true)
+        runCurrent()
+
+        assertEquals(1, repository.archivedLoads)
+        assertTrue(viewModel.uiState.value.archivedVisible)
+        assertEquals(listOf("session-c"), viewModel.uiState.value.sessionRows.rowIds())
+
+        viewModel.setArchivedVisible(false)
+        runCurrent()
+
+        assertEquals(1, repository.archivedLoads)
+        assertEquals(
+            listOf("session-a", "session-b"),
+            viewModel.uiState.value.sessionRows.rowIds(),
+        )
+    }
+
+    /**
+     * Archiving the open session leaves the reader on a fresh draft rather than
+     * staring at a conversation that is no longer in the list — the same move
+     * deleting the open session already makes.
+     */
+    @Test
+    fun `archiving the open session leaves the reader on a fresh draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.selectSession("session-a")
+        runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+
+        viewModel.setSessionArchivedAsync("session-a", true)
+        runCurrent()
+
+        assertEquals(listOf(Triple("archived", "session-a", true)), repository.flagWrites)
+        assertNull(viewModel.uiState.value.activeSession)
+    }
+
+    /** A refused flag write is reported on the one outcome slot this app has. */
+    @Test
+    fun `a refused pin is reported rather than silently dropped`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.refuseFlagWritesFor += "session-a"
+
+        viewModel.setSessionPinnedAsync("session-a", true)
+        runCurrent()
+
+        // The pin's own sentence, not the read-state one.
+        assertEquals(
+            "Could not update pin. Check the Gateway and try again.",
+            viewModel.uiState.value.notice,
+        )
+    }
+
+    /**
+     * The failure the whole verb set shares if the press owns the coroutine:
+     * each of these takes the row off the list it was pressed on — an archive
+     * leaves the live pool, a pin moves into the Pinned section — so a scope
+     * belonging to that row's composition is cancelled mid-`PATCH`. The Gateway
+     * is never told, and neither the success nor the rollback branch runs.
+     *
+     * These entry points do not suspend their caller: they hand the write to
+     * [ChatViewModel]'s own scope, which outlives every row.
+     */
+    @Test
+    fun `a flag write survives the row that started it leaving the screen`() = runTest(dispatcher) {
+        collectState()
+        cache.upsertSession(summary("session-a", 2_000))
+        runCurrent()
+        // The PATCH is in flight and has not answered yet.
+        val inFlight = kotlinx.coroutines.CompletableDeferred<Unit>()
+        repository.holdFlagWrites = inFlight
+
+        // The row's own composition scope: the tap runs here.
+        val rowScope = kotlinx.coroutines.CoroutineScope(dispatcher)
+        rowScope.launch { viewModel.setSessionArchivedAsync("session-a", true) }
+        runCurrent()
+
+        // Archiving takes the row out of the live pool, so it leaves
+        // composition on the next frame and its scope is cancelled.
+        rowScope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+        runCurrent()
+        inFlight.complete(Unit)
+        runCurrent()
+
+        assertEquals(listOf(Triple("archived", "session-a", true)), repository.flagWrites)
+        assertEquals(true, cache.session("session-a")?.archived)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    private fun List<com.hermesagent.mobile.data.session.SessionListRow>.rowIds(): List<String> =
+        filterIsInstance<com.hermesagent.mobile.data.session.SessionListRow.Row>().map { it.session.id }
+
     private fun kotlinx.coroutines.test.TestScope.collectState() {
         backgroundScope.launch { viewModel.uiState.collect { } }
     }
@@ -1588,6 +1802,61 @@ class ChatViewModelTest {
         }
 
         override suspend fun refreshSessions() = Unit
+
+        /** Every flag write this fake was asked for, in order. */
+        val flagWrites = mutableListOf<Triple<String, String, Boolean>>()
+
+        /** How many times the archived pool was read. */
+        var archivedLoads = 0
+
+        /** Session ids whose next flag write is refused. */
+        val refuseFlagWritesFor = mutableSetOf<String>()
+
+        /**
+         * The repository raises a different sentence per flag, so a fake that
+         * raised one message for all three would let a test named for pin pass
+         * on the unread copy.
+         */
+        private fun refusalFor(flag: String) = when (flag) {
+            "pinned" -> "Could not update pin. Check the Gateway and try again."
+            "archived" -> "Could not archive that chat. Check the Gateway and try again."
+            else -> "Could not update unread state"
+        }
+
+        /** Parks every flag write until completed, so a test can cancel mid-write. */
+        var holdFlagWrites: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
+        private suspend fun writeFlag(flag: String, durableId: String, value: Boolean) {
+            holdFlagWrites?.await()
+            flagWrites += Triple(flag, durableId, value)
+            if (durableId in refuseFlagWritesFor) {
+                throw com.hermesagent.mobile.data.gateway.GatewayRpcException(refusalFor(flag))
+            }
+            val row = cache.session(durableId) ?: return
+            cache.upsertSession(
+                when (flag) {
+                    "pinned" -> row.copy(pinned = value)
+                    "archived" -> row.copy(archived = value)
+                    else -> row.copy(
+                        unread = value,
+                        status = if (!value && row.status == SessionStatus.Unread) SessionStatus.Idle else row.status,
+                    )
+                },
+            )
+        }
+
+        override suspend fun setSessionPinned(durableId: String, pinned: Boolean) =
+            writeFlag("pinned", durableId, pinned)
+
+        override suspend fun setSessionArchived(durableId: String, archived: Boolean) =
+            writeFlag("archived", durableId, archived)
+
+        override suspend fun setSessionUnread(durableId: String, unread: Boolean) =
+            writeFlag("unread", durableId, unread)
+
+        override suspend fun loadArchivedSessions() {
+            archivedLoads++
+        }
 
         override suspend fun openProject(projectId: String) {
             openedProjects += projectId

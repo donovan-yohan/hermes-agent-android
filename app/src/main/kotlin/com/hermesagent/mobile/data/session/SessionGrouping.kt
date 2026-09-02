@@ -27,11 +27,32 @@ fun SessionBucket.label(): String = when (this) {
     SessionBucket.Older -> "Older"
 }
 
-/** A divider or a session row. Interleaved so one list renders both. */
+/** A divider, a section label, a note or a session row. One list renders them all. */
 sealed interface SessionListRow {
     data class Divider(val bucket: SessionBucket) : SessionListRow
     data class Row(val session: SessionSummary) : SessionListRow
+
+    /**
+     * Desktop's leading `Pinned` section, label `Pinned`
+     * (`apps/desktop/src/i18n/en.ts:2205`, rendered at
+     * `apps/desktop/src/app/chat/sidebar/index.tsx:1640-1661` @ `3ca096de`).
+     */
+    data object PinnedLabel : SessionListRow
+
+    /**
+     * Desktop's empty-recents line when everything loaded is pinned
+     * (`en.ts:2214`, chosen at `sidebar/index.tsx:1697-1699` @ `3ca096de`). It
+     * is the honest explanation of an otherwise confusing empty list, so it
+     * ships with the feature rather than after it.
+     */
+    data object AllPinnedNote : SessionListRow
 }
+
+/** `Everything here is pinned…` (`apps/desktop/src/i18n/en.ts:2214` @ `3ca096de`). */
+const val ALL_PINNED_NOTE = "Everything here is pinned. Unpin a chat to show it in recents."
+
+/** `Pinned` (`apps/desktop/src/i18n/en.ts:2205` @ `3ca096de`). */
+const val PINNED_SECTION_LABEL = "Pinned"
 
 fun calendarBucket(
     atMillis: Long,
@@ -65,11 +86,17 @@ fun calendarBucket(
 
 /**
  * Newest first, grouped by calendar bucket with a divider *between* groups —
- * never above the first one.
+ * never above the first one — under a leading `Pinned` section.
  *
  * Search filters rows but not the grouping rules, so a filtered list still
  * reads as the same list — Desktop's "ranking and grouping are separate
  * concerns" (`sidebar/order.ts:147-159`).
+ *
+ * @param archivedView Desktop's `Archived` toggle. Archived is a view of its
+ *   own set rather than a filter over the live one
+ *   (`apps/desktop/src/app/chat/sidebar/index.tsx:488-495` @ `3ca096de`), so it
+ *   swaps the pool wholesale and renders it flat: no pinned section and no
+ *   dividers (`:1723`, `grouping='none'` while archived).
  */
 fun buildSessionRows(
     sessions: Collection<SessionSummary>,
@@ -77,26 +104,51 @@ fun buildSessionRows(
     query: String = "",
     timeZone: TimeZone = TimeZone.getDefault(),
     locale: Locale = Locale.getDefault(),
+    archivedView: Boolean = false,
 ): List<SessionListRow> {
     val needle = query.trim().lowercase(locale)
     val visible = sessions
         .asSequence()
+        // `archived == null` is a Gateway that never said, and an unsaid flag
+        // is not an archive: a row only leaves the live list when a contract
+        // that can answer says `true`.
+        .filter { (it.archived == true) == archivedView }
         .filter { needle.isEmpty() || it.matches(needle, locale) }
         .sortedByDescending { it.lastActiveAtMillis }
         .toList()
 
-    val rows = ArrayList<SessionListRow>(visible.size + SessionBucket.entries.size)
+    if (archivedView) return visible.map(SessionListRow::Row)
+
+    // Desktop hides the Pinned section while a query is live — search answers
+    // in one Results list (`sidebar/index.tsx:1640,1664`). The backend flag is
+    // the authority on membership (`session-index.ts:41-49`); ordering is the
+    // list's own, because Android has no drag reorder to hint with.
+    val pinned = if (needle.isEmpty()) visible.filter { it.pinned == true } else emptyList()
+    val pinnedIds = pinned.mapTo(HashSet(pinned.size), SessionSummary::id)
+    val recents = if (pinned.isEmpty()) visible else visible.filterNot { it.id in pinnedIds }
+
+    val rows = ArrayList<SessionListRow>(visible.size + SessionBucket.entries.size + 2)
+    if (pinned.isNotEmpty()) {
+        rows += SessionListRow.PinnedLabel
+        pinned.forEach { rows += SessionListRow.Row(it) }
+    }
+
     var currentBucket: SessionBucket? = null
-    for (session in visible) {
+    var emittedRecent = false
+    for (session in recents) {
         val bucket = calendarBucket(session.lastActiveAtMillis, nowMillis, timeZone, locale)
-        // `rows.isNotEmpty()` is the first-group rule: the top of the list is
-        // already "the newest", so labelling it says nothing.
+        // The first-group rule: the top of the list is already "the newest", so
+        // labelling it says nothing. A Pinned section above it changes that —
+        // there is now something to separate the newest bucket *from*, and an
+        // unlabelled first bucket would read as more pinned rows.
         if (bucket != currentBucket) {
-            if (rows.isNotEmpty()) rows += SessionListRow.Divider(bucket)
+            if (emittedRecent || pinned.isNotEmpty()) rows += SessionListRow.Divider(bucket)
             currentBucket = bucket
         }
         rows += SessionListRow.Row(session)
+        emittedRecent = true
     }
+    if (pinned.isNotEmpty() && recents.isEmpty()) rows += SessionListRow.AllPinnedNote
     return rows
 }
 

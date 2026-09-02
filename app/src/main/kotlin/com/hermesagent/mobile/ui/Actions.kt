@@ -30,6 +30,18 @@ class ChatActions(
     val onCreateSession: () -> Unit = {},
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
+    /**
+     * Pin, read-state and archive. Not `suspend`: every one of these verbs
+     * takes the row off the list it was pressed on, so a coroutine owned by
+     * that row's composition would be cancelled before the write landed. The
+     * ViewModel owns the scope.
+     */
+    val onSetSessionPinned: ((String, Boolean) -> Unit) = { _, _ -> },
+    val onSetSessionUnread: ((String, Boolean) -> Unit) = { _, _ -> },
+    val onSetSessionArchived: ((String, Boolean) -> Unit) = { _, _ -> },
+    /** Desktop's `Archived` filter: show the archived set instead of the live one. */
+    val onArchivedVisibleChange: (Boolean) -> Unit = {},
+    val onMarkAllSessionsRead: () -> Unit = {},
     /** Scope the sidebar to one Hermes profile and start fresh there. */
     val onSelectProfile: (String) -> Unit = {},
     /** Desktop's opt-in unified view; it does not change which profile is active. */

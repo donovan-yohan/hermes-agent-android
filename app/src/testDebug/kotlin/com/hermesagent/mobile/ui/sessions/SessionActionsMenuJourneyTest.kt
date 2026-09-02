@@ -237,7 +237,7 @@ class SessionActionsMenuJourneyTest {
     }
 
     @Test
-    fun `the chat header offers the open session the same three-item menu`() {
+    fun `the chat header offers the open session the same menu its row does`() {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 ChatScreen(
@@ -258,11 +258,14 @@ class SessionActionsMenuJourneyTest {
         compose.waitForIdle()
 
         assertEquals(1, compose.nodesTagged(SESSION_ACTIONS_MENU_TAG))
-        compose.onNodeWithText("Rename…").assertIsDisplayed()
-        compose.onNodeWithText("Copy ID").assertIsDisplayed()
-        compose.onNodeWithText("Delete").assertIsDisplayed()
+        listOf("Rename…", "Pin", "Mark as unread", "Copy ID", "Archive", "Delete").forEach { label ->
+            compose.onNodeWithText(label).assertIsDisplayed()
+        }
         // Identical item list: the header and the row read the same spec.
-        assertEquals(listOf("Rename…", "Copy ID", "Delete"), sessionActionItems(FIRST_ID).map { it.label })
+        assertEquals(
+            listOf("Rename…", "Pin", "Mark as unread", "Copy ID", "Archive", "Delete"),
+            sessionActionItems(FIRST_ID).map { it.label },
+        )
     }
 
     @Test

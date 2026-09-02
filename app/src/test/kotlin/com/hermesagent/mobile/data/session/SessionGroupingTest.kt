@@ -193,15 +193,159 @@ class SessionGroupingTest {
         assertTrue(rows.isEmpty())
     }
 
+    /**
+     * The leading Pinned section, ported from Desktop's own
+     * (`apps/desktop/src/app/chat/sidebar/index.tsx:1640-1661` @ `3ca096de`).
+     * Membership is the backend's `pinned` flag alone; ordering is this list's,
+     * because a phone has no drag reorder to hint with.
+     */
+    @Test
+    fun `pinned rows lead the list under their own section label`() {
+        val rows = buildSessionRows(
+            listOf(
+                session("a", now),
+                session("b", now - HOUR, pinned = true),
+                session("c", now - 2 * HOUR),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(
+            listOf("pinned", "row:b", "divider:Today", "row:a", "row:c"),
+            rows.map(::describe),
+        )
+    }
+
+    /**
+     * A `pinned` the Gateway never reported is not a pin. `null` means the
+     * contract said nothing, and a silent contract must not fill the section.
+     */
+    @Test
+    fun `only an explicit backend pin joins the section`() {
+        val rows = buildSessionRows(
+            listOf(session("a", now, pinned = false), session("b", now - HOUR)),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(listOf("row:a", "row:b"), rows.map(::describe))
+    }
+
+    /** The pinned section is ordered by activity, newest first, like the rest. */
+    @Test
+    fun `the pinned section is ordered newest first`() {
+        val rows = buildSessionRows(
+            listOf(
+                session("old", now - 3 * HOUR, pinned = true),
+                session("new", now, pinned = true),
+                session("recent", now - HOUR),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(
+            listOf("pinned", "row:new", "row:old", "divider:Today", "row:recent"),
+            rows.map(::describe),
+        )
+    }
+
+    /**
+     * Desktop's empty-recents line, verbatim (`i18n/en.ts:2214`, chosen at
+     * `sidebar/index.tsx:1697-1699` @ `3ca096de`). Without it an all-pinned
+     * account reads as a broken list rather than an explained one.
+     */
+    @Test
+    fun `everything pinned explains the empty recents rather than showing nothing`() {
+        val rows = buildSessionRows(
+            listOf(session("a", now, pinned = true)),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(listOf("pinned", "row:a", "all-pinned"), rows.map(::describe))
+        assertEquals(
+            "Everything here is pinned. Unpin a chat to show it in recents.",
+            ALL_PINNED_NOTE,
+        )
+    }
+
+    /** Nothing pinned, nothing to explain: the note belongs to that one state. */
+    @Test
+    fun `an empty list carries no all-pinned note`() {
+        assertTrue(buildSessionRows(emptyList(), now, timeZone = zone, locale = locale).isEmpty())
+    }
+
+    /** Desktop answers a search in one Results list, with no Pinned section. */
+    @Test
+    fun `a search answers in one list`() {
+        val rows = buildSessionRows(
+            listOf(session("a", now, title = "alpha"), session("b", now - HOUR, title = "alpha two", pinned = true)),
+            now,
+            query = "alpha",
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(listOf("row:a", "row:b"), rows.map(::describe))
+    }
+
+    /**
+     * Archived is a view of its own set, flat: no pinned section and no
+     * dividers (`sidebar/index.tsx:488-495,1723` @ `3ca096de`).
+     */
+    @Test
+    fun `the archived view swaps the pool rather than filtering it`() {
+        val sessions = listOf(
+            session("live", now),
+            session("filed", now - HOUR, archived = true),
+            session("filed-pinned", now - 2 * HOUR, archived = true, pinned = true),
+        )
+
+        assertEquals(listOf("row:live"), buildSessionRows(sessions, now, timeZone = zone, locale = locale).map(::describe))
+        assertEquals(
+            listOf("row:filed", "row:filed-pinned"),
+            buildSessionRows(sessions, now, timeZone = zone, locale = locale, archivedView = true).map(::describe),
+        )
+    }
+
+    /** A Gateway that never reported `archived` has not archived anything. */
+    @Test
+    fun `an unsaid archive flag keeps the row in the live list`() {
+        val rows = buildSessionRows(listOf(session("a", now)), now, timeZone = zone, locale = locale)
+
+        assertEquals(listOf("row:a"), rows.map(::describe))
+        assertTrue(
+            buildSessionRows(listOf(session("a", now)), now, timeZone = zone, locale = locale, archivedView = true)
+                .isEmpty(),
+        )
+    }
+
     private fun session(
         id: String,
         at: Long,
         title: String = "Session $id",
         preview: String = "",
-    ) = SessionSummary(id = id, title = title, preview = preview, lastActiveAtMillis = at)
+        pinned: Boolean? = null,
+        archived: Boolean? = null,
+    ) = SessionSummary(
+        id = id,
+        title = title,
+        preview = preview,
+        lastActiveAtMillis = at,
+        pinned = pinned,
+        archived = archived,
+    )
 
     private fun describe(row: SessionListRow): String = when (row) {
         is SessionListRow.Divider -> "divider:${row.bucket.name}"
+        is SessionListRow.PinnedLabel -> "pinned"
+        is SessionListRow.AllPinnedNote -> "all-pinned"
         is SessionListRow.Row -> "row:${row.session.id}"
     }
 

@@ -5,10 +5,11 @@ every session row (`ui/sessions/SessionList.kt`) and from the chat header for th
 open session (`ui/chat/ChatScreen.kt`), ported per
 [`docs/workflows/port-desktop-surface.md`](../workflows/port-desktop-surface.md).
 
-This slice ships the **container**, not the verbs. Rename lands in S14, delete in
-S15, and pin / unread / branch / export / move-to-project / archive later still.
-The point of shipping the shell first is that the group order below is fixed and
-tested *now*, so none of those slices can reorder the menu on their way in.
+The menu shipped as a **container** first, deliberately: the group order below
+was fixed and tested before any verb landed, so no later slice could reorder it
+on its way in. Copy ID landed with the shell (S13), Rename and Delete with #65,
+and **Pin / Unpin, Mark as read / unread and Archive / Unarchive with #66**.
+Branch, Export and Move to project are still empty slots.
 
 ## Pin
 
@@ -42,10 +43,10 @@ literally, so reordering two constants fails the build.
 | # | Group | Desktop | What it holds | Ships here |
 |---|---|---|---|---|
 | 1 | `Open` | `openItems` (`:234`) | Open in new tab, New window, Open in terminal | **Never** — Android has no tabs, no second window, and no local terminal. The slot exists only to keep the numbering honest. |
-| 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13), **Rename** (S14, #65) — proved by `GatewaySessionRepositoryTest.renameSession with live runtime id calls session_title RPC and updates cache`, `.renameSession without live runtime id calls REST PATCH and updates cache`, `.renameSession falls back to REST PATCH when the session_title RPC fails` and `SessionActionsMenuJourneyTest.renaming a session seeds the dialog with current title and saves on confirm`. Pin / unread in #66. |
+| 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13), **Rename** (S14, #65) — proved by `GatewaySessionRepositoryTest.renameSession with live runtime id calls session_title RPC and updates cache`, `.renameSession without live runtime id calls REST PATCH and updates cache`, `.renameSession falls back to REST PATCH when the session_title RPC fails` and `SessionActionsMenuJourneyTest.renaming a session seeds the dialog with current title and saves on confirm`. **Pin / Unpin and Mark as read / unread** (#66) — proved by `SessionActionsMenuTest.the ported menu sits in Desktop's slots`, `.a pinned row offers the way back out of the section`, `.the read-state row is one slot naming the action it performs`, `GatewaySessionRepositoryTest.setSessionPinned writes the pin with the row's own profile and paints it first` and `.marking read clears the watermark and the finished-turn dot together`. |
 | 3 | `Work` | `workItems` (`:344`) + Move to project (`:491-499`) | Branch, Export, Move to project | Not yet |
 | 4 | `Tab` | `tabItems` (`:371`) | Reload, Close, Close others / to the right / all | **Never** — no tab strip on a phone |
-| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. Archive in #66. |
+| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. **Archive / Unarchive** (#66), above Delete and not destructive-red — proved by `SessionActionsMenuTest.an archived row offers the restore in the same slot`, `.every flag combination keeps the menu structure` and `GatewaySessionRepositoryTest.setSessionArchived files the row in place and off the live list`. |
 
 ### Does Desktop render a separator for an empty group?
 
@@ -95,13 +96,13 @@ nothing at all in a screenshot, so the inspection is a gate rather than a note.
 | `check` (lucide upstream) | `copy-button.tsx:142` | `Check` | `U+EAB2` | yes | **yes** — copy confirmation |
 | `close` (lucide `X` upstream) | `copy-button.tsx:142` | `Close` | `U+EA76` | yes | **yes** — copy failure |
 | `edit` | `:292` | `Edit` | `U+EA73` | yes | S14 (Rename) |
-| `pin` | `:304` | `Pin` | `U+EB2B` | yes | later |
-| `mail` | `:317` | `Mail` | `U+EB1C` | yes | later |
-| `mail-read` | `:317` | `MailRead` | `U+EB1B` | yes | later |
+| `pin` | `:304` | `Pin` | `U+EB2B` | yes | #66 (Pin / Unpin) |
+| `mail` | `:317` | `Mail` | `U+EB1C` | yes | #66 (Mark as unread) |
+| `mail-read` | `:317` | `MailRead` | `U+EB1B` | yes | #66 (Mark as read) |
 | `repo-forked` | `:345` | `RepoForked` | `U+EA63` | yes | later |
 | `cloud-download` | `:357` | `CloudDownload` | `U+EAC2` | yes | later |
 | `folder` | `:493` | `Folder` | `U+EA83` | yes | later |
-| `archive` | `:435` | `Archive` | `U+EA98` | yes | later |
+| `archive` | `:435` | `Archive` | `U+EA98` | yes | #66 (Archive / Unarchive) |
 | `trash` | `:444` | `Trash` | `U+EA81` | yes | S15 (Delete) |
 
 Two notes the source settles rather than guesswork:
@@ -116,9 +117,21 @@ Two notes the source settles rather than guesswork:
   `Transcript.kt` and `CodingStatusRow.kt` already use for clipboard actions.
 
 Only **Delete** carries the destructive-red variant (`:445,461`). Archive shares
-the danger group without it. `SessionActionItem.destructive` carries that flag
-and `only Delete is destructive-red` asserts it against the transcribed Desktop
-menu, so S15 cannot quietly redden Archive too.
+the danger group without it. `SessionActionItem.destructive` carries that flag,
+`only Delete is destructive-red` asserts it against the transcribed Desktop
+menu, and `every flag combination keeps the menu structure` re-asserts it for
+every pinned/unread/archived state the shipped menu can be in — so nothing can
+quietly redden Archive.
+
+Two glyph facts the source settles for #66's verbs:
+
+- The envelope pair names the **action**, not the state: Desktop picks
+  `unread || isUnread ? 'mail-read' : 'mail'` alongside
+  `markRead : markUnread` (`:314-315`), so `Mark as read` carries the *open*
+  envelope. Reading the glyph as a state indicator and inverting it is the
+  obvious mistake and it is wrong.
+- Pin and Archive each use **one** glyph for both directions; only the label
+  swaps (`:299-300`, `:434-435`).
 
 ## Mobile adaptation
 
@@ -183,10 +196,27 @@ group does not, and the last two settle back to the first after 1500ms.
 
 Everything else in the table above is absent, and its group slot is present.
 
+## What #66 added
+
+| Item | Group | Glyph | Label | Source |
+|---|---|---|---|---|
+| Pin | Identity | `Pin` | `Pin` | `en.ts:2303`; `session-actions-menu.tsx:297-305` |
+| …when the row is pinned | Identity | `Pin` | `Unpin` | `en.ts:2304`; `:300` |
+| Mark as unread | Identity | `Mail` | `Mark as unread` | `en.ts:2305`; `:310-333` |
+| …when the row is unread | Identity | `MailRead` | `Mark as read` | `en.ts:2306`; `:314-315` |
+| Archive | Danger | `Archive` | `Archive` | `en.ts:2312`; `:431-440` |
+| …when the row is archived | Danger | `Archive` | `Unarchive` | `en.ts:1156` (Desktop's settings page) |
+
+Each is one PATCH on `PATCH /api/sessions/{id}` (`hermes_cli/web_routers/sessions.py:825-832`
+@ the pin), written optimistically and repainted on refusal. The unread row
+drives off **both** unread sources exactly as Desktop's does (`:311,314-315`):
+this client's transient finished-turn dot and the backend's durable watermark,
+and marking read clears both in one action.
+
 ## Omissions
 
-- Every verb in the epic's rank-5 and rank-6 lists: rename (S14), delete (S15),
-  pin, mark read/unread, branch, export, move to project, archive, colour.
+- The remaining verbs in the epic's rank-6 list: branch, export, move to
+  project, colour.
 - The open group and the tab group, permanently — no tabs, windows, or local
   terminal on this platform.
 - The right-click / context-menu twin of the dropdown, permanently.
@@ -252,8 +282,12 @@ carries the argument and the citations.
 | Copy failure raises a notification *and* swaps the item, with a tooltip (`copy-button.tsx:142,149-164`) | mobile-adaptation | One slot: the item swaps to `Close` + `Could not copy session ID` for the same 1500 ms | Touch has no hover so the tooltip has nowhere to go, and this build has no notification centre |
 | Desktop `Renamed` toast (`en.ts:2328`) | omission | Inline failure on refusal, dialog dismiss on success | deferred: #73 (in-app-notification-stack) |
 | Desktop `Session deleted` toast (`en.ts:2336`) | omission | Rendered via chat `notice` banner | deferred: #73 (in-app-notification-stack) |
-| Unavailable verbs stay mounted and **disabled** | omission | Absent | pill-owed: #101 — this page previously argued for omitting them; the standing rule is now a visible disabled row with a "coming soon" pill, and #66 carries pin/archive/unread |
-| Pin, mark read/unread, branch, export, move to project, archive, colour | omission | Absent | pill-owed: #101 — pin/archive/unread are #66 |
+| Unavailable verbs stay mounted and **disabled** | omission | Absent | pill-owed: #101 — this page previously argued for omitting them; the standing rule is now a visible disabled row with a "coming soon" pill |
+| Branch, export, move to project, colour | omission | Absent | pill-owed: #101 — pin, archive and read-state are no longer among them; they ship in #66 |
+| Read-state item is `disabled` when neither `onToggleUnread` nor a live dot exists (`session-actions-menu.tsx:311`) | mobile-adaptation | Always enabled | The handler always exists on this surface, so the disabled branch is unreachable rather than dropped — the Gateway, not the client, decides whether a row can carry a watermark |
+| `Unarchive` lives on the Archived Chats settings page (`app/settings/sessions-settings.tsx:148-154`) | mobile-adaptation | In the row's own actions menu, with Desktop's own word | That settings page is a declared non-goal here, so the row menu is the only place a reversible verb can live; moving the verb rather than inventing a word keeps the vocabulary Desktop's |
+| Archived Chats settings page, and auto-archive-after-N-days | omission | Absent | deferred: #73 — session maintenance; #66 declares both non-goals |
+| `Renamed` / `Session deleted` / pin and archive toasts (`en.ts:2328,2336`) | omission | Chat `notice` banner, or nothing on success | deferred: #73 (in-app-notification-stack) |
 | Nested `Appearance` and `Move to project` submenus (`:470-478,491-499`) | omission | Absent | pill-owed: #101 — they flatten into their group when their verbs land; nested pointer submenus are not what ships |
 | Right-click `SessionContextMenu` (`session-actions-menu.tsx:621-639`) | omission | Absent | non-goal: long-press belongs to text selection on a phone, and binding the menu to it would fight the transcript's gesture |
 | ⇧-click pin, ⌥⇧-click archive (`session-row-gesture.ts:33,45`) | omission | Absent | non-goal: a soft keyboard has no modifier keys |
@@ -262,9 +296,12 @@ carries the argument and the citations.
 ## Visual report
 
 - pending: #65
+- pending: #66
 
 Not captured. The Desktop reference capture in the port workflow needs a
 disposable pinned dev renderer with CDP, which was not available for this slice;
 the menu's geometry, colour roles and glyph vocabulary are pinned against source
 and the shipped font instead. A capture pass belongs with #65, when the menu
-has enough items for a screenshot to be worth comparing.
+has enough items for a screenshot to be worth comparing — and #66 owes its own,
+because Pin / Unpin, the read-state row and Archive / Unarchive are three more
+rendered items that no side-by-side has yet seen.
