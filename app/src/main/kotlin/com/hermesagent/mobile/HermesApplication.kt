@@ -43,6 +43,9 @@ import com.hermesagent.mobile.data.notifications.NotificationSurface
 import com.hermesagent.mobile.data.notifications.SessionNotifier
 import com.hermesagent.mobile.data.prefs.HermesPreferences
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.updates.GatewaySystemApi
+import com.hermesagent.mobile.data.updates.GatewayUpdateController
+import com.hermesagent.mobile.data.updates.RestGatewaySystemApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -161,6 +164,27 @@ class HermesApplication : Application() {
             cache = cache,
             drafts = draftStore,
             credentials = StoredGatewayCredentials(gatewaySecrets),
+            // The backend's version, its update receipt and any apply in flight
+            // belong to the machine this device is leaving, exactly as its
+            // session ids do. Same seam, one clear.
+            endpointScopedState = { updateController.reset() },
+        )
+    }
+
+    /** The System panel's six host calls, over the connection-owned transport. */
+    internal val systemApi: GatewaySystemApi by lazy { RestGatewaySystemApi { gatewayHttp } }
+
+    /**
+     * The backend-update engine, app-scoped for the reason its own KDoc gives:
+     * a six-minute apply must outlive the screen that started it, and the
+     * redial it performs on success is a property of the process's one live
+     * connection rather than of a ViewModel.
+     */
+    internal val updateController: GatewayUpdateController by lazy {
+        GatewayUpdateController(
+            scope = appScope,
+            api = systemApi,
+            redial = { gatewayConnection.redialAfterBackendUpdate() },
         )
     }
 

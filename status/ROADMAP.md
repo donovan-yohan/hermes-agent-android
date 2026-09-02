@@ -209,6 +209,42 @@ lifecycle.
 - The per-kind settings screen, notifications for a failed turn, a lost
   connection, and replying to a question from the shade are not built yet.
 
+### System panel and backend updates
+
+- A `System panel` Settings row, enabled only while a Gateway is connected,
+  showing Desktop's own status block: an emerald/amber dot with
+  `Messaging gateway running` / `stopped`, and `Hermes {version} · Active
+  sessions {count}` from `GET /api/status`. This is the first surface in the
+  app that reads or shows the backend's version.
+- `Restart gateway` restarts the **messaging gateway** on the host and polls
+  the action Desktop's way — eighteen attempts, 1200 ms apart. Exit code 0 is a
+  handoff to the supervisor rather than a running gateway, so the panel
+  re-reads the status instead of claiming anything; a non-zero exit says
+  `Gateway restart failed.` It does not restart the `hermes serve` this app is
+  connected to, and no HTTP route does.
+- `Update Hermes` opens an updates sheet with Desktop's grouped changelog and
+  applies through an app-scoped engine, so leaving the screen never cancels an
+  apply. It survives the backend restarting underneath it: the poll blacks out,
+  the deadline extends by four minutes, and success is re-derived from the
+  durable action id, the update receipt, or a re-check. A successful apply
+  forces a redial of the Remote socket, because a gateway restart over a tunnel
+  can strand a connection that still reads open.
+- A refusal is HTTP 200 with `ok:false` on that route, so an install the host
+  cannot update in place shows the host's own message and the command to run
+  instead — apt, docker, nix and image-marker installs all land there.
+- **Unproven.** No device or emulator pass ran this surface, and no Desktop
+  side-by-side render was captured — [#126](../docs/parity/system-panel.md)
+  owes it, and the parity page records the review at Concern for that reason.
+  Nothing has been exercised against a real backend update: every claim above
+  rests on unit tests against the pinned HTTP contract and Robolectric journeys.
+- **Not built.** `Recent logs` renders every control Desktop has and none of
+  them work (`WIP`): no `/api/logs` fetch, no level filter, no search. There is
+  no background update check and no `Update ready` surfacing, because this app
+  has no in-app notification stack, and no backend contract-skew warning. The
+  update receipt's `pre_update` → `post_update` versions and `hermes serve`'s
+  own recovery buckets are read and held but rendered nowhere, because Desktop
+  has no string for them.
+
 ### Appearance and Android adaptation
 
 - All six built-in Desktop themes at the pinned theme authority, in the same
@@ -233,6 +269,7 @@ lifecycle.
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
 | Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
+| Backend updates and restart | The System panel's status read, gateway restart and backend update are covered by unit tests against the pinned HTTP contract and by Robolectric journeys, and by nothing else. No `hermes update` has been run through this app against a real host; the six-minute apply, the restart blackout, the receipt proof and the forced redial are all proven on virtual time only. Log fetching is not built, and the panel's `Recent logs` block ships disabled. | A device pass that applies a real backend update over the Remote route and watches the socket come back, plus the rendered Desktop side-by-side the parity page owes. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
 | Device evidence | An instrumented emulator lane runs on every CI build and covers what an emulator is green on: 48 dp touch targets at the real display density, the chat chrome arriving in the platform accessibility tree in the window under test, a real input method binding to the composer, a real orientation change, and the open destination surviving a real Activity destroy and rebuild. It is not physical acceptance and does not stand in for it: the PKCE browser hand-off (freezer-proofed and covered by JVM/Robolectric tests, never yet run screen-off on a physical device), real radio, network handoff, TalkBack, media, an enlarged font scale, the keyboard's own window under the composer, a system-initiated process kill, and the label and touch-size audit of what that accessibility tree publishes ([#91](https://github.com/donovan-yohan/hermes-agent-android/issues/91)) remain unproven, and exact-head physical Pixel acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
 

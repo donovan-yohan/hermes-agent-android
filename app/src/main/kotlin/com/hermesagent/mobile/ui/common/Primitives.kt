@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -421,6 +422,14 @@ fun TextButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     color: Color = HermesTheme.tokens.accent,
+    /**
+     * Desktop's `textStrong` rather than its `text`
+     * (`components/ui/button.tsx:31,34` @ the pinned SHA): the same muted ink,
+     * carrying weight and a standing underline. It marks the *primary* of two
+     * adjacent boxless actions, which is a distinction colour alone cannot make
+     * where both are already the same colour.
+     */
+    strong: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -431,7 +440,14 @@ fun TextButton(
     ) {
         Text(
             text = label,
-            style = HermesTheme.type.caption,
+            style = if (strong) {
+                HermesTheme.type.caption.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    textDecoration = TextDecoration.Underline,
+                )
+            } else {
+                HermesTheme.type.caption
+            },
             color = if (enabled) color else HermesTheme.tokens.textQuaternary,
         )
     }

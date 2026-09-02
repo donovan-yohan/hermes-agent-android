@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
 import com.hermesagent.mobile.ui.common.Hairline
+import com.hermesagent.mobile.ui.system.SystemCopy
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /** Settings destinations, ordered as their Desktop peers. */
@@ -28,6 +29,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenGateways: () -> Unit,
+    onOpenSystem: () -> Unit,
     onOpenRelay: () -> Unit,
     /**
      * Whether this Gateway exposes the Relay plugin. A Gateway without it is a
@@ -35,6 +37,14 @@ fun SettingsScreen(
      * rather than disappearing or raising an error somewhere else.
      */
     relayAvailable: Boolean,
+    /**
+     * Whether a Gateway is connected. The System panel reads the backend's own
+     * version, session count and messaging-gateway state over HTTP, so with no
+     * connection there is nothing for it to show and nothing for its two
+     * actions to act on. The row stays where it is and says so by being
+     * disabled, rather than appearing and disappearing under the person.
+     */
+    systemAvailable: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val tokens = HermesTheme.tokens
@@ -52,6 +62,18 @@ fun SettingsScreen(
             onClick = onOpenGateways,
         )
         SettingsRow(
+            // Verbatim `commandCenter.sectionEntries.system` (`en.ts:1548` @
+            // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Desktop reaches this
+            // panel from a command palette, which a phone has no form of, so it
+            // becomes a Settings destination and sits with the Gateway rows it
+            // is about.
+            label = SystemCopy.TITLE,
+            description = SystemCopy.DETAIL,
+            traversalIndex = 2f,
+            enabled = systemAvailable,
+            onClick = onOpenSystem,
+        )
+        SettingsRow(
             label = "Relay channels",
             description = if (relayAvailable) {
                 // Desktop's own launcher wording (hermes-plugin-relay @
@@ -60,7 +82,7 @@ fun SettingsScreen(
             } else {
                 RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
             },
-            traversalIndex = 2f,
+            traversalIndex = 3f,
             enabled = relayAvailable,
             onClick = onOpenRelay,
         )
