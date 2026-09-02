@@ -572,11 +572,12 @@ internal class ChatViewModel(
         // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). `cache.state` here is
         // not that: it republishes on every transcript append of *any* session
         // (`SessionCache.kt:207-242`), so a background turn's `message.delta`
-        // stream would re-enter this body dozens of times a second. The derived
-        // signal plus `distinctUntilChanged` is what keeps the RPC on the four
-        // transitions that mean something, and `contextBreakdownAttempted` is
-        // what stops "we still have no breakdown" from being a reason to ask
-        // again.
+        // stream would re-enter this body dozens of times a second. The guard
+        // that actually bounds the RPC is `contextBreakdownAttempted`: a
+        // session is asked once per (session change, turn end) transition and
+        // "we still have no breakdown" is never a reason to ask again. The
+        // derived signal and `distinctUntilChanged` only thin the emissions
+        // this body sees; removing them changes work, not behaviour.
         viewModelScope.launch {
             var observed: ContextFetchSignal? = null
 
@@ -640,7 +641,10 @@ internal class ChatViewModel(
                 contextBreakdownJob = viewModelScope.launch {
                     try {
                         val breakdown = repository.loadContextBreakdown(sessionId)
-                        if (activeSessionId.value == sessionId) {
+                        // A resolved-null answer never clears a good breakdown:
+                        // `use-context-breakdown.ts:43` @ 3ca096de only sets
+                        // fetched when the payload is truthy.
+                        if (activeSessionId.value == sessionId && breakdown != null) {
                             activeContextBreakdown.value = breakdown
                         }
                     } catch (e: CancellationException) {
