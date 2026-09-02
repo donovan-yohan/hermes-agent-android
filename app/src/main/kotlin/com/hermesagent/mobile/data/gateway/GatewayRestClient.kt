@@ -131,6 +131,27 @@ data class GatewaySessionPage(
 )
 
 /**
+ * The answer to one session search.
+ *
+ * [results] stay as parsed JSON objects for the same reason
+ * [GatewaySessionPage.rows] do: the row contract belongs to the session model.
+ * The envelope is this client's — `{"results": [...]}` (`sessions.py:421` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) — and a body without a `results`
+ * array, or with an element that is not an object, fails the whole search
+ * rather than rendering a half-truth.
+ *
+ * A result carries `{session_id, lineage_root, model, role, session_started,
+ * snippet, source}` (`apps/desktop/src/types/hermes.ts:1193-1208` @ the pin).
+ * The route stamps a richer row on the payload when it can resolve one
+ * (`sessions.py:326-348`); none of that is read here, because Desktop's own
+ * type does not carry it and a field only this client read would be a second
+ * contract to keep in step.
+ */
+data class GatewaySessionSearchPage(
+    val results: List<JsonObject>,
+)
+
+/**
  * One page of a transcript. [messages] stay as JSON objects for the same
  * reason [GatewaySessionPage.rows] do.
  *
@@ -423,6 +444,60 @@ class GatewayRestClient(
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
             parse = ::parseSessionPage,
+        )
+    }
+
+    /**
+     * Full-text session search through `GET /api/sessions/search`
+     * (`sessions.py:205-213` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     *
+     * The route answers over *every* session the profile owns, not only the
+     * page this client has loaded: direct session-id hits first, then FTS5
+     * message-content hits with an automatic prefix wildcard, deduped by
+     * compression lineage root (`:306-321,353-420`). That is why the app can
+     * find a conversation the list has never paged in.
+     *
+     * [query] is sent as `q` and is URL-encoded by the transport. A control
+     * character is refused here rather than escaped: the route's FTS parser is
+     * the wrong place to discover that a paste carried a newline, and this
+     * client's rule everywhere else is that a caller's broken input is a
+     * request to refuse. A blank query is refused for the same reason — the
+     * route answers it with an empty list (`:224-225`), so sending one is a
+     * round trip that can only say nothing.
+     *
+     * [limit] defaults to the route's own `20`, which is also what Desktop
+     * gets: it sends `q` alone (`apps/desktop/src/api/sessions.ts:348-352`).
+     * The route clamps to `1..100` itself (`:229`); refusing outside that range
+     * keeps the same rule [listSessions] applies, so a caller's arithmetic
+     * never quietly reads a page it did not ask for.
+     *
+     * [profile] is this client's own addition — Desktop's sidebar is one
+     * profile's by construction, while this app's rail can stand in a named
+     * profile, and a search that ignored the scope would answer with
+     * conversations the list beside it does not show. It travels the way every
+     * other leg's scope does, through [scopeQuery]. Ledgered as a
+     * mobile-adaptation in `docs/parity/session-search.md`.
+     */
+    suspend fun searchSessions(
+        query: String,
+        limit: Int = DEFAULT_SESSION_SEARCH,
+        profile: String? = null,
+    ): GatewayRestResult<GatewaySessionSearchPage> {
+        if (query.isBlank()) return malformed()
+        if (query.any(Char::isISOControl)) return malformed()
+        if (limit !in 1..MAX_SESSION_SEARCH) return malformed()
+        val scope = scopeQuery(profile) ?: return malformed()
+        return send(
+            path = SESSION_SEARCH_PATH,
+            verb = GatewayRestVerb.GET,
+            query = buildMap {
+                put("q", query)
+                put("limit", limit.toString())
+                putAll(scope)
+            },
+            timeoutMillis = LIST_TIMEOUT_MILLIS,
+            maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
+            parse = ::parseSessionSearchPage,
         )
     }
 
@@ -775,6 +850,19 @@ private fun parseSessionPage(bytes: ByteArray): GatewaySessionPage? {
     )
 }
 
+/**
+ * The route clamps its own answer to 100 rows (`sessions.py:229,316` @ the
+ * pin), so a longer list is a backend this client does not recognise rather
+ * than a bigger page. Refused whole, like every other envelope that does not
+ * match the contract — truncating would render a page nobody asked for.
+ */
+private fun parseSessionSearchPage(bytes: ByteArray): GatewaySessionSearchPage? {
+    val root = parseObject(bytes) ?: return null
+    val results = root.objectArray("results") ?: return null
+    if (results.size > MAX_SESSION_SEARCH) return null
+    return GatewaySessionSearchPage(results = results)
+}
+
 private fun parseMessagePage(bytes: ByteArray): GatewaySessionMessagePage? {
     val root = parseObject(bytes) ?: return null
     val sessionId = root.jsonString("session_id") ?: return null
@@ -955,6 +1043,7 @@ private fun JsonObject.objectArray(name: String): List<JsonObject>? {
 }
 
 private const val SESSIONS_PATH = "api/sessions"
+private const val SESSION_SEARCH_PATH = "$SESSIONS_PATH/search"
 private const val STATUS_PATH = "api/status"
 private const val UPDATE_CHECK_PATH = "api/hermes/update/check"
 private const val UPDATE_PATH = "api/hermes/update"
@@ -982,6 +1071,15 @@ private val EMPTY_BODY = ByteArray(0)
 /** The route's own page cap; an unbounded limit is a query it refuses. */
 internal const val MAX_SESSION_PAGE = 100
 private const val DEFAULT_SESSION_PAGE = 20
+
+/**
+ * The search route's own clamp, `max(1, min(limit, 100))` (`sessions.py:229` @
+ * the pin), and its own default. Desktop sends neither and takes the `20`
+ * (`apps/desktop/src/api/sessions.ts:348-352`), so this client's default is
+ * that same 20 rather than a bigger page nothing on Desktop ever renders.
+ */
+internal const val MAX_SESSION_SEARCH = 100
+internal const val DEFAULT_SESSION_SEARCH = 20
 
 /** The transcript route truncates to 500 rows itself (`sessions.py:630`). */
 private const val MAX_MESSAGE_PAGE = 500

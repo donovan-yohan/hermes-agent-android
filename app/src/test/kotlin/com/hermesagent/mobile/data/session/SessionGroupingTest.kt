@@ -171,8 +171,15 @@ class SessionGroupingTest {
         assertEquals(listOf("row:old", "row:older"), rows.map(::describe))
     }
 
+    // -----------------------------------------------------------------------
+    // Search. A live query is a different list, not a filtered one: Desktop
+    // answers it in one `Results` section and hides Pinned and the buckets
+    // (`apps/desktop/src/app/chat/sidebar/index.tsx:1611-1638,1640,1664` @
+    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+    // -----------------------------------------------------------------------
+
     @Test
-    fun `search matches title and preview, case-insensitively, and keeps grouping`() {
+    fun `a live query answers in one Results section with no buckets`() {
         val sessions = listOf(
             session("tunnel", now - HOUR, title = "SSH tunnel", preview = "probe ok"),
             session("theme", now - 2 * HOUR, title = "Themes", preview = "six presets"),
@@ -181,16 +188,173 @@ class SessionGroupingTest {
 
         val rows = buildSessionRows(sessions, now, query = "TUNNEL", timeZone = zone, locale = locale)
 
-        assertEquals(listOf("row:tunnel", "divider:LastWeek", "row:old"), rows.map(::describe))
+        // `old` would carry a `Last week` divider in the ordinary list.
+        assertEquals(listOf("results-label", "row:tunnel", "row:old"), rows.map(::describe))
 
         val byPreview = buildSessionRows(sessions, now, query = "presets", timeZone = zone, locale = locale)
-        assertEquals(listOf("row:theme"), byPreview.map(::describe))
+        assertEquals(listOf("results-label", "row:theme"), byPreview.map(::describe))
     }
 
+    /**
+     * Every field Desktop's `sessionMatchesSearch` reads
+     * (`apps/desktop/src/lib/session-search.ts:14-22` @ the pin): the id, the
+     * lineage root, the title, the preview, the cwd, the git branch, and the
+     * source's own terms.
+     */
     @Test
-    fun `a query that matches nothing yields no rows and no dividers`() {
-        val rows = buildSessionRows(listOf(session("a", now)), now, query = "zzz", timeZone = zone, locale = locale)
-        assertTrue(rows.isEmpty())
+    fun `search reads every field Desktop's client-side match reads`() {
+        val sessions = listOf(
+            session("id-needle", now, title = "By id"),
+            session("root", now, title = "By lineage root", lineageRoot = "root-needle"),
+            session("title", now, title = "By title needle"),
+            session("preview", now, title = "By preview", preview = "a needle in it"),
+            session("cwd", now, title = "By cwd", worktreePath = "/srv/needle-repo"),
+            session("branch", now, title = "By branch", gitBranch = "feat/needle"),
+        )
+
+        for (id in sessions.map(SessionSummary::id)) {
+            val only = sessions.filter { it.id == id }
+            assertEquals(
+                "matched on the field carried by $id",
+                listOf("results-label", "row:$id"),
+                buildSessionRows(only, now, query = "needle", timeZone = zone, locale = locale).map(::describe),
+            )
+        }
+    }
+
+    /**
+     * The source's search terms are its id, its label and its aliases
+     * (`apps/desktop/src/lib/session-source.ts:121-130` @ the pin), so a chat
+     * is findable under the name the person on the other end calls it.
+     */
+    @Test
+    fun `search reads a source's id, its label and its aliases`() {
+        val bluebubbles = listOf(session("bb", now, title = "Untitled", source = "bluebubbles"))
+        for (needle in listOf("bluebubbles", "imessage", "apple messages")) {
+            assertEquals(
+                "matched on $needle",
+                listOf("results-label", "row:bb"),
+                buildSessionRows(bluebubbles, now, query = needle, timeZone = zone, locale = locale).map(::describe),
+            )
+        }
+
+        // An unknown source keeps Desktop's title-cased fallback label
+        // (`session-source.ts:118`), so it is still searchable by name.
+        val unknown = listOf(session("x", now, title = "Untitled", source = "new_platform"))
+        assertEquals(
+            listOf("results-label", "row:x"),
+            buildSessionRows(unknown, now, query = "New Platform", timeZone = zone, locale = locale).map(::describe),
+        )
+    }
+
+    /**
+     * Loaded rows first, server hits appended, and the loaded row object always
+     * wins for the same conversation (`sidebar/index.tsx:655-678`). Reached
+     * under the lineage root as well as the id, because the route already
+     * collapses a compression chain to one result
+     * (`hermes_cli/web_routers/sessions.py:306-321`).
+     */
+    @Test
+    fun `server hits are appended behind local matches and deduped by id and lineage root`() {
+        val local = listOf(
+            session("local-1", now, title = "Matched local", lineageRoot = "root-a"),
+            session("local-2", now - HOUR, title = "Nothing to see", lineageRoot = "root-b"),
+        )
+        val server = listOf(
+            // The same conversation as local-1, named by its root.
+            session("root-a", now, title = "Server, same lineage"),
+            // The same conversation as local-1, named by its id.
+            session("local-1", now, title = "Server, same id"),
+            session("server-2", now, title = "Server, new", lineageRoot = "root-c"),
+            session("server-3", now, title = "Server, rootless"),
+        )
+
+        val rows = buildSessionRows(
+            sessions = local,
+            nowMillis = now,
+            query = "matched",
+            serverMatches = server,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(
+            listOf("results-label", "row:local-1", "row:server-2", "row:server-3"),
+            rows.map(::describe),
+        )
+        // The loaded row, not the stub that names it.
+        assertEquals(
+            "Matched local",
+            rows.filterIsInstance<SessionListRow.Row>().first().session.title,
+        )
+    }
+
+    /** Server hits keep the Gateway's ranking; only the local half is re-sorted. */
+    @Test
+    fun `server hits keep the order the Gateway ranked them in`() {
+        val server = listOf(
+            session("ranked-first", now - 8 * DAY, title = "Oldest but ranked first"),
+            session("ranked-second", now, title = "Newest but ranked second"),
+        )
+
+        val rows = buildSessionRows(
+            sessions = emptyList(),
+            nowMillis = now,
+            query = "ranked",
+            serverMatches = server,
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(listOf("results-label", "row:ranked-first", "row:ranked-second"), rows.map(::describe))
+    }
+
+    /**
+     * Skeletons and the empty sentence are the *section's* empty state on
+     * Desktop (`sidebar/index.tsx:1615-1623`), so neither can appear beside a
+     * row.
+     */
+    @Test
+    fun `a pending search shows skeletons only while nothing else is on screen`() {
+        val matched = listOf(session("a", now, title = "Tunnel"))
+
+        assertEquals(
+            listOf("results-label", "skeletons"),
+            buildSessionRows(matched, now, query = "zzz", searchPending = true, timeZone = zone, locale = locale)
+                .map(::describe),
+        )
+        assertEquals(
+            listOf("results-label", "row:a"),
+            buildSessionRows(matched, now, query = "tunnel", searchPending = true, timeZone = zone, locale = locale)
+                .map(::describe),
+        )
+    }
+
+    /**
+     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2203` @ the
+     * pin), quoting the query as it was typed rather than as it was matched.
+     */
+    @Test
+    fun `a settled query that matches nothing carries Desktop's sentence`() {
+        val rows = buildSessionRows(
+            listOf(session("a", now)),
+            now,
+            query = "  Nothing Here  ",
+            timeZone = zone,
+            locale = locale,
+        )
+
+        assertEquals(listOf("results-label", "no-results:Nothing Here"), rows.map(::describe))
+        assertEquals(
+            "No sessions match \u201CNothing Here\u201D.",
+            noSessionsMatch("Nothing Here"),
+        )
+    }
+
+    /** `Results` (`en.ts:2204` @ the pin). */
+    @Test
+    fun `the section label is Desktop's word`() {
+        assertEquals("Results", RESULTS_SECTION_LABEL)
     }
 
     /**
@@ -292,7 +456,7 @@ class SessionGroupingTest {
             locale = locale,
         )
 
-        assertEquals(listOf("row:a", "row:b"), rows.map(::describe))
+        assertEquals(listOf("results-label", "row:a", "row:b"), rows.map(::describe))
     }
 
     /**
@@ -333,6 +497,10 @@ class SessionGroupingTest {
         preview: String = "",
         pinned: Boolean? = null,
         archived: Boolean? = null,
+        worktreePath: String? = null,
+        gitBranch: String? = null,
+        source: String? = null,
+        lineageRoot: String? = null,
     ) = SessionSummary(
         id = id,
         title = title,
@@ -340,6 +508,10 @@ class SessionGroupingTest {
         lastActiveAtMillis = at,
         pinned = pinned,
         archived = archived,
+        worktreePath = worktreePath,
+        gitBranch = gitBranch,
+        source = source,
+        lineageRootId = lineageRoot,
     )
 
     private fun describe(row: SessionListRow): String = when (row) {
@@ -347,6 +519,9 @@ class SessionGroupingTest {
         is SessionListRow.PinnedLabel -> "pinned"
         is SessionListRow.AllPinnedNote -> "all-pinned"
         is SessionListRow.Row -> "row:${row.session.id}"
+        is SessionListRow.ResultsLabel -> "results-label"
+        is SessionListRow.NoResultsNote -> "no-results:${row.query}"
+        is SessionListRow.SearchSkeletons -> "skeletons"
     }
 
     private companion object {

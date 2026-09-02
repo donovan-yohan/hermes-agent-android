@@ -5358,6 +5358,132 @@ class GatewaySessionRepositoryTest {
             .filterIsInstance<SessionListRow.Row>()
             .map { it.session.id }
 
+    // -----------------------------------------------------------------------
+    // Backend session search (`GET /api/sessions/search`). Fixtures are the
+    // shape the route actually answers at hermes-agent @
+    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`
+    // (`hermes_cli/web_routers/sessions.py:353-421`), read through the fields
+    // Desktop's own type carries (`apps/desktop/src/types/hermes.ts:1193-1208`).
+    // -----------------------------------------------------------------------
+
+    /**
+     * A hit nothing is loaded for becomes Desktop's stub, field for field
+     * (`apps/desktop/src/app/chat/sidebar/index.tsx:272-293` @ the pin): no
+     * title, the snippet as the preview with the FTS markers stripped, and
+     * `session_started` — Unix *seconds* — as the row's activity.
+     */
+    @Test
+    fun `a search hit becomes Desktop's stub, and never a cache row`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest {
+            restPage(
+                """{"results":[{"session_id":"tip-9","lineage_root":"root-1","model":"opus",""" +
+                    """"role":"assistant","session_started":1756000000,""" +
+                    """"snippet":"the >>>tunnel<<< probe","source":"cli"}]}""",
+            )
+        }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+
+        val hits = repository.searchSessions("tunnel", profile = "work")
+
+        assertEquals(listOf("tip-9"), hits?.map(SessionSummary::id))
+        val hit = hits!!.single()
+        assertEquals("", hit.title)
+        assertEquals("the tunnel probe", hit.preview)
+        assertEquals("root-1", hit.lineageRootId)
+        assertEquals("opus", hit.model)
+        assertEquals("cli", hit.source)
+        assertEquals(1_756_000_000_000L, hit.lastActiveAtMillis)
+        // A stub knows nothing about these, and an invented `false` would draw
+        // an affordance that lies.
+        assertNull(hit.archived)
+        assertNull(hit.pinned)
+        // Search is UI state: the hit is returned, never filed as backend truth.
+        assertNull(cache.session("tip-9"))
+        assertNull(cache.session("root-1"))
+        // The connection bootstrap lists sessions on the same transport, so the
+        // search is the request on the search path rather than the only one.
+        val search = http.requests.single { it.path == "api/sessions/search" }
+        assertEquals("tunnel", search.query["q"])
+        assertEquals("work", search.query["profile"])
+    }
+
+    /** Backend prose on its way to a screen goes through `redact()` like the rest. */
+    @Test
+    fun `a search snippet is redacted before it can be rendered`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest {
+            restPage(
+                """{"results":[{"session_id":"s-1","snippet":"ran with password: hunter2 twice"}]}""",
+            )
+        }
+
+        val hit = liveRepository(cache, http).searchSessions("password")!!.single()
+
+        assertEquals("ran with password: <redacted> twice", hit.preview)
+    }
+
+    /**
+     * A `404` on a route with no path parameters can only mean the route is
+     * absent, so it is remembered per connection rather than re-asked on every
+     * keystroke. Null is "no server truth" at every caller, which reads as
+     * "keep the local matches".
+     */
+    @Test
+    fun `a Gateway without the search route is asked once and then not again`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { GatewayHttpResult.Rejected(404, "Not Found") }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+
+        assertNull(repository.searchSessions("tunnel"))
+        assertNull(repository.searchSessions("theme"))
+
+        assertEquals(1, http.requests.count { it.path == "api/sessions/search" })
+    }
+
+    /**
+     * Any other refusal is a failure of this attempt, not a fact about the
+     * backend: it answers null so the list keeps its client-side matches, and
+     * the next keystroke asks again. Desktop swallows the same failure
+     * (`sidebar/index.tsx:641` @ the pin).
+     */
+    @Test
+    fun `a failed search answers null without remembering anything`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { GatewayHttpResult.Rejected(500, "Search failed") }
+        val repository = liveRepository(cache, http)
+        runCurrent()
+
+        assertNull(repository.searchSessions("tunnel"))
+        assertNull(repository.searchSessions("tunnel"))
+
+        assertEquals(2, http.requests.count { it.path == "api/sessions/search" })
+    }
+
+    /** An empty answer is not the same fact as no answer at all. */
+    @Test
+    fun `a search the Gateway answered with nothing is an empty list, not null`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest { restPage("""{"results":[]}""") }
+
+        assertEquals(emptyList<SessionSummary>(), liveRepository(cache, http).searchSessions("nothing"))
+    }
+
+    /** A result with no id is not a row anything could open. */
+    @Test
+    fun `a search result without a session id is dropped`() = runTest {
+        val cache = SessionCache()
+        val http = FakeGatewayRest {
+            restPage(
+                """{"results":[{"snippet":"orphan"},{"session_id":"s-2","snippet":"real"}]}""",
+            )
+        }
+
+        assertEquals(listOf("s-2"), liveRepository(cache, http).searchSessions("x")?.map(SessionSummary::id))
+    }
+
     /**
      * The default clock is the fixed [CLOCK]; a test about the write fence's
      * ten-second guard passes one that actually moves, because a constant clock

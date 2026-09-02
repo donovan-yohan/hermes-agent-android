@@ -267,6 +267,21 @@ interface GatewaySessionRepository {
      */
     suspend fun loadEarlierMessages(durableId: String) = Unit
 
+    /**
+     * Full-text search across every session the [profile] scope owns, not only
+     * the rows this app has paged in.
+     *
+     * Null is "this backend has no server-side search to offer" — the route is
+     * absent, the connection is gone, or the request failed — and every caller
+     * reads it the same way: keep the client-side matches and show no error.
+     * An empty list is the opposite: the Gateway answered, and nothing matched.
+     *
+     * Rows returned here are UI state, never [SessionCache] truth. A hit this
+     * app has not loaded is a *stub* carrying only what the search contract
+     * says (`apps/desktop/src/types/hermes.ts:1193-1208` @ `3ca096de`).
+     */
+    suspend fun searchSessions(query: String, profile: String? = null): List<SessionSummary>? = null
+
     suspend fun renameSession(durableId: String, title: String): String =
         error("Session renaming is not implemented by this repository.")
     suspend fun deleteSession(durableId: String): Unit =
@@ -411,6 +426,14 @@ private enum class GatewayOptionalCapability {
     Processes,
     Goals,
     Attachments,
+    /**
+     * `GET /api/sessions/search`. Another route with no path parameters, so a
+     * `404` here can only mean the route itself is absent — a Gateway older
+     * than the search leg. Remembered per connection, like the list and
+     * transcript routes below, so one refusal is not re-asked on every
+     * keystroke.
+     */
+    SearchSessionsRest,
 
     /**
      * `GET /api/sessions`. A 404 on a route with no path parameters can mean
@@ -1652,6 +1675,78 @@ internal class LiveGatewaySessionRepository(
                 publishEarlierMessagesLocked()
             }
         }
+    }
+    /**
+     * One search against the Gateway's own index — never a promotion of what it
+     * answers into [SessionCache].
+     *
+     * A hit that this app has not loaded arrives as a *stub*: an id, a lineage
+     * root, a snippet, a model and a source, and nothing else the row contract
+     * would normally carry. Desktop builds the same stub and keeps it in the
+     * sidebar's own memo (`apps/desktop/src/app/chat/sidebar/index.tsx:272-293,
+     * 655-678` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), never in its
+     * session store. Filing one under this cache's backend-authoritative rules
+     * would make a row with an invented message count, no archive flag and no
+     * pin flag indistinguishable from a listed one — and it would survive the
+     * query that produced it. It is UI state, so it is returned, not stored.
+     */
+    override suspend fun searchSessions(query: String, profile: String?): List<SessionSummary>? {
+        // Every refusal below reads the same at the caller: no server truth,
+        // keep the local matches. A search that cannot be asked is not an
+        // error worth a banner — Desktop swallows its own failure and renders
+        // the client-side matches alone (`sidebar/index.tsx:641`).
+        val connection = try {
+            connectionSnapshot().also { ensureCurrent(it) }
+        } catch (failure: GatewayRpcException) {
+            return null
+        }
+        if (isCapabilityUnsupported(GatewayOptionalCapability.SearchSessionsRest, connection)) return null
+        return when (val result = rest.searchSessions(query, profile = profile)) {
+            is GatewayRestResult.Success -> result.value.results.mapNotNull(::parseSearchStub)
+            is GatewayRestResult.Failed -> {
+                // A Gateway old enough not to serve the route says so once. The
+                // marker is connection-scoped like every other capability here,
+                // so a newer backend on the next connection is asked again.
+                if (result.statusCode == HTTP_NOT_FOUND) {
+                    markCapabilityUnsupported(GatewayOptionalCapability.SearchSessionsRest, connection)
+                }
+                null
+            }
+        }
+    }
+
+    /**
+     * One search result as the row the list can draw, or null if the result
+     * carries no id to navigate to.
+     *
+     * Field for field this is Desktop's `searchResultToSession`
+     * (`sidebar/index.tsx:272-293` @ the pin): the snippet becomes the preview
+     * with the FTS markers stripped, `session_started` becomes the row's
+     * activity, and the title stays empty because a search result has none —
+     * the row's own untitled treatment then reads the same here as it does for
+     * a listed conversation with no title.
+     *
+     * `session_started` is Unix *seconds* (`sessions.py:375,418`), and an
+     * absent one takes now, exactly as Desktop's `?? Date.now() / 1000` does.
+     *
+     * The snippet is backend-authored text on its way to a screen and a screen
+     * reader, so it goes through [redact] and the same bound the rest of this
+     * file puts on Gateway prose. Nothing else here is rendered: the archive,
+     * pin and unread flags stay absent, because a stub knows nothing about
+     * them and a `false` invented here would draw an affordance that lies.
+     */
+    private fun parseSearchStub(row: JsonObject): SessionSummary? {
+        val id = row.jsonString("session_id") ?: return null
+        val startedSeconds = row.long("session_started")
+        return SessionSummary(
+            id = id,
+            title = "",
+            preview = row.jsonString("snippet").orEmpty().stripFtsMarkers().redactSafeBounded(MAX_STATUS_TEXT),
+            lastActiveAtMillis = startedSeconds?.let { it * 1000L } ?: clock(),
+            lineageRootId = row.jsonString("lineage_root"),
+            model = row.jsonString("model"),
+            source = row.jsonString("source"),
+        )
     }
 
     /** Assumes [stateLock]. */
@@ -5624,6 +5719,16 @@ private fun String?.safePayloadText(): String? = safeDisplayText(MAX_TOOL_PAYLOA
 
 private fun String?.safeToolLabel(fallback: String): String =
     safeDisplayText(MAX_TOOL_LABEL) ?: fallback
+
+/**
+ * Drop the FTS5 highlight markers the search route wraps a match in.
+ *
+ * Desktop strips the same two tokens for the same reason: the sidebar renders
+ * the snippet as plain text, so leaving them in paints rows titled
+ * `>>>foo<<<` (`apps/desktop/src/app/chat/sidebar/index.tsx:265-270` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ */
+private fun String.stripFtsMarkers(): String = replace(">>>", "").replace("<<<", "")
 
 /** Redacted, bounded, single-line text for pending-input display fields. */
 private fun String.redactSafeBounded(limit: Int = MAX_PENDING_TEXT): String =

@@ -79,6 +79,94 @@ class GatewayRestClientTest {
         assertEquals(20L, page.offset)
     }
 
+    /**
+     * The search route's own shape: `q`, `limit` and `profile`
+     * (`sessions.py:205-213`), answered as `{"results": [...]}` (`:421`) with
+     * the fields Desktop's own type carries
+     * (`apps/desktop/src/types/hermes.ts:1193-1208`).
+     */
+    @Test
+    fun `searches on the route's own query, its default page and the profile in scope`() = runTest {
+        val http = RecordingGatewayHttp(
+            success(
+                """{"results":[{"session_id":"a1","lineage_root":"r0","model":"opus",""" +
+                    """"role":"user","session_started":1756000000,""" +
+                    """"snippet":">>>ship<<< it","source":"cli"}]}""",
+            ),
+        )
+
+        val page = GatewayRestClient { http }.searchSessions(query = "ship it", profile = "work").valueOrFail()
+
+        val request = http.requests.single()
+        assertEquals("api/sessions/search", request.path)
+        assertEquals("GET", request.method)
+        assertNull(request.body)
+        // Sent raw here: percent-encoding is the transport's job, and a client
+        // that escaped it first would send `ship%20it` as the literal query.
+        assertEquals(mapOf("q" to "ship it", "limit" to "20", "profile" to "work"), request.query)
+        assertFalse(request.captureEnvelope)
+        // Byte- and time-bound exactly like the list route beside it.
+        assertEquals(15_000L, request.timeoutMillis)
+        assertEquals(1024L * 1024L, request.maxResponseBytes)
+
+        assertEquals(1, page.results.size)
+        assertEquals("a1", page.results.single().string("session_id"))
+        assertEquals("r0", page.results.single().string("lineage_root"))
+    }
+
+    /** An unscoped search omits `profile` rather than sending a blank one. */
+    @Test
+    fun `an unscoped search asks for no profile at all`() = runTest {
+        val http = RecordingGatewayHttp(success("""{"results":[]}"""))
+
+        GatewayRestClient { http }.searchSessions(query = "ship").valueOrFail()
+
+        assertFalse(http.requests.single().query.containsKey("profile"))
+    }
+
+    /**
+     * Nothing below reaches the wire. The route clamps `limit` itself
+     * (`sessions.py:229`) and answers a blank `q` with an empty list (`:224`);
+     * refusing here keeps the rule the list route already applies and spares a
+     * round trip that could only say nothing. A control character is refused
+     * rather than escaped — the FTS parser is the wrong place to discover that
+     * a paste carried a newline.
+     */
+    @Test
+    fun `a search refuses a blank query, a control character and a limit outside the route's clamp`() = runTest {
+        val http = RecordingGatewayHttp(success("""{"results":[]}"""))
+        val client = GatewayRestClient { http }
+
+        assertTrue(client.searchSessions("   ") is GatewayRestResult.Failed)
+        assertTrue(client.searchSessions("ship\nit") is GatewayRestResult.Failed)
+        assertTrue(client.searchSessions("ship\u0000") is GatewayRestResult.Failed)
+        assertTrue(client.searchSessions("ship", limit = 0) is GatewayRestResult.Failed)
+        assertTrue(client.searchSessions("ship", limit = 101) is GatewayRestResult.Failed)
+        assertTrue(http.requests.isEmpty())
+    }
+
+    /**
+     * Fail-closed on the envelope, exactly as the list page does: an absent
+     * `results`, an element that is not an object, or more rows than the route
+     * can produce (`sessions.py:229,316`) is a body this client does not
+     * recognise, and half a search is worse than none.
+     */
+    @Test
+    fun `a search body that is not the route's envelope fails whole`() = runTest {
+        suspend fun parse(body: String) = GatewayRestClient { RecordingGatewayHttp(success(body)) }
+            .searchSessions("ship")
+
+        assertTrue(parse("""{"sessions":[]}""") is GatewayRestResult.Failed)
+        assertTrue(parse("""{"results":{}}""") is GatewayRestResult.Failed)
+        assertTrue(parse("""{"results":["a1"]}""") is GatewayRestResult.Failed)
+        assertTrue(parse("not json") is GatewayRestResult.Failed)
+
+        val hundred = (1..100).joinToString(",") { """{"session_id":"s$it","snippet":""}""" }
+        assertEquals(100, parse("""{"results":[$hundred]}""").valueOrFail().results.size)
+        val hundredOne = (1..101).joinToString(",") { """{"session_id":"s$it","snippet":""}""" }
+        assertTrue(parse("""{"results":[$hundredOne]}""") is GatewayRestResult.Failed)
+    }
+
     @Test
     fun `an unscoped list asks for no profile at all and defaults to Desktop's own page`() = runTest {
         val http = RecordingGatewayHttp(success("""{"sessions":[],"total":0,"limit":20,"offset":0}"""))

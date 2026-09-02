@@ -34,6 +34,7 @@ import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
 import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -52,6 +53,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.resetMain
@@ -1021,7 +1023,7 @@ class ChatViewModelTest {
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
         assertEquals(
             listOf("session-b"),
-            viewModel.uiState.value.sessionRows.filterIsInstance<com.hermesagent.mobile.data.session.SessionListRow.Row>()
+            viewModel.uiState.value.sessionRows.filterIsInstance<SessionListRow.Row>()
                 .map { it.session.id },
         )
 
@@ -1888,8 +1890,8 @@ class ChatViewModelTest {
         )
     }
 
-    private fun List<com.hermesagent.mobile.data.session.SessionListRow>.rowIds(): List<String> =
-        filterIsInstance<com.hermesagent.mobile.data.session.SessionListRow.Row>().map { it.session.id }
+    private fun List<SessionListRow>.rowIds(): List<String> =
+        filterIsInstance<SessionListRow.Row>().map { it.session.id }
 
     private fun kotlinx.coroutines.test.TestScope.collectState() {
         backgroundScope.launch { viewModel.uiState.collect { } }
@@ -1914,6 +1916,17 @@ class ChatViewModelTest {
         private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 4)
         override val composerControls: Flow<SessionComposerControls> = composerControlEvents
         val opened = mutableListOf<String>()
+
+        /** Every backend search this repository was actually asked for. */
+        val searches = mutableListOf<Pair<String, String?>>()
+
+        /** What the Gateway answers; null is "no server-side search here". */
+        var searchAnswer: List<SessionSummary>? = null
+
+        override suspend fun searchSessions(query: String, profile: String?): List<SessionSummary>? {
+            searches += query to profile
+            return searchAnswer
+        }
         val submitted = mutableListOf<Pair<String, String>>()
         val interrupted = mutableListOf<String>()
         val openedProjects = mutableListOf<String>()
@@ -2465,4 +2478,208 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a" to "Updated Session Title"), repository.renamed)
         assertEquals("Updated Session Title", cache.session("session-a")?.title)
     }
+    // -----------------------------------------------------------------------
+    // Backend session search: Desktop's 200 ms debounce and its local-first
+    // merge (`apps/desktop/src/app/chat/sidebar/index.tsx:619-678` @
+    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). All of it on virtual time.
+    // -----------------------------------------------------------------------
+
+    /** `setTimeout(…, 200)` at `sidebar/index.tsx:647`, and no minimum length. */
+    @Test
+    fun `no backend search is issued before the debounce elapses`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("t")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS - 1)
+        runCurrent()
+
+        assertEquals(emptyList<Pair<String, String?>>(), repository.searches)
+
+        advanceTimeBy(1)
+        runCurrent()
+
+        // One character is a legitimate search; the wait, not a length floor,
+        // is what keeps this from being a request per keystroke.
+        assertEquals(listOf("t" to null), repository.searches)
+    }
+
+    /** A retyped query cancels the pending one: one request, for the last word. */
+    @Test
+    fun `a query retyped inside the debounce window issues one search for the final text`() =
+        runTest(dispatcher) {
+            collectState()
+            runCurrent()
+
+            viewModel.setQuery("tun")
+            runCurrent()
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS - 50)
+            viewModel.setQuery("tunnel")
+            runCurrent()
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS - 50)
+            runCurrent()
+
+            assertEquals(emptyList<Pair<String, String?>>(), repository.searches)
+
+            advanceTimeBy(50)
+            runCurrent()
+
+            assertEquals(listOf("tunnel" to null), repository.searches)
+        }
+
+    /** The trimmed query is what travels, and whitespace alone is not a query. */
+    @Test
+    fun `the search is the trimmed query, and a blank one asks nothing`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("   ")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(emptyList<Pair<String, String?>>(), repository.searches)
+
+        viewModel.setQuery("  tunnel  ")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("tunnel" to null), repository.searches)
+    }
+
+    /**
+     * Loaded rows answer instantly; the backend's slower answer is appended
+     * behind them, and the loaded row object wins for the same conversation
+     * (`sidebar/index.tsx:655-678`).
+     */
+    @Test
+    fun `local matches answer at once and server hits are appended behind them`() = runTest(dispatcher) {
+        cache.upsertSessions(
+            listOf(
+                summary("session-a", 2_000).copy(title = "Tunnel probe", lineageRootId = "root-a"),
+                summary("session-b", 1_000).copy(title = "Themes"),
+            ),
+        )
+        repository.searchAnswer = listOf(
+            // Same conversation as `session-a`, reached under its lineage root.
+            stub("root-a", "tunnel again"),
+            stub("session-z", "another tunnel"),
+        )
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("tunnel")
+        runCurrent()
+
+        // Before the debounce: the local match alone, already under `Results`.
+        assertEquals(SessionListRow.ResultsLabel, viewModel.uiState.value.sessionRows.first())
+        assertEquals(listOf("session-a"), viewModel.uiState.value.sessionRows.rowIds())
+
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(listOf("session-a", "session-z"), viewModel.uiState.value.sessionRows.rowIds())
+    }
+
+    /**
+     * A Gateway that cannot be asked, or that refuses, leaves the client-side
+     * matches exactly where they were — no banner, no empty list. Desktop
+     * swallows the same failure (`sidebar/index.tsx:641`).
+     */
+    @Test
+    fun `a Gateway without backend search still answers from the loaded rows`() = runTest(dispatcher) {
+        cache.upsertSessions(listOf(summary("session-a", 2_000).copy(title = "Tunnel probe")))
+        repository.searchAnswer = null
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(listOf("session-a"), viewModel.uiState.value.sessionRows.rowIds())
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    /**
+     * Skeletons stand in for the *server* answer only, and only while nothing
+     * else is on screen — Desktop hangs them on the section's empty state
+     * (`sidebar/index.tsx:1615-1623`). Settled with nothing, the sentence
+     * replaces them.
+     */
+    @Test
+    fun `an unmatched query shows skeletons while the backend answers, then Desktop's sentence`() =
+        runTest(dispatcher) {
+            repository.searchAnswer = emptyList()
+            collectState()
+            runCurrent()
+
+            viewModel.setQuery("nothing here")
+            runCurrent()
+
+            assertTrue(
+                viewModel.uiState.value.sessionRows.contains(
+                    SessionListRow.SearchSkeletons,
+                ),
+            )
+
+            advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+            runCurrent()
+
+            assertEquals(
+                SessionListRow.NoResultsNote("nothing here"),
+                viewModel.uiState.value.sessionRows.last(),
+            )
+        }
+
+    /** Clearing the field drops the server half with it. */
+    @Test
+    fun `clearing the query drops the server hits and restores the ordinary list`() = runTest(dispatcher) {
+        repository.searchAnswer = listOf(stub("session-z", "a tunnel"))
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("session-z"), viewModel.uiState.value.sessionRows.rowIds())
+
+        viewModel.setQuery("")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertEquals(listOf("session-a", "session-b"), viewModel.uiState.value.sessionRows.rowIds())
+        assertEquals(listOf("tunnel" to null), repository.searches)
+    }
+
+    /**
+     * A stub is UI state. It never reaches the cache, because a row with an
+     * invented message count and no archive or pin flag must not become
+     * indistinguishable from a listed one.
+     */
+    @Test
+    fun `a search stub never enters the session cache`() = runTest(dispatcher) {
+        repository.searchAnswer = listOf(stub("session-z", "a tunnel"))
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("tunnel")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+
+        assertNull(cache.session("session-z"))
+    }
+
+    /** A search hit built the way the repository builds one. */
+    private fun stub(id: String, preview: String) = SessionSummary(
+        id = id,
+        title = "",
+        preview = preview,
+        lastActiveAtMillis = CLOCK,
+        lineageRootId = id,
+    )
 }

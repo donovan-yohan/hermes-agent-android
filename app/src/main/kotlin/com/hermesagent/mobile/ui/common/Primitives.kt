@@ -30,8 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -61,9 +59,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
@@ -205,6 +205,17 @@ fun StatusDot(
 /**
  * Borderless search: underline on focus, no boxed tile. The only search input
  * (`apps/desktop/DESIGN.md:158-160`).
+ *
+ * Desktop's `SearchField` carries a leading search glyph and a trailing clear
+ * button (`apps/desktop/src/components/ui/search-field.tsx:69,90-100` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`); both are Codicons, and the
+ * clear button is `close`. It also lets the caller name the field for a screen
+ * reader separately from the placeholder (`:71`), which is why [spokenName]
+ * exists: the sessions rail speaks `Search sessions` while the field shows
+ * `Search sessions…`.
+ *
+ * @param leadingGlyph Desktop's leading glyph. Null keeps the plain field the
+ *   surfaces that predate it already render.
  */
 @Composable
 fun SearchField(
@@ -212,10 +223,20 @@ fun SearchField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    spokenName: String = placeholder,
+    leadingGlyph: HermesIcon? = null,
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (leadingGlyph != null) {
+                HermesIconGlyph(
+                    icon = leadingGlyph,
+                    color = tokens.textTertiary,
+                    size = 14.sp,
+                    modifier = Modifier.testTag(SEARCH_FIELD_GLYPH),
+                )
+            }
             Box(
                 Modifier
                     .weight(1f)
@@ -234,7 +255,7 @@ fun SearchField(
                         .fillMaxWidth()
                         // The editable node owns the complete touch target.
                         .heightIn(min = HermesTheme.spacing.touchTarget)
-                        .semantics { contentDescription = placeholder },
+                        .semantics { contentDescription = spokenName },
                     decorationBox = { innerTextField ->
                         CenteredTextFieldContent(
                             isEmpty = value.isEmpty(),
@@ -252,8 +273,11 @@ fun SearchField(
                 )
             }
             if (value.isNotEmpty()) {
-                QuietIconButton(
-                    icon = Icons.Filled.Clear,
+                // Desktop's `close` Codicon, named `Clear search`
+                // (`components/ui/search-field.tsx:92,98`, `i18n/en.ts:2202`
+                // and `:3565` @ `3ca096de`).
+                HermesIconButton(
+                    icon = HermesIcon.Close,
                     contentDescription = "Clear search",
                     onClick = { onValueChange("") },
                 )
@@ -263,6 +287,9 @@ fun SearchField(
         Hairline(color = if (value.isEmpty()) tokens.strokeQuaternary else tokens.accent)
     }
 }
+
+/** Desktop's leading search glyph (`components/ui/search-field.tsx:69` @ `3ca096de`). */
+internal const val SEARCH_FIELD_GLYPH = "Search field glyph"
 
 /** Centers natural-height text inside a full-size editor without changing its wrap width. */
 @Composable
@@ -453,7 +480,15 @@ fun TextButton(
     }
 }
 
-/** Plain-body empty state. Centered, no icon pile, no card. */
+/**
+ * Plain-body empty state. Centered, no icon pile, no card.
+ *
+ * The block is centered, so its text is too: a title long enough to wrap —
+ * a search sentence quoting the reader's own query, say — would otherwise sit
+ * left-aligned inside a centered column and read as a layout fault. A blank
+ * [description] renders nothing rather than an empty line, because some of
+ * these states are one sentence and Desktop gives them no second one.
+ */
 @Composable
 fun EmptyState(title: String, description: String, modifier: Modifier = Modifier) {
     Column(
@@ -461,13 +496,21 @@ fun EmptyState(title: String, description: String, modifier: Modifier = Modifier
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(title, style = HermesTheme.type.bodyStrong, color = HermesTheme.tokens.textSecondary)
         Text(
-            description,
-            style = HermesTheme.type.caption,
-            color = HermesTheme.tokens.textTertiary,
-            modifier = Modifier.padding(horizontal = 8.dp),
+            title,
+            style = HermesTheme.type.bodyStrong,
+            color = HermesTheme.tokens.textSecondary,
+            textAlign = TextAlign.Center,
         )
+        if (description.isNotBlank()) {
+            Text(
+                description,
+                style = HermesTheme.type.caption,
+                color = HermesTheme.tokens.textTertiary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
     }
 }
 
