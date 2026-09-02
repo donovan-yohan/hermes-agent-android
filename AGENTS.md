@@ -17,6 +17,7 @@ Phase 2 ships all three connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../data/connections/` | Saved connections registry, dedupe/display rules, the connection switch | Adding, editing, removing or switching a saved Gateway |
 | `app/src/main/kotlin/.../data/gateway/` | Remote lifecycle, HTTP/JSON-RPC connection, live session repository, network monitor | Gateway startup, ownership, forwarding, sessions, live turns |
 | `app/src/main/kotlin/.../data/profiles/` | Hermes profile roster, identity colour, active scope, session-RPC routing | Which profile the sidebar is in, or what a session RPC is scoped to |
+| `app/src/main/kotlin/.../data/updates/` | Backend update engine, the System panel's host calls, Desktop's changelog grouping | Anything about `hermes update`, the update receipt, or the backend's version |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
 | `app/src/androidTest/kotlin/` | The instrumented emulator lane: real display density, the platform accessibility tree, a real input-method binding, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
@@ -203,4 +204,5 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `.chalk/README.md` | chalkbag source-of-truth rules |
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |
 | `docs/parity/profile-switcher.md` | Profile rail, active-profile scope, and the read-only roster: pin, adaptation, deviations |
+| `docs/parity/system-panel.md` | System panel and the backend updates sheet: pin, HTTP contract, adaptation, deviations |
 | `docs/guides/termux-local-gateway.md` | Standing up a Termux `hermes serve` on the phone and adding it as a Local connection |

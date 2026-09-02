@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.SignInOrigin
 import com.hermesagent.mobile.ui.appearance.AppearanceScreen
 import com.hermesagent.mobile.ui.chat.ChatScreen
@@ -41,6 +42,11 @@ import com.hermesagent.mobile.ui.relay.RelayScreen
 import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
 import com.hermesagent.mobile.ui.settings.SettingsScreen
+import com.hermesagent.mobile.ui.system.SystemActions
+import com.hermesagent.mobile.ui.system.SystemCopy
+import com.hermesagent.mobile.ui.system.SystemScreen
+import com.hermesagent.mobile.ui.system.SystemUiState
+import com.hermesagent.mobile.ui.system.UpdatesOverlay
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -49,7 +55,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Chat is home. Settings has two short child surfaces, so a saved destination
  * is sufficient without a navigation graph.
  */
-enum class HermesDestination { Chat, Settings, Appearance, Gateways, Relay, Profiles }
+enum class HermesDestination { Chat, Settings, Appearance, Gateways, System, Relay, Profiles }
 
 /**
  * A navigation ask from outside the composition — today, a sign-in coming back
@@ -90,6 +96,8 @@ fun HermesApp(
     sshActions: SshActions,
     relayState: RelayUiState,
     relayActions: RelayActions,
+    systemState: SystemUiState = SystemUiState(),
+    systemActions: SystemActions = SystemActions(),
     connectionsState: ConnectionsUiState = ConnectionsUiState(),
     connectionsActions: ConnectionsActions = ConnectionsActions(),
     /** Honoured once per [HermesNavigationAsk.token]; see that type. */
@@ -177,8 +185,11 @@ fun HermesApp(
                 SettingsScreen(
                     onOpenAppearance = { destination = HermesDestination.Appearance },
                     onOpenGateways = onOpenGateways,
+                    onOpenSystem = { destination = HermesDestination.System },
                     onOpenRelay = { destination = HermesDestination.Relay },
                     relayAvailable = !relayState.unavailableOnGateway,
+                    systemAvailable =
+                        gatewayState.connection.status == GatewayConnectionStatus.Connected,
                 )
             }
 
@@ -201,6 +212,20 @@ fun HermesApp(
                     connectionsState = connectionsState,
                     connectionsActions = connectionsActions,
                 )
+            }
+
+            // The updates sheet is hosted here rather than beside the panel's
+            // own content, because it is a window of its own: hosting it inside
+            // the scaffold would put it under the scaffold's insets, and an
+            // apply outlives the screen that started it anyway.
+            HermesDestination.System -> OverlayScaffold(
+                title = SystemCopy.TITLE,
+                onBack = onBack,
+            ) {
+                SystemScreen(state = systemState, actions = systemActions)
+                if (systemState.sheetOpen) {
+                    UpdatesOverlay(state = systemState, actions = systemActions)
+                }
             }
 
             // Relay wears the same overlay chrome as its peers but supplies
@@ -313,6 +338,7 @@ internal fun HermesDestination.backDestination(): HermesDestination = when (this
     HermesDestination.Profiles -> HermesDestination.Chat
     HermesDestination.Appearance,
     HermesDestination.Gateways,
+    HermesDestination.System,
     HermesDestination.Relay,
     -> HermesDestination.Settings
 }

@@ -53,6 +53,18 @@ internal enum class ConnectionSwitchOutcome {
 }
 
 /**
+ * Backend-authoritative state, held outside [SessionCache], that a connection
+ * switch has to forget.
+ *
+ * A single method so there is one seam and one call site: the endpoint switch
+ * already has exactly one wholesale clear, and this joins it rather than
+ * competing with it.
+ */
+internal fun interface EndpointScopedState {
+    fun resetForEndpointSwitch()
+}
+
+/**
  * Re-homes this device to one saved connection.
  *
  * The order is the whole point, and it is Desktop’s
@@ -100,6 +112,16 @@ internal class ConnectionSwitchController(
      * [ConnectionCredentialProbe]; the default answers yes for every slot.
      */
     private val credentials: ConnectionCredentialProbe = ConnectionCredentialProbe { true },
+    /**
+     * Everything else this device knows about the endpoint it is leaving.
+     *
+     * [SessionCache.resetForEndpointSwitch] is the one wholesale clear this app
+     * has, and this is the same seam rather than a second one: a backend
+     * version, an update receipt and a half-finished `hermes update` belong to
+     * one machine exactly as its session ids do. A no-op by default, so a test
+     * that does not care about the System panel does not have to say so.
+     */
+    private val endpointScopedState: EndpointScopedState = EndpointScopedState {},
     private val settleTimeoutMillis: Long = SETTLE_TIMEOUT_MILLIS,
 ) {
     private val switching = Mutex()
@@ -199,6 +221,7 @@ internal class ConnectionSwitchController(
     private suspend fun leaveLocked(dropDrafts: Boolean) {
         gateway.disconnect()
         cache.resetForEndpointSwitch()
+        endpointScopedState.resetForEndpointSwitch()
         if (dropDrafts) drafts.clear()
     }
 

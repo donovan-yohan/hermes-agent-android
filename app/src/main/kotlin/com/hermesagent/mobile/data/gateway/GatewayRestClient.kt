@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -22,7 +23,30 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * caller can mistype. Nothing outside this file names a verb, so the set of
  * things this client can do to a Gateway is this declaration.
  */
-internal enum class GatewayRestVerb { GET, PATCH, DELETE }
+internal enum class GatewayRestVerb { GET, POST, PATCH, DELETE }
+
+/**
+ * The host actions this client is willing to name in a path.
+ *
+ * `GET /api/actions/{name}/status` resolves `name` against the host's own
+ * action table and 404s anything else (`hermes_cli/web_server.py:5817-5819` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), and that table holds seventeen
+ * entries including `backup`, `import` and `security-audit` (`:4572-4590`). A
+ * free string here would let any caller tail any of them; this app starts
+ * exactly two, so exactly two are addressable.
+ */
+enum class GatewayAction(val wire: String) {
+    /** `hermes update` on the host (`web_server.py:5139-5145` @ the pin). */
+    HermesUpdate("hermes-update"),
+
+    /**
+     * `hermes gateway restart` — the *messaging* gateway, not the `hermes
+     * serve` process this app is talking to (`web_server.py:4842-4843,4939` @
+     * the pin). The HTTP server survives it, which is what makes polling
+     * across it possible at all.
+     */
+    GatewayRestart("gateway-restart"),
+}
 
 /**
  * `archived` on the session list: hide soft-archived sessions, return only
@@ -147,6 +171,147 @@ data class GatewaySessionUpdate(
  * there is "ensure it is gone", so a missing row is a success, not a 404.
  */
 data class GatewaySessionDeletion(val alreadyAbsent: Boolean)
+
+/**
+ * What `GET /api/status` says about the backend, as the System panel needs it
+ * (payload `web_server.py:4011-4031` @ the pin).
+ *
+ * Four fields out of thirty. This is where Desktop reads the backend version —
+ * its System panel's sub-line is `Hermes {version} · Active sessions {count}`
+ * (`apps/desktop/src/app/command-center/index.tsx:440-442`) — and nothing else
+ * on that panel reads the rest. [gatewayRunning] is the one field its status dot
+ * looks at; `gateway_state` exists and Desktop deliberately ignores it
+ * (`index.tsx:430-435`), so it is not carried here either.
+ */
+data class GatewayStatusSummary(
+    val version: String,
+    val activeSessions: Long,
+    val gatewayRunning: Boolean,
+    /**
+     * Whether the host's own updater is usable here at all
+     * (`web_server.py:4016`, derived at `:2593-2605`). Nullable because a
+     * Gateway older than the pin simply omits it, which is a capability to
+     * remember rather than a `false` to act on.
+     */
+    val canUpdateHermes: Boolean?,
+)
+
+/** One upstream commit from the update check (`web_server.py:5200` @ the pin). */
+data class GatewayUpdateCommit(val sha: String, val summary: String)
+
+/**
+ * `GET /api/hermes/update/check` (`web_server.py:5211-5303` @ the pin). Always
+ * HTTP 200; the fields carry the verdict.
+ */
+data class GatewayUpdateCheck(
+    val installMethod: String?,
+    val currentVersion: String?,
+    /**
+     * How far behind: `null` means the check itself failed, `-1` that the count
+     * is unknown, `0` up to date, `>= 1` behind (`:5219-5235`). The three
+     * non-positive answers are different facts, so they are not collapsed.
+     */
+    val behind: Long?,
+    val updateAvailable: Boolean,
+    /** True only for a git install — the one the host can apply in place (`:5259`). */
+    val canApply: Boolean,
+    val updateCommand: String?,
+    val message: String?,
+    /** Only sent for a git install that is behind (`:5300-5301`); `[]` otherwise. */
+    val commits: List<GatewayUpdateCommit>,
+)
+
+/**
+ * What `POST /api/hermes/update` answered.
+ *
+ * **A refusal is HTTP 200 with `ok: false`** (`web_server.py:5088-5095,
+ * 5117-5124` @ the pin), so the status code cannot classify this and the
+ * envelope has to. That is the whole reason this is a sealed type rather than a
+ * nullable field: a caller cannot forget to look.
+ */
+sealed interface GatewayUpdateStart {
+    /**
+     * The host spawned, or already had, a detached `hermes update`.
+     *
+     * [actionId] is what makes success provable across the restart the update
+     * performs on the host: it appears in `update.log` as `=== hermes-update
+     * completed <id> ===` (`web_server.py:4814-4839`). A Gateway older than
+     * that recovery sends none, which is why it is nullable rather than
+     * required.
+     */
+    data class Started(
+        val name: String,
+        val actionId: String?,
+        /** The host adopted a run already in flight (`web_server.py:5126-5137`). */
+        val alreadyRunning: Boolean,
+    ) : GatewayUpdateStart
+
+    /**
+     * The host will not update itself in place, and said what to run instead.
+     *
+     * [message] and [updateCommand] are Gateway-authored: they may be shown
+     * only after redaction and a length cap, like every other backend string.
+     */
+    data class Refused(
+        val error: String?,
+        val message: String?,
+        val updateCommand: String?,
+    ) : GatewayUpdateStart
+}
+
+/**
+ * The durable receipt summary the action-status route attaches to a
+ * `hermes-update` poll (`web_server.py:5890-5920` @ the pin).
+ *
+ * It is the answer to "did the update this app started actually finish", which
+ * liveness cannot answer across the restart the update performs on itself.
+ */
+data class GatewayActionReceipt(
+    val outcome: String?,
+    val startedAt: String?,
+    val finishedAt: String?,
+    val postVersion: String?,
+)
+
+/** `GET /api/actions/{name}/status` (`web_server.py:5876-5886` @ the pin). */
+data class GatewayActionStatus(
+    val name: String,
+    val running: Boolean,
+    /**
+     * `null` while the host has no answer — which is also what it reports right
+     * after an update restarted the process that was watching the child. Never
+     * read as "failed"; that is what [receipt] and the log marker are for.
+     */
+    val exitCode: Long?,
+    val actionId: String?,
+    /** The action log tail, Gateway-authored. Redact and cap before showing. */
+    val lines: List<String>,
+    val receipt: GatewayActionReceipt?,
+)
+
+/**
+ * The full update receipt (`GET /api/hermes/update/receipt`,
+ * `web_server.py:5923-5945` @ the pin; shape `hermes_cli/update_receipt.py:60-73`).
+ *
+ * Only the fields this app can act on are carried. [serveUnitsVerified] and
+ * [staleRuntimes] are new at this pin (`update_receipt.py:135-155`) and describe
+ * `hermes serve`'s *own* post-update recovery — the process this app talks to.
+ * The action-status summary does not project them (`web_server.py:5908-5918`),
+ * so this endpoint is the only place they exist.
+ */
+data class GatewayUpdateReceipt(
+    val outcome: String?,
+    val preVersion: String?,
+    val postVersion: String?,
+    /** Units a supervisor confirmed back up. The only bucket allowed to claim coverage. */
+    val serveUnitsVerified: List<String>,
+    val serveUnitsFailed: List<String>,
+    /** Processes still alive on the pre-update generation. */
+    val staleRuntimes: Int,
+)
+
+/** `POST /api/gateway/restart` (`web_server.py:4988-5002` @ the pin). */
+data class GatewayRestartStart(val name: String, val pid: Long?)
 
 /**
  * Authenticated REST client for the Gateway's session routes.
@@ -358,6 +523,142 @@ class GatewayRestClient(private val http: () -> GatewayHttp?) {
         )
     }
 
+    // -----------------------------------------------------------------------
+    // System panel: backend status, the host's own updater, and the messaging
+    // gateway's restart. Every route below is public HTTP on the Gateway and
+    // route-agnostic; nothing here is Remote-specific.
+    // -----------------------------------------------------------------------
+
+    /**
+     * The backend's version, session count and messaging-gateway state from
+     * `GET /api/status` (`web_server.py:3771` @ the pin).
+     *
+     * Fail-closed on the three fields the panel renders: a body missing any of
+     * them is not that route's answer, and half a status line is worse than the
+     * loading state it would replace. `can_update_hermes` is the exception — an
+     * older Gateway omits it, so its absence is a null rather than a refusal.
+     */
+    suspend fun status(): GatewayRestResult<GatewayStatusSummary> = send(
+        path = STATUS_PATH,
+        verb = GatewayRestVerb.GET,
+        query = emptyMap(),
+        timeoutMillis = LIST_TIMEOUT_MILLIS,
+        maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
+        parse = ::parseStatusSummary,
+    )
+
+    /**
+     * `GET /api/hermes/update/check` (`web_server.py:5211-5303` @ the pin).
+     *
+     * [force] busts the host's six-hour `.update_check` cache (`:5279-5283`).
+     * Desktop always forces (`apps/desktop/src/store/updates.ts:374`), because a
+     * person who opened the updates surface is asking *now*.
+     */
+    suspend fun checkHermesUpdate(force: Boolean): GatewayRestResult<GatewayUpdateCheck> = send(
+        path = UPDATE_CHECK_PATH,
+        verb = GatewayRestVerb.GET,
+        query = mapOf("force" to force.toString()),
+        timeoutMillis = LIST_TIMEOUT_MILLIS,
+        maxResponseBytes = CHECK_MAX_RESPONSE_BYTES,
+        parse = ::parseUpdateCheck,
+    )
+
+    /**
+     * Start `hermes update` on the host through `POST /api/hermes/update`
+     * (`web_server.py:5078-5154` @ the pin).
+     *
+     * Asynchronous: the host spawns a detached child and answers immediately,
+     * so this returning does not mean anything was updated. It also does not
+     * mean anything was *started* — see [GatewayUpdateStart.Refused], which
+     * arrives as a 200.
+     *
+     * Sent once, like every other write here. The route is not idempotent in
+     * the ordinary sense but it is coalescing: a second call while one is in
+     * flight adopts the running child rather than starting a second
+     * (`:5126-5137`).
+     */
+    suspend fun startHermesUpdate(): GatewayRestResult<GatewayUpdateStart> = send(
+        path = UPDATE_PATH,
+        verb = GatewayRestVerb.POST,
+        query = emptyMap(),
+        // The route takes no body (`web_server.py:5079`), and this transport
+        // will not POST without one, so it carries zero bytes rather than an
+        // invented object the host would parse and discard.
+        body = EMPTY_BODY.toRequestBody(JSON_MEDIA_TYPE),
+        timeoutMillis = WRITE_TIMEOUT_MILLIS,
+        maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
+        parse = ::parseUpdateStart,
+    )
+
+    /**
+     * Tail one of this app's two host actions
+     * (`GET /api/actions/{name}/status`, `web_server.py:5814-5887` @ the pin).
+     *
+     * [lines] is refused rather than clamped outside the route's own
+     * `[1, 2000]` window (`:5822`), for the reason the session list refuses a
+     * bad page: a caller's broken arithmetic must not silently read something
+     * else. The timeout is deliberately the shortest in this file — this call
+     * runs on a 1500 ms cadence across a host that is restarting itself, and a
+     * dead host must fail it fast enough that the next tick is still a tick.
+     */
+    suspend fun actionStatus(
+        action: GatewayAction,
+        lines: Int = DEFAULT_ACTION_LINES,
+    ): GatewayRestResult<GatewayActionStatus> {
+        if (lines !in 1..MAX_ACTION_LINES) return malformed()
+        return send(
+            path = "$ACTIONS_PATH/${action.wire}/status",
+            verb = GatewayRestVerb.GET,
+            query = mapOf("lines" to lines.toString()),
+            timeoutMillis = ACTION_STATUS_TIMEOUT_MILLIS,
+            maxResponseBytes = ACTION_STATUS_MAX_RESPONSE_BYTES,
+            parse = ::parseActionStatus,
+        )
+    }
+
+    /**
+     * The durable record of the last `hermes update`
+     * (`GET /api/hermes/update/receipt`, `web_server.py:5923-5945` @ the pin).
+     *
+     * A **404** here is the host saying no update has ever been recorded
+     * (`:5940-5944`) — a capability and a fact, not a failure to retry.
+     */
+    suspend fun updateReceipt(): GatewayRestResult<GatewayUpdateReceipt> = send(
+        path = UPDATE_RECEIPT_PATH,
+        verb = GatewayRestVerb.GET,
+        query = emptyMap(),
+        timeoutMillis = LIST_TIMEOUT_MILLIS,
+        maxResponseBytes = RECEIPT_MAX_RESPONSE_BYTES,
+        parse = ::parseUpdateReceipt,
+    )
+
+    /**
+     * Restart the **messaging gateway** through `POST /api/gateway/restart`
+     * (`web_server.py:4988-5002` @ the pin).
+     *
+     * Not the `hermes serve` process this app is connected to: the host runs
+     * `hermes [--profile P] gateway restart` (`:4842-4843,4939`) and the HTTP
+     * server survives it. No HTTP endpoint restarts `hermes serve` itself;
+     * Desktop's "Restart backend" is Electron IPC.
+     *
+     * Asynchronous, and completion is not readiness: the child exits as soon as
+     * it has handed the restart to the supervisor (`:4598-4604`). Poll
+     * [actionStatus] with [GatewayAction.GatewayRestart] for the child, and read
+     * `exit_code == 0` as a successful handoff rather than a running gateway.
+     */
+    suspend fun restartGateway(profile: String? = null): GatewayRestResult<GatewayRestartStart> {
+        val scope = scopeQuery(profile) ?: return malformed()
+        return send(
+            path = GATEWAY_RESTART_PATH,
+            verb = GatewayRestVerb.POST,
+            query = scope,
+            body = EMPTY_BODY.toRequestBody(JSON_MEDIA_TYPE),
+            timeoutMillis = WRITE_TIMEOUT_MILLIS,
+            maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
+            parse = ::parseRestartStart,
+        )
+    }
+
     /**
      * The single hop every helper above makes.
      *
@@ -492,6 +793,129 @@ private fun parseSessionDeletion(bytes: ByteArray): GatewaySessionDeletion? {
     return GatewaySessionDeletion(alreadyAbsent = root.boolean("already_absent") == true)
 }
 
+private fun parseStatusSummary(bytes: ByteArray): GatewayStatusSummary? {
+    val root = parseObject(bytes) ?: return null
+    return GatewayStatusSummary(
+        version = root.jsonString("version") ?: return null,
+        activeSessions = root.number("active_sessions") ?: return null,
+        gatewayRunning = root.boolean("gateway_running") ?: return null,
+        canUpdateHermes = root.boolean("can_update_hermes"),
+    )
+}
+
+private fun parseUpdateCheck(bytes: ByteArray): GatewayUpdateCheck? {
+    val root = parseObject(bytes) ?: return null
+    return GatewayUpdateCheck(
+        installMethod = root.jsonString("install_method"),
+        currentVersion = root.jsonString("current_version"),
+        // Absent and explicitly null are the same answer here: the check did
+        // not produce a count (`web_server.py:5292` @ the pin).
+        behind = root.number("behind"),
+        // The two booleans decide what the surface offers, so a body without
+        // them is not this route's answer.
+        updateAvailable = root.boolean("update_available") ?: return null,
+        canApply = root.boolean("can_apply") ?: return null,
+        updateCommand = root.jsonString("update_command"),
+        message = root.jsonString("message"),
+        // One unreadable commit poisons the list, for the same reason one
+        // unreadable session row poisons a page.
+        commits = root.commitArray() ?: return null,
+    )
+}
+
+/**
+ * `commits` is optional: the route omits it entirely for a non-git install or a
+ * host that is up to date (`web_server.py:5300-5301` @ the pin). Absent is an
+ * empty changelog; present-and-malformed is a body this client will not read.
+ */
+private fun JsonObject.commitArray(): List<GatewayUpdateCommit>? {
+    val raw = this["commits"] ?: return emptyList()
+    if (raw is JsonNull) return emptyList()
+    val rows = raw as? JsonArray ?: return null
+    val parsed = ArrayList<GatewayUpdateCommit>(rows.size)
+    for (row in rows) {
+        val commit = row as? JsonObject ?: return null
+        parsed.add(
+            GatewayUpdateCommit(
+                sha = commit.jsonString("sha") ?: return null,
+                summary = commit.jsonString("summary") ?: return null,
+            ),
+        )
+    }
+    return parsed
+}
+
+private fun parseUpdateStart(bytes: ByteArray): GatewayUpdateStart? {
+    val root = parseObject(bytes) ?: return null
+    val ok = root.boolean("ok") ?: return null
+    if (!ok) {
+        return GatewayUpdateStart.Refused(
+            error = root.jsonString("error"),
+            message = root.jsonString("message"),
+            updateCommand = root.jsonString("update_command"),
+        )
+    }
+    return GatewayUpdateStart.Started(
+        name = root.jsonString("name") ?: return null,
+        actionId = root.jsonString("action_id"),
+        alreadyRunning = root.boolean("already_running") == true,
+    )
+}
+
+private fun parseActionStatus(bytes: ByteArray): GatewayActionStatus? {
+    val root = parseObject(bytes) ?: return null
+    return GatewayActionStatus(
+        name = root.jsonString("name") ?: return null,
+        running = root.boolean("running") ?: return null,
+        exitCode = root.number("exit_code"),
+        actionId = root.jsonString("action_id"),
+        lines = root.stringArray("lines") ?: return null,
+        receipt = root.child("receipt")?.let { receipt ->
+            GatewayActionReceipt(
+                outcome = receipt.jsonString("outcome"),
+                startedAt = receipt.jsonString("started_at"),
+                finishedAt = receipt.jsonString("finished_at"),
+                postVersion = receipt.jsonString("post_version"),
+            )
+        },
+    )
+}
+
+private fun parseUpdateReceipt(bytes: ByteArray): GatewayUpdateReceipt? {
+    val root = parseObject(bytes) ?: return null
+    val receipt = root.child("receipt") ?: return null
+    val recovery = receipt.child("gateway_restart")?.child("fresh_recovery")
+    val serveUnits = recovery?.child("serve_units")
+    return GatewayUpdateReceipt(
+        outcome = receipt.jsonString("outcome"),
+        preVersion = receipt.child("pre_update")?.jsonString("version"),
+        postVersion = receipt.child("post_update")?.jsonString("version"),
+        serveUnitsVerified = serveUnits?.stringArray("verified").orEmpty(),
+        serveUnitsFailed = serveUnits?.stringArray("failed").orEmpty(),
+        staleRuntimes = (recovery?.get("stale_runtimes") as? JsonArray)?.size ?: 0,
+    )
+}
+
+private fun parseRestartStart(bytes: ByteArray): GatewayRestartStart? {
+    val root = parseObject(bytes) ?: return null
+    if (root.boolean("ok") != true) return null
+    return GatewayRestartStart(
+        name = root.jsonString("name") ?: return null,
+        pid = root.number("pid"),
+    )
+}
+
+/** A named array of strings, or null if it is present and holds anything else. */
+private fun JsonObject.stringArray(name: String): List<String>? {
+    val raw = this[name] ?: return null
+    val rows = raw as? JsonArray ?: return null
+    val parsed = ArrayList<String>(rows.size)
+    for (row in rows) {
+        parsed.add((row as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null)
+    }
+    return parsed
+}
+
 private fun parseObject(bytes: ByteArray): JsonObject? =
     runCatching { Json.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()
 
@@ -515,6 +939,29 @@ private fun JsonObject.objectArray(name: String): List<JsonObject>? {
 }
 
 private const val SESSIONS_PATH = "api/sessions"
+private const val STATUS_PATH = "api/status"
+private const val UPDATE_CHECK_PATH = "api/hermes/update/check"
+private const val UPDATE_PATH = "api/hermes/update"
+private const val UPDATE_RECEIPT_PATH = "api/hermes/update/receipt"
+private const val ACTIONS_PATH = "api/actions"
+private const val GATEWAY_RESTART_PATH = "api/gateway/restart"
+
+/** The route's own window; anything outside it is a query it would clamp (`:5822`). */
+internal const val MAX_ACTION_LINES = 2000
+
+/**
+ * What Desktop's own System panel asks for (`store/system-actions.ts:19-32` @
+ * the pin). Kept as this client's default so the two ask the host the same
+ * question.
+ */
+internal const val DEFAULT_ACTION_LINES = 180
+
+/**
+ * A body of zero bytes. Both POST routes here take no body at all
+ * (`web_server.py:5079`, `:4989` @ the pin) and this transport refuses a POST
+ * without one, so they send nothing rather than an invented object.
+ */
+private val EMPTY_BODY = ByteArray(0)
 
 /** The route's own page cap; an unbounded limit is a query it refuses. */
 internal const val MAX_SESSION_PAGE = 100
@@ -534,12 +981,46 @@ private const val MESSAGES_TIMEOUT_MILLIS = 30_000L
 private const val WRITE_TIMEOUT_MILLIS = 15_000L
 
 /**
+ * The shortest timeout in this file, and deliberately.
+ *
+ * The action-status poll runs on a 1500 ms cadence against a host that is in
+ * the middle of restarting itself, so a hop that hangs for the shared 15 s does
+ * not slow the loop down — it *replaces* it, turning a 1.5-second cadence into a
+ * 16.5-second one for the whole of the restart window. Five seconds is long
+ * enough for a host that is merely busy and short enough that a host which has
+ * gone away is observed as gone rather than as slow.
+ */
+private const val ACTION_STATUS_TIMEOUT_MILLIS = 5_000L
+
+/**
  * A list page is 100 rows with the payload-dominating fields already stripped
  * server-side (`sessions.py:126-129,157-158`), and an ack is one line. Both are
  * bounds this client would rather fail on than hold.
  */
 private const val LIST_MAX_RESPONSE_BYTES = 1024L * 1024L
 private const val ACK_MAX_RESPONSE_BYTES = 64L * 1024L
+
+/**
+ * The update check carries up to twenty commit subjects (`git log HEAD..origin/main
+ * -n20`, `web_server.py:5157-5208` @ the pin) plus a remediation message. That is
+ * an ack with a list bolted on, not a page.
+ */
+private const val CHECK_MAX_RESPONSE_BYTES = 256L * 1024L
+
+/**
+ * An action log tail: up to [MAX_ACTION_LINES] lines of somebody else's build
+ * output. Bounded like a list rather than like an ack, because a single `pip`
+ * or `npm` line is routinely hundreds of characters and a wedged action's log
+ * is exactly where a runaway one appears.
+ */
+private const val ACTION_STATUS_MAX_RESPONSE_BYTES = 1024L * 1024L
+
+/**
+ * The full receipt carries every step, skip and fleet row of one update
+ * (`hermes_cli/update_receipt.py:60-73` @ the pin) — larger than an ack and
+ * nowhere near a transcript page.
+ */
+private const val RECEIPT_MAX_RESPONSE_BYTES = 256L * 1024L
 
 /**
  * A transcript page cannot take a flat bound: one message can carry a whole

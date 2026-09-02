@@ -49,6 +49,8 @@ import com.hermesagent.mobile.ui.relay.RelayChannelReader
 import com.hermesagent.mobile.data.relay.RelayMessageFormat
 import com.hermesagent.mobile.ui.relay.RelayPoster
 import com.hermesagent.mobile.ui.relay.RelayViewModel
+import com.hermesagent.mobile.ui.system.SystemActions
+import com.hermesagent.mobile.ui.system.SystemViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -140,6 +142,14 @@ class MainActivity : ComponentActivity() {
                 ) = app.relayRepository.post(channelId, text, format, clientMessageId)
             },
         )
+    }
+    /**
+     * The System panel. It owns the restart poll and the status read; the
+     * six-minute update engine it drives is app-scoped, so nothing here can
+     * cancel an apply by going away.
+     */
+    private val systemViewModel: SystemViewModel by viewModels {
+        SystemViewModel.factory(api = app.systemApi, updates = app.updateController)
     }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
@@ -309,6 +319,17 @@ class MainActivity : ComponentActivity() {
             // edges only, so holding this costs nothing.
             val relayState by relayViewModel.uiState.collectAsStateWithLifecycle()
             val connectionsState by connectionsViewModel.uiState.collectAsStateWithLifecycle()
+            val systemState by systemViewModel.uiState.collectAsStateWithLifecycle()
+            val systemActions = remember {
+                SystemActions(
+                    onRefresh = systemViewModel::refresh,
+                    onRestartGateway = systemViewModel::restartGateway,
+                    onOpenUpdates = systemViewModel::openUpdates,
+                    onCheckUpdates = systemViewModel::checkForUpdates,
+                    onApplyUpdate = systemViewModel::applyUpdate,
+                    onCloseUpdates = systemViewModel::closeUpdates,
+                )
+            }
             val connectionsActions = remember {
                 ConnectionsActions(
                     onSelect = connectionsViewModel::select,
@@ -417,6 +438,8 @@ class MainActivity : ComponentActivity() {
                 ),
                 relayState = relayState,
                 relayActions = relayActions,
+                systemState = systemState,
+                systemActions = systemActions,
                 connectionsState = connectionsState,
                 connectionsActions = connectionsActions,
                 navigationAsk = navigationAsk,

@@ -178,6 +178,36 @@ internal interface GatewayConnectionController {
      */
     suspend fun signInAvailable(): Boolean = false
 
+    /**
+     * Retire the live Remote socket and redial it immediately, because the
+     * backend it was talking to has just restarted itself.
+     *
+     * The Remote route already redials on a transport failure, and that is not
+     * enough here. A backend update restarts the gateway process; over a tunnel
+     * the old TCP connection frequently dies with **no close event at all**, so
+     * this client's socket still reads open while every RPC on it hangs
+     * forever. Desktop hit the same thing and its users force-quit the app to
+     * recover (`apps/desktop/src/store/updates.ts:543-550` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The only way out is for the
+     * side that knows the restart happened to say so.
+     *
+     * Three things it must not do, and all three are why it is a method here
+     * rather than a `disconnect()` plus a `connect()` at the call site:
+     *
+     * - **Never override a user-driven Disconnected state.** Someone who put
+     *   the connection down while an update ran did not ask for it back.
+     * - **Never dial a route the app is not on.** Managed SSH's credential died
+     *   with its connection, and a Local Hermes was not restarted by a remote
+     *   host's update. On both this is a no-op.
+     * - **Never dial a profile other than the live one.** A connection switch
+     *   that landed mid-update moved the desired route, and that route wins.
+     *
+     * A no-op by default: this is a capability of the live connection layer,
+     * and a fake that silently redialled something would be worse than one that
+     * does nothing.
+     */
+    suspend fun redialAfterBackendUpdate() = Unit
+
     suspend fun disconnect()
 }
 
@@ -1558,6 +1588,44 @@ internal class GatewayConnectionManager(
             mutex.withLock {
                 nudgeRemoteReconnectLocked()
             }
+        }
+    }
+
+    /**
+     * See [GatewayConnectionController.redialAfterBackendUpdate].
+     *
+     * The inverse of [nudgeRemoteReconnect], and deliberately so: the nudge
+     * only ever acts when `active == null`, because a healthy connection is
+     * never torn down. This one acts *only* on a live Remote connection,
+     * because a live connection is exactly the thing that may be lying about
+     * being alive. Everything else — no desired route, a different desired
+     * route, a route that is not Remote, nothing connected at all — is left
+     * to the machinery that already owns it.
+     *
+     * The socket is retired even when nothing can be dialled right now, which
+     * is the common case: an apply that takes six minutes usually finishes with
+     * the app in someone's pocket, and [scheduleRemoteReconnectLocked] parks the
+     * route rather than redialling from the background. A closed connection that
+     * says `Disconnected` is the honest state there, and a half-open one that
+     * says `Connected` while every RPC hangs is the bug this exists to fix.
+     * [nudgeRemoteReconnect] brings it back on the next foreground edge.
+     */
+    override suspend fun redialAfterBackendUpdate() {
+        mutex.withLock {
+            // Null here is a user-driven Disconnected, a teardown, or a switch
+            // in flight. None of them is this call's to reverse.
+            val desired = desiredRemoteProfile ?: return@withLock
+            val live = (active as? ActiveConnection.Remote) ?: return@withLock
+            if (live.profile != desired) return@withLock
+            // Retire the socket first. `closeActive` cancels the monitor that
+            // watches it, so this does not race the ordinary transport-failure
+            // path into a second reconnect ladder.
+            closeActive()
+            // A fresh ladder, not a continuation of one: nothing about the
+            // update is a failure episode, and inheriting an old one would
+            // escalate to "still trying" on the first attempt.
+            remoteReconnectAttempts = 0
+            armRemoteReconnectLocked(desired, failingSinceMillis = null)
         }
     }
 
