@@ -422,6 +422,7 @@ class MainActivity : ComponentActivity() {
                     onInsertText = chatViewModel::onInsertText,
                     onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
                     onRemoveAttachment = chatViewModel::removeAttachment,
+                    onShowEarlierMessages = chatViewModel::showEarlierMessages,
                     onToggleDictation = { chatViewModel.requestToggleDictation() },
                     onToggleConversation = chatViewModel::toggleVoiceConversation,
                     onToggleVoiceMute = chatViewModel::toggleVoiceMute,

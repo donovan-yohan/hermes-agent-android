@@ -229,22 +229,26 @@ class SessionCache {
      * streaming turn grows: one entry rewritten in place rather than a new
      * message per delta.
      *
-     * The replacement is wholesale, so a caller that overwrites a hydrated
-     * entry with a live one drops that row's durable [TranscriptEntry.rowId];
-     * a transcript merge that can carry persisted rows (#68 S25) has to
-     * preserve the address already held when the incoming entry has none.
+     * The replacement is wholesale in everything but the durable address: an
+     * incoming entry that carries no [TranscriptEntry.rowId] keeps the one the
+     * entry it replaces already held, because null there means "the backend has
+     * not written this row down yet", never "this row has no durable identity".
+     * Dropping it would cost the transcript merge (#68 S25) the only key it can
+     * dedupe an overlapping older page on.
      */
     fun putEntry(sessionId: String, entry: TranscriptEntry) {
         _state.update { current ->
             val existing = current.transcripts[sessionId].orEmpty()
             val index = existing.indexOfFirst { it.id == entry.id }
-            when {
-                index < 0 -> current.copy(transcripts = current.transcripts + (sessionId to existing + entry))
-                existing[index] == entry -> current
-                else -> {
-                    val updated = existing.toMutableList().apply { this[index] = entry }
-                    current.copy(transcripts = current.transcripts + (sessionId to updated))
-                }
+            if (index < 0) {
+                return@update current.copy(transcripts = current.transcripts + (sessionId to existing + entry))
+            }
+            val incoming = entry.preservingRowIdOf(existing[index])
+            if (existing[index] == incoming) {
+                current
+            } else {
+                val updated = existing.toMutableList().apply { this[index] = incoming }
+                current.copy(transcripts = current.transcripts + (sessionId to updated))
             }
         }
     }

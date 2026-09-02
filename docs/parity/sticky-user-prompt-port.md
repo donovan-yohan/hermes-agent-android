@@ -6,6 +6,14 @@ Android derives the closest preceding authoritative `UserTurn` for the first vis
 
 The debug-manifest-only `StickyPromptParityActivity` is a sanitized two-turn visual fixture with dark/light extra support and no orientation lock. Focused Compose coverage verifies visible-source suppression, turn-relative source identity, id return/no re-follow, delayed history, image reference stripping, readable unique semantics, shared scroll action, and touch size. Ignored visual evidence belongs in `build/visual-parity/sticky-user-prompt/`.
 
+When an older page is prepended by `Show earlier messages`
+(`docs/parity/transcript-backfill.md`), the pin does not move and does not
+change owner. The merge only adds a strictly older, chronological prefix: it
+never reorders, rewrites or drops a row already on screen, so a turn stays
+whole across the window boundary and the closest preceding `UserTurn` for the
+first visible row is the same turn it was. What does change is that turn's
+index, which the pane re-anchors on the row itself rather than on a position.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |

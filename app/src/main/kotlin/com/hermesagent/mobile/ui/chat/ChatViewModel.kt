@@ -282,6 +282,15 @@ data class ChatUiState(
     /** Connection-owned attached-image loader; null while disconnected. */
     val imageLoader: GatewayImageLoader? = null,
     val contextMeter: ContextMeterState? = null,
+    /**
+     * Whether this session's transcript has older rows the Gateway has not been
+     * asked for — the one thing `Show earlier messages` renders on. There is no
+     * in-flight or exhausted variant: Desktop's control carries neither, and an
+     * exhausted session simply stops offering it
+     * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:834` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     */
+    val canShowEarlierMessages: Boolean = false,
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
@@ -437,7 +446,7 @@ internal class ChatViewModel(
         draft,
         activeSessionId,
         combine(
-            repository.imageLoader,
+            combine(repository.imageLoader, repository.sessionsWithEarlierMessages, ::TranscriptWindowBundle),
             combine(
                 composer,
                 voice,
@@ -464,10 +473,10 @@ internal class ChatViewModel(
             ) { composerState, voiceState, navigation, meterBundle ->
                 ComposerBundle(composerState, voiceState, navigation, meterBundle)
             },
-        ) { imageLoader, composerBundle -> composerBundle to imageLoader },
+        ) { windowBundle, composerBundle -> composerBundle to windowBundle },
     ) { cacheState, queryText, draftText, activeId, bundle ->
         val composerBundle = bundle.first
-        val imageLoader = bundle.second
+        val imageLoader = bundle.second.imageLoader
         val navigation = composerBundle.navigation
         val voiceState = composerBundle.voice
         val meterBundle = composerBundle.contextMeter
@@ -638,6 +647,8 @@ internal class ChatViewModel(
             composer = composerBundle.composer.copy(runtime = runtime),
             imageLoader = imageLoader,
             contextMeter = contextMeter,
+            canShowEarlierMessages = displayedActiveId != null &&
+                displayedActiveId in bundle.second.sessionsWithEarlierMessages,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -2615,6 +2626,22 @@ internal class ChatViewModel(
         activeSessionId.value?.let { refreshProcesses(it, showFailure = true) }
     }
 
+    /**
+     * `Show earlier messages`: fetch the page before the one on screen and
+     * prepend it to the session that asked.
+     *
+     * Addressed to the session the press came from, never to whatever is active
+     * when the page lands — the repository writes the page into that
+     * transcript, so a switch mid-fetch cannot paint it into the wrong one. A
+     * failure is silent by design: the control simply stays, and the next press
+     * retries (`transcript-backfill.ts:143-148` @ `3ca096de`).
+     */
+    fun showEarlierMessages() {
+        val activeId = activeSessionId.value ?: return
+        val durableId = cache.state.value.rehomes[activeId] ?: activeId
+        viewModelScope.launch { runCatching { repository.loadEarlierMessages(durableId) } }
+    }
+
     private fun refreshProcesses(sessionId: String, showFailure: Boolean) {
         viewModelScope.launch {
             when (repository.listProcesses(sessionId)) {
@@ -3008,6 +3035,12 @@ internal class ChatViewModel(
         val voice: VoiceUiState,
         val navigation: NavigationState,
         val contextMeter: ContextMeterBundle,
+    )
+
+    /** Connection-owned transcript projections: the image loader and the window. */
+    private data class TranscriptWindowBundle(
+        val imageLoader: GatewayImageLoader?,
+        val sessionsWithEarlierMessages: Set<String>,
     )
 
     companion object {

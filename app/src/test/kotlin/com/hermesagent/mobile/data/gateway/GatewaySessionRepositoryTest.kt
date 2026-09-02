@@ -4399,6 +4399,9 @@ class GatewaySessionRepositoryTest {
         val rpc = FakeRpc()
         var patchCalled = false
         val http = FakeGatewayRest { request ->
+            // Binding the runtime hydrates its newest transcript page first
+            // (#68 S25); this test is about the rename that follows.
+            if (request.method == "GET") return@FakeGatewayRest restPage(REST_EMPTY_TRANSCRIPT)
             patchCalled = true
             assertEquals("PATCH", request.method)
             assertEquals("api/sessions/durable-a", request.path)
@@ -4437,6 +4440,7 @@ class GatewaySessionRepositoryTest {
         val rpc = FakeRpc()
         val patched = mutableListOf<String>()
         val http = FakeGatewayRest { request ->
+            if (request.method == "GET") return@FakeGatewayRest restPage(REST_EMPTY_TRANSCRIPT)
             assertEquals("PATCH", request.method)
             assertEquals("api/sessions/durable-a", request.path)
             val buffer = okio.Buffer()
@@ -5361,6 +5365,654 @@ class GatewaySessionRepositoryTest {
         return buffer.readUtf8()
     }
 
+    // -----------------------------------------------------------------------
+    // `Show earlier messages` — windowed hydration and the older-page backfill
+    // (#68 S25). Fixtures below are the shape `GET /api/sessions/{id}/messages`
+    // actually answers at hermes-agent @
+    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`: the stored `messages` rows
+    // themselves (`hermes_cli/web_routers/sessions.py:672-708` →
+    // `hermes_state.py:12869-13016`), plus the `pagination` the route stamps
+    // (`sessions.py:709-714`).
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `a session hydrates with its newest page over the paged transcript route`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0) }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            // The REST leg's production home is `Dispatchers.IO` — a real
+            // thread a virtual-time test cannot schedule. See `liveRepository`.
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "work"))
+        cache.upsertSession(SessionSummary("durable-a", "Long chat", "", CLOCK, remoteProfile = "work"))
+
+        repository.openSession("durable-a")
+        runCurrent()
+
+        val request = http.requests.last { it.path.endsWith("/messages") }
+        assertEquals("api/sessions/durable-a/messages", request.path)
+        assertEquals("GET", request.method)
+        assertEquals("120", request.query["limit"])
+        assertEquals("0", request.query["offset"])
+        assertEquals("latest", request.query["order"])
+        // Without the compacted rows the transcript silently ends at the last
+        // compaction boundary (`api/sessions.ts:418-424`).
+        assertEquals("true", request.query["include_compacted"])
+        assertEquals("work", request.query["profile"])
+        // The whole-history RPC is not consulted when the paged route answers.
+        assertTrue(rpc.calls.none { it.method == "session.history" })
+
+        assertEquals(120, cache.transcript("durable-a").size)
+        assertEquals(TranscriptRowId(101), cache.transcript("durable-a").first().rowId)
+        assertTrue("durable-a" in repository.sessionsWithEarlierMessages.value)
+    }
+
+    @Test
+    fun `an older page prepends, dedupes an overlapping row, and retires the control`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            if (request.query["offset"] == "120") {
+                // The origin shifted while the tail was on screen, so the page
+                // measured back from the newest row overlaps by one
+                // (`transcript-backfill.ts:10-15`).
+                restTranscript("durable-a", listOf(99, 100, 101), limit = 120, offset = 120)
+            } else {
+                restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "work"))
+        cache.upsertSession(SessionSummary("durable-a", "Long chat", "", CLOCK, remoteProfile = "work"))
+        repository.openSession("durable-a")
+        runCurrent()
+
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+
+        // An older page is the same read at a deeper offset: the same lineage
+        // tip, the same scope, and the same compacted rows — without them the
+        // page would stop at a compaction boundary the first one crossed.
+        val older = http.requests.last { it.path.endsWith("/messages") }
+        assertEquals("120", older.query["offset"])
+        assertEquals("120", older.query["limit"])
+        assertEquals("latest", older.query["order"])
+        assertEquals("true", older.query["include_compacted"])
+        assertEquals("work", older.query["profile"])
+
+        val transcript = cache.transcript("durable-a")
+        assertEquals(122, transcript.size)
+        assertEquals(listOf(99L, 100L, 101L), transcript.take(3).map { it.rowId!!.value })
+        // The page came back short of its own limit, so there is nothing older
+        // to offer and the control stops rendering (`transcript-tail.ts:87-93`).
+        assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
+    }
+
+    @Test
+    fun `re-opening a session keeps the pages already asked for and pages past them`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            when (request.query["offset"]) {
+                "120" -> restTranscript("durable-a", (98..100).toList(), limit = 120, offset = 120)
+                "123" -> restTranscript("durable-a", listOf(97), limit = 120, offset = 123)
+                else -> restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+        assertEquals(123, cache.transcript("durable-a").size)
+
+        // Coming back to the session re-reads its newest page. Replacing the
+        // transcript with that page would silently drop what the reader
+        // already asked for (`transcript-backfill.ts:66-93`).
+        repository.openSession("durable-a")
+        runCurrent()
+
+        assertEquals(123, cache.transcript("durable-a").size)
+        assertEquals(TranscriptRowId(98), cache.transcript("durable-a").first().rowId)
+
+        // And the next page starts past the rows that prefix holds, rather than
+        // re-reading the page the reader already has.
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+        assertEquals("123", http.requests.last().query["offset"])
+        assertEquals(TranscriptRowId(97), cache.transcript("durable-a").first().rowId)
+    }
+
+    /**
+     * The next offset is stored-row arithmetic, and the kept prefix is projected
+     * entries. The projection drops rows — a `[System: …]` notice is persisted as
+     * a `role=user` row and is runtime metadata, never a bubble
+     * (`tui_gateway/server.py:9639-9650` @ `3ca096de`) — so re-deriving the
+     * offset from the entries that survived would step the next page back onto
+     * rows the reader already holds. The window's own offsets are the only place
+     * the row count still exists.
+     */
+    @Test
+    fun `the next page is measured in stored rows, not in the entries the graft kept`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            when (request.query["offset"]) {
+                // Three stored rows, one of which the display projection drops.
+                "120" -> restTranscriptOf(
+                    "durable-a",
+                    listOf(98 to "turn 98", 99 to "[System: resumed by the gateway]", 100 to "turn 100"),
+                    limit = 120,
+                    offset = 120,
+                )
+                "123" -> restTranscript("durable-a", listOf(97), limit = 120, offset = 123)
+                else -> restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+
+        // Three rows were paid for; two of them are on screen.
+        assertEquals(122, cache.transcript("durable-a").size)
+        assertEquals(TranscriptRowId(98), cache.transcript("durable-a").first().rowId)
+
+        repository.openSession("durable-a")
+        runCurrent()
+        assertEquals(122, cache.transcript("durable-a").size)
+
+        // 123, the rows consumed — not 122, the entries kept.
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+        assertEquals("123", http.requests.last().query["offset"])
+        assertEquals(TranscriptRowId(97), cache.transcript("durable-a").first().rowId)
+    }
+
+    /**
+     * `_lineage_root_id` only ever arrives on a list row, and a session can be
+     * hydrated before one exists — a reconnect resume, a restored active id, a
+     * session opened straight from a notification. Such a session is windowed on
+     * the evidence there was at the time; when the list finally says otherwise,
+     * the window goes with it rather than paging to a first row that is not the
+     * conversation's first row.
+     */
+    @Test
+    fun `a list that first reveals a compression tip retracts its window`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        var lineageListed = false
+        val http = FakeGatewayRest { request ->
+            when {
+                request.path.endsWith("/messages") ->
+                    restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+                lineageListed -> restPage(REST_PAGE_LINEAGE_TIP)
+                // Nothing on this page says anything about `durable-a`.
+                else -> restPage(REST_PAGE_WITHOUT_A)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+        assertTrue("durable-a" in repository.sessionsWithEarlierMessages.value)
+
+        // The list catches up and reports the row is a tip projected forward
+        // from `root-a` (`hermes_state.py:11586-11605` @ `3ca096de`).
+        lineageListed = true
+        repository.refreshSessions()
+        runCurrent()
+
+        assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
+        assertEquals("root-a", cache.session("durable-a")?.lineageRootId)
+    }
+
+    @Test
+    fun `a second press while a page is in flight does not ask twice`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val arrived = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val http = FakeGatewayRestSuspending { request ->
+            if (request.query["offset"] != "120") {
+                restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+            } else {
+                arrived.complete(Unit)
+                release.await()
+                restTranscript("durable-a", listOf(99), limit = 120, offset = 120)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        val first = async { repository.loadEarlierMessages("durable-a") }
+        // The REST client answers off its own dispatcher, so wait for the page
+        // to actually be on the wire rather than for the scheduler to idle.
+        arrived.await()
+        // Desktop's button stays clickable and shares one in-flight promise
+        // (`transcript-backfill.ts:126-133`); a second press here is ignored
+        // rather than sending a second page request that would double-advance
+        // the offset.
+        repository.loadEarlierMessages("durable-a")
+        assertEquals(1, http.requests.count { it.query["offset"] == "120" })
+
+        release.complete(Unit)
+        first.await()
+        assertEquals(121, cache.transcript("durable-a").size)
+    }
+
+    @Test
+    fun `a page landing after the window moved is discarded`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val arrived = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val http = FakeGatewayRestSuspending { request ->
+            if (request.query["offset"] == "120") {
+                arrived.complete(Unit)
+                release.await()
+                restTranscript("durable-a", listOf(99), limit = 120, offset = 120)
+            } else {
+                restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        val inFlight = async { repository.loadEarlierMessages("durable-a") }
+        arrived.await()
+        // Re-hydrating re-reads the tail and rebases the window: the page on
+        // the wire was measured from an origin that no longer applies.
+        repository.openSession("durable-a")
+
+        release.complete(Unit)
+        inFlight.await()
+        assertEquals(120, cache.transcript("durable-a").size)
+        assertTrue(cache.transcript("durable-a").none { it.rowId == TranscriptRowId(99) })
+    }
+
+    @Test
+    fun `later pages address the lineage tip the route resolved, never the id asked for`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            if (request.query["offset"] == "120") {
+                restTranscript("live-tip", listOf(99), limit = 120, offset = 120)
+            } else {
+                // The route walks the compression chain forward before it reads
+                // and reports the id it landed on (`sessions.py:660-663,707`).
+                restTranscript("live-tip", (101..220).toList(), limit = 120, offset = 0)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+
+        assertEquals("api/sessions/live-tip/messages", http.requests.last().path)
+        // The rows still land on the conversation the person opened.
+        assertEquals(121, cache.transcript("durable-a").size)
+    }
+
+    /**
+     * The default topology is one profile and an unscoped list, and its rows name
+     * no profile at all: the route stamps every row it serves
+     * (`hermes_cli/web_routers/sessions.py:182-189` @ `3ca096de`) and this app
+     * strips that stamp back off the unscoped leg, because there it describes the
+     * Gateway rather than the row. So "did this read go to the store that listed
+     * the row?" cannot be asked of the stamp. It is asked of the unscoped leg's
+     * own answer, which opened the same `state.db` an unscoped read opens.
+     */
+    @Test
+    fun `a Gateway without the paged transcript route keeps the whole-history RPC`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"count":1,"messages":[{"role":"user","text":"only ask","row_id":7}]}"""
+        }
+        var messageRequests = 0
+        val http = FakeGatewayRest { request ->
+            if (request.path.endsWith("/messages")) {
+                messageRequests++
+                GatewayHttpResult.Rejected(404, "Hermes refused that Gateway request.")
+            } else {
+                restPage(REST_PAGE_ONE)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        // The app's default routing is the unscoped leg, and this is the real
+        // list path — nothing is hand-seeded into the cache.
+        repository.refreshSessions()
+        runCurrent()
+        assertEquals("First", cache.session("durable-a")?.title)
+        // The row the leg listed carries no profile, which is exactly why the
+        // stamp cannot be the question.
+        assertNull(cache.session("durable-a")?.remoteProfile)
+
+        repository.openSession("durable-a")
+        runCurrent()
+
+        assertEquals("only ask", (cache.transcript("durable-a").single() as UserTurn).text)
+        // Nothing older to offer: the RPC has no page contract at all.
+        assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+
+        // The unscoped read opened the store the unscoped list answered from,
+        // and the RPC returned that same session's rows, so the only thing left
+        // the 404 can mean is that this backend has no such route. Neither this
+        // open nor any later one asks it again.
+        repository.openSession("durable-a")
+        runCurrent()
+        assertEquals(1, messageRequests)
+    }
+
+    /**
+     * The route raises `404 "Session not found"` for an id it cannot resolve in
+     * the store it opened (`sessions.py:660-662,683-684` @ `3ca096de`), and the
+     * store it opens is the one `?profile=` names. A row this connection has
+     * never listed names no store at all: its read goes out unscoped and can land
+     * where the session genuinely is not. Demoting on that would cost the whole
+     * connection its windowed hydration for one unlisted row.
+     */
+    @Test
+    fun `a 404 for a session this connection never listed never demotes the route`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"count":1,"messages":[{"role":"user","text":"only ask","row_id":7}]}"""
+        }
+        var messageRequests = 0
+        val http = FakeGatewayRest { request ->
+            if (request.path.endsWith("/messages")) {
+                messageRequests++
+                GatewayHttpResult.Rejected(404, "Hermes refused that Gateway request.")
+            } else {
+                // This page does not carry `durable-a`.
+                restPage(REST_PAGE_WITHOUT_A)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.refreshSessions()
+        runCurrent()
+        // The list answered, and `durable-a` is not on the page it answered
+        // with. Whatever else this connection knows the row from — a project
+        // tree preview, a resume, a notification — says nothing about which
+        // store it lives in.
+        assertEquals("Second", cache.session("durable-b")?.title)
+
+        repository.openSession("durable-a")
+        runCurrent()
+        // The read still falls back, exactly as any other refusal does.
+        assertEquals("only ask", (cache.transcript("durable-a").single() as UserTurn).text)
+
+        repository.openSession("durable-a")
+        runCurrent()
+
+        // Still probed, because nothing here says the 404 was about the route.
+        assertEquals(2, messageRequests)
+    }
+
+    @Test
+    fun `a 404 the whole-history RPC cannot corroborate never demotes the route`() = runTest {
+        val cache = SessionCache()
+        // The RPC has nothing to say about this session either, so nothing
+        // proves the session was there to be found.
+        val rpc = FakeRpc()
+        var messageRequests = 0
+        val http = FakeGatewayRest { request ->
+            if (request.path.endsWith("/messages")) messageRequests++
+            GatewayHttpResult.Rejected(404, "Hermes refused that Gateway request.")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Long chat", "", CLOCK, remoteProfile = "work"))
+
+        repository.openSession("durable-a")
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        assertEquals(2, messageRequests)
+    }
+
+    /**
+     * `session.history` merges a compression chain's ancestors
+     * (`get_messages_as_conversation(..., include_ancestors=True)`,
+     * `methods_session.py:2843-2847` @ `3ca096de`); the paged route resolves the
+     * chain forward and reads the tip alone (`sessions.py:660-663,672-678`).
+     * Windowing such a session would put turns Android used to show out of reach
+     * behind a control that retires at the tip's first row.
+     */
+    @Test
+    fun `a compression tip keeps whole-history hydration and is offered no control`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"count":2,"messages":[
+                {"role":"user","text":"an ancestor turn","row_id":3},
+                {"role":"user","text":"a turn after compression","row_id":9}]}"""
+        }
+        var messageRequests = 0
+        val http = FakeGatewayRest { request ->
+            if (request.path.endsWith("/messages")) messageRequests++
+            restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        // The list route projects a compression root forward to its tip and
+        // stamps the root it came from, and only on such a row
+        // (`hermes_state.py:11586-11605`).
+        cache.upsertSession(
+            SessionSummary("durable-a", "Long chat", "", CLOCK, remoteProfile = "work", lineageRootId = "root-a"),
+        )
+
+        repository.openSession("durable-a")
+        runCurrent()
+
+        assertEquals(0, messageRequests)
+        val transcript = cache.transcript("durable-a").filterIsInstance<UserTurn>()
+        assertEquals(listOf("an ancestor turn", "a turn after compression"), transcript.map(UserTurn::text))
+        assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
+    }
+
+    @Test
+    fun `an ordinary listed row still takes the window`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0) }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        // A row that is its own lineage root says nothing about ancestors.
+        cache.upsertSession(
+            SessionSummary("durable-a", "Long chat", "", CLOCK, remoteProfile = "work", lineageRootId = "durable-a"),
+        )
+
+        repository.openSession("durable-a")
+        runCurrent()
+
+        assertEquals(120, cache.transcript("durable-a").size)
+        assertTrue("durable-a" in repository.sessionsWithEarlierMessages.value)
+    }
+
+    /**
+     * The hydrated window is authoritative history, and reconciliation is what
+     * decides how a live turn already on screen sits against it
+     * (`reconcileAuthoritativeTranscript`). #68 S25 requires the page to go
+     * through it rather than being written straight to the cache.
+     */
+    @Test
+    fun `the hydrated window reaches the cache through reconciliation, not around it`() = runTest {
+        val cache = SessionCache()
+        // The Gateway reports a turn still in flight over the persisted rows.
+        // Only `reconcileAuthoritativeTranscript` may extend history with it, so
+        // its arrival past the page is the proof the page went through there
+        // rather than being written straight to the cache.
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val http = FakeGatewayRest { restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0) }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Long chat", "", CLOCK, remoteProfile = "work"))
+
+        repository.openSession("durable-a")
+        runCurrent()
+
+        val transcript = cache.transcript("durable-a")
+        // The 120 persisted rows, then the in-flight ask and its partial answer.
+        assertEquals(122, transcript.size)
+        assertEquals(TranscriptRowId(101), transcript.first().rowId)
+        assertEquals("current prompt", transcript.filterIsInstance<UserTurn>().last().text)
+        val streaming = transcript.filterIsInstance<AssistantTurn>().single()
+        assertEquals("partial answer", streaming.markdown)
+        assertTrue(streaming.streaming)
+    }
+
+    @Test
+    fun `a transcript refusal that is not a 404 falls back for that read without demoting the route`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"count":1,"messages":[{"role":"user","text":"only ask","row_id":7}]}"""
+        }
+        var refuse = true
+        val http = FakeGatewayRest { request ->
+            if (!request.path.endsWith("/messages")) {
+                GatewayHttpResult.Rejected(503, "The Gateway could not complete that request. Try again.")
+            } else if (refuse) {
+                GatewayHttpResult.Rejected(503, "The Gateway could not complete that request. Try again.")
+            } else {
+                restTranscript("durable-a", (101..220).toList(), limit = 120, offset = 0)
+            }
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+        runCurrent()
+        // Opening a session must not become less reliable than it was before
+        // the window existed, so one refused read falls back rather than fails.
+        assertEquals(1, cache.transcript("durable-a").size)
+
+        refuse = false
+        repository.openSession("durable-a")
+        runCurrent()
+        // A blip is not evidence about what the backend can do.
+        assertEquals(120, cache.transcript("durable-a").size)
+    }
+
     /**
      * A [GatewayHttp] that answers the session-list route from a script and
      * remembers every attempt.
@@ -5379,6 +6031,60 @@ class GatewaySessionRepositoryTest {
             requests.add(request)
             return answer(request)
         }
+    }
+
+    /** The same script, allowed to suspend — the in-flight cases need a fetch to park. */
+    private class FakeGatewayRestSuspending(
+        private val answer: suspend (GatewayHttpRequest) -> GatewayHttpResult,
+    ) : GatewayHttp {
+        // The client answers off `Dispatchers.IO`, so a parked fetch and the
+        // test body genuinely share this list.
+        val requests: MutableList<GatewayHttpRequest> =
+            java.util.Collections.synchronizedList(mutableListOf())
+
+        override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+            requests.add(request)
+            return answer(request)
+        }
+    }
+
+    /**
+     * One page of `GET /api/sessions/{id}/messages`: the stored rows as
+     * `SessionDB.get_messages` hands them back (`hermes_state.py:13000-13016`
+     * @ `3ca096de`) under the `pagination` the route stamps
+     * (`sessions.py:709-714`).
+     */
+    private fun restTranscript(sessionId: String, rowIds: List<Int>, limit: Int, offset: Int): GatewayHttpResult =
+        restTranscriptOf(sessionId, rowIds.map { it to "turn $it" }, limit, offset)
+
+    /**
+     * The same page, with each row's body given, so a page can carry a row the
+     * display projection drops — a `[System: …]` notice is persisted as a
+     * `role=user` row and is runtime metadata, never a bubble
+     * (`tui_gateway/server.py:9639-9650` @ `3ca096de`).
+     */
+    private fun restTranscriptOf(
+        sessionId: String,
+        rows: List<Pair<Int, String>>,
+        limit: Int,
+        offset: Int,
+    ): GatewayHttpResult {
+        val body = rows.joinToString(",") { (id, content) ->
+            // `SessionDB.get_messages` builds each row as `dict(row)`
+            // (`hermes_state.py:13001-13002`) over a `SELECT *` (`:12926`,
+            // `:12943`), so every column is present and the ones this row did
+            // not use are JSON `null` — not absent. A projection that read key
+            // presence rather than value would drop rows on this shape and on
+            // no other.
+            """{"id":$id,"session_id":"$sessionId","role":"user","content":"$content",""" +
+                """"tool_calls":null,"tool_call_id":null,"tool_name":null,"reasoning":null,""" +
+                """"display_kind":null,"display_content":null,""" +
+                """"timestamp":1700001000.0,"active":1,"compacted":0}"""
+        }
+        return restPage(
+            """{"session_id":"$sessionId","messages":[$body],""" +
+                """"pagination":{"limit":$limit,"offset":$offset,"order":"latest","returned":${rows.size}}}""",
+        )
     }
 
     private data class RpcCall(val method: String, val params: JsonObject)
@@ -5691,6 +6397,18 @@ class GatewaySessionRepositoryTest {
              "profile":"work","is_default_profile":false}
         ],"total":152,"limit":50,"offset":50}"""
 
+        /**
+         * `durable-a` as the list reports it once the Gateway has compressed the
+         * conversation onto it: `_lineage_root_id` names the root it was
+         * projected forward from (`hermes_state.py:11586-11605` @ `3ca096de`).
+         */
+        const val REST_PAGE_LINEAGE_TIP = """{"sessions":[
+            {"id":"durable-a","_lineage_root_id":"root-a","title":"Long chat","preview":"a",
+             "started_at":1700000100,"last_active":1700000100,
+             "message_count":7,"source":"desktop","archived":false,"pinned":false,"unread":false,
+             "profile":"default","is_default_profile":true}
+        ],"total":1,"limit":50,"offset":0}"""
+
         /** What the backend answers after auto-archive retires `durable-a`. */
         const val REST_PAGE_WITHOUT_A = """{"sessions":[
             {"id":"durable-b","title":"Second","preview":"b","started_at":1700000200,"last_active":1700000200,
@@ -5752,3 +6470,9 @@ private fun json(text: String): JsonElement = Json.parseToJsonElement(text)
 /** A fresh buffer per answer: the REST client wipes the one it decodes. */
 private fun restPage(body: String): GatewayHttpResult =
     GatewayHttpResult.Success(200, body.toByteArray(Charsets.UTF_8))
+
+/** A session whose transcript route answers with nothing to show. */
+private val REST_EMPTY_TRANSCRIPT = """
+    {"session_id":"durable-a","messages":[],
+     "pagination":{"limit":120,"offset":0,"order":"latest","returned":0}}
+""".trimIndent()
