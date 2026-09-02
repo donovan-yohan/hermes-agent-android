@@ -26,12 +26,15 @@ import com.hermesagent.mobile.data.session.ComposerGoalStatus
 import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.data.session.ComposerTodoState
 import com.hermesagent.mobile.data.session.ComposerTodoStatus
+import com.hermesagent.mobile.data.session.ContextBreakdown
+import com.hermesagent.mobile.data.session.ContextUsageCategory
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.SessionUsage
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
@@ -71,6 +74,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.buildJsonObject
 
 /**
@@ -144,6 +150,28 @@ interface GatewaySessionRepository {
         error("Model options are not implemented by this repository.")
     suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot =
         error("Composer controls are not implemented by this repository.")
+    /**
+     * Read the context breakdown for [durableId] via `session.context_breakdown`.
+     * Fail-closed; returns null on unconfigured or unreachable backends, and the
+     * last breakdown this session had when one call fails.
+     *
+     * A passive read: it never opens or activates a session to answer. Ask
+     * [hasLiveRuntime] first — Desktop's own caller only ever holds a session
+     * that is already active (`use-context-breakdown.ts:41` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     */
+    suspend fun loadContextBreakdown(durableId: String): ContextBreakdown? = null
+
+    /**
+     * Whether [durableId] is already bound to a Gateway runtime.
+     *
+     * The breakdown read is an observer, so it must not be the thing that opens
+     * a session: `openSession` holds the navigation mutex, and a read that
+     * queued behind it would starve real navigation. Implementations that have
+     * no runtime concept answer `true`.
+     */
+    fun hasLiveRuntime(durableId: String): Boolean = true
+
     suspend fun loadComposerState(durableId: String?): ComposerControlState {
         val catalog = loadModelOptions(durableId)
         val controls = loadComposerControls(durableId)
@@ -569,6 +597,7 @@ internal class LiveGatewaySessionRepository(
     /** Per-runtime submit timestamp and liveness, keyed by runtime session id. */
     private val localSubmitStartedAtByRuntime = mutableMapOf<String, Long>()
     private val liveTurnRuntimeIds = mutableSetOf<String>()
+    private val contextBreakdownBySession = mutableMapOf<String, ContextBreakdown>()
 
     init {
         scope.launch {
@@ -599,6 +628,7 @@ internal class LiveGatewaySessionRepository(
                     progressRuntimeIds.clear()
                     composerStatusRuntimeIds.clear()
                     queuedPromptDrainReadyBatchIdsByRuntime.clear()
+                    contextBreakdownBySession.clear()
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
@@ -1318,6 +1348,50 @@ internal class LiveGatewaySessionRepository(
                 fast = FastMode.fromWire(fast.string("value")),
             ),
         )
+    }
+
+    override fun hasLiveRuntime(durableId: String): Boolean {
+        val trimmed = durableId.trim().takeIf(String::isNotEmpty) ?: return false
+        return synchronized(stateLock) { identities.runtimeFor(trimmed) != null }
+    }
+
+    override suspend fun loadContextBreakdown(durableId: String): ContextBreakdown? {
+        val trimmed = durableId.trim().takeIf(String::isNotEmpty) ?: return null
+        // Never `ensureRuntime` from here. That falls through to `openSession`,
+        // which takes the navigation mutex; a periodic read has no business
+        // holding it, and a session with no runtime has nothing to estimate
+        // from anyway. Desktop asks the same question by only ever passing a
+        // session that is already active (`use-context-breakdown.ts:41` @
+        // `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+        val runtimeId = synchronized(stateLock) { identities.runtimeFor(trimmed) }
+            ?: return synchronized(stateLock) { contextBreakdownBySession[trimmed] }
+        val connection = connectionSnapshot()
+        val params = buildJsonObject {
+            put("session_id", JsonPrimitive(runtimeId))
+            // `_sess_nowait` (`tui_gateway/server.py:3564-3584` @ the same SHA)
+            // reads only `session_id`, so this is defensive and unread: it keeps
+            // the routing shape every other session RPC here sends.
+            synchronized(stateLock) { profileRouting }.activeProfile
+                ?.let { put("profile", JsonPrimitive(it)) }
+        }
+        // `runCatching` would swallow the CancellationException a session switch
+        // throws, and the cancelled job would then clear "Loading breakdown…"
+        // out from under the switch's own in-flight read.
+        val response = try {
+            connection.client.request("session.context_breakdown", params) as? JsonObject
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return synchronized(stateLock) { contextBreakdownBySession[trimmed] }
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val parsed = parseContextBreakdown(response) ?: return synchronized(stateLock) {
+            contextBreakdownBySession[trimmed]
+        }
+        synchronized(stateLock) {
+            contextBreakdownBySession[trimmed] = parsed
+        }
+        return parsed
     }
 
     override suspend fun setLiveModel(
@@ -2506,6 +2580,23 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    /**
+     * Merge a streamed `usage` object into the session's cached usage, the way
+     * Desktop spreads it over the previous value
+     * (`apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/
+     * session-info.ts:403,439` and `.../message-stream.ts:383` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): an absent key keeps the last
+     * value rather than resetting it.
+     */
+    private fun applyStreamedUsage(durableId: String, payload: JsonObject) {
+        val usageObj = payload.obj("usage") ?: return
+        val nextUsage = parseSessionUsage(usageObj, cache.session(durableId)?.usage)
+        cache.session(durableId)?.let { row ->
+            val next = row.copy(usage = nextUsage)
+            if (next != row) cache.upsertSession(next)
+        }
+    }
+
     private suspend fun ensureRuntime(durableId: String): SessionBinding {
         synchronized(stateLock) {
             identities.runtimeFor(durableId)?.let { return SessionBinding(durableId, it) }
@@ -2560,6 +2651,9 @@ internal class LiveGatewaySessionRepository(
                 val worktreePath = payload.sessionWorktreePath()
                 val reportsBranch = "branch" in payload || "git_branch" in payload
                 val reportsWorktree = "cwd" in payload
+                val usageObj = payload.obj("usage")
+                val reportsUsage = usageObj != null
+                val nextUsage = usageObj?.let { parseSessionUsage(it, cache.session(durableId)?.usage) }
                 if (reportsBranch) {
                     if (branch == null) {
                         branchByDurableId.remove(durableId)
@@ -2574,11 +2668,12 @@ internal class LiveGatewaySessionRepository(
                         worktreeByDurableId[durableId] = worktreePath
                     }
                 }
-                if (reportsBranch || reportsWorktree) {
+                if (reportsBranch || reportsWorktree || reportsUsage) {
                     cache.session(durableId)?.let { row ->
                         val next = row.copy(
                             gitBranch = if (reportsBranch) branch else row.gitBranch,
                             worktreePath = if (reportsWorktree) worktreePath else row.worktreePath,
+                            usage = if (reportsUsage) nextUsage else row.usage,
                         )
                         if (next != row) cache.upsertSession(next)
                     }
@@ -2600,6 +2695,11 @@ internal class LiveGatewaySessionRepository(
                     releaseRuntimeGuard(runtimeId)
                 }
                 rehomed || settled
+            }
+
+            "session.usage" -> {
+                applyStreamedUsage(durableId, payload)
+                false
             }
 
             "message.start" -> {
@@ -2642,6 +2742,14 @@ internal class LiveGatewaySessionRepository(
 
             "message.complete" -> {
                 clearPendingInputsForRuntime(runtimeId)
+                // The authoritative end-of-turn figure. The Gateway stops and
+                // joins its usage ticker *before* emitting this precisely so no
+                // mid-turn `session.usage` tick can outlive it
+                // (`tui_gateway/server.py:12820-12822,13431` @
+                // `3ca096de5f8183cb2e0ec23673f294d5978656a3`); Desktop merges it
+                // the same way (`apps/desktop/src/app/session/hooks/
+                // use-message-stream/gateway-event/message-stream.ts:377-388`).
+                applyStreamedUsage(durableId, payload)
                 completeMessage(durableId, runtimeId, payload)
                 true
             }
@@ -4132,6 +4240,7 @@ private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Lon
 internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: String? = null): SessionSummary {
     val id = authoritativeId ?: root.string("id")
         ?: throw GatewayRpcException("Hermes returned a session without a durable id.")
+    val usageObj = root.obj("usage")
     return SessionSummary(
         id = id,
         title = root.string("title")?.ifBlank { "New session" } ?: "New session",
@@ -4142,6 +4251,7 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
         remoteProfile = root.string("profile") ?: root.string("profile_name"),
         gitBranch = root.sessionGitBranch(),
         worktreePath = root.sessionWorktreePath(),
+        usage = if (usageObj != null) parseSessionUsage(usageObj) else null,
     )
 }
 
@@ -4197,6 +4307,82 @@ internal fun parseRestSession(root: JsonObject, nowMillis: Long): SessionSummary
         actualCostUsd = root.primitive("actual_cost_usd")?.toDoubleOrNull(),
         estimatedCostUsd = root.primitive("estimated_cost_usd")?.toDoubleOrNull(),
         lineageRootId = root.jsonString("_lineage_root_id")?.takeIf(String::isNotBlank),
+    )
+}
+
+internal fun parseSessionUsage(
+    json: JsonObject,
+    previous: SessionUsage? = null,
+): SessionUsage {
+    val contextUsed = json.long("context_used")
+        ?: json.int("context_used")?.toLong()
+        ?: previous?.contextUsed
+    val contextMax = json.long("context_max")
+        ?: json.int("context_max")?.toLong()
+        ?: previous?.contextMax
+    val contextPercent = json.int("context_percent")
+        ?: json.double("context_percent")?.let { Math.round(it).toInt() }
+        ?: previous?.contextPercent
+    val total = json.long("total")
+        ?: json.int("total")?.toLong()
+        ?: previous?.total
+        ?: 0L
+    val input = json.long("input")
+        ?: json.int("input")?.toLong()
+        ?: previous?.input
+        ?: 0L
+    val output = json.long("output")
+        ?: json.int("output")?.toLong()
+        ?: previous?.output
+        ?: 0L
+    val calls = json.int("calls")
+        ?: previous?.calls
+        ?: 0
+    val model = json.string("model")
+        ?.let { redact(it).take(40) }
+        ?: previous?.model
+        ?: ""
+    return SessionUsage(
+        contextUsed = contextUsed?.takeIf { it >= 0 },
+        contextMax = contextMax?.takeIf { it > 0 },
+        contextPercent = contextPercent?.coerceIn(0, 100),
+        total = maxOf(0L, total),
+        input = maxOf(0L, input),
+        output = maxOf(0L, output),
+        calls = maxOf(0, calls),
+        model = model,
+    )
+}
+
+internal fun parseContextBreakdown(json: JsonObject): ContextBreakdown? {
+    val categories = json.array("categories").orEmpty().take(16).mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val id = obj.string("id")?.trim()?.take(40) ?: ""
+        val rawLabel = obj.string("label")?.trim() ?: id
+        val label = redact(rawLabel).take(40)
+        val tokens = maxOf(0L, obj.long("tokens") ?: obj.int("tokens")?.toLong() ?: 0L)
+        val color = obj.string("color")?.trim() ?: "var(--ui-text-tertiary)"
+        ContextUsageCategory(
+            id = id,
+            label = label,
+            tokens = tokens,
+            color = color,
+        )
+    }
+    val contextMax = maxOf(0L, json.long("context_max") ?: json.int("context_max")?.toLong() ?: 0L)
+    val contextPercent = (json.int("context_percent")
+        ?: json.double("context_percent")?.let { Math.round(it).toInt() }
+        ?: 0).coerceIn(0, 100)
+    val contextUsed = maxOf(0L, json.long("context_used") ?: json.int("context_used")?.toLong() ?: 0L)
+    val estimatedTotal = maxOf(0L, json.long("estimated_total") ?: json.int("estimated_total")?.toLong() ?: 0L)
+    val model = redact(json.string("model")?.trim() ?: "").take(40)
+    return ContextBreakdown(
+        categories = categories,
+        contextMax = contextMax,
+        contextPercent = contextPercent,
+        contextUsed = contextUsed,
+        estimatedTotal = estimatedTotal,
+        model = model,
     )
 }
 
@@ -4706,6 +4892,14 @@ private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<
 }
 
 private fun JsonObject.primitive(name: String): String? = (this[name] as? JsonPrimitive)?.content
+private fun JsonObject.obj(name: String): JsonObject? = this[name] as? JsonObject
+private fun JsonObject.array(name: String): JsonArray? = this[name] as? JsonArray
+private fun JsonObject.long(name: String): Long? = (this[name] as? JsonPrimitive)?.longOrNull
+    ?: primitive(name)?.toLongOrNull()
+private fun JsonObject.int(name: String): Int? = (this[name] as? JsonPrimitive)?.intOrNull
+    ?: primitive(name)?.toIntOrNull()
+private fun JsonObject.double(name: String): Double? = (this[name] as? JsonPrimitive)?.doubleOrNull
+    ?: primitive(name)?.toDoubleOrNull()
 
 /**
  * A JSON *boolean* field. A quoted `"true"` is not one — the wire says what it
@@ -4796,6 +4990,7 @@ internal val RESUMED_BUSY_STATUSES = setOf(
 )
 private val LIVE_RUNTIME_EVENT_TYPES = setOf(
     "session.info",
+    "session.usage",
     "message.start",
     "message.delta",
     "message.complete",

@@ -113,6 +113,8 @@ data class HermesTokens(
     val destructive: Color,
     /** The sixteen ANSI foregrounds terminal-shaped tool output paints with. */
     val ansi: HermesAnsiInk,
+    /** The eight inks the Context Usage breakdown paints its categories in. */
+    val contextUsage: HermesContextUsageInk,
 ) {
     companion object {
         // Tailwind amber-500 / emerald-500, the two literals Desktop's status
@@ -173,6 +175,7 @@ data class HermesTokens(
             val uiBlue = Color(0xFF0053FD)
             val uiCyan = if (dark) Color(0xFF6F9BA6) else Color(0xFF4C7F8C)
             val uiPurple = Color(0xFF9E94D5)
+            val uiOrange = Color(0xFFDB704B)
 
             // An ANSI hue's *normal* rung is Desktop's diff-foreground rung for
             // that seed: the same knob, doing the same job — take a saturated
@@ -315,6 +318,23 @@ data class HermesTokens(
                     cyan = diffInk(uiCyan),
                     brightCyan = ansiBright(uiCyan),
                 ),
+                // styles.css:217-224 @
+                // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — the eight
+                // `--context-usage-*` variables, each one an expression over
+                // the named colour set above rather than a literal. Only
+                // `system` tracks the preset (it is a wash of `--ui-base`);
+                // the rest are fixed per mode, exactly like the diff palette,
+                // so a breakdown reads the same in every skin.
+                contextUsage = HermesContextUsageInk(
+                    system = base.withAlpha(0.55f),
+                    tools = uiPurple,
+                    rules = diffAdded,
+                    skills = uiYellow,
+                    mcp = mixPremultiplied(diffRemoved, 72f, uiPurple),
+                    subagents = mixPremultiplied(uiBlue, 70f, uiCyan),
+                    memory = mixPremultiplied(uiOrange, 80f, uiYellow),
+                    conversation = uiCyan,
+                ),
             )
         }
     }
@@ -408,4 +428,42 @@ data class HermesAnsiInk(
     val brightMagenta: Color,
     val brightCyan: Color,
     val brightWhite: Color,
+)
+
+/**
+ * The eight inks the Context Usage breakdown paints a category in, resolved for
+ * one mode.
+ *
+ * The Gateway never sends a colour value: `agent/context_breakdown.py:19-28` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3` maps each of the eight known
+ * category ids to a CSS variable name (`var(--context-usage-*)`), and defaults
+ * an unknown id to `var(--ui-text-tertiary)` (`:155`). Desktop resolves those
+ * names against `apps/desktop/src/styles.css:217-224` at the same SHA:
+ *
+ * ```
+ * --context-usage-system:       color-mix(in srgb, var(--ui-base) 55%, transparent)
+ * --context-usage-tools:        var(--ui-purple)
+ * --context-usage-rules:        var(--ui-green)
+ * --context-usage-skills:       var(--ui-yellow)
+ * --context-usage-mcp:          color-mix(in srgb, var(--ui-red) 72%, var(--ui-purple))
+ * --context-usage-subagents:    color-mix(in srgb, var(--ui-blue) 70%, var(--ui-cyan))
+ * --context-usage-memory:       color-mix(in srgb, var(--ui-orange) 80%, var(--ui-yellow))
+ * --context-usage-conversation: var(--ui-cyan)
+ * ```
+ *
+ * Android has no CSS variables, so the same expressions are resolved here, over
+ * the same named colour set (`styles.css:210-216`, `:root.dark:556-558`). The
+ * fields are named for the *variable*, not for the category id, so the mapping
+ * back to `styles.css` stays one-to-one; `resolveCategoryColor` is the only
+ * place that joins a Gateway id to one of them.
+ */
+data class HermesContextUsageInk(
+    val system: Color,
+    val tools: Color,
+    val rules: Color,
+    val skills: Color,
+    val mcp: Color,
+    val subagents: Color,
+    val memory: Color,
+    val conversation: Color,
 )

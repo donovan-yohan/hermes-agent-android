@@ -58,6 +58,9 @@ import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
+import com.hermesagent.mobile.data.session.ContextBreakdown
+import com.hermesagent.mobile.data.session.ContextMeterState
+import com.hermesagent.mobile.data.session.SessionUsage
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputKind
 import com.hermesagent.mobile.data.gateway.PendingInputRequest
@@ -233,6 +236,7 @@ data class ChatUiState(
     val composer: ComposerUiState = ComposerUiState(),
     /** Connection-owned attached-image loader; null while disconnected. */
     val imageLoader: GatewayImageLoader? = null,
+    val contextMeter: ContextMeterState? = null,
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
@@ -273,6 +277,24 @@ internal class ChatViewModel(
     /** Occurrence-keyed preview bitmaps for image drafts; UI-only, wiped with drafts. */
     private val attachmentThumbnails = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
     private val activeSessionId = MutableStateFlow<String?>(null)
+    private val activeContextBreakdown = MutableStateFlow<ContextBreakdown?>(null)
+    private val contextBreakdownLoading = MutableStateFlow(false)
+    private var contextBreakdownJob: Job? = null
+
+    /**
+     * Which read owns [contextBreakdownLoading]. A cancelled job still runs its
+     * `finally`, and it may run *after* its successor set the flag — without
+     * this, a session switch clears "Loading breakdown…" out from under the new
+     * session's own in-flight read.
+     */
+    private var contextBreakdownGeneration = 0L
+
+    /**
+     * Which sessions this connection has already asked for a breakdown. A
+     * per-session marker, not "do we have one yet": a backend that answers null
+     * — or fails — must not turn every subsequent signal into another RPC.
+     */
+    private val contextBreakdownAttempted = mutableSetOf<String>()
     private val notice = MutableStateFlow<String?>(null)
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
@@ -371,15 +393,17 @@ internal class ChatViewModel(
                     },
                     localComposerState,
                 ) { navigation, local -> navigation.copy(localComposer = local) },
-            ) { composerState, voiceState, navigation ->
-                Triple(composerState, voiceState, navigation)
+                combine(activeContextBreakdown, contextBreakdownLoading, ::ContextMeterBundle),
+            ) { composerState, voiceState, navigation, meterBundle ->
+                ComposerBundle(composerState, voiceState, navigation, meterBundle)
             },
         ) { imageLoader, composerBundle -> composerBundle to imageLoader },
     ) { cacheState, queryText, draftText, activeId, bundle ->
         val composerBundle = bundle.first
         val imageLoader = bundle.second
-        val navigation = composerBundle.third
-        val voiceState = composerBundle.second
+        val navigation = composerBundle.navigation
+        val voiceState = composerBundle.voice
+        val meterBundle = composerBundle.contextMeter
         val running = cacheState.sessions.values.count { it.status in PROMPT_BLOCKING_STATUSES }
         // SessionCache publishes this alias in the same atomic update that
         // moves a compressed parent to its canonical tip. Resolve it here so
@@ -466,6 +490,43 @@ internal class ChatViewModel(
                     kind = pending.key.kind,
                 )
             }
+        val breakdown = if (displayedActiveId != null) meterBundle.breakdown else null
+        val breakdownLoading = meterBundle.loading
+        val streamedUsage = active?.usage ?: SessionUsage()
+        // `gaugeUsage`: the breakdown overrides the three context fields and
+        // nothing else, so the meter and the panel can never disagree —
+        //   `contextBreakdown ? { ...currentUsage, context_max, context_percent,
+        //    context_used } : currentUsage`
+        // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:254-265` @
+        // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). `total` and `model` stay
+        // the streamed ones: a resumed session whose breakdown reports
+        // `context_max: 0` (no compressor, `agent/context_breakdown.py:130-131`)
+        // has no measured usage either, and Desktop hides the item rather than
+        // painting the estimate under it.
+        val gaugeUsage = if (breakdown != null) {
+            streamedUsage.copy(
+                contextUsed = breakdown.contextUsed,
+                contextMax = breakdown.contextMax.takeIf { it > 0 },
+                contextPercent = breakdown.contextPercent,
+            )
+        } else {
+            streamedUsage
+        }
+
+        val contextLabel = usageContextLabel(gaugeUsage.contextUsed, gaugeUsage.contextMax, gaugeUsage.total)
+        val contextDetail = contextBarLabel(gaugeUsage.contextPercent?.toDouble(), gaugeUsage.contextMax)
+        val contextMeter = if (contextLabel.isNotEmpty()) {
+            ContextMeterState(
+                label = contextLabel,
+                detail = contextDetail,
+                usage = gaugeUsage,
+                breakdown = breakdown,
+                loading = breakdownLoading,
+            )
+        } else {
+            null
+        }
+
         ChatUiState(
             voice = voiceState,
             sessionRows = buildSessionRows(
@@ -498,12 +559,106 @@ internal class ChatViewModel(
             backgroundPendingInput = backgroundPending,
             connection = navigation.connection,
             notice = navigation.notice,
-            composer = composerBundle.first.copy(runtime = runtime),
+            composer = composerBundle.composer.copy(runtime = runtime),
             imageLoader = imageLoader,
+            contextMeter = contextMeter,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
+        // The breakdown is a *transition* reader, not a poller. Desktop's effect
+        // re-runs only when the focused session or `busy` changes
+        // (`apps/desktop/src/app/shell/hooks/use-context-breakdown.ts:31-57` @
+        // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). `cache.state` here is
+        // not that: it republishes on every transcript append of *any* session
+        // (`SessionCache.kt:207-242`), so a background turn's `message.delta`
+        // stream would re-enter this body dozens of times a second. The guard
+        // that actually bounds the RPC is `contextBreakdownAttempted`: a
+        // session is asked once per (session change, turn end) transition and
+        // "we still have no breakdown" is never a reason to ask again. The
+        // derived signal and `distinctUntilChanged` only thin the emissions
+        // this body sees; removing them changes work, not behaviour.
+        viewModelScope.launch {
+            var observed: ContextFetchSignal? = null
+
+            combine(
+                activeSessionId,
+                cache.state,
+                repository.activeTurns,
+                repository.connectionState,
+            ) { activeId, cacheState, turns, connection ->
+                val activeSession = activeId?.let { cacheState.rehomes[it] ?: it }?.let(cacheState.sessions::get)
+                val busy = activeSession?.status in STREAMING_STATUSES ||
+                    (activeId != null && activeId in turns) ||
+                    activeSession?.status == SessionStatus.Working
+                ContextFetchSignal(
+                    sessionId = activeId,
+                    busy = busy,
+                    connected = connection.status == GatewayConnectionStatus.Connected,
+                    // Asked, never forced: `loadContextBreakdown` refuses to open
+                    // a session, so the read waits for navigation to bind one.
+                    runtimeReady = activeId != null && repository.hasLiveRuntime(activeId),
+                )
+            }.distinctUntilChanged().collect { signal ->
+                val previous = observed
+                observed = signal
+                val sessionChanged = previous?.sessionId != signal.sessionId
+                val turnEnded = previous?.busy == true && !signal.busy && !sessionChanged
+
+                if (sessionChanged) {
+                    contextBreakdownJob?.cancel()
+                    contextBreakdownJob = null
+                    activeContextBreakdown.value = null
+                    contextBreakdownLoading.value = false
+                    // Re-arm: coming back to a session re-reads it, exactly as
+                    // Desktop's `sessionId` dependency does.
+                    signal.sessionId?.let(contextBreakdownAttempted::remove)
+                }
+                if (!signal.connected) {
+                    // The next backend is a different machine. Nothing that was
+                    // read on this one counts as read on it.
+                    contextBreakdownAttempted.clear()
+                }
+                if (signal.busy) {
+                    // Mid-turn the transcript changes on every delta and the
+                    // Gateway already streams measured usage, so an estimate
+                    // would be both stale and wasteful (`use-context-breakdown
+                    // .ts:32-36`).
+                    contextBreakdownJob?.cancel()
+                    contextBreakdownJob = null
+                    contextBreakdownLoading.value = false
+                    return@collect
+                }
+
+                val sessionId = signal.sessionId ?: return@collect
+                if (!signal.connected || !signal.runtimeReady) return@collect
+                val firstAttempt = contextBreakdownAttempted.add(sessionId)
+                if (!firstAttempt && !turnEnded) return@collect
+
+                val generation = ++contextBreakdownGeneration
+                contextBreakdownJob?.cancel()
+                contextBreakdownLoading.value = true
+                contextBreakdownJob = viewModelScope.launch {
+                    try {
+                        val breakdown = repository.loadContextBreakdown(sessionId)
+                        // A resolved-null answer never clears a good breakdown:
+                        // `use-context-breakdown.ts:43` @ 3ca096de only sets
+                        // fetched when the payload is truthy.
+                        if (activeSessionId.value == sessionId && breakdown != null) {
+                            activeContextBreakdown.value = breakdown
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // A failure keeps the last breakdown for that session
+                    } finally {
+                        if (generation == contextBreakdownGeneration) {
+                            contextBreakdownLoading.value = false
+                        }
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             composerQueueController.state.collect { queueState.value = it }
         }
@@ -2537,6 +2692,29 @@ internal class ChatViewModel(
         val attachments: List<ComposerAttachmentDraft> = emptyList(),
         /** Occurrence-keyed preview bitmaps for image drafts; UI-only. */
         val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
+    )
+
+    /**
+     * The only four things that make a breakdown worth re-reading. Everything
+     * else `cache.state` publishes collapses in `distinctUntilChanged`.
+     */
+    private data class ContextFetchSignal(
+        val sessionId: String?,
+        val busy: Boolean,
+        val connected: Boolean,
+        val runtimeReady: Boolean,
+    )
+
+    private data class ContextMeterBundle(
+        val breakdown: ContextBreakdown? = null,
+        val loading: Boolean = false,
+    )
+
+    private data class ComposerBundle(
+        val composer: ComposerUiState,
+        val voice: VoiceUiState,
+        val navigation: NavigationState,
+        val contextMeter: ContextMeterBundle,
     )
 
     companion object {

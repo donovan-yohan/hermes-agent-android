@@ -608,6 +608,76 @@ class ThemeSemanticParityTest {
         }
     }
 
+    @Test
+    fun `the context usage inks derive from desktop's css variables in each mode`() {
+        // styles.css:217-224 @ 3ca096de5f8183cb2e0ec23673f294d5978656a3 — the
+        // eight `--context-usage-*` variables, each an expression over the named
+        // colour set at `styles.css:210-216` / `:root.dark:556-558`. The Gateway
+        // never sends a value for a category, only one of these names
+        // (`agent/context_breakdown.py:19-28`), so if this drifts the whole
+        // panel silently paints one flat colour.
+        for (preset in BuiltinThemes.ALL) {
+            for (requested in listOf(false, true)) {
+                val palette = preset.paletteFor(requested)
+                val dark = rendersDark(palette.background, requested)
+                val ink = HermesTokens.from(palette, dark).contextUsage
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                val uiYellow = Color(0xFFC08532)
+                val uiBlue = Color(0xFF0053FD)
+                val uiPurple = Color(0xFF9E94D5)
+                val uiOrange = Color(0xFFDB704B)
+                val uiCyan = if (dark) Color(0xFF6F9BA6) else Color(0xFF4C7F8C)
+                val uiGreen = if (dark) Color(0xFF55A583) else Color(0xFF1F8A65)
+                val uiRed = if (dark) Color(0xFFE75E78) else Color(0xFFCF2D56)
+
+                assertEquals(
+                    "$where: --context-usage-system",
+                    palette.foreground.withAlpha(0.55f).argb(),
+                    ink.system.argb(),
+                )
+                assertEquals("$where: --context-usage-tools", uiPurple.argb(), ink.tools.argb())
+                assertEquals("$where: --context-usage-rules", uiGreen.argb(), ink.rules.argb())
+                assertEquals("$where: --context-usage-skills", uiYellow.argb(), ink.skills.argb())
+                assertEquals(
+                    "$where: --context-usage-mcp",
+                    mixPremultiplied(uiRed, 72f, uiPurple).argb(),
+                    ink.mcp.argb(),
+                )
+                assertEquals(
+                    "$where: --context-usage-subagents",
+                    mixPremultiplied(uiBlue, 70f, uiCyan).argb(),
+                    ink.subagents.argb(),
+                )
+                assertEquals(
+                    "$where: --context-usage-memory",
+                    mixPremultiplied(uiOrange, 80f, uiYellow).argb(),
+                    ink.memory.argb(),
+                )
+                assertEquals("$where: --context-usage-conversation", uiCyan.argb(), ink.conversation.argb())
+
+                // Colour *is* the panel's only encoding of which category is
+                // which, so two categories sharing an ink is the same failure as
+                // the port having none at all.
+                val all = listOf(
+                    "system" to ink.system,
+                    "tools" to ink.tools,
+                    "rules" to ink.rules,
+                    "skills" to ink.skills,
+                    "mcp" to ink.mcp,
+                    "subagents" to ink.subagents,
+                    "memory" to ink.memory,
+                    "conversation" to ink.conversation,
+                )
+                assertEquals(
+                    "$where: the eight context-usage inks must stay distinct",
+                    all.size,
+                    all.map { it.second.argb() }.toSet().size,
+                )
+            }
+        }
+    }
+
     private fun tokensFor(name: String, dark: Boolean): HermesTokens {
         val palette = BuiltinThemes.resolve(name).paletteFor(dark)
         return HermesTokens.from(palette, rendersDark(palette.background, dark))

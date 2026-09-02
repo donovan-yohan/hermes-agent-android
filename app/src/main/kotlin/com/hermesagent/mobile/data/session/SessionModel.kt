@@ -135,6 +135,8 @@ data class SessionSummary(
      * identity: [id] is.
      */
     val lineageRootId: String? = null,
+    /** Latest coalesced Gateway `usage` from `session.info` or `session.usage`. */
+    val usage: SessionUsage? = null,
 )
 
 /** A transient backend notice rendered at the live turn tail, never stored as transcript content. */
