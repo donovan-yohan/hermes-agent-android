@@ -204,6 +204,22 @@ class ModelVisibilityTest {
     }
 
     @Test
+    fun `the picker drops the virtual MoA row before the shortlist resolves`() {
+        // `providers?.filter(provider => provider.slug.toLowerCase() !== 'moa')`
+        // (`model-catalog-menu.tsx:172-175`). Resolving over the raw catalog
+        // would expand the preset into everyone's curated default, including
+        // the customised sets that never named it.
+        val providers = listOf(provider("acme", "alpha"), provider("MoA", "council"))
+        val offered = pickerProviders(providers)
+
+        assertEquals(listOf("acme"), offered.map(ModelProvider::id))
+        assertFalse(effectiveVisibleKeys(null, offered).any { it.startsWith("MoA::") })
+        // The Models sheet resolves over the unfiltered list, exactly as
+        // Desktop's dialog does (`model-visibility-dialog.tsx:61-66`).
+        assertTrue(effectiveVisibleKeys(null, providers).contains(modelVisibilityKey("MoA", "council")))
+    }
+
+    @Test
     fun `a provider that appeared after the last customisation is still offered`() {
         // `resolveVisibleKeys` expands any provider with neither a stored key
         // nor a sentinel (`model-visibility.ts:134-165`); reaching the picker

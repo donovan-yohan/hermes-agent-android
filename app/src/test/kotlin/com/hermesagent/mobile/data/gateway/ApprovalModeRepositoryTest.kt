@@ -19,6 +19,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
@@ -264,6 +266,55 @@ class ApprovalModeRepositoryTest {
     }
 
     @Test
+    fun `a session_info racing a profile switch cannot repaint the profile just left`() = runTest {
+        val rpc = FakeRpc()
+        val repository = repository(rpc)
+        runCurrent()
+
+        // A launch-profile `session.info` is applied on the event pump while the
+        // rail's switch lands on another thread. The scope test and the publish
+        // have to be one critical section: read under its own acquisition, the
+        // gate can see the launch profile, the switch can land, and the publish
+        // then paints the new profile's chip with the old one's posture — the
+        // answer `setProfileRouting` had just dropped, and one a failed scoped
+        // `config.get` would leave standing. Raw threads because a single test
+        // dispatcher cannot interleave two of them inside one function.
+        val info = Json.parseToJsonElement(
+            """{"stored_session_id":"session-1","running":false,"approval_mode":"off"}""",
+        ).jsonObject
+        val launchScope = ProfileRouting()
+        val namedScope = ProfileRouting(activeProfile = "beta")
+        val stop = AtomicBoolean(false)
+        val pump = thread(name = "session-info-pump") {
+            while (!stop.get()) repository.applyStreamedApprovalMode(info)
+        }
+
+        var repaintedOnRound: Int? = null
+        try {
+            repeat(RACE_ROUNDS) { round ->
+                repository.setProfileRouting(launchScope)
+                Thread.yield()
+                repository.setProfileRouting(namedScope)
+                // Beta is on the rail before this line: nothing the pump is
+                // holding may reach the chip any more.
+                repeat(SETTLE_READS) {
+                    if (repaintedOnRound == null && repository.approvalMode.value.mode != null) {
+                        repaintedOnRound = round
+                    }
+                }
+            }
+        } finally {
+            stop.set(true)
+            pump.join()
+        }
+
+        assertNull(
+            "a launch-profile session.info repainted the switched-to profile on round $repaintedOnRound",
+            repaintedOnRound,
+        )
+    }
+
+    @Test
     fun `an accepted write whose echo carries no value keeps the mode that was written`() = runTest {
         val rpc = FakeRpc()
         val repository = repository(rpc)
@@ -302,6 +353,15 @@ class ApprovalModeRepositoryTest {
 
         assertNull(repository.approvalMode.value.mode)
         assertEquals(false, repository.approvalMode.value.bypassActive)
+    }
+
+    /**
+     * Enough switches to land one inside the window a second lock acquisition
+     * would open; the assertion itself holds on every round of a correct build.
+     */
+    private companion object {
+        const val RACE_ROUNDS = 2_000
+        const val SETTLE_READS = 64
     }
 
     private fun kotlinx.coroutines.test.TestScope.repository(rpc: FakeRpc) = LiveGatewaySessionRepository(

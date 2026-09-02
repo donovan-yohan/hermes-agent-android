@@ -202,12 +202,42 @@ fun providerVisibility(
 }
 
 /**
+ * The catalog's virtual Mixture-of-Agents provider. Its `models` are MoA preset
+ * *names*, not model ids (`hermes_cli/inventory.py:1000-1015` @ `3ca096de`).
+ */
+const val MOA_PROVIDER_ID = "moa"
+
+/**
+ * The providers the picker groups: the catalog minus the virtual `moa` row
+ * (`model-catalog-menu.tsx:172-175` @ `3ca096de`, `providers?.filter(provider
+ * => provider.slug.toLowerCase() !== 'moa')`).
+ *
+ * Desktop drops it there because it renders presets as their own searchable
+ * section instead (`:165-170,194-200`); this app has not ported presets at all
+ * (`docs/parity/model-visibility.md`), so dropping the row is what keeps them
+ * off a surface that cannot honour them — a tap would send a preset name where
+ * a model id belongs.
+ *
+ * It has to happen **before** [effectiveVisibleKeys] resolves, exactly as it
+ * does upstream (`:182-185` resolves over `pickerProviders`): resolving over
+ * the raw catalog expands `Mixture of Agents` into the curated default for
+ * everyone, including the customised people whose stored set never named it.
+ *
+ * The Models sheet deliberately does **not** filter — Desktop's own dialog
+ * lists every provider the catalog carries that has models at all
+ * (`model-visibility-dialog.tsx:61-64`).
+ */
+fun pickerProviders(providers: List<ModelProvider>): List<ModelProvider> =
+    providers.filterNot { it.id.equals(MOA_PROVIDER_ID, ignoreCase = true) }
+
+/**
  * The provider-grouped rows the picker shows, ported from `groupModels`
  * (`apps/desktop/src/app/shell/model-catalog-menu.tsx:546-601` @ `3ca096de`).
  *
- * [visible] is the **resolved** display set, never the raw stored one: Desktop
- * resolves it against the catalog it actually fetched before calling
- * `groupModels` (`:179-188`, `shownKeys = effectiveVisibleKeys(visibleModels,
+ * [providers] is [pickerProviders], never the raw catalog, and [visible] is the
+ * **resolved** display set, never the raw stored one: Desktop resolves both
+ * against the catalog it actually fetched before calling `groupModels`
+ * (`:179-188`, `shownKeys = effectiveVisibleKeys(visibleModels,
  * pickerProviders)`), so the curated default flows through
  * `expandProviderDefaults` — which honours the host's `featured_models` — and a
  * provider that appeared after the last customisation is expanded rather than

@@ -2206,11 +2206,21 @@ internal class LiveGatewaySessionRepository(
      * those while scoped elsewhere would flip the control to another profile's
      * posture, so a named scope takes its answer from the scoped `config.get`
      * and `config.set` echo alone.
+     *
+     * The scope test and the publish are **one** critical section. Read under a
+     * separate acquisition, a [setProfileRouting] landing between the two would
+     * let a launch-profile event repaint — and confirm — the mode the profile
+     * switch had just dropped, which is exactly the answer that clear exists to
+     * remove; it would then survive a failed scoped `config.get`, because that
+     * read is silent.
+     *
+     * `internal` so the two-thread race can be driven directly: a single test
+     * dispatcher cannot interleave two threads inside one function.
      */
-    private fun applyStreamedApprovalMode(payload: JsonObject) {
+    internal fun applyStreamedApprovalMode(payload: JsonObject) {
         if ("approval_mode" !in payload && "yolo" !in payload) return
-        if (activeProfileParam() != null) return
         synchronized(stateLock) {
+            if (profileRouting.activeProfile != null) return
             // This is an authoritative answer, so it also fences any read or
             // write still in flight: whatever they were told is older.
             approvalModeRevision++

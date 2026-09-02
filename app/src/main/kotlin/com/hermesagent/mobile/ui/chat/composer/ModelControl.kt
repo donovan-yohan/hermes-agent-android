@@ -51,6 +51,7 @@ import com.hermesagent.mobile.data.composer.ModelProvider
 import com.hermesagent.mobile.data.composer.ModelControlsSnapshot
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.effectiveVisibleKeys
+import com.hermesagent.mobile.data.composer.pickerProviders
 import com.hermesagent.mobile.data.composer.visibleModelGroups
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
@@ -236,6 +237,16 @@ private fun ModelControlSheet(
     val selectedOption = catalog?.providers
         ?.firstOrNull { it.id == selected?.provider }
         ?.models?.firstOrNull { it.id == selected?.model }
+    // Desktop's `pickerProviders`/`shownKeys` pair, resolved once per catalog
+    // rather than per keystroke, the way the memo upstream and this app's own
+    // Models sheet both do (`model-catalog-menu.tsx:172-185` @ `3ca096de`,
+    // `ModelVisibilitySheet.kt`). The `moa` row is dropped before the
+    // resolution, or the curated default would expand MoA presets into a
+    // picker that cannot select one.
+    val offeredProviders = remember(catalog) { pickerProviders(catalog?.providers.orEmpty()) }
+    val shownKeys = remember(visibleModels, offeredProviders) {
+        effectiveVisibleKeys(visibleModels, offeredProviders)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -295,15 +306,14 @@ private fun ModelControlSheet(
                 // rules are `visibleModelGroups`, ported from Desktop's own
                 // `groupModels` (`model-catalog-menu.tsx:546-601` @ `3ca096de`).
                 //
-                // Resolved here, against the catalog actually fetched, exactly
-                // as Desktop resolves `shownKeys` before calling `groupModels`
-                // (`:179-188`): the shortlist reaching the picker is never the
-                // raw stored set, so the curated default honours the host's
-                // `featured_models` and a provider added since the last
-                // customisation is expanded rather than silently dropped.
-                val shownKeys = effectiveVisibleKeys(visibleModels, catalog.providers)
+                // Both the provider list and the shortlist are the resolved
+                // ones from above, exactly as Desktop groups `pickerProviders`
+                // under `shownKeys` (`:179-188`): the set reaching the picker
+                // is never the raw stored one, so the curated default honours
+                // the host's `featured_models` and a provider added since the
+                // last customisation is expanded rather than silently dropped.
                 val visibleProviders = visibleModelGroups(
-                    providers = catalog.providers,
+                    providers = offeredProviders,
                     query = modelQuery,
                     visible = shownKeys,
                     current = selected,

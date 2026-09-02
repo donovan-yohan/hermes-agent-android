@@ -25,6 +25,7 @@ Every `path:line` below is against that SHA.
 | The `Edit models…` row, its glyph, and that it closes the catalog | `apps/desktop/src/app/shell/model-catalog-menu.tsx:521-535` |
 | That the picker honours the set, that search spans everything, and that the current model is pinned | `apps/desktop/src/app/shell/model-catalog-menu.tsx:546-601` |
 | That the picker resolves the shortlist against the catalog it fetched before grouping | `apps/desktop/src/app/shell/model-catalog-menu.tsx:179-188` |
+| That the picker groups the catalog **minus** the virtual `moa` provider, and where that row comes from | `apps/desktop/src/app/shell/model-catalog-menu.tsx:165-175`, `hermes_cli/inventory.py:1000-1015` |
 | Every visible string | `apps/desktop/src/i18n/en.ts:2847-2852,2861` |
 | That `model.options` carries no visibility field, and what `featured_models` is | `apps/desktop/src/types/hermes.ts:384-427`, `tui_gateway/methods_complete.py:469-490`, `hermes_cli/inventory.py:513-568` |
 | Which providers the dialog lists | `apps/desktop/src/components/model-visibility-dialog.tsx:61-64` |
@@ -37,7 +38,7 @@ Every `path:line` below is against that SHA.
 | `$visibleModels` | `localStorage['hermes.desktop.visible-models']`, one global entry | `ComposerControlsStore.visibleModels(scope)`, one DataStore document per connection/profile scope |
 | null vs. empty set | null = never customised, empty = everything hidden (`model-visibility.ts:87-89,144-146`) | the same two states, and `ModelVisibilityCodec` keeps them apart on disk |
 | hide-all sentinel | `${provider}::` (`:16-26`) | `emptyProviderSentinelKey`, preserved by every write and stripped for display |
-| curated default | `featured_models`, else the top 50 collapsed families (`:114-132`) | `expandProviderDefaults`, over `ModelProvider.featured` parsed from `model.options`. Both the picker and the Models sheet reach it the way Desktop does — through `effectiveVisibleKeys(stored, providers)`, resolved against the catalog actually fetched (`model-catalog-menu.tsx:182-188`) — so `groupModels`' top-N `else` branch has no counterpart here |
+| curated default | `featured_models`, else the top 50 collapsed families (`:114-132`) | `expandProviderDefaults`, over `ModelProvider.featured` parsed from `model.options`. Both the picker and the Models sheet reach it the way Desktop does — through `effectiveVisibleKeys(stored, providers)`, resolved against the catalog actually fetched (`model-catalog-menu.tsx:182-188`) — so `groupModels`' top-N `else` branch has no counterpart here. The picker resolves over `pickerProviders` and the sheet over the unfiltered list, which is the same split Desktop makes (`:172-175` against `model-visibility-dialog.tsx:61-66`) |
 | collapsed providers | `localStorage['hermes.desktop.collapsed-providers']`, shared with the picker | sheet-local state, for the life of the sheet |
 | model display name | `modelDisplayParts` prettifier (`lib/model-status-label.ts:74-91`) | the Gateway's own `label`, which is what this app's picker has always rendered |
 | provider setup | `onOpenProviders()` opens the provider dialog | absent; the footer ships disabled behind the marker chip |
@@ -59,7 +60,7 @@ Every `path:line` below is against that SHA.
 | Models dialog is a centred modal `Dialog` | mobile-adaptation | Modal bottom sheet | Mobile touch viewports use bottom sheets rather than centred desktop dialogs |
 | Visibility is one global `localStorage` entry across every host and profile | mobile-adaptation | One stored document per connection/profile scope | Two Gateways are two catalogs; a shortlist carried across them would name models the other host cannot serve, which is the same rule the saved model pick already follows |
 | `Edit models…` is the last row of the whole catalog menu, after the MoA presets and the host footer (`model-catalog-menu.tsx:527-535`) | mobile-adaptation | Last row of the model list, above the adapted Reasoning and Fast sections | Desktop's reasoning and fast controls are per-row submenus, not sections; the phone sheet has them as sections below, so "the end of the list" is the row directly after the models |
-| MoA preset rows above the footer (`model-catalog-menu.tsx:495-518`) | omission | Absent | deferred: #73 — Mixture-of-Agents presets are their own capability and no part of this batch |
+| MoA preset rows above the footer (`model-catalog-menu.tsx:495-518`) | omission | Absent, and the virtual `moa` provider is filtered out before the shortlist resolves | deferred: #73 — Mixture-of-Agents presets are their own capability and no part of this batch. `pickerProviders` is Desktop's own filter (`:172-175`); without it the curated default would expand a preset name into the picker as though it were a model. The Models sheet keeps the row, exactly as Desktop's dialog does (`model-visibility-dialog.tsx:61-64`) |
 | `Add provider…` closes the dialog and opens provider setup | omission | Visible and disabled behind the marker chip | pill-owed: #101 — provider setup is not ported, so the control is marked rather than missing |
 | Collapsed providers persist in `localStorage` and are shared with the picker (`store/provider-collapse.ts:22`) | omission | Collapse lives for the life of the sheet | deferred: #73 — the picker here has no collapse to share, and a presentation preference is a detail rather than a control |
 | Model names run through `modelDisplayParts`, which strips date pins and lifts a variant tag out of the name | omission | The Gateway's own `label` is rendered | deferred: #73 — the prettifier is a shared label concern for every model surface, and the picker already renders the same string today |
@@ -74,7 +75,8 @@ Every `path:line` below is against that SHA.
 |---|---|
 | A `-fast` sibling collapses into its base, a stray `-fast` model stands alone, and a date-pinned snapshot superseded by its alias is dropped | `ModelVisibilityTest` |
 | The curated default is the top 50 families, and the backend's `featured_models` wins where a provider ships one | `ModelVisibilityTest` |
-| The picker's own default is the resolved curated set, not a bare top-N, and a provider that appeared after the last customisation is still offered | `ModelVisibilityTest` |
+| `visibleModelGroups` over a resolved set is the curated default rather than a bare top-N, and it keeps a provider the stored set never named | `ModelVisibilityTest` |
+| The picker drops the virtual `moa` row before resolving, while the Models sheet's own resolution keeps it | `ModelVisibilityTest` |
 | A provider that was never touched keeps its default; a hide-all records a sentinel that survives another provider's edit and does not read as a model | `ModelVisibilityTest` |
 | Re-enabling one model clears only that provider's sentinel and restores nothing else | `ModelVisibilityTest` |
 | The provider master switch enables every family, hiding records the sentinel, and a provider with no models strands none | `ModelVisibilityTest` |
@@ -83,7 +85,8 @@ Every `path:line` below is against that SHA.
 | The stored document round-trips, keeps sentinels, tells "everything hidden" from "never customised", and fails closed on a future version | `HermesPreferencesTest` |
 | A shortlist restores only for its own connection/profile scope | `HermesPreferencesTest` |
 | The saved shortlist reaches the picker, and a toggle publishes then persists it | `ApprovalModeViewModelTest` |
-| `Edit models…` sits after the last model row and before the Reasoning section; the sheet carries Desktop's title, search and uppercase provider label; a switch hides one model and the reopened picker stops offering it; a provider added after the last customisation still reaches the picker; the provider checkbox bulk-toggles and reports its partial state; `Add provider…` ships disabled behind the marker chip | `ModelVisibilityJourneyTest` under Robolectric |
+| `Edit models…` sits after the last model row and before the Reasoning section; the sheet carries Desktop's title, search and uppercase provider label; a switch hides one model and the reopened picker stops offering it; the provider checkbox bulk-toggles and reports its partial state; `Add provider…` ships disabled behind the marker chip | `ModelVisibilityJourneyTest` under Robolectric |
+| The picker composable's own default is the host's `featured_models` shortlist rather than a bare top-N, a provider added after the last customisation still reaches it, and no MoA preset is ever offered there while the Models sheet still lists one | `ModelVisibilityJourneyTest` under Robolectric |
 
 ## Visual report
 

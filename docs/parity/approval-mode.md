@@ -82,5 +82,6 @@ Every `path:line` below is against that SHA.
 | An endpoint switch forgets everything the previous host said | `ApprovalModeRepositoryTest` |
 | The control is hidden until the mode is known and while the Gateway is not connected; connecting reads it once; re-picking the selected mode writes nothing; a refusal raises the notice | `ApprovalModeViewModelTest` |
 | A profile-scope change drops the previous profile's answer: nothing is shown until the new scope's `config.get` answers, and a failed read leaves it showing nothing | `ApprovalModeRepositoryTest` |
+| A launch-profile `session.info` racing that scope change cannot repaint the profile just left: the scope test and the publish are one critical section | `ApprovalModeRepositoryTest` |
 | An accepted write whose echo omits `value` keeps the mode that was written rather than confirming Manual | `ApprovalModeRepositoryTest` |
 | The chip's label and Desktop's `Approval mode: {mode}` spoken name; the menu title; three rows in Desktop's order with every label and description verbatim; picking a row writes that mode; the chip sits to the right of the context meter | `ApprovalModeJourneyTest` under Robolectric |

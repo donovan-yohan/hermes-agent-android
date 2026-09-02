@@ -173,6 +173,45 @@ class ModelVisibilityJourneyTest {
     }
 
     @Test
+    fun `the picker's default is the host's featured shortlist, not a bare top-N`() {
+        // Never customised, so the picker resolves the default itself
+        // (`model-catalog-menu.tsx:179-188` @ `3ca096de`) and
+        // `expandProviderDefaults` cuts the provider that ships a
+        // `featured_models` manifest down to it (`model-visibility.ts:114-132`).
+        launch(catalog = CATALOG_WITH_FEATURED)
+        openPicker()
+
+        compose.onNodeWithContentDescription("Use two from Curated").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Use one from Curated").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Use three from Curated").assertDoesNotExist()
+        // A provider the manifest says nothing about keeps every family it ships.
+        compose.onNodeWithContentDescription("Use four from Plain").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the picker never offers a MoA preset, and the Models sheet still lists one`() {
+        // The Gateway ships MoA presets as a virtual `moa` provider whose
+        // "models" are preset names (`hermes_cli/inventory.py:1000-1015`).
+        // Desktop keeps that row out of the picker's groups
+        // (`model-catalog-menu.tsx:172-175`) and renders presets as their own
+        // section; presets are not ported here, so resolving the shortlist over
+        // that row would expand a preset into the curated default and offer it
+        // where a model id belongs.
+        launch(catalog = CATALOG_WITH_MOA)
+        openPicker()
+
+        compose.onNodeWithContentDescription("Use council from Mixture of Agents").assertDoesNotExist()
+        compose.onNodeWithText("Mixture of Agents").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Use alpha from Acme").assertIsDisplayed()
+
+        // Desktop's own dialog filters nothing (`model-visibility-dialog.tsx:61-64`),
+        // so the row a person can still curate stays curatable.
+        compose.onNodeWithTag(EDIT_MODELS_TAG).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(modelVisibilityToggleTag("moa", "council")).assertIsDisplayed()
+    }
+
+    @Test
     fun `the provider checkbox bulk-toggles, and reports its partial state`() {
         launch()
         openModelsSheet()
@@ -226,6 +265,26 @@ class ModelVisibilityJourneyTest {
         /** [CATALOG] plus a provider authenticated after the last edit. */
         val CATALOG_WITH_NEWCOMER = CATALOG.copy(
             providers = CATALOG.providers + ModelProvider("newcomer", "Newcomer", listOf(ModelOption("delta"))),
+        )
+
+        /** A host that ships a `featured_models` manifest for one provider. */
+        val CATALOG_WITH_FEATURED = ModelCatalog(
+            providers = listOf(
+                ModelProvider(
+                    "curated",
+                    "Curated",
+                    listOf(ModelOption("one"), ModelOption("two"), ModelOption("three")),
+                    featured = listOf("two"),
+                ),
+                ModelProvider("plain", "Plain", listOf(ModelOption("four"))),
+            ),
+            effectiveSelection = ComposerModelSelection("two", "curated"),
+        )
+
+        /** [CATALOG] plus the Gateway's virtual Mixture-of-Agents row. */
+        val CATALOG_WITH_MOA = CATALOG.copy(
+            providers = CATALOG.providers +
+                ModelProvider("moa", "Mixture of Agents", listOf(ModelOption("council"))),
         )
     }
 }
