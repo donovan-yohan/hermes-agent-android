@@ -11,6 +11,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -18,6 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -171,6 +176,64 @@ fun HermesIconButton(
         )
     }
 }
+
+/**
+ * Desktop's approval-mode bolt.
+ *
+ * Desktop draws it from Tabler Icons (MIT) — `IconBolt` and `IconBoltFilled`,
+ * re-exported as `Zap` / `ZapFilled` (`apps/desktop/src/lib/icons.ts:125-126` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and used at `size-3.5`
+ * (`apps/desktop/src/app/shell/approval-mode-menu.tsx:47`). Codicons 0.0.45,
+ * the font every other glyph in this app comes from, ships no bolt at all, so
+ * this is the one glyph drawn rather than typed.
+ *
+ * The path is Tabler's own `bolt` outline, `M13 3l0 7l6 0l-8 11l0 -7l-6 0l8
+ * -11` on a 24×24 viewport — a closed six-point polygon. Tabler's filled
+ * variant is a separately drawn path with rounded joins; filling this same
+ * polygon keeps outline and filled provably one silhouette, which is what the
+ * two states have to share (`docs/parity/approval-mode.md`).
+ *
+ * @param filled the `off` state: Desktop swaps in `ZapFilled` and drops the
+ *   70% opacity the other two modes carry (`approval-mode-menu.tsx:47`).
+ */
+@Composable
+fun ZapGlyph(
+    color: Color,
+    modifier: Modifier = Modifier,
+    filled: Boolean = false,
+    size: Dp = 14.dp,
+) {
+    Canvas(modifier.size(size).clearAndSetSemantics {}) {
+        val unit = this.size.minDimension / VIEWPORT
+        val left = (this.size.width - VIEWPORT * unit) / 2f
+        val top = (this.size.height - VIEWPORT * unit) / 2f
+        val bolt = Path()
+        BOLT_POINTS.forEachIndexed { index, (px, py) ->
+            val dx = left + px * unit
+            val dy = top + py * unit
+            if (index == 0) bolt.moveTo(dx, dy) else bolt.lineTo(dx, dy)
+        }
+        bolt.close()
+        drawPath(
+            path = bolt,
+            color = color,
+            style = if (filled) Fill else Stroke(width = 2f * unit, join = StrokeJoin.Round),
+        )
+    }
+}
+
+/** Tabler's icon viewport; every coordinate below is on this square. */
+private const val VIEWPORT = 24f
+
+/** Tabler `bolt`, `M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11`, as absolute points. */
+private val BOLT_POINTS = listOf(
+    13f to 3f,
+    13f to 10f,
+    19f to 10f,
+    11f to 21f,
+    11f to 14f,
+    5f to 14f,
+)
 
 /** Desktop's 8px two-tone checker mark from `.dither`. */
 @Composable

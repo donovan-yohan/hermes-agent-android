@@ -5,6 +5,7 @@ import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
+import com.hermesagent.mobile.data.gateway.ApprovalMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -71,7 +72,13 @@ class ChatActions(
     val onDismissCodingReview: () -> Unit = {},
     val onRefreshProcesses: () -> Unit = {},
     val onKillProcess: (String) -> Unit = {},
+    /** Write the host's approval mode; the repository owns the rollback. */
+    val onSelectApprovalMode: (ApprovalMode) -> Unit = {},
     val onSelectModel: (ComposerModelSelection) -> Unit = {},
+    /** Show or hide one model in the picker. */
+    val onToggleModelVisible: (provider: String, model: String) -> Unit = { _, _ -> },
+    /** Show or hide every model a provider serves. */
+    val onSetProviderModelsVisible: (provider: String, visible: Boolean) -> Unit = { _, _ -> },
     val onSelectReasoning: (ReasoningEffort) -> Unit = {},
     val onSelectFast: (FastMode) -> Unit = {},
     val onEditorSelectionChange: (text: String, selectionStart: Int, selectionEnd: Int) -> Unit = { _, _, _ -> },

@@ -449,6 +449,41 @@ class HermesPreferencesTest {
     }
 
     @Test
+    fun `a saved model shortlist restores only for its own connection profile scope`() = runBlocking {
+        val firstScope = ComposerControlsScope("remote:fixture-visible-a", "profile-a")
+        val secondScope = ComposerControlsScope("remote:fixture-visible-b", "profile-a")
+        val keys = setOf("acme::alpha", "acme::", "openai::gpt")
+
+        // Never customised is null, which is what makes the curated default the
+        // default rather than an empty picker.
+        assertNull(preferences.visibleModels(firstScope).first())
+
+        preferences.saveVisibleModels(firstScope, keys)
+
+        assertEquals(keys, preferences.visibleModels(firstScope).first())
+        // Another Gateway is another catalog: its keys would name models this
+        // one does not serve.
+        assertNull(preferences.visibleModels(secondScope).first())
+
+        // "Every provider hidden" is a choice, and it is not "never customised".
+        preferences.saveVisibleModels(firstScope, setOf("acme::"))
+        assertEquals(setOf("acme::"), preferences.visibleModels(firstScope).first())
+    }
+
+    @Test
+    fun `the model shortlist codec fails closed for a future version and keeps the sentinels`() {
+        assertNull(ModelVisibilityCodec.decode(null))
+        assertNull(ModelVisibilityCodec.decode("not json"))
+        assertNull(ModelVisibilityCodec.decode("""{"version":"2","keys":["acme::alpha"]}"""))
+        assertNull(ModelVisibilityCodec.decode("""{"version":"1"}"""))
+
+        val encoded = ModelVisibilityCodec.encode(setOf("openai::gpt", "acme::alpha", "acme::"))
+        assertEquals(setOf("openai::gpt", "acme::alpha", "acme::"), ModelVisibilityCodec.decode(encoded))
+        // An explicit empty document is "everything hidden", not "no document".
+        assertEquals(emptySet<String>(), ModelVisibilityCodec.decode(ModelVisibilityCodec.encode(emptySet())))
+    }
+
+    @Test
     fun `active composer scope follows the selected remote route and provider`() = runBlocking {
         try {
             preferences.saveGatewayConnectionMode(GatewayConnectionMode.Remote, expectedConnectionId = null)

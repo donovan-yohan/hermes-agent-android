@@ -79,6 +79,30 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `model catalog keeps the backend's featured strings verbatim and drops non-strings`() {
+        // `featured_models` is the host's own curated list — one flagship per
+        // lab (`hermes_cli/inventory.py:513-568`, `apps/desktop/src/types/
+        // hermes.ts:391-395` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). It
+        // is what the Models sheet shows before anyone customises it, so a
+        // provider that ships one must not be capped at the top-N fallback.
+        val catalog = parseModelCatalog(
+            json(
+                """{"providers":[
+                  {"slug":"aggregator","models":["a","b","c"],"featured_models":["b"," c ",null,"",7]},
+                  {"slug":"plain","models":["one"]}
+                ]}""",
+            ),
+        )
+
+        // The field is typed `string[]` and is matched with
+        // `featured.includes(family.id)` (`store/model-visibility.ts:127`): a
+        // number is not a member of that type, and a padded name is a name that
+        // matches no model id — neither may be coerced into one that does.
+        assertEquals(listOf("b", " c "), catalog.providers.first().featured)
+        assertEquals(emptyList<String>(), catalog.providers.last().featured)
+    }
+
+    @Test
     fun `live controls resolve durable identity and remain session scoped`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
