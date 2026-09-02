@@ -2,6 +2,8 @@ package com.hermesagent.mobile.ui.sessions
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.view.MotionEvent
+import androidx.activity.ComponentDialog
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -22,6 +24,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 
 /**
  * The actions menu as a reader meets it: one always-visible control per row,
@@ -232,7 +237,7 @@ class SessionActionsMenuJourneyTest {
     }
 
     @Test
-    fun `the chat header offers the open session the same single-item menu`() {
+    fun `the chat header offers the open session the same three-item menu`() {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 ChatScreen(
@@ -253,15 +258,262 @@ class SessionActionsMenuJourneyTest {
         compose.waitForIdle()
 
         assertEquals(1, compose.nodesTagged(SESSION_ACTIONS_MENU_TAG))
+        compose.onNodeWithText("Rename…").assertIsDisplayed()
         compose.onNodeWithText("Copy ID").assertIsDisplayed()
+        compose.onNodeWithText("Delete").assertIsDisplayed()
         // Identical item list: the header and the row read the same spec.
-        assertEquals(listOf("Copy ID"), sessionActionItems(FIRST_ID).map { it.label })
+        assertEquals(listOf("Rename…", "Copy ID", "Delete"), sessionActionItems(FIRST_ID).map { it.label })
     }
+
+    @Test
+    fun `renaming a session seeds the dialog with current title and saves on confirm`() {
+        var renamedId: String? = null
+        var renamedTitle: String? = null
+        launchSessionList(
+            onRenameSession = { id, title ->
+                renamedId = id
+                renamedTitle = title
+            },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(RENAME_SESSION_DIALOG_TAG).assertIsDisplayed()
+        compose.onNodeWithText("Rename session").assertIsDisplayed()
+        compose.onNodeWithText("Leave empty to clear.").assertIsDisplayed()
+
+        compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextClearance()
+        compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextInput("Renamed session")
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        assertEquals(FIRST_ID, renamedId)
+        assertEquals("Renamed session", renamedTitle)
+        assertEquals(0, compose.nodesTagged(RENAME_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `renaming without changes dismisses without calling onRename`() {
+        var called = false
+        launchSessionList(
+            onRenameSession = { _, _ -> called = true },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        org.junit.Assert.assertFalse(called)
+        assertEquals(0, compose.nodesTagged(RENAME_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `clearing the title in rename dialog saves empty string`() {
+        var renamedTitle: String? = null
+        launchSessionList(
+            onRenameSession = { _, title -> renamedTitle = title },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextClearance()
+        compose.waitForIdle()
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        assertEquals("", renamedTitle)
+        assertEquals(0, compose.nodesTagged(RENAME_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `cancelling rename dialog closes without calling onRename`() {
+        var called = false
+        launchSessionList(
+            onRenameSession = { _, _ -> called = true },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextInput(" New")
+        compose.waitForIdle()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
+
+        org.junit.Assert.assertFalse(called)
+        assertEquals(0, compose.nodesTagged(RENAME_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `rename error renders inline without closing dialog`() {
+        launchSessionList(
+            onRenameSession = { _, _ -> error("Rename failed. Try a different title.") },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextInput(" New")
+        compose.waitForIdle()
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Rename failed. Try a different title.").assertIsDisplayed()
+        assertEquals(1, compose.nodesTagged(RENAME_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `deleting a session opens confirmation dialog with redacted title and deletes on confirm`() {
+        var deletedId: String? = null
+        launchSessionList(
+            onDeleteSession = { id -> deletedId = id },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(DELETE_SESSION_DIALOG_TAG).assertIsDisplayed()
+        compose.onNodeWithText("Delete session?").assertIsDisplayed()
+        compose.onNodeWithText("This will permanently delete “$FIRST_TITLE”. This cannot be undone.").assertIsDisplayed()
+
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+
+        assertEquals(FIRST_ID, deletedId)
+        assertEquals(0, compose.nodesTagged(DELETE_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `cancelling delete dialog closes without calling onDelete`() {
+        var called = false
+        launchSessionList(
+            onDeleteSession = { called = true },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
+
+        org.junit.Assert.assertFalse(called)
+        assertEquals(0, compose.nodesTagged(DELETE_SESSION_DIALOG_TAG))
+    }
+
+    @Test
+    fun `delete error renders inline without closing dialog`() {
+        launchSessionList(
+            onDeleteSession = { error("Cannot delete a running session. Stop the turn first and try again.") },
+        )
+
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Cannot delete a running session. Stop the turn first and try again.").assertIsDisplayed()
+        assertEquals(1, compose.nodesTagged(DELETE_SESSION_DIALOG_TAG))
+    }
+
+    /**
+     * Dismiss is not confirm, and a Compose `Dialog` has two ways out that no
+     * button press covers. Both land on `onDismissRequest`
+     * (`DeleteSessionDialog.kt:92`), which is exactly why it is worth pinning:
+     * an edit that wired that lambda to the confirm path would delete a session
+     * on a back gesture, and every button-press test here would still pass.
+     *
+     * The gesture goes to the dialog's own `OnBackPressedDispatcher` — the one
+     * Compose's `DialogWrapper` registers its `dismissOnBackPress` callback on
+     * — because the dialog is its own window and Robolectric has no second
+     * window to press back in.
+     */
+    @Test
+    fun `system back on the delete confirmation is not a confirm`() {
+        var called = false
+        launchSessionList(onDeleteSession = { called = true })
+        openDeleteConfirmation()
+
+        val dialog = ShadowDialog.getLatestDialog() as ComponentDialog
+        compose.runOnUiThread { dialog.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        org.junit.Assert.assertFalse(called)
+        assertEquals(0, compose.nodesTagged(DELETE_SESSION_DIALOG_TAG))
+    }
+
+    /**
+     * The scrim half of the same rule. `dismissOnClickOutside` is on by default
+     * and calls the same lambda, so a press that starts and ends off the
+     * dialog's content closes it without deleting anything.
+     *
+     * The press is delivered at a point the dialog itself classifies as outside
+     * its content, whatever geometry the window was laid out at — and if it did
+     * not, nothing would dismiss and the assertions below would fail rather
+     * than quietly pass.
+     */
+    @Test
+    fun `a press outside the delete confirmation is not a confirm`() {
+        var called = false
+        launchSessionList(onDeleteSession = { called = true })
+        openDeleteConfirmation()
+
+        val dialog = ShadowDialog.getLatestDialog()
+        compose.runOnUiThread {
+            dialog.onTouchEvent(offContent(MotionEvent.ACTION_DOWN))
+            dialog.onTouchEvent(offContent(MotionEvent.ACTION_UP))
+        }
+        compose.waitForIdle()
+
+        org.junit.Assert.assertFalse(called)
+        assertEquals(0, compose.nodesTagged(DELETE_SESSION_DIALOG_TAG))
+    }
+
+    /** Open the first row's menu and confirm nothing: just raise the dialog. */
+    private fun openDeleteConfirmation() {
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(DELETE_SESSION_DIALOG_TAG).assertIsDisplayed()
+    }
+
+    /**
+     * A press before the content's own origin. `DialogWrapper` compares the
+     * event against its content view's bounds, and those bounds never start
+     * below zero, so this is off the content on any layout.
+     */
+    private fun offContent(action: Int): MotionEvent =
+        MotionEvent.obtain(0L, 0L, action, -1f, -1f, 0)
 
     private fun launchSessionList(
         onSelect: (String) -> Unit = {},
         /** The unified view, which is the only scope that tags a row's owner. */
         showAllProfiles: Boolean = false,
+        onRenameSession: (suspend (String, String) -> Unit)? = null,
+        onDeleteSession: (suspend (String) -> Unit)? = null,
     ) {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
@@ -286,6 +538,8 @@ class SessionActionsMenuJourneyTest {
                     onSelect = onSelect,
                     onCreate = {},
                     modifier = Modifier,
+                    onRenameSession = onRenameSession,
+                    onDeleteSession = onDeleteSession,
                     profileRail = ProfileRailState(
                         scope = ProfileScope(showAllProfiles = showAllProfiles),
                     ),

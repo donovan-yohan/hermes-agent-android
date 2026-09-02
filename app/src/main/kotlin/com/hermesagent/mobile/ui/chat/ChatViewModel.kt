@@ -1199,6 +1199,42 @@ internal class ChatViewModel(
         }
     }
 
+    fun renameSession(id: String, newTitle: String) {
+        viewModelScope.launch {
+            try {
+                renameSessionAsync(id, newTitle)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                notice.value = e.message ?: "Rename failed. Check the Gateway and try again."
+            }
+        }
+    }
+
+    suspend fun renameSessionAsync(id: String, newTitle: String): String {
+        return repository.renameSession(id, newTitle)
+    }
+
+    fun deleteSession(id: String) {
+        viewModelScope.launch {
+            try {
+                deleteSessionAsync(id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                notice.value = e.message ?: "Delete failed. Check the Gateway and try again."
+            }
+        }
+    }
+
+    suspend fun deleteSessionAsync(id: String) {
+        repository.deleteSession(id)
+        if (activeSessionId.value == id) {
+            startFreshSessionInScope()
+        }
+        notice.value = "Session deleted"
+    }
+
     private fun rehome(id: String?) {
         activeSessionId.value?.let(composerHistoryController::reset)
         id?.let(composerHistoryController::reset)

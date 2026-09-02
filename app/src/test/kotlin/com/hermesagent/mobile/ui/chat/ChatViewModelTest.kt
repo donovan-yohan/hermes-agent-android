@@ -1731,6 +1731,23 @@ class ChatViewModelTest {
                 else -> GatewayInterruptOutcome.Interrupted
             }
         }
+
+        val renamed = mutableListOf<Pair<String, String>>()
+        val deleted = mutableListOf<String>()
+
+        override suspend fun renameSession(durableId: String, title: String): String {
+            renamed.add(durableId to title)
+            val existing = cache.session(durableId)
+            if (existing != null) {
+                cache.upsertSession(existing.copy(title = title))
+            }
+            return title
+        }
+
+        override suspend fun deleteSession(durableId: String) {
+            deleted.add(durableId)
+            cache.removeSession(durableId)
+        }
     }
 
     private class DelayedDraftStore : SessionDraftStore {
@@ -1962,5 +1979,49 @@ class ChatViewModelTest {
         viewModel.performComposerPrimaryAction()
         runCurrent()
         assertEquals(1, repository.submitAttempts)
+    }
+
+    @Test
+    fun `deleting the active session routes to a fresh draft and displays notice`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+
+        viewModel.deleteSession("session-a")
+        runCurrent()
+
+        assertEquals(listOf("session-a"), repository.deleted)
+        assertNull(viewModel.uiState.value.activeSession)
+        assertEquals("Session deleted", viewModel.uiState.value.notice)
+        assertEquals(listOf("session-b"), cache.state.value.sessions.keys.toList())
+    }
+
+    @Test
+    fun `deleting an inactive session removes it without resetting active session draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+        viewModel.setDraft("active draft")
+        runCurrent()
+
+        viewModel.deleteSession("session-b")
+        runCurrent()
+
+        assertEquals(listOf("session-b"), repository.deleted)
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+        assertEquals("active draft", viewModel.uiState.value.draft)
+        assertEquals("Session deleted", viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `renaming a session updates repository and cache`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.renameSession("session-a", "Updated Session Title")
+        runCurrent()
+
+        assertEquals(listOf("session-a" to "Updated Session Title"), repository.renamed)
+        assertEquals("Updated Session Title", cache.session("session-a")?.title)
     }
 }

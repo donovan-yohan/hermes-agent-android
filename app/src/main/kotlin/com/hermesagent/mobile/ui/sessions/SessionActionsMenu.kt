@@ -52,13 +52,19 @@ import kotlinx.coroutines.delay
  * `docs/parity/session-actions-menu.md`.
  */
 
-/** Desktop's spoken name for the control (`i18n/en.ts:2167`). */
+/** Desktop's spoken name for the control (`i18n/en.ts:2319` @ `3ca096de`). */
 const val SESSION_ACTIONS_LABEL = "Session actions"
 
 internal const val SESSION_ACTIONS_MENU_TAG = "Session actions menu"
 
-/** `Copy ID` (`i18n/en.ts:2156`). */
+/** `Copy ID` (`i18n/en.ts:2308` @ `3ca096de`). */
 private const val COPY_ID = "Copy ID"
+
+/** `Rename…` (`i18n/en.ts:2311` @ `3ca096de`). */
+const val RENAME = "Rename…"
+
+/** `Delete` (`i18n/en.ts:24` @ `3ca096de`). */
+const val DELETE = "Delete"
 
 /**
  * The copy confirmation. Desktop's `CopyButton` swaps the item's own icon and
@@ -78,7 +84,7 @@ private const val COPY_ID_DONE = "Copied"
  * and a desktop notification (`session-actions-menu.tsx:482,486`). Touch has no
  * hover and this build has no notification centre, so the one slot on screen
  * carries the specific message rather than the bare word — `copyIdFailed`
- * verbatim (`i18n/en.ts:2166`).
+ * verbatim (`i18n/en.ts:2318` @ `3ca096de`).
  */
 private const val COPY_ID_FAILED = "Could not copy session ID"
 
@@ -173,10 +179,6 @@ fun sessionActionsMenuPlan(items: List<SessionActionItem>): List<SessionMenuNode
 /**
  * The verbs this build can actually perform for [sessionId].
  *
- * Deliberately short: a permanently disabled Rename would be the menu lying
- * about what the app can do. Rename (S14) and Delete (S15) append themselves
- * here, and [SessionActionsGroup] puts them in Desktop's slots.
- *
  * Desktop disables its whole menu for a session with no id
  * (`disabled={!sessionId}`, `session-actions-menu.tsx:471,481`); with nothing
  * left to disable this returns nothing, and [SessionActionsControl] renders no
@@ -188,11 +190,13 @@ fun sessionActionItems(
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
+        Rename,
         when (copyStatus) {
             SessionIdCopyStatus.Idle -> CopyId
             SessionIdCopyStatus.Copied -> CopyIdCopied
             SessionIdCopyStatus.Failed -> CopyIdFailed
         },
+        Delete,
     )
 }
 
@@ -202,6 +206,19 @@ fun sessionActionItems(
  * building a list it would only measure and throw away.
  */
 internal fun hasSessionActions(sessionId: String): Boolean = sessionId.isNotBlank()
+
+/**
+ * `Rename…` in the identity group (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:288-296`
+ * @ `3ca096de`).
+ */
+private val Rename = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Edit, RENAME)
+
+/**
+ * `Delete` in the danger group, destructive-styled (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:441-459`
+ * @ `3ca096de`).
+ */
+private val Delete =
+    SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Trash, DELETE, destructive = true)
 
 /**
  * The Copy ID row and its two settled forms. Declared once and matched by value
@@ -234,9 +251,12 @@ private val CopyIdFailed =
 @Composable
 internal fun SessionActionsControl(
     sessionId: String,
+    sessionTitle: String = "",
     modifier: Modifier = Modifier,
     tint: Color = HermesTheme.tokens.textTertiary,
     writeClipboard: ClipboardWriter = rememberClipboardWriter(),
+    onRename: (suspend (String) -> Unit)? = null,
+    onDelete: (suspend () -> Unit)? = null,
 ) {
     // A menu with nothing in it is chrome that lies about the app. This asks the
     // rule `sessionActionItems` itself applies, so the control and its contents
@@ -244,6 +264,8 @@ internal fun SessionActionsControl(
     if (!hasSessionActions(sessionId)) return
 
     var expanded by remember(sessionId) { mutableStateOf(false) }
+    var renameOpen by remember(sessionId) { mutableStateOf(false) }
+    var deleteOpen by remember(sessionId) { mutableStateOf(false) }
     var copyStatus by remember(sessionId) { mutableStateOf(SessionIdCopyStatus.Idle) }
     // Bumped on every press so a repeat press restarts the reset below, exactly
     // as Desktop clears its pending timeout before setting a new one
@@ -283,6 +305,11 @@ internal fun SessionActionsControl(
             },
             onSelect = { item ->
                 when (item) {
+                    Rename -> {
+                        expanded = false
+                        renameOpen = true
+                    }
+
                     // Desktop's copy item keeps the menu open so its own
                     // confirmation is visible (`copy-button.tsx:94-97`).
                     CopyId, CopyIdCopied, CopyIdFailed -> {
@@ -294,11 +321,37 @@ internal fun SessionActionsControl(
                         }
                     }
 
-                    // S14's Rename and S15's Delete must arrive with a branch
-                    // here. Falling through would render a live-looking row
-                    // that does nothing, which is worse than not shipping it.
+                    Delete -> {
+                        expanded = false
+                        deleteOpen = true
+                    }
+
                     else -> error("unhandled session action: ${item.label}")
                 }
+            },
+        )
+    }
+
+    if (renameOpen) {
+        RenameSessionDialog(
+            open = renameOpen,
+            onDismiss = { renameOpen = false },
+            sessionId = sessionId,
+            currentTitle = sessionTitle,
+            onConfirm = { newTitle ->
+                onRename?.invoke(newTitle)
+            },
+        )
+    }
+
+    if (deleteOpen) {
+        DeleteSessionDialog(
+            open = deleteOpen,
+            onDismiss = { deleteOpen = false },
+            sessionId = sessionId,
+            sessionTitle = sessionTitle,
+            onConfirm = {
+                onDelete?.invoke()
             },
         )
     }
