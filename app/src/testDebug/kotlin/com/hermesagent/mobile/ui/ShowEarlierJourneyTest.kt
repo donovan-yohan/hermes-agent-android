@@ -243,6 +243,40 @@ class ShowEarlierJourneyTest {
         compose.onNodeWithContentDescription(ANCHOR_TURN).assertIsDisplayed()
     }
 
+    /**
+     * The same press that fetched nothing, with the reader then moving away from
+     * the row the anchor was recorded on.
+     *
+     * This is what separates latching the anchor on the row's INDEX from
+     * latching it on the transcript's size. A later turn appended at the tail
+     * grows the transcript, so a size latch fires and re-applies a viewport the
+     * reader has since left; an index latch does not, because rows arriving at
+     * the tail never move the anchor row down.
+     */
+    @Test
+    fun aTailAppendAfterAPressThatFetchedNothingLeavesTheReaderWhereTheyScrolledTo() {
+        launch(tail(), canShowEarlier = true)
+        scrollToTop()
+
+        compose.onNodeWithText(LABEL).performClick()
+        compose.waitForIdle()
+
+        // Away from the anchor row, and not as far as the tail — so the pane is
+        // not following, and nothing but a stale restore could move the viewport.
+        compose.onNodeWithText(MID_REPLY).performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithText(MID_REPLY).assertIsDisplayed()
+
+        // A live turn lands at the tail.
+        state = chatState(
+            tail() + UserTurn("row-122", "one more ask", NOW, rowId = TranscriptRowId(122)),
+            canShowEarlier = true,
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText(MID_REPLY).assertIsDisplayed()
+    }
+
     private companion object {
         const val SESSION = "durable-a"
         const val NOW = 1_800_000_000_000L
@@ -252,6 +286,9 @@ class ShowEarlierJourneyTest {
 
         /** The user turn the reader is parked on when the page is asked for. */
         const val ANCHOR_TURN = "You said: tell me something long"
+
+        /** A paragraph deep inside the reply, well past the anchor turn. */
+        const val MID_REPLY = "Paragraph 30 of the reply."
 
         /** `JumpToLatestButton`'s description once it claims unseen activity. */
         const val UNSEEN_JUMP = "New activity. Scroll to bottom"

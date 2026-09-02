@@ -105,8 +105,9 @@ class RestTranscriptProjectionTest {
 
     /**
      * The shape the route actually emits. `SessionDB.get_messages` builds each
-     * row as `dict(row)` over `SELECT *` (`hermes_state.py:12961-12977` @
-     * `3ca096de`), so every column rides the wire and a row that made no call
+     * row as `dict(row)` (`hermes_state.py:13001-13002` @ `3ca096de`) over a
+     * `SELECT *` (`:12926`, and `:12943` on the `include_compacted` read this
+     * app always makes), so every column rides the wire and a row that made no call
      * carries `"tool_calls": null` rather than omitting the key. Reading the
      * key's presence rather than the array's would drop exactly the row upstream
      * keeps deliberately (`server.py:9770-9787`).

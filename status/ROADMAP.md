@@ -156,7 +156,9 @@ lifecycle.
   reach. Whether a conversation is such a tip is a fact the session list states,
   so a Gateway that serves no session list — or one this app has only read over
   the older RPC — cannot be asked, and a compressed conversation there is
-  windowed at its tip.
+  windowed at its tip. A session opened before any list row for it arrives is
+  windowed on what was known then; the moment a list does say it is a tip, the
+  window is taken back and the control stops being offered.
 - Terminal-shaped tool output is ANSI-parsed rather than printed as escape
   codes, with stdout and stderr as separate labelled sections, the command on a
   `$` prompt line, and the process exit code. Web-search results render as

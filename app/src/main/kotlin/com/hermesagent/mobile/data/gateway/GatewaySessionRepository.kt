@@ -532,22 +532,32 @@ private data class TranscriptHydration(
 
 /**
  * What one hydration needs to know before it touches the wire, read once under
- * the lock: which profile owns the row, whether this conversation is a
- * compression tip whose ancestors the paged route will not read, and how deep
- * the previous window had already paged.
+ * the lock: which profile the read is scoped to, whether that scope is the store
+ * that listed the row, and whether this conversation is a compression tip whose
+ * ancestors the paged route will not read.
  */
 private data class TranscriptHydrationPlan(
     val profile: String?,
     /**
-     * Whether the row names the profile that owns it. The list route stamps
-     * every row it serves with its serving profile (`sessions.py:146,152` @
-     * `3ca096de`), so a row that says nothing is a row this connection has not
-     * listed — and a read for it goes out unscoped, to whichever store the
-     * Gateway's own profile points at.
+     * Whether this read goes to the store that listed the row.
+     *
+     * A row that names a profile is read scoped to it, and that name is the
+     * canonicalised one the leg that listed it asked for: the list route writes
+     * `row_profile = profile_name or _cron_default_profile()` onto every row it
+     * serves as `s["profile"]` (`hermes_cli/web_routers/sessions.py:182-189` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     *
+     * A row that names NONE is read unscoped, and an unscoped read lands on
+     * exactly the launch profile's own `state.db`. Naming none is the ordinary
+     * case rather than the exotic one, because this file strips that stamp back
+     * off the unscoped leg's rows on purpose — there it describes the Gateway
+     * and not the row (`readSessionPages`, the `profile == null` branch). So an
+     * unstamped row is owned when the unscoped leg is the leg that listed it
+     * (`launchListedRowIds`), and a row this connection has never listed at all
+     * is a row whose store nothing here can name.
      */
     val ownerKnown: Boolean,
     val compressed: Boolean,
-    val previousOffset: Int,
 )
 
 /**
@@ -808,6 +818,24 @@ internal class LiveGatewaySessionRepository(
 
     /** The single pending [armFlagWriteReconcile] wake-up, if one is armed. */
     private var flagWriteReconcileJob: Job? = null
+
+    /**
+     * Rows the UNSCOPED list leg has answered with on this connection.
+     *
+     * An unscoped list and an unscoped read open the same store — the launch
+     * profile's own — so a row this set holds is a row a later unscoped read is
+     * addressing in the store that listed it. That is the only thing that makes
+     * a `404` from the paged transcript route evidence about the ROUTE rather
+     * than about the scope, for the rows the default single-profile topology is
+     * made of: their stamp is deliberately stripped (`readSessionPages`), so
+     * nothing else about them can say which store they came from.
+     *
+     * Ids accumulate across pages and refreshes and are cleared with the
+     * connection. A row that has since left the backend cannot make this wrong:
+     * a `404` for it is only ever read together with a `session.history` that
+     * returned rows for the same session.
+     */
+    private val launchListedRowIds = mutableSetOf<String>()
     private val sessionPagingFlow = MutableStateFlow(SessionListPaging())
     override val sessionPaging: StateFlow<SessionListPaging> = sessionPagingFlow.asStateFlow()
 
@@ -885,8 +913,10 @@ internal class LiveGatewaySessionRepository(
                     worktreeByDurableId.clear()
                     unsupportedCapabilities.clear()
                     // Offsets are facts about one backend's rows, cleared with
-                    // that backend's capabilities just above.
+                    // that backend's capabilities just above. So is which rows
+                    // the launch profile's own store answered with.
                     sessionPageCursors.clear()
+                    launchListedRowIds.clear()
                     // A fence outranks a page from the backend it was written
                     // against. A new connection's pages are not that backend's,
                     // so the fence goes with the offsets — and so does the
@@ -1075,7 +1105,7 @@ internal class LiveGatewaySessionRepository(
                     // That route stamps *every* row with a profile even when
                     // the request named none: `row_profile = profile_name or
                     // _cron_default_profile()`, written onto each row as
-                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:146,152`
+                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:182-189`
                     // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). That
                     // fallback resolves the Gateway process's *own* active
                     // profile, and answers `"default"` only when that profile
@@ -1131,6 +1161,11 @@ internal class LiveGatewaySessionRepository(
                 }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
+                    // An unscoped leg reads the launch profile's own store, so
+                    // the rows it answered with are the rows a later unscoped
+                    // read addresses in the store that listed them. Both pools
+                    // read that same store, so both say so.
+                    if (profile == null) rows.mapTo(launchListedRowIds, SessionSummary::id)
                     if (pool == SessionPool.Live) {
                         sessionPageCursors[profile] = when (mode) {
                             // `More` replaces too: its own page is the deeper one,
@@ -1144,9 +1179,9 @@ internal class LiveGatewaySessionRepository(
                     // is layering over under the id this page actually named,
                     // and the fence runs last so an unconfirmed write of ours
                     // outranks a page that was already in flight when it went.
-                    cache.upsertSessions(
-                        rows.map { applyPendingFlagWrites(mergeListedSession(alignLineage(it))) },
-                    )
+                    val merged = rows.map { applyPendingFlagWrites(mergeListedSession(alignLineage(it))) }
+                    cache.upsertSessions(merged)
+                    retractWindowsForCompressionTipsLocked(merged)
                 }
             }
             if (!answered) firstFailure?.let { throw it }
@@ -1288,13 +1323,20 @@ internal class LiveGatewaySessionRepository(
     ): TranscriptHydration {
         val plan = synchronized(stateLock) {
             ensureCurrent(connection)
+            val owningProfile = owningProfileParam(canonicalId) ?: owningProfileParam(durableId)
             TranscriptHydrationPlan(
-                profile = owningProfileParam(canonicalId) ?: owningProfileParam(durableId),
-                ownerKnown = sequenceOf(canonicalId, durableId).any { id ->
-                    cache.session(id)?.remoteProfile?.isNotBlank() == true
+                profile = owningProfile,
+                // The question is which STORE this read opens, not whether the
+                // row happens to carry a string. A named scope opens the store
+                // whose leg stamped that name; no scope at all opens the launch
+                // profile's, which owns this row exactly when the unscoped leg
+                // is the leg that listed it.
+                ownerKnown = if (owningProfile != null) {
+                    true
+                } else {
+                    sequenceOf(canonicalId, durableId).any { it in launchListedRowIds }
                 },
                 compressed = hasCompressionAncestorLocked(canonicalId, durableId),
-                previousOffset = transcriptWindows[canonicalId]?.nextOffset ?: 0,
             )
         }
         val profile = plan.profile
@@ -1345,6 +1387,16 @@ internal class LiveGatewaySessionRepository(
                             entries,
                             cache.transcript(canonicalId).ifEmpty { cache.transcript(durableId) },
                         )
+                        // Read HERE, not at plan time. A `loadEarlierMessages`
+                        // that completed while this page was on the wire has
+                        // already deepened the window, and a snapshot taken
+                        // before the read would step the next page back over
+                        // rows the reader now holds. The id falls back the same
+                        // way the transcript above does, so a row rehomed onto a
+                        // lineage tip finds the window it was actually paged
+                        // with.
+                        val previousOffset =
+                            (transcriptWindows[canonicalId] ?: transcriptWindows[durableId])?.nextOffset ?: 0
                         transcriptWindows[canonicalId] = TranscriptWindow(
                             pagingSessionId = pagingId,
                             profile = profile,
@@ -1361,7 +1413,7 @@ internal class LiveGatewaySessionRepository(
                             // offset can address a row already held — an overlap
                             // the prepend dedupes, never a row skipped.
                             nextOffset = if (grafted.keptPrefix) {
-                                maxOf(window.nextOffset, plan.previousOffset)
+                                maxOf(window.nextOffset, previousOffset)
                             } else {
                                 window.nextOffset
                             },
@@ -1442,6 +1494,32 @@ internal class LiveGatewaySessionRepository(
         sequenceOf(canonicalId, durableId).any { id ->
             cache.session(id)?.lineageRootId?.let { it.isNotBlank() && it != id } == true
         }
+
+    /**
+     * Take the window back from a session the list has just revealed to be a
+     * compression tip.
+     *
+     * [hasCompressionAncestorLocked] can only answer for a row the cache already
+     * holds, and a session can be hydrated before its listed row arrives — a
+     * reconnect resume, a restored active id, a session opened straight from a
+     * notification. Such a session is windowed on the evidence available at the
+     * time, and the list is the only contract that ever says otherwise
+     * (`hermes_state.py:11586-11605` @ `3ca096de`). So the moment it does, the
+     * window goes: the control stops being offered rather than paging to a first
+     * row that is not the conversation's first row. The transcript already on
+     * screen stays as it is, and the next open hydrates it whole.
+     *
+     * Assumes [stateLock].
+     */
+    private fun retractWindowsForCompressionTipsLocked(rows: List<SessionSummary>) {
+        var retracted = false
+        for (row in rows) {
+            val root = row.lineageRootId ?: continue
+            if (root.isBlank() || root == row.id) continue
+            if (transcriptWindows.remove(row.id) != null) retracted = true
+        }
+        if (retracted) publishEarlierMessagesLocked()
+    }
 
     override suspend fun loadEarlierMessages(durableId: String) {
         val connection = connectionSnapshot()
@@ -5077,7 +5155,7 @@ internal fun parseRestSession(root: JsonObject, nowMillis: Long): SessionSummary
     // The columns both contracts share are one parser's job, not two. Title,
     // preview, activity, count, source, profile, branch and cwd read identically
     // off either shape — the profile included, which this route stamps on every
-    // row even when the request named none (`sessions.py:146,152`). Whether that
+    // row even when the request named none (`sessions.py:182-189`). Whether that
     // stamp is a fact about the *row* is not this parser's call to make: it is
     // the row's owner on a named leg and the Gateway describing itself on an
     // unscoped one, and `readSessionPages` is where that is decided. What

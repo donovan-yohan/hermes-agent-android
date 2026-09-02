@@ -16,9 +16,12 @@ Desktop authority is `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
   `text-muted-foreground`, `rounded-full`, `mx-auto`,
   `mb-(--conversation-turn-gap)`. `--composer-fill` is
   `color-mix(in srgb, var(--dt-card) 90%, var(--dt-background))`
-  (`styles.css:1789`); the two seeds are `--ui-bg-editor` and `--ui-bg-chrome`
-  (`styles.css:370-372`), which are this app's `cardSurface` and `chatSurface`.
-  `--conversation-turn-gap` is `styles.css:474`, this app's `spacing.turnGap`.
+  (`styles.css:1789`); the two seeds are `--dt-card: var(--ui-bg-editor)`
+  (`styles.css:390`) and `--dt-background: var(--ui-bg-chrome)`
+  (`styles.css:388`), which are this app's `cardSurface` and `chatSurface`.
+  `--conversation-turn-gap` is `0.375rem` — 6 px — at `styles.css:474`; this
+  app's `spacing.turnGap` is `8.dp` (`HermesTypography.kt:56`), the same gap
+  taken up to the mobile spacing step (ledgered below).
 - Page size: `LATEST_SESSION_MESSAGES_LIMIT = 120`,
   `apps/desktop/src/api/sessions.ts:415`, used for both the hydration page
   (`getLatestSessionMessages`, `:417-438`) and every older page
@@ -77,6 +80,13 @@ and is windowed at its tip. A compressed conversation reached that way still
 loses its ancestors, exactly as Desktop's would. No control copy says otherwise,
 because Desktop has no such string and this port invents none.
 
+A session can also be hydrated before any list row for it arrives — a reconnect
+resume, a restored active id, a session opened straight from a notification —
+and is windowed on the evidence available at that moment. When a later list does
+report `_lineage_root_id` for it, the window is retracted there and then and the
+control stops being offered (`retractWindowsForCompressionTipsLocked`). The
+transcript already on screen is left alone; the next open hydrates it whole.
+
 `include_compacted=false` ending history at the compaction boundary — the case
 #68 asked to surface — cannot arise: every read this app makes sends
 `include_compacted=true`, as Desktop's does, so in-place compaction summaries
@@ -105,6 +115,7 @@ projection both splits and drops.
 | The RPC's tool row is `{role, name, context, args}` and nothing else (`tui_gateway/server.py:9755-9769`) | mobile-adaptation | The projected tool row also carries `content`, `row_id` and `timestamp` | This row follows the REST contract, not the RPC's projection of it: Desktop's own REST reader attaches the stored result (`lib/chat-messages/tool-parts.ts:737`, used at `hydration.ts:186`), and dropping `row_id` would leave the one row the window cannot dedupe by durable address. A tool row is therefore richer on the paged path than on the RPC path |
 | `display_kind` (`model_switch`, `auto_continue`, `personality_switch`, `async_delegation_complete`) and `display_metadata` are forwarded (`server.py:9705-9717,9813-9820`) and rendered as system timeline rows (`lib/chat-messages/hydration.ts:94-116,197-208`) | omission | Only `display_kind: "hidden"` is read; the rest is dropped | out-of-scope: #68 — Android renders no system timeline row on either contract, so this is a pre-existing gap this port inherits rather than introduces. An `auto_continue` row's body is `[System note: …`, which the `[System:` filter does not match, so it reaches a user bubble on both paths |
 | `build_tool_preview` masks recognizable credentials in a `browser_type` call's `text` first (`redact_tool_args_for_display`, `agent/display.py:400-414`, applied at `:456`) | mobile-adaptation | `browser_type` gets no collapsed preview at all | The masking is `redact_sensitive_text(force=True)` over thirteen credential patterns (`agent/redact.py:831-900`), not ported. A partial copy would mask the shapes it knew and print the rest while looking checked, so the preview is withheld instead. The call still rides the row as `args`, as it does upstream |
+| The pill's bottom gap is `--conversation-turn-gap`, `0.375rem` = 6 px (`styles.css:474`, applied at `list.tsx:836`) | mobile-adaptation | `spacing.turnGap`, 8 dp (`HermesTypography.kt:56`) | The whole type and spacing scale is stepped up for touch; the turn gap follows it rather than being pinned to Desktop's pixel, so the pill sits on the same rhythm as every other turn on this platform |
 | One read's tool-call map covers that read (`server.py:9740-9752`) | mobile-adaptation | The map covers one page | A tool row whose assistant call row fell on the other side of a page boundary renders with its stored `tool_name` and no argument preview. Carrying the map across pages would be per-session repository state with a lifetime nothing else in the projection has, for one row per page |
 
 ## Visual report

@@ -84,10 +84,11 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             // (`server.py:9743-9754`).
             //
             // The presence test is the ARRAY, never the key. `SessionDB.get_messages`
-            // builds each row as `dict(row)` over `SELECT *`
-            // (`hermes_state.py:12961-12977` @ `3ca096de`), so every column of the
-            // `messages` table rides the wire and `"tool_calls": null` is on every
-            // row that made no call. Reading the key's presence would drop every
+            // builds each row as `dict(row)` (`hermes_state.py:13001-13002` @
+            // `3ca096de`) over a `SELECT *` (`:12926`, and `:12943` on the
+            // `include_compacted` read this app always makes), so every column of
+            // the `messages` table rides the wire and `"tool_calls": null` is on
+            // every row that made no call. Reading the key's presence would drop every
             // reasoning-only assistant turn — the row upstream keeps deliberately
             // ten lines below (`server.py:9770-9787`).
             if ((row["tool_calls"] as? JsonArray)?.isNotEmpty() == true && text.isBlank()) continue

@@ -206,7 +206,8 @@ fun Transcript(
  * `color-mix(in srgb, var(--dt-card) 90%, var(--dt-background))`
  * (`styles.css:1789`) — the card token with a tenth of the page ground over it,
  * and Desktop derives both from the same two seeds this app does (`--dt-card` is
- * `--ui-bg-editor`, `--dt-background` is `--ui-bg-chrome`, `styles.css:370-372`).
+ * `--ui-bg-editor`, `styles.css:390`; `--dt-background` is `--ui-bg-chrome`,
+ * `styles.css:388`).
  * The `mb-(--conversation-turn-gap)` below it is the turn gap, on top of the
  * list's own block gap, as Desktop's is on top of its flow.
  *

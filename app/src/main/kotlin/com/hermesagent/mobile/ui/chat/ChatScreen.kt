@@ -433,6 +433,13 @@ private fun TranscriptPane(
             // they just asked to leave.
             if (grewAtHead) {
                 following = false
+                // The page is not activity below the reader, but it does change
+                // whether there IS anywhere below them: a transcript short
+                // enough that the tail was already on screen becomes one that
+                // scrolls. Leaving the control's visibility stale would strand
+                // the reader at the top of the page they just asked for with no
+                // way back to the latest turn until something else changed.
+                showJump = canScrollForward
                 return@collect
             }
 
@@ -590,6 +597,16 @@ private data class TranscriptAnchor(
  * first is now exactly that far down, and the last row is unchanged. A streamed
  * delta rewrites an entry in place and does not grow the list; an appended turn
  * moves the last row.
+ *
+ * A page landing in the same emission as a turn appended at the tail is both
+ * shapes at once, and it answers false — it falls through to the ordinary path
+ * deliberately. That emission carries real activity below the reader, which the
+ * head path would swallow. The anchor restore fires on it as well, so the two
+ * can order a scroll in one frame: if the reader had returned to the tail with
+ * an anchor still armed, the restore pulls them back up and the follow pushes
+ * them down. The loser is a viewport for a frame, never a row — and the case
+ * needs a backfill page and a live turn to settle into one snapshot, which is
+ * why it is left as the honest fall-through rather than guessed at.
  */
 private fun grewAtHead(previous: List<TranscriptEntry>, current: List<TranscriptEntry>): Boolean {
     val added = current.size - previous.size
