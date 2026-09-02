@@ -144,8 +144,9 @@ Not deviations — things this slice does not ship, stated rather than hidden.
 - **Composer.** Issue #42.
 - **Harnesses inspector.** Out of scope for v1 (epic #38 boundary).
 - **`POST /connection/authorize`.** The lane's `auth_required` state renders
-  Relay's own remediation text; redeeming the host's one-time grant is a write
-  and belongs with the write slice.
+  Relay's own remediation text and Desktop's own `Authorize Relay` button,
+  disabled behind the `WIP` chip; redeeming the host's one-time grant is a write
+  and belongs with the write slice (#38).
 - **`summary` on a channel row.** Not projected by the pinned mobile client.
 - **Pagination.** The frozen endpoint takes `limit` and no cursor, and Desktop
   re-requests the same fixed 50-row window every time.
@@ -160,9 +161,9 @@ argument.
 |---|---|---|---|
 | Two panes side by side | mobile-adaptation | One pane at a time, with the transcript pushed as its own destination | A 360 dp column cannot hold a channel list and a transcript at a legible type scale |
 | Hover-revealed row affordances | mobile-adaptation | Always visible inside 48 dp targets | Touch has no hover; glyph weight and placement are unchanged |
-| Composer | omission | Absent | pill-owed: #101 — Relay's composer is #42, so the input owes a disabled "coming soon" state rather than an empty foot |
-| Harnesses inspector | omission | Absent | pill-owed: #101 — out of scope for v1 (the epic #38 boundary), so it owes a disabled entry rather than a missing one |
-| The `auth_required` banner's `Authorize Relay` action (`desktop/plugin.js:384-388` @ `563a8c8`) | omission | The banner's title and body render; the action does not | pill-owed: #101 — it is a control, so it ships disabled rather than absent. Redeeming the host's one-time grant (`POST /connection/authorize`) is a write and lands with the write slice |
+| Composer | omission | Absent | pill-owed: #42 — retargeted off #101, which shipped every pill it could. A composer is not one control but a whole input surface with its own attachment, send and queue affordances, and a disabled facsimile of it would be a mock of an unbuilt screen rather than a marker on a missing button. #42 builds it. The retarget is an amendment to #101's acceptance and is recorded in the PR body for the owner to carry back onto #101 |
+| Harnesses inspector | omission | Absent | out-of-scope: #38 — #38's own Boundaries section excludes it from v1 ("separate decision later"), which the Omissions list above states in prose. A `pill-owed:` marker would park a debt on an issue that will close without discharging it; this is the taxonomy's marker for something an issue deliberately excluded, and it may still return. Moving it off #101 is an amendment to that issue's acceptance and is recorded in the PR body |
+| The `auth_required` banner's `Authorize Relay` action (`desktop/plugin.js:384-388,438-446` @ `563a8c8`) | omission | The action renders in Desktop's slot under the banner's title and body, disabled behind the `WIP` chip | coming soon — `RelayJourneyTest.an unauthorized lane offers Desktop's authorize action, marked and inert`. This page pins the Relay plugin at `563a8c8` and settles the banner from `desktop/plugin.js:384-412`, so the pinned contract *does* carry the control; what is missing is the write. Redeeming the host's one-time grant (`POST /connection/authorize`) belongs to #38's write slice, and until it lands the button says so rather than being absent |
 | `summary` on a channel row | omission | Not projected | deferred: #43 — the pinned mobile client does not carry the field |
 
 ## Visual report

@@ -7,9 +7,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -35,6 +39,7 @@ import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,6 +59,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -545,13 +551,77 @@ class ConnectionsJourneyTest {
         // surface that never had the feature (`connections-registry.tsx:589-603`).
         compose.onNodeWithText(ConnectionsCopy.TEST_CONNECTION).performScrollTo().assertExists()
         compose.onNodeWithText(ConnectionsCopy.MAKE_PRIMARY).performScrollTo().assertExists()
-        compose.onAllNodesWithTag(WIP_PILL, useUnmergedTree = true).assertCountEquals(2)
+        // Three on this pane: the row's two, and the launch-mode toggle's at
+        // the foot of the section. `Update all instances` is not among them —
+        // Desktop gates its fan-out on there being more than one connection.
+        compose.onAllNodesWithTag(WIP_PILL, useUnmergedTree = true).assertCountEquals(3)
+        // Whole names, not matches: the finders test the description list with
+        // `any { }`, so a control that also named itself into the merge would
+        // announce twice and still be found by every assertion here.
         compose.onNodeWithContentDescription(
             "${ConnectionsCopy.TEST_CONNECTION}. ${WIP_SPOKEN}",
-        ).assertExists()
+        ).assertContentDescriptionEquals("${ConnectionsCopy.TEST_CONNECTION}. ${WIP_SPOKEN}")
         compose.onNodeWithContentDescription(
             "${ConnectionsCopy.MAKE_PRIMARY}. ${WIP_SPOKEN}",
-        ).assertExists()
+        ).assertContentDescriptionEquals("${ConnectionsCopy.MAKE_PRIMARY}. ${WIP_SPOKEN}")
+        compose.onNodeWithText(ConnectionsCopy.UPDATE_ALL).assertDoesNotExist()
+    }
+
+    /**
+     * Desktop's page-level controls, both disabled: the update fan-out beside
+     * `Add connection` (`connections-registry.tsx:968-988` @ `3ca096de`) and
+     * the launch-mode toggle in its own section below it (`:992-1006`).
+     */
+    @Test
+    fun `the page's own unbuilt controls render disabled in Desktop's slots`() {
+        val state = ConnectionsUiState(
+            connections = listOf(
+                remoteConnection("a", "Alpha", "https://alpha.test"),
+                remoteConnection("b", "Bravo", "https://bravo.test"),
+            ),
+            activeId = "a",
+            loaded = true,
+        )
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConnectionsSection(state = state, actions = ConnectionsActions())
+                }
+            }
+        }
+
+        // The toggle says the whole thing once: Desktop's title, Desktop's
+        // description, then the marker.
+        val toggleName = "${ConnectionsCopy.LAUNCH_MODE_TITLE}. ${ConnectionsCopy.LAUNCH_MODE_DESC} $WIP_SPOKEN"
+        val updateAllName = "${ConnectionsCopy.UPDATE_ALL}. $WIP_SPOKEN"
+
+        // One scroll, then three readings: bounds are in root coordinates, so a
+        // scroll between two of them would be comparing two different frames.
+        compose.onNodeWithContentDescription(toggleName).performScrollTo().assertIsDisplayed()
+        val add = compose.onNodeWithContentDescription(ConnectionsCopy.ADD_CONNECTION)
+            .getUnclippedBoundsInRoot()
+        val updateAll = compose.onNodeWithContentDescription(updateAllName).getUnclippedBoundsInRoot()
+        val toggle = compose.onNodeWithContentDescription(toggleName).getUnclippedBoundsInRoot()
+
+        // The fan-out sits beside Add connection, which is where Desktop puts
+        // it, and both are bordered buttons rather than one button and a link.
+        assertTrue("the fan-out follows Add connection", updateAll.left > add.left)
+        assertEquals(add.top, updateAll.top)
+        assertTrue("the launch-mode section sits below the add row", toggle.top > add.top)
+
+        // Both are unreachable, and both say so once. `assertContentDescriptionEquals`
+        // rather than the finder's own `any { }` match, so an inner control that
+        // named itself into the merge would fail here rather than pass unseen.
+        compose.onNodeWithContentDescription(updateAllName)
+            .assertIsNotEnabled()
+            .assertContentDescriptionEquals(updateAllName)
+        // The toggle is a preference rather than an action, and the one control
+        // #101 added that could quietly become live: it is off, disabled, and
+        // still a touch target a finger can land on.
+        compose.onNodeWithContentDescription(toggleName)
+            .assertIsNotEnabled()
+            .assertContentDescriptionEquals(toggleName)
+            .assertHeightIsAtLeast(HermesSpacing().touchTarget)
     }
 
     @Test

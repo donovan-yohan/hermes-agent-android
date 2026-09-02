@@ -150,31 +150,35 @@ Two glyph facts the source settles for #66's verbs:
 | Confirmation clears itself after `COPIED_RESET_MS` = 1500 (`copy-button.tsx:15,120-123,133-136`) | **Same**: `LaunchedEffect` + `COPY_CONFIRM_MILLIS`, which is 1500 | Verbatim, including the repeat press: Desktop clears its pending timeout before setting a new one, so a second press restarts the beat rather than inheriting the first one's remainder. The constant is the one `Transcript.kt` and `CodingStatusRow.kt` already share, moved to `ui/common/Clipboard.kt` beside the write itself. |
 | Copy failure raises a notification *and* swaps the item to `X` + `t.common.failed`, with `copyIdFailed` on its tooltip and `aria-label` (`copy-button.tsx:142,149-151,161-164`; `session-actions-menu.tsx:482,486`) | One slot: the item swaps to `Close` + `Could not copy session ID` (`en.ts:2318`) for the same 1500ms | Touch has no hover, so the tooltip has nowhere to go, and this build has no notification centre. Desktop's three surfaces collapse to the one the phone has — and the specific message goes there rather than the bare `Failed`, because it is the half that says what did not happen. |
 | Copy failure is **not** tinted: the row is handed `text-current` and no variant (`session-actions-menu.tsx:483`) | **Same**: the failure row keeps `textSecondary` | Deliberate, and against the reviewer's suggestion: destructive-red is Delete's alone here. Reddening a transient, self-clearing failure would make a message that resolves itself in a second and a permanently destructive verb read alike. |
-| Nested `Appearance` and `Move to project` submenus (`:470-478,491-499`) | Not ported | The port workflow's standing rule: nested pointer submenus are brittle on a phone. When those verbs land they flatten into their group. |
+| Nested `Appearance` and `Move to project` submenus (`:467-475,488-496`) | One disabled row each, in the trigger's own slot, with the trigger's glyph and label | The port workflow's standing rule: nested pointer submenus are brittle on a phone. Neither has a second level to hold anyway — no per-session colour is persisted here and there is no projects roster to move a session into — so the flattening costs nothing that exists. |
 | Rename input seeded with the raw session title (`session-actions-menu.tsx:637-720`) | **Same**: the field shows the real title, and it is the one title across these two dialogs that is not passed through `redact()` | It is the text being *edited*, not text describing something. A redacted seed would either be saved back over the real title or have to be reversed before it was sent, and neither is safer than showing someone a title they already own. The delete confirmation only *describes* a title, and that one is redacted (`DeleteSessionDialog.kt:54`). |
 
 ### Deviation the reviewer should weigh explicitly
 
-> **Superseded by [#101](https://github.com/donovan-yohan/hermes-agent-android/issues/101).**
-> The standing rule is now Desktop's: a mode or control this app does not
-> support **yet** stays visible and disabled with a "coming soon" pill rather
-> than being absent, so the menu's shape is the same one Desktop teaches. Only
-> a *non-goal* — something this platform will never have — is omitted outright.
+> **Settled by [#101](https://github.com/donovan-yohan/hermes-agent-android/issues/101),
+> and now shipped.** The standing rule is Desktop's: a control this app does not
+> support **yet** stays visible and disabled behind the `WIP` chip rather than
+> being absent, so the menu's shape is the same one Desktop teaches. Only a
+> *non-goal* — something this platform will never have — is omitted outright.
 > The reasoning below still settles the non-goals (the right-click twin, the
-> modifier gestures, the tab and open groups) and the blank-id case. It no
-> longer settles rename, delete, pin, archive or the nested submenus; those are
-> `pill-owed` rows in the Divergences table.
+> modifier gestures, the tab and open groups) and the blank-id case.
 
 Desktop keeps every identity / work / danger item mounted and **disabled** when
-its handler is missing. This port **omits** an unavailable verb instead.
+its handler is missing, and so does this port. `Appearance`, `Branch`, `Export`
+and `Move to project` render in Desktop's slots carrying `SessionActionItem.available
+= false`: dimmed to the quaternary ink, a silent `WIP` chip after the label, the
+whole row spoken once as `"<label>. Work in progress."`, no click action, and no
+path to `onSelect` at all — so the dispatch `when` stays exhaustive over the
+verbs this build actually performs.
 
-Shipping a permanently greyed-out `Rename` would be the menu advertising a
-capability the app does not have — the port workflow calls that an omission, not
-a deviation, and says to keep the port incomplete rather than fake the row. The
-group slots are what preserve ordering, and they are preserved structurally (in
-`SessionActionsGroup`) rather than by rendering dead items.
+The earlier argument here was that a permanently greyed-out row advertises a
+capability the app does not have. What that missed is the other half: a *missing*
+row advertises a capability the app was never meant to have, which is the larger
+lie, and it is the one a reader has no way to detect. The group slots still
+preserve ordering structurally (`SessionActionsGroup`); they no longer have to
+do it alone.
 
-The same reasoning settles the blank-id case. Desktop disables its whole menu
+The blank-id case is different, and the original reasoning still settles it. Desktop disables its whole menu
 when there is no session id (`disabled={!sessionId}`, `:471,481`); with nothing
 left to disable, `sessionActionItems` returns nothing and the control is not
 rendered at all — the alternative is an empty bordered popup, which is the menu
@@ -215,12 +219,15 @@ and marking read clears both in one action.
 
 ## Omissions
 
-- The remaining verbs in the epic's rank-6 list: branch, export, move to
-  project, colour.
 - The open group and the tab group, permanently — no tabs, windows, or local
   terminal on this platform.
 - The right-click / context-menu twin of the dropdown, permanently.
-- Both nested submenus; they flatten when their verbs arrive.
+- The second level of both nested submenus; the triggers themselves render, and
+  a phone flattens what they would have opened.
+
+Not omissions any more, since #101: branch, export, move to project and colour
+render in Desktop's slots, disabled and marked. What is missing there is the
+implementation, not the row.
 
 ## Evidence
 
@@ -230,6 +237,7 @@ and marking read clears both in one action.
 | Every `HermesIcon` code point resolves in the shipped `codicon.ttf`, and the reader that says so is not simply saying yes | `app/src/test/kotlin/com/hermesagent/mobile/ui/common/HermesIconFontTest.kt` |
 | A refused clip is reported rather than thrown, and an accepted one lands under its own label | `app/src/test/kotlin/com/hermesagent/mobile/ui/common/ClipboardTest.kt` |
 | 48dp control, reserved end inset, unfragmented row label, tap-not-long-press, clipboard write, confirmation and its 1500ms settle, refusal in place, no control for a blank id, destructive ink, chat-header parity | `app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenuJourneyTest.kt` |
+| The four unbuilt verbs: one `WIP` chip each and no more, `"<label>. Work in progress."` spoken once, the 48 dp floor kept, the tap refused, and every row rendered in Desktop's own top-to-bottom order | `app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenuJourneyTest.kt` |
 | Rename and delete resolution: the `session.title` RPC for a live runtime, REST `PATCH` for a persisted row or a clear, the fall-through to REST when the RPC refuses, the mapped failures, `session.delete` with its 4023 refusal and 4007 already-deleted, REST `DELETE` with 404 as success, and a rename that outlives a `session.list` refresh in flight | `app/src/test/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepositoryTest.kt` |
 | Dialogs as a reader meets them: the rename field seeded, cleared and committed, the delete confirmation's redacted body, the in-flight and inline-failure states, and the three ways out (Cancel, system back, a tap outside) that are never a confirm | `app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenuJourneyTest.kt` |
 
@@ -265,8 +273,11 @@ a gate is that removing the behaviour turns it red):
 | `hasSessionActions` always says yes | 3 |
 
 `else -> error(...)` in the control's `when` has no mutation: it is the branch
-that must never be reached, and its whole job is to fail loudly the first time
-S14's Rename arrives without a handler instead of rendering a dead row.
+that must never be reached, and its whole job is to fail loudly the first time a
+new verb arrives without a handler instead of rendering a dead row. The four
+marked verbs never reach it — `SessionActionsMenu` drops a press on a row whose
+`available` is false — which is why an unbuilt verb is a flag on the item rather
+than a missing `when` branch.
 
 ## Divergences
 
@@ -282,13 +293,13 @@ carries the argument and the citations.
 | Copy failure raises a notification *and* swaps the item, with a tooltip (`copy-button.tsx:142,149-164`) | mobile-adaptation | One slot: the item swaps to `Close` + `Could not copy session ID` for the same 1500 ms | Touch has no hover so the tooltip has nowhere to go, and this build has no notification centre |
 | Desktop `Renamed` toast (`en.ts:2328`) | omission | Inline failure on refusal, dialog dismiss on success | deferred: #73 (in-app-notification-stack) |
 | Desktop `Session deleted` toast (`en.ts:2336`) | omission | Rendered via chat `notice` banner | deferred: #73 (in-app-notification-stack) |
-| Unavailable verbs stay mounted and **disabled** | omission | Absent | pill-owed: #101 — this page previously argued for omitting them; the standing rule is now a visible disabled row with a "coming soon" pill |
-| Branch, export, move to project, colour | omission | Absent | pill-owed: #101 — pin, archive and read-state are no longer among them; they ship in #66 |
+| Unavailable verbs stay mounted and **disabled** | omission | The same: `available = false` dims the row, marks it with the `WIP` chip, and takes its click action away | coming soon — the pill ships in this change (#101). This page previously argued for omitting them; the standing rule is Desktop's shape, and `SessionActionsMenuJourneyTest` measures that each marked row keeps the 48 dp floor, announces once and refuses the tap |
+| `Branch` (`:337-349`, `en.ts:2310`), `Export` (`:350-358`, `en.ts:2309`), `Move to project` (`:488-496`, `en.ts:2247`) and `Appearance` (`:467-475`, `en.ts:2242`) | omission | All four render in Desktop's slots, disabled behind the chip | coming soon — the pill ships in this change (#101). None has a call behind it here: branching needs a session-fork RPC, exporting needs a platform file destination, and the two submenu triggers have no per-session colour and no projects roster to open onto. Pin, archive and read-state are no longer among them; they shipped in #66 |
 | Read-state item is `disabled` when neither `onToggleUnread` nor a live dot exists (`session-actions-menu.tsx:311`) | mobile-adaptation | Always enabled | The handler always exists on this surface, so the disabled branch is unreachable rather than dropped — the Gateway, not the client, decides whether a row can carry a watermark |
 | `Unarchive` lives on the Archived Chats settings page (`app/settings/sessions-settings.tsx:148-154`) | mobile-adaptation | In the row's own actions menu, with Desktop's own word | That settings page is a declared non-goal here, so the row menu is the only place a reversible verb can live; moving the verb rather than inventing a word keeps the vocabulary Desktop's |
 | Archived Chats settings page, and auto-archive-after-N-days | omission | Absent | deferred: #73 — session maintenance; #66 declares both non-goals |
 | `Renamed` / `Session deleted` / pin and archive toasts (`en.ts:2328,2336`) | omission | Chat `notice` banner, or nothing on success | deferred: #73 (in-app-notification-stack) |
-| Nested `Appearance` and `Move to project` submenus (`:470-478,491-499`) | omission | Absent | pill-owed: #101 — they flatten into their group when their verbs land; nested pointer submenus are not what ships |
+| Nested `Appearance` and `Move to project` submenus (`:467-475,488-496`) | mobile-adaptation | Each trigger is one disabled row in its own slot; there is no second level | Touch mechanics: nested pointer submenus are brittle on a phone, and the port workflow's standing rule is to flatten them. Neither has content to hold here — no per-session colour is persisted, and there is no projects roster — so the level that is missing is empty by construction |
 | Right-click `SessionContextMenu` (`session-actions-menu.tsx:621-639`) | omission | Absent | non-goal: long-press belongs to text selection on a phone, and binding the menu to it would fight the transcript's gesture |
 | ⇧-click pin, ⌥⇧-click archive (`session-row-gesture.ts:33,45`) | omission | Absent | non-goal: a soft keyboard has no modifier keys |
 | The open group and the tab group | omission | Absent | non-goal: no tabs, windows or local terminal on this platform |

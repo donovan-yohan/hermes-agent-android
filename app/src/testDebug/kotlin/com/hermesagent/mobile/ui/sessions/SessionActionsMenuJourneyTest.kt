@@ -9,17 +9,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -40,6 +44,8 @@ import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
 import com.hermesagent.mobile.ui.common.ClipboardWriter
 import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.WIP_PILL
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.common.ownedByProfileLabel
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
@@ -258,14 +264,86 @@ class SessionActionsMenuJourneyTest {
         compose.waitForIdle()
 
         assertEquals(1, compose.nodesTagged(SESSION_ACTIONS_MENU_TAG))
-        listOf("Rename…", "Pin", "Mark as unread", "Copy ID", "Archive", "Delete").forEach { label ->
+        DESKTOP_MENU_LABELS.forEach { label ->
             compose.onNodeWithText(label).assertIsDisplayed()
         }
         // Identical item list: the header and the row read the same spec.
+        assertEquals(DESKTOP_MENU_LABELS, sessionActionItems(FIRST_ID).map { it.label })
+    }
+
+    /**
+     * The four verbs Desktop renders that this build cannot perform ship
+     * visible, dimmed, marked, and inert — the #101 rule, in the menu's own
+     * slots (`session-actions-menu.tsx:337-359,467-475,488-496` @ `3ca096de`).
+     */
+    @Test
+    fun `an unbuilt verb renders marked, keeps the touch floor and refuses the tap`() {
+        var selected: String? = null
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box {
+                    SessionActionsMenu(
+                        expanded = true,
+                        items = { sessionActionItems(FIRST_ID) },
+                        onDismiss = {},
+                        onSelect = { selected = it.label },
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        // One chip per unbuilt verb, and no more: a chip on a verb that works
+        // would be the menu lying in the other direction. Unmerged, because
+        // each chip's semantics are cleared and folded into its row.
         assertEquals(
-            listOf("Rename…", "Pin", "Mark as unread", "Copy ID", "Archive", "Delete"),
-            sessionActionItems(FIRST_ID).map { it.label },
+            4,
+            compose.onAllNodesWithTag(WIP_PILL, useUnmergedTree = true).fetchSemanticsNodes().size,
         )
+
+        UNBUILT_VERBS.forEach { label ->
+            // The whole phrase, once — the row owns it and the chip is silent.
+            // Asserted as the *whole* description rather than matched: the
+            // finder tests the list with `any { }`, so a row that also let its
+            // control name itself would announce twice and still be found.
+            compose.onNodeWithContentDescription("$label. $WIP_SPOKEN")
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+                .assertContentDescriptionEquals("$label. $WIP_SPOKEN")
+                .assertHeightIsAtLeast(HermesSpacing().touchTarget)
+            compose.onNodeWithText(label).performClick()
+        }
+        compose.waitForIdle()
+
+        assertEquals(null, selected)
+    }
+
+    /** Desktop's slots, read off the rendered menu rather than off the spec. */
+    @Test
+    fun `the unbuilt verbs render in Desktop's slots, not appended to the end`() {
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box {
+                    SessionActionsMenu(
+                        expanded = true,
+                        items = { sessionActionItems(FIRST_ID) },
+                        onDismiss = {},
+                        onSelect = {},
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val tops = DESKTOP_MENU_LABELS.associateWith {
+            compose.onNodeWithText(it).getUnclippedBoundsInRoot().top
+        }
+        DESKTOP_MENU_LABELS.zipWithNext().forEach { (above, below) ->
+            assertTrue(
+                "$below should render below $above",
+                tops.getValue(below) > tops.getValue(above),
+            )
+        }
     }
 
     @Test
@@ -611,5 +689,27 @@ class SessionActionsMenuJourneyTest {
         /** S15's item, standing in early so the flag it needs is proven now. */
         val DELETE =
             SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Trash, "Delete", destructive = true)
+
+        /**
+         * Desktop's row menu top to bottom, minus the open and tab groups this
+         * platform declares non-goals (`session-actions-menu.tsx:462-504` @
+         * `3ca096de`). `SessionActionsMenuTest` holds the same order as a spec;
+         * this file asserts it against what is drawn.
+         */
+        val DESKTOP_MENU_LABELS = listOf(
+            "Rename…",
+            "Pin",
+            "Mark as unread",
+            "Appearance",
+            "Copy ID",
+            "Branch",
+            "Export",
+            "Move to project",
+            "Archive",
+            "Delete",
+        )
+
+        /** The four of those this build cannot perform. */
+        val UNBUILT_VERBS = listOf("Appearance", "Branch", "Export", "Move to project")
     }
 }

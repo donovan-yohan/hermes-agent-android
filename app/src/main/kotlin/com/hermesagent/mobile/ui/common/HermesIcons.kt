@@ -132,6 +132,38 @@ enum class HermesIcon(val glyph: String) {
     CloudDownload("\uEAC2"),
     Folder("\uEA83"),
     Archive("\uEA98"),
+
+    /**
+     * Desktop's `symbol-color`, the Appearance submenu's trigger glyph
+     * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:469` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     */
+    SymbolColor("\uEB5C"),
+
+    /**
+     * The refresh verb, in the three places Desktop draws it: the registry's
+     * `Update all instances` button (`RefreshCw`,
+     * `app/settings/connections-registry.tsx:984`), the assistant action bar's
+     * reload (`RefreshCwIcon`,
+     * `components/assistant-ui/thread/assistant-message.tsx:640`) and the tab
+     * menu's own reload, which names the Codicon directly
+     * (`session-actions-menu.tsx:370`, `icon: 'refresh'`) — all @ `3ca096de`.
+     * Two lucide draws and one Codicon name, one glyph in this font.
+     */
+    Refresh("\uEB37"),
+
+    /**
+     * Read aloud. Desktop's idle glyph is lucide `AudioLines`
+     * (`assistant-message.tsx:697` @ `3ca096de`), a waveform Codicons 0.0.45
+     * does not ship at all.
+     *
+     * `unmute` — a speaker with sound leaving it — is this family's nearest
+     * "audio is playing", and the substitution is the one [Database] and
+     * [Monitor] already record: stay inside the shipped font rather than mix a
+     * second glyph family into one row. Ledgered in
+     * `docs/parity/transcript-selection-copy.md`.
+     */
+    Unmute("\uEB75"),
 }
 
 private val CodiconFont = FontFamily(Font(R.font.codicon))
@@ -155,11 +187,19 @@ fun HermesIconGlyph(
 /**
  * Desktop-sized Codicon inside Android's 48dp touch floor. Growing the hit box
  * must not make a quiet 12-14px sidebar glyph look like a Material toolbar icon.
+ *
+ * @param contentDescription the spoken name, or `null` where a merging host
+ *   already says the whole phrase. `SemanticsProperties.ContentDescription`
+ *   *concatenates* on merge rather than replacing, so a name kept here inside a
+ *   `semantics(mergeDescendants = true)` parent is a second name on one node —
+ *   which is how a marked control starts announcing its label twice. See
+ *   [com.hermesagent.mobile.ui.common.ComingSoonIconAction] for what that costs
+ *   and what today's merge actually does with it.
  */
 @Composable
 fun HermesIconButton(
     icon: HermesIcon,
-    contentDescription: String,
+    contentDescription: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -167,6 +207,7 @@ fun HermesIconButton(
     tint: Color = HermesTheme.tokens.textTertiary,
 ) {
     val tokens = HermesTheme.tokens
+    val spoken = contentDescription
     Box(
         modifier = modifier
             .size(HermesTheme.spacing.touchTarget)
@@ -175,7 +216,13 @@ fun HermesIconButton(
                 RoundedCornerShape(4.dp),
             )
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics { this.contentDescription = contentDescription },
+            .then(
+                if (spoken == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { this.contentDescription = spoken }
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         HermesIconGlyph(

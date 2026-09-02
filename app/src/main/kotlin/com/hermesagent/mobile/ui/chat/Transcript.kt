@@ -96,6 +96,7 @@ import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
+import com.hermesagent.mobile.ui.common.ComingSoonIconAction
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.DitherMark
@@ -606,6 +607,14 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * drag-selecting several screens of prose with two handles is the one thing a
  * phone is worse at than a mouse — the system Copy in the selection toolbar
  * still handles "copy this sentence".
+ *
+ * The other three controls Desktop mounts here are rendered in Desktop's order
+ * — Branch, Copy, Read aloud, Refresh (`assistant-message.tsx:625-642` @
+ * `3ca096de`) — and every one of them is disabled behind a `WIP` chip. None
+ * has anything to call: branching needs a session-fork RPC, read-aloud needs
+ * speech synthesis and a playback store, and a re-run needs the turn-rewind
+ * path #69 owns. Leaving them out would say this bar was only ever meant to
+ * copy, which is a claim about the port rather than about the app.
  */
 @Composable
 private fun ReplyActions(reply: String) {
@@ -649,7 +658,12 @@ private fun ReplyActions(reply: String) {
         }
     }
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ComingSoonIconAction(HermesIcon.RepoForked, BRANCH_IN_NEW_CHAT)
         HermesIconButton(
             icon = if (copied) HermesIcon.Check else HermesIcon.Copy,
             contentDescription = label,
@@ -667,8 +681,35 @@ private fun ReplyActions(reply: String) {
             // control that is already focusable.
             modifier = Modifier.semantics { customActions = replyActions },
         )
+        ComingSoonIconAction(HermesIcon.Unmute, READ_ALOUD)
+        ComingSoonIconAction(HermesIcon.Refresh, REFRESH_REPLY)
     }
 }
+
+/** `Branch in new chat` (`i18n/en.ts:3234` @ `3ca096de`). */
+private const val BRANCH_IN_NEW_CHAT = "Branch in new chat"
+
+/**
+ * `Read aloud` (`i18n/en.ts:3260` @ `3ca096de`) — the idle label of Desktop's
+ * `ReadAloudButton`, which is the only one of its three this app can render:
+ * `Preparing audio...` and `Stop reading` (`:3258-3259`) are states a control
+ * that never starts cannot reach.
+ */
+private const val READ_ALOUD = "Read aloud"
+
+/** `Refresh` (`i18n/en.ts:3232` @ `3ca096de`), Desktop's word for re-running the turn. */
+private const val REFRESH_REPLY = "Refresh"
+
+/**
+ * `Copy file` (`i18n/en.ts:3340`, `assistant.tool.copyFile` @ `3ca096de`).
+ *
+ * Desktop labels this slot through `toolCopyPayload`, which for a file-edit
+ * tool holding an inline diff returns `copy.file` rather than the generic
+ * `common.copy` (`components/assistant-ui/tool/fallback-model/index.ts:1253-1256`).
+ * It is the same word this app already puts on a live file payload
+ * (`ToolView.kt:124`), so the marked control and the built one agree.
+ */
+private const val COPY_DIFF = "Copy file"
 
 @Composable
 private fun ReasoningRow(activity: ReasoningActivity) {
@@ -1209,6 +1250,18 @@ private fun InlineDiffPanel(
             )
         }
         if (expanded) {
+            // The slot #71 S35's real control lands in, holding Desktop's own
+            // placement: its diff Copy sits over the top-right of the payload,
+            // which is where `ToolCopyControl` already puts this app's. Nothing
+            // to hand over yet — the panel renders the diff it was given rather
+            // than owning the text — so it ships dimmed behind the `WIP` chip
+            // instead of absent.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                ComingSoonIconAction(HermesIcon.Copy, COPY_DIFF)
+            }
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
                     // diff-lines.tsx:41-51 @

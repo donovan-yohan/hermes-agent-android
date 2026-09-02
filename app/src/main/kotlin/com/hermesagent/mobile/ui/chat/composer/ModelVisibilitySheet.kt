@@ -2,7 +2,6 @@
 
 package com.hermesagent.mobile.ui.chat.composer
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,9 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -45,7 +41,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.composer.ModelCatalog
@@ -58,6 +53,7 @@ import com.hermesagent.mobile.data.composer.providerVisibility
 import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.TokenSwitch
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
@@ -389,39 +385,4 @@ private fun ModelVisibilityRow(
     }
 }
 
-/**
- * Desktop's `Switch` affordance, painted from `HermesTheme.tokens`.
- *
- * Material's own `Switch` would bring Material's shape, motion and colour
- * defaults into a surface every other control in this app draws from the token
- * layer; the shape is Desktop's, the ink is this app's.
- */
-@Composable
-private fun TokenSwitch(on: Boolean) {
-    val tokens = HermesTheme.tokens
-    val knobOffset by animateDpAsState(if (on) 14.dp else 2.dp, label = "model-visibility-switch")
-    val density = LocalDensity.current
-    Box(
-        Modifier
-            .width(28.dp)
-            .height(16.dp)
-            .clip(TrackShape)
-            .background(if (on) tokens.accent else tokens.widgetSurface)
-            .border(1.dp, if (on) tokens.accent else tokens.strokeSecondary, TrackShape),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Box(
-            Modifier
-                // The lambda overload: the knob animates, so reading the state
-                // in layout rather than composition keeps the travel off the
-                // recomposition path.
-                .offset { IntOffset(with(density) { knobOffset.roundToPx() }, 0) }
-                .size(12.dp)
-                .background(if (on) tokens.accentForeground else tokens.textTertiary, KnobShape),
-        )
-    }
-}
-
 private val CheckShape = RoundedCornerShape(3.dp)
-private val TrackShape = RoundedCornerShape(8.dp)
-private val KnobShape = RoundedCornerShape(6.dp)

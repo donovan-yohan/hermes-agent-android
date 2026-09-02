@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui.common
 
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -61,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -436,6 +440,121 @@ fun PrimaryButton(
         )
     }
 }
+
+/**
+ * Desktop's `size="sm" variant="outline"` button: a bordered, transparent
+ * action with an optional leading glyph
+ * (`components/ui/button.tsx:22-23,39` @ `3ca096de`).
+ *
+ * The registry's `Add connection` and `Update all instances` are both this
+ * (`app/settings/connections-registry.tsx:958-967,969-987`), and the border is
+ * what separates them from the boxless [TextButton] a row action is. Android
+ * rendered `Add connection` as a bare accent row until #85 caught it reading as
+ * a link rather than a button.
+ *
+ * One target, not two: Desktop puts the glyph inside the button, so the glyph
+ * is decorative here and the whole box carries the name.
+ *
+ * @param contentDescription the spoken name, [label] by default and `null`
+ *   where a merging host already says the whole phrase. Merge *concatenates*
+ *   `SemanticsProperties.ContentDescription`, so a name kept here inside a
+ *   `semantics(mergeDescendants = true)` parent is a second name on one node.
+ *   See [ComingSoonOutlineAction].
+ */
+@Composable
+fun OutlineButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: HermesIcon? = null,
+    enabled: Boolean = true,
+    contentDescription: String? = label,
+) {
+    val tokens = HermesTheme.tokens
+    val shape = RoundedCornerShape(8.dp)
+    val ink = if (enabled) tokens.textSecondary else tokens.textQuaternary
+    val spoken = contentDescription
+    Row(
+        modifier = modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .border(1.dp, if (enabled) tokens.strokeTertiary else tokens.strokeQuaternary, shape)
+            .clip(shape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .then(
+                if (spoken == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { this.contentDescription = spoken }
+                },
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        icon?.let { HermesIconGlyph(it, color = ink) }
+        Text(text = label, style = HermesTheme.type.caption, color = ink)
+    }
+}
+
+/**
+ * Desktop's `Switch` affordance, painted from `HermesTheme.tokens`.
+ *
+ * Material's own `Switch` would bring Material's shape, motion and colour
+ * defaults into a surface every other control in this app draws from the token
+ * layer; the shape is Desktop's, the ink is this app's.
+ *
+ * Shared rather than per-surface: the model shortlist toggles one of these and
+ * the Gateways page renders a permanently disabled one, and two drawings of one
+ * affordance is how a switch starts meaning two different things.
+ *
+ * @param enabled Desktop's `disabled` (`app/settings/primitives.tsx:158-181` @
+ *   `3ca096de`). A disabled switch drops to the quaternary ink rather than
+ *   compositing at an alpha nothing in the token set controls — the same rule
+ *   the disabled mode cards follow.
+ */
+@Composable
+fun TokenSwitch(on: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val tokens = HermesTheme.tokens
+    val knobOffset by animateDpAsState(if (on) 14.dp else 2.dp, label = "token-switch")
+    val density = LocalDensity.current
+    val track = when {
+        !enabled -> tokens.widgetSurface
+        on -> tokens.accent
+        else -> tokens.widgetSurface
+    }
+    val stroke = when {
+        !enabled -> tokens.strokeQuaternary
+        on -> tokens.accent
+        else -> tokens.strokeSecondary
+    }
+    val knob = when {
+        !enabled -> tokens.textQuaternary
+        on -> tokens.accentForeground
+        else -> tokens.textTertiary
+    }
+    Box(
+        modifier
+            .width(28.dp)
+            .height(16.dp)
+            .clip(SwitchTrackShape)
+            .background(track)
+            .border(1.dp, stroke, SwitchTrackShape),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier
+                // The lambda overload: the knob animates, so reading the state
+                // in layout rather than composition keeps the travel off the
+                // recomposition path.
+                .offset { IntOffset(with(density) { knobOffset.roundToPx() }, 0) }
+                .size(12.dp)
+                .background(knob, SwitchKnobShape),
+        )
+    }
+}
+
+private val SwitchTrackShape = RoundedCornerShape(8.dp)
+private val SwitchKnobShape = RoundedCornerShape(6.dp)
 
 /**
  * Quiet inline affordance — "Change", "Forget key".

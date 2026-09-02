@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
+import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.PrimaryButton
@@ -168,6 +169,10 @@ private fun RelayNoticeBlock(
             RelayNoticeAction.Retry -> TextButton(label = "Try again", onClick = onRetry)
             RelayNoticeAction.OpenGateways ->
                 TextButton(label = "Open Gateways", onClick = onOpenGateways)
+            // Desktop's word, in Desktop's slot, dimmed: there is no write path
+            // to Relay here yet (#38), and the banner already told the person
+            // that authorization is what is missing.
+            RelayNoticeAction.Authorize -> ComingSoonAction(AUTHORIZE_RELAY)
             null -> Unit
         }
     }
@@ -650,6 +655,13 @@ private fun SendOutcomeRow(
         }
     }
 }
+
+/**
+ * Desktop's `auth_required` banner action (`desktop/plugin.js:386` @ `563a8c8`).
+ * Rendered disabled: redeeming the host's one-time grant is a write and #38
+ * owns Relay's write path.
+ */
+private const val AUTHORIZE_RELAY = "Authorize Relay"
 
 private const val RELAY_TITLE = "Relay channels"
 private const val ARCHIVED_NOTE = "Archived. Relay still returns its previous messages."

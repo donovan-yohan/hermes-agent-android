@@ -156,6 +156,127 @@ fun ComingSoonAction(label: String, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * [ComingSoonAction] where Desktop's control is an icon button rather than a
+ * word — the assistant action bar's Branch / Read aloud / Refresh
+ * (`components/assistant-ui/thread/assistant-message.tsx:625-642` @
+ * `3ca096de`) and the inline diff's Copy.
+ *
+ * Same contract as its sibling: one spoken node ending in [WIP_SPOKEN], a
+ * silent [WipPill] beside a disabled control, and the 48dp floor the icon
+ * button already keeps. The chip is what stops a dimmed glyph from reading as
+ * a control that is merely unavailable this second.
+ *
+ * The button is handed no `contentDescription` of its own, and that is the
+ * contract rather than an oversight. Exactly one thing on this row may carry a
+ * name, because `SemanticsProperties.ContentDescription` *concatenates* on
+ * merge rather than replacing, and a node carrying
+ * `["<label>. Work in progress.", "<label>"]` is TalkBack saying the label
+ * twice. Compose does not do that today — a descendant that merges its own
+ * descendants, which `Modifier.clickable` makes this button, is skipped by the
+ * parent's merge rather than absorbed — but that is a rule about how the two
+ * nodes happen to be built, not about what they promise, and it stops holding
+ * the moment the inner control is drawn without a click of its own. So the
+ * name lives in one place. The journeys assert it with
+ * `assertContentDescriptionEquals`, not the finders' own `any { }` match,
+ * which would not notice a second entry.
+ */
+@Composable
+fun ComingSoonIconAction(icon: HermesIcon, label: String, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label. $WIP_SPOKEN"
+            disabled()
+        },
+    ) {
+        // Silent by design: the Row above owns the whole phrase (see the KDoc).
+        HermesIconButton(icon = icon, contentDescription = null, onClick = {}, enabled = false)
+        WipPill()
+    }
+}
+
+/**
+ * [ComingSoonAction] where Desktop's control is a bordered outline button —
+ * the registry's `Update all instances`
+ * (`app/settings/connections-registry.tsx:969-987` @ `3ca096de`).
+ *
+ * The border is the point: it sits beside a live `Add connection` drawn the
+ * same way, and a boxless marker there would read as a different class of
+ * control rather than as the same one, unbuilt.
+ *
+ * The button keeps its own name everywhere else and gives it up here, for the
+ * reason [ComingSoonIconAction] records: one node, one name, because merge
+ * concatenates content descriptions rather than replacing them.
+ */
+@Composable
+fun ComingSoonOutlineAction(icon: HermesIcon, label: String, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label. $WIP_SPOKEN"
+            disabled()
+        },
+    ) {
+        OutlineButton(
+            label = label,
+            onClick = {},
+            icon = icon,
+            enabled = false,
+            // The Row above says the whole phrase; see the KDoc.
+            contentDescription = null,
+        )
+        WipPill()
+    }
+}
+
+/**
+ * Desktop's `ToggleRow` (`app/settings/primitives.tsx:158-181` @ `3ca096de`)
+ * as the marked, permanently-off form this app can honestly render.
+ *
+ * A preference whose *state* this app does not persist cannot be shown on:
+ * drawing it half-lit would be a claim about a stored value that does not
+ * exist. So the switch is off and disabled, the chip says why, and the row
+ * still teaches the setting Desktop has. The whole row is one spoken node —
+ * label, then Desktop's own description, then [WIP_SPOKEN] — because a screen
+ * reader that reads the setting and leaves the marker to a second stop has
+ * announced an option the person cannot take.
+ */
+@Composable
+fun ComingSoonToggleRow(
+    label: String,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+) {
+    val spoken = listOfNotNull("$label.", description, WIP_SPOKEN).joinToString(" ")
+    SettingsListRow(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = spoken
+            disabled()
+        },
+        description = description,
+        action = { TokenSwitch(on = false, enabled = false) },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = label,
+                    style = HermesTheme.type.bodyStrong,
+                    // One tier down from an enabled row's `textPrimary`, the
+                    // rule the disabled mode cards already follow rather than
+                    // compositing at an alpha no token controls.
+                    color = HermesTheme.tokens.textTertiary,
+                )
+                WipPill()
+            }
+        },
+    )
+}
+
 /** Icon + title heading above a run of rows (`settings/primitives.tsx:31-52`). */
 @Composable
 fun SettingsSectionHeading(

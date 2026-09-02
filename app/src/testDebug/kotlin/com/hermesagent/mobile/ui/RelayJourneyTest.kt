@@ -8,8 +8,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -38,6 +40,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hermesagent.mobile.ui.chat.ChatUiState
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.relay.CHANNEL_LIST_TAG
 import com.hermesagent.mobile.ui.relay.COMPOSER_FIELD_TAG
@@ -297,6 +300,42 @@ class RelayJourneyTest {
     @Test
     fun `a cold start on an errored lane shows the state, never a spinner`() =
         assertColdStartIsSilent(RelayLaneState.ERROR, "Relay needs attention")
+
+    /**
+     * Desktop's `auth_required` banner carries a title, a body and an
+     * `Authorize Relay` button (`desktop/plugin.js:384-388,438-446` @
+     * `563a8c8`, the SHA `docs/parity/relay-channels-surface.md` pins the
+     * plugin at). This app renders the first two and cannot perform the third,
+     * so the button ships visible, dimmed and marked rather than absent (#101);
+     * #38 owns the write path that lights it.
+     */
+    @Test
+    fun `an unauthorized lane offers Desktop's authorize action, marked and inert`() {
+        launchScreen(
+            RelayUiState(
+                relayAnswered = true,
+                relayReady = false,
+                notice = relayNotice(
+                    RelayAvailabilityState(
+                        RelayAvailability.Available(
+                            RelayChannelsStatus(RelayLaneState.AUTH_REQUIRED, LANE_DETAIL, guidance = null),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val spoken = "Authorize Relay. $WIP_SPOKEN"
+        // The whole name, once: the finder matches the description list with
+        // `any { }`, so a control that also named itself would announce twice
+        // and still be found here.
+        compose.onNodeWithContentDescription(spoken)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assertContentDescriptionEquals(spoken)
+        // Retry is the wrong next step for a grant the host has to make.
+        assertTrue(displayed("Try again").isEmpty())
+    }
 
     /**
      * Relay answered, so `relayAnswered` is true — but the ViewModel polls only

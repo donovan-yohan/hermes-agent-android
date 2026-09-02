@@ -24,6 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +36,8 @@ import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
+import com.hermesagent.mobile.ui.common.WipPill
 import com.hermesagent.mobile.ui.common.rememberClipboardWriter
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.delay
@@ -76,6 +81,29 @@ const val MARK_READ = "Mark as read"
 
 /** `Archive` (`i18n/en.ts:2312` @ `3ca096de`). */
 const val ARCHIVE = "Archive"
+
+/**
+ * `Appearance` (`i18n/en.ts:2242` @ `3ca096de`) — Desktop's per-session colour
+ * submenu, rendered disabled behind the `WIP` chip.
+ *
+ * Desktop opens a swatch grid from this trigger (`session-actions-menu.tsx:467-475`).
+ * Android persists no per-session colour, so there is nothing to open and
+ * nothing to choose; the trigger still holds Desktop's slot, between the
+ * identity verbs and Copy ID.
+ */
+const val APPEARANCE = "Appearance"
+
+/** `Branch` (`i18n/en.ts:2310` @ `3ca096de`), the first of Desktop's work verbs. */
+const val BRANCH = "Branch"
+
+/** `Export` (`i18n/en.ts:2309` @ `3ca096de`), the second. */
+const val EXPORT = "Export"
+
+/**
+ * `Move to project` (`i18n/en.ts:2247` @ `3ca096de`), Desktop's second nested
+ * submenu, after the work verbs.
+ */
+const val MOVE_TO_PROJECT = "Move to project"
 
 /**
  * `Unarchive` (`i18n/en.ts:1156` @ `3ca096de`).
@@ -168,6 +196,17 @@ data class SessionActionItem(
      * danger group without it (`session-actions-menu.tsx:435-461`).
      */
     val destructive: Boolean = false,
+    /**
+     * Whether this build can perform the verb at all.
+     *
+     * Not Desktop's `disabled`, which is per-session state — a row with no id,
+     * a handler the surface did not pass. This is the permanent kind: the verb
+     * has no implementation here, so it renders dimmed behind a `WIP` chip and
+     * never reaches `onSelect`. Desktop keeps its own unavailable items mounted
+     * and disabled (`session-actions-menu.tsx:287,298,339,351,468,489`), which
+     * is the shape being matched; what differs is that theirs can light up.
+     */
+    val available: Boolean = true,
 )
 
 /** A rendered menu node: an action, or one of Desktop's group separators. */
@@ -224,11 +263,15 @@ fun sessionActionItems(
         // the glyph both name the *action*, so `Mark as read` carries the open
         // envelope (`session-actions-menu.tsx:310-333` @ `3ca096de`).
         if (unread) MarkRead else MarkUnread,
+        Appearance,
         when (copyStatus) {
             SessionIdCopyStatus.Idle -> CopyId
             SessionIdCopyStatus.Copied -> CopyIdCopied
             SessionIdCopyStatus.Failed -> CopyIdFailed
         },
+        Branch,
+        Export,
+        MoveToProject,
         if (archived) Unarchive else Archive,
         Delete,
     )
@@ -267,6 +310,44 @@ private val Unpin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.P
 private val MarkRead = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.MailRead, MARK_READ)
 
 private val MarkUnread = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Mail, MARK_UNREAD)
+
+/**
+ * Desktop's `Appearance` submenu trigger, in the identity group between the
+ * read-state row and Copy ID (`session-actions-menu.tsx:467-475` @ `3ca096de`).
+ *
+ * Flattened to one row: a nested pointer submenu is not what ships on a phone,
+ * and with no per-session colour to persist there is nothing for a second level
+ * to hold. The page records that flattening as the standing adaptation for both
+ * of Desktop's submenus.
+ */
+private val Appearance =
+    SessionActionItem(SessionActionsGroup.Identity, HermesIcon.SymbolColor, APPEARANCE, available = false)
+
+/**
+ * Desktop's two work verbs, in Desktop's order
+ * (`session-actions-menu.tsx:337-359` @ `3ca096de`): `Branch` on `repo-forked`
+ * — the codicon this font has, since it ships no `git-fork` — then `Export` on
+ * `cloud-download`.
+ *
+ * Neither has a backend call here: branching needs a session-fork RPC this app
+ * does not make, and exporting needs a file destination Android has to ask the
+ * platform for. They hold Desktop's slots so the group exists and its separator
+ * lands where upstream's does.
+ */
+private val Branch =
+    SessionActionItem(SessionActionsGroup.Work, HermesIcon.RepoForked, BRANCH, available = false)
+
+private val Export =
+    SessionActionItem(SessionActionsGroup.Work, HermesIcon.CloudDownload, EXPORT, available = false)
+
+/**
+ * Desktop's second submenu, after the work verbs and before the tab group
+ * (`session-actions-menu.tsx:488-496` @ `3ca096de`), flattened for the same
+ * reason [Appearance] is. Android has no projects roster to move a session
+ * into.
+ */
+private val MoveToProject =
+    SessionActionItem(SessionActionsGroup.Work, HermesIcon.Folder, MOVE_TO_PROJECT, available = false)
 
 /**
  * `Archive` in the danger group *above* Delete and deliberately not
@@ -492,7 +573,13 @@ internal fun SessionActionsMenu(
             when (node) {
                 is SessionMenuNode.Separator -> Hairline()
 
-                is SessionMenuNode.Action -> SessionActionRow(node.item) { onSelect(node.item) }
+                is SessionMenuNode.Action -> SessionActionRow(node.item) {
+                    // A row that cannot act never dispatches: `onSelect`'s
+                    // `when` is exhaustive over the verbs this build performs,
+                    // and an unbuilt one arriving there would be an error()
+                    // rather than a no-op.
+                    if (node.item.available) onSelect(node.item)
+                }
             }
         }
     }
@@ -501,18 +588,37 @@ internal fun SessionActionsMenu(
 @Composable
 private fun SessionActionRow(item: SessionActionItem, onClick: () -> Unit) {
     val tokens = HermesTheme.tokens
-    val ink = if (item.destructive) tokens.destructive else tokens.textSecondary
+    val ink = when {
+        !item.available -> tokens.textQuaternary
+        item.destructive -> tokens.destructive
+        else -> tokens.textSecondary
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = HermesTheme.spacing.touchTarget)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = item.available, role = Role.Button, onClick = onClick)
+            // One spoken node for an unbuilt verb: the row says the action and
+            // its status together and the chip beside the label stays silent,
+            // which is the same contract `ComingSoonAction` keeps. An available
+            // row is left alone so the menu keeps per-item text navigation.
+            .then(
+                if (item.available) {
+                    Modifier
+                } else {
+                    Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = "${item.label}. $WIP_SPOKEN"
+                        disabled()
+                    }
+                },
+            )
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         HermesIconGlyph(item.icon, color = ink, size = 13.sp)
         Text(text = item.label, style = HermesTheme.type.scaffold, color = ink)
+        if (!item.available) WipPill()
     }
 }
 
