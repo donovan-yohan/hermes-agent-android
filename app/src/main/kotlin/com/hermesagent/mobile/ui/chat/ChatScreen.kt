@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -68,6 +69,7 @@ import com.hermesagent.mobile.data.attachments.ImageRefLines
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ContextMeterState
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ToolActivity
@@ -144,12 +146,27 @@ fun ChatScreen(
     // the same predicate three times.
     val gatewayDoor = StatusAction(ConnectionsCopy.MANAGE_GATEWAYS, onOpenGateways)
         .takeIf { state.gatewayNeedsAttention }
+    var contextUsageOpen by rememberSaveable { mutableStateOf(false) }
+    val onOpenContextUsage = { contextUsageOpen = true }
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, onOpenContextUsage)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, onOpenContextUsage)
         }
+    }
+    // The meter disappears whenever its session does — a switch, a reconnect, an
+    // endpoint change. Without this the sheet would vanish with it and then
+    // re-open by itself when the next breakdown landed, and `rememberSaveable`
+    // would carry that latent `true` across an Activity recreate.
+    LaunchedEffect(state.contextMeter) {
+        if (state.contextMeter == null) contextUsageOpen = false
+    }
+    if (contextUsageOpen && state.contextMeter != null) {
+        ContextUsageSheet(
+            meterState = state.contextMeter,
+            onDismiss = { contextUsageOpen = false },
+        )
     }
 }
 
@@ -167,6 +184,7 @@ private fun CompactLayout(
     gatewayDoor: StatusAction?,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
+    onOpenContextUsage: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -220,6 +238,8 @@ private fun CompactLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession,
                 onDeleteSession = actions.onDeleteSession,
+                contextMeter = state.contextMeter,
+                onOpenContextUsage = onOpenContextUsage,
                 modifier = Modifier.statusBarsPadding(),
             )
             TranscriptPane(state, Modifier.weight(1f))
@@ -238,6 +258,7 @@ private fun WideLayout(
     railInsets: WindowInsets,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
+    onOpenContextUsage: () -> Unit = {},
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         // The rail owns its bottom edge in the wide layout. Keep its surface
@@ -271,6 +292,8 @@ private fun WideLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession,
                 onDeleteSession = actions.onDeleteSession,
+                contextMeter = state.contextMeter,
+                onOpenContextUsage = onOpenContextUsage,
             )
             TranscriptPane(state, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
@@ -708,6 +731,8 @@ private fun ChatTopBar(
     gatewayDoor: StatusAction? = null,
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
+    contextMeter: ContextMeterState? = null,
+    onOpenContextUsage: () -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
@@ -735,14 +760,27 @@ private fun ChatTopBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = subtitle,
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.scaffoldMeta,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.statusAction(subtitle, gatewayDoor),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = subtitle,
+                        style = HermesTheme.type.scaffoldMeta,
+                        color = tokens.scaffoldMeta,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).statusAction(subtitle, gatewayDoor),
+                    )
+                    if (contextMeter != null && contextMeter.label.isNotEmpty()) {
+                        ContextMeter(
+                            label = contextMeter.label,
+                            detail = contextMeter.detail,
+                            onClick = onOpenContextUsage,
+                        )
+                    }
+                }
             }
             // The open session's actions, identical to its sidebar row's:
             // both read the one item list in `sessionActionItems`.

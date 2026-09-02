@@ -149,6 +149,9 @@ lifecycle.
 - Gateway-backed dictation, voice conversation, auto-speak, and a user-started
   wake-word foreground service. Barge-in, complete permission-recovery journeys,
   streaming-TTS fallback, and physical-device acceptance remain open.
+- Top-bar context meter with live token usage and percentage glyph bar, opening a
+  detailed Context Usage bottom sheet with localized category breakdowns,
+  swatches, and compact token numbers.
 
 ### Coding and agent status
 
