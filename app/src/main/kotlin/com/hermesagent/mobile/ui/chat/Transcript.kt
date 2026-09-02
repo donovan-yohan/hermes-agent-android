@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -47,6 +48,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
@@ -140,6 +142,11 @@ fun Transcript(
     activityStartedAtMillis: Long? = null,
     progress: SessionProgress? = null,
     imageLoader: GatewayImageLoader? = null,
+    /**
+     * Ask the Gateway for the page before this one. Null when there is nothing
+     * earlier to ask for, which is also when the control does not render.
+     */
+    onShowEarlier: (() -> Unit)? = null,
 ) {
     val spacing = HermesTheme.spacing
     // Progress has exactly one owner: the live transcript tail. A running tool
@@ -163,6 +170,9 @@ fun Transcript(
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(spacing.blockGap),
     ) {
+        if (onShowEarlier != null) {
+            item(key = SHOW_EARLIER_KEY) { ShowEarlierRow(onShowEarlier) }
+        }
         items(items = entries, key = { it.id }) { entry ->
             when (entry) {
                 is UserTurn -> UserBubble(entry, imageLoader)
@@ -178,6 +188,70 @@ fun Transcript(
         }
     }
 }
+
+/**
+ * `Show earlier messages`.
+ *
+ * Desktop's control, ported: a plain centred text pill at the top of the
+ * transcript content, inside the scroll rather than pinned over it, with no
+ * glyph, no spinner, no disabled state and no loading label — it simply stops
+ * rendering once a session is exhausted
+ * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:834-842` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`; copy verbatim from
+ * `apps/desktop/src/i18n/en.ts:3218`).
+ *
+ * The ink is the muted rung (`text-muted-foreground` → `--dt-muted-foreground`
+ * → `--ui-text-tertiary`, `styles.css:393`) and the hairline is
+ * `border-border/65`. The fill is `bg-(--composer-fill)`, which is
+ * `color-mix(in srgb, var(--dt-card) 90%, var(--dt-background))`
+ * (`styles.css:1789`) — the card token with a tenth of the page ground over it,
+ * and Desktop derives both from the same two seeds this app does (`--dt-card` is
+ * `--ui-bg-editor`, `styles.css:390`; `--dt-background` is `--ui-bg-chrome`,
+ * `styles.css:388`).
+ * The `mb-(--conversation-turn-gap)` below it is the turn gap, on top of the
+ * list's own block gap, as Desktop's is on top of its flow.
+ *
+ * Desktop's `hover:text-foreground` is not painted: touch has no hover state.
+ * That is the one difference, ledgered in
+ * `docs/parity/transcript-backfill.md`.
+ */
+@Composable
+private fun ShowEarlierRow(onClick: () -> Unit) {
+    val tokens = HermesTheme.tokens
+    // `color-mix(in srgb, …)` composites the encoded sRGB components, which is
+    // what `compositeOver` does: a tenth of the ground over nine tenths of the
+    // card.
+    val fill = tokens.chatSurface.copy(alpha = COMPOSER_FILL_GROUND).compositeOver(tokens.cardSurface)
+    Box(
+        Modifier.fillMaxWidth().padding(bottom = HermesTheme.spacing.turnGap),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = SHOW_EARLIER_LABEL,
+            style = HermesTheme.type.scaffold,
+            color = tokens.textTertiary,
+            modifier = Modifier
+                // Desktop's pill is a 22px chrome control; a touch one may not
+                // be smaller than the platform floor.
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .background(fill, ShowEarlierShape)
+                .border(1.dp, tokens.strokeSecondary, ShowEarlierShape)
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 12.dp)
+                .wrapContentHeight(Alignment.CenterVertically),
+        )
+    }
+}
+
+/** The share of `--dt-background` in `--composer-fill` (`styles.css:1789`). */
+private const val COMPOSER_FILL_GROUND = 0.1f
+
+/** `rounded-full` on a one-line pill (`list.tsx:836`). */
+private val ShowEarlierShape = RoundedCornerShape(percent = 50)
+
+/** `apps/desktop/src/i18n/en.ts:3218` @ `3ca096de`, verbatim. */
+private const val SHOW_EARLIER_LABEL = "Show earlier messages"
+private const val SHOW_EARLIER_KEY = "show-earlier"
 
 /** The one user-turn bubble shape, shared by the transcript and the pinned prompt. */
 private val UserBubbleShape = RoundedCornerShape(14.dp)

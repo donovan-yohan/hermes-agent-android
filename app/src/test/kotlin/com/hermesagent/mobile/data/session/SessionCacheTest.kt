@@ -138,6 +138,38 @@ class SessionCacheTest {
         assertEquals("local-user-1", stamped.id)
     }
 
+    /**
+     * The carry-over from the #75 review that #68 S25 turns on: a page can now
+     * be merged into a live transcript, so a replace whose incoming entry has
+     * no durable address must keep the one already held. Null there means "the
+     * backend has not written this row down yet", never "this row has no
+     * identity" — and the older-page merge dedupes on exactly that address.
+     */
+    @Test
+    fun `a live row landing on a hydrated id keeps that row's durable address`() {
+        cache.upsertSession(row("a"))
+        cache.setTranscript("a", listOf(AssistantTurn("101", "half an answer", 0, rowId = TranscriptRowId(101))))
+
+        // A live delta rewrites the same entry under the same rendering key; a
+        // streamed frame carries no `row_id`.
+        cache.putEntry("a", AssistantTurn("101", "half an answer, then the rest", 0, streaming = true))
+
+        val entry = cache.transcript("a").single()
+        assertEquals("half an answer, then the rest", (entry as AssistantTurn).markdown)
+        assertEquals(TranscriptRowId(101), entry.rowId)
+    }
+
+    @Test
+    fun `an unstamped replace that changes nothing else stays a no-op`() {
+        cache.upsertSession(row("a"))
+        cache.setTranscript("a", listOf(UserTurn("101", "ship it", 0, rowId = TranscriptRowId(101))))
+        val before = cache.state.value
+
+        cache.putEntry("a", UserTurn("101", "ship it", 0))
+
+        assertSame("preserving the address must not churn identity", before, cache.state.value)
+    }
+
     @Test
     fun `project snapshots own membership and follow tombstone and rehome identity`() {
         val preview = row("parent", title = "Project chat")

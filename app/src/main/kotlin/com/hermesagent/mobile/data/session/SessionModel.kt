@@ -358,3 +358,29 @@ data class ToolActivity(
 ) : TranscriptEntry
 
 enum class ToolState { Running, Done, Failed, Stopped }
+
+/**
+ * The same entry addressed at [rowId]. A `when` over the sealed variants rather
+ * than a member, because the durable address belongs to the row a variant was
+ * projected from, not to the variant's own shape.
+ */
+internal fun TranscriptEntry.withRowId(rowId: TranscriptRowId?): TranscriptEntry = when (this) {
+    is UserTurn -> copy(rowId = rowId)
+    is AssistantTurn -> copy(rowId = rowId)
+    is ReasoningActivity -> copy(rowId = rowId)
+    is ToolActivity -> copy(rowId = rowId)
+}
+
+/**
+ * This entry, keeping the durable address [existing] already holds when this
+ * one has none.
+ *
+ * A replace keyed on the rendering id is wholesale, so an unstamped entry
+ * landing on a stamped one would erase the only address the backend gave us for
+ * that row (`transcript-backfill.ts:44-57` @ `3ca096de` dedupes on exactly that
+ * address). Null on the incoming entry means "the backend has not written this
+ * down yet", never "this row has no durable identity" — so it may not overwrite
+ * one that was.
+ */
+internal fun TranscriptEntry.preservingRowIdOf(existing: TranscriptEntry): TranscriptEntry =
+    if (rowId != null || existing.rowId == null) this else withRowId(existing.rowId)

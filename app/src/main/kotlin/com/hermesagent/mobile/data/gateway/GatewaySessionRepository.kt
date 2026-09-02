@@ -41,7 +41,11 @@ import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.session.graftRefreshedTailOntoBackfill
+import com.hermesagent.mobile.data.session.mergeOlderTranscriptPage
+import com.hermesagent.mobile.data.session.preservingRowIdOf
 import com.hermesagent.mobile.data.session.retainingGatewayQueue
+import com.hermesagent.mobile.data.session.transcriptPageState
 import com.hermesagent.mobile.data.ssh.redact
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -226,6 +230,24 @@ interface GatewaySessionRepository {
     suspend fun killProcess(durableId: String, processId: String): GatewayProcessKillOutcome =
         GatewayProcessKillOutcome.Unsupported
     suspend fun goalStatus(durableId: String): GatewayGoalStatusOutcome = GatewayGoalStatusOutcome.Unsupported
+    /**
+     * Durable session ids whose transcript is known to have older rows nobody
+     * has asked for yet — exactly what the `Show earlier messages` control
+     * renders on, and what it stops rendering on once a session is exhausted.
+     */
+    val sessionsWithEarlierMessages: StateFlow<Set<String>> get() = NO_EARLIER_MESSAGES
+
+    /**
+     * Fetch the page immediately older than the rows already held for
+     * [durableId] and prepend it.
+     *
+     * A no-op when nothing older is known to exist, when a page for that
+     * session is already in flight, or on a Gateway with no paged transcript
+     * route. A failure is not raised: the control stays available and the next
+     * press retries (`transcript-backfill.ts:143-148` @ `3ca096de`).
+     */
+    suspend fun loadEarlierMessages(durableId: String) = Unit
+
     suspend fun renameSession(durableId: String, title: String): String =
         error("Session renaming is not implemented by this repository.")
     suspend fun deleteSession(durableId: String): Unit =
@@ -382,6 +404,19 @@ private enum class GatewayOptionalCapability {
      * the user pin, archive and unread for the rest of the session.
      */
     SessionListRest,
+
+    /**
+     * `GET /api/sessions/{id}/messages`. The paged transcript route: the one
+     * contract that can hydrate a session with its newest page instead of the
+     * whole conversation, and the only one `Show earlier messages` can read
+     * (`session.history` takes a session id and nothing else,
+     * `tui_gateway/methods_session.py:2827-2856` @ `3ca096de`). A `404` here is
+     * this backend saying it has no such route; every other refusal falls back
+     * to the RPC for that one read without demoting the connection, because
+     * opening a session must not become less reliable than it was before the
+     * window existed.
+     */
+    SessionMessagesRest,
 }
 
 /** Why the session list is being read, and therefore what happens to its cursors. */
@@ -461,6 +496,89 @@ private data class PendingFlagWrite(
  * permanently disbelieve it.
  */
 private const val FLAG_WRITE_GUARD_MILLIS = 10_000L
+
+/**
+ * Where one session's transcript window stands on this connection.
+ *
+ * @param pagingSessionId the id the route resolved the compression chain
+ *   forward to (`hermes_cli/web_routers/sessions.py:663,707` @ `3ca096de`).
+ *   Every later page addresses it, so a page can never be read off a parent.
+ * @param profile the scope that served the tail, so an older page routes its
+ *   read to the same backend store.
+ * @param nextOffset where the next older page starts, measured back from the
+ *   newest row.
+ * @param possiblyTruncated whether older rows are believed to exist beyond it.
+ * @param loading whether a page is on the wire for this session right now.
+ * @param generation which hydration this window belongs to. A page in flight
+ *   is measured back from the newest row *as this window saw it*; a re-hydrate
+ *   re-reads the tail and rebases that origin, so the page must be discarded
+ *   rather than prepended against a window it was not measured for — and the
+ *   offset alone cannot say, because a rebase can land on the same number.
+ */
+private data class TranscriptWindow(
+    val pagingSessionId: String,
+    val profile: String?,
+    val nextOffset: Int,
+    val possiblyTruncated: Boolean,
+    val generation: Long,
+    val loading: Boolean = false,
+)
+
+/** One hydrated transcript window and the composer todos it ends on. */
+private data class TranscriptHydration(
+    val entries: List<TranscriptEntry>,
+    val todos: List<ComposerTodoStatus>?,
+)
+
+/**
+ * What one hydration needs to know before it touches the wire, read once under
+ * the lock: which profile the read is scoped to, whether that scope is the store
+ * that listed the row, and whether this conversation is a compression tip whose
+ * ancestors the paged route will not read.
+ */
+private data class TranscriptHydrationPlan(
+    val profile: String?,
+    /**
+     * Whether this read goes to the store that listed the row.
+     *
+     * A row that names a profile is read scoped to it, and that name is the
+     * canonicalised one the leg that listed it asked for: the list route writes
+     * `row_profile = profile_name or _cron_default_profile()` onto every row it
+     * serves as `s["profile"]` (`hermes_cli/web_routers/sessions.py:182-189` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     *
+     * A row that names NONE is read unscoped, and an unscoped read lands on
+     * exactly the launch profile's own `state.db`. Naming none is the ordinary
+     * case rather than the exotic one, because this file strips that stamp back
+     * off the unscoped leg's rows on purpose — there it describes the Gateway
+     * and not the row (`readSessionPages`, the `profile == null` branch). So an
+     * unstamped row is owned when the unscoped leg is the leg that listed it
+     * (`launchListedRowIds`), and a row this connection has never listed at all
+     * is a row whose store nothing here can name.
+     */
+    val ownerKnown: Boolean,
+    val compressed: Boolean,
+)
+
+/**
+ * The rendering key for a paged row the backend stamped no identifier onto.
+ *
+ * Keyed off the page's own offset rather than a position in the whole
+ * conversation. Within one hydration the pages cover disjoint offset ranges by
+ * construction (`nextOffset = offset + returned`), so the same row keeps the
+ * same key and two rows cannot claim one. It cannot collide with the RPC
+ * history's `"<runtime>-history-<index>"` either.
+ *
+ * ACROSS hydrations the offsets are measured from a newest row that may have
+ * moved, so a re-read can key a row at an offset an earlier read already used
+ * for a different row. That is reachable only on a backend that stamps no
+ * `messages.id`: at the pin every persisted row carries a positive one and
+ * `messageId()` never reaches this fallback, so no key this function makes is
+ * ever the thing a merge dedupes on. A backend that stopped stamping would need
+ * the key to carry the window generation as well.
+ */
+private fun restRenderKey(pagingSessionId: String, offset: Int, index: Int): String =
+    "$pagingSessionId-rest-${offset + index}"
 
 /** Where one profile leg's paging stands. Meaningless across a connection change. */
 private data class SessionPageCursor(
@@ -700,8 +818,35 @@ internal class LiveGatewaySessionRepository(
 
     /** The single pending [armFlagWriteReconcile] wake-up, if one is armed. */
     private var flagWriteReconcileJob: Job? = null
+
+    /**
+     * Rows the UNSCOPED list leg has answered with on this connection.
+     *
+     * An unscoped list and an unscoped read open the same store — the launch
+     * profile's own — so a row this set holds is a row a later unscoped read is
+     * addressing in the store that listed it. That is the only thing that makes
+     * a `404` from the paged transcript route evidence about the ROUTE rather
+     * than about the scope, for the rows the default single-profile topology is
+     * made of: their stamp is deliberately stripped (`readSessionPages`), so
+     * nothing else about them can say which store they came from.
+     *
+     * Ids accumulate across pages and refreshes and are cleared with the
+     * connection. A row that has since left the backend cannot make this wrong:
+     * a `404` for it is only ever read together with a `session.history` that
+     * returned rows for the same session.
+     */
+    private val launchListedRowIds = mutableSetOf<String>()
     private val sessionPagingFlow = MutableStateFlow(SessionListPaging())
     override val sessionPaging: StateFlow<SessionListPaging> = sessionPagingFlow.asStateFlow()
+
+    /**
+     * Per hydrated session, where its transcript window stands. Facts about one
+     * backend's rows, so cleared with that backend's capabilities.
+     */
+    private val transcriptWindows = mutableMapOf<String, TranscriptWindow>()
+    private var transcriptWindowGeneration = 0L
+    private val earlierMessagesFlow = MutableStateFlow<Set<String>>(emptySet())
+    override val sessionsWithEarlierMessages: StateFlow<Set<String>> = earlierMessagesFlow.asStateFlow()
 
     /** Latest server-reported git branch per durable session, connection-scoped. */
     private val branchByDurableId = mutableMapOf<String, String>()
@@ -768,8 +913,10 @@ internal class LiveGatewaySessionRepository(
                     worktreeByDurableId.clear()
                     unsupportedCapabilities.clear()
                     // Offsets are facts about one backend's rows, cleared with
-                    // that backend's capabilities just above.
+                    // that backend's capabilities just above. So is which rows
+                    // the launch profile's own store answered with.
                     sessionPageCursors.clear()
+                    launchListedRowIds.clear()
                     // A fence outranks a page from the backend it was written
                     // against. A new connection's pages are not that backend's,
                     // so the fence goes with the offsets — and so does the
@@ -778,6 +925,8 @@ internal class LiveGatewaySessionRepository(
                     flagWriteReconcileJob?.cancel()
                     flagWriteReconcileJob = null
                     sessionPagingFlow.value = SessionListPaging()
+                    transcriptWindows.clear()
+                    publishEarlierMessagesLocked()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
                     activeRuntimeIds.clear()
@@ -956,7 +1105,7 @@ internal class LiveGatewaySessionRepository(
                     // That route stamps *every* row with a profile even when
                     // the request named none: `row_profile = profile_name or
                     // _cron_default_profile()`, written onto each row as
-                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:146,152`
+                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:182-189`
                     // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). That
                     // fallback resolves the Gateway process's *own* active
                     // profile, and answers `"default"` only when that profile
@@ -1012,6 +1161,11 @@ internal class LiveGatewaySessionRepository(
                 }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
+                    // An unscoped leg reads the launch profile's own store, so
+                    // the rows it answered with are the rows a later unscoped
+                    // read addresses in the store that listed them. Both pools
+                    // read that same store, so both say so.
+                    if (profile == null) rows.mapTo(launchListedRowIds, SessionSummary::id)
                     if (pool == SessionPool.Live) {
                         sessionPageCursors[profile] = when (mode) {
                             // `More` replaces too: its own page is the deeper one,
@@ -1025,9 +1179,9 @@ internal class LiveGatewaySessionRepository(
                     // is layering over under the id this page actually named,
                     // and the fence runs last so an unconfirmed write of ours
                     // outranks a page that was already in flight when it went.
-                    cache.upsertSessions(
-                        rows.map { applyPendingFlagWrites(mergeListedSession(alignLineage(it))) },
-                    )
+                    val merged = rows.map { applyPendingFlagWrites(mergeListedSession(alignLineage(it))) }
+                    cache.upsertSessions(merged)
+                    retractWindowsForCompressionTipsLocked(merged)
                 }
             }
             if (!answered) firstFailure?.let { throw it }
@@ -1141,6 +1295,308 @@ internal class LiveGatewaySessionRepository(
             rows = rows,
             cursor = SessionPageCursor(nextOffset = rows.size, total = null, exhausted = true),
         )
+    }
+
+    /**
+     * The newest page of a session's transcript, and the todo list it ends on.
+     *
+     * Desktop hydrates a chat from `getLatestSessionMessages` — 120 rows,
+     * newest-first, compacted rows included — and keeps `session.history` for
+     * the one thing that still needs the whole stamped conversation, rewind
+     * (`apps/desktop/src/api/sessions.ts:408-438` and
+     * `apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts:200,226`
+     * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). This mirrors that split:
+     * the paged route first, the RPC as the contract for a backend that has no
+     * such route — and as the answer for one read the route refused, because a
+     * blip must not make opening a session worse than it was.
+     *
+     * The window budget is enforced where the contract exists. The RPC has no
+     * `limit` at all (`tui_gateway/methods_session.py:2827-2856`), so a Gateway
+     * on that path still hydrates whole, and its window records nothing older
+     * to ask for.
+     */
+    private suspend fun hydrateTranscript(
+        connection: ConnectionSnapshot,
+        durableId: String,
+        canonicalId: String,
+        runtimeId: String,
+    ): TranscriptHydration {
+        val plan = synchronized(stateLock) {
+            ensureCurrent(connection)
+            val owningProfile = owningProfileParam(canonicalId) ?: owningProfileParam(durableId)
+            TranscriptHydrationPlan(
+                profile = owningProfile,
+                // The question is which STORE this read opens, not whether the
+                // row happens to carry a string. A named scope opens the store
+                // whose leg stamped that name; no scope at all opens the launch
+                // profile's, which owns this row exactly when the unscoped leg
+                // is the leg that listed it.
+                ownerKnown = if (owningProfile != null) {
+                    true
+                } else {
+                    sequenceOf(canonicalId, durableId).any { it in launchListedRowIds }
+                },
+                compressed = hasCompressionAncestorLocked(canonicalId, durableId),
+            )
+        }
+        val profile = plan.profile
+        val restUsable = http() != null &&
+            !isCapabilityUnsupported(GatewayOptionalCapability.SessionMessagesRest, connection) &&
+            !plan.compressed
+        var routeAnswered404 = false
+        if (restUsable) {
+            val result = rest.sessionMessages(
+                sessionId = canonicalId,
+                limit = TRANSCRIPT_PAGE,
+                offset = 0,
+                order = GatewayMessageOrder.Latest,
+                // Durable display history must include the rows in-place
+                // compaction preserved; without them the transcript silently
+                // ends at the compaction boundary and earlier turns are
+                // unreachable (`api/sessions.ts:418-424`).
+                includeCompacted = true,
+                profile = profile,
+            )
+            when (result) {
+                is GatewayRestResult.Success -> {
+                    val page = result.value
+                    // The route resolves the compression chain forward to the
+                    // live tip before it reads, and reports the id it landed on
+                    // (`sessions.py:660-663,707`). Every later page addresses
+                    // that id; older rows never come from a parent.
+                    val pagingId = page.sessionId.takeIf(String::isNotBlank) ?: canonicalId
+                    val rows = projectRestTranscriptRows(page.messages)
+                    val entries = parseMessages(rows, clock()) { index ->
+                        restRenderKey(pagingId, page.offset?.toInt() ?: 0, index)
+                    }
+                    val window = transcriptPageState(
+                        requestedOffset = 0,
+                        echoedOffset = page.offset?.toInt(),
+                        echoedLimit = page.limit?.toInt(),
+                        returned = page.messages.size,
+                    )
+                    return synchronized(stateLock) {
+                        ensureCurrent(connection)
+                        // Re-opening a session re-reads only its newest page.
+                        // Replacing the transcript with that page outright
+                        // would silently drop everything `Show earlier
+                        // messages` had already loaded, so the refreshed tail
+                        // is grafted onto the prefix ahead of it and the next
+                        // page starts past the rows that prefix holds.
+                        val grafted = graftRefreshedTailOntoBackfill(
+                            entries,
+                            cache.transcript(canonicalId).ifEmpty { cache.transcript(durableId) },
+                        )
+                        // Read HERE, not at plan time. A `loadEarlierMessages`
+                        // that completed while this page was on the wire has
+                        // already deepened the window, and a snapshot taken
+                        // before the read would step the next page back over
+                        // rows the reader now holds. The id falls back the same
+                        // way the transcript above does, so a row rehomed onto a
+                        // lineage tip finds the window it was actually paged
+                        // with.
+                        val previousOffset =
+                            (transcriptWindows[canonicalId] ?: transcriptWindows[durableId])?.nextOffset ?: 0
+                        transcriptWindows[canonicalId] = TranscriptWindow(
+                            pagingSessionId = pagingId,
+                            profile = profile,
+                            // Offsets are raw stored rows measured back from the
+                            // newest one, so what the previous window had already
+                            // consumed is already in that unit: the pages the
+                            // reader loaded covered `[0, previousOffset)` and this
+                            // refreshed tail covers `[0, nextOffset)`. The union
+                            // ends at the further of the two, and re-deriving it
+                            // from the kept prefix would count *entries* the
+                            // projection may have dropped and step the next page
+                            // onto rows the reader already holds. Rows persisted
+                            // since the last read shift the origin, so the deeper
+                            // offset can address a row already held — an overlap
+                            // the prepend dedupes, never a row skipped.
+                            nextOffset = if (grafted.keptPrefix) {
+                                maxOf(window.nextOffset, previousOffset)
+                            } else {
+                                window.nextOffset
+                            },
+                            possiblyTruncated = window.possiblyTruncated,
+                            generation = ++transcriptWindowGeneration,
+                        )
+                        publishEarlierMessagesLocked()
+                        TranscriptHydration(grafted.entries, latestComposerTodosFromRows(rows))
+                    }
+                }
+
+                // A 404 here is TWO different answers wearing one status. The
+                // route raises it for a session id it could not resolve
+                // (`sessions.py:660-662,683-684` @ `3ca096de`) as readily as a
+                // backend with no such route does, and the read is scoped by
+                // `owningProfileParam`, which answers null for a row whose
+                // owning profile is not known yet — sending the read to a
+                // different profile's `state.db`, where the session genuinely is
+                // not found. Demoting on that would turn one unowned row into a
+                // whole connection reverting to whole-history hydration. So the
+                // status alone demotes nothing; it falls back for this read like
+                // any other refusal, and the fallback itself is the evidence.
+                is GatewayRestResult.Failed -> routeAnswered404 = result.statusCode == HTTP_NOT_FOUND
+            }
+        }
+        val historyResult = connection.client.request("session.history", historyParams(runtimeId))
+        val entries = parseHistory(historyResult, runtimeId, clock())
+        // Two independent things have to be true before a 404 is evidence about
+        // the ROUTE. The read has to have gone to the store that owns this row —
+        // an unowned row's read goes out unscoped and can land on a different
+        // profile's `state.db`, where a real session genuinely is not found. And
+        // the RPC has to have come back with rows for the same session on the
+        // same connection, so the session demonstrably exists and is readable.
+        // Neither alone says anything; together they leave only "this backend
+        // has no such route". An unowned row, an empty history or a failed one
+        // demotes nothing and simply falls back for this read.
+        if (routeAnswered404 && plan.ownerKnown && entries.isNotEmpty()) {
+            markCapabilityUnsupported(GatewayOptionalCapability.SessionMessagesRest, connection)
+        }
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            // The whole conversation is loaded, so there is nothing earlier to
+            // offer and the control must not appear.
+            transcriptWindows.remove(canonicalId)
+            publishEarlierMessagesLocked()
+        }
+        return TranscriptHydration(
+            entries = entries,
+            todos = latestComposerTodosFromHistory(historyResult),
+        )
+    }
+
+    /**
+     * Whether this conversation is the live tip of a compression chain whose
+     * earlier sessions the paged route will not read.
+     *
+     * `session.history` merges the chain
+     * (`get_messages_as_conversation(..., include_ancestors=True)`,
+     * `tui_gateway/methods_session.py:2843-2847` @ `3ca096de`); the paged route
+     * resolves the chain FORWARD to its tip and reads that session's rows alone
+     * (`hermes_cli/web_routers/sessions.py:660-663,672-678`). Windowing such a
+     * session would put turns Android used to show out of reach behind a control
+     * that retires at the tip's first row, so those sessions keep whole-history
+     * hydration and are offered no `Show earlier messages` at all.
+     *
+     * The signal is the list route's own, and this app already reads it:
+     * `list_sessions_rich` projects a compression root forward to its tip and
+     * stamps `_lineage_root_id` on the row it surfaces, and only on that row
+     * (`hermes_state.py:11586-11605`), which [parseRestSession] carries as
+     * [SessionSummary.lineageRootId]. It is a fact the REST list route states;
+     * the `session.list` RPC does not, so a conversation this connection has
+     * only ever seen over the RPC says nothing and takes the window. That
+     * boundary is stated in `docs/parity/transcript-backfill.md`.
+     *
+     * Assumes [stateLock].
+     */
+    private fun hasCompressionAncestorLocked(canonicalId: String, durableId: String): Boolean =
+        sequenceOf(canonicalId, durableId).any { id ->
+            cache.session(id)?.lineageRootId?.let { it.isNotBlank() && it != id } == true
+        }
+
+    /**
+     * Take the window back from a session the list has just revealed to be a
+     * compression tip.
+     *
+     * [hasCompressionAncestorLocked] can only answer for a row the cache already
+     * holds, and a session can be hydrated before its listed row arrives — a
+     * reconnect resume, a restored active id, a session opened straight from a
+     * notification. Such a session is windowed on the evidence available at the
+     * time, and the list is the only contract that ever says otherwise
+     * (`hermes_state.py:11586-11605` @ `3ca096de`). So the moment it does, the
+     * window goes: the control stops being offered rather than paging to a first
+     * row that is not the conversation's first row. The transcript already on
+     * screen stays as it is, and the next open hydrates it whole.
+     *
+     * Assumes [stateLock].
+     */
+    private fun retractWindowsForCompressionTipsLocked(rows: List<SessionSummary>) {
+        var retracted = false
+        for (row in rows) {
+            val root = row.lineageRootId ?: continue
+            if (root.isBlank() || root == row.id) continue
+            if (transcriptWindows.remove(row.id) != null) retracted = true
+        }
+        if (retracted) publishEarlierMessagesLocked()
+    }
+
+    override suspend fun loadEarlierMessages(durableId: String) {
+        val connection = connectionSnapshot()
+        val started = synchronized(stateLock) {
+            ensureCurrent(connection)
+            val id = cache.state.value.rehomes[durableId] ?: durableId
+            val window = transcriptWindows[id] ?: return
+            // Nothing older, or a page is already on the wire. Desktop leaves
+            // its button clickable and shares the one in-flight promise
+            // (`transcript-backfill.ts:111-133`); a press here is cheap to
+            // ignore, and two overlapping pages would both advance the offset.
+            if (!window.possiblyTruncated || window.loading) return
+            transcriptWindows[id] = window.copy(loading = true)
+            id to window
+        }
+        val (windowId, window) = started
+        try {
+            val result = rest.sessionMessages(
+                sessionId = window.pagingSessionId,
+                limit = TRANSCRIPT_PAGE,
+                offset = window.nextOffset,
+                order = GatewayMessageOrder.Latest,
+                includeCompacted = true,
+                profile = window.profile,
+            )
+            val page = (result as? GatewayRestResult.Success)?.value ?: return
+            val rows = projectRestTranscriptRows(page.messages)
+            val older = parseMessages(rows, clock()) { index ->
+                restRenderKey(window.pagingSessionId, page.offset?.toInt() ?: window.nextOffset, index)
+            }
+            val advanced = transcriptPageState(
+                requestedOffset = window.nextOffset,
+                echoedOffset = page.offset?.toInt(),
+                echoedLimit = page.limit?.toInt(),
+                returned = page.messages.size,
+            )
+            synchronized(stateLock) {
+                // The connection changed under the fetch: this page describes a
+                // backend that is no longer the one on screen.
+                if (connection.generation != connectionGeneration || clientFlow.value !== connection.client) return
+                val current = transcriptWindows[windowId] ?: return
+                // The window moved while the page was in flight — a re-hydrate
+                // or a lineage change. Discard it rather than prepend a page
+                // measured from an origin that no longer applies.
+                if (current.generation != window.generation) return
+                val existing = cache.transcript(windowId)
+                val merged = mergeOlderTranscriptPage(existing, older)
+                // Reconciliation is the tail's rule: it decides what the live
+                // projection may add past persisted history
+                // (`reconcileAuthoritativeTranscript`). [existing] has already
+                // been through it and every prepended row is strictly older
+                // than its boundary, so the merge layers under a reconciled
+                // transcript rather than around one.
+                if (merged !== existing) cache.setTranscript(windowId, merged)
+                transcriptWindows[windowId] = current.copy(
+                    nextOffset = advanced.nextOffset,
+                    possiblyTruncated = advanced.possiblyTruncated,
+                    loading = false,
+                )
+                publishEarlierMessagesLocked()
+            }
+        } finally {
+            synchronized(stateLock) {
+                transcriptWindows[windowId]?.takeIf(TranscriptWindow::loading)?.let { latest ->
+                    transcriptWindows[windowId] = latest.copy(loading = false)
+                }
+                publishEarlierMessagesLocked()
+            }
+        }
+    }
+
+    /** Assumes [stateLock]. */
+    private fun publishEarlierMessagesLocked() {
+        earlierMessagesFlow.value = transcriptWindows
+            .filterValues(TranscriptWindow::possiblyTruncated)
+            .keys
+            .toSet()
     }
 
     private fun publishSessionPaging() {
@@ -1365,9 +1821,9 @@ internal class LiveGatewaySessionRepository(
             }
         }
 
-        val historyResult = connection.client.request("session.history", historyParams(runtimeId))
-        val history = parseHistory(historyResult, runtimeId, clock())
-        val hydratedTodos = latestComposerTodosFromHistory(historyResult)
+        val hydration = hydrateTranscript(connection, durableId, canonicalId, runtimeId)
+        val history = hydration.entries
+        val hydratedTodos = hydration.todos
         synchronized(stateLock) {
             ensureCurrent(connection)
             val currentRevision = runtimeEventRevision(runtimeId)
@@ -1463,7 +1919,12 @@ internal class LiveGatewaySessionRepository(
             ephemeralSessions += durableId
             cache.upsertSession(parseSession(info, clock(), durableId))
             val messages = result["messages"]
-            if (messages is JsonArray) cache.setTranscript(durableId, parseMessages(messages, runtimeId, clock()))
+            if (messages is JsonArray) {
+                cache.setTranscript(
+                    durableId,
+                    parseMessages(messages, clock()) { index -> "$runtimeId-history-$index" },
+                )
+            }
         }
         durableId
     }
@@ -4552,8 +5013,12 @@ internal fun parseHistory(result: JsonElement, runtimeId: String, nowMillis: Lon
     val root = result.asObject("session.history")
     val messages = root["messages"] as? JsonArray
         ?: throw GatewayRpcException("Hermes returned malformed session history.")
-    return parseMessages(messages, runtimeId, nowMillis)
+    return parseMessages(messages, nowMillis) { index -> "$runtimeId-history-$index" }
 }
+
+/** The todo list a projected REST page ends on, read the same way history's is. */
+internal fun latestComposerTodosFromRows(messages: List<JsonObject>): List<ComposerTodoStatus>? =
+    latestComposerTodosFromHistory(buildJsonObject { put("messages", JsonArray(messages)) })
 
 /** Latest parseable todo call wins; active historical lists are filtered by the caller. */
 internal fun latestComposerTodosFromHistory(result: JsonElement): List<ComposerTodoStatus>? {
@@ -4574,10 +5039,24 @@ internal fun latestComposerTodosFromHistory(result: JsonElement): List<ComposerT
     return latest
 }
 
-private fun parseMessages(messages: JsonArray, runtimeId: String, nowMillis: Long): List<TranscriptEntry> = buildList {
+/**
+ * Projected rows to transcript entries.
+ *
+ * [fallbackId] mints the rendering key for a row the backend gave no
+ * identifier for. It is the caller's because the two contracts number their
+ * rows differently: `session.history` ships the whole conversation, so an index
+ * into it is a position; a REST page ships a window, so only its offset places
+ * a row. Two schemes that could collide would merge two different rows into one
+ * on a prepend.
+ */
+private fun parseMessages(
+    messages: List<JsonElement>,
+    nowMillis: Long,
+    fallbackId: (Int) -> String,
+): List<TranscriptEntry> = buildList {
     messages.forEachIndexed { index, element ->
         val message = element as? JsonObject ?: return@forEachIndexed
-        val id = message.messageId() ?: "$runtimeId-history-$index"
+        val id = message.messageId() ?: fallbackId(index)
         val rowId = message.durableRowId()
         val time = message.timestamp(nowMillis)
         when (message.string("role")) {
@@ -4676,7 +5155,7 @@ internal fun parseRestSession(root: JsonObject, nowMillis: Long): SessionSummary
     // The columns both contracts share are one parser's job, not two. Title,
     // preview, activity, count, source, profile, branch and cwd read identically
     // off either shape — the profile included, which this route stamps on every
-    // row even when the request named none (`sessions.py:146,152`). Whether that
+    // row even when the request named none (`sessions.py:182-189`). Whether that
     // stamp is a fact about the *row* is not this parser's call to make: it is
     // the row's owner on a named leg and the Gateway describing itself on an
     // unscoped one, and `readSessionPages` is where that is decided. What
@@ -4875,19 +5354,7 @@ private fun JsonObject.canonicalDurableId(): String? =
 
 private fun JsonObject.deltaText(): String = string("delta") ?: string("text") ?: contentText()
 
-private fun JsonObject.contentText(): String = when (val content = this["content"] ?: this["text"]) {
-    null, JsonNull -> ""
-    is JsonPrimitive -> content.content
-    is JsonArray -> content.joinToString("") { item ->
-        when (item) {
-            is JsonPrimitive -> item.content
-            is JsonObject -> item.string("text") ?: item.string("content") ?: ""
-            else -> ""
-        }
-    }
-
-    is JsonObject -> content.string("text") ?: content.string("content") ?: ""
-}
+private fun JsonObject.contentText(): String = (this["content"] ?: this["text"]).coerceMessageText()
 
 private fun JsonObject.reasoningText(): String {
     string("reasoning")?.let { return it }
@@ -5270,17 +5737,17 @@ private fun ComposerStatusState.hasVisibleRows(): Boolean =
 /**
  * Replace by rendering key, or append.
  *
- * Note for the `Show earlier` backfill (#68 S25): this replaces wholesale, so
- * a live entry landing on the id of a hydrated one would erase that row's
- * [TranscriptEntry.rowId]. Unreachable at the pinned Gateway — a live row
- * arrives with no durable stamp and its own minted key, never a persisted
- * row's — but once a page can be merged into a live transcript, a replace
- * whose incoming `rowId` is null must keep the address already held.
+ * Wholesale in everything but the durable address: a live entry landing on the
+ * id of a hydrated one keeps that row's [TranscriptEntry.rowId], because null
+ * on the incoming entry means the backend has not written it down yet rather
+ * than that the row has no identity — and the `Show earlier` merge dedupes an
+ * overlapping page on exactly that address (#68 S25).
  */
 private fun List<TranscriptEntry>.replaceOrAppend(entry: TranscriptEntry): List<TranscriptEntry> {
     val index = indexOfFirst { it.id == entry.id }
     if (index < 0) return this + entry
-    return toMutableList().apply { this[index] = entry }
+    val merged = entry.preservingRowIdOf(this[index])
+    return toMutableList().apply { this[index] = merged }
 }
 
 private fun JsonObject.primitive(name: String): String? = (this[name] as? JsonPrimitive)?.content
@@ -5348,6 +5815,7 @@ private const val STOP_DISPATCH_WAIT_MILLIS = 2_000L
 private const val IMAGE_ONLY_PROMPT = "What do you see in this image?"
 private val NO_IMAGE_LOADER: MutableStateFlow<GatewayImageLoader?> = MutableStateFlow(null)
 internal val NO_SESSION_PAGING: StateFlow<SessionListPaging> = MutableStateFlow(SessionListPaging())
+internal val NO_EARLIER_MESSAGES: StateFlow<Set<String>> = MutableStateFlow(emptySet())
 internal val NO_ACTIVE_TURNS: StateFlow<Set<String>> = MutableStateFlow(emptySet())
 
 /**
@@ -5403,6 +5871,19 @@ private const val SESSION_PAGE_SIZE = 50
  * (`MAX_SESSION_PAGE`).
  */
 private const val ARCHIVED_POOL_SIZE = MAX_SESSION_PAGE
+
+/**
+ * One transcript page — the tail a session first paints, and the size of every
+ * older page `Show earlier messages` asks for.
+ *
+ * Desktop's own hydration page (`LATEST_SESSION_MESSAGES_LIMIT = 120`,
+ * `apps/desktop/src/api/sessions.ts:415` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): "enough tail to fill the
+ * transcript window a few times over, small enough that opening a long session
+ * doesn't ship hundreds of rows nobody has scrolled to". Well inside the
+ * route's own 500-row ceiling (`hermes_cli/web_routers/sessions.py:671`).
+ */
+private const val TRANSCRIPT_PAGE = 120
 
 /** The one status that means "this backend does not have that route". */
 private const val HTTP_NOT_FOUND = 404

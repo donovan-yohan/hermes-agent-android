@@ -140,6 +140,25 @@ lifecycle.
 - Live transcript with Markdown paragraphs, headings, lists, tables, code
   fences, reasoning/tool activity, attached-image thumbnails, and image
   lightbox viewing.
+- Opening a session paints its newest 120 messages rather than its whole
+  history, read from the Gateway's paged transcript route with compaction-
+  preserved rows included, and a `Show earlier messages` control at the top of
+  the transcript asks for the page before it. Overlapping rows are deduped on
+  the Gateway's durable row id, the reader's position survives the prepend, and
+  the control retires once a conversation is exhausted. Coming back to a session
+  keeps the pages already asked for rather than collapsing to the newest one.
+  One page at a time and no infinite scroll, as Desktop does it. A Gateway without that route still
+  hydrates the whole conversation over the older RPC and offers nothing earlier
+  to ask for, so the window budget holds only where the paging contract exists.
+  A conversation the Gateway has already compressed onto a fresh id keeps
+  whole-history hydration too, and is offered nothing earlier: the paged route
+  reads only the live tip, so windowing it would put its earlier turns out of
+  reach. Whether a conversation is such a tip is a fact the session list states,
+  so a Gateway that serves no session list — or one this app has only read over
+  the older RPC — cannot be asked, and a compressed conversation there is
+  windowed at its tip. A session opened before any list row for it arrives is
+  windowed on what was known then; the moment a list does say it is a tip, the
+  window is taken back and the control stops being offered.
 - Terminal-shaped tool output is ANSI-parsed rather than printed as escape
   codes, with stdout and stderr as separate labelled sections, the command on a
   `$` prompt line, and the process exit code. Web-search results render as
@@ -368,6 +387,7 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 - [Managed SSH ADR](../docs/adr/0001-ssh-probe-to-tunnel.md)
 - [Composer capability contract](../docs/parity/composer-capabilities.json)
 - [Transcript selection and copy parity](../docs/parity/transcript-selection-copy.md)
+- [Transcript window and `Show earlier messages` parity](../docs/parity/transcript-backfill.md)
 - [Inline diff token parity](../docs/parity/inline-diff-tokens.md)
 - [Profile rail and roster parity](../docs/parity/profile-switcher.md)
 - [Theme parity workflow](../docs/workflows/sync-desktop-themes.md)

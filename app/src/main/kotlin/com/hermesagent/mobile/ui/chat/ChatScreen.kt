@@ -74,6 +74,7 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
+import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.data.session.isUnread
@@ -249,7 +250,7 @@ private fun CompactLayout(
                 onOpenContextUsage = onOpenContextUsage,
                 modifier = Modifier.statusBarsPadding(),
             )
-            TranscriptPane(state, Modifier.weight(1f))
+            TranscriptPane(state, actions.onShowEarlierMessages, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -308,7 +309,7 @@ private fun WideLayout(
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
             )
-            TranscriptPane(state, Modifier.weight(1f))
+            TranscriptPane(state, actions.onShowEarlierMessages, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -366,10 +367,22 @@ private fun SessionsPane(
 }
 
 @Composable
-private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
+private fun TranscriptPane(
+    state: ChatUiState,
+    onShowEarlier: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val listState = rememberLazyListState()
     val transcript = rememberUpdatedState(state.transcript)
     val scope = rememberCoroutineScope()
+    // Rows the transcript renders before the first turn. `Show earlier
+    // messages` is a leading item inside the scroll, so every index this pane
+    // maps between the list and the transcript passes through it.
+    val leadingItems = if (state.canShowEarlierMessages) 1 else 0
+    val leadingItemsNow = rememberUpdatedState(leadingItems)
+    // Where the viewport sat when `Show earlier messages` was pressed, held
+    // until the older page lands.
+    var prependAnchor by remember(state.activeSession?.id) { mutableStateOf<TranscriptAnchor?>(null) }
     var showJump by remember(state.activeSession?.id) { mutableStateOf(false) }
     var hasUnseenActivity by remember(state.activeSession?.id) { mutableStateOf(false) }
     // This remains UI-local. The authoritative transcript supplies the turn
@@ -408,7 +421,27 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
             )
         }.collect { (currentTranscript, canScrollForward, scrolledBackward) ->
             val contentChanged = currentTranscript != observedTranscript
+            val grewAtHead = grewAtHead(observedTranscript, currentTranscript)
             observedTranscript = currentTranscript
+
+            // History the reader asked for is not activity below them and is not
+            // a reason to follow the tail. Left to the ordinary path this would
+            // light the jump control's unseen-activity dot on every press, and —
+            // on a transcript short enough that `canScrollForward` was still
+            // false — would run `scrollToTail()` in the same emission the anchor
+            // restore fires in, throwing the reader to the bottom of the page
+            // they just asked to leave.
+            if (grewAtHead) {
+                following = false
+                // The page is not activity below the reader, but it does change
+                // whether there IS anywhere below them: a transcript short
+                // enough that the tail was already on screen becomes one that
+                // scrolls. Leaving the control's visibility stale would strand
+                // the reader at the top of the page they just asked for with no
+                // way back to the latest turn until something else changed.
+                showJump = canScrollForward
+                return@collect
+            }
 
             if (!canScrollForward) {
                 following = true
@@ -431,11 +464,55 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
         }
     }
 
+    // A prepend slides everything on screen down by the height of the rows it
+    // added. Desktop anchors before the prepend and re-applies the anchor in
+    // the same commit the taller tree lands in, because otherwise the view is
+    // stranded near the top for a frame or two
+    // (`apps/desktop/src/components/assistant-ui/thread/list.tsx:497-505,762-770`
+    // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The `LazyListState`
+    // equivalent of its distance-from-bottom is the row that was on top and how
+    // far into that row the viewport began — keyed on the row, so the rows
+    // inserted above it cannot invalidate it.
+    //
+    // The latch is the anchor row's own INDEX, not the transcript's size.
+    // Desktop guards the same restore with `loadSettledRef` so a recorded
+    // distance cannot be re-applied by an unrelated commit; here a press that
+    // fetches nothing — the in-flight guard swallowing a second tap, a refused
+    // page, a page whose rows all dedupe away — leaves the row exactly where it
+    // was, and only rows landing ABOVE it move it down. So a live turn
+    // appending at the tail can never fire this, however long the anchor waits.
+    LaunchedEffect(state.transcript, prependAnchor) {
+        val anchor = prependAnchor ?: return@LaunchedEffect
+        val index = state.transcript.indexOfFirst { it.id == anchor.entryId }
+        // The row the reader was on is gone — a session swap, or a compaction
+        // rewrite. There is nothing to restore and nothing left to wait for.
+        if (index < 0) {
+            prependAnchor = null
+            return@LaunchedEffect
+        }
+        if (index <= anchor.entryIndex) return@LaunchedEffect
+        prependAnchor = null
+        listState.scrollToItem(index + leadingItems, anchor.scrollOffset)
+    }
+
     Box(modifier.fillMaxWidth()) {
         Transcript(
             entries = state.transcript,
             imageLoader = state.imageLoader,
             listState = listState,
+            onShowEarlier = if (!state.canShowEarlierMessages) {
+                null
+            } else {
+                {
+                    val entries = transcript.value
+                    val top = (listState.firstVisibleItemIndex - leadingItemsNow.value)
+                        .coerceIn(0, entries.lastIndex.coerceAtLeast(0))
+                    prependAnchor = entries.getOrNull(top)?.let { row ->
+                        TranscriptAnchor(row.id, listState.firstVisibleItemScrollOffset, top)
+                    }
+                    onShowEarlier()
+                }
+            },
             isWorking = state.activeSession?.status == SessionStatus.Working,
             activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
             progress = state.activeSession?.progress,
@@ -456,10 +533,12 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
         // Scrolling changes firstVisibleItemIndex at every item boundary. Read
         // it inside a derived state so only the pin — not the whole pane —
         // recomposes, and only when the *owning* turn actually changes.
-        val prompt by remember(listState, state.transcript) {
+        val prompt by remember(listState, state.transcript, leadingItems) {
             derivedStateOf {
                 val entries = state.transcript
-                val firstVisible = listState.firstVisibleItemIndex.coerceAtMost(entries.lastIndex)
+                if (entries.isEmpty()) return@derivedStateOf null
+                val firstVisible = (listState.firstVisibleItemIndex - leadingItems)
+                    .coerceIn(0, entries.lastIndex)
                 if (entries.getOrNull(firstVisible) is UserTurn) return@derivedStateOf null
                 for (index in firstVisible - 1 downTo 0) {
                     (entries[index] as? UserTurn)?.let { return@derivedStateOf it }
@@ -481,7 +560,7 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
                         val currentIndex = transcript.value.indexOfFirst { it.id == owner.id }
                         if (currentIndex >= 0) {
                             following = false
-                            scope.launch { listState.scrollToItem(currentIndex) }
+                            scope.launch { listState.scrollToItem(currentIndex + leadingItemsNow.value) }
                         }
                     }
                 }
@@ -495,6 +574,44 @@ private fun TranscriptPane(state: ChatUiState, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * Where the viewport sat before an older page was prepended: the transcript row
+ * that was on top, how far into it the viewport began, and where that row sat in
+ * the transcript at that moment — which is how the restore knows rows landed
+ * *above* the reader rather than firing on the press itself or on a later
+ * append at the tail.
+ */
+private data class TranscriptAnchor(
+    val entryId: String,
+    val scrollOffset: Int,
+    val entryIndex: Int,
+)
+
+/**
+ * Whether [current] is [previous] with rows added only at the head — the shape a
+ * prepended older page makes, and nothing else does.
+ *
+ * The two ends are enough to say it: the list grew, the row that used to be
+ * first is now exactly that far down, and the last row is unchanged. A streamed
+ * delta rewrites an entry in place and does not grow the list; an appended turn
+ * moves the last row.
+ *
+ * A page landing in the same emission as a turn appended at the tail is both
+ * shapes at once, and it answers false — it falls through to the ordinary path
+ * deliberately. That emission carries real activity below the reader, which the
+ * head path would swallow. The anchor restore fires on it as well, so the two
+ * can order a scroll in one frame: if the reader had returned to the tail with
+ * an anchor still armed, the restore pulls them back up and the follow pushes
+ * them down. The loser is a viewport for a frame, never a row — and the case
+ * needs a backfill page and a live turn to settle into one snapshot, which is
+ * why it is left as the honest fall-through rather than guessed at.
+ */
+private fun grewAtHead(previous: List<TranscriptEntry>, current: List<TranscriptEntry>): Boolean {
+    val added = current.size - previous.size
+    if (added <= 0 || previous.isEmpty()) return false
+    return current[added].id == previous.first().id && current.last().id == previous.last().id
 }
 
 /**
