@@ -18,7 +18,7 @@ data class SessionCacheState(
  * The cache of backend truth.
  *
  * The live Gateway repository is the writer. Its merge rules are taken from
- * `apps/desktop/AGENTS.md` ("Server truth is cached, not owned" @ `29112bef`):
+ * `apps/desktop/AGENTS.md` ("Server truth is cached, not owned" @ `3ca096de`):
  *
  * - **Merge, don't clobber.** [upsertSessions] layers new information over
  *   what is already known; it never drops a row the refresh did not mention.
@@ -135,7 +135,7 @@ class SessionCache {
      *
      * This is the one wholesale clear, and it is not a weaker tombstone: it is
      * what Desktop's `wipeSessionListsForGatewaySwitch` does on the same event
-     * (`apps/desktop/src/store/gateway-switch.ts:47-96` @ `29112bef`). Two
+     * (`apps/desktop/src/store/gateway-switch.ts:47-96` @ `3ca096de`). Two
      * gateways can recycle the same durable id, and painting one machine's
      * conversation under another's row is worse than an empty list — so a
      * switch clears rather than merges, and only a switch may call this.

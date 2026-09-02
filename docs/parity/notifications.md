@@ -9,7 +9,7 @@ per [`docs/workflows/port-desktop-surface.md`](../workflows/port-desktop-surface
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer, Gateway | `hermes-agent` @ `29112bef099274229cadff79cdff7bf7b99c4b77` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer, Gateway | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
@@ -26,15 +26,15 @@ Every `path:line` below is against that SHA.
 | Foreground / active-session gating | `:131-148` |
 | Approve / Reject from a notification button | `:348-367` |
 | 4 s post-connect quiet window, and why | `apps/desktop/src/store/notify-baseline.ts:1-26` |
-| Native titles, bodies and action labels | `apps/desktop/src/i18n/en.ts:174-186` |
-| Per-kind labels and descriptions | `apps/desktop/src/i18n/en.ts:430-473` |
+| Native titles, bodies and action labels | `apps/desktop/src/i18n/en.ts:175-187` |
+| Per-kind labels and descriptions | `apps/desktop/src/i18n/en.ts:431-474` |
 | `turnDone` dispatch site | `apps/desktop/src/app/session/hooks/use-message-stream/index.ts:772` |
 | `input` dispatch sites (clarify, batch clarify, sudo, secret) | `.../use-message-stream/gateway-event/input-requests.ts:101-106`, `:149-154`, `:282-287`, `:313-318` |
 | `approval` dispatch site, with its two buttons | `.../gateway-event/input-requests.ts:256-265` |
 | `turnError` dispatch site | `.../gateway-event/status.ts:140-145` |
 | The choices the Gateway actually offers | `gateway/platforms/api_server.py:74-77` |
-| `approval.respond` answering `{resolved: N}` | `tui_gateway/methods_prompt.py:1496-1517` |
-| The `approval.received` ack that precedes it | `tui_gateway/methods_prompt.py:1477-1493` |
+| `approval.respond` answering `{resolved: N}` | `tui_gateway/methods_prompt.py:1513-1534` |
+| The `approval.received` ack that precedes it | `tui_gateway/methods_prompt.py:1494-1510` |
 
 ## What was built
 
@@ -119,7 +119,7 @@ here rather than in the table under a class they would not earn.
 ## `resolved == 0` is success — but a map miss is not
 
 `approval.respond` answers `{"resolved": N}` and carries no `status` field
-(`methods_prompt.py:1496-1517`), and `respondToPendingInput` reads an absent
+(`methods_prompt.py:1513-1534`), and `respondToPendingInput` reads an absent
 status as resolved. So an approval the Gateway reports as `resolved: 0` —
 answered somewhere else — is withdrawn from the shade without a word. That is
 the intended reading of #99's "success-and-cancel-the-notification".

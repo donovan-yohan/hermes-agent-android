@@ -19,8 +19,8 @@ data class ProfileRosterState(
  *
  * - **One answer is the whole roster.** `profiles.list` enumerates every
  *   profile and emits every field of each row
- *   (`tui_gateway/methods_profiles.py:194-246` @
- *   `29112bef099274229cadff79cdff7bf7b99c4b77`), so a successful answer decides
+ *   (`tui_gateway/methods_profiles.py:203-255` @
+ *   `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so a successful answer decides
  *   both which profiles exist and what each one says. Layering fields would
  *   only ever resurrect a model, a colour or a display name the host cleared.
  * - **A failed refresh keeps the last good answer.** Nothing calls [publish] on

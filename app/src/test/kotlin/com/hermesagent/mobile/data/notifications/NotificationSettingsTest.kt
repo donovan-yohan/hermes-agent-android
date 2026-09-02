@@ -10,7 +10,7 @@ import org.junit.Test
 /**
  * The preference model, which is Desktop's
  * (`apps/desktop/src/store/native-notifications.ts:31-49` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`).
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  */
 class NotificationSettingsTest {
 

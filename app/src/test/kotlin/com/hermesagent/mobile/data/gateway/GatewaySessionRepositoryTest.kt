@@ -315,7 +315,7 @@ class GatewaySessionRepositoryTest {
         repository.openSession("durable-a")
 
         // The pinned Gateway stamps its own read and never looks at this param
-        // (tui_gateway/methods_session.py:2597-2606 @ 29112bef). The flag is the
+        // (tui_gateway/methods_session.py:2611-2620 @ 3ca096de). The flag is the
         // hedge for a Gateway that ever makes the stamped read opt-in, and it
         // costs nothing here because this handler reads only `session_id`.
         assertEquals(JsonPrimitive(true), rpc.call("session.history").params["include_row_ids"])
@@ -3838,9 +3838,9 @@ class GatewaySessionRepositoryTest {
     // -----------------------------------------------------------------------
     // The REST session list (#64 S11). Every fixture below is the shape
     // `GET /api/sessions` actually returns at hermes-agent @
-    // `29112bef099274229cadff79cdff7bf7b99c4b77`: the `sessions` columns as
+    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`: the `sessions` columns as
     // `list_sessions_rich` projects them (`hermes_state_portability.py:33-43`,
-    // `hermes_state.py:9002-9020`) plus what the route stamps
+    // `hermes_state.py:9383-9401`) plus what the route stamps
     // (`hermes_cli/web_routers/sessions.py:145-159`).
     // -----------------------------------------------------------------------
 
@@ -3919,7 +3919,7 @@ class GatewaySessionRepositoryTest {
 
         // The route stamped these rows with the profile the Gateway process
         // itself was launched under (`sessions.py:146,152` →
-        // `web_server.py:12438-12455`), which is a fact about the Gateway, not
+        // `web_server.py:12461-12478`), which is a fact about the Gateway, not
         // about the row. Unstamped is what the RPC lane produces for the same
         // rows, and unstamped is the `default` bucket.
         val row = cache.session("launch-row")!!
@@ -4544,9 +4544,9 @@ class GatewaySessionRepositoryTest {
          * fully populated row (`sessions.py:159`; the row's own keys at
          * `hermes_state_portability.py:33-43` plus the route's stamps at
          * `sessions.py:145-156` and the derived `unread` at
-         * `hermes_state.py:9019-9020`). `_lineage_root_id` marks this as a
+         * `hermes_state.py:9400-9401`). `_lineage_root_id` marks this as a
          * compression tip projected forward from `root-a`
-         * (`hermes_state.py:9002-9011`).
+         * (`hermes_state.py:9383-9392`).
          */
         const val REST_PAGE_RICH = """{"sessions":[
             {"id":"tip-a","_lineage_root_id":"root-a","parent_session_id":null,"title":"Ship the pager",
@@ -4579,7 +4579,7 @@ class GatewaySessionRepositoryTest {
          * was launched under a named profile: every row stamped with that name,
          * because the route falls back to its own active profile when the
          * request named none (`sessions.py:146,152` →
-         * `web_server.py:12438-12455`). The name is arbitrary — what matters is
+         * `web_server.py:12461-12478`). The name is arbitrary — what matters is
          * that it is neither absent nor `"default"`.
          */
         const val REST_PAGE_LAUNCH_PROFILE = """{"sessions":[

@@ -14,7 +14,7 @@ tested *now*, so none of those slices can reorder the menu on their way in.
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer and i18n | `hermes-agent` @ `29112bef099274229cadff79cdff7bf7b99c4b77` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer and i18n | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
@@ -25,10 +25,10 @@ Every `path:line` below is against that SHA.
 | Group order and the separator rule | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:234,291,344,371,433,465-522` |
 | The menu kit both surfaces share | `apps/desktop/src/components/ui/actions-menu.tsx:37-98,119-146` |
 | Codicon vocabulary | `session-actions-menu.tsx:292,304,317,345,357,435,444`; trigger glyph at `session-row.tsx:326` |
-| Trigger placement and spoken name | `session-row.tsx:316-327`; `apps/desktop/src/i18n/en.ts:2167` |
-| Item labels | `apps/desktop/src/i18n/en.ts:2151-2167` |
+| Trigger placement and spoken name | `session-row.tsx:316-327`; `apps/desktop/src/i18n/en.ts:2185` |
+| Item labels | `apps/desktop/src/i18n/en.ts:2169-2185` |
 | Copy-ID behaviour inside a menu | `apps/desktop/src/components/ui/copy-button.tsx:92-140,166-181` |
-| The words the item swaps to | `copy-button.tsx:142,147-151,161-164`; `apps/desktop/src/i18n/en.ts:21,29,2166` |
+| The words the item swaps to | `copy-button.tsx:142,147-151,161-164`; `apps/desktop/src/i18n/en.ts:21,29,2184` |
 | How long the swap lasts | `copy-button.tsx:15` (`COPIED_RESET_MS`), `:115-123,128-136` |
 | What the Copy ID row is handed | `session-actions-menu.tsx:479-488` |
 | Modifier chords with no touch equivalent | `apps/desktop/src/app/chat/sidebar/session-row-gesture.ts:27-50` |

@@ -7,7 +7,7 @@ import com.hermesagent.mobile.data.session.SessionSummary
  *
  * Desktop computes this from a persisted "show all" flag over the live
  * gateway's profile (`apps/desktop/src/store/profile.ts:437-448` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`). Android talks to one Gateway, so
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Android talks to one Gateway, so
  * the concrete half is app state too: UI-only authority, persisted as a
  * preference, never sent to the Gateway as anything but the `profile`
  * parameter below.
@@ -40,7 +40,7 @@ data class ProfileScope(
      * and the scoped `session.list` (`:163`).
      *
      * Null means "omit it": a blank profile resolves to the launch profile
-     * server-side (`tui_gateway/server.py:1519-1533`), so a single-profile
+     * server-side (`tui_gateway/server.py:1599-1613`), so a single-profile
      * install sends exactly the request it sends today.
      */
     val sessionProfileParam: String? get() = normalizeProfileKey(activeProfile)
@@ -60,7 +60,7 @@ data class ProfileScope(
  *
  * **The launch profile is always first, and that order is load-bearing.** A
  * profile the Gateway cannot resolve falls back to the launch handle
- * (`tui_gateway/server.py:1476-1491,1519-1533`) rather than failing, so the
+ * (`tui_gateway/server.py:1556-1571,1599-1613`) rather than failing, so the
  * refresh needs to know which rows the launch profile already claimed before
  * it stamps anything with a named owner.
  */

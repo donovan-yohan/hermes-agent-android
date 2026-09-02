@@ -6,7 +6,7 @@ colour is derived rather than chosen.
 ## Pin and source contract
 
 Desktop authority is `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77` (read-only checkout; read with
+`3ca096de5f8183cb2e0ec23673f294d5978656a3` (read-only checkout; read with
 `git -C ~/.hermes/hermes-agent show <sha>:<path>`). The `--ui-diff-*` block and
 its `--ui-green`/`--ui-red` seeds are byte-identical at upstream `HEAD`
 (`1fe0f2f3ac9748ce799272eb93bee2937b5ab802`, checked 2026-08-26), so the

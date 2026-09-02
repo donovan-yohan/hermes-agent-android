@@ -53,7 +53,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Non-obvious rules
 
 **Upstream is read-only.** `~/.hermes/hermes-agent` is a
-reference checkout pinned at `29112bef099274229cadff79cdff7bf7b99c4b77`. Never
+reference checkout pinned at `3ca096de5f8183cb2e0ec23673f294d5978656a3`. Never
 write to it, never fetch or check out inside it. Cite `path:line` **with** that
 SHA or the citation means nothing.
 

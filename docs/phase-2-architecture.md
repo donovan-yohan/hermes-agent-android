@@ -1,7 +1,7 @@
 # Phase 2 — live remote Gateway vertical slice
 
 Authorities: `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77` for the original Desktop/SSH
+`3ca096de5f8183cb2e0ec23673f294d5978656a3` for the original Desktop/SSH
 contract and `59795c40fff95b3029b8f2b02164da892429070f` for native Remote
 Gateway authentication. The pinned source and tests were inspected read-only;
 the checkout was neither modified nor fetched.
@@ -122,14 +122,14 @@ the lock even when the SSH login shell selected a non-default `HERMES_HOME`.
 The uploaded token artifact retains its own immutable fingerprint for guarded
 deletion even if the served token is adopted for the final lock. This contract
 comes from `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77`,
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`,
 `apps/desktop/electron/remote-lifecycle.ts:32-60,292-370,876-960` and
-`hermes_cli/dashboard_procs.py:722-783`.
+`hermes_cli/dashboard_procs.py:736-797`.
 
 Served-token resolution follows the same pinned source at
 `apps/desktop/electron/dashboard-token.ts:10-101`,
 `apps/desktop/electron/remote-lifecycle.ts:733-751,920-931`, and
-`hermes_cli/web_server.py:17242-17310`: the public dashboard is authoritative
+`hermes_cli/web_server.py:17265-17333`: the public dashboard is authoritative
 for the token it injects, but token drift is accepted only while the exact
 lock-owned child remains alive.
 
@@ -138,7 +138,7 @@ not a Gateway readiness field. Readiness requires the authenticated ownership
 response to contain `ok: true`, the exact spawned `sshOwnerNonce`, and
 `protocolVersion: 1` as defined by
 `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77`,
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`,
 `hermes_cli/web_server.py:3445-3450`.
 
 This slice does **not** reuse an existing lockfile process. Reconnecting starts

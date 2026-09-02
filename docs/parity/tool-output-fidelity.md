@@ -11,7 +11,7 @@ selection of tool output is S35. Both have rows in the deferral table.
 ## Pin and source contract
 
 Desktop authority is `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77` (read-only checkout; read with
+`3ca096de5f8183cb2e0ec23673f294d5978656a3` (read-only checkout; read with
 `git -C ~/.hermes/hermes-agent show <sha>:<path>`). Files read for this port:
 
 | Desktop source | What it decides |
@@ -29,7 +29,7 @@ Desktop authority is `NousResearch/hermes-agent` at
 | `apps/desktop/src/lib/ansi.ts` + `ansi.test.ts` | The ANSI rule set and its fixtures |
 | `apps/desktop/src/components/chat/terminal-output.tsx:14,23,45-58` | Tail only when already near the bottom |
 | `apps/desktop/src/styles.css:196-202,222-227`, `:root.dark:528-532` | The named colour set the ANSI ladder derives from |
-| `apps/desktop/src/i18n/en.ts:3152-3155` | The status glyph vocabulary: Running / Error / Recovered / Done |
+| `apps/desktop/src/i18n/en.ts:3182-3185` | The status glyph vocabulary: Running / Error / Recovered / Done |
 
 ## ToolView field map
 

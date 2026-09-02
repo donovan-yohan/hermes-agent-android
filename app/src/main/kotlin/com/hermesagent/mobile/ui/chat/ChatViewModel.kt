@@ -187,7 +187,7 @@ data class BackgroundPendingInput(
  *
  * `projects.tree` and `projects.project_sessions` take no `profile` and resolve
  * through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`), so the catalog is always one
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so the catalog is always one
  * profile's. Desktop never has to say so: its backend is per profile.
  */
 enum class ProjectProfileScope {
@@ -538,7 +538,7 @@ internal class ChatViewModel(
         // was deleted or renamed on the host, or the scope came from another
         // Gateway entirely. The Gateway does not refuse that name: an
         // unresolvable profile falls back to the launch handle
-        // (`tui_gateway/server.py:1476-1491,1519-1533`), so a named scope would
+        // (`tui_gateway/server.py:1556-1571,1599-1613`), so a named scope would
         // quietly list the launch profile's rows and stamp them with an owner
         // that does not exist. Once the roster has actually answered, a scope
         // it does not contain goes back to the Gateway's own profile.

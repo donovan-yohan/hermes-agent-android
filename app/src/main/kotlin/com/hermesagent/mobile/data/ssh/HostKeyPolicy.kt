@@ -8,7 +8,7 @@ import java.util.Base64
  *
  * Desktop delegates this to OpenSSH (`StrictHostKeyChecking=accept-new`) and
  * detects a change by regexing stderr
- * (`apps/desktop/electron/ssh-connection.ts:337-342` @ `29112bef`). Android has
+ * (`apps/desktop/electron/ssh-connection.ts:337-342` @ `3ca096de`). Android has
  * no OpenSSH and no stderr, so the policy becomes real code — and gets to be
  * stricter than Desktop's: a change is a hard stop with no click-through.
  *

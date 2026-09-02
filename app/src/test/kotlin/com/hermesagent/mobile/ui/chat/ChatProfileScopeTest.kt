@@ -42,7 +42,7 @@ import org.junit.Test
  * The active profile scope as this app's own state: what it shows, what it
  * routes, and what it must never disturb.
  *
- * Desktop reference at `29112bef099274229cadff79cdff7bf7b99c4b77`:
+ * Desktop reference at `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
  * `apps/desktop/src/store/profile.ts:437-483` and
  * `apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`.
  */
@@ -210,7 +210,7 @@ class ChatProfileScopeTest {
     @Test
     fun `a saved scope the Gateway no longer has falls back to its own profile`() = runTest(dispatcher) {
         // The Gateway does not refuse an unresolvable profile: it falls back to
-        // the launch handle (`tui_gateway/server.py:1476-1491,1519-1533`), so a
+        // the launch handle (`tui_gateway/server.py:1556-1571,1599-1613`), so a
         // stale scope would quietly list the launch profile's rows under a name
         // that no longer exists. Once the roster has actually answered, it goes.
         val stale = RecordingProfileScopeStore(ProfileScope(activeProfile = "retired"))

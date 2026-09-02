@@ -23,8 +23,8 @@ import org.junit.Test
 
 /**
  * `profiles.list` parsing and the roster's authority rules, over the payload
- * `tui_gateway/methods_profiles.py:196-246` builds at
- * `29112bef099274229cadff79cdff7bf7b99c4b77`.
+ * `tui_gateway/methods_profiles.py:205-255` builds at
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
  *
  * Every path or name in these fixtures is invented; nothing here corresponds to
  * a real host, profile or person.
@@ -44,7 +44,7 @@ class ProfileRosterTest {
         assertEquals("a-provider", default.provider)
         assertEquals(7, default.skillCount)
         // profiles.list never sends has_env; only the REST twin does
-        // (hermes_cli/web_server.py:14475). Absent must read as false, not true.
+        // (hermes_cli/web_server.py:14498). Absent must read as false, not true.
         assertFalse(default.hasEnv)
 
         val lab = rows[1]
@@ -193,7 +193,7 @@ class ProfileRosterTest {
 
     @Test
     fun `profiles list gets the slow lane's own budget, not the generic one`() {
-        // tui_gateway/server.py:263-271 keeps profiles.list off the WS reader
+        // tui_gateway/server.py:297-305 keeps profiles.list off the WS reader
         // thread precisely because it is seconds-scale; Desktop budgets the
         // same call at 60s (apps/desktop/src/hermes.ts:88).
         assertEquals(

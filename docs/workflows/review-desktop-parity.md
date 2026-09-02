@@ -18,8 +18,8 @@ citation is worthless without saying which one it is against.
 
 | Surface | Pin | Where it is recorded |
 |---|---|---|
-| UI structure, behaviour and copy — everything this checklist reviews | `29112bef099274229cadff79cdff7bf7b99c4b77` | `AGENTS.md` |
-| Theme values: presets, palettes, colour tokens | `29112bef099274229cadff79cdff7bf7b99c4b77` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
+| UI structure, behaviour and copy — everything this checklist reviews | `3ca096de5f8183cb2e0ec23673f294d5978656a3` | `AGENTS.md` |
+| Theme values: presets, palettes, colour tokens | `3ca096de5f8183cb2e0ec23673f294d5978656a3` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
 | A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/relay-channels-surface.md` pins the Relay plugin at `563a8c8` |
 
 Use the UI pin for this checklist, and the theme pin only when the question is
@@ -50,7 +50,7 @@ Desktop needs a dev renderer with CDP, run from a **disposable pinned export**
 so no real config, `.env` or auth is in reach:
 
 ```bash
-pin=29112bef099274229cadff79cdff7bf7b99c4b77
+pin=3ca096de5f8183cb2e0ec23673f294d5978656a3
 export=/tmp/hermes-desktop-$pin
 git clone --no-hardlinks --quiet --no-checkout \
   "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" "$export"

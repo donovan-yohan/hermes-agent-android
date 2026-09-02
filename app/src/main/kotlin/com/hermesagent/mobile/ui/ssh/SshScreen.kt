@@ -56,7 +56,7 @@ internal const val SECTION_PROBE = "ssh-section-probe"
 
 /**
  * Connect via SSH, adapted from Hermes Desktop's remote connection task at the
- * frozen `29112bef` authority contract. Security mechanics stay in code/docs;
+ * frozen `3ca096de` authority contract. Security mechanics stay in code/docs;
  * the primary surface is task, state, outcome, and next action.
  */
 @Composable
@@ -67,7 +67,7 @@ fun SshScreen(
     /**
      * Page content that belongs above this form — the Gateways page's
      * Connection mode cards. Desktop scrolls the mode grid with the rest of
-     * the page (`gateway-settings.tsx:1044-1084` @ `29112bef`) rather than
+     * the page (`gateway-settings.tsx:1044-1084` @ `3ca096de`) rather than
      * pinning it, and four stacked cards on a phone are far too tall to pin.
      */
     header: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {},

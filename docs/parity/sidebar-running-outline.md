@@ -3,13 +3,13 @@
 ## Pin and source contract
 
 Desktop authority is `NousResearch/hermes-agent` at
-`29112bef099274229cadff79cdff7bf7b99c4b77` (read-only checkout).
+`3ca096de5f8183cb2e0ec23673f294d5978656a3` (read-only checkout).
 
 | Contract | Desktop source | Android port |
 |---|---|---|
 | Owner | `apps/desktop/src/store/session-dot-state.ts:70-80` | `SessionStatus.Working` and `SessionStatus.Stalled` only |
 | Rendering | `apps/desktop/src/app/chat/sidebar/session-row.tsx:254-258,404` | `SessionRow` paint sibling, including project preview rows |
-| Geometry and bright stop | `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,84-108`; `src/styles.css:1011-1040,1129-1144` | Flush 6dp rounded host; 1.25dp inset stroke; semantic `sessionRunningOutline` is foreground in dark mode and accent in light mode |
+| Geometry and bright stop | `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,116-140`; `src/styles.css:1011-1040,1129-1144` | Flush 6dp rounded host; 1.25dp inset stroke; semantic `sessionRunningOutline` is foreground in dark mode and accent in light mode |
 | Motion | `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113` | 300% 160-degree gradient, -10% to -50% travel, 2.23s linear infinite |
 | Reduced motion | `apps/desktop/src/styles.css:1157-1161` | `ValueAnimator.areAnimatorsEnabled()` omits the Compose infinite clock; phase zero remains a visible static ring |
 
@@ -53,7 +53,7 @@ data was used.
 ## Default-dark sidebar color contract
 
 For Android commit `44b409c610d0c0cb8e21d1856ea2bfaf4b5a81c3` against pinned
-Desktop source `29112bef099274229cadff79cdff7bf7b99c4b77`, the default-dark
+Desktop source `3ca096de5f8183cb2e0ec23673f294d5978656a3`, the default-dark
 sidebar uses the Nous palette defined in `presets.ts:174-232`: sidebar raw
 `#010409`, accent `#4A84FE`, and outline `#E6EDF3`. The selected sidebar row
 follows `styles.css:308-312`, with active raw `#2084ABFA`; on Android its

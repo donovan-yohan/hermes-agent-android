@@ -5,7 +5,7 @@ package com.hermesagent.mobile.data.profiles
  * without persisting anything.
  *
  * Straight port of `apps/desktop/src/lib/profile-color.ts:6-43` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`, including the rule that the
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, including the rule that the
  * default profile has no colour of its own. Kept Compose-free so the hash and
  * the hue conversion are unit-testable on their own; the surface converts the
  * packed value and mixes it against theme tokens.

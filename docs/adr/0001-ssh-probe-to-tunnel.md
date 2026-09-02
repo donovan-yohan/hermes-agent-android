@@ -4,7 +4,7 @@
 **Amended:** 2026-08-24 — current per-runtime concurrency contract recorded below
 **Source:** `docs/spikes/native-kotlin-ssh-client-scope.md` §5, §7
 **Authority:** `NousResearch/hermes-agent` @
-`29112bef099274229cadff79cdff7bf7b99c4b77`
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`
 
 ## Context
 
@@ -84,7 +84,7 @@ reverse direction and clears the repository's live client.
   `~/.hermes/desktop-ssh/<ownershipId>/<nonce>.log` path, and a 32-hex truncated
   SHA-256 fingerprint of the token used for final authentication
   (`apps/desktop/electron/remote-lifecycle.ts:876-960` and
-  `hermes_cli/dashboard_procs.py:722-783` at the pinned SHA).
+  `hermes_cli/dashboard_procs.py:736-797` at the pinned SHA).
 - A pid receives TERM only when live argv proves one exact executable, `serve`,
   isolated flag, nonce, token path, and profile shape. Cleanup waits at most
   five seconds and needs two death observations before touching artifacts.
@@ -118,10 +118,10 @@ Readiness is ordered:
 6. correlated `session.list` JSON-RPC round trip.
 
 This ordering ports pinned Desktop's served-token contract at
-`29112bef099274229cadff79cdff7bf7b99c4b77`,
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`,
 `apps/desktop/electron/dashboard-token.ts:10-101`,
 `apps/desktop/electron/remote-lifecycle.ts:733-751,920-931`, and
-`hermes_cli/web_server.py:17242-17310`. The public dashboard token may drift
+`hermes_cli/web_server.py:17265-17333`. The public dashboard token may drift
 benignly only while the exact spawned child remains owned; a mismatched token
 after child death/replacement is refused as foreign.
 

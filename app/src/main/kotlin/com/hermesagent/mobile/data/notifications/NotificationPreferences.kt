@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Desktop's `NativeNotificationPrefs` (`store/native-notifications.ts:31-49` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`): a master switch plus one
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): a master switch plus one
  * boolean per kind, every one of them defaulting to on.
  *
  * Scope is per install, matching Desktop's "Per device" (`i18n/en.ts:432`) —

@@ -169,7 +169,7 @@ interface RemoteGatewayProfileStore {
  * kernel still accepts the browser's callback into the listener's backlog, but
  * the loop that would read it never runs, and the Gateway's authorization code
  * expires 120 s later (hermes-agent @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`,
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`,
  * `hermes_cli/dashboard_auth/native_flow.py:89`). A held service binding is
  * what keeps the process runnable across that window.
  */
@@ -389,7 +389,7 @@ internal interface GatewayTokenStore {
  * The same slots, holding the other kind of credential this app can be given:
  * a Hermes dashboard session token, which is static for the life of the server
  * process and has no refresh (`hermes_cli/web_server.py:499-504` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`).
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  *
  * A separate interface rather than more methods on [GatewayTokenStore] because
  * the two credentials have no caller in common: the Local route never signs
@@ -445,7 +445,7 @@ internal fun interface GatewayNativeLogin {
  * Source authority: NousResearch/hermes-agent @
  * 59795c40fff95b3029b8f2b02164da892429070f,
  * `apps/desktop/electron/native-oauth*.ts` and
- * `hermes_cli/dashboard_auth/routes.py:248-423,927-961,965-1097`.
+ * `hermes_cli/dashboard_auth/routes.py:266-440,942-976,980-1112`.
  */
 internal class NativeGatewayAuthenticator(
     private val api: GatewayNativeAuthApi,
@@ -461,8 +461,8 @@ internal class NativeGatewayAuthenticator(
      * `/auth/native/refresh` hands back a *new* access/refresh pair in its
      * response body, and answers a refresh token every provider rejects —
      * dead, expired, or reuse-detected — with a 401 (hermes-agent @
-     * `29112bef099274229cadff79cdff7bf7b99c4b77`,
-     * `hermes_cli/dashboard_auth/routes.py:1027-1079`; where the presented
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`,
+     * `hermes_cli/dashboard_auth/routes.py:1042-1094`; where the presented
      * token is actually retired is the session provider's business, which that
      * route does not show). Two callers — the
      * reconnect path's [ticket] and a REST leg's [refreshAccessToken] — that
@@ -707,8 +707,8 @@ internal class OkHttpGatewayNativeAuthApi(
      * A code the Gateway will not redeem is a 400, and deliberately a generic
      * one: unknown, expired, already redeemed and PKCE mismatch are one reply,
      * so the code is consumed on every path and there is no verifier oracle
-     * (hermes-agent @ `29112bef099274229cadff79cdff7bf7b99c4b77`,
-     * `hermes_cli/dashboard_auth/routes.py:988-1005`). The app cannot tell
+     * (hermes-agent @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`,
+     * `hermes_cli/dashboard_auth/routes.py:1003-1020`). The app cannot tell
      * those apart either, so it says the one thing they have in common and the
      * one action that fixes all of them.
      *

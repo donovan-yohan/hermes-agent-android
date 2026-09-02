@@ -2,12 +2,12 @@ package com.hermesagent.mobile.data.attachments
 
 /**
  * The gateway persists attached images as `@image:<path>` directive lines at
- * the end of a user turn's text (`tui_gateway/server.py` @ `29112bef`,
+ * the end of a user turn's text (`tui_gateway/server.py` @ `3ca096de`,
  * `_build_persist_message_with_image_refs`). Renderers lift those lines out of
  * the body and draw thumbnails instead — the same contract Desktop's
- * `extractImageRefs` (`apps/desktop/src/lib/embedded-images.ts` @ `29112bef`)
+ * `extractImageRefs` (`apps/desktop/src/lib/embedded-images.ts` @ `3ca096de`)
  * implements. A path containing whitespace arrives quoted with `` ` ``, `"` or
- * `'` (`agent/context_references.py` `format_reference_value` @ `29112bef`).
+ * `'` (`agent/context_references.py` `format_reference_value` @ `3ca096de`).
  */
 object ImageRefLines {
     private val IMAGE_REF_LINE = Regex("""^@image:[^\n]*\n?""", setOf(RegexOption.MULTILINE))
@@ -39,7 +39,7 @@ object ImageRefLines {
 
     /**
      * Formats a gateway path as the `@image:` line the gateway persists
-     * (`agent/context_references.py` `format_reference_value` @ `29112bef`):
+     * (`agent/context_references.py` `format_reference_value` @ `3ca096de`):
      * unquoted when clean, else wrapped in the first quote char the path does
      * not contain. Used for the optimistic row so it reads back identical to
      * the authoritative row the gateway will write.

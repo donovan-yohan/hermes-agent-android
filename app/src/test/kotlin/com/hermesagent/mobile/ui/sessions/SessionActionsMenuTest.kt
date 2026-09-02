@@ -13,7 +13,7 @@ import org.junit.Test
  * order and the separator placement are pinned here rather than in a rendered
  * assertion. Every expectation is transcribed from
  * `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`, not derived from production code.
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, not derived from production code.
  */
 class SessionActionsMenuTest {
 

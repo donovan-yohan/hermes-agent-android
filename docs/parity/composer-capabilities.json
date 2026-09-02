@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "desktop_repository": "NousResearch/hermes-agent",
-  "desktop_sha": "29112bef099274229cadff79cdff7bf7b99c4b77",
+  "desktop_sha": "3ca096de5f8183cb2e0ec23673f294d5978656a3",
   "scope_note": "The audited surface is every file below the Desktop composer root plus these load-bearing integration and end-to-end paths. A future source file in a scoped root fails until it is explicitly classified.",
   "desktop_scope": {
     "roots": [
@@ -91,7 +91,7 @@
         "source": [
           "apps/desktop/src/app/chat/composer/index.tsx:880-1085",
           "apps/desktop/src/app/chat/composer/rich-editor.ts:1",
-          "apps/desktop/src/app/chat/composer/hooks/use-composer-draft.ts:290-485",
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-draft.ts:296-491",
           "apps/desktop/src/store/composer.ts:365-437"
         ],
         "tests": [
@@ -301,7 +301,7 @@
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/input-requests.ts:27-325",
-          "apps/desktop/src/components/assistant-ui/clarify-tool.tsx:283-307",
+          "apps/desktop/src/components/assistant-ui/clarify-tool.tsx:284-308",
           "apps/desktop/src/components/assistant-ui/tool/approval.tsx:34-93",
           "apps/desktop/src/components/prompt-overlays.tsx:25-250"
         ],

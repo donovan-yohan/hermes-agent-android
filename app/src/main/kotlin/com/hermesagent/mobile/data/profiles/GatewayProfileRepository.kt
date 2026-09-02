@@ -39,7 +39,7 @@ enum class GatewayProfileConnectionState {
  * `profiles.list` over the live Gateway.
  *
  * The handler sits in the Gateway's slow-method lane
- * (`tui_gateway/server.py:263-271` @ `29112bef099274229cadff79cdff7bf7b99c4b77`)
+ * (`tui_gateway/server.py:297-305` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`)
  * because it walks each profile's skill tree and opens each profile's
  * `state.db`. So it gets its own generous budget at the RPC boundary
  * (`gatewayRpcTimeoutMillis`), matching Desktop's own
@@ -89,7 +89,7 @@ internal class GatewayProfileRepository(
 }
 
 /**
- * Parses `profiles.list` (`tui_gateway/methods_profiles.py:196-240`).
+ * Parses `profiles.list` (`tui_gateway/methods_profiles.py:205-249`).
  *
  * A row without a usable `name` is dropped rather than invented; a malformed
  * envelope answers null so the caller keeps its last good roster.

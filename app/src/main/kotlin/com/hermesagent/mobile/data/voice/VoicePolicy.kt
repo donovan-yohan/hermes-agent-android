@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * The stop-phrase half is a port of Desktop's
  * `apps/desktop/src/lib/voice-stop-word.ts:1-105` and the phrase-list resolution
  * in `apps/desktop/src/store/voice-prefs.ts:15-38`
- * @ `29112bef099274229cadff79cdff7bf7b99c4b77`. Pure functions only: nothing
+ * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`. Pure functions only: nothing
  * here logs, and a transcript never leaves the call it arrived on.
  */
 object VoicePolicy {
@@ -170,7 +170,7 @@ object VoicePolicy {
 
     /**
      * The conversation start notice, verbatim from Desktop
-     * `apps/desktop/src/i18n/en.ts:168`.
+     * `apps/desktop/src/i18n/en.ts:169`.
      */
     fun stopNotice(phrase: String): String = "Say \"$phrase\" to end the voice chat."
 

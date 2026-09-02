@@ -32,11 +32,11 @@ enum class HermesIcon(val glyph: String) {
     Add("\uEA60"),
     Edit("\uEA73"),
     File("\uEA7B"),
-    /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `29112bef`). */
+    /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `3ca096de`). */
     Globe("\uEB01"),
     /**
      * Desktop's `local` kind and Local-gateway mode glyph
-     * (`connections-registry.tsx:28`, `gateway-settings.tsx:1053` @ `29112bef`),
+     * (`connections-registry.tsx:28`, `gateway-settings.tsx:1053` @ `3ca096de`),
      * which is lucide `Monitor`.
      *
      * This used to be `device-mobile`, on the argument that Android's local
@@ -54,7 +54,7 @@ enum class HermesIcon(val glyph: String) {
     Monitor("\uEA7A"),
     /**
      * Desktop's `cloud` connection kind and Hermes Cloud mode glyph
-     * (`connections-registry.tsx:27`, `gateway-settings.tsx:1061` @ `29112bef`).
+     * (`connections-registry.tsx:27`, `gateway-settings.tsx:1061` @ `3ca096de`).
      * This app has no Hermes Cloud sign-in yet, so the control it marks ships
      * visible and disabled behind a `WIP` pill rather than absent.
      */
@@ -106,7 +106,7 @@ enum class HermesIcon(val glyph: String) {
 
     // The per-session actions menu's glyph vocabulary, fixed by Desktop at
     // `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:292,304,317,
-    // 345,357,435,444` @ `29112bef099274229cadff79cdff7bf7b99c4b77`. Rename
+    // 345,357,435,444` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`. Rename
     // (`edit`) and Delete (`trash`) already have entries above. Every code
     // point here is asserted against the shipped font by `HermesIconFontTest`.
     Pin("\uEB2B"),

@@ -117,7 +117,7 @@ internal const val PROFILE_PICKER_TAG = "Profile picker"
  * The active profile pops in its own colour — the "where am I" cue.
  *
  * Port of `apps/desktop/src/app/chat/sidebar/profile-switcher.tsx:119-345` @
- * `29112bef099274229cadff79cdff7bf7b99c4b77`.
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
  *
  * Desktop stops scaling the strip past thirteen profiles and collapses to a
  * compact menu (`:49`). A phone's budget is width, not count, so the strip
@@ -412,7 +412,7 @@ private fun ProfilePickerRow(
     }
 }
 
-// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1755,1766-1771.
+// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1773,1784-1789.
 internal const val PROFILES_TITLE = "Profiles"
 internal const val ALL_PROFILES_LABEL = "All profiles"
 internal const val SHOW_ALL_PROFILES = "Show all profiles"

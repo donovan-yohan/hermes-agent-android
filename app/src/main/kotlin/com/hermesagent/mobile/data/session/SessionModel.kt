@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.session
  * The shapes the chat surface renders.
  *
  * These are deliberately modelled on what the Hermes gateway is authoritative
- * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `29112bef`),
+ * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `3ca096de`),
  * not on UI-local convenience. The live Gateway repository maps protocol data
  * into these types while [SessionCache] preserves backend authority.
  */
@@ -75,7 +75,7 @@ data class SessionSummary(
     val activityStartedAtMillis: Long? = null,
     /**
      * Durable server-side soft-archive flag (`sessions.archived`, exposed as a
-     * real JSON boolean at hermes-agent @ `29112bef`,
+     * real JSON boolean at hermes-agent @ `3ca096de`,
      * `hermes_cli/web_routers/sessions.py:154`).
      *
      * Null is not `false`: it means this Gateway's list contract never said.
@@ -88,14 +88,14 @@ data class SessionSummary(
     /**
      * Durable server-side pin (`sessions.pinned`, `sessions.py:155`). The list
      * route back-fills pinned rows past its own LIMIT
-     * (`hermes_state.py:8711-8718`), so on a Gateway that reports it, a pinned
+     * (`hermes_state.py:9092-9099`), so on a Gateway that reports it, a pinned
      * conversation is present in every page. Null means "no opinion" — see
      * [archived].
      */
     val pinned: Boolean? = null,
     /**
      * Backend read watermark: `last_read_at` against `last_active`, derived per
-     * surfaced conversation (`hermes_state.py:9019-9020`, `session_unread` at
+     * surfaced conversation (`hermes_state.py:9400-9401`, `session_unread` at
      * `:8455`).
      *
      * Deliberately not [SessionStatus.Unread]. That status is this client's
@@ -129,7 +129,7 @@ data class SessionSummary(
     val estimatedCostUsd: Double? = null,
     /**
      * Original root id of a compression chain when [id] is a projected
-     * continuation tip (`hermes_state.py:9011`). Stable across compressions, so
+     * continuation tip (`hermes_state.py:9392`). Stable across compressions, so
      * it is the durable id a pin is stored against — and the id an earlier
      * refresh may have filed this conversation under. Never navigation
      * identity: [id] is.
@@ -217,10 +217,10 @@ data class ComposerPreviewArtifact(
 /**
  * The Gateway's durable address for one persisted message — the `messages.id`
  * it stamps onto a history row when the transcript is read with row ids
- * (NousResearch/hermes-agent @ `29112bef`,
- * `tui_gateway/methods_session.py:2597-2606`: "the durable row id is how
+ * (NousResearch/hermes-agent @ `3ca096de`,
+ * `tui_gateway/methods_session.py:2611-2620`: "the durable row id is how
  * clients address a specific persisted turn"; the wire value is projected at
- * `tui_gateway/server.py:7640-7646`).
+ * `tui_gateway/server.py:7752-7758`).
  *
  * A separate type because it is not interchangeable with [TranscriptEntry.id]:
  * that id is a rendering key this client mints, and it exists for every row —
