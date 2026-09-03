@@ -92,7 +92,7 @@ points at something a later reader can still open.
 Chrome, not Electron, so `window.hermesDesktop` does not exist and every control
 gated on it is simply not built into the tree. `New window` and `Open in
 terminal` in the session actions menu are two (`store/windows.ts:146-148,163-165`,
-consumed at `session-actions-menu.tsx:244,261`); anything else reached through
+consumed at `session-actions-menu.tsx:244,260`); anything else reached through
 that bridge behaves the same way. **A control missing from a Desktop capture is
 never on its own evidence that Desktop does not render it** — check the source
 for a shell gate before writing the absence into a ledger. The reverse still
