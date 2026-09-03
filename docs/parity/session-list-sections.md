@@ -104,17 +104,36 @@ Every `path:line` below is against that SHA.
 | Mark-all writes nothing to the Gateway (`store/session.ts:1113`, `store/session-unread.ts:302`) | mobile-adaptation | One `PATCH {"unread":false}` per unread row, reporting the count that refused | There is no local persisted watermark here, so the durable read state is the Gateway's and acking it is a write; the fan-out is serial and uncancellable, which is named as a limitation |
 | The zero gate counts the whole transient finished-unread set (`filter-menu.tsx:172`) | mobile-adaptation | The loaded, in-scope, non-archived rows whose resolved dot is unread | The count has to describe the same rows the verb acts on, which are the ones this sidebar has loaded in the profile scope it is standing in |
 | The first calendar divider is unlabelled | mobile-adaptation | Labelled when a Pinned section renders above it | The rule exists because nothing sits above the newest group; with Pinned above it, an unlabelled bucket reads as more pinned rows |
-| Status grouping, cost/token ordering and the rest of the filter menu (`filter-menu.tsx:200-378`) | omission | Absent | out-of-scope: #66 — that issue takes only `Archived` and `Mark all as read` |
+| `Ordering` (`filter-menu.tsx:260`), `Show` (`:274`), `Inbox style` (`:292`), `Status` (`:302`), `Profile` (`:334`) and `Collapse all` (`:408`) | omission | Absent from the menu entirely | pill-owed: #142 — #66 deliberately took only `Archived` and `Mark all as read`, so the rows were never built; since #101 the standing rule is that an unsupported **control** stays visible and disabled behind the `WIP` chip rather than vanishing, and six of them vanish here. The rendered pair is `docs/parity/visual/session-list-archived-filter/` |
 | Archived Chats settings page, its per-row `<folder> · N messages` hint and auto-archive-after-N-days (`app/settings/sessions-settings.tsx`) | omission | Absent; the restore lives in the row's own menu | deferred: #73 — session maintenance; #66 declares them non-goals |
 | Bulk selection on the archived list | omission | Absent | out-of-scope: #66 — no bulk operations |
 | A `draft` dot below unread (`session-dot-state.ts:129-131`) | omission | Folded into `Idle` | out-of-scope: #66 — this list has no draft state to distinguish yet |
+| `sidebar.dateDivider` reads `Earlier today` / `Yesterday` / `Earlier this week` / `Last week` / `Earlier this month`, then a month name and month + year from `Intl` (`en.ts:2345-2351`; `lib/time.ts:125-165`) | drift | `Today` / `Yesterday` / `This week` / `Last week` / `This month` / `Older` (`SessionGrouping.kt:21-28`) | #141. Three labels are re-phrased and every month bucket collapses into one `Older`. The captures read `YESTERDAY · EARLIER THIS WEEK · LAST WEEK · JULY` against `TODAY · LAST WEEK · OLDER`. Upstream's `Earlier …` is load-bearing: the newest run is left unlabelled above the first divider, which is what makes the word true (`lib/time.ts:118-124`) |
+| Two distinct captions: `SidebarPanelLabel` for `Pinned` / `Sessions` — accent `--theme-primary` ink, tracking 0.16em, leading 8 px dither square (`app/shell/sidebar-label.tsx:9-22`) — and `SidebarDateDivider` for the buckets — `--ui-text-quaternary`, tracking 0.12em, trailed by a hairline rule (`sidebar/chrome.tsx:51-97`) | drift | One `SectionLabel` for both: `textTertiary`, no glyph, no rule (`ui/common/Primitives.kt:87-94`) | #141. `PINNED` therefore reads as another date bucket, and Desktop's two-level hierarchy flattens to one. Visible in `docs/parity/visual/session-list-sections/` |
+| Every row carries a right-aligned relative age — `12m`, `9h`, `1d`, `39d` — from the default row meta `['preview', 'updated']` (`store/layout.ts:300`; units at `en.ts:2340-2343`) | omission | The title and the preview line only; no age | deferred: #143 — the `preview` half of Desktop's default ships, the `updated` half does not, and nothing in `app/src/main/kotlin` reads those four keys. An omitted field rather than a control |
+| `Grouping` is a submenu trigger showing the active value on its right (`filter-menu.tsx:238-258`) | mobile-adaptation | An inline `GROUPING` caption over two radio rows, `Updated` (checked) and `Project` | Nested pointer submenus are brittle on a phone and the port workflow's standing rule is to flatten them; with two options the flattened form costs one caption and shows the choice without a second surface. `GROUPING` is not a Desktop string — it is this list's own section caption, applied to a Desktop control |
+| The filter menu has no `Search` item; search is a persistent field in the sidebar header (`sidebar/index.tsx`, `en.ts:2200-2202`) | mobile-adaptation | A `Search` row sits in this menu, above `Archived` | Viewport: the drawer header holds the connection, the title, `+` and the filter trigger already, and a permanent field would take a row of the list on every phone. The field itself is unchanged when it opens — see `session-search.md` |
 
 ## Visual report
 
-- pending: #66
+Rendered side by side at `be20b61`. Desktop was captured from a disposable
+export at the pin with a headless CDP renderer and synthetic sessions; Android
+on a Pixel 10 Pro emulator in light theme against a clean `kame-qa` profile
+holding four synthetic sessions, one pinned pair, one unread row and one
+archived row. Three states, both sides each:
 
-Not captured. The Desktop reference capture in the port workflow needs a
-disposable pinned dev renderer with CDP, which was not available for this
-slice; the section order, copy, glyph vocabulary and colour roles are pinned
-against source and the shipped font instead, and the rendered structure is
-asserted under Robolectric by `SessionListSectionsJourneyTest`.
+- report: docs/parity/visual/session-list-sections/report.html
+- report: docs/parity/visual/session-list-archived-filter/report.html
+- report: docs/parity/visual/session-list-archived-view/report.html
+- commit: be20b61
+
+The `Pinned` section renders first and the archived view swaps the pool rather
+than filtering it, both as ported, and the unread dot is the same filled green
+mark in the same slot. One state the pair does **not** settle: Desktop's archived view keeps the
+`Pinned` section, so a row that is both pinned and archived still files under
+`PINNED`. The seeded archived row was unpinned, so the Android half never
+rendered that combination and this pass makes no claim about it.
+
+The render is what caught the divider copy and the
+section-label treatment (#141), the six filter-menu controls that are absent
+rather than disabled (#142), and the missing row age (#143).

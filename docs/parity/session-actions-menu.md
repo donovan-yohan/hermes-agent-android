@@ -42,11 +42,11 @@ literally, so reordering two constants fails the build.
 
 | # | Group | Desktop | What it holds | Ships here |
 |---|---|---|---|---|
-| 1 | `Open` | `openItems` (`:234`) | Open in new tab, New window, Open in terminal | **Never** — Android has no tabs, no second window, and no local terminal. The slot exists only to keep the numbering honest. |
+| 1 | `Open` | `openItems` (`:227-240`) | **One item on the row surface**: `Open in new tab`. The window hop and the tab verbs belong to the tab surface (`surface === 'row' && !alreadyTabbed`, `:228`) — the rendered side-by-side shows a single row above the first rule | **Never** — Android has no tabs, no second window, and no local terminal. The slot exists only to keep the numbering honest. |
 | 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13), **Rename** (S14, #65) — proved by `GatewaySessionRepositoryTest.renameSession with live runtime id calls session_title RPC and updates cache`, `.renameSession without live runtime id calls REST PATCH and updates cache`, `.renameSession falls back to REST PATCH when the session_title RPC fails` and `SessionActionsMenuJourneyTest.renaming a session seeds the dialog with current title and saves on confirm`. **Pin / Unpin and Mark as read / unread** (#66) — proved by `SessionActionsMenuTest.the ported menu sits in Desktop's slots`, `.a pinned row offers the way back out of the section`, `.the read-state row is one slot naming the action it performs`, `GatewaySessionRepositoryTest.setSessionPinned writes the pin with the row's own profile and paints it first` and `.marking read clears the watermark and the finished-turn dot together`. |
 | 3 | `Work` | `workItems` (`:344`) + Move to project (`:491-499`) | Branch, Export, Move to project | Not yet |
 | 4 | `Tab` | `tabItems` (`:371`) | Reload, Close, Close others / to the right / all | **Never** — no tab strip on a phone |
-| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. **Archive / Unarchive** (#66), above Delete and not destructive-red — proved by `SessionActionsMenuTest.an archived row offers the restore in the same slot`, `.every flag combination keeps the menu structure` and `GatewaySessionRepositoryTest.setSessionArchived files the row in place and off the live list`. |
+| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. **Archive / Unarchive** (#66), above Delete and not destructive-red — but see the drift row for `Unarchive`: Desktop's own menu never swaps that label ([#138](https://github.com/donovan-yohan/hermes-agent-android/issues/138)) — proved by `SessionActionsMenuTest.an archived row offers the restore in the same slot`, `.every flag combination keeps the menu structure` and `GatewaySessionRepositoryTest.setSessionArchived files the row in place and off the live list`. |
 
 ### Does Desktop render a separator for an empty group?
 
@@ -209,7 +209,7 @@ Everything else in the table above is absent, and its group slot is present.
 | Mark as unread | Identity | `Mail` | `Mark as unread` | `en.ts:2305`; `:310-333` |
 | …when the row is unread | Identity | `MailRead` | `Mark as read` | `en.ts:2306`; `:314-315` |
 | Archive | Danger | `Archive` | `Archive` | `en.ts:2312`; `:431-440` |
-| …when the row is archived | Danger | `Archive` | `Unarchive` | `en.ts:1156` (Desktop's settings page) |
+| …when the row is archived | Danger | `Archive` | `Unarchive` | `en.ts:1156` — Desktop's **settings page**, not this menu. Desktop's row menu renders `Archive` in both directions (`session-actions-menu.tsx:431-435`), so this swap is drift: [#138](https://github.com/donovan-yohan/hermes-agent-android/issues/138) |
 
 Each is one PATCH on `PATCH /api/sessions/{id}` (`hermes_cli/web_routers/sessions.py:825-832`
 @ the pin), written optimistically and repainted on refusal. The unread row
@@ -296,23 +296,35 @@ carries the argument and the citations.
 | Unavailable verbs stay mounted and **disabled** | omission | The same: `available = false` dims the row, marks it with the `WIP` chip, and takes its click action away | coming soon — the pill ships in this change (#101). This page previously argued for omitting them; the standing rule is Desktop's shape, and `SessionActionsMenuJourneyTest` measures that each marked row keeps the 48 dp floor, announces once and refuses the tap |
 | `Branch` (`:337-349`, `en.ts:2310`), `Export` (`:350-358`, `en.ts:2309`), `Move to project` (`:488-496`, `en.ts:2247`) and `Appearance` (`:467-475`, `en.ts:2242`) | omission | All four render in Desktop's slots, disabled behind the chip | coming soon — the pill ships in this change (#101). None has a call behind it here: branching needs a session-fork RPC, exporting needs a platform file destination, and the two submenu triggers have no per-session colour and no projects roster to open onto. Pin, archive and read-state are no longer among them; they shipped in #66 |
 | Read-state item is `disabled` when neither `onToggleUnread` nor a live dot exists (`session-actions-menu.tsx:311`) | mobile-adaptation | Always enabled | The handler always exists on this surface, so the disabled branch is unreachable rather than dropped — the Gateway, not the client, decides whether a row can carry a watermark |
-| `Unarchive` lives on the Archived Chats settings page (`app/settings/sessions-settings.tsx:148-154`) | mobile-adaptation | In the row's own actions menu, with Desktop's own word | That settings page is a declared non-goal here, so the row menu is the only place a reversible verb can live; moving the verb rather than inventing a word keeps the vocabulary Desktop's |
+| The row menu renders `Archive` on an **already-archived** row; the label never swaps (`session-actions-menu.tsx:431-435`, `label: r.archive` unconditional, against `pinned ? r.unpin : r.pin` at `:300` and the read-state swap at `:315`) | drift | The same slot reads `Unarchive`, using Desktop's settings-page word (`en.ts:1156`) | #138. The rendered pair `docs/parity/visual/session-actions-open-pinned-unread-archived/` shows Desktop's `Archive` beside Android's `Unarchive` in the same state. The reasoning below is real — Android has no Archived Chats settings page, so this menu is the only reversible path — but it was written before either side was rendered, and it does not make the two menus the same menu. #138 decides whether the swap stays with the reason recorded or goes |
 | Archived Chats settings page, and auto-archive-after-N-days | omission | Absent | deferred: #73 — session maintenance; #66 declares both non-goals |
 | `Renamed` / `Session deleted` / pin and archive toasts (`en.ts:2328,2336`) | omission | Chat `notice` banner, or nothing on success | deferred: #73 (in-app-notification-stack) |
 | Nested `Appearance` and `Move to project` submenus (`:467-475,488-496`) | mobile-adaptation | Each trigger is one disabled row in its own slot; there is no second level | Touch mechanics: nested pointer submenus are brittle on a phone, and the port workflow's standing rule is to flatten them. Neither has content to hold here — no per-session colour is persisted, and there is no projects roster — so the level that is missing is empty by construction |
 | Right-click `SessionContextMenu` (`session-actions-menu.tsx:621-639`) | omission | Absent | non-goal: long-press belongs to text selection on a phone, and binding the menu to it would fight the transcript's gesture |
 | ⇧-click pin, ⌥⇧-click archive (`session-row-gesture.ts:33,45`) | omission | Absent | non-goal: a soft keyboard has no modifier keys |
 | The open group and the tab group | omission | Absent | non-goal: no tabs, windows or local terminal on this platform |
+| Rename dialog renders a title, the input and the two buttons — no description (`session-actions-menu.tsx:684-716`; `r.renameDesc`, `en.ts:2331`, is read by nothing but Desktop's own test stub at `session-actions-menu.test.tsx:60`) | drift | A helper line `Leave empty to clear.` sits between the title and the field (`RenameSessionDialog.kt:48,65`) | #139. `docs/parity/visual/session-rename-dialog/` — the Desktop contract's node text is `Rename session Cancel Save Close`. The port renders a Desktop string in a slot Desktop leaves empty |
+| Filled `Save` and `Delete` carry `--primary-foreground` / `--destructive-foreground` — white on the saturated fill | drift | `PrimaryButton` paints the label `tokens.accentForeground`, the ink meant for the *tinted* accent surface: `#1F2328` in the default light theme (`Primitives.kt:439`; `BuiltinThemes.kt:43`) | #140. Sampled from `docs/parity/visual/session-rename-dialog/android/reference.png`: `#1F2328` on `rgb(0,83,253)` is **2.48:1**, below WCAG AA, where Desktop's white on the same blue is 6.36:1 |
+| Dialogs carry a top-right `✕` close control (`components/ui/dialog.tsx`, visible in both dialog captures) | mobile-adaptation | No `✕`; the three ways out are Cancel, system back and a tap outside | Android's back gesture is the platform's own dismiss and every dialog on this surface honours it, so a fourth affordance would be a second spelling of a gesture the reader already has. `SessionActionsMenuJourneyTest` asserts all three exits and that none of them confirms |
+| `Appearance` and `Move to project` render a trailing `›` chevron, the submenu affordance (`:467-475,488-496`) | mobile-adaptation | The same two rows carry the `WIP` chip in that slot and are dimmed | The chevron promises a second level; flattened, there is none to open, and the chip says what the row is instead. Both keep Desktop's glyph, label and position — only the trailing mark differs |
+| `Branch` and `Export` render enabled when their handlers exist (`:337-358`) | omission | Both are dimmed behind the `WIP` chip | coming soon — the pill ships (#101); neither verb has a call behind it here |
 
 ## Visual report
 
-- pending: #65
-- pending: #66
+Rendered side by side at `be20b61`. Desktop was captured from a disposable
+export at the pin with a headless CDP renderer and synthetic sessions; Android
+was captured on a Pixel 10 Pro emulator in light theme against a clean `kame-qa`
+profile holding four synthetic sessions. Four states, both sides each:
 
-Not captured. The Desktop reference capture in the port workflow needs a
-disposable pinned dev renderer with CDP, which was not available for this slice;
-the menu's geometry, colour roles and glyph vocabulary are pinned against source
-and the shipped font instead. A capture pass belongs with #65, when the menu
-has enough items for a screenshot to be worth comparing — and #66 owes its own,
-because Pin / Unpin, the read-state row and Archive / Unarchive are three more
-rendered items that no side-by-side has yet seen.
+- report: docs/parity/visual/session-actions-open/report.html
+- report: docs/parity/visual/session-actions-open-pinned-unread-archived/report.html
+- report: docs/parity/visual/session-rename-dialog/report.html
+- report: docs/parity/visual/session-delete-confirm/report.html
+- commit: be20b61
+
+Order, group boundaries, glyph family and label casing match Desktop item for
+item, and the empty-`Open`-group separator rule renders exactly as the port
+argued it would: Desktop paints three rules between four populated groups,
+Android two between three. What the render found that source reading had not is
+in the drift rows above — the `Unarchive` swap (#138), the rename dialog's extra
+helper line (#139), and the near-black label on both filled buttons (#140).

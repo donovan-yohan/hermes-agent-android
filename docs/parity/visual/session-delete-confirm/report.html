@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>session-delete-confirm visual parity</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101013; color: #eee; }
+  body { margin: 0; padding: 20px; }
+  header { margin-bottom: 16px; }
+  h1 { margin: 0 0 6px; font-size: 18px; }
+  p { margin: 0; color: #aaa; font-size: 12px; }
+  main { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  figure { margin: 0; min-width: 0; }
+  figcaption { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+  figcaption span:last-child { color: #888; overflow-wrap: anywhere; text-align: right; }
+  img { display: block; max-width: 100%; height: auto; border: 1px solid #303038; background: #18181c; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+</style>
+<header>
+  <h1>session-delete-confirm</h1>
+  <p>Judge hierarchy, typography, icon family/order, spacing rhythm, surfaces, and every recorded deviation.</p>
+</header>
+<main>
+  <figure>
+    <figcaption><strong>Desktop</strong><span>3ca096de5f8183cb2e0ec23673f294d5978656a3</span></figcaption>
+    <img src="desktop/reference.png" alt="Desktop reference">
+  </figure>
+  <figure>
+    <figcaption><strong>Android</strong><span>sdk_gphone16k_arm64 · Physical size: 1280x2856 · Physical density: 480</span></figcaption>
+    <img src="android/reference.png" alt="Android reference">
+  </figure>
+</main>
