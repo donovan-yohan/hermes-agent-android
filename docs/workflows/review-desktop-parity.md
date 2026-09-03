@@ -58,10 +58,9 @@ git -C "$export" checkout --quiet "$pin"
 git -C "$export" rev-parse HEAD   # must print $pin
 ```
 
-These commands prompt for approval rather than running unattended: `git clone`
-executes an arbitrary command through `--upload-pack` or an `ext::` transport
-and its destination is unconstrained, so `.chalk/permissions.yaml` lists it
-under `ask`. Approve it once per review. The clone reads the reference checkout and never writes to it, and
+Treat the clone with care: `git clone` executes an arbitrary command through
+`--upload-pack` or an `ext::` transport and its destination is unconstrained,
+so read the command before running it. The clone reads the reference checkout and never writes to it, and
 `--no-hardlinks` keeps the export's object store from reaching back into it, so
 the checkout that moves is the disposable one. That also gives
 `capture-desktop-reference.mjs` a real repository for its clean-tree and
@@ -109,8 +108,8 @@ grep -n '<the key>' "$export/apps/desktop/src/i18n/en.ts"
 
 `$export` is the pinned export from step 2, already checked out at the pin.
 Running `git show "$pin":…` from this repo cannot work — the Desktop commit is
-not an object here — and running it against `~/.hermes/hermes-agent` is refused
-by `.chalk/permissions.yaml`. If you have not made the export yet, make it now;
+not an object here — and running it against `~/.hermes/hermes-agent` breaks
+the read-only rule in `AGENTS.md`. If you have not made the export yet, make it now;
 it is the only sanctioned way to read Desktop at a pin.
 
 Every rendered Android string that has a Desktop counterpart keeps Desktop's

@@ -1,6 +1,6 @@
 # .chalk
 
-chalkbag source of truth for this repo: skills, permissions, provider config.
+chalkbag source of truth for this repo: skills and provider config. No custom permissions are generated: the harness defaults apply.
 
 ## Layout
 
@@ -10,14 +10,13 @@ chalkbag source of truth for this repo: skills, permissions, provider config.
 | `skills/review-desktop-parity/` | The review gate for any UI change: render Desktop at the pin beside Android, diff copy and menu order, classify every divergence; pairs with `scripts/check-parity-evidence.py` |
 | `skills/sync-hermes-desktop-themes/` | How to keep the theme registry in step with Desktop; ships an executable parity diff under `scripts/` |
 | `skills/review-product-copy/` | How to review actual rendered strings, screenshots and semantics; pairs with the repo copy gate |
-| `permissions.yaml` | Per-provider permissions. Encodes the two hard rules: upstream is read-only, and nothing reads a credential |
 | `providers.yaml` | Which providers get rendered |
 
 ## Rules
 
 - Repo-specific instructions live in the tracked `AGENTS.md` at the root
   (`CLAUDE.md` is a symlink to it). Keep chalkbag workflow notes here.
-- Edit `skills/`, `permissions.yaml`, `providers.yaml`. Never hand-edit the
+- Edit `skills/`, `providers.yaml`. Never hand-edit the
   generated `.agents/`, `.claude/`, `.codex/`, `.opencode/` or `opencode.json` —
   they are gitignored, and `./gradlew check` fails if one gets committed.
 - Long checklists belong in `docs/workflows/`, not in a `SKILL.md`. A skill
