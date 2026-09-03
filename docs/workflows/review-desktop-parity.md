@@ -84,7 +84,24 @@ python3 .chalk/skills/port-hermes-desktop-surface/scripts/build-visual-report.py
 ```
 
 Everything lands under the untracked `build/visual-parity/<name>/`. Open
-`report.html` and judge both surfaces together.
+`report.html` and judge both surfaces together. Copy the packet into
+`docs/parity/visual/<name>/` when the review lands, so the page's `report:` line
+points at something a later reader can still open.
+
+**Where the Android capture reads focus.** `capture-android-reference.py` will
+not screenshot a device it cannot prove this app is on, and where `adb` keeps
+that proof moved: `dumpsys window windows` carried `mCurrentFocus` /
+`mFocusedApp` through Android 15, and on API 36+ images they are only in plain
+`dumpsys window`. The script asks the subcommand first and falls back, so both
+generations work; an empty reading from both is still a refusal.
+
+Compose popups matter here too. A dropdown, a dialog or a menu is its own
+window, so `mCurrentFocus` reads `Pop-Up Window` while `mFocusedApp` names the
+activity. The script **joins** the two focus lines before matching, and that is
+what lets a menu capture pass — it is this app's popup exactly when the joined
+reading names this app. Do not "fix" a menu capture by matching `mCurrentFocus`
+alone; it refuses every open menu. `scripts/tests/test_capture_android_reference.py`
+holds both cases.
 
 ### When a renderer is not available
 

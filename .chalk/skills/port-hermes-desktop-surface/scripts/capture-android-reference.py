@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
 
+"""Capture one Android visual-parity reference, fenced on who is on screen.
+
+A screenshot proves nothing unless the app in it is this app, so every capture
+is gated on `adb` agreeing that the expected package/activity is both resolvable
+and focused.
+
+Two facts about where that focus lives, both learned the hard way:
+
+* `dumpsys window windows` carried `mCurrentFocus` / `mFocusedApp` through
+  Android 15. On API 36+ images they moved to the display-contents section that
+  plain `dumpsys window` prints, and the `windows` subcommand emits neither — so
+  the gate aborted every capture on a Pixel 10 Pro emulator however correct the
+  foreground app was. The subcommand is still asked first and plain `dumpsys
+  window` is the fallback, because older images answer the subcommand and never
+  reach it.
+* A Compose dropdown or dialog is its own window, so `mCurrentFocus` reads
+  `Pop-Up Window` while `mFocusedApp` still names the activity. The two lines are
+  therefore **joined** before matching: the popup is this app's popup exactly
+  when the joined text names this app. Matching `mCurrentFocus` alone would
+  refuse every menu capture.
+
+The check is not loosened by either: an empty focus reading is a refusal, not a
+pass, and the joined text must still carry the expected package and activity.
+"""
+
 import argparse
 import json
 import subprocess
@@ -27,6 +52,29 @@ def shell(serial: str | None, *command: str) -> str:
     return adb(serial, "shell", *command).strip()
 
 
+def focus_lines(dump: str) -> str:
+    """The `mCurrentFocus` / `mFocusedApp` lines of a `dumpsys window` dump, joined.
+
+    Joined rather than matched one at a time: see the module docstring — a
+    Compose popup owns `mCurrentFocus` and leaves the activity name on
+    `mFocusedApp`.
+    """
+    return "\n".join(
+        line.strip()
+        for line in dump.splitlines()
+        if "mCurrentFocus" in line or "mFocusedApp" in line
+    )
+
+
+def read_focus(serial: str | None) -> str:
+    """Whichever `dumpsys window` form this image answers with focus lines."""
+    focused = focus_lines(shell(serial, "dumpsys", "window", "windows"))
+    if focused:
+        return focused
+    # API 36+ moved them out of the `windows` subcommand entirely.
+    return focus_lines(shell(serial, "dumpsys", "window"))
+
+
 def verify_app_identity(serial: str | None, package: str, activity: str) -> dict[str, str]:
     component = f"{package}/{activity}"
     abbreviated_activity = f".{activity.rsplit('.', 1)[-1]}"
@@ -35,14 +83,15 @@ def verify_app_identity(serial: str | None, package: str, activity: str) -> dict
         return package in text and (activity in text or f"/{abbreviated_activity}" in text)
 
     resolved = shell(serial, "cmd", "package", "resolve-activity", "--brief", component)
-    windows = shell(serial, "dumpsys", "window", "windows")
-    focused = "\n".join(
-        line.strip()
-        for line in windows.splitlines()
-        if "mCurrentFocus" in line or "mFocusedApp" in line
-    )
+    focused = read_focus(serial)
     if not contains_expected(resolved):
         raise SystemExit(f"capture target did not resolve to {component}: {resolved!r}")
+    if not focused:
+        raise SystemExit(
+            "adb reported no mCurrentFocus/mFocusedApp lines from either "
+            "`dumpsys window windows` or `dumpsys window`; the capture target "
+            "cannot be proved to be on screen"
+        )
     if not contains_expected(focused):
         raise SystemExit(f"capture target is not the focused Android activity: expected {component}")
     return {"component": component, "resolvedActivity": resolved, "focusedWindow": focused}
