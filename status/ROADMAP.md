@@ -400,6 +400,28 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 - Pixel-for-pixel Electron imitation where Android input, lifecycle, security,
   or accessibility requires a different surface.
 
+## Device passes
+
+### 2026-09-03 — emulator pass on `be20b61`
+
+A Pixel 10 Pro emulator (Android 17) drove the seven slices merged since
+`c8fd145` against a QA Remote Gateway, in light and dark, with screenshots
+throughout and accessibility dumps on the #135 pass.
+
+- **Six PASS**: rename and delete, the context meter and its usage sheet, pin /
+  archive / mark read and unread, the approval-mode control and the Models
+  sheet, backend session search, and the WIP pills with the connections editor.
+- **One PARTIAL**: `Show earlier messages`. No conversation on the Gateway holds
+  more than the 120 rows that make the control appear, so it was never on screen
+  and nothing about it was proved on live data.
+- **One defect filed**:
+  [#136](https://github.com/donovan-yohan/hermes-agent-android/issues/136) — the
+  chat header's `Connected` subtitle truncates to `Co…` beside the context meter
+  chip.
+
+Emulator only. The physical Pixel never held a stable USB connection, so
+exact-head physical acceptance is still open.
+
 ## Evidence map
 
 - [Desktop surface port workflow](../docs/workflows/port-desktop-surface.md)

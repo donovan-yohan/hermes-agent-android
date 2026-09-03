@@ -122,6 +122,27 @@ projection both splits and drops.
 
 - pending: #68
 
-The rendered side-by-side against Desktop at the pin is owed by the device
-acceptance matrix, alongside the sticky-prompt capture the same surface owes
-(`docs/parity/sticky-user-prompt-port.md`).
+**Half a pair, and `pending:` is the honest half.** The Desktop reference exists
+and is stored in this repo at `docs/parity/visual/transcript-show-earlier/desktop/`
+(`reference.png` + `contract.json`, captured from a disposable export at the pin
+against a seeded 120-turn transcript, at `be20b61`). It is deliberately **not**
+recorded as `report:` — `scripts/check-parity-evidence.py` refuses a page that
+claims a report and owes one at the same time, and the side that is missing is
+Android's, which is the side a parity review is actually about. There is no
+`report.html` under that name either, because a side-by-side needs two sides.
+
+Why the Android half is owed rather than skipped: the pill renders only once a
+conversation holds more than the 120-row hydration page, and no session on any
+Gateway this pass could reach does. Two capture runs probed the six longest
+sessions in the active profile and in the QA profile and reached the first user
+message in every one with no pill on screen; the large token counts there come
+from a few very big messages, not from many rows. Manufacturing one by sending
+turns was outside the capture pass. Until a long transcript exists on a reachable
+Gateway, the control is proved by Robolectric and the repository tests —
+structure, not pixels — and this page reviews at **Concern** for it.
+
+What the stored Desktop half does settle, against what the port claimed from
+source: the control is a plain centred rounded pill with no glyph, no spinner and
+no disabled state, reading `Show earlier messages` verbatim (`en.ts:3218`), 164 x
+26 px at the top of the scrolled transcript content. The clip carries exactly one
+node, and that node is the whole control.

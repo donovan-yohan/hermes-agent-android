@@ -1,0 +1,83 @@
+{
+  "capture": {
+    "capturedAt": "2026-09-03T05:11:09.699Z",
+    "title": "Hermes",
+    "url": "http://127.0.0.1:5174/#/",
+    "viewport": {
+      "width": 1600,
+      "height": 1000,
+      "devicePixelRatio": 1,
+      "scrollX": 0,
+      "scrollY": 0
+    },
+    "clip": {
+      "x": 847.578125,
+      "y": 34,
+      "width": 164.84375,
+      "height": 26,
+      "scale": 1
+    },
+    "nodeCount": 1,
+    "nodes": [
+      {
+        "index": 0,
+        "tag": "button",
+        "id": null,
+        "role": null,
+        "slot": null,
+        "ariaLabel": null,
+        "text": "Show earlier messages",
+        "classes": "mx-auto mb-(--conversation-turn-gap) rounded-full border border-border/65 bg-(--composer-fill) px-3 py-1 text-xs text-muted-foreground hover:text-foreground",
+        "rect": {
+          "x": 847.578125,
+          "y": 34,
+          "width": 164.84375,
+          "height": 26
+        },
+        "computed": {
+          "display": "block",
+          "position": "static",
+          "width": "164.844px",
+          "height": "26px",
+          "minWidth": "auto",
+          "minHeight": "auto",
+          "paddingTop": "4px",
+          "paddingRight": "12px",
+          "paddingBottom": "4px",
+          "paddingLeft": "12px",
+          "marginTop": "0px",
+          "marginRight": "563.578px",
+          "marginBottom": "6px",
+          "marginLeft": "563.578px",
+          "gap": "normal",
+          "fontFamily": "\"Segoe WPC\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\", emoji",
+          "fontSize": "12px",
+          "fontWeight": "400",
+          "lineHeight": "16px",
+          "letterSpacing": "normal",
+          "textTransform": "none",
+          "textAlign": "center",
+          "color": "color(srgb 0.121569 0.137255 0.156863 / 0.54)",
+          "backgroundColor": "color(srgb 0.984376 0.985929 0.987482)",
+          "borderTopWidth": "1px",
+          "borderRightWidth": "1px",
+          "borderBottomWidth": "1px",
+          "borderLeftWidth": "1px",
+          "borderRadius": "31996.8px",
+          "opacity": "1"
+        },
+        "before": null
+      }
+    ]
+  },
+  "reference": {
+    "name": "transcript-show-earlier",
+    "rootSelector": "[data-slot=\"aui_thread-content\"] > button",
+    "upstream": "/tmp/hermes-desktop-3ca096de5f8183cb2e0ec23673f294d5978656a3",
+    "upstreamSha": "3ca096de5f8183cb2e0ec23673f294d5978656a3",
+    "target": {
+      "title": "Hermes",
+      "url": "http://127.0.0.1:5174/#/"
+    }
+  }
+}
