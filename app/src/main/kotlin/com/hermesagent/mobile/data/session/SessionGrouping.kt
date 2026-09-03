@@ -140,8 +140,14 @@ fun calendarBucket(
  * @param archivedView Desktop's `Archived` toggle. Archived is a view of its
  *   own set rather than a filter over the live one
  *   (`apps/desktop/src/app/chat/sidebar/index.tsx:488-495` @ `3ca096de`), so it
- *   swaps the pool wholesale and renders it flat: no pinned section and no
- *   dividers (`:1723`, `grouping='none'` while archived). A query inside that
+ *   swaps the pool wholesale and renders it without date dividers (`:1723`,
+ *   `grouping='none'` while archived). This returns a **flat** list, which goes
+ *   further than upstream does and is a known divergence, not the port of that
+ *   line: Desktop's `Pinned` section is its own section gated only on
+ *   `!trimmedQuery` (`:1640-1661`), so a pinned + archived row still files
+ *   under `PINNED` there. See
+ *   [#146](https://github.com/donovan-yohan/hermes-agent-android/issues/146) and
+ *   the drift row in `docs/parity/session-list-sections.md`. A query inside that
  *   view stays a local filter over the archived pool — see
  *   `docs/parity/session-search.md`.
  */

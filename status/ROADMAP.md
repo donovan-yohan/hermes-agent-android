@@ -405,8 +405,8 @@ cannot be copied honestly without a new protocol or a mobile redesign.
 ### 2026-09-03 — emulator pass on `be20b61`
 
 A Pixel 10 Pro emulator (Android 17) drove the seven slices merged since
-`c8fd145` against a QA Remote Gateway, in light and dark, with screenshots and
-accessibility dumps for each.
+`c8fd145` against a QA Remote Gateway, in light and dark, with screenshots
+throughout and accessibility dumps on the #135 pass.
 
 - **Six PASS**: rename and delete, the context meter and its usage sheet, pin /
   archive / mark read and unread, the approval-mode control and the Models

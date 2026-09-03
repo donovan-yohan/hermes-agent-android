@@ -88,6 +88,16 @@ Everything lands under the untracked `build/visual-parity/<name>/`. Open
 `docs/parity/visual/<name>/` when the review lands, so the page's `report:` line
 points at something a later reader can still open.
 
+**What a browser-hosted Desktop capture cannot see.** The dev renderer runs in
+Chrome, not Electron, so `window.hermesDesktop` does not exist and every control
+gated on it is simply not built into the tree. `New window` and `Open in
+terminal` in the session actions menu are two (`store/windows.ts:146-148,163-165`,
+consumed at `session-actions-menu.tsx:244,261`); anything else reached through
+that bridge behaves the same way. **A control missing from a Desktop capture is
+never on its own evidence that Desktop does not render it** — check the source
+for a shell gate before writing the absence into a ledger. The reverse still
+holds: a control Desktop renders and Android does not is a finding.
+
 **Where the Android capture reads focus.** `capture-android-reference.py` will
 not screenshot a device it cannot prove this app is on, and where `adb` keeps
 that proof moved: `dumpsys window windows` carried `mCurrentFocus` /

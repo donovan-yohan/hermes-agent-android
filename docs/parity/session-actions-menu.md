@@ -42,7 +42,7 @@ literally, so reordering two constants fails the build.
 
 | # | Group | Desktop | What it holds | Ships here |
 |---|---|---|---|---|
-| 1 | `Open` | `openItems` (`:227-240`) | **One item on the row surface**: `Open in new tab`. The window hop and the tab verbs belong to the tab surface (`surface === 'row' && !alreadyTabbed`, `:228`) — the rendered side-by-side shows a single row above the first rule | **Never** — Android has no tabs, no second window, and no local terminal. The slot exists only to keep the numbering honest. |
+| 1 | `Open` | `openItems` (`:227-282`) | Open in new tab (`:233`), New window (`:250`), Open in terminal (`:266`). The rendered Desktop capture shows only the first, because the other two are gated on `canOpenSessionWindow()` / `canOpenSessionInTerminal()` — `typeof window.hermesDesktop?.X === 'function'` (`store/windows.ts:146-148,163-165`) — and a browser-hosted renderer has no `hermesDesktop`. Their absence there is the capture's shape, not Desktop's | **Never** — Android has no tabs, no second window, and no local terminal. The slot exists only to keep the numbering honest. |
 | 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13), **Rename** (S14, #65) — proved by `GatewaySessionRepositoryTest.renameSession with live runtime id calls session_title RPC and updates cache`, `.renameSession without live runtime id calls REST PATCH and updates cache`, `.renameSession falls back to REST PATCH when the session_title RPC fails` and `SessionActionsMenuJourneyTest.renaming a session seeds the dialog with current title and saves on confirm`. **Pin / Unpin and Mark as read / unread** (#66) — proved by `SessionActionsMenuTest.the ported menu sits in Desktop's slots`, `.a pinned row offers the way back out of the section`, `.the read-state row is one slot naming the action it performs`, `GatewaySessionRepositoryTest.setSessionPinned writes the pin with the row's own profile and paints it first` and `.marking read clears the watermark and the finished-turn dot together`. |
 | 3 | `Work` | `workItems` (`:344`) + Move to project (`:491-499`) | Branch, Export, Move to project | Not yet |
 | 4 | `Tab` | `tabItems` (`:371`) | Reload, Close, Close others / to the right / all | **Never** — no tab strip on a phone |
@@ -303,18 +303,18 @@ carries the argument and the citations.
 | Right-click `SessionContextMenu` (`session-actions-menu.tsx:621-639`) | omission | Absent | non-goal: long-press belongs to text selection on a phone, and binding the menu to it would fight the transcript's gesture |
 | ⇧-click pin, ⌥⇧-click archive (`session-row-gesture.ts:33,45`) | omission | Absent | non-goal: a soft keyboard has no modifier keys |
 | The open group and the tab group | omission | Absent | non-goal: no tabs, windows or local terminal on this platform |
-| Rename dialog renders a title, the input and the two buttons — no description (`session-actions-menu.tsx:684-716`; `r.renameDesc`, `en.ts:2331`, is read by nothing but Desktop's own test stub at `session-actions-menu.test.tsx:60`) | drift | A helper line `Leave empty to clear.` sits between the title and the field (`RenameSessionDialog.kt:48,65`) | #139. `docs/parity/visual/session-rename-dialog/` — the Desktop contract's node text is `Rename session Cancel Save Close`. The port renders a Desktop string in a slot Desktop leaves empty |
-| Filled `Save` and `Delete` carry `--primary-foreground` / `--destructive-foreground` — white on the saturated fill | drift | `PrimaryButton` paints the label `tokens.accentForeground`, the ink meant for the *tinted* accent surface: `#1F2328` in the default light theme (`Primitives.kt:439`; `BuiltinThemes.kt:43`) | #140. Sampled from `docs/parity/visual/session-rename-dialog/android/reference.png`: `#1F2328` on `rgb(0,83,253)` is **2.48:1**, below WCAG AA, where Desktop's white on the same blue is 6.36:1 |
+| Rename dialog renders a title, the input and the two buttons — no description (`session-actions-menu.tsx:687-718`; `r.renameDesc`, `en.ts:2331`, is read by nothing but Desktop's own test stub at `session-actions-menu.test.tsx:60`) | drift | A helper line `Leave empty to clear.` sits between the title and the field (`RenameSessionDialog.kt:48,65`) | #139. `docs/parity/visual/session-rename-dialog/` — the Desktop contract's node text is `Rename session Cancel Save Close`. The port renders a Desktop string in a slot Desktop leaves empty |
+| Filled `Save` and `Delete` carry `--primary-foreground` / `--destructive-foreground` — white on the saturated fill | drift | `PrimaryButton` paints the label `tokens.accentForeground`, the ink meant for the *tinted* accent surface: `#1F2328` in the default light theme (`Primitives.kt:439`; `BuiltinThemes.kt:43`) | #140. Sampled from the committed Android halves: `#1F2328` is **2.75:1** on `Save`'s `rgb(0,83,253)` and **2.95:1** on `Delete`'s `rgb(207,34,46)`, both below WCAG AA, where white on the same two fills is 5.74:1 and 5.36:1 |
 | Dialogs carry a top-right `✕` close control (`components/ui/dialog.tsx`, visible in both dialog captures) | mobile-adaptation | No `✕`; the three ways out are Cancel, system back and a tap outside | Android's back gesture is the platform's own dismiss and every dialog on this surface honours it, so a fourth affordance would be a second spelling of a gesture the reader already has. `SessionActionsMenuJourneyTest` asserts all three exits and that none of them confirms |
-| `Appearance` and `Move to project` render a trailing `›` chevron, the submenu affordance (`:467-475,488-496`) | mobile-adaptation | The same two rows carry the `WIP` chip in that slot and are dimmed | The chevron promises a second level; flattened, there is none to open, and the chip says what the row is instead. Both keep Desktop's glyph, label and position — only the trailing mark differs |
-| `Branch` and `Export` render enabled when their handlers exist (`:337-358`) | omission | Both are dimmed behind the `WIP` chip | coming soon — the pill ships (#101); neither verb has a call behind it here |
+| `Appearance` (`:467-475`) and `Move to project` (`:488-496`) render live, with a trailing `›` submenu chevron; `Branch` (`:337-349`) and `Export` (`:350-358`) render live with no trailing mark | omission | All four are dimmed and carry the `WIP` chip in the trailing slot | coming soon — the pill ships (#101). One class for all four because the difference is one thing, not two: none of the four has an implementation here, so each row keeps Desktop's glyph, label and slot and loses its trailing affordance to the chip that says why. The chevron is the only trailing mark any of them had, and it promised a second level that a flattened menu does not have |
 
 ## Visual report
 
 Rendered side by side at `be20b61`. Desktop was captured from a disposable
 export at the pin with a headless CDP renderer and synthetic sessions; Android
-was captured on a Pixel 10 Pro emulator in light theme against a clean `kame-qa`
-profile holding four synthetic sessions. Four states, both sides each:
+was captured on a Pixel 10 Pro emulator in light theme against a `kame-qa` QA
+profile seeded with four synthetic sessions among its existing QA rows. Four
+states, both sides each:
 
 - report: docs/parity/visual/session-actions-open/report.html
 - report: docs/parity/visual/session-actions-open-pinned-unread-archived/report.html
@@ -325,6 +325,9 @@ profile holding four synthetic sessions. Four states, both sides each:
 Order, group boundaries, glyph family and label casing match Desktop item for
 item, and the empty-`Open`-group separator rule renders exactly as the port
 argued it would: Desktop paints three rules between four populated groups,
-Android two between three. What the render found that source reading had not is
+Android two between three. Desktop's `Open` group shows one of its three items
+in the capture rather than all three — the renderer is browser-hosted and two of
+them are gated on `window.hermesDesktop`, so nothing about that group is
+evidenced here. What the render found that source reading had not is
 in the drift rows above — the `Unarchive` swap (#138), the rename dialog's extra
 helper line (#139), and the near-black label on both filled buttons (#140).
