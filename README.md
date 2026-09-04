@@ -14,9 +14,8 @@ run, and gives you that agent's sessions, live turns and tools on a phone.
 </p>
 
 <p align="center">
-  <img src="docs/media/demo/live-turn.gif" alt="A turn streaming into the transcript" width="32%">
-  <img src="docs/media/demo/switch-sessions.gif" alt="Switching sessions while a turn runs" width="32%">
-  <img src="docs/media/demo/connect-remote-gateway.gif" alt="Adding a Remote Gateway connection" width="32%">
+  <img src="docs/media/demo/live-turn.gif" alt="A turn streaming into the transcript" width="40%">
+  <img src="docs/media/demo/switch-sessions.gif" alt="Switching sessions while a turn runs" width="40%">
 </p>
 
 <p align="center"><sub>More captures, and the rule they are taken under, in

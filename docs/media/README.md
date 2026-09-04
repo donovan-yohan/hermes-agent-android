@@ -31,7 +31,6 @@ can show the GIF while a reader can still open the sharper MP4.
 | `chat-dark.png` | Live transcript, dark |
 | `chat-light.png` | Live transcript, light |
 | `composer-completions-dark.png` | Composer with completions open |
-| `gateways-dark.png` | Gateways screen and the connection routes |
 | `appearance-themes-dark.png` | Appearance screen and the built-in themes |
 | `system-panel-dark.png` | System panel |
 
@@ -41,4 +40,12 @@ can show the GIF while a reader can still open the sharper MP4.
 |---|---|
 | `live-turn` | Sending a turn and watching it stream back |
 | `switch-sessions` | Switching sessions while a turn keeps running |
-| `connect-remote-gateway` | Adding a Remote Gateway connection and signing in |
+
+**The Gateways surfaces are not captured, and cannot be.** They set
+`FLAG_SECURE` for as long as they are on screen
+(`app/src/main/kotlin/com/hermesagent/mobile/ui/gateway/GatewayScreen.kt:125`
+via `SecureScreenLifetime`, `ui/common/SecureScreen.kt:56`), which is the same
+flag that stops a screenshot of a password field — so `screencap` returns black
+by design. That covers the connection list, the connection editor and the
+sign-in flow. Do not add a screenshot or a demo of them here; describe them in
+prose instead.
