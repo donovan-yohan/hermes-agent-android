@@ -90,6 +90,30 @@ data class ProfileRailState(
     val visible: Boolean get() = loaded || !scope.isDefault
 
     /**
+     * The default-profile row the picker sheet pins at its head, or null when
+     * the rail itself would not offer one.
+     *
+     * Desktop's condensed `ProfileDropdown` lists named profiles only
+     * (`profile-switcher.tsx:722-829`), because on a pointer rail its pinned
+     * home pill never leaves the trigger's side. Its *fleet* groups, where a
+     * gateway's own squares are not that pinned pill, head the list with the
+     * gateway's default agent instead — `[group.defaultAgent, ...group.named]`,
+     * home glyph and all (`:808-824`). A phone's sheet is the second shape: the
+     * pill beside it is a default↔all toggle whose face reads the scope rather
+     * than the action, so from the unified view the only route back to the
+     * default profile wears a `layers` mark.
+     *
+     * The presence rule is the rail's own, so the sheet never offers a switch
+     * the rail would not: the roster's default row when there is one, and
+     * otherwise the canonical row the rail's last branch renders — the way out
+     * of a scope that is not the Gateway's own profile. Nothing here knows that
+     * profile's label, so it is named canonically, exactly as that pill is.
+     */
+    val pickerDefault: HermesProfile?
+        get() = defaultProfile
+            ?: HermesProfile(name = DEFAULT_PROFILE, isDefault = true).takeIf { !scope.isDefault }
+
+    /**
      * The roster row a session's `profile` names. A row from a profile this
      * roster has not heard of still gets a mark rather than nothing: the
      * session says who owns it, and the roster is only how it is painted.
@@ -110,6 +134,11 @@ class ProfileRailActions(
 
 internal const val PROFILE_RAIL_TAG = "Profile rail"
 internal const val PROFILE_PICKER_TAG = "Profile picker"
+
+/** The head row's list key, kept off the roster's own name space. */
+private const val PICKER_DEFAULT_KEY = "picker.default"
+
+internal fun profilePickerRowTag(name: String): String = "Profile picker row $name"
 
 /**
  * Arc-Spaces-style profile rail at the sidebar foot: a default↔all toggle
@@ -371,6 +400,20 @@ private fun ProfilePickerSheet(
     Column(modifier.fillMaxWidth().imePadding().navigationBarsPadding()) {
         SectionLabel(PROFILES_TITLE, Modifier.padding(start = 16.dp, bottom = 4.dp))
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
+            // The default profile heads the list, home mark and all, the way a
+            // fleet group's default agent heads its gateway's
+            // (`profile-switcher.tsx:808-824`). Its own key: a roster row named
+            // `default` that the Gateway did not flag would otherwise collide
+            // with it.
+            state.pickerDefault?.let { profile ->
+                item(key = PICKER_DEFAULT_KEY) {
+                    ProfilePickerRow(
+                        profile = profile,
+                        active = state.onDefault,
+                        onClick = { onSelect(profile.name) },
+                    )
+                }
+            }
             items(items = state.named, key = { it.name }) { profile ->
                 ProfilePickerRow(
                     profile = profile,
@@ -395,8 +438,14 @@ private fun ProfilePickerRow(
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .background(if (active) tokens.sessionRowActiveSurface else Color.Transparent)
             .clickable(role = Role.Button, onClick = onClick)
+            .testTag(profilePickerRowTag(profile.name))
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .semantics { selected = active },
+            .semantics {
+                // Same sentence the rail square speaks, so a reader who
+                // collapsed the strip hears no new vocabulary.
+                contentDescription = switchToProfile(profile.label)
+                selected = active
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -412,7 +461,8 @@ private fun ProfilePickerRow(
     }
 }
 
-// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1773,1784-1789.
+// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1862,1873-1875,1878
+// @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
 internal const val PROFILES_TITLE = "Profiles"
 internal const val ALL_PROFILES_LABEL = "All profiles"
 internal const val SHOW_ALL_PROFILES = "Show all profiles"
