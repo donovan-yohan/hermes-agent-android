@@ -64,9 +64,18 @@ data class ProfileRailState(
 ) {
     val defaultProfile: HermesProfile? = profiles.firstOrNull(HermesProfile::isDefault)
 
-    /** Unordered names alphabetise (`apps/desktop/src/store/profile.ts:92-106`). */
-    val named: List<HermesProfile> =
-        profiles.filterNot(HermesProfile::isDefault).sortedBy { it.name.lowercase() }
+    /**
+     * Unordered names alphabetise (`apps/desktop/src/store/profile.ts:92-106`).
+     *
+     * A row whose name normalises to `default` is never one of these, flagged or
+     * not: the pinned Gateway skips a named `default` outright
+     * (`hermes_cli/profiles.py:1069-1070`), and if one ever arrived unflagged it
+     * would collide with the head row the picker sheet renders for the default
+     * profile — same list key, same test tag, two rows.
+     */
+    val named: List<HermesProfile> = profiles
+        .filterNot { it.isDefault || normalizeProfileKey(it.name) == DEFAULT_PROFILE }
+        .sortedBy { it.name.lowercase() }
 
     /** Desktop hides the default↔all toggle and the squares until a second profile exists. */
     val multiProfile: Boolean get() = profiles.size > 1
@@ -90,30 +99,6 @@ data class ProfileRailState(
     val visible: Boolean get() = loaded || !scope.isDefault
 
     /**
-     * The default-profile row the picker sheet pins at its head, or null when
-     * the rail itself would not offer one.
-     *
-     * Desktop's condensed `ProfileDropdown` lists named profiles only
-     * (`profile-switcher.tsx:722-829`), because on a pointer rail its pinned
-     * home pill never leaves the trigger's side. Its *fleet* groups, where a
-     * gateway's own squares are not that pinned pill, head the list with the
-     * gateway's default agent instead — `[group.defaultAgent, ...group.named]`,
-     * home glyph and all (`:808-824`). A phone's sheet is the second shape: the
-     * pill beside it is a default↔all toggle whose face reads the scope rather
-     * than the action, so from the unified view the only route back to the
-     * default profile wears a `layers` mark.
-     *
-     * The presence rule is the rail's own, so the sheet never offers a switch
-     * the rail would not: the roster's default row when there is one, and
-     * otherwise the canonical row the rail's last branch renders — the way out
-     * of a scope that is not the Gateway's own profile. Nothing here knows that
-     * profile's label, so it is named canonically, exactly as that pill is.
-     */
-    val pickerDefault: HermesProfile?
-        get() = defaultProfile
-            ?: HermesProfile(name = DEFAULT_PROFILE, isDefault = true).takeIf { !scope.isDefault }
-
-    /**
      * The roster row a session's `profile` names. A row from a profile this
      * roster has not heard of still gets a mark rather than nothing: the
      * session says who owns it, and the roster is only how it is painted.
@@ -134,9 +119,6 @@ class ProfileRailActions(
 
 internal const val PROFILE_RAIL_TAG = "Profile rail"
 internal const val PROFILE_PICKER_TAG = "Profile picker"
-
-/** The head row's list key, kept off the roster's own name space. */
-private const val PICKER_DEFAULT_KEY = "picker.default"
 
 internal fun profilePickerRowTag(name: String): String = "Profile picker row $name"
 
@@ -279,6 +261,7 @@ fun ProfileRail(
             onDismissRequest = { pickerVisible = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = HermesTheme.tokens.chatSurface,
+            scrimColor = HermesTheme.tokens.overlayScrim,
         ) {
             ProfilePickerSheet(
                 state = state,
@@ -402,11 +385,19 @@ private fun ProfilePickerSheet(
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
             // The default profile heads the list, home mark and all, the way a
             // fleet group's default agent heads its gateway's
-            // (`profile-switcher.tsx:808-824`). Its own key: a roster row named
-            // `default` that the Gateway did not flag would otherwise collide
-            // with it.
-            state.pickerDefault?.let { profile ->
-                item(key = PICKER_DEFAULT_KEY) {
+            // (`profile-switcher.tsx:808-824`). Desktop's own condensed
+            // `ProfileDropdown` lists named profiles only (`:722-829`), because
+            // on a pointer rail its home pill never leaves the trigger's side;
+            // here the pill beside the sheet is a default↔all toggle whose face
+            // reads the scope rather than the action, so from the unified view
+            // the only route back to the default profile wears a `layers` mark.
+            //
+            // The presence rule is the rail's own, so the sheet can never offer
+            // a switch the rail would not: the roster's flagged default row, or
+            // nothing. `named` keeps an unflagged `default` row out, so this key
+            // cannot collide with one below.
+            state.defaultProfile?.let { profile ->
+                item(key = profile.name) {
                     ProfilePickerRow(
                         profile = profile,
                         active = state.onDefault,
@@ -440,12 +431,10 @@ private fun ProfilePickerRow(
             .clickable(role = Role.Button, onClick = onClick)
             .testTag(profilePickerRowTag(profile.name))
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .semantics {
-                // Same sentence the rail square speaks, so a reader who
-                // collapsed the strip hears no new vocabulary.
-                contentDescription = switchToProfile(profile.label)
-                selected = active
-            },
+            // No label of its own: Desktop's `ProfileDropdownItem` carries no
+            // aria-label either (`profile-switcher.tsx:835-851`), so the row's
+            // accessible name is the label it renders.
+            .semantics { selected = active },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

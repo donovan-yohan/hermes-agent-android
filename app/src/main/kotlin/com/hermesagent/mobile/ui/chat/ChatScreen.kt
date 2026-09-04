@@ -194,6 +194,7 @@ private fun CompactLayout(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        scrimColor = HermesTheme.tokens.overlayScrim,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = HermesTheme.tokens.sidebarSurface,

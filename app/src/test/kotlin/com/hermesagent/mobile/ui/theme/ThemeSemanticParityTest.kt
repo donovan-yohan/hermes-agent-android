@@ -194,25 +194,6 @@ class ThemeSemanticParityTest {
     }
 
     @Test
-    fun `the opaque scrim material re-alphas lands back on the token`() {
-        // `BottomSheetDefaults.ScrimColor` and `DrawerDefaults.scrimColor`
-        // (material3 1.4.0, `SheetDefaults.kt:390` / `NavigationDrawer.kt:1012`)
-        // both read `colorScheme.scrim` and `.copy(alpha = 0.32f)` it, which
-        // *replaces* the alpha rather than multiplying it. `HermesTheme` maps
-        // `scrim` to the opaque form of this token for exactly that reason, so
-        // the sessions drawer and the profile-rail sheet — neither of which
-        // passes a `scrimColor` — land on the same wash the explicit sites do.
-        for (dark in listOf(false, true)) {
-            val tokens = HermesTokens.from(BuiltinThemes.Nous.paletteFor(dark), dark)
-            assertEquals(
-                "the Material default path must resolve to overlayScrim",
-                tokens.overlayScrim.argb(),
-                tokens.overlayScrim.withAlpha(1f).copy(alpha = 0.32f).argb(),
-            )
-        }
-    }
-
-    @Test
     fun `the diff palette derives from desktop's green and red in each mode`() {
         // styles.css:196-199,222-227 and `:root.dark:528-532` @
         // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — byte-identical at upstream

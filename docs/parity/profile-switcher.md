@@ -72,7 +72,7 @@ including the Default badge living on the detail rather than the row.
 | 20px square, 4px gap, hover tooltip | Same 20px glyph inside a 48dp target, `contentDescription` = `Switch to {name}` | Touch floor; touch has no hover |
 | Strip collapses past **13** profiles to a pointer dropdown (`profile-switcher.tsx:49,225-238`) | Collapses as soon as the squares stop fitting beside the two pinned pills, into a modal bottom sheet | A phone's budget is width, not count. A dropdown anchored to a 20px square is not a phone control, so the sheet is the phone default rather than the exception |
 | Drag-reorder, long-press-recolour, per-square context menu | Not ported | Explicit non-goals for this slice; they map later onto the reorderable-row grammar |
-| The condensed `ProfileDropdown` lists named profiles only in its radio group (`profile-switcher.tsx:722-829`) | The picker sheet heads its list with the default profile - the roster's own row, or the canonical `default` row when the rail's last branch would render one - carrying the same home mark and the same `Switch to {name}` sentence as the rail | Desktop keeps that pill on screen beside the trigger at every width, and a pointer reads its tooltip. On a phone the same pill is a default-to-all toggle whose face reads the *scope*, so from the unified view the one route home wears a `layers` mark and a reader who collapsed the strip cannot find it. Desktop heads a fleet group's list with `[group.defaultAgent, ...group.named]` for exactly that reason (`:808-824`), which is the shape the sheet takes |
+| The condensed `ProfileDropdown` lists named profiles only in its radio group (`profile-switcher.tsx:722-829`) | The picker sheet heads its list with the roster's flagged default row, carrying the same home mark as the rail's own pill. No flagged row, no head row - the presence rule is the rail's (`profile-switcher.tsx:407-444`), so the sheet never offers a switch the rail would not | Desktop keeps that pill on screen beside the trigger at every width, and a pointer reads its tooltip. On a phone the same pill is a default-to-all toggle whose face reads the *scope*, so from the unified view the one route home wears a `layers` mark and a reader who collapsed the strip cannot find it. Desktop heads a fleet group's list with `[group.defaultAgent, ...group.named]` for exactly that reason (`:808-824`), which is the shape the sheet takes |
 | `+` create and import buttons in the strip | Not ported | Profile create/import is an explicit non-goal |
 | Manage overlay is a card over the app | One full-screen destination with a back affordance; system back leaves it | Viewport space, and this app's route-overlay rule |
 | Panel list beside detail on a wide card | List above detail, list height-capped | Desktop's *own* narrow behaviour (`panel.tsx:88-98,126-128`); the phone is always narrow |
@@ -219,13 +219,15 @@ Not deviations — things this slice does not ship, stated rather than hidden.
 ## Divergences
 
 Classified for `scripts/check-parity-evidence.py`; the ledger and omissions
-above carry the argument.
+above carry the argument. The picker sheet's scrim is not one of them: it is the
+app-wide `HermesTokens.overlayScrim`, classified once on
+`docs/parity/system-panel.md`.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | `profiles.list` re-pulls on window focus or visibility (`profile-switcher.tsx:179`) | mobile-adaptation | Asked on a connection edge | Mobile lifecycle: `profiles.list` is a slow-lane call, and putting it on every foreground would spend seconds of a cold backend's time on a roster that changes rarely |
 | `DropdownMenu` rail trigger and roster page | mobile-adaptation | Rail plus a bottom sheet, 48 dp rows | Pointer menus are brittle on a phone; order and checkmark are unchanged |
-| The condensed `ProfileDropdown` radio group lists named profiles only (`profile-switcher.tsx:722-829`) | mobile-adaptation | The sheet pins the default profile at its head, home mark and all, selected while the scope is default | Desktop's own fleet groups head a gateway's list with its default agent (`profile-switcher.tsx:808-824`). The pill the strip collapsed away from reads the scope rather than the action, so in the unified view the only route back to the default profile wears a `layers` glyph with no tooltip a touch reader can hover; the head row is the visible affordance, and its presence rule is the rail's own so the sheet never offers a switch the rail would not |
+| The condensed `ProfileDropdown` radio group lists named profiles only (`profile-switcher.tsx:722-829`) | mobile-adaptation | The sheet pins the roster's flagged default row at its head, home mark and all, selected while the scope is default; with no flagged row it heads nothing | Desktop's own fleet groups head a gateway's list with its default agent (`profile-switcher.tsx:808-824`). The pill the strip collapsed away from reads the scope rather than the action, so in the unified view the only route back to the default profile wears a `layers` glyph with no tooltip a touch reader can hover; the head row is the visible affordance. Its presence rule is the rail's own (`profile-switcher.tsx:407-444`): where the rail has no default row to render it shows the layers pill alone, so a head row there would offer a switch the rail does not. Rendered side-by-side: pending: #147 |
 | Manage is always rendered, because the renderer only runs inside a connected app | mobile-adaptation | The rail is absent until a Gateway answers, and stays after that | This app can be looking at no Gateway at all, and before the first answer a rail has nothing to switch between; once one `profiles.list` has answered it stays, because it is the only way out of a profile scope |
 | The `.env` pill reads `profile.has_env`, served only by the REST route (`hermes_cli/web_server.py:14498`) | mobile-adaptation | Parsed and rendered when a Gateway offers it; dark at this pin | Reading the roster over REST would tie the surface to a route only one of this app's two connection legs reaches |
 | Scope follows a live gateway, so it cannot name a profile that does not exist | drift | A stale persisted scope stamps the launch profile's rows with the missing name until each is opened | #81 |
@@ -238,7 +240,8 @@ above carry the argument.
 
 ## Visual report
 
-- pending: #43
+- pending: #43 — the rail, the picker sheet and the roster
+- pending: #147 — the sheet's default head row, and the sheet's darkened scrim
 
 `capture-android-reference.py` needs an attached device or emulator and
 `capture-desktop-reference.mjs` needs a disposable pinned Desktop dev renderer

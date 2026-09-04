@@ -161,13 +161,17 @@ private fun HermesPalette.toMaterialColorScheme(dark: Boolean, tokens: HermesTok
         onError = destructiveForeground,
         errorContainer = destructive,
         onErrorContainer = destructiveForeground,
-        // Material re-alphas whatever this holds: both `BottomSheetDefaults`
-        // `.ScrimColor` and `DrawerDefaults.scrimColor` read `colorScheme.scrim`
-        // and `.copy(alpha = 0.32f)` it (material3 1.4.0, `SheetDefaults.kt:390`
-        // / `NavigationDrawer.kt:1012`, both against `ScrimTokens.Scrim`). So the
-        // opaque form of the token is what lands on exactly the token: every
-        // default-scrim consumer — the sessions drawer, the profile-rail sheet —
-        // gets the same black wash the explicit sites pass by hand.
+        // Belt-and-braces. Every scrim in this app is delivered by an explicit
+        // `scrimColor = tokens.overlayScrim` at its own call site — the sheets,
+        // the profile-rail picker and the sessions drawer alike — so nothing
+        // depends on this slot. It is mapped anyway for whatever reaches
+        // Material's default path: `BottomSheetDefaults.ScrimColor` and
+        // `DrawerDefaults.scrimColor` are both
+        // `ScrimTokens.ContainerColor.value.copy(ScrimTokens.ContainerOpacity)`,
+        // where `ContainerColor` is `ColorSchemeKeyTokens.Scrim` and
+        // `ContainerOpacity` is 0.32f. That `copy` *replaces* the alpha rather
+        // than multiplying it, so the opaque form of the token is what lands
+        // back on exactly the token.
         scrim = tokens.overlayScrim.withAlpha(1f),
     )
 }

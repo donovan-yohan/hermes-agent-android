@@ -344,40 +344,6 @@ class ProfileRailJourneyTest {
         assertEquals(0, compose.onAllNodesWithTag(profilePickerRowTag("default")).fetchSemanticsNodes().size)
     }
 
-    /**
-     * The roster the pinned Gateway sends always flags one row, but it can be a
-     * stale-or-never answer while the persisted scope names a profile. The rail
-     * renders its canonical way back there; a sheet that did not would strand a
-     * reader who only ever sees the collapsed strip. Driven directly, because
-     * the ViewModel reconciles a scope an answered roster does not contain.
-     */
-    @Test
-    fun `a collapsed strip with no default row still offers the way back`() {
-        val picked = mutableListOf<String>()
-        compose.setContent {
-            HermesTheme(AppearanceSelection()) {
-                ProfileRail(
-                    state = ProfileRailState(
-                        profiles = (1..12).map { HermesProfile(name = "team-$it") },
-                        scope = ProfileScope(activeProfile = "team-2"),
-                        loaded = true,
-                    ),
-                    actions = ProfileRailActions(onSelectProfile = { picked += it }),
-                )
-            }
-        }
-        compose.waitForIdle()
-
-        compose.onNodeWithContentDescription("Profiles").performClick()
-        compose.waitForIdle()
-
-        compose.onNodeWithTag(profilePickerRowTag("default")).assertIsNotSelected()
-        compose.onNodeWithTag(profilePickerRowTag("default")).performClick()
-        compose.waitForIdle()
-
-        assertEquals(listOf("default"), picked)
-    }
-
     private fun launch(
         profiles: List<HermesProfile> = ROSTER,
         rosterLoaded: Boolean = true,
