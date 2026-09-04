@@ -117,7 +117,7 @@ private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit
         onDismissRequest = onDismiss,
         containerColor = tokens.cardSurface,
         contentColor = tokens.textPrimary,
-        scrimColor = tokens.textPrimary.copy(alpha = .32f),
+        scrimColor = tokens.overlayScrim,
         modifier = Modifier.testTag("Composer add sheet"),
     ) {
         Column(
@@ -193,7 +193,7 @@ private fun UrlReferenceSheet(onDismiss: () -> Unit, onInsert: (String) -> Unit)
         onDismissRequest = onDismiss,
         containerColor = tokens.cardSurface,
         contentColor = tokens.textPrimary,
-        scrimColor = tokens.textPrimary.copy(alpha = .32f),
+        scrimColor = tokens.overlayScrim,
         modifier = Modifier.testTag("Composer URL sheet"),
     ) {
         Column(
@@ -249,7 +249,7 @@ internal fun PromptSnippetSheet(onDismiss: () -> Unit, onInsert: (String) -> Uni
         onDismissRequest = onDismiss,
         containerColor = tokens.cardSurface,
         contentColor = tokens.textPrimary,
-        scrimColor = tokens.textPrimary.copy(alpha = .32f),
+        scrimColor = tokens.overlayScrim,
         modifier = Modifier.testTag("Composer prompt snippets sheet"),
     ) {
         Column(

@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
@@ -37,6 +39,7 @@ import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.sessions.ProfileRail
 import com.hermesagent.mobile.ui.sessions.ProfileRailActions
 import com.hermesagent.mobile.ui.sessions.ProfileRailState
+import com.hermesagent.mobile.ui.sessions.profilePickerRowTag
 import com.hermesagent.mobile.ui.sessions.PROJECT_PROFILE_SCOPE_NOTE
 import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
@@ -294,6 +297,51 @@ class ProfileRailJourneyTest {
 
         compose.onNodeWithTag(PROJECT_PROFILE_SCOPE_NOTE).assertIsDisplayed()
         assertEquals(0, compose.countWithText("Hermes mobile"))
+    }
+
+    /**
+     * The reason the sheet carries the default row at all: the pill it
+     * collapsed away from is a default-to-all toggle whose face reads the
+     * *scope*, so from the unified view the only route home wears a `layers`
+     * mark. Desktop's fleet groups head a gateway's list with its default agent
+     * for the same reason (`profile-switcher.tsx:808-824` @ `3ca096de`).
+     */
+    @Test
+    fun `the collapsed sheet heads its list with the default profile`() {
+        launch(profiles = teamRoster(RAIL_CAPACITY + 1))
+        openSessions()
+
+        compose.onNodeWithContentDescription("Profiles").performClick()
+        compose.waitForIdle()
+
+        // `isDefault` is what gives the row the home mark rather than a tinted
+        // initial (`ProfileGlyph`), and `ProfilePickerDefaultRowTest` pins that
+        // flag; the glyph itself clears its own semantics, so what is assertable
+        // here is the row, its place and its state.
+        compose.onNodeWithTag(profilePickerRowTag("default")).assertIsDisplayed()
+        compose.onNodeWithTag(profilePickerRowTag("default")).assertIsSelected()
+        assertTrue(
+            compose.onNodeWithTag(profilePickerRowTag("default")).fetchSemanticsNode().positionInRoot.y <
+                compose.onNodeWithTag(profilePickerRowTag("team-1")).fetchSemanticsNode().positionInRoot.y,
+        )
+    }
+
+    @Test
+    fun `the sheet's default row leaves a named profile and closes`() {
+        launch(profiles = teamRoster(RAIL_CAPACITY + 1), scope = ProfileScope(activeProfile = "team-2"))
+        openSessions()
+
+        compose.onNodeWithContentDescription("Profiles").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(profilePickerRowTag("default")).assertIsNotSelected()
+
+        compose.onNodeWithTag(profilePickerRowTag("default")).performClick()
+        compose.waitForIdle()
+
+        // `default` is "whatever this Gateway launched with", so the session
+        // RPCs carry no profile parameter again.
+        assertNull(repository.routing.activeProfile)
+        assertEquals(0, compose.onAllNodesWithTag(profilePickerRowTag("default")).fetchSemanticsNodes().size)
     }
 
     private fun launch(

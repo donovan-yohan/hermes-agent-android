@@ -68,7 +68,7 @@ fun UpdatesOverlay(state: SystemUiState, actions: SystemActions) {
         sheetState = sheetState,
         containerColor = tokens.cardSurface,
         contentColor = tokens.textPrimary,
-        scrimColor = tokens.textPrimary.copy(alpha = .32f),
+        scrimColor = tokens.overlayScrim,
         modifier = Modifier.testTag(UPDATES_SHEET_TAG),
     ) {
         // The sheet is its own window, so this handler runs before the shell's:

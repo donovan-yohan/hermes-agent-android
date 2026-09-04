@@ -61,6 +61,7 @@ Every `path:line` below is against that SHA.
 | `text` / `textStrong` button variants | `TextButton(color = textTertiary)` / `TextButton(strong = true)` | Same ink, same weight-and-underline distinction (`components/ui/button.tsx:31,34`) |
 | Error line inside the logs header row | Directly under the action it is about | A phone column has no header row to hang it in |
 | Modal overlay window | Bottom sheet | The app's one modal shape; `ConfirmSheet` set the precedent |
+| Overlay scrim `bg-black/22 backdrop-blur-[0.125rem]` (`app/overlays/overlay-view.tsx:77`) | Black at 32%, no blur (`HermesTokens.overlayScrim`) | Android composites no backdrop blur behind a modal, so the alpha carries the whole separation on its own |
 | Lemniscate loader | `WorkingDots` | The app's one reduced-motion-safe working indicator |
 
 ## Divergences
@@ -70,6 +71,7 @@ Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the a
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | System panel lives in the command palette | mobile-adaptation | A Settings destination, placed after Gateways and before Relay channels | A phone has no palette; a 360 dp viewport routes by list-then-detail, and the panel's subject is the Gateway the rows above it configure |
+| Overlay scrim is `bg-black/22` over a `0.125rem` backdrop blur, black in every skin (`app/overlays/overlay-view.tsx:77`; the session picker's is `bg-black/15` with a 1px blur, `components/session-picker.tsx:48`) | mobile-adaptation | Black at 32% with no blur, one `overlayScrim` token every sheet and the sessions drawer read | Desktop separates the overlay from the page twice — a wash *and* a blur — a `ModalBottomSheet` scrim on this minSdk has no blur to spend — `RenderEffect` only exists from API 31 and Compose exposes no backdrop blur for the content *behind* a modal — so the wash has to do both jobs alone; 0.32 is the weight that reads as separation on a 360 dp viewport where the sheet covers most of what is behind it. Black rather than the theme foreground is Desktop's own literal: seeding it from `textPrimary` made a dark skin's scrim *lighten* the transcript behind it. `ThemeSemanticParityTest` pins the token in both modes for every preset, and every sheet, the picker and the drawer pass it explicitly rather than leaning on Material's default. Rendered side-by-side: pending: #147 |
 | Panel's `Update Hermes` fire-and-forgets the POST and polls 21.6 s (`index.tsx:266-301`) | mobile-adaptation | Opens the updates sheet, driven by the app-scoped `runBackendUpdate` port | An apply takes minutes and the person puts the phone down; Desktop's own robust path for the same endpoint is `store/updates.ts:638-766` plus the overlay, which its `Update Hermes` toast action already routes to |
 | Budget exhausted mid-restart reports `applyStatus.failed` (`updates.ts:745-751`) | mobile-adaptation | Reports `applyStatus.noReturn` when the deadline expired while the host was not answering; `failed` otherwise | On the Remote route over a tunnel — the topology this app is built around (`docs/adr/0002-shared-remote-gateway.md`) — the restart blackout is the ordinary way an apply ends, so each of Desktop's two strings is used for the state it was written for rather than telling someone their working server failed |
 | `Recent logs`: heading, four file tabs, four level tabs, filter field, empty state | omission | All six render, all six disabled behind the `WIP` chip | pill-owed: #127 — log fetch, redaction and level filtering are that issue; the controls ship visible so the surface is not silently smaller |
@@ -105,7 +107,8 @@ four ship exactly as Desktop lists them, disabled with the rest of the block.
 
 ## Visual report
 
-- pending: #126
+- pending: #126 — the System panel and the backend updates sheet
+- pending: #147 — the `overlayScrim` wash, on every sheet and the sessions drawer
 
 Hermes Desktop was **not rendered** for this change.
 `.chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs`
@@ -142,7 +145,7 @@ Order:   unchanged (Restart gateway → Update Hermes; Update now → Maybe late
 States:  every Desktop state above is rendered and asserted in
          SystemJourneyTest / UpdatesOverlayJourneyTest; none was rendered
          side by side against Desktop
-Divergences: 3 mobile-adaptation, 0 drift, 12 omission
+Divergences: 4 mobile-adaptation, 0 drift, 12 omission
 Verdict: Concern — the change is correct against the pinned source and fully
          classified, but it ships without a rendered side-by-side comparison,
          which the workflow caps at Concern (#126 owes it).

@@ -166,6 +166,34 @@ class ThemeSemanticParityTest {
     }
 
     @Test
+    fun `the modal scrim is black in every skin and mode, never the foreground`() {
+        // `app/overlays/overlay-view.tsx:77` @ DesktopThemeLedger.PINNED_SHA
+        // (3ca096de) paints `bg-black/22 backdrop-blur-[0.125rem]`, and
+        // `components/session-picker.tsx:48` `bg-black/15 backdrop-blur-[1px]`:
+        // a literal black in both, never a theme variable. Seeding the scrim
+        // from `textPrimary` — which every sheet here used to do — makes a dark
+        // skin's overlay *lighten* what it covers, because a dark theme's
+        // foreground is near-white.
+        //
+        // The alpha stays at this app's 0.32 rather than Desktop's 0.22 because
+        // Android paints no backdrop blur behind a modal; that one divergence is
+        // classified in `docs/parity/system-panel.md`.
+        for (dark in listOf(false, true)) {
+            for (preset in BuiltinThemes.ALL) {
+                val tokens = HermesTokens.from(preset.paletteFor(dark), dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                assertEquals("$where: the modal scrim must be black at 32%", "#52000000", tokens.overlayScrim.argb())
+                assertNotEquals(
+                    "$where: the scrim must not track the theme foreground",
+                    tokens.textPrimary.argb(),
+                    tokens.overlayScrim.argb(),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `the diff palette derives from desktop's green and red in each mode`() {
         // styles.css:196-199,222-227 and `:root.dark:528-532` @
         // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — byte-identical at upstream

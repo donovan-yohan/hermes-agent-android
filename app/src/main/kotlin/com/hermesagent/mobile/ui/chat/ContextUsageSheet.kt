@@ -115,7 +115,7 @@ fun ContextUsageSheet(
         sheetState = sheetState,
         containerColor = tokens.cardSurface,
         contentColor = tokens.textPrimary,
-        scrimColor = tokens.textPrimary.copy(alpha = 0.32f),
+        scrimColor = tokens.overlayScrim,
         modifier = modifier.testTag(CONTEXT_USAGE_SHEET_TAG),
     ) {
         Column(

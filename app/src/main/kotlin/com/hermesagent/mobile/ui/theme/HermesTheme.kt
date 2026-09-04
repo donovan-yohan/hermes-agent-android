@@ -161,7 +161,18 @@ private fun HermesPalette.toMaterialColorScheme(dark: Boolean, tokens: HermesTok
         onError = destructiveForeground,
         errorContainer = destructive,
         onErrorContainer = destructiveForeground,
-        scrim = foreground.withAlpha(0.32f),
+        // Belt-and-braces. Every bottom sheet and the sessions drawer pass
+        // `scrimColor = tokens.overlayScrim` at their own call site, so nothing
+        // depends on this slot; the `Dialog` surfaces dim through the platform
+        // window and reach neither. It is mapped anyway for whatever reaches
+        // Material's default path: `BottomSheetDefaults.ScrimColor` and
+        // `DrawerDefaults.scrimColor` are both
+        // `ScrimTokens.ContainerColor.value.copy(ScrimTokens.ContainerOpacity)`,
+        // where `ContainerColor` is `ColorSchemeKeyTokens.Scrim` and
+        // `ContainerOpacity` is 0.32f. That `copy` *replaces* the alpha rather
+        // than multiplying it, so the opaque form of the token is what lands
+        // back on exactly the token.
+        scrim = tokens.overlayScrim.withAlpha(1f),
     )
 }
 

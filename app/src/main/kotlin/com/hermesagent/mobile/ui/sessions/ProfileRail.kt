@@ -64,9 +64,18 @@ data class ProfileRailState(
 ) {
     val defaultProfile: HermesProfile? = profiles.firstOrNull(HermesProfile::isDefault)
 
-    /** Unordered names alphabetise (`apps/desktop/src/store/profile.ts:92-106`). */
-    val named: List<HermesProfile> =
-        profiles.filterNot(HermesProfile::isDefault).sortedBy { it.name.lowercase() }
+    /**
+     * Unordered names alphabetise (`apps/desktop/src/store/profile.ts:92-106`).
+     *
+     * A row whose name normalises to `default` is never one of these, flagged or
+     * not: the pinned Gateway skips a named `default` outright
+     * (`hermes_cli/profiles.py:1069-1070`), and if one ever arrived unflagged it
+     * would collide with the head row the picker sheet renders for the default
+     * profile — same list key, same test tag, two rows.
+     */
+    val named: List<HermesProfile> = profiles
+        .filterNot { it.isDefault || normalizeProfileKey(it.name) == DEFAULT_PROFILE }
+        .sortedBy { it.name.lowercase() }
 
     /** Desktop hides the default↔all toggle and the squares until a second profile exists. */
     val multiProfile: Boolean get() = profiles.size > 1
@@ -110,6 +119,8 @@ class ProfileRailActions(
 
 internal const val PROFILE_RAIL_TAG = "Profile rail"
 internal const val PROFILE_PICKER_TAG = "Profile picker"
+
+internal fun profilePickerRowTag(name: String): String = "Profile picker row $name"
 
 /**
  * Arc-Spaces-style profile rail at the sidebar foot: a default↔all toggle
@@ -250,6 +261,7 @@ fun ProfileRail(
             onDismissRequest = { pickerVisible = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = HermesTheme.tokens.chatSurface,
+            scrimColor = HermesTheme.tokens.overlayScrim,
         ) {
             ProfilePickerSheet(
                 state = state,
@@ -371,6 +383,28 @@ private fun ProfilePickerSheet(
     Column(modifier.fillMaxWidth().imePadding().navigationBarsPadding()) {
         SectionLabel(PROFILES_TITLE, Modifier.padding(start = 16.dp, bottom = 4.dp))
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
+            // The default profile heads the list, home mark and all, the way a
+            // fleet group's default agent heads its gateway's
+            // (`profile-switcher.tsx:808-824`). Desktop's own condensed
+            // `ProfileDropdown` lists named profiles only (`:722-829`), because
+            // on a pointer rail its home pill never leaves the trigger's side;
+            // here the pill beside the sheet is a default↔all toggle whose face
+            // reads the scope rather than the action, so from the unified view
+            // the only route back to the default profile wears a `layers` mark.
+            //
+            // The presence rule is the rail's own, so the sheet can never offer
+            // a switch the rail would not: the roster's flagged default row, or
+            // nothing. `named` keeps an unflagged `default` row out, so this key
+            // cannot collide with one below.
+            state.defaultProfile?.let { profile ->
+                item(key = profile.name) {
+                    ProfilePickerRow(
+                        profile = profile,
+                        active = state.onDefault,
+                        onClick = { onSelect(profile.name) },
+                    )
+                }
+            }
             items(items = state.named, key = { it.name }) { profile ->
                 ProfilePickerRow(
                     profile = profile,
@@ -395,7 +429,14 @@ private fun ProfilePickerRow(
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .background(if (active) tokens.sessionRowActiveSurface else Color.Transparent)
             .clickable(role = Role.Button, onClick = onClick)
+            .testTag(profilePickerRowTag(profile.name))
             .padding(horizontal = 16.dp, vertical = 8.dp)
+            // No label of its own, so the row's accessible name is the label
+            // it renders and voice control can match it. Desktop's
+            // `ProfileDropdownItem` carries no aria-label (`profile-switcher.tsx:835-851`);
+            // the fleet head row this shape is ported from does
+            // (`:810`, `p.fleet.onGateway(...)`), and that one is deliberately
+            // not taken.
             .semantics { selected = active },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -412,7 +453,8 @@ private fun ProfilePickerRow(
     }
 }
 
-// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1773,1784-1789.
+// Copy is Desktop's, verbatim: apps/desktop/src/i18n/en.ts:1862,1873-1875,1878
+// @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
 internal const val PROFILES_TITLE = "Profiles"
 internal const val ALL_PROFILES_LABEL = "All profiles"
 internal const val SHOW_ALL_PROFILES = "Show all profiles"
