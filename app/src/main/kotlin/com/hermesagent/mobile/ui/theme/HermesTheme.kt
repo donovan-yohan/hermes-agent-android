@@ -161,10 +161,10 @@ private fun HermesPalette.toMaterialColorScheme(dark: Boolean, tokens: HermesTok
         onError = destructiveForeground,
         errorContainer = destructive,
         onErrorContainer = destructiveForeground,
-        // Belt-and-braces. Every scrim in this app is delivered by an explicit
-        // `scrimColor = tokens.overlayScrim` at its own call site — the sheets,
-        // the profile-rail picker and the sessions drawer alike — so nothing
-        // depends on this slot. It is mapped anyway for whatever reaches
+        // Belt-and-braces. Every bottom sheet and the sessions drawer pass
+        // `scrimColor = tokens.overlayScrim` at their own call site, so nothing
+        // depends on this slot; the `Dialog` surfaces dim through the platform
+        // window and reach neither. It is mapped anyway for whatever reaches
         // Material's default path: `BottomSheetDefaults.ScrimColor` and
         // `DrawerDefaults.scrimColor` are both
         // `ScrimTokens.ContainerColor.value.copy(ScrimTokens.ContainerOpacity)`,

@@ -431,9 +431,12 @@ private fun ProfilePickerRow(
             .clickable(role = Role.Button, onClick = onClick)
             .testTag(profilePickerRowTag(profile.name))
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            // No label of its own: Desktop's `ProfileDropdownItem` carries no
-            // aria-label either (`profile-switcher.tsx:835-851`), so the row's
-            // accessible name is the label it renders.
+            // No label of its own, so the row's accessible name is the label
+            // it renders and voice control can match it. Desktop's
+            // `ProfileDropdownItem` carries no aria-label (`profile-switcher.tsx:835-851`);
+            // the fleet head row this shape is ported from does
+            // (`:810`, `p.fleet.onGateway(...)`), and that one is deliberately
+            // not taken.
             .semantics { selected = active },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
