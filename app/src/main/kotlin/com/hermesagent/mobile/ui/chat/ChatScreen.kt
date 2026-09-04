@@ -140,6 +140,12 @@ fun ChatScreen(
      * it answers for itself here.
      */
     imeInsets: WindowInsets = WindowInsets.ime,
+    /**
+     * Appearance's `Intro Splash` (`i18n/en.ts:588` @ `3ca096de`). On, an empty
+     * chat is the wordmark; off, it is the plain note. It is a saved appearance
+     * preference rather than chat state, so it arrives beside the theme.
+     */
+    introSplashEnabled: Boolean = true,
     /** Rail chrome above the session header — the connection switcher. */
     sidebarHeader: @Composable () -> Unit = {},
 ) {
@@ -153,9 +159,9 @@ fun ChatScreen(
     val onOpenContextUsage = { contextUsageOpen = true }
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, onOpenContextUsage)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, introSplashEnabled, onOpenContextUsage)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, onOpenContextUsage)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, introSplashEnabled, onOpenContextUsage)
         }
     }
     // The meter disappears whenever its session does — a switch, a reconnect, an
@@ -187,6 +193,7 @@ private fun CompactLayout(
     gatewayDoor: StatusAction?,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
+    introSplashEnabled: Boolean,
     onOpenContextUsage: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -254,7 +261,7 @@ private fun CompactLayout(
                 onSelectApprovalMode = actions.onSelectApprovalMode,
                 modifier = Modifier.statusBarsPadding(),
             )
-            TranscriptPane(state, actions.onShowEarlierMessages, Modifier.weight(1f))
+            TranscriptPane(state, actions.onShowEarlierMessages, introSplashEnabled, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -270,6 +277,7 @@ private fun WideLayout(
     railInsets: WindowInsets,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
+    introSplashEnabled: Boolean,
     onOpenContextUsage: () -> Unit = {},
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -315,7 +323,7 @@ private fun WideLayout(
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
             )
-            TranscriptPane(state, actions.onShowEarlierMessages, Modifier.weight(1f))
+            TranscriptPane(state, actions.onShowEarlierMessages, introSplashEnabled, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -376,6 +384,7 @@ private fun SessionsPane(
 private fun TranscriptPane(
     state: ChatUiState,
     onShowEarlier: () -> Unit,
+    introSplashEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -527,6 +536,15 @@ private fun TranscriptPane(
                 end = HermesTheme.spacing.pageInset,
                 top = HermesTheme.spacing.blockGap,
                 bottom = HermesTheme.spacing.blockGap,
+            ),
+            // Read from the homed id rather than from the summary: a session
+            // created a frame ago has an id and no row yet, and that is exactly
+            // the frame a splash must not appear in.
+            showIntroSplash = shouldShowIntroSplash(
+                enabled = introSplashEnabled,
+                activeSessionId = state.activeSessionId,
+                transcriptEmpty = state.transcriptIsEmpty,
+                turnRunning = state.activeSession?.status == SessionStatus.Working,
             ),
         )
         if (showJump) {

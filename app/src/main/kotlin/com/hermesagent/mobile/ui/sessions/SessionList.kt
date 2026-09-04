@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -392,13 +393,19 @@ fun SessionList(
                     NoResultsNote(query.trim())
                 }
 
-                rows.isEmpty() -> EmptyState(
-                    title = "No sessions",
-                    description = if (canCreate) {
-                        "Start one with the + above."
-                    } else {
-                        "Connect to a Gateway to start a session."
-                    },
+                // Desktop's `SidebarBlankState`
+                // (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`
+                // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), which it
+                // renders on exactly this condition: nothing filtered, nothing
+                // loading, no sessions and no projects (`sidebar/index.tsx:1427,1912`).
+                rows.isEmpty() -> SidebarBlankState(
+                    canCreateProject = canCreate && projectsAvailable == true,
+                    onNewProject = { projectCreateVisible = true },
+                    // Desktop's sidebar is never disconnected, so it has no
+                    // sentence for this. A phone's is, and losing the one line
+                    // that says which action comes first would cost more than
+                    // the divergence does. See `docs/parity/empty-states.md`.
+                    disconnectedNote = "Connect to a Gateway to start a session.".takeIf { !canCreate },
                     modifier = listSlot,
                 )
 
@@ -839,6 +846,110 @@ internal const val ARCHIVED_EMPTY_STATE = "Archived empty state"
 internal const val ARCHIVED_LOADING_STATE = "Archived loading state"
 internal const val ARCHIVED_FAILED_STATE = "Archived failed state"
 internal const val ARCHIVED_UNSUPPORTED_STATE = "Archived unsupported state"
+
+/** Desktop's `SidebarBlankState`: no filter, no sessions, no projects. */
+internal const val SIDEBAR_BLANK_STATE = "Sidebar blank state"
+
+/**
+ * `sidebar.noSessions` and `sidebar.projects.newButton`, verbatim
+ * (`apps/desktop/src/i18n/en.ts:2218,2223` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Note the missing full stop:
+ * `commandCenter.noSessions` at `:1560` reads `No sessions yet.` **with** one,
+ * and the sidebar's is the other string.
+ */
+internal const val NO_SESSIONS_YET = "No sessions yet"
+internal const val NEW_PROJECT_BUTTON = "New project"
+
+/**
+ * Desktop's `SidebarBlankState`
+ * (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): a `root-folder` codicon in the
+ * quaternary ink, the caption in the tertiary, and a ghost `New project` under
+ * them, all `place-items-center` in the height the list section leaves.
+ *
+ * @param canCreateProject the same gate the header's `+` uses in project mode.
+ *   A Gateway that serves no project RPC leaves the button visible and
+ *   disabled rather than removing it.
+ * @param disconnectedNote this app's own extra line, and null whenever Desktop
+ *   would have nothing to add. Ledgered in `docs/parity/empty-states.md`.
+ */
+@Composable
+private fun SidebarBlankState(
+    canCreateProject: Boolean,
+    onNewProject: () -> Unit,
+    modifier: Modifier = Modifier,
+    disconnectedNote: String? = null,
+) {
+    val tokens = HermesTheme.tokens
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .testTag(SIDEBAR_BLANK_STATE),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            HermesIconGlyph(
+                icon = HermesIcon.RootFolder,
+                color = tokens.textQuaternary,
+                size = 20.sp,
+            )
+            Text(
+                text = NO_SESSIONS_YET,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+                textAlign = TextAlign.Center,
+            )
+            if (disconnectedNote != null) {
+                Text(
+                    text = disconnectedNote,
+                    style = HermesTheme.type.caption,
+                    color = tokens.textQuaternary,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            GhostAction(
+                label = NEW_PROJECT_BUTTON,
+                icon = HermesIcon.Add,
+                enabled = canCreateProject,
+                onClick = onNewProject,
+            )
+        }
+    }
+}
+
+/**
+ * Desktop's `variant="ghost"` button: no fill, no border, the glyph inside the
+ * label's own target. One target, not two, so the row carries the whole name
+ * and the glyph is cleared out of the semantics tree by [HermesIconGlyph].
+ */
+@Composable
+private fun GhostAction(
+    label: String,
+    icon: HermesIcon,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    val ink = if (enabled) tokens.textSecondary else tokens.textQuaternary
+    Row(
+        modifier = modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        HermesIconGlyph(icon, color = ink, size = 12.sp)
+        Text(text = label, style = HermesTheme.type.caption, color = ink)
+    }
+}
 
 /**
  * Desktop's `SidebarSessionSkeletons`, at this rail's scale

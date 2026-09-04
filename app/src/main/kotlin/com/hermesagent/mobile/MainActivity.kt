@@ -313,6 +313,7 @@ class MainActivity : ComponentActivity() {
             val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
+            val introSplash by preferences.introSplash.collectAsStateWithLifecycle(true)
             // Collected from the shell, not from the Relay screen: the Settings
             // entry point has to be able to say Relay is unavailable on this
             // Gateway before anyone opens it. Availability probes on connection
@@ -433,7 +434,9 @@ class MainActivity : ComponentActivity() {
                 appearanceActions = AppearanceActions(
                     onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },
                     onSelectMode = { mode -> lifecycleScope.launch { preferences.setMode(mode) } },
+                    onSetIntroSplash = { on -> lifecycleScope.launch { preferences.setIntroSplash(on) } },
                 ),
+                introSplash = introSplash,
                 gatewayActions = GatewayActions(
                     onModeChange = gatewaySettingsViewModel::setMode,
                     onRemoteUrlChange = gatewaySettingsViewModel::setRemoteUrl,

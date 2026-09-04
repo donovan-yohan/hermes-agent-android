@@ -1,0 +1,181 @@
+package com.hermesagent.mobile.ui.chat
+
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.SessionListRow
+import com.hermesagent.mobile.data.session.SessionStatus
+import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.TranscriptEntry
+import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.sessions.NEW_PROJECT_BUTTON
+import com.hermesagent.mobile.ui.sessions.NO_SESSIONS_YET
+import com.hermesagent.mobile.ui.sessions.SIDEBAR_BLANK_STATE
+import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.theme.HermesTheme
+import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * The two vertically centred empty states, rendered.
+ *
+ * Desktop's originals are `Intro`
+ * (`apps/desktop/src/components/chat/intro.tsx:160-179`) and
+ * `SidebarBlankState` (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`),
+ * both @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ */
+// Wide enough for the persistent rail, so the session list is on screen without
+// a drawer gesture and the transcript column is beside it.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "w900dp-h800dp")
+class EmptyStateJourneyTest {
+
+    @get:Rule
+    val compose = createComposeRule()
+
+    @Test
+    fun `an empty draft shows the wordmark splash instead of the plain note`() {
+        launch()
+
+        compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
+        compose.onNodeWithText(INTRO_WORDMARK).assertIsDisplayed()
+        compose.onAllNodesWithText("No messages yet").assertCountEquals(0)
+    }
+
+    @Test
+    fun `the splash draws one of Desktop's neutral lines`() {
+        launch(introSeed = 2)
+
+        // Seeded, so the assertion names a line rather than any line. The
+        // production splash rolls a fresh seed per mount, exactly as Desktop's
+        // `mountSeed` does.
+        compose.onNodeWithText(NEUTRAL_INTRO_COPY[2]).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a transcript with one entry replaces the splash with the transcript`() {
+        launch(
+            activeSessionId = "session-a",
+            transcript = listOf(AssistantTurn(id = "reply", markdown = "First reply", atMillis = NOW)),
+        )
+
+        compose.onAllNodesWithTag(INTRO_SPLASH_TAG).assertCountEquals(0)
+        compose.onNodeWithText("First reply").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a homed session with nothing in it yet keeps the plain note, never the splash`() {
+        launch(activeSessionId = "session-a")
+
+        compose.onAllNodesWithTag(INTRO_SPLASH_TAG).assertCountEquals(0)
+        compose.onNodeWithText("No messages yet").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the Appearance toggle off falls back to the plain centred note`() {
+        launch(introSplashEnabled = false)
+
+        compose.onAllNodesWithTag(INTRO_SPLASH_TAG).assertCountEquals(0)
+        compose.onNodeWithText("No messages yet").assertIsDisplayed()
+        compose.onNodeWithText("Start a conversation with Hermes.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `an empty session list shows Desktop's sidebar blank state`() {
+        launchSidebar()
+
+        compose.onNodeWithTag(SIDEBAR_BLANK_STATE).assertIsDisplayed()
+        compose.onNodeWithText(NO_SESSIONS_YET).assertIsDisplayed()
+        compose.onNodeWithText(NEW_PROJECT_BUTTON).assertIsDisplayed()
+        compose.onAllNodesWithText("No sessions").assertCountEquals(0)
+    }
+
+    @Test
+    fun `a list with a row shows no blank state`() {
+        launchSidebar(
+            rows = listOf(
+                SessionListRow.Row(
+                    SessionSummary(
+                        id = "session-a",
+                        title = "A saved chat",
+                        preview = "",
+                        lastActiveAtMillis = NOW,
+                        status = SessionStatus.Idle,
+                    ),
+                ),
+            ),
+        )
+
+        compose.onAllNodesWithTag(SIDEBAR_BLANK_STATE).assertCountEquals(0)
+        compose.onNodeWithText("A saved chat").assertIsDisplayed()
+    }
+
+    private fun launch(
+        introSplashEnabled: Boolean = true,
+        activeSessionId: String? = null,
+        transcript: List<TranscriptEntry> = emptyList(),
+        introSeed: Int? = null,
+    ) {
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                if (introSeed != null) {
+                    // The splash on its own, so the seed can be pinned. The
+                    // gate that decides whether it renders is the other tests.
+                    IntroSplash(seed = introSeed)
+                } else {
+                    ChatScreen(
+                        state = ChatUiState(
+                            activeSessionId = activeSessionId,
+                            activeSession = activeSessionId?.let {
+                                SessionSummary(
+                                    id = it,
+                                    title = "A live chat",
+                                    preview = "",
+                                    lastActiveAtMillis = NOW,
+                                    status = SessionStatus.Idle,
+                                )
+                            },
+                            transcript = transcript,
+                        ),
+                        actions = ChatActions(),
+                        onOpenSettings = {},
+                        wideRailInsets = WindowInsets(0, 0, 0, 0),
+                        imeInsets = WindowInsets(0, 0, 0, 0),
+                        introSplashEnabled = introSplashEnabled,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    /** The rail, which is where the session list is without opening a drawer. */
+    private fun launchSidebar(rows: List<SessionListRow> = emptyList()) {
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                ChatScreen(
+                    state = ChatUiState(sessionRows = rows),
+                    actions = ChatActions(),
+                    onOpenSettings = {},
+                    wideRailInsets = WindowInsets(0, 0, 0, 0),
+                    imeInsets = WindowInsets(0, 0, 0, 0),
+                )
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    private companion object {
+        const val NOW = 1_755_600_000_000L
+    }
+}

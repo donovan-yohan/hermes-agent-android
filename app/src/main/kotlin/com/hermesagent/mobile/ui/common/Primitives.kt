@@ -61,6 +61,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -602,21 +603,55 @@ fun TextButton(
     }
 }
 
-/** Plain-body empty state. Centered, no icon pile, no card. */
+/**
+ * Plain-body empty state. Centred, no icon pile, no card.
+ *
+ * Centred on **both** axes, which is what Desktop's empty states are: every one
+ * of them is `grid place-items-center` in the height its section leaves —
+ * `SidebarBlankState` (`apps/desktop/src/app/chat/sidebar/section-states.tsx:31`
+ * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and the intro slot
+ * (`styles.css:1603-1607`) both. So the caller decides the slot and this
+ * centres inside it: pass `Modifier.fillMaxSize()` or a `weight(1f)` and the
+ * body lands in the middle of the space; pass nothing and it wraps its content
+ * exactly as before.
+ *
+ * @param icon Desktop hangs a quiet glyph above the sentence where the empty
+ *   state is a whole pane rather than a note inside one. Absent by default,
+ *   because most of these are the note.
+ */
 @Composable
-fun EmptyState(title: String, description: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxWidth().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(title, style = HermesTheme.type.bodyStrong, color = HermesTheme.tokens.textSecondary)
-        Text(
-            description,
-            style = HermesTheme.type.caption,
-            color = HermesTheme.tokens.textTertiary,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+fun EmptyState(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    icon: HermesIcon? = null,
+) {
+    Box(modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (icon != null) {
+                HermesIconGlyph(
+                    icon = icon,
+                    color = HermesTheme.tokens.textQuaternary,
+                    size = 20.sp,
+                )
+            }
+            Text(
+                title,
+                style = HermesTheme.type.bodyStrong,
+                color = HermesTheme.tokens.textSecondary,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                description,
+                style = HermesTheme.type.caption,
+                color = HermesTheme.tokens.textTertiary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
     }
 }
 

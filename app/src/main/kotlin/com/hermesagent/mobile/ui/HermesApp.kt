@@ -100,6 +100,12 @@ fun HermesApp(
     systemActions: SystemActions = SystemActions(),
     connectionsState: ConnectionsUiState = ConnectionsUiState(),
     connectionsActions: ConnectionsActions = ConnectionsActions(),
+    /**
+     * Appearance's saved `Intro Splash`. Separate from [appearance] because it
+     * paints nothing: it is a preference the chat reads, not a theme value the
+     * token layer resolves, and `HermesTheme` has no business being handed it.
+     */
+    introSplash: Boolean = true,
     /** Honoured once per [HermesNavigationAsk.token]; see that type. */
     navigationAsk: HermesNavigationAsk? = null,
     /**
@@ -157,6 +163,7 @@ fun HermesApp(
                 // a drawer switch to a signed-out gateway, and the sign-in it
                 // leads to belongs back here.
                 onOpenGateways = onOpenGatewaysFromSessions,
+                introSplashEnabled = introSplash,
                 sidebarHeader = {
                     ConnectionSwitcherBar(
                         state = connectionsState,
@@ -197,7 +204,11 @@ fun HermesApp(
                 title = "Appearance",
                 onBack = onBack,
             ) {
-                AppearanceScreen(selection = appearance, actions = appearanceActions)
+                AppearanceScreen(
+                    selection = appearance,
+                    actions = appearanceActions,
+                    introSplash = introSplash,
+                )
             }
 
             HermesDestination.Gateways -> OverlayScaffold(

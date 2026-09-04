@@ -57,6 +57,8 @@ fun AppearanceScreen(
     selection: AppearanceSelection,
     actions: AppearanceActions,
     modifier: Modifier = Modifier,
+    /** The saved `Intro Splash` preference; see [IntroSplashRow]. */
+    introSplash: Boolean = true,
 ) {
     val tokens = HermesTheme.tokens
 
@@ -113,6 +115,52 @@ fun AppearanceScreen(
                     onClick = { actions.onSelectTheme(preset.name) },
                 )
             }
+
+            // Desktop's Appearance list runs Language → Themes → UI scale →
+            // Terminal font → Session density → Tab strip → Translucency →
+            // Backdrop → **Intro Splash** → Composer pop-out → …
+            // (`apps/desktop/src/app/settings/appearance-settings.tsx:461-737`
+            // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). This app ships
+            // none of the rows between the theme picker and this one, so
+            // "after the skins" is the same position, not a new one.
+            item {
+                IntroSplashRow(on = introSplash, onChange = actions.onSetIntroSplash)
+            }
+        }
+    }
+}
+
+/**
+ * `Intro Splash` (`i18n/en.ts:588-589` @ `3ca096de`), verbatim, behind Desktop's
+ * own control for it: an Off/On segmented pair, not a switch
+ * (`appearance-settings.tsx:715-736`). `Off` and `On` are `common.off` /
+ * `common.on` (`i18n/en.ts:44-45`).
+ */
+@Composable
+private fun IntroSplashRow(on: Boolean, onChange: (Boolean) -> Unit) {
+    val tokens = HermesTheme.tokens
+    Column {
+        Hairline(Modifier.padding(bottom = 4.dp))
+        Column(
+            modifier = Modifier.padding(
+                horizontal = HermesTheme.spacing.pageInset,
+                vertical = 10.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Intro Splash", style = HermesTheme.type.sessionTitle, color = tokens.textPrimary)
+            Text(
+                "The wordmark and prompt shown on an empty chat.",
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+            )
+            SegmentedControl(
+                options = listOf(false, true),
+                selected = on,
+                label = { if (it) "On" else "Off" },
+                describe = { if (it) "Intro Splash on" else "Intro Splash off" },
+                onSelect = onChange,
+            )
         }
     }
 }

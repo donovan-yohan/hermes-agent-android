@@ -169,7 +169,8 @@ internal object AdoptConnectionRegistry : DataMigration<Preferences> {
  * Everything this connection/appearance preference store puts on disk.
  *
  * The list is short by design, and every entry is non-secret:
- * - the chosen theme and light/dark mode;
+ * - the chosen theme and light/dark mode, and whether an empty chat draws the
+ *   intro splash;
  * - the session sidebar's grouping mode and its active Hermes-profile scope;
  * - the saved connections, each one a random local id, a label, a route, the
  *   Remote Gateway's non-secret URL/provider, and the SSH host, port, username,
@@ -214,6 +215,18 @@ class HermesPreferences(private val context: Context) :
             themeName = prefs[THEME_NAME] ?: BuiltinThemes.DEFAULT_NAME,
             mode = prefs[THEME_MODE]?.toThemeMode() ?: HermesThemeMode.System,
         )
+    }
+
+    /**
+     * Appearance's `Intro Splash` (`apps/desktop/src/i18n/en.ts:588` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     *
+     * Desktop's `$introSplash` defaults to on (`store/intro-splash.ts:8`), so an
+     * absent key here is on too. Stored as a string, like every other flag in
+     * this store, so the whole document keeps one encoding.
+     */
+    val introSplash: Flow<Boolean> = context.hermesDataStore.data.map { prefs ->
+        prefs[INTRO_SPLASH] != "false"
     }
 
     override val sidebarGrouping: Flow<SidebarGrouping> = context.hermesDataStore.data.map { prefs ->
@@ -298,6 +311,9 @@ class HermesPreferences(private val context: Context) :
 
     suspend fun setMode(mode: HermesThemeMode) =
         context.hermesDataStore.edit { it[THEME_MODE] = mode.name }
+
+    suspend fun setIntroSplash(on: Boolean) =
+        context.hermesDataStore.edit { it[INTRO_SPLASH] = on.toString() }
 
     override suspend fun saveSidebarGrouping(grouping: SidebarGrouping) {
         context.hermesDataStore.edit { prefs -> prefs[SIDEBAR_GROUPING] = grouping.name }
@@ -537,6 +553,7 @@ class HermesPreferences(private val context: Context) :
 
         val THEME_NAME = stringPreferencesKey("appearance.theme")
         val THEME_MODE = stringPreferencesKey("appearance.mode")
+        val INTRO_SPLASH = stringPreferencesKey("appearance.introSplash")
         val SIDEBAR_GROUPING = stringPreferencesKey("sidebar.grouping")
         val PROFILE_ACTIVE = stringPreferencesKey("sidebar.profile.active")
         val PROFILE_SHOW_ALL = stringPreferencesKey("sidebar.profile.showAll")

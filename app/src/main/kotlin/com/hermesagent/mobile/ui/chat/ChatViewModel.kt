@@ -285,6 +285,17 @@ data class ChatUiState(
     val selectedProject: ProjectSummary? = null,
     val projectLoading: Boolean = false,
     val activeSession: SessionSummary? = null,
+    /**
+     * The session the composer is homed on, whether or not its row has reached
+     * the cache yet.
+     *
+     * Not the same question as [activeSession] being non-null: `session.create`
+     * homes the composer on an id before `session.info` publishes the row, so
+     * for a frame or two there is an active session with no summary. Anything
+     * that must distinguish "no session at all" from "a session whose row has
+     * not landed" — the intro splash does — has to read this, not that.
+     */
+    val activeSessionId: String? = null,
     val transcript: List<TranscriptEntry> = emptyList(),
     val query: String = "",
     val draft: String = "",
@@ -694,6 +705,7 @@ internal class ChatViewModel(
             selectedProject = selectedProject,
             projectLoading = selectedProject != null && navigation.loadingProjectId == selectedProject.id,
             activeSession = active,
+            activeSessionId = displayedActiveId,
             transcript = displayedActiveId?.let(cacheState.transcripts::get).orEmpty(),
             query = searchState.query,
             draft = draftText,
