@@ -56,6 +56,27 @@ data class HermesTokens(
     /** Inline tool/artifact widget fill (`--ui-widget-surface-background`). */
     val widgetSurface: Color,
 
+    /**
+     * The wash a modal paints over everything behind it: every
+     * `ModalBottomSheet`, the sessions drawer, and the updates overlay.
+     *
+     * Desktop's scrim is **black in every skin**, not an ink derived from the
+     * theme: `apps/desktop/src/app/overlays/overlay-view.tsx:77` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3` paints
+     * `bg-black/22 backdrop-blur-[0.125rem]`, and the session picker's dialog
+     * overlay `bg-black/15 backdrop-blur-[1px]`
+     * (`apps/desktop/src/components/session-picker.tsx:48` @ the same SHA).
+     * Seeding it from the theme *foreground* — which is what every scrim here
+     * used to do — inverts the effect in a dark skin, where the foreground is
+     * near-white: the content behind the sheet gets lighter, not dimmer.
+     *
+     * Android paints no backdrop blur behind a modal, so the alpha carries the
+     * whole separation alone and stays at this app's established 0.32 rather
+     * than following Desktop down to 0.22. That single difference is the
+     * mobile-adaptation row in `docs/parity/system-panel.md`.
+     */
+    val overlayScrim: Color,
+
     // ── Chat grammar ──────────────────────────────────────────────────────
     val userBubble: Color,
     val userBubbleBorder: Color,
@@ -124,6 +145,13 @@ data class HermesTokens(
 
         /** `--ui-selection-background`'s seed, identical in both modes. */
         private val SelectionInk = Color(0xFFFFD24A)
+
+        /**
+         * [overlayScrim]. One value for every preset and both modes, because
+         * `overlay-view.tsx:77` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` is
+         * a literal `bg-black/22`, not a theme variable.
+         */
+        private val OverlayScrim = Color.Black.withAlpha(0.32f)
 
         /**
          * Resolve a palette into semantic tokens.
@@ -240,6 +268,7 @@ data class HermesTokens(
                 // chrome, so a widget wearing the raw card fill reads as a lit
                 // panel. Dark knocks it toward black; light uses the card as is.
                 widgetSurface = if (dark) mixPremultiplied(editor, 88f, Color.Black) else editor,
+                overlayScrim = OverlayScrim,
                 userBubble = bubble,
                 userBubbleBorder = palette.userBubbleBorder ?: palette.border,
                 composerRing = palette.composerRing ?: accent,

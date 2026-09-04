@@ -161,7 +161,14 @@ private fun HermesPalette.toMaterialColorScheme(dark: Boolean, tokens: HermesTok
         onError = destructiveForeground,
         errorContainer = destructive,
         onErrorContainer = destructiveForeground,
-        scrim = foreground.withAlpha(0.32f),
+        // Material re-alphas whatever this holds: both `BottomSheetDefaults`
+        // `.ScrimColor` and `DrawerDefaults.scrimColor` read `colorScheme.scrim`
+        // and `.copy(alpha = 0.32f)` it (material3 1.4.0, `SheetDefaults.kt:390`
+        // / `NavigationDrawer.kt:1012`, both against `ScrimTokens.Scrim`). So the
+        // opaque form of the token is what lands on exactly the token: every
+        // default-scrim consumer — the sessions drawer, the profile-rail sheet —
+        // gets the same black wash the explicit sites pass by hand.
+        scrim = tokens.overlayScrim.withAlpha(1f),
     )
 }
 

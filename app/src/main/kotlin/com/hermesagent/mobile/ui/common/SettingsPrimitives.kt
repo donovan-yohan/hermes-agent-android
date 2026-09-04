@@ -348,7 +348,7 @@ fun ConfirmSheet(
         onDismissRequest = onDismiss,
         containerColor = tokens.cardSurface,
         contentColor = tokens.textPrimary,
-        scrimColor = tokens.textPrimary.copy(alpha = .32f),
+        scrimColor = tokens.overlayScrim,
         modifier = Modifier.testTag(testTag),
     ) {
         Column(
