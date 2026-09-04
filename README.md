@@ -48,6 +48,10 @@ this route owns no process: the app connects to the Hermes you started and
 never starts, stops or reaps it. Setup is in the
 [Termux local Gateway guide](docs/guides/termux-local-gateway.md).
 
+Running on **Hermes Cloud**? A hosted instance is reached through the Remote
+gateway route — there is no separate Cloud sign-in in the app yet. See
+[Hermes Cloud](docs/guides/getting-started.md#hermes-cloud).
+
 ```text
 Desktop ───────┐
                ├── Remote Gateway ── one Hermes profile and session database

@@ -331,23 +331,44 @@ Termux needs, are in
 <!-- hermes-cloud:start -->
 ## Hermes Cloud
 
-Hermes Desktop can sign in to **Hermes Cloud** and pick from the agents on your
-account instead of pasting a URL. **The Android app cannot do this yet.** The
-card is on screen — it is the fourth option in the connection chooser, in the
-same position Desktop puts it, titled `Hermes Cloud` and described as *"Sign in
-once to Hermes Cloud and pick from the agents on your account — no URL to
-paste."* (`app/src/main/kotlin/com/hermesagent/mobile/ui/gateway/ConnectionsCopy.kt:342,429,432-433`)
-— but it is disabled behind the `WIP` marker chip and cannot be selected or
-saved. There is no Android Hermes Cloud sign-in, and the connection model has
-no member for it (`docs/parity/gateway-connections.md:81,280`).
+If your Hermes runs on **Hermes Cloud** rather than on a machine you administer,
+you reach it through the **Remote gateway** route above — a hosted instance is
+an ordinary HTTPS Gateway with the auth gate on. There is no separate Cloud
+sign-in in the app yet: the `Hermes Cloud` card is on screen in the connection
+chooser, in the position Desktop puts it, but it is disabled behind the `WIP`
+marker chip and cannot be selected or saved
+(`app/src/main/kotlin/com/hermesagent/mobile/ui/gateway/ConnectionsCopy.kt:342,429,432-433`;
+`docs/parity/gateway-connections.md:81,280`). It is shown rather than hidden
+because a control this app does not implement yet stays visible and disabled
+rather than silently missing.
 
-It is shown rather than hidden on purpose: the chooser teaches the same four
-options Desktop's does, and a control this app does not implement yet stays
-visible and disabled rather than silently missing.
+To connect:
 
-Use the Remote gateway route in the meantime.
+1. Open the Nous portal and go to its **Agents** page (`/agents`).
+2. Copy the instance's dashboard URL.
+3. In the app, add a **Remote gateway** connection and paste that URL.
+4. Connect. Sign in when the browser tab opens — if that browser already holds
+   a portal session, it should complete without asking you again.
 
-<!-- TODO(cloud-spike): replace this paragraph with the spike's conclusion on what Hermes Cloud can actually do from Android today, and the steps if any. -->
+A hosted instance satisfies the app's two requirements without you configuring
+anything: the auth gate is on and the portal injects the OAuth client id that
+registers the interactive session provider
+(`plugins/dashboard_auth/nous/__init__.py:605` @
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`), which is what puts `native_pkce`
+in `auth_flows` (`hermes_cli/web_server.py:3977-3988` @ the pin) — and
+`native_pkce` over HTTPS is all the app asks for
+(`RemoteGateway.kt:480-497`).
+
+**Agent discovery is not in the app.** Desktop can list the agents on your
+account; this app cannot, so the portal is where you find an instance's URL, and
+where you go back to when you create a new one. Each instance is its own saved
+connection.
+
+> **Unverified.** This path is read from the Hermes contract at the pinned
+> commit and has not yet been run end to end against a live Hermes Cloud
+> account. If you try it, please say how it went on
+> [#151](https://github.com/donovan-yohan/hermes-agent-android/issues/151).
+
 <!-- hermes-cloud:end -->
 
 ---
