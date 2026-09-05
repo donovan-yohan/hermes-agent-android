@@ -135,9 +135,11 @@ profile directory, or the Termux Local route — rather than the shared QA
 instance.
 
 **History caveat:** the deleted clip is still reachable in this branch's
-history (commit `f5bf6a4`). If this branch is ever pushed to a public remote,
-squash it or expunge those blobs; deleting the file from the tree does not
-remove them.
+history — it was introduced in `ba4dc93`, the branch's first commit, and the
+branch has since been rebased, so that SHA is the one to look for rather than
+the original. Deleting the file from the tree does not remove the blobs.
+**Squash this branch on merge, or expunge those objects, before anything here
+reaches a public remote.**
 
 ### The `demo` profile was attempted and reverted
 
