@@ -44,7 +44,6 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.ChatActions
-import com.hermesagent.mobile.ui.chat.ReadAloudUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -549,7 +548,7 @@ class TranscriptSelectionTest {
 
         state = state.copy(readAloud = ReadAloudUiState.Speaking("entry1"))
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Stop reading").assertIsDisplayed() // we can't assertIsEnabled because SemanticsPropertyMatcher for enabled isn't simple without specific matchers on the button. Oh wait, we can just assert it is present. But let's check it.
+        compose.onNodeWithContentDescription("Stop reading").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithContentDescription("Read aloud").assertIsDisplayed().assertIsNotEnabled()
     }
 

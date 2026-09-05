@@ -97,6 +97,7 @@ import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
+import com.hermesagent.mobile.ui.common.ComingSoonIconAction
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.DitherMark
@@ -815,27 +816,6 @@ private const val REFRESH_REPLY = "Refresh"
  */
 private const val COPY_DIFF = "Copy file"
 
-/** The inline diff has no copy payload to hand over yet, so it keeps its slot. */
-@Composable
-private fun ToolCopyPlaceholder() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier.semantics(mergeDescendants = true) {
-            contentDescription = "$COPY_DIFF. Work in progress."
-            disabled()
-        },
-    ) {
-        HermesIconButton(
-            icon = HermesIcon.Copy,
-            contentDescription = null,
-            onClick = {},
-            enabled = false,
-        )
-        WipPill()
-    }
-}
-
 @Composable
 private fun ReasoningRow(activity: ReasoningActivity) {
     var expanded by rememberSaveable(activity.id) { mutableStateOf(activity.state == ToolState.Running) }
@@ -1385,7 +1365,7 @@ private fun InlineDiffPanel(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
-                ToolCopyPlaceholder()
+                ComingSoonIconAction(HermesIcon.Copy, COPY_DIFF)
             }
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
