@@ -80,46 +80,43 @@ class WordmarkFitDeviceTest {
     }
 
     /**
-     * A raised font scale widens the run in the same units the fit works in, so
-     * the answer shrinks to match instead of overflowing. The instrumented lane
-     * cannot test this — a device-wide font scale would move what every other
-     * test on it can see — and it is a real setting, so it is tested here.
+     * **Font scale is not tested here, and could not be.** Robolectric does not
+     * plumb one into text layout: a `Density(platform, 1.5f)` provided through
+     * `LocalDensity`, and one handed straight to a constructed `TextMeasurer`
+     * as its `defaultDensity`, both return exactly the size the unscaled case
+     * returns. A test written against either would have divided and multiplied
+     * by the same factor and proved nothing.
+     *
+     * The invariant itself — a run that measures wider yields a proportionally
+     * smaller fit, which is what a raised scale does — is proved in
+     * `WordmarkFitTest.a raised font scale still fits, because the ratio is
+     * measured not assumed`, where the widened run is supplied directly and no
+     * platform has to cooperate. The real device is the third leg:
+     * `docs/parity/visual/empty-states/empty-chat-intro-w320dp-dark/` is the
+     * narrowest column at the emulator's own scale of 1.0.
      */
-    @Test
-    fun `a raised font scale still fits`() {
-        for (fit in fits(fontScale = 1.5f)) {
-            assertTrue(
-                "w${fit.screenDp}dp at fontScale 1.5: ${fit.runDp}dp in ${fit.columnDp}dp",
-                fit.runDp <= fit.columnDp + TOLERANCE_DP,
-            )
-        }
-    }
-
-    private fun fits(fontScale: Float = 1f): List<Fit> {
+    private fun fits(): List<Fit> {
         var measured by mutableStateOf(emptyList<Fit>())
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                val density = LocalDensity.current
                 val measurer = rememberTextMeasurer()
                 val style = HermesTheme.type.wordmark
-                val density = androidx.compose.ui.unit.Density(
-                    density = LocalDensity.current.density,
-                    fontScale = fontScale,
-                )
                 measured = PHONE_WIDTHS_DP.map { screenDp ->
                     with(density) {
                         val columnDp = screenDp.dp - INTRO_SPLASH_GUTTER * 2 - WORDMARK_INSET
-                        // The measurer captured the composition's own density,
-                        // so scale the target instead of the measurer: a run
-                        // measured at `fontScale` times the size fits a column
-                        // `fontScale` times narrower.
-                        val target = columnDp.toPx() / fontScale
-                        val size = fitWordmarkFontSize(measurer, INTRO_WORDMARK, style, target)
+                        val size = fitWordmarkFontSize(
+                            measurer,
+                            INTRO_WORDMARK,
+                            style,
+                            columnDp.toPx(),
+                        )
                         val runPx = measurer.measure(
                             text = AnnotatedString(INTRO_WORDMARK),
                             style = style.copy(fontSize = size),
                             softWrap = false,
                             maxLines = 1,
-                        ).size.width.toFloat() * fontScale
+                        ).size.width.toFloat()
                         Fit(
                             screenDp = screenDp,
                             columnDp = columnDp.value,

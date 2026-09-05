@@ -26,11 +26,13 @@ import com.hermesagent.mobile.ui.sessions.SIDEBAR_BLANK_STATE
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * The two vertically centred empty states, rendered.
@@ -62,26 +64,29 @@ class EmptyStateJourneyTest {
     }
 
     /**
-     * The narrowest phone this app supports. Robolectric cannot measure the
-     * device font — `WordmarkFitTest` carries the arithmetic — but it can prove
-     * the splash still lays out and stays inside the screen at this width,
-     * which is where the old floor clamp overflowed.
+     * The narrowest phone this app supports, laid out on the **real** platform
+     * face: `@GraphicsMode(NATIVE)` is what makes this a check rather than a
+     * formality, because under Robolectric's default legacy graphics the
+     * lettering has no width to overflow with and the old floor clamp passed
+     * too. `WordmarkFitDeviceTest` carries the numbers; this carries the layout.
      */
     @Test
     @Config(sdk = [34], qualifiers = "w320dp-h640dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun `the splash renders on the narrowest phone without leaving the screen`() {
         launch()
 
         compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
-        val wordmark = compose.onNodeWithText(INTRO_WORDMARK).fetchSemanticsNode()
-        val root = compose.onNodeWithTag(INTRO_SPLASH_TAG).fetchSemanticsNode()
-        val bounds = wordmark.boundsInRoot
-        assert(bounds.left >= root.boundsInRoot.left - 1f) {
-            "wordmark starts at ${bounds.left}, left of the splash at ${root.boundsInRoot.left}"
-        }
-        assert(bounds.right <= root.boundsInRoot.right + 1f) {
-            "wordmark ends at ${bounds.right}, right of the splash at ${root.boundsInRoot.right}"
-        }
+        val wordmark = compose.onNodeWithText(INTRO_WORDMARK).fetchSemanticsNode().boundsInRoot
+        val splash = compose.onNodeWithTag(INTRO_SPLASH_TAG).fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "wordmark starts at ${wordmark.left}, left of the splash at ${splash.left}",
+            wordmark.left >= splash.left - 1f,
+        )
+        assertTrue(
+            "wordmark ends at ${wordmark.right}, right of the splash at ${splash.right}",
+            wordmark.right <= splash.right + 1f,
+        )
     }
 
     @Test

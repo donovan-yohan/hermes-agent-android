@@ -708,6 +708,11 @@ internal class ChatViewModel(
             unreadCount = scopedSessions.count {
                 it.archived != true && it.displayStatus() == SessionStatus.Unread
             },
+            // A genuinely empty account therefore alternates between the
+            // placeholder bars and the blank state on every background refresh,
+            // because both clauses stay true. That is Desktop's behaviour too —
+            // `showSessionSkeletons` has the same two clauses and no latch — and
+            // matching it is the point.
             sessionsLoading = bundle.second.sessionPaging.loading && scopedSessions.isEmpty(),
             projects = projects,
             projectsAvailable = cacheState.projects.available,
