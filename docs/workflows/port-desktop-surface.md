@@ -38,7 +38,7 @@ disagree, the component is the current contract and the doc is a bug.
 
 | Surface | Upstream path | What it settles |
 |---|---|---|
-| Theme registry | `apps/desktop/src/themes/presets.ts` | The six built-ins, labels, descriptions, default skin |
+| Theme registry | `apps/desktop/src/themes/presets.ts` | The built-in presets (eleven at the pin), labels, descriptions, default skin |
 | Theme resolution | `apps/desktop/src/themes/context.tsx:84-129` | `getBaseColors` + `synthLightColors` — dark-first presets synthesise their light half |
 | Colour maths | `apps/desktop/src/themes/color.ts` | `mix`, `readableOn`, WCAG luminance |
 | Derived tokens | `apps/desktop/src/styles.css:183-370,440-447` | Text/hairline ladders, conversation type scale, widget fill |
