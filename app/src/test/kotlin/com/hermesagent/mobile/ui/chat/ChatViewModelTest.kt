@@ -1208,6 +1208,28 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `unread chat allows branching and invokes branch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Unread))
+        runCurrent()
+        cache.setTranscript(
+            "session-a",
+            listOf(UserTurn("u1", "hello", 1_000), AssistantTurn("a1", "reply", 1_100)),
+        )
+        repository.historyResult = listOf(
+            UserTurn("h-u1", "hello", 2_000),
+            AssistantTurn("h-a1", "reply", 2_100),
+        )
+        runCurrent()
+
+        viewModel.branchFromReply("a1")
+        runCurrent()
+
+        assertEquals(listOf("session-a" to null), repository.branchCalls)
+    }
+
+    @Test
     fun `branching from reply at end of transcript starts a whole chat branch`() = runTest(dispatcher) {
         collectState()
         runCurrent()

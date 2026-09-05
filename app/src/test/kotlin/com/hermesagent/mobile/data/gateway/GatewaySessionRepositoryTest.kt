@@ -232,7 +232,7 @@ class GatewaySessionRepositoryTest {
     fun `branchSession sends correct params and upserts response`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
-            branchResult = """{"session_id":"runtime-branch","stored_session_id":"durable-branch","session":{"id":"durable-branch","title":"Branch","running":false,"archived":false},"messages":[{"role":"user","text":"hello"}]}"""
+            branchResult = """{"session_id":"runtime-branch","stored_session_id":"durable-branch","title":"Branch","message_count":1,"info":{"session_id":"durable-branch","title":"Branch"},"messages":[{"role":"user","text":"hello"}]}"""
         }
         val repository = LiveGatewaySessionRepository(
             cache,
@@ -255,6 +255,7 @@ class GatewaySessionRepositoryTest {
         val cachedSession = cache.session("durable-branch")
         assertNotNull(cachedSession)
         assertEquals("Branch", cachedSession?.title)
+        assertEquals(1, cachedSession?.messageCount)
 
         val transcript = cache.transcript("durable-branch")
         assertEquals(1, transcript.size)

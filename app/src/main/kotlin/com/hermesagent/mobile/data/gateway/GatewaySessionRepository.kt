@@ -2124,11 +2124,16 @@ internal class LiveGatewaySessionRepository(
         val newDurableId = result.string("stored_session_id")
             ?: throw GatewayRpcException("Hermes did not return a durable session id.")
         val info = (result["session"] as? JsonObject) ?: (result["info"] as? JsonObject) ?: result
+        val mergedInfo = buildJsonObject {
+            info.forEach { (name, value) -> put(name, value) }
+            result.string("title")?.let { put("title", JsonPrimitive(it)) }
+            result["message_count"]?.let { put("message_count", it) }
+        }
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.bind(newDurableId, newRuntimeId)
-            ephemeralSessions += newDurableId
-            cache.upsertSession(parseSession(info, clock(), newDurableId))
+            // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
+            cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId))
             val messages = result["messages"]
             if (messages is JsonArray) {
                 cache.setTranscript(

@@ -5,9 +5,8 @@ import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 
 /**
- * Derives the `count` parameter for `session.branch`, mirroring Desktop's `selectBranchMessages`.
- *
- * @see "apps/desktop/src/app/session/hooks/use-session-actions/utils.ts:selectBranchMessages@3ca096de5f8183cb2e0ec23673f294d5978656a3"
+ * What `session.branch` is asked for: keep `count` messages, the whole chat,
+ * or nothing because the reply cannot be located.
  *
  * @param localTranscript The transcript as currently held in the app's cache.
  * @param authoritativeTranscript The transcript returned by the backend's `session.history`.
@@ -20,6 +19,12 @@ sealed interface BranchPlan {
     data object Unlocatable : BranchPlan
 }
 
+/**
+ * Derives the `count` parameter for `session.branch`, mirroring Desktop's
+ * `selectBranchMessages` implementation in
+ * `apps/desktop/src/app/session/hooks/use-session-actions/utils.ts:selectBranchMessages`
+ * at `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ */
 fun deriveBranchCount(
     localTranscript: List<TranscriptEntry>,
     authoritativeTranscript: List<TranscriptEntry>,
@@ -27,11 +32,11 @@ fun deriveBranchCount(
 ): BranchPlan {
     val localTarget = localTranscript.find { it.id == targetId } as? AssistantTurn
         ?: return BranchPlan.Unlocatable
-    
-    val localVisible = localTranscript.filter { 
+
+    val localVisible = localTranscript.filter {
         (it is UserTurn && it.text.isNotBlank()) || (it is AssistantTurn && it.markdown.isNotBlank())
     }
-    
+
     val authoritativeVisible = authoritativeTranscript.filter {
         (it is UserTurn && it.text.isNotBlank()) || (it is AssistantTurn && it.markdown.isNotBlank())
     }
@@ -50,7 +55,7 @@ fun deriveBranchCount(
     if (matchedIndex == -1) {
         val targetRole = "assistant"
         val targetText = localTarget.markdown.trim()
-        
+
         // Find N-th match in local visible
         var ordinal = 0
         for (msg in localVisible) {
@@ -61,7 +66,7 @@ fun deriveBranchCount(
                 ordinal++
             }
         }
-        
+
         // Find N-th match in authoritative visible
         var authOrdinal = 0
         for ((index, msg) in authoritativeVisible.withIndex()) {

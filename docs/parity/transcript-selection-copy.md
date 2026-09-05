@@ -8,6 +8,7 @@ Android inverts the mechanism because Compose inverts the default: nothing is se
 
 | Desktop | Android | Why |
 |---|---|---|
+| `Branch in new chat` warns by toast and is enabled while a turn is working | Android disables the control while a turn is working and puts refusals on the notice line | a busy click that only toasts is a dead tap on a phone; the reasons already ledgered in the `## Divergences` row |
 | Native browser selection is the whole copy story | selection **plus** an explicit per-reply copy control | two handles and a scroll gesture are a poor way to grab several screens of prose on a phone; the system Copy in the selection toolbar still covers "copy this sentence" |
 | Action bar is `opacity-0`, reveals on `group-hover` | always mounted, always quiet: scaffold-meta ink inside a 48dp target | there is no hover on touch. Same deviation shape as the worked example in `docs/workflows/port-desktop-surface.md` |
 | Bar is mounted from the first frame of a turn | control appears with the reply's first visible text | a control that copies nothing is worse than one that arrives a token late; the shift is one row at the start of a turn rather than at the settle Desktop's comment protects |
@@ -29,7 +30,7 @@ Recorded rather than implemented, per `docs/workflows/port-desktop-surface.md`:
 
 ## Evidence
 
-`app/src/test/.../data/markdown/MarkdownPlainTextTest.kt` (11) covers the projection on fixed inputs. `app/src/testDebug/.../ui/chat/TranscriptSelectionTest.kt` covers long-press selection on prose and on the user bubble, the platform menu offering Copy, scaffold rows and the pinned prompt selecting nothing, both halves of the streaming behaviour below, a real pointer drag scrolling the same with and without a selection, the clipboard contents, the in-place confirmation, the 48dp target, the custom action, the control appearing but disabled for a reply that renders only an `@image:` line, and the three marked controls: Desktop's order, the touch floor, the single announcement, and the bar staying on one line rather than wrapping under the chips. `ThemeSemanticParityTest` pins the selection token across every built-in in both modes.
+`app/src/test/.../data/markdown/MarkdownPlainTextTest.kt` (11) covers the projection on fixed inputs. `app/src/testDebug/.../ui/chat/TranscriptSelectionTest.kt` covers long-press selection on prose and on the user bubble, the platform menu offering Copy, scaffold rows and the pinned prompt selecting nothing, both halves of the streaming behaviour below, a real pointer drag scrolling the same with and without a selection, the clipboard contents, the in-place confirmation, the 48dp target, the custom action, the control appearing but disabled for a reply that renders only an `@image:` line, the two marked controls: Desktop's order, the touch floor, the single announcement, and the bar staying on one line rather than wrapping under the chips, plus the live Branch control. `ThemeSemanticParityTest` pins the selection token across every built-in in both modes.
 
 ## Streaming
 

@@ -1751,15 +1751,13 @@ internal class ChatViewModel(
         }
     }
 
-
     fun branchFromReply(entryId: String) {
         val sessionId = activeSessionId.value
         if (sessionId == null || repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
             notice.value = "Nothing to branch. Start or resume a chat before branching."
             return
         }
-        val activeIsIdle = cache.session(sessionId)?.status == SessionStatus.Idle
-        if (!activeIsIdle) {
+        if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
             notice.value = "Session busy. Stop the current turn before branching this chat."
             return
         }
@@ -1767,6 +1765,10 @@ internal class ChatViewModel(
         viewModelScope.launch {
             try {
                 val authoritativeHistory = repository.fetchSessionHistory(sessionId)
+                if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
+                    notice.value = "Session busy. Stop the current turn before branching this chat."
+                    return@launch
+                }
                 if (activeSessionId.value != sessionId) {
                     // Desktop aborts if session ownership drifted while the RPC
                     // ran, so don't paint anything until this call returns.
@@ -1802,11 +1804,12 @@ internal class ChatViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (e: Throwable) {
+            } catch (_: Throwable) {
                 notice.value = "Branch failed. Check the Gateway and try again."
             }
         }
     }
+
     fun renameSession(id: String, newTitle: String) {
         viewModelScope.launch {
             try {
