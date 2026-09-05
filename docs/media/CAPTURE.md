@@ -43,15 +43,22 @@ pillarboxes the frame in black.
    `com.hermesagent.mobile.debug`; an unfocused or empty reading refused the
    capture rather than saving it. An earlier pass without this gate tapped out
    into the launcher's search bar and saved that instead.
-2. **The frame was looked at.** Every PNG, and a sampled contact sheet of every
-   recording, was opened and read before it was committed.
+2. **The frame was looked at.** Every PNG was opened and read before it was
+   committed. For the recordings this gate was weaker than it should have been:
+   a seven-frame contact sheet was sampled at even intervals, which is enough to
+   confirm the clip's arc and not enough to read every row a scrolled drawer
+   puts on screen. It missed what the next gate now catches.
 3. **No real host name is visible.** Checked per file below. The chat header
    shows the session title and a connection word (`Connected`, `Streaming ·
    Connected`) — never an address. The sessions drawer shows the connection's
-   *label*, `QA Remote`, which is a name the person typed, not a host.
-4. **Session content is synthetic.** Every prompt in these captures was written
-   for this pass and is about the Kotlin language. Nothing here is private
-   conversation.
+   *label*, which is a name the person typed, not a host.
+4. **Every visible session title is synthetic.** This is a separate check from
+   the host-name one, and the two are not interchangeable: a frame can be free
+   of addresses and still put an internal task id on the page. For a screenshot
+   the title list is read off the frame. For a clip it needs a frame grid dense
+   enough to cover every drawer scroll position, with the titles enumerated —
+   see the defect recorded under [Demos](#demos), which a per-file host check
+   passed and this check does not.
 
 ## Screenshots
 
@@ -114,13 +121,46 @@ make the set title-consistent at the cost of a plainer chat frame.
 
 | File | Size | Length | Shows |
 |---|---|---|---|
-| `live-turn.mp4` | 123 KB | 12.0 s | A new session from `No messages yet`: tap the composer, type a short prompt, send, the turn streams with an elapsed counter, and the reply lands as a fenced Kotlin block |
-| `live-turn.gif` | 791 KB | 12.3 s, 147 frames @12 fps, 540×1204 | The same clip as a GIF, for GitHub-rendered Markdown |
-| `switch-sessions.mp4` | 162 KB | 10.0 s | Open the sessions drawer from one session, tap a different one, and watch the transcript replace itself with the other session's turn |
-| `switch-sessions.gif` | 895 KB | 10.6 s, 127 frames @12 fps, 540×1204 | The same clip as a GIF |
+| `live-turn.mp4` | 123 KB | 12.261 s | A new session from `No messages yet`: tap the composer, type a short prompt, send, the turn streams with an elapsed counter, and the reply lands as a fenced Kotlin block |
+| `live-turn.gif` | 791 KB | 12.260 s, 147 frames @12 fps, 540×1204 | The same clip as a GIF, for GitHub-rendered Markdown |
+| `switch-sessions.mp4` | 162 KB | 10.622 s | Open the sessions drawer from one session, tap a different one, and watch the transcript replace itself with the other session's turn |
+| `switch-sessions.gif` | 895 KB | 10.580 s, 127 frames @12 fps, 540×1204 | The same clip as a GIF |
 
-Both GIFs are well under the 4 MB budget. Neither clip shows a host name: the
-drawer in `switch-sessions` shows connection labels and session titles only.
+**Budget: a GIF here stays under 1 MB.** Both are. The wider 4 MB ceiling the
+brief allowed is not the number to design to — a README hero that costs a
+reader four megabytes before the first paragraph is not worth it, and 540 px at
+12 fps lands comfortably below one.
+
+### Known defect: the clips predate the session sweep
+
+Both clips were recorded **before** the `kame-qa` list was swept, and
+`switch-sessions` scrolls the drawer far enough to show what the sweep later
+archived. Around frames 40–75 of `switch-sessions.gif` the rows
+`Acknowledge with OK`, `reply with exactly: OK`,
+`Work on kanban task t_14b0a05c`, `Work kanban task t_4e9bfa14` and
+`Work on kanban task t_c86db5bf` are legible — internal task ids, on what is
+meant to be a public front page. `live-turn` never opens the drawer and is
+clear of it, but it was recorded in the same pre-sweep state.
+
+So the claim these files carried until now — that every prompt in them was
+written for this pass — was **false for the clips**. It was true of the
+screenshots and was extended to the recordings without checking, and the
+seven-frame contact sheet was too sparse to contradict it. Both clips are being
+re-recorded against the clean list; until they are, treat them as unpublishable
+and do not reference them from the README.
+
+## Open against this set
+
+Review blocked these files. Everything below is a known defect in the committed
+frames, not a description of them working:
+
+| # | Defect | Fix |
+|---|---|---|
+| P0 | `switch-sessions.*` shows five pre-sweep internal task-id rows | Re-record both clips on the clean list, and never scroll past it |
+| P2 | The connection label `QA Remote` and the profile chip `kame-qa` are internal-lane names, visible in every drawer frame | Rename the connection to a neutral label; use a `demo` profile if one is cheap to make, and say so here if it is not |
+| P2 | Every synthetic row previews `Reply with the single word pong.` under an unrelated title — visibly test residue | Re-seed the demo set with one short turn each whose prompt matches its title, then archive the pong rows |
+| P2 | `chat-light.png` clips the approval label to `Manua`; `chat-dark.png` clips the context meter; the collapsed reasoning row sits above the reply in one and below it in the other | Capture both chat frames from one session state; prefer a session whose context string is short enough not to clip, or record that none is and cite [#136](https://github.com/donovan-yohan/hermes-agent-android/issues/136) |
+| P2 | The status-bar clock is illegible in dark frames | Drive SystemUI demo mode for every capture (`sysui_demo_allowed`, then `clock hhmm 1200`, `battery level 100`, `network wifi level 4`; `exit` afterwards) |
 
 ## What could not be captured
 
