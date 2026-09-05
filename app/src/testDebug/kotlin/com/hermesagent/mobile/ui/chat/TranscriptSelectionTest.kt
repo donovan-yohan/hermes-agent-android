@@ -16,7 +16,6 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -26,10 +25,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -44,7 +44,6 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.ChatActions
-import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -77,9 +76,9 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 // A phone-width screen, because the reply action bar is a fixed row of four
-// 48dp targets carrying three chips and the only way it can fail is by running
-// off the right edge. Robolectric's default screen is narrower than any device
-// this ships to, which would have made that assertion untestable.
+// live 48dp controls and the only way it can fail is by running off the right
+// edge. Robolectric's default screen is narrower than any device this ships to,
+// which would have made that assertion untestable.
 @Config(sdk = [34], qualifiers = "w411dp-h891dp", shadows = [ShadowSelectionMagnifier::class])
 // A live selection draws Compose's two vector handles. Robolectric's legacy
 // graphics pipeline hands the vector rasteriser a null Bitmap and the draw
@@ -421,8 +420,8 @@ class TranscriptSelectionTest {
     /**
      * Desktop mounts four controls under every assistant reply, in this order:
      * Branch, Copy, Read aloud, Refresh
-     * (`assistant-message.tsx:625-642` @ `3ca096de`). Branch is live in this
-     * build; Read aloud and Refresh remain disabled behind a WIP chip.
+     * (`assistant-message.tsx:625-642` @ `3ca096de`). All four are live in
+     * this build.
      */
     @Test
     fun `branch control is enabled when not streaming and invokes the callback`() {
@@ -463,7 +462,7 @@ class TranscriptSelectionTest {
     }
 
     @Test
-    fun `the action bar renders Desktop's one remaining control, disabled and marked`() {
+    fun `the action bar keeps Desktop's live controls in order at the touch floor`() {
         launch()
 
         val floor = HermesSpacing().touchTarget
@@ -473,15 +472,6 @@ class TranscriptSelectionTest {
                 .assertIsDisplayed()
                 .assertHeightIsAtLeast(floor)
         }
-        UNBUILT_ACTIONS.forEach { name ->
-            // The one of those this build cannot perform.
-            // Whole, not matched: `onNodeWithContentDescription` tests the
-            // description list with `any { }`, so a control that also named
-            // itself into the merge would announce twice and still be found.
-            compose.onNodeWithContentDescription(name)
-                .assertIsNotEnabled()
-                .assertContentDescriptionEquals(name)
-        }
 
         // Desktop's order, left to right.
         val boxes = DESKTOP_ACTION_BAR.map {
@@ -490,9 +480,8 @@ class TranscriptSelectionTest {
         boxes.zipWithNext().forEach { (left, right) ->
             assertTrue("the bar must keep Desktop's order", right.left > left.left)
         }
-        // The bar is a `Row`, which cannot wrap, so what four targets and three
-        // chips can actually do at 411dp is overrun the screen. Assert the
-        // right edge of the last control is still on it.
+        // The bar is a `Row`, which cannot wrap; assert its four targets fit
+        // on screen.
         val screenRight = compose.onRoot().getUnclippedBoundsInRoot().right
         val rightmost = boxes.maxOf { it.right }
         assertTrue(
@@ -514,7 +503,55 @@ class TranscriptSelectionTest {
         )
 
         compose.onNodeWithContentDescription("Copy reply").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Read aloud").assertDoesNotExist()
     }
+
+    @Test
+    fun `read aloud states cycle and disable appropriately`() {
+        var toggledId: String? = null
+        val actions = ChatActions(onToggleReadAloud = { toggledId = it })
+        state = ChatUiState(
+            activeSession = SessionSummary(
+                id = SESSION,
+                title = "Selection",
+                preview = "",
+                lastActiveAtMillis = NOW,
+                status = SessionStatus.Idle,
+            ),
+            transcript = listOf(
+                AssistantTurn(id = "entry1", markdown = "First", atMillis = NOW),
+                AssistantTurn(id = "entry2", markdown = "Second", atMillis = NOW),
+            ),
+        )
+
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                CompositionLocalProvider(
+                    LocalTextContextMenuToolbarProvider provides contextMenu,
+                ) {
+                    ChatScreen(state = state, actions = actions, onOpenSettings = {})
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val readAloudNodes = compose.onAllNodesWithContentDescription("Read aloud")
+        assertEquals(2, readAloudNodes.fetchSemanticsNodes().size)
+
+        readAloudNodes.onFirst().assertIsDisplayed().performClick()
+        assertEquals("entry1", toggledId)
+
+        state = state.copy(readAloud = ReadAloudUiState.Preparing("entry1"))
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Preparing audio...").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Read aloud").assertIsDisplayed().assertIsNotEnabled()
+
+        state = state.copy(readAloud = ReadAloudUiState.Speaking("entry1"))
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Stop reading").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("Read aloud").assertIsDisplayed().assertIsNotEnabled()
+    }
+
 
     /**
      * The control tracks what is *drawn*, not what the projection yields.
@@ -634,12 +671,10 @@ class TranscriptSelectionTest {
         val DESKTOP_ACTION_BAR = listOf(
             "Branch in new chat",
             "Copy reply",
-            "Read aloud. Work in progress.",
+            "Read aloud",
             "Refresh",
         )
 
-        /** The one of those this build cannot perform. */
-        val UNBUILT_ACTIONS = DESKTOP_ACTION_BAR.filter { it.endsWith(WIP_SPOKEN) }
         const val FIRST_PARAGRAPH = "First paragraph of the reply."
 
         /** Layout rounds to whole pixels, and a wrap would cost a whole target. */

@@ -16,11 +16,15 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.Base64
 
+interface SpeechSynthesizer {
+    suspend fun speak(key: VoiceSessionKey, cleanText: String): SpeechAudio
+}
+
 /**
  * Typed audio/wake routes over the connection-owned authenticated HTTP leg.
  * Payloads never log; response bytes are wiped by the caller's ownership.
  */
-class GatewayVoiceRepository(private val http: () -> GatewayHttp?) {
+class GatewayVoiceRepository(private val http: () -> GatewayHttp?) : SpeechSynthesizer {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun transcribe(key: VoiceSessionKey, audio: CapturedAudio): TranscriptionResult =
@@ -54,7 +58,7 @@ class GatewayVoiceRepository(private val http: () -> GatewayHttp?) {
         return if (text.isBlank()) TranscriptionResult.Silence else TranscriptionResult.Transcript(text)
     }
 
-    suspend fun speak(key: VoiceSessionKey, cleanText: String): SpeechAudio =
+    override suspend fun speak(key: VoiceSessionKey, cleanText: String): SpeechAudio =
         withContext(Dispatchers.IO) {
             val transport = http() ?: throw VoiceTransportException("Reconnect to the Gateway before using voice.")
             val payload = buildJsonObject { put("text", cleanText) }.toString()

@@ -10,6 +10,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
+interface SpeechPlayback {
+    suspend fun play(audio: SpeechAudio): Boolean
+    fun stop()
+}
+
 /**
  * One playback sequence owner. Every stop/cancel increments the sequence so a
  * stale completion cannot revive output — the Desktop voice-playback
@@ -19,7 +24,7 @@ import java.io.File
 class SpeechPlayer(
     context: Context,
     private val ioDispatcher: CoroutineDispatcher,
-) : AutoCloseable {
+) : SpeechPlayback, AutoCloseable {
     private val sequencer = PlaybackSequencer()
     private val mutex = Mutex()
     private val player: ExoPlayer = ExoPlayer.Builder(context).build()
@@ -35,7 +40,7 @@ class SpeechPlayer(
      * superseded. The temp file is deleted in finally; bytes are wiped by the
      * caller's ownership of [audio].
      */
-    suspend fun play(audio: SpeechAudio): Boolean = withContext(ioDispatcher) {
+    override suspend fun play(audio: SpeechAudio): Boolean = withContext(ioDispatcher) {
         val slot = sequencer.next()
         phase = Phase.Preparing
         val temp = File.createTempFile("speech", ".bin", voiceDir)
@@ -78,7 +83,7 @@ class SpeechPlayer(
     }
 
     /** Immediate stop: invalidates the live slot and any pending fallback. */
-    fun stop() {
+    override fun stop() {
         sequencer.invalidate()
         phase = Phase.Idle
         runCatching { player.stop() }

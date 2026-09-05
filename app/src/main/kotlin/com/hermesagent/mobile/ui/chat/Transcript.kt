@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -104,6 +105,7 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.ScaffoldRow
+import com.hermesagent.mobile.ui.common.WipPill
 import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
 import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesAnsiInk
@@ -150,6 +152,8 @@ fun Transcript(
     onShowEarlier: (() -> Unit)? = null,
     onBranchFromReply: ((entryId: String) -> Unit)? = null,
     onRegenerateReply: ((entryId: String) -> Unit)? = null,
+    readAloud: ReadAloudUiState = ReadAloudUiState.Idle,
+    onToggleReadAloud: ((entryId: String) -> Unit)? = null,
     /**
      * Whether an empty transcript is the *intro splash* rather than the plain
      * note. Desktop decides this outside the thread too and hands the component
@@ -199,7 +203,26 @@ fun Transcript(
         items(items = entries, key = { it.id }) { entry ->
             when (entry) {
                 is UserTurn -> UserBubble(entry, imageLoader)
-                is AssistantTurn -> AssistantProse(entry, isWorking, onBranchFromReply, if (entry.id == newestAssistantEntryId) onRegenerateReply else null)
+                is AssistantTurn -> AssistantProse(
+                    turn = entry,
+                    isWorking = isWorking,
+                    onBranchFromReply = onBranchFromReply,
+                    onRegenerateReply = if (entry.id == newestAssistantEntryId) onRegenerateReply else null,
+                    readAloudControl = when (val state = readAloud) {
+                        ReadAloudUiState.Idle -> ReadAloudControl.Idle
+                        is ReadAloudUiState.Preparing -> if (state.entryId == entry.id) {
+                            ReadAloudControl.Preparing
+                        } else {
+                            ReadAloudControl.Blocked
+                        }
+                        is ReadAloudUiState.Speaking -> if (state.entryId == entry.id) {
+                            ReadAloudControl.Speaking
+                        } else {
+                            ReadAloudControl.Blocked
+                        }
+                    },
+                    onToggleReadAloud = onToggleReadAloud,
+                )
                 is ReasoningActivity -> ReasoningRow(entry)
                 is ToolActivity -> ToolRow(entry)
             }
@@ -533,6 +556,8 @@ private fun AssistantProse(
     isWorking: Boolean,
     onBranchFromReply: ((entryId: String) -> Unit)?,
     onRegenerateReply: ((entryId: String) -> Unit)?,
+    readAloudControl: ReadAloudControl = ReadAloudControl.Idle,
+    onToggleReadAloud: ((entryId: String) -> Unit)? = null,
 ) {
     val blocks = remember(turn.markdown) { parseMarkdown(turn.markdown) }
     // Whether this turn draws any prose at all. One gate, read twice below, so
@@ -598,7 +623,16 @@ private fun AssistantProse(
         // line as prose, and text on screen with no way to lift it is the bug
         // this control exists to fix.
         if (hasProse) {
-            ReplyActions(reply, turn.id, isWorking, turn.streaming, onBranchFromReply, onRegenerateReply)
+            ReplyActions(
+                reply = reply,
+                entryId = turn.id,
+                isWorking = isWorking,
+                streaming = turn.streaming,
+                onBranchFromReply = onBranchFromReply,
+                onRegenerateReply = onRegenerateReply,
+                readAloudControl = readAloudControl,
+                onToggleReadAloud = onToggleReadAloud,
+            )
         }
     }
 }
@@ -635,12 +669,13 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * phone is worse at than a mouse — the system Copy in the selection toolbar
  * still handles "copy this sentence".
  *
- * The bar is rendered in the same order as Desktop's: Branch, Copy, Read aloud,
- * Refresh (`assistant-message.tsx:625-642` @ `3ca096de`).
- * Branch is live over `session.branch` via [onBranchFromReply]. Refresh is live
- * over `prompt.submit` with `truncate_before_row_id` via [onRegenerateReply],
- * enabled only on the newest reply (#69). Read aloud remains behind the `WIP`
- * chip because it needs speech synthesis and a playback store.
+ * All four controls are live in Desktop's order: Branch, Copy, Read aloud,
+ * Refresh (`assistant-message.tsx:625-642` @ `3ca096de`). Branch uses
+ * `session.branch` through [onBranchFromReply], Copy copies the rendered reply,
+ * and Read aloud uses the Gateway's `POST api/audio/speak` with Preparing,
+ * Speaking and Idle states and one playback at a time. Refresh uses
+ * `prompt.submit` with `truncate_before_row_id` through [onRegenerateReply] on
+ * the newest reply only (#69).
  */
 @Composable
 private fun ReplyActions(
@@ -650,6 +685,8 @@ private fun ReplyActions(
     streaming: Boolean,
     onBranchFromReply: ((entryId: String) -> Unit)?,
     onRegenerateReply: ((entryId: String) -> Unit)?,
+    readAloudControl: ReadAloudControl = ReadAloudControl.Idle,
+    onToggleReadAloud: ((entryId: String) -> Unit)? = null,
 ) {
     val tokens = HermesTheme.tokens
     val platformContext = LocalContext.current
@@ -691,6 +728,24 @@ private fun ReplyActions(
         }
     }
 
+    val readAloudIcon = when (readAloudControl) {
+        ReadAloudControl.Preparing -> HermesIcon.Loading
+        ReadAloudControl.Speaking -> HermesIcon.Mute
+        ReadAloudControl.Idle,
+        ReadAloudControl.Blocked,
+        -> HermesIcon.Unmute
+    }
+    val readAloudLabel = when (readAloudControl) {
+        ReadAloudControl.Preparing -> "Preparing audio..."
+        ReadAloudControl.Speaking -> "Stop reading"
+        ReadAloudControl.Idle,
+        ReadAloudControl.Blocked,
+        -> READ_ALOUD
+    }
+    val readAloudEnabled = readAloudControl != ReadAloudControl.Preparing &&
+        readAloudControl != ReadAloudControl.Blocked &&
+        canCopy && onToggleReadAloud != null
+
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
@@ -720,7 +775,13 @@ private fun ReplyActions(
             // control that is already focusable.
             modifier = Modifier.semantics { customActions = replyActions },
         )
-        ComingSoonIconAction(HermesIcon.Unmute, READ_ALOUD)
+        HermesIconButton(
+            icon = readAloudIcon,
+            contentDescription = readAloudLabel,
+            onClick = { onToggleReadAloud?.invoke(entryId) },
+            enabled = readAloudEnabled,
+            tint = tokens.scaffoldMeta,
+        )
         HermesIconButton(
             icon = HermesIcon.Refresh,
             contentDescription = REFRESH_REPLY,
@@ -736,9 +797,8 @@ private const val BRANCH_IN_NEW_CHAT = "Branch in new chat"
 
 /**
  * `Read aloud` (`i18n/en.ts:3260` @ `3ca096de`) — the idle label of Desktop's
- * `ReadAloudButton`, which is the only one of its three this app can render:
- * `Preparing audio...` and `Stop reading` (`:3258-3259`) are states a control
- * that never starts cannot reach.
+ * `ReadAloudButton`, whose Preparing and Speaking states use `Preparing
+ * audio...` and `Stop reading` (`:3258-3259`) here too.
  */
 private const val READ_ALOUD = "Read aloud"
 

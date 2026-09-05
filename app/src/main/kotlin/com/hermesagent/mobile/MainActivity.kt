@@ -89,6 +89,8 @@ class MainActivity : ComponentActivity() {
             draftScope = app.appScope,
             composerQueueController = app.composerQueueController,
             switchComposerQueueScope = app::switchComposerQueueScope,
+            replySpeaker = app.replySpeaker,
+            connectionGeneration = { app.gatewayConnection.currentGeneration },
         )
     }
     private val sshViewModel: SshViewModel by viewModels {
@@ -437,6 +439,7 @@ class MainActivity : ComponentActivity() {
                     onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
                     onRemoveAttachment = chatViewModel::removeAttachment,
                     onShowEarlierMessages = chatViewModel::showEarlierMessages,
+                    onToggleReadAloud = chatViewModel::toggleReadAloud,
                     onToggleDictation = { chatViewModel.requestToggleDictation() },
                     onToggleConversation = chatViewModel::toggleVoiceConversation,
                     onToggleVoiceMute = chatViewModel::toggleVoiceMute,

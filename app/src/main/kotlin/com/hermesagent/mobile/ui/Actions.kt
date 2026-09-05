@@ -88,8 +88,8 @@ class ChatActions(
     val onInsertText: (String) -> Unit = {},
     val onPickFiles: () -> Unit = {},
     val onRemoveAttachment: (String) -> Unit = {},
-    /** `Show earlier messages`: ask the Gateway for the page before this one. */
     val onShowEarlierMessages: () -> Unit = {},
+    val onToggleReadAloud: (String) -> Unit = {},
     val onToggleDictation: () -> Unit = {},
     val onToggleConversation: () -> Unit = {},
     val onToggleVoiceMute: () -> Unit = {},

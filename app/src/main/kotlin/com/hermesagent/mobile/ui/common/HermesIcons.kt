@@ -153,6 +153,18 @@ enum class HermesIcon(val glyph: String) {
     Refresh("\uEB37"),
 
     /**
+     * Read aloud. Desktop's `disabled={isPreparing}` renders lucide `Loader2Icon`
+     * (`assistant-message.tsx:697` @ `3ca096de`), which is `loading` here.
+     */
+    Loading("\uEB19"),
+
+    /**
+     * Read aloud. Desktop's speaking glyph is lucide `VolumeXIcon`
+     * (`assistant-message.tsx:697` @ `3ca096de`), which is `mute` here.
+     */
+    Mute("\uEB24"),
+
+    /**
      * Read aloud. Desktop's idle glyph is lucide `AudioLines`
      * (`assistant-message.tsx:697` @ `3ca096de`), a waveform Codicons 0.0.45
      * does not ship at all.

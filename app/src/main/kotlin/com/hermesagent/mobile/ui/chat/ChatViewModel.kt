@@ -5,8 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
-import com.hermesagent.mobile.data.voice.VoiceUiState
+import com.hermesagent.mobile.data.voice.ReplySpeaker
 import com.hermesagent.mobile.data.voice.TranscriptionResult
+import com.hermesagent.mobile.data.voice.VoiceSessionKey
+import com.hermesagent.mobile.data.voice.VoiceTransportException
+import com.hermesagent.mobile.data.voice.VoiceUiState
 import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.CompletionResult
 import com.hermesagent.mobile.data.composer.CompletionTrigger
@@ -75,6 +78,7 @@ import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
 import com.hermesagent.mobile.data.session.ContextBreakdown
+import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ContextMeterState
 import com.hermesagent.mobile.data.session.SessionUsage
 import com.hermesagent.mobile.data.gateway.PendingInputKey
@@ -272,8 +276,17 @@ enum class ArchivedPoolState {
     val needsRead: Boolean get() = this == Idle || this == Failed
 }
 
+sealed interface ReadAloudUiState {
+    data object Idle : ReadAloudUiState
+    data class Preparing(val entryId: String) : ReadAloudUiState
+    data class Speaking(val entryId: String) : ReadAloudUiState
+}
+
+enum class ReadAloudControl { Idle, Preparing, Speaking, Blocked }
+
 data class ChatUiState(
     val voice: VoiceUiState = VoiceUiState.Idle,
+    val readAloud: ReadAloudUiState = ReadAloudUiState.Idle,
     val sessionRows: List<SessionListRow> = emptyList(),
     val projects: List<ProjectSummary> = emptyList(),
     val projectsAvailable: Boolean? = null,
@@ -388,6 +401,8 @@ internal class ChatViewModel(
     /** Saved profile scope. Declared late so existing positional callers keep working. */
     private val profileScopeStore: ProfileScopeStore = TransientProfileScopeStore(),
     private val profileRepository: ProfileRepository = NoProfileRepository,
+    private val replySpeaker: ReplySpeaker? = null,
+    private val connectionGeneration: () -> Long = { 0L },
     /** Reads happen off Main; tests inject the virtual scheduler. */
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -440,6 +455,8 @@ internal class ChatViewModel(
      * — or fails — must not turn every subsequent signal into another RPC.
      */
     private val contextBreakdownAttempted = mutableSetOf<String>()
+    private val readAloudState = MutableStateFlow<ReadAloudUiState>(ReadAloudUiState.Idle)
+    private var readAloudJob: Job? = null
     private val notice = MutableStateFlow<String?>(null)
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
@@ -578,10 +595,12 @@ internal class ChatViewModel(
             ) { composerState, voiceState, navigation, meterBundle, chrome ->
                 ComposerBundle(composerState, voiceState, navigation, meterBundle, chrome)
             },
-        ) { windowBundle, composerBundle -> composerBundle to windowBundle },
+            readAloudState,
+        ) { windowBundle, composerBundle, readAloud -> Triple(composerBundle, windowBundle, readAloud) },
     ) { cacheState, searchState, draftText, activeId, bundle ->
         val composerBundle = bundle.first
         val imageLoader = bundle.second.imageLoader
+        val readAloud = bundle.third
         val navigation = composerBundle.navigation
         val voiceState = composerBundle.voice
         val meterBundle = composerBundle.contextMeter
@@ -710,6 +729,7 @@ internal class ChatViewModel(
 
         ChatUiState(
             voice = voiceState,
+            readAloud = readAloud,
             sessionRows = buildSessionRows(
                 sessions = scopedSessions,
                 nowMillis = clock(),
@@ -2486,6 +2506,60 @@ internal class ChatViewModel(
         }
     }
 
+    fun toggleReadAloud(entryId: String) {
+        val current = readAloudState.value
+        if (current is ReadAloudUiState.Speaking && current.entryId == entryId) {
+            replySpeaker?.stop()
+            readAloudJob?.cancel()
+            readAloudState.value = ReadAloudUiState.Idle
+            return
+        }
+        if (current is ReadAloudUiState.Preparing || current is ReadAloudUiState.Speaking) {
+            return
+        }
+
+        val sessionId = activeSessionId.value ?: return
+        val transcript = cache.state.value.transcripts[sessionId] ?: return
+        val entry = transcript.find { it.id == entryId } as? AssistantTurn ?: return
+        if (entry.markdown.isBlank()) return
+
+        readAloudState.value = ReadAloudUiState.Preparing(entryId)
+        readAloudJob = viewModelScope.launch {
+            val key = VoiceSessionKey(
+                connectionGeneration = connectionGeneration(),
+                durableSessionId = sessionId
+            )
+            try {
+                replySpeaker?.speak(key, entry.markdown) {
+                    if (readAloudState.value is ReadAloudUiState.Preparing && readAloudOwns(entryId)) {
+                        readAloudState.value = ReadAloudUiState.Speaking(entryId)
+                    }
+                }
+                if (readAloudOwns(entryId)) {
+                    readAloudState.value = ReadAloudUiState.Idle
+                }
+            } catch (e: VoiceTransportException) {
+                if (readAloudOwns(entryId)) {
+                    readAloudState.value = ReadAloudUiState.Idle
+                    notice.value = "Read aloud failed. ${e.safeMessage}"
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                if (readAloudOwns(entryId)) {
+                    readAloudState.value = ReadAloudUiState.Idle
+                    notice.value = "Read aloud failed. Check the Gateway and try again."
+                }
+            }
+        }
+    }
+
+    private fun readAloudOwns(entryId: String): Boolean = when (val state = readAloudState.value) {
+        is ReadAloudUiState.Preparing -> state.entryId == entryId
+        is ReadAloudUiState.Speaking -> state.entryId == entryId
+        ReadAloudUiState.Idle -> false
+    }
+
     /** Engine hook: surface a failed transcription as state, never as silence. */
     fun reportDictationFailure(message: String) {
         if (voice.value is VoiceUiState.DictationTranscribing || voice.value is VoiceUiState.DictationRecording) {
@@ -3124,6 +3198,7 @@ internal class ChatViewModel(
     }
 
     override fun onCleared() {
+        replySpeaker?.stop()
         // Attachment bytes are memory-only by contract: nothing survives the
         // ViewModel, and process recreation shows "unavailable" rather than a
         // stale grant.
@@ -3568,6 +3643,8 @@ internal class ChatViewModel(
             draftScope: CoroutineScope,
             composerQueueController: ComposerQueueController = transientQueueController(),
             switchComposerQueueScope: suspend (ComposerQueueScope) -> Unit = {},
+            replySpeaker: ReplySpeaker? = null,
+            connectionGeneration: () -> Long = { 0L },
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -3587,6 +3664,8 @@ internal class ChatViewModel(
                         applicationDraftScope = draftScope,
                         composerQueueController = composerQueueController,
                         switchComposerQueueScope = switchComposerQueueScope,
+                        replySpeaker = replySpeaker,
+                        connectionGeneration = connectionGeneration,
                         composerHistoryController = ComposerHistoryController(
                             cache,
                             SavedStateComposerHistoryBrowseStore(extras.createSavedStateHandle()),
