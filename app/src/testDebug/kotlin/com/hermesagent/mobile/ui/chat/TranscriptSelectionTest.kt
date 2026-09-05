@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithText
@@ -115,6 +116,7 @@ class TranscriptSelectionTest {
     private fun launch(
         transcript: List<TranscriptEntry> = reply(),
         onBranchFromReply: ((entryId: String) -> Unit)? = null,
+        onRegenerateReply: ((entryId: String) -> Unit)? = null,
         isWorking: Boolean = false,
     ) {
         state = ChatUiState(
@@ -132,11 +134,14 @@ class TranscriptSelectionTest {
                 CompositionLocalProvider(
                     LocalTextContextMenuToolbarProvider provides contextMenu,
                 ) {
-            ChatScreen(
-                state = state,
-                actions = ChatActions(onBranchFromReply = onBranchFromReply),
-                onOpenSettings = {},
-            )
+                    ChatScreen(
+                        state = state,
+                        actions = ChatActions(
+                            onBranchFromReply = onBranchFromReply,
+                            onRegenerateReply = onRegenerateReply,
+                        ),
+                        onOpenSettings = {},
+                    )
                 }
             }
         }
@@ -144,7 +149,10 @@ class TranscriptSelectionTest {
     }
 
     /** One reply worth copying, plus the scaffolding that must stay out of it. */
-    private fun reply(markdown: String = REPLY_MARKDOWN): List<TranscriptEntry> = listOf(
+    private fun reply(
+        markdown: String = REPLY_MARKDOWN,
+        streaming: Boolean = false,
+    ): List<TranscriptEntry> = listOf(
         UserTurn(id = "$SESSION-u1", text = "summarise the change", atMillis = NOW),
         ToolActivity(
             id = "$SESSION-t1",
@@ -153,7 +161,7 @@ class TranscriptSelectionTest {
             state = ToolState.Done,
             argsText = """{"path":"notes.md"}""",
         ),
-        AssistantTurn(id = "$SESSION-a1", markdown = markdown, atMillis = NOW),
+        AssistantTurn(id = "$SESSION-a1", markdown = markdown, atMillis = NOW, streaming = streaming),
     )
 
     // ── Selection ─────────────────────────────────────────────────────────
@@ -455,7 +463,7 @@ class TranscriptSelectionTest {
     }
 
     @Test
-    fun `the action bar renders Desktop's two remaining controls, disabled and marked`() {
+    fun `the action bar renders Desktop's one remaining control, disabled and marked`() {
         launch()
 
         val floor = HermesSpacing().touchTarget
@@ -466,7 +474,7 @@ class TranscriptSelectionTest {
                 .assertHeightIsAtLeast(floor)
         }
         UNBUILT_ACTIONS.forEach { name ->
-            // The two of those this build cannot perform.
+            // The one of those this build cannot perform.
             // Whole, not matched: `onNodeWithContentDescription` tests the
             // description list with `any { }`, so a control that also named
             // itself into the merge would announce twice and still be found.
@@ -547,6 +555,52 @@ class TranscriptSelectionTest {
         compose.onNodeWithContentDescription("Reply copied").assertDoesNotExist()
     }
 
+    @Test
+    fun `refresh control is enabled when not streaming and invokes the callback for newest reply`() {
+        var tapped = false
+        launch(
+            transcript = reply(),
+            onRegenerateReply = { entryId ->
+                assertEquals("${SESSION}-a1", entryId)
+                tapped = true
+            },
+        )
+
+        compose.onNodeWithContentDescription("Refresh")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        assertTrue(tapped)
+    }
+
+    @Test
+    fun `refresh control is disabled for older reply`() {
+        launch(
+            transcript = reply() + listOf(AssistantTurn("${SESSION}-a2", "newer", NOW)),
+            onRegenerateReply = { },
+        )
+
+        compose.onAllNodesWithContentDescription("Refresh")[0]
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun `refresh control is disabled when streaming`() {
+        launch(
+            transcript = reply(streaming = true),
+            onRegenerateReply = { },
+        )
+
+        compose.onNodeWithContentDescription("Refresh")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+    }
+
     /**
      * Records what Compose offers the platform selection toolbar.
      *
@@ -581,10 +635,10 @@ class TranscriptSelectionTest {
             "Branch in new chat",
             "Copy reply",
             "Read aloud. Work in progress.",
-            "Refresh. Work in progress.",
+            "Refresh",
         )
 
-        /** The two of those this build cannot perform. */
+        /** The one of those this build cannot perform. */
         val UNBUILT_ACTIONS = DESKTOP_ACTION_BAR.filter { it.endsWith(WIP_SPOKEN) }
         const val FIRST_PARAGRAPH = "First paragraph of the reply."
 

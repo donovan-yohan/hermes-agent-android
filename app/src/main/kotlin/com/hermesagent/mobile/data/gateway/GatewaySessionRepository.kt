@@ -223,6 +223,12 @@ interface GatewaySessionRepository {
         error("Slash completion is not implemented by this repository.")
     suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult =
         error("Path completion is not implemented by this repository.")
+    suspend fun regenerate(
+        durableId: String,
+        text: String,
+        truncateBeforeRowId: TranscriptRowId,
+        truncateBeforeEntryId: String,
+    ): GatewaySubmitOutcome = error("Regenerate is not implemented by this repository.")
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
     /** A queue drain opts into the Gateway's non-interrupting busy behavior. */
     suspend fun submit(durableId: String, text: String, queued: Boolean): GatewaySubmitOutcome =
@@ -2699,6 +2705,37 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    override suspend fun regenerate(
+        durableId: String,
+        text: String,
+        truncateBeforeRowId: TranscriptRowId,
+        truncateBeforeEntryId: String,
+    ): GatewaySubmitOutcome {
+        val prompt = text.trim()
+        val interruptEpoch = submitInterruptEpoch(durableId)
+        return submitMutexes.withLock(durableId) {
+            require(prompt.isNotEmpty())
+            val binding = ensureRuntime(durableId)
+            val connection = connectionSnapshot()
+            val currentTranscript = cache.transcript(durableId)
+            val prefixCutoff = currentTranscript.indexOfFirst { it.id == truncateBeforeEntryId }.let { index ->
+                if (index >= 0) index else currentTranscript.indexOfFirst { it.rowId == truncateBeforeRowId }
+            }
+            val optimisticTranscriptPrefix = if (prefixCutoff >= 0) currentTranscript.take(prefixCutoff) else null
+            submitInternalLocked(
+                binding,
+                connection,
+                prompt,
+                prompt,
+                queued = false,
+                gatewayQueueMergeable = true,
+                interruptEpoch = interruptEpoch,
+                truncateBeforeRowId = truncateBeforeRowId,
+                optimisticTranscriptPrefix = optimisticTranscriptPrefix,
+            )
+        }
+    }
+
     private suspend fun submitInternalLocked(
         binding: SessionBinding,
         connection: ConnectionSnapshot,
@@ -2707,6 +2744,8 @@ internal class LiveGatewaySessionRepository(
         queued: Boolean,
         gatewayQueueMergeable: Boolean,
         interruptEpoch: Long,
+        truncateBeforeRowId: TranscriptRowId? = null,
+        optimisticTranscriptPrefix: List<TranscriptEntry>? = null,
     ): GatewaySubmitOutcome {
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
@@ -2739,7 +2778,11 @@ internal class LiveGatewaySessionRepository(
             val previousTranscript = cache.transcript(binding.durableId)
             val optimisticUser = UserTurn("local-user-${sequence.incrementAndGet()}", optimisticText, now)
             optimisticUserByRuntime[binding.runtimeId] = optimisticUser
-            cache.appendEntry(binding.durableId, optimisticUser)
+            if (optimisticTranscriptPrefix != null) {
+                cache.setTranscript(binding.durableId, optimisticTranscriptPrefix + optimisticUser)
+            } else {
+                cache.appendEntry(binding.durableId, optimisticUser)
+            }
             clearProgress(binding.durableId, binding.runtimeId)
             previousSession?.let { session ->
                 cache.upsertSession(
@@ -2758,7 +2801,7 @@ internal class LiveGatewaySessionRepository(
         try {
             return turnDispatchMutexes.withLock(binding.durableId) {
                 requireUninterruptedSubmit(binding.durableId, interruptEpoch)
-                requestPromptSubmit(connection, binding.runtimeId, wireText, queued)
+                requestPromptSubmit(connection, binding.runtimeId, wireText, queued, truncateBeforeRowId)
                 synchronized(stateLock) {
                     ensureCurrent(connection)
                     val stoppedBeforeAcknowledgement =
@@ -2828,6 +2871,7 @@ internal class LiveGatewaySessionRepository(
         runtimeId: String,
         prompt: String,
         queued: Boolean,
+        truncateBeforeRowId: TranscriptRowId? = null,
     ) {
         connection.client.request(
             "prompt.submit",
@@ -2835,6 +2879,11 @@ internal class LiveGatewaySessionRepository(
                 put("session_id", JsonPrimitive(runtimeId))
                 put("text", JsonPrimitive(prompt))
                 if (queued) put("queued", JsonPrimitive(true))
+                if (truncateBeforeRowId != null) {
+                    put("confirm_truncate", JsonPrimitive(true))
+                    put("truncate_before_row_id", JsonPrimitive(truncateBeforeRowId.value))
+                    put("confirm_empty_truncate", JsonPrimitive(true))
+                }
             },
         )
     }

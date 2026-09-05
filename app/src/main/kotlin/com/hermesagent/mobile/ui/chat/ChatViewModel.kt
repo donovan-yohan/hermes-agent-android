@@ -68,6 +68,11 @@ import com.hermesagent.mobile.data.gateway.BranchPlan
 import com.hermesagent.mobile.data.gateway.deriveBranchCount
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
+import com.hermesagent.mobile.data.gateway.RegeneratePlan
+import com.hermesagent.mobile.data.gateway.planRegenerate
+import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
 import com.hermesagent.mobile.data.session.ContextBreakdown
 import com.hermesagent.mobile.data.session.ContextMeterState
@@ -1806,6 +1811,104 @@ internal class ChatViewModel(
                 throw cancelled
             } catch (_: Throwable) {
                 notice.value = "Branch failed. Check the Gateway and try again."
+            }
+        }
+    }
+
+    fun regenerateReply(entryId: String) {
+        val sessionId = activeSessionId.value ?: return
+
+        viewModelScope.launch {
+            fun setInterruptNotice(interrupt: GatewayInterruptOutcome) {
+                when (interrupt) {
+                    GatewayInterruptOutcome.Interrupted -> Unit
+                    GatewayInterruptOutcome.NeedsInput -> notice.value = "Hermes needs a response. Answer the request above."
+                    else -> notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                }
+            }
+
+            suspend fun interruptForRefresh(): Boolean {
+                val outcome = try {
+                    repository.requestInterrupt(sessionId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    if (activeSessionId.value == sessionId) {
+                        notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                    }
+                    return false
+                }
+                if (outcome == GatewayInterruptOutcome.Interrupted) return true
+                if (activeSessionId.value == sessionId) setInterruptNotice(outcome)
+                return false
+            }
+
+            try {
+                val transcript = cache.transcript(sessionId)
+                val plan = planRegenerate(transcript, entryId)
+                if (plan !is RegeneratePlan.Ready) return@launch
+
+                if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
+                    if (activeSessionId.value == sessionId) {
+                        notice.value = "Connect to a Gateway before refreshing this reply."
+                    }
+                    return@launch
+                }
+
+                var targetRowId = plan.sourceRowId
+                if (targetRowId == null) {
+                    val authoritativeHistory = repository.fetchSessionHistory(sessionId)
+                    if (activeSessionId.value != sessionId) return@launch
+                    val matchingUsers = authoritativeHistory.filterIsInstance<UserTurn>().filter { it.rowId != null && it.text.trim() == plan.sourceText.trim() }
+                    if (matchingUsers.size == 1) {
+                        targetRowId = matchingUsers.first().rowId
+                    } else if (matchingUsers.size > 1) {
+                        val lastDurableUserTurn = authoritativeHistory.findLast { it is UserTurn && it.rowId != null }
+                        if (plan.sourceIsLastUserTurn && matchingUsers.last() == lastDurableUserTurn) {
+                            targetRowId = matchingUsers.last().rowId
+                        }
+                    }
+                }
+
+                if (targetRowId == null) {
+                    if (activeSessionId.value == sessionId) notice.value =
+                        "Refresh could not find this turn in the session history. Reopen the session and try again."
+                    return@launch
+                }
+
+                val sessionStatus = cache.session(sessionId)?.status
+                if (sessionStatus == SessionStatus.NeedsInput) {
+                    if (activeSessionId.value == sessionId) {
+                        notice.value = "Hermes needs a response. Answer the request above."
+                    }
+                    return@launch
+                }
+                if (sessionStatus == SessionStatus.Working || sessionStatus == SessionStatus.Stalled) {
+                    if (!interruptForRefresh()) return@launch
+                }
+
+                var retries = 1
+                while (true) {
+                    try {
+                        repository.regenerate(sessionId, plan.sourceText, targetRowId, plan.sourceEntryId)
+                        break
+                    } catch (e: GatewayRpcException) {
+                        // Match the repository's own refusal ("Hermes is already working in this session.") and the Gateway's 4090 busy refusal.
+                        val isBusy = e.message?.contains("already working", ignoreCase = true) == true ||
+                            e.message?.contains("busy", ignoreCase = true) == true
+                        if (retries > 0 && isBusy) {
+                            retries--
+                            if (!interruptForRefresh()) return@launch
+                        } else {
+                            if (activeSessionId.value == sessionId) notice.value = "Regenerate failed. Check the Gateway and try again."
+                            break
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                if (activeSessionId.value == sessionId) notice.value = "Regenerate failed. Check the Gateway and try again."
             }
         }
     }
