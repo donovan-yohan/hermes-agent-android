@@ -52,6 +52,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -224,6 +225,46 @@ class GatewaySessionRepositoryTest {
         val unknownParams = rpc.call("session.create").params
         assertFalse("reasoning_effort" in unknownParams)
         assertFalse("fast" in unknownParams)
+    }
+
+
+    @Test
+    fun `branchSession sends correct params and upserts response`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            branchResult = """{"session_id":"runtime-branch","stored_session_id":"durable-branch","session":{"id":"durable-branch","title":"Branch","running":false,"archived":false},"messages":[{"role":"user","text":"hello"}]}"""
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a") // to bind runtime-a
+
+        val branchId = repository.branchSession("durable-a", 3)
+        runCurrent()
+
+        val paramsWithCount = rpc.calls.last { it.method == "session.branch" }.params
+        assertEquals("runtime-a", paramsWithCount.string("session_id"))
+        assertEquals(3, (paramsWithCount["count"] as JsonPrimitive).content.toInt())
+        assertEquals("durable-branch", branchId)
+
+        val cachedSession = cache.session("durable-branch")
+        assertNotNull(cachedSession)
+        assertEquals("Branch", cachedSession?.title)
+
+        val transcript = cache.transcript("durable-branch")
+        assertEquals(1, transcript.size)
+        assertEquals("hello", (transcript.first() as UserTurn).text)
+
+        // without count
+        repository.branchSession("durable-a", null)
+        val paramsWithoutCount = rpc.calls.last { it.method == "session.branch" }.params
+        assertEquals("runtime-a", paramsWithoutCount.string("session_id"))
+        assertFalse("count" in paramsWithoutCount)
     }
 
     @Test
@@ -6247,6 +6288,7 @@ class GatewaySessionRepositoryTest {
         var resumeFailures = 0
         var completeDuringSubmit = false
         var createResult = CREATE
+        var branchResult = """{}"""
         var resumeA = RESUME_A
         var activateResult = "{}"
         var historyResult = """{"messages":[],"count":0}"""
@@ -6314,6 +6356,7 @@ class GatewaySessionRepositoryTest {
                 }
                 "session.history" -> historyResponse?.await() ?: json(historyResult)
                 "session.create" -> json(createResult)
+                "session.branch" -> json(branchResult)
                 "model.options" -> modelOptionsResponse?.await() ?: json(modelOptionsResult)
                 "config.get" -> when (params.string("key")) {
                     "provider" -> json(providerResult)

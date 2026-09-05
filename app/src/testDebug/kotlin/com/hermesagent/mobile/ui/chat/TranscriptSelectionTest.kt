@@ -20,6 +20,7 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -111,14 +112,18 @@ class TranscriptSelectionTest {
         get() = clipboard.primaryClip?.takeIf { it.itemCount > 0 }
             ?.getItemAt(0)?.text?.toString()
 
-    private fun launch(transcript: List<TranscriptEntry> = reply()) {
+    private fun launch(
+        transcript: List<TranscriptEntry> = reply(),
+        onBranchFromReply: ((entryId: String) -> Unit)? = null,
+        isWorking: Boolean = false,
+    ) {
         state = ChatUiState(
             activeSession = SessionSummary(
                 id = SESSION,
                 title = "Selection",
                 preview = "",
                 lastActiveAtMillis = NOW,
-                status = SessionStatus.Idle,
+                status = if (isWorking) SessionStatus.Working else SessionStatus.Idle,
             ),
             transcript = transcript,
         )
@@ -127,7 +132,11 @@ class TranscriptSelectionTest {
                 CompositionLocalProvider(
                     LocalTextContextMenuToolbarProvider provides contextMenu,
                 ) {
-                    ChatScreen(state = state, actions = ChatActions(), onOpenSettings = {})
+            ChatScreen(
+                state = state,
+                actions = ChatActions(onBranchFromReply = onBranchFromReply),
+                onOpenSettings = {},
+            )
                 }
             }
         }
@@ -404,10 +413,47 @@ class TranscriptSelectionTest {
     /**
      * Desktop mounts four controls under every assistant reply, in this order:
      * Branch, Copy, Read aloud, Refresh
-     * (`assistant-message.tsx:625-642` @ `3ca096de`). Three have no
-     * implementation here, so they ship visible, disabled and marked rather
-     * than absent (#101).
+     * (`assistant-message.tsx:625-642` @ `3ca096de`). Branch is live in this
+     * build; Read aloud and Refresh remain disabled behind a WIP chip.
      */
+    @Test
+    fun `branch control is enabled when not streaming and invokes the callback`() {
+        var tapped = false
+        launch(
+            transcript = reply(),
+            onBranchFromReply = { entryId ->
+                assertEquals("$SESSION-a1", entryId)
+                tapped = true
+            },
+        )
+
+        compose.onNodeWithContentDescription("Branch in new chat")
+            .assertIsEnabled()
+            .performClick()
+
+        assertTrue(tapped)
+    }
+
+    @Test
+    fun `without a handler the Branch control is disabled`() {
+        launch(
+            onBranchFromReply = null,
+        )
+        compose.onNodeWithContentDescription("Branch in new chat")
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a streaming reply's Branch control is disabled`() {
+        launch(
+            transcript = listOf(AssistantTurn("assistant-1", "response", 100, streaming = true)),
+            isWorking = false,
+            onBranchFromReply = {},
+        )
+        compose.onNodeWithContentDescription("Branch in new chat")
+            .assertIsNotEnabled()
+    }
+
     @Test
     fun `the action bar renders Desktop's other three controls, disabled and marked`() {
         launch()
@@ -531,7 +577,7 @@ class TranscriptSelectionTest {
          * rather than the markdown source, ledgered on the parity page.
          */
         val DESKTOP_ACTION_BAR = listOf(
-            "Branch in new chat. Work in progress.",
+            "Branch in new chat",
             "Copy reply",
             "Read aloud. Work in progress.",
             "Refresh. Work in progress.",

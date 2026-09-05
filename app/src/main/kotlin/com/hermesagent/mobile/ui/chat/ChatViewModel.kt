@@ -64,6 +64,8 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
+import com.hermesagent.mobile.data.gateway.BranchPlan
+import com.hermesagent.mobile.data.gateway.deriveBranchCount
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
@@ -1749,6 +1751,62 @@ internal class ChatViewModel(
         }
     }
 
+
+    fun branchFromReply(entryId: String) {
+        val sessionId = activeSessionId.value
+        if (sessionId == null || repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
+            notice.value = "Nothing to branch. Start or resume a chat before branching."
+            return
+        }
+        val activeIsIdle = cache.session(sessionId)?.status == SessionStatus.Idle
+        if (!activeIsIdle) {
+            notice.value = "Session busy. Stop the current turn before branching this chat."
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val authoritativeHistory = repository.fetchSessionHistory(sessionId)
+                if (activeSessionId.value != sessionId) {
+                    // Desktop aborts if session ownership drifted while the RPC
+                    // ran, so don't paint anything until this call returns.
+                    return@launch
+                }
+                val localTranscript = cache.transcript(sessionId)
+                val count = when (val plan = deriveBranchCount(localTranscript, authoritativeHistory, entryId)) {
+                    BranchPlan.Whole -> null
+                    is BranchPlan.Keep -> plan.count
+                    BranchPlan.Unlocatable -> {
+                        notice.value = "Nothing to branch. This message has no text to branch from."
+                        return@launch
+                    }
+                }
+
+                val createdControls = composer.value.controls
+                val createdCatalog = composer.value.catalog
+                val newId = repository.branchSession(sessionId, count)
+                if (activeSessionId.value != sessionId) {
+                    // Desktop aborts on drift after branching, so don't swap
+                    // composer state and don't switch to the result session.
+                    return@launch
+                }
+                flushDraft()
+                rehome(newId)
+                composer.value = ComposerUiState(
+                    catalog = createdCatalog,
+                    controls = createdControls,
+                    isLiveSession = true,
+                )
+                if (createdCatalog !is ComposerCatalogUiState.Ready) {
+                    refreshComposer(newId, retainControlsUntilSessionInfo = true)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Throwable) {
+                notice.value = "Branch failed. Check the Gateway and try again."
+            }
+        }
+    }
     fun renameSession(id: String, newTitle: String) {
         viewModelScope.launch {
             try {
