@@ -160,7 +160,7 @@ fun ComingSoonAction(label: String, modifier: Modifier = Modifier) {
  * [ComingSoonAction] where Desktop's control is an icon button rather than a
  * word — the assistant action bar's Branch / Read aloud / Refresh
  * (`components/assistant-ui/thread/assistant-message.tsx:625-642` @
- * `3ca096de`) and the inline diff's Copy.
+ * `3ca096de`).
  *
  * Same contract as its sibling: one spoken node ending in [WIP_SPOKEN], a
  * silent [WipPill] beside a disabled control, and the 48dp floor the icon
