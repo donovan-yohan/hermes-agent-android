@@ -12,8 +12,51 @@ produced, so a later pass can reproduce or replace it.
 | APK | `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`, installed with `adb -s emulator-5554 install -r` |
 | Package | `com.hermesagent.mobile.debug`, versionName `0.2.0-phase2` |
 | Device | `emulator-5554`, AVD `Pixel_10_Pro`, 1280×2856 @480dpi, Android 17 |
-| Backend | A Remote Gateway row labelled `QA Remote`, Hermes 0.21.0, profile `kame-qa` |
+| Backend | A Remote Gateway row, Hermes 0.21.0 |
+| Profile | `demo` (see below). The committed frames still show `kame-qa`; they predate it |
 | Captured | 2026-09-04; `sessions-light.png` and `sessions-dark.png` recaptured 2026-09-05 |
+
+### The `demo` profile
+
+The frames used to show `kame-qa`, an internal lane name, on a page meant to be
+public. A profile exists solely for these captures instead:
+
+```bash
+hermes profile create demo --clone-from kame-qa \
+  --description "Neutral demo profile used only for README media captures."
+# then ~/.hermes/profiles/demo/SOUL.md was replaced with a neutral identity
+```
+
+Cloning from an existing profile rather than starting empty is what makes the
+live turns work at all: `--clone-from` copies `config.yaml` and `.env`, so the
+provider configuration comes with it and no key had to be set up. It also copies
+`SOUL.md`, which is the part that had to go — the source profile's QA persona is
+what put a stray internal repository name into an earlier take's reply. The
+replacement says only that this is a general-purpose assistant, that it answers
+the question and stops, and that everything it writes may be published.
+
+**Revert, when these captures no longer need it:**
+
+```bash
+hermes profile delete demo
+```
+
+That is the whole footprint. No other profile was touched, the sticky default
+was left on its original profile, and the shared Gateway unit was never
+restarted — which it does not need to be: `profiles.list` calls
+`list_profiles()` inside the request handler
+(`tui_gateway/methods_profiles.py:22,264-268` at the pinned SHA), and
+`list_profiles()` scans the profiles directory on every call
+(`hermes_cli/profiles.py:1029,1064` — the only cache there counts skills, not
+profiles). So the roster is enumerated per request.
+
+That is the code's claim, not a measurement. `hermes profile list` confirms the
+profile exists on this host, but reading `profiles.list` off the Gateway needs a
+dashboard session cookie this pass does not have — `/api/status` answers 200
+unauthenticated, `/api/profiles` answers 401 `no_cookie` — and hunting for one
+is out of bounds. **The roster showing `demo` is therefore still owed as an
+observation from the app**, and will be confirmed in the drawer's profile sheet
+during the recapture.
 
 Screenshots were taken with:
 
@@ -157,7 +200,7 @@ frames, not a description of them working:
 | # | Defect | Fix |
 |---|---|---|
 | P0 | `switch-sessions.*` shows five pre-sweep internal task-id rows | Re-record both clips on the clean list, and never scroll past it |
-| P2 | The connection label `QA Remote` and the profile chip `kame-qa` are internal-lane names, visible in every drawer frame | Rename the connection to a neutral label; use a `demo` profile if one is cheap to make, and say so here if it is not |
+| P2 | The connection label and the profile chip in the committed frames are internal-lane names, visible in every drawer frame | Profile: **done** — the `demo` profile above replaces it. Connection: rename the saved row to `Home gateway` in the Gateways editor at recapture |
 | P2 | Every synthetic row previews `Reply with the single word pong.` under an unrelated title — visibly test residue | Re-seed the demo set with one short turn each whose prompt matches its title, then archive the pong rows |
 | P2 | `chat-light.png` clips the approval label to `Manua`; `chat-dark.png` clips the context meter; the collapsed reasoning row sits above the reply in one and below it in the other | Capture both chat frames from one session state; prefer a session whose context string is short enough not to clip, or record that none is and cite [#136](https://github.com/donovan-yohan/hermes-agent-android/issues/136) |
 | P2 | The status-bar clock is illegible in dark frames | Drive SystemUI demo mode for every capture (`sysui_demo_allowed`, then `clock hhmm 1200`, `battery level 100`, `network wifi level 4`; `exit` afterwards) |
