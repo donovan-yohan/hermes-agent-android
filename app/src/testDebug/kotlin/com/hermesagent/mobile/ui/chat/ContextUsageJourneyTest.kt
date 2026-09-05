@@ -6,7 +6,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -127,6 +129,31 @@ class ContextUsageJourneyTest {
                 node.config.getOrNull(SemanticsActions.OnClick)?.label == "Context usage"
             },
         )
+    }
+
+    /**
+     * A proportion with no count behind it speaks the proportion, and nothing
+     * else.
+     *
+     * `session.info` may carry `context_percent` and `context_max` without
+     * `context_used`. The ring still has something to draw, but the spoken
+     * reading used to default the missing figure to zero and say "0 of 200k,
+     * 40%" — two numbers contradicting the third, in the one place a screen
+     * reader gets the meter at all.
+     */
+    @Test
+    fun `a proportion with no token count speaks the proportion alone`() {
+        launch(
+            usage = SessionUsage(
+                contextUsed = null,
+                contextMax = 200_000,
+                contextPercent = 40,
+                model = "test-model",
+            ),
+        )
+
+        compose.onNodeWithContentDescription("40%").assertExists()
+        compose.onAllNodesWithContentDescription("0 of 200k, 40%").assertCountEquals(0)
     }
 
     /** No context window, no proportion: Desktop's own words are what is left. */

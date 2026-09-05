@@ -64,26 +64,49 @@ class WordmarkFitDeviceTest {
         assertNotNull(ResourcesCompat.getFont(context, R.font.collapse_bold))
     }
 
-    /** The face is the wordmark's whatever the preset asks for. */
+    /**
+     * The face is the wordmark's whatever the preset asks for — and it is
+     * Collapse, not whatever the platform hands back.
+     *
+     * The two halves are asserted differently on purpose. Comparing the two
+     * presets to each other only says they agree, which two identical platform
+     * fallbacks would also satisfy: if `res/font` failed to load, both runs
+     * would be Roboto and the equality would still hold. So `nous` is pinned to
+     * the advances read off the shipped file itself
+     * ([CollapseBoldFontTest.HERMES_EM], plus `.wordmark`'s own tracking on each
+     * of the six characters), which no fallback reproduces; `cyberpunk` — the
+     * preset that sets *both* theme families to a monospace — is then held to
+     * the same run, which is the claim about overriding the preset's sans.
+     */
     @Test
     fun `the monospace-everything preset still sets the wordmark in Collapse`() {
         var cyberpunk: Float by mutableStateOf(-1f)
         var nous: Float by mutableStateOf(-1f)
         compose.setContent {
             val measurer = rememberTextMeasurer()
+            val probePx = with(LocalDensity.current) { WORDMARK_PROBE_FONT_SIZE.toPx() }
             HermesTheme(AppearanceSelection("cyberpunk", HermesThemeMode.Dark)) {
-                cyberpunk = probeRun(measurer, HermesTheme.type.wordmark)
+                cyberpunk = probeRun(measurer, HermesTheme.type.wordmark) / probePx
             }
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
-                nous = probeRun(measurer, HermesTheme.type.wordmark)
+                nous = probeRun(measurer, HermesTheme.type.wordmark) / probePx
             }
         }
         compose.waitForIdle()
         assertTrue("nothing measured", cyberpunk > 0f)
+        val shipped = CollapseBoldFontTest.HERMES_EM +
+            INTRO_WORDMARK_LINES.first().length * CollapseBoldFontTest.WORDMARK_TRACKING_EM
+        assertEquals(
+            "HERMES measures ${nous}em, not the ${shipped}em the shipped Collapse Bold advances " +
+                "give it — the wordmark is being drawn in a platform fallback",
+            shipped,
+            nous,
+            EM_TOLERANCE,
+        )
         // `cyberpunk` sets both theme families to a monospace, so if the
         // wordmark took the preset's sans this run would be the wider of the
         // two rather than identical to `nous`'s.
-        assertEquals(nous, cyberpunk, 0.5f)
+        assertEquals(nous, cyberpunk, EM_TOLERANCE)
     }
 
     @Test
@@ -223,5 +246,13 @@ class WordmarkFitDeviceTest {
 
         /** A device pixel of rounding, generously in dp. */
         const val TOLERANCE_DP = 1f
+
+        /**
+         * Hinting and integer-pixel rounding on a 48px probe, in em. Wide
+         * enough to absorb both, far narrower than the gap to any fallback
+         * face: Roboto Bold sets the same six characters at roughly `4.0 em`
+         * before tracking against Collapse's `3.727`.
+         */
+        const val EM_TOLERANCE = 0.05f
     }
 }

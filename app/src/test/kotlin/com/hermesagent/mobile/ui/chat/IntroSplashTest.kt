@@ -161,6 +161,31 @@ class IntroSplashTest {
         assertEquals("", shortenWorktreePath(""))
     }
 
+    /**
+     * The splash's cwd goes through `displayWorktreePath` before it is
+     * shortened, which is the repo's one rule for the account name a path
+     * carries. Shortening alone would not do it: a shallow `/home/<account>`
+     * is already two segments and would render verbatim, in the surface most
+     * likely to end up in a screenshot.
+     */
+    @Test
+    fun `the home prefix is redacted before the tail is taken`() {
+        val rendered = shortenWorktreePath(displayWorktreePath("/home/someone/work/hermes-mobile"))
+        assertEquals("~/work/hermes-mobile", rendered)
+        assertTrue("a redacted path must keep its home mark", rendered.startsWith("~"))
+        assertFalse("the account segment must not survive", rendered.contains("someone"))
+
+        // macOS's own home, and a path deep enough that the tail rule still
+        // fires — the `~` survives that too, because it is the one part of the
+        // head that means something.
+        assertEquals(
+            "~/…/personal/hermes-mobile",
+            shortenWorktreePath(displayWorktreePath("/Users/someone/code/personal/hermes-mobile")),
+        )
+        // The shallow case shortening could never have covered.
+        assertEquals("~", shortenWorktreePath(displayWorktreePath("/home/someone")))
+    }
+
     private fun showing(
         enabled: Boolean = true,
         activeSessionId: String? = null,

@@ -89,11 +89,16 @@ fun ContextMeter(
     // them; now the row draws them, so the figures are what the description
     // carries. Desktop's own accessible name for the item (`en.ts:2963`) still
     // rides on `onClickLabel`, which is where the action a tap performs belongs.
-    val spoken = if (percent == null) {
-        state.label
-    } else {
-        ContextUsageCopy.spokenUsage(
-            compactNumber(state.usage.contextUsed ?: 0L),
+    // A percent with no `context_used` behind it is a real Gateway answer, and
+    // defaulting the missing figure to zero would have TalkBack read "0 of
+    // 200k, 40%" — two numbers that contradict the third. The percent alone is
+    // the whole of what is known.
+    val used = state.usage.contextUsed
+    val spoken = when {
+        percent == null -> state.label
+        used == null -> ContextUsageCopy.spokenPercent(percent)
+        else -> ContextUsageCopy.spokenUsage(
+            compactNumber(used),
             compactNumber(state.usage.contextMax ?: 0L),
             percent,
         )

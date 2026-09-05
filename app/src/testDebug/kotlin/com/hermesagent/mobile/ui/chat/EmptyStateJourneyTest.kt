@@ -158,6 +158,26 @@ class EmptyStateJourneyTest {
         compose.onNodeWithText("…/work/hermes-mobile").assertIsDisplayed()
     }
 
+    /**
+     * The rendered cwd carries no account name.
+     *
+     * A Gateway on a Linux or macOS host reports the host user's own home in
+     * every path, and the splash is the surface a screenshot is most likely to
+     * catch. `displayWorktreePath` — the rule the coding status row above the
+     * composer already applies — runs before the tail is taken, so what is
+     * drawn begins at `~`.
+     */
+    @Test
+    fun `the working directory a host reports is drawn from its home mark, not its account`() {
+        launch(
+            activeSessionId = "session-a",
+            worktreePath = "/home/someone/work/hermes-mobile",
+        )
+
+        compose.onNodeWithText("~/work/hermes-mobile").assertIsDisplayed()
+        compose.onAllNodesWithText("someone", substring = true).assertCountEquals(0)
+    }
+
     /** A fresh draft has neither, so Desktop's own case renders unchanged. */
     @Test
     fun `a fresh draft shows no project and no path`() {

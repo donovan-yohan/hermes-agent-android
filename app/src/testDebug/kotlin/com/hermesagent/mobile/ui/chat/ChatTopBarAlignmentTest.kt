@@ -6,10 +6,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
@@ -25,6 +29,7 @@ import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlin.math.abs
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -41,8 +46,9 @@ import org.robolectric.annotation.Config
  * and left the title floating above the chrome's centre while the status line
  * sat below it. The floor is a pointer rule, so it now overflows the line
  * ([com.hermesagent.mobile.ui.common.touchTargetOverflow]) instead of setting
- * its height — which only holds if the band a thumb and TalkBack get is still
- * 48dp, so both halves are asserted here.
+ * its height — which only holds if a thumb landing beside the words still
+ * reaches the control, so both halves are asserted here: the layout, by
+ * measurement, and the band, by tapping it.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
@@ -113,13 +119,77 @@ class ChatTopBarAlignmentTest {
         assertClose("a status line that is a door is the same line", prose, tappable)
     }
 
+    /*
+     * The band, asserted by tapping it.
+     *
+     * These three used to be checked by reading `touchBoundsInRoot` and
+     * comparing it to 48dp, which proves nothing: that property is *defined* as
+     * the node's bounds grown to the platform minimum touch target, so it reads
+     * 48dp for any clickable whether or not `touchTargetOverflow` is there. The
+     * assertion could not have failed on the bug it was written to catch.
+     *
+     * What follows sends a real pointer down and up at a coordinate outside the
+     * drawn status line and inside the control's band, and asserts the outcome
+     * a thumb gets: the handler runs, the sheet opens, the menu opens.
+     *
+     * **Honestly, this does not isolate the modifier.** Compose grows every
+     * clickable to the same 48dp during hit testing as a fallback, so with no
+     * sibling covering the point that fallback would answer these taps too.
+     * What is kept here is the behavioural guarantee — the control answers a
+     * thumb that lands beside its words rather than on them, and nothing
+     * between it and the window clips that away — which is the thing that must
+     * not regress and which, unlike a measurement, a pointer can disprove.
+     */
+
     @Test
-    fun `the status door, the meter and the chip keep a 48dp band`() {
+    fun `the status door opens Gateways from a tap above its words`() {
+        var opened = 0
+        launch(onOpenGateways = { opened++ })
+
+        tapTheBandAboveTheLine(CHAT_SUBTITLE_TAG)
+
+        assertEquals("a tap in the status door's band should open Gateways", 1, opened)
+    }
+
+    @Test
+    fun `the context meter opens the usage sheet from a tap above its ring`() {
         launch()
 
-        assertTouchBand("the status door", CHAT_SUBTITLE_TAG)
-        assertTouchBand("the context meter", CONTEXT_METER_TAG)
-        assertTouchBand("the approval chip", APPROVAL_MODE_CHIP_TAG)
+        tapTheBandAboveTheLine(CONTEXT_METER_TAG)
+
+        compose.onNodeWithTag(CONTEXT_USAGE_SHEET_TAG).assertExists()
+    }
+
+    @Test
+    fun `the approval chip opens its menu from a tap above its word`() {
+        launch()
+
+        tapTheBandAboveTheLine(APPROVAL_MODE_CHIP_TAG)
+
+        compose.onNodeWithTag(APPROVAL_MODE_MENU_TAG).assertExists()
+    }
+
+    /**
+     * Taps [tag] halfway up the gap between the top of its pointer band and the
+     * top of the drawn status line: outside the line, inside the band, wherever
+     * this platform's text metrics happen to put those two edges.
+     *
+     * Dispatched through `onRoot` rather than through the node, because
+     * addressing the node would measure the offset from bounds that already
+     * *are* the band — the whole confusion the old assertion rested on.
+     */
+    private fun tapTheBandAboveTheLine(tag: String) {
+        val line = compose.onNodeWithTag(CHAT_SUBTITLE_ROW_TAG).getUnclippedBoundsInRoot()
+        val control = compose.onNodeWithTag(tag).getUnclippedBoundsInRoot()
+        assertTrue(
+            "$tag's band ${control.top}..${control.bottom} does not reach above the status " +
+                "line at ${line.top}, so there is no overflow left to tap",
+            control.top < line.top - 1.dp,
+        )
+        val x = (control.left + control.right) / 2
+        val y = (control.top + line.top) / 2
+        compose.onRoot().performTouchInput { click(Offset(x.toPx(), y.toPx())) }
+        compose.waitForIdle()
     }
 
     /**
@@ -174,14 +244,14 @@ class ChatTopBarAlignmentTest {
         assertTrue("the prose gives way to the figures", subtitle.right.value <= meter.left.value + 0.5f)
     }
 
-    private fun launch() {
+    private fun launch(onOpenGateways: () -> Unit = {}) {
         compose.setContent {
             HermesTheme(AppearanceSelection(BuiltinThemes.DEFAULT_NAME, HermesThemeMode.Dark)) {
                 ChatScreen(
                     state = chromeState(),
                     actions = ChatActions(),
                     onOpenSettings = {},
-                    onOpenGateways = {},
+                    onOpenGateways = onOpenGateways,
                 )
             }
         }
@@ -210,18 +280,8 @@ class ChatTopBarAlignmentTest {
         approvalMode = ApprovalMode.Smart,
     )
 
-    /**
-     * What a thumb and TalkBack actually get: `touchBoundsInRoot` is the
-     * pointer region of the node's own coordinator, which is the band
-     * `touchTargetOverflow` measured rather than the height it reported.
-     */
-    private fun assertTouchBand(what: String, tag: String) {
-        val node = compose.onNodeWithTag(tag).fetchSemanticsNode()
-        val band = with(compose.density) { node.touchBoundsInRoot.height.toDp() }
-        assertTrue("$what should keep a 48dp band, was $band", band.value >= 47.5f)
-    }
-
     private fun assertClose(what: String, expected: Dp, actual: Dp, tolerance: Float = 1f) {
         assertTrue("$what: expected $expected, was $actual", abs((expected - actual).value) <= tolerance)
     }
+
 }

@@ -43,6 +43,34 @@ data class StatusAction(
  * It must sit *outside* the `clickable` it is expanding, and whatever is inside
  * has to centre itself in the band it is handed: a `Row` does that with
  * `verticalAlignment`, a `Text` with `wrapContentHeight`.
+ *
+ * **What this adds over what Compose already does.** Compose expands any
+ * `clickable` smaller than `ViewConfiguration.minimumTouchTargetSize` — 48dp —
+ * during hit testing on its own, so a bare one-line clickable is *already*
+ * tappable outside its bounds. But that expansion is a **fallback**: pointer
+ * input resolves the visible bounds of every candidate first and only consults
+ * the expanded areas when nothing was hit directly, so a tap in the overflow
+ * loses to any sibling whose real bounds cover it — which on a crowded status
+ * row is the neighbouring control, not empty space. The band this modifier
+ * measures is first-class: it is the node's own pointer region, it wins ties by
+ * being an actual hit, and it costs the row no layout height, which the plain
+ * `heightIn(min = 48.dp)` it replaces did.
+ *
+ * **Constraints, both inherited from asking for an intrinsic height.**
+ *
+ * - `minIntrinsicHeight` **throws** on content that subcomposes —
+ *   `BoxWithConstraints`, `LazyColumn`, `LazyRow`, anything built on
+ *   `SubcomposeLayout` — because there is nothing to measure until composition
+ *   runs. Wrapping one of those in this is a crash, not a layout bug.
+ * - The reported height is the intrinsic one while the *measured* height is the
+ *   band, so content whose real height is not what its intrinsic reports —
+ *   anything sized by weight, aspect ratio or a fill — draws outside the height
+ *   its parent reserved and overlaps its neighbours.
+ *
+ * Both say the same thing: this is for **one-line controls** whose height is a
+ * line of type. That is every caller today — the chat status door, the context
+ * meter, the approval chip — and a second-guessing use belongs in a `Box` with
+ * an explicit height instead.
  */
 fun Modifier.touchTargetOverflow(minHeight: Dp): Modifier = layout { measurable, constraints ->
     val floor = minHeight.roundToPx()

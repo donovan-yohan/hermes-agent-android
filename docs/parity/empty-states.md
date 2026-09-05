@@ -246,10 +246,12 @@ Each `report.html` sits beside its two halves under
 The last two are Android-only on purpose. `empty-chat-intro-w320dp-dark` is the
 narrowest supported phone, taken with `wm size 960x2140` at density 480 and
 reset afterwards; its `contract.json` records the override. It is the render the
-fit table above exists for. It was taken when the wordmark was one line, and it
-shows what that cost: the lettering fits its column only at a size *below*
-Desktop's `2.75rem` floor. It is the before half of this change and is owed a
-retake. Desktop has no `w320dp` to compare it against.
+fit table above exists for, and it has been retaken from this branch: the
+lettering is stacked, set in the bundled Collapse Bold, and clears Desktop's
+`2.75rem` floor on the narrowest column this app supports. That is the claim the
+fit table makes, and it is the one the capture it replaced could not make — on
+one line the same column fitted the wordmark only *below* the floor. Desktop has
+no `w320dp` to compare it against.
 `appearance-intro-splash-row-light` is the Appearance row, evidence that the
 `Intro Splash` title, description and Off/On control ship verbatim.
 
@@ -276,14 +278,15 @@ the `7.756 em` the fit table above is built on.
 
 ### What the side-by-side shows
 
-- **This bullet describes the captures as they stand, which is before this
-  change.** In them the wordmark fills the column on both sides and the face is
-  the visible difference: Desktop's Collapse against Android's Roboto Bold,
-  every other property — uppercase, weight 700, `0.08em` tracking, `0.9` line
-  height, the midground/foreground colour roles — matching. Both halves of that
-  sentence are what the retake has to settle: the face is now Desktop's own
-  file, and Android's lettering is two lines where Desktop's is one. Those are
-  the two rows a reviewer should look hardest at.
+- **The wordmark.** In the retaken halves both sides draw it from the same
+  file: Desktop's `Collapse-Bold.woff2` and the `res/font/collapse_bold.otf`
+  this app decompressed from it, pinned by digest in `CollapseBoldFontTest`.
+  The face is therefore no longer a difference at all — it was Roboto Bold in
+  the captures this packet replaced. What is left is the one row a reviewer
+  should look hardest at: Android sets `HERMES` over `AGENT` where Desktop fits
+  `HERMES AGENT` on one line. Every other property matches — uppercase, weight
+  700, `0.08em` tracking, `0.9` line height, and the midground/foreground colour
+  roles, with the dark half four alpha points lighter as ledgered below.
 - The body line sits directly under the lettering on both, centred, in the
   tertiary ink. Desktop's fits one line in a `1132px` column; Android's wraps to
   two or three in a phone column, which is the measure doing its job.
@@ -304,7 +307,7 @@ the `7.756 em` the fit table above is built on.
 | The wordmark is one line, `HERMES AGENT`, fitted to `calc(100% - 1rem)` (`wordmark.tsx:15-45`) | mobile-adaptation | Two lines, `HERMES` over `AGENT`, one shared size, same `0.9` leading and `0.08em` tracking, both centred | Viewport space. Twelve characters plus a space across the `300 dp` a `w320dp` phone leaves sets the lettering at about `38.7 sp` — a heading, not display type — and Desktop's own `2.75rem` floor is unreachable there. Stacking puts the wider of a six- and a five-character run across the same column, so the same fill rule yields `71.3 sp` and clears the floor on every phone width; the table is in **The wordmark's fit** above. Wide layouts stack too rather than reverting to one line, because a tablet is the same app and one identity beats a breakpoint. `INTRO_WORDMARK` stays the accessibility name, so a screen reader hears `HERMES AGENT` once and never the split |
 | `.fit-text` sizes the lettering from a container query, unbounded above, floor `2.75rem` (`wordmark.tsx:22-24`, `styles.css:1633-1661`) | mobile-adaptation | One measured layout pass per line at a probe size scaled to the column, clamped at 72 sp per line and by half the slot's height, and still not floored | Compose has no container query, so the fit is measured. Both ceilings are this port's: Desktop's column is bounded by `--composer-width` and a tablet column here is not, and two lines are twice as tall, so a landscape phone would otherwise push the copy line off the surface. The floor is not clamped because a clamp could only ever raise a size the column has already been measured as unable to hold — but stacked, the fit now *meets* the floor everywhere, which is the difference from the one-line port. `WordmarkFitTest`, `WordmarkFitDeviceTest` and `CollapseBoldFontTest` hold it |
 | The intro renders only for a fresh draft; a session that owns the view gets `ChatEmptySlot` (`intro-visibility.ts:12-33`, `thread/index.tsx:155`) | mobile-adaptation | The splash also renders for a homed session whose transcript is empty and whose turn is not running | `ChatEmptySlot` has never been ported, so the alternative here was not Desktop's empty slot but the plain `No messages yet` note, which says less than the wordmark and the intro line do. The three guards are unchanged: the Appearance toggle still restores the note when it is `Off`, a running turn still wins, and the loading flash is refused by `SessionSummary.messageCount` — `session.info`'s own count — rather than by assuming an unread transcript is an empty one. `IntroSplashTest` and `EmptyStateJourneyTest` hold each clause |
-| The session's working directory and project live in Desktop's own chrome (`app/chat/index.tsx:419,675,734`) | mobile-adaptation | Two small centred lines under the intro copy — the project label in `type.caption`, the cwd's last two segments in the terminal family — and only when a session is homed | Viewport space. Desktop's window has room for a status bar carrying both facts at all times; a phone's chat chrome does not, and the splash is the one moment a session has nothing else on screen. So an opened session says which project it belongs to and which directory it will act in *before* the first instruction, rather than after. A fresh draft has neither and renders exactly what it rendered before. The path is shortened head-first because the tail identifies it, and the project resolves only when the catalog has been read — unknown says nothing rather than guessing |
+| The session's working directory and project live in Desktop's own chrome (`app/chat/index.tsx:419,675,734`) | mobile-adaptation | Two small centred lines under the intro copy — the project label in `type.caption`, the cwd's last two segments in the terminal family — and only when a session is homed | Viewport space. Desktop's window has room for a status bar carrying both facts at all times; a phone's chat chrome does not, and the splash is the one moment a session has nothing else on screen. So an opened session says which project it belongs to and which directory it will act in *before* the first instruction, rather than after. A fresh draft has neither and renders exactly what it rendered before. The path is shortened head-first because the tail identifies it, and the project resolves only when the catalog has been read — unknown says nothing rather than guessing. The shortening rule is Desktop's own tail rule applied unconditionally: `compactPath` (`lib/statusbar.tsx:19`) returns a path under 44 characters untouched and only past that falls back to `…/` plus the last two segments, whereas a phone column has no width at which the whole path is affordable, so Android always takes the last two. The home prefix is this app's addition on top of it — `displayWorktreePath` replaces `/home/<account>` or `/Users/<account>` with `~`, the same redaction the coding status row already applies, and the `~` survives the shortening because it is the one part of the head that names something other than an account |
 | The lettering renders twice, the `aria-hidden` twin acting as the `.fit-text` width reference (`wordmark.tsx:38-43`) | mobile-adaptation | Rendered once | The doubled span exists only to feed a CSS container query. Compose measures directly, so the second copy would be a node with no purpose and a second thing for the semantics tree to trip over |
 | `mix-blend-plus-lighter` on the wordmark (`wordmark.tsx:33`) | mobile-adaptation | Not painted | Compose has no plus-lighter blend for text without rendering the glyphs into a layer and compositing by hand. The colour role is unchanged: midground in light, foreground in dark |
 | The dark wordmark is `text-foreground/90` — 0.90 alpha over the foreground (`wordmark.tsx:33`) | mobile-adaptation | `tokens.textPrimary`, which is 0.94 over the same base (`HermesTokens.kt`) | Four points lighter, and deliberately not compounded: multiplying Desktop's 0.90 into a token already at 0.94 lands at 0.85 and matches neither. The alternative is a raw alpha in a component, which the token rule forbids. the dark side-by-side above is what judges whether four points is visible |

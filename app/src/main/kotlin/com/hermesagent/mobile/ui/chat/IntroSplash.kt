@@ -138,13 +138,18 @@ fun pickIntroCopy(seed: Int): String =
  * A Gateway that reports no `message_count` defaults it to zero and can
  * therefore still flash; that is the same window Desktop's own `messagesEmpty`
  * has, and it closes as soon as the first row arrives.
+ *
+ * [sessionMessageCount] carries no default **on purpose**: null is a real
+ * answer here — "the row has not landed" — and a default would let a later
+ * caller omit the argument and silently restore the rule this clause replaced,
+ * with the splash flashing over every resumed session's history.
  */
 fun shouldShowIntroSplash(
     enabled: Boolean,
     activeSessionId: String?,
     transcriptEmpty: Boolean,
     turnRunning: Boolean,
-    sessionMessageCount: Int? = null,
+    sessionMessageCount: Int?,
 ): Boolean {
     if (!enabled || !transcriptEmpty || turnRunning) return false
     // A fresh draft is Desktop's own case and needs no count to vouch for it.
@@ -244,7 +249,17 @@ fun IntroSplash(
 private fun SessionContextLines(context: IntroSplashContext) {
     val tokens = HermesTheme.tokens
     val project = context.projectLabel?.takeIf { it.isNotBlank() }
-    val path = context.worktreePath?.takeIf { it.isNotBlank() }?.let(::shortenWorktreePath)
+    // Redact before shortening, never after. `displayWorktreePath` is the one
+    // rule this repo already has for the account name a cwd carries
+    // (`CodingContext.kt`), and the coding status row above the composer shows
+    // the same path through it. Shortening alone would only hide the home
+    // prefix when the path happened to be deep enough — a two-segment
+    // `/home/<account>` renders verbatim — so the splash would leak the
+    // account name into a screenshot on exactly the shallow paths.
+    val path = context.worktreePath
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::displayWorktreePath)
+        ?.let(::shortenWorktreePath)
     if (project == null && path == null) return
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -268,7 +283,12 @@ private fun SessionContextLines(context: IntroSplashContext) {
                 // terminal family, and a proportional face makes two similar
                 // directories hard to tell apart at caption size.
                 style = HermesTheme.type.code.copy(fontSize = 12.sp, lineHeight = 17.sp),
-                color = tokens.textQuaternary,
+                // The same ink as the project label above it. `textQuaternary`
+                // at 12sp measures 2.18:1 in light and 3.0:1 in dark, under
+                // WCAG's 4.5:1 for text this size — and a working directory is
+                // read character by character, which is the case that needs
+                // contrast most.
+                color = tokens.textTertiary,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -288,13 +308,31 @@ private fun SessionContextLines(context: IntroSplashContext) {
  *
  * A path of two segments or fewer is already its own tail and is left alone,
  * including `/` itself.
+ *
+ * A `~` root survives, because it is the one part of the head that carries
+ * meaning rather than an account name: `displayWorktreePath` has already
+ * replaced `/home/<account>` with it, and collapsing that into the same `…/`
+ * as every other head would throw away the fact that the session is working
+ * under the host user's own home. So `~/work/app` stays whole and
+ * `~/code/personal/app` becomes `~/…/personal/app`.
+ *
+ * Desktop shortens a path far later and by a different rule — `compactPath`
+ * (`apps/desktop/src/lib/statusbar.tsx:19` @ `3ca096de`) leaves anything up to
+ * 44 characters untouched — because its status bar is a window wide. Ledgered
+ * in `docs/parity/empty-states.md`.
  */
 internal fun shortenWorktreePath(path: String): String {
     val trimmed = path.trimEnd('/')
-    val segments = trimmed.split('/').filter { it.isNotEmpty() }
+    val home = trimmed == HOME_MARK || trimmed.startsWith("$HOME_MARK/")
+    val body = if (home) trimmed.removePrefix(HOME_MARK) else trimmed
+    val segments = body.split('/').filter { it.isNotEmpty() }
+    val root = if (home) "$HOME_MARK/" else ""
     if (segments.size <= 2) return if (trimmed.isEmpty()) path else trimmed
-    return "…/" + segments.takeLast(2).joinToString("/")
+    return root + "…/" + segments.takeLast(2).joinToString("/")
 }
+
+/** What `displayWorktreePath` leaves where the host user's home was. */
+private const val HOME_MARK = "~"
 
 
 /**
