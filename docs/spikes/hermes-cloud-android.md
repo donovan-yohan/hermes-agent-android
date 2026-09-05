@@ -140,7 +140,7 @@ itself was never the cookie-shaped part.
 - `client_id` = `hermes-cli` (`auth.py:115` `DEFAULT_NOUS_CLIENT_ID`)
 - `scope` = `inference:invoke` (`auth.py:116-118`;
   `NOUS_BILLING_MANAGE_SCOPE = "billing:manage"` is the only other one named)
-- device-code endpoint `POST {portal}/api/oauth/device/code` (`auth.py:5455`)
+- device-code endpoint `POST {portal}/api/oauth/device/code` (`auth.py:5456`)
   returning `device_code, user_code, verification_uri,
   verification_uri_complete, expires_in, interval` (`auth.py:5466`)
 - token endpoint `POST {portal}/api/oauth/token` with
