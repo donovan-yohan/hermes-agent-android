@@ -12,7 +12,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
@@ -30,7 +30,6 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.ChatActions
-import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -283,20 +282,15 @@ class ToolRowFidelityTest {
     // ── Inline diff ──────────────────────────────────────────────────────────
 
     /**
-     * The Copy control Desktop puts over a diff payload, shipped disabled.
+     * The Copy control Desktop puts over a diff payload.
      *
-     * `InlineDiffPanel` owns this surface and #71 S35 lands its real
-     * affordances; until then the control is visible, dimmed and marked rather
-     * than absent, in the slot `ToolCopyControl` already occupies for an
-     * ordinary payload — right-aligned above the body.
-     *
-     * `Copy file` is Desktop's own label for this payload: `toolCopyPayload`
-     * resolves a file-edit tool holding an inline diff to `copy.file`
-     * (`fallback-model/index.ts:1253-1256`, `en.ts:3340` @ `3ca096de`), not to
-     * the generic `common.copy`.
+     * `InlineDiffPanel` carries this same slot and `toolCopyPayload` makes
+     * file-edit inline diffs resolve to `copy.file`
+     * (`fallback-model/index.ts:1253-1256 @ 3ca096de`), so this app ships the
+     * full diff through `ToolCopyControl` and names it `Copy file`.
      */
     @Test
-    fun `an inline diff carries the Copy control it has not built yet`() {
+    fun `an inline diff carries a live Copy control that hands over the whole diff`() {
         launch(
             ToolActivity(
                 id = "$SESSION-t1",
@@ -310,15 +304,11 @@ class ToolRowFidelityTest {
             ),
         )
 
-        // A diff panel opens itself, so the control is on screen with no tap.
-        // The name is asserted whole rather than matched: the finders test the
-        // description list with `any { }`, so a second entry — the inner
-        // button naming itself into the merge — would pass unseen.
-        val copy = compose.onNodeWithContentDescription("Copy file. $WIP_SPOKEN")
+        val copy = compose.onNodeWithContentDescription("Copy file")
             .performScrollTo()
             .assertIsDisplayed()
-            .assertIsNotEnabled()
-            .assertContentDescriptionEquals("Copy file. $WIP_SPOKEN")
+            .assertContentDescriptionEquals("Copy file")
+            .assertIsEnabled()
             .assertWidthIsAtLeast(TOUCH_FLOOR)
             .assertHeightIsAtLeast(TOUCH_FLOOR)
             .getUnclippedBoundsInRoot()
@@ -326,6 +316,11 @@ class ToolRowFidelityTest {
         val firstLine = compose.onNodeWithText(REMOVED_LINE, useUnmergedTree = true)
             .getUnclippedBoundsInRoot()
         assertTrue("the control belongs above the diff body", copy.top < firstLine.top)
+
+        compose.onNodeWithContentDescription("Copy file")
+            .performClick()
+        compose.waitForIdle()
+        assertEquals(DIFF, clipboardText)
     }
 
     // ── Web search ───────────────────────────────────────────────────────────
