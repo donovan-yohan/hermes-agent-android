@@ -270,7 +270,7 @@ private fun CompactLayout(
                 onSelectApprovalMode = actions.onSelectApprovalMode,
                 modifier = Modifier.statusBarsPadding(),
             )
-            TranscriptPane(state, actions.onShowEarlierMessages, introSplashEnabled, Modifier.weight(1f))
+    TranscriptPane(state, actions.onShowEarlierMessages, actions.onBranchFromReply, introSplashEnabled, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -332,7 +332,7 @@ private fun WideLayout(
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
             )
-            TranscriptPane(state, actions.onShowEarlierMessages, introSplashEnabled, Modifier.weight(1f))
+    TranscriptPane(state, actions.onShowEarlierMessages, actions.onBranchFromReply, introSplashEnabled, Modifier.weight(1f))
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -394,6 +394,7 @@ private fun SessionsPane(
 private fun TranscriptPane(
     state: ChatUiState,
     onShowEarlier: () -> Unit,
+    onBranchFromReply: ((String) -> Unit)?,
     introSplashEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -525,6 +526,7 @@ private fun TranscriptPane(
             entries = state.transcript,
             imageLoader = state.imageLoader,
             listState = listState,
+            onBranchFromReply = onBranchFromReply,
             onShowEarlier = if (!state.canShowEarlierMessages) {
                 null
             } else {

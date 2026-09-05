@@ -171,6 +171,10 @@ interface GatewaySessionRepository {
         workspacePath: String?,
         overrides: NewSessionComposerOverrides?,
     ): String = createSession(workspacePath)
+    suspend fun branchSession(durableId: String, count: Int?): String =
+        error("Branching is not implemented by this repository.")
+    suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> =
+        error("History fetch not implemented.")
     suspend fun loadModelOptions(durableId: String?): ModelCatalog =
         error("Model options are not implemented by this repository.")
     suspend fun loadComposerControls(durableId: String?): ModelControlsSnapshot =
@@ -2087,6 +2091,68 @@ internal class LiveGatewaySessionRepository(
         durableId
     }
 
+
+    /**
+     * Reads the authoritative persisted transcript via `session.history` including
+     * the `include_row_ids` argument.
+     */
+    override suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> = navigationMutex.withLock {
+        val binding = ensureRuntime(durableId)
+        val connection = connectionSnapshot()
+        val historyResult = connection.client.request("session.history", historyParams(binding.runtimeId))
+        synchronized(stateLock) { ensureCurrent(connection) }
+        parseHistory(historyResult, binding.runtimeId, clock())
+    }
+
+    /**
+     * Calls `session.branch` with `session_id` and optional `count`, then
+     * upserts the created runtime/session using the same parse and parseMessages
+     * path `session.create` uses.
+     */
+    override suspend fun branchSession(durableId: String, count: Int?): String = navigationMutex.withLock {
+        val binding = ensureRuntime(durableId)
+        val connection = connectionSnapshot()
+        val result = connection.client.request(
+            "session.branch",
+            buildJsonObject {
+                put("session_id", JsonPrimitive(binding.runtimeId))
+                count?.let { put("count", JsonPrimitive(it)) }
+            },
+        ).asObject("session.branch")
+        val newRuntimeId = result.string("session_id")
+            ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
+        val newDurableId = result.string("stored_session_id")
+            ?: throw GatewayRpcException("Hermes did not return a durable session id.")
+        val info = (result["session"] as? JsonObject) ?: (result["info"] as? JsonObject) ?: result
+        val mergedInfo = buildJsonObject {
+            info.forEach { (name, value) -> put(name, value) }
+            result.string("title")?.let { put("title", JsonPrimitive(it)) }
+            result["message_count"]?.let { put("message_count", it) }
+        }
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            identities.bind(newDurableId, newRuntimeId)
+            // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
+            cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId))
+            val messages = result["messages"]
+            if (messages is JsonArray) {
+                cache.setTranscript(
+                    newDurableId,
+                    parseMessages(messages, clock()) { index -> "$newRuntimeId-history-$index" },
+                )
+            }
+        }
+        // Best-effort refresh to get title, parent, ordering from the backend
+        scope.launch {
+            try {
+                refreshSessions()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+            }
+        }
+        newDurableId
+    }
     override suspend fun loadModelOptions(durableId: String?): ModelCatalog {
         val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
         val connection = connectionSnapshot()

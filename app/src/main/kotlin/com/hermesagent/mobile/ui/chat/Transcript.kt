@@ -148,6 +148,7 @@ fun Transcript(
      * earlier to ask for, which is also when the control does not render.
      */
     onShowEarlier: (() -> Unit)? = null,
+    onBranchFromReply: ((entryId: String) -> Unit)? = null,
     /**
      * Whether an empty transcript is the *intro splash* rather than the plain
      * note. Desktop decides this outside the thread too and hands the component
@@ -196,7 +197,7 @@ fun Transcript(
         items(items = entries, key = { it.id }) { entry ->
             when (entry) {
                 is UserTurn -> UserBubble(entry, imageLoader)
-                is AssistantTurn -> AssistantProse(entry)
+                is AssistantTurn -> AssistantProse(entry, isWorking, onBranchFromReply)
                 is ReasoningActivity -> ReasoningRow(entry)
                 is ToolActivity -> ToolRow(entry)
             }
@@ -525,7 +526,7 @@ private fun FullSizeImageOverlay(
  * readable as ordinary text once it lands.
  */
 @Composable
-private fun AssistantProse(turn: AssistantTurn) {
+private fun AssistantProse(turn: AssistantTurn, isWorking: Boolean, onBranchFromReply: ((entryId: String) -> Unit)?) {
     val blocks = remember(turn.markdown) { parseMarkdown(turn.markdown) }
     // Whether this turn draws any prose at all. One gate, read twice below, so
     // the container and the copy control can never disagree about it.
@@ -590,7 +591,7 @@ private fun AssistantProse(turn: AssistantTurn) {
         // line as prose, and text on screen with no way to lift it is the bug
         // this control exists to fix.
         if (hasProse) {
-            ReplyActions(reply)
+            ReplyActions(reply, turn.id, isWorking, turn.streaming, onBranchFromReply)
         }
     }
 }
@@ -627,16 +628,21 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * phone is worse at than a mouse — the system Copy in the selection toolbar
  * still handles "copy this sentence".
  *
- * The other three controls Desktop mounts here are rendered in Desktop's order
- * — Branch, Copy, Read aloud, Refresh (`assistant-message.tsx:625-642` @
- * `3ca096de`) — and every one of them is disabled behind a `WIP` chip. None
- * has anything to call: branching needs a session-fork RPC, read-aloud needs
- * speech synthesis and a playback store, and a re-run needs the turn-rewind
- * path #69 owns. Leaving them out would say this bar was only ever meant to
- * copy, which is a claim about the port rather than about the app.
+ * The bar is rendered in the same order as Desktop's: Branch, Copy, Read aloud,
+ * Refresh (`assistant-message.tsx:625-642` @ `3ca096de`).
+ * Branch is live (`session.branch`) through [onBranchFromReply] and stays
+ * enabled unless a turn is working, streaming, or this surface is not wired.
+ * Read aloud and Refresh are still placeholders behind a `WIP` chip with unchanged
+ * reasons from previous work.
  */
 @Composable
-private fun ReplyActions(reply: String) {
+private fun ReplyActions(
+    reply: String,
+    entryId: String,
+    isWorking: Boolean,
+    streaming: Boolean,
+    onBranchFromReply: ((entryId: String) -> Unit)?,
+) {
     val tokens = HermesTheme.tokens
     val platformContext = LocalContext.current
     // Not keyed on the reply: a delta must not silently retract a confirmation
@@ -682,7 +688,13 @@ private fun ReplyActions(reply: String) {
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ComingSoonIconAction(HermesIcon.RepoForked, BRANCH_IN_NEW_CHAT)
+        HermesIconButton(
+            icon = HermesIcon.RepoForked,
+            contentDescription = BRANCH_IN_NEW_CHAT,
+            onClick = { onBranchFromReply?.invoke(entryId) },
+            enabled = !isWorking && !streaming && onBranchFromReply != null,
+            tint = tokens.scaffoldMeta,
+        )
         HermesIconButton(
             icon = if (copied) HermesIcon.Check else HermesIcon.Copy,
             contentDescription = label,

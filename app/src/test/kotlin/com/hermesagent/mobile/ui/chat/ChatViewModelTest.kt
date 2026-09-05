@@ -38,6 +38,7 @@ import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
 import com.hermesagent.mobile.data.composer.ComposerQueueController
@@ -1169,6 +1170,115 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `disconnected chat refuses branching and does not call branch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        cache.setTranscript(
+            "session-a",
+            listOf(UserTurn("u1", "hello", 1_000), AssistantTurn("a1", "reply", 1_100)),
+        )
+        runCurrent()
+
+        viewModel.branchFromReply("a1")
+        runCurrent()
+
+        assertEquals("Nothing to branch. Start or resume a chat before branching.", viewModel.uiState.value.notice)
+        assertEquals(emptyList<Pair<String, Int?>>(), repository.branchCalls)
+    }
+
+    @Test
+    fun `working chat refuses branching and does not call branch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        runCurrent()
+        cache.setTranscript(
+            "session-a",
+            listOf(UserTurn("u1", "hello", 1_000), AssistantTurn("a1", "reply", 1_100)),
+        )
+        runCurrent()
+
+        viewModel.branchFromReply("a1")
+        runCurrent()
+
+        assertEquals("Session busy. Stop the current turn before branching this chat.", viewModel.uiState.value.notice)
+        assertEquals(emptyList<Pair<String, Int?>>(), repository.branchCalls)
+    }
+
+    @Test
+    fun `unread chat allows branching and invokes branch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Unread))
+        runCurrent()
+        cache.setTranscript(
+            "session-a",
+            listOf(UserTurn("u1", "hello", 1_000), AssistantTurn("a1", "reply", 1_100)),
+        )
+        repository.historyResult = listOf(
+            UserTurn("h-u1", "hello", 2_000),
+            AssistantTurn("h-a1", "reply", 2_100),
+        )
+        runCurrent()
+
+        viewModel.branchFromReply("a1")
+        runCurrent()
+
+        assertEquals(listOf("session-a" to null), repository.branchCalls)
+    }
+
+    @Test
+    fun `branching from reply at end of transcript starts a whole chat branch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.setTranscript(
+            "session-a",
+            listOf(UserTurn("u1", "hello", 1_000), AssistantTurn("a1", "reply", 1_100)),
+        )
+        repository.historyResult = listOf(
+            UserTurn("h-u1", "hello", 2_000),
+            AssistantTurn("h-a1", "reply", 2_100),
+        )
+        runCurrent()
+
+        viewModel.branchFromReply("a1")
+        runCurrent()
+
+        assertEquals(listOf("session-a" to null), repository.branchCalls)
+        assertEquals("new-durable", viewModel.uiState.value.activeSessionId)
+        assertEquals("new-durable", viewModel.uiState.value.activeSession?.id)
+    }
+
+    @Test
+    fun `branching from reply in middle of transcript starts a partial chat branch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.setTranscript(
+            "session-a",
+            listOf(
+                UserTurn("u1", "hello", 1_000),
+                AssistantTurn("a1", "reply", 1_100),
+                UserTurn("u2", "more", 1_200),
+            ),
+        )
+        repository.historyResult = listOf(
+            UserTurn("h-u1", "hello", 2_000),
+            AssistantTurn("h-a1", "reply", 2_100),
+            UserTurn("h-u2", "more", 2_200),
+        )
+        runCurrent()
+
+        viewModel.branchFromReply("a1")
+        runCurrent()
+
+        assertEquals(listOf("session-a" to 2), repository.branchCalls)
+        assertEquals("new-durable", viewModel.uiState.value.activeSessionId)
+        assertEquals("new-durable", viewModel.uiState.value.activeSession?.id)
+    }
+
+    @Test
     fun `canonical session rehome preserves the active transcript and draft`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -2077,6 +2187,20 @@ class ChatViewModelTest {
             return durableId
         }
 
+
+        var branchResult = "new-durable"
+        var historyResult = emptyList<com.hermesagent.mobile.data.session.TranscriptEntry>()
+        val branchCalls = mutableListOf<Pair<String, Int?>>()
+
+        override suspend fun branchSession(durableId: String, count: Int?): String {
+            branchCalls.add(durableId to count)
+            cache.upsertSession(summary(branchResult, CLOCK).copy(title = "Branched from $durableId"))
+            return branchResult
+        }
+
+        override suspend fun fetchSessionHistory(durableId: String): List<com.hermesagent.mobile.data.session.TranscriptEntry> {
+            return historyResult
+        }
         override suspend fun createSession(workspacePath: String?): String {
             created++
             createdWorkspace = workspacePath
