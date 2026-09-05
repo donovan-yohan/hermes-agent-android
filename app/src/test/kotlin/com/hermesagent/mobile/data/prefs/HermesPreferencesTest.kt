@@ -84,6 +84,52 @@ class HermesPreferencesTest {
         assertEquals(GatewayConnectionMode.Ssh, preferences.gatewayConnectionMode.first())
     }
 
+    /**
+     * Desktop's `$introSplash` defaults to **on**
+     * (`apps/desktop/src/store/intro-splash.ts:8` @
+     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so an install that has never
+     * touched the toggle gets the splash.
+     */
+    @Test
+    fun `an unset Intro Splash reads on, as Desktop's default does`() = runBlocking {
+        context.hermesDataStore.edit { it.remove(INTRO_SPLASH) }
+
+        assertTrue(preferences.introSplash.first())
+    }
+
+    @Test
+    fun `turning Intro Splash off round-trips, and back on again`() = runBlocking {
+        try {
+            preferences.setIntroSplash(false)
+            assertFalse(preferences.introSplash.first())
+
+            preferences.setIntroSplash(true)
+            assertTrue(preferences.introSplash.first())
+        } finally {
+            context.hermesDataStore.edit { it.remove(INTRO_SPLASH) }
+        }
+    }
+
+    /**
+     * Only the exact string this store writes turns the splash off. Anything
+     * else on disk — a value from a build that stored it differently, or a
+     * corrupted entry — falls back to the default rather than to the quieter
+     * surface, because a preference nobody set must not silently hide a
+     * feature.
+     */
+    @Test
+    fun `an unrecognised stored Intro Splash value falls back to on`() = runBlocking {
+        try {
+            context.hermesDataStore.edit { it[INTRO_SPLASH] = "0" }
+            assertTrue(preferences.introSplash.first())
+
+            context.hermesDataStore.edit { it[INTRO_SPLASH] = "" }
+            assertTrue(preferences.introSplash.first())
+        } finally {
+            context.hermesDataStore.edit { it.remove(INTRO_SPLASH) }
+        }
+    }
+
     @Test
     fun `sidebar grouping round-trips as a non-secret view preference`() = runBlocking {
         try {
@@ -513,6 +559,9 @@ class HermesPreferencesTest {
 
         val LEGACY = stringPreferencesKey("host.single.importedKeyName")
         val HOST = stringPreferencesKey("host.single.host")
+
+        /** The key `HermesPreferences` writes the Appearance toggle to. */
+        val INTRO_SPLASH = stringPreferencesKey("appearance.introSplash")
 
         /** Not a real fingerprint, and not from a real host. */
         const val FINGERPRINT = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01"

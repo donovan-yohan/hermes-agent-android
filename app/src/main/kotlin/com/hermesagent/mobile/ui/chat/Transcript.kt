@@ -148,6 +148,14 @@ fun Transcript(
      * earlier to ask for, which is also when the control does not render.
      */
     onShowEarlier: (() -> Unit)? = null,
+    /**
+     * Whether an empty transcript is the *intro splash* rather than the plain
+     * note. Desktop decides this outside the thread too and hands the component
+     * an `intro` prop or nothing (`components/assistant-ui/thread/index.tsx:155`
+     * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`); the decision itself is
+     * [shouldShowIntroSplash].
+     */
+    showIntroSplash: Boolean = false,
 ) {
     val spacing = HermesTheme.spacing
     // Progress has exactly one owner: the live transcript tail. A running tool
@@ -155,11 +163,20 @@ fun Transcript(
     // current status text.
     val showTurnProgress = isWorking || entries.any { it is AssistantTurn && it.streaming }
 
+    // Desktop's empty thread is vertically centred in the whole slot, not
+    // stacked at the top of it: the intro is `align-items:center;
+    // justify-content:center` (`styles.css:1603-1607` @ `3ca096de`) and
+    // `ChatEmptySlot` sits in the same box. Both halves below fill the height
+    // and centre inside it, so the caller's slot decides the geometry.
     if (entries.isEmpty() && !showTurnProgress) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        if (showIntroSplash) {
+            IntroSplash(modifier.fillMaxSize())
+        } else {
             EmptyState(
                 title = "No messages yet",
                 description = "Start a conversation with Hermes.",
+                modifier = modifier.fillMaxSize(),
+                centered = true,
             )
         }
         return

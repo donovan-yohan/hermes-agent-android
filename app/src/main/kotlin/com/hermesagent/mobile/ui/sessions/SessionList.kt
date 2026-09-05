@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -49,6 +50,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -133,6 +135,13 @@ fun SessionList(
     onArchivedVisibleChange: (Boolean) -> Unit = {},
     /** Loaded rows that are still unread; Desktop hides the action at zero. */
     unreadCount: Int = 0,
+    /**
+     * Desktop's `showSessionSkeletons` (`sidebar/index.tsx:1423` @ `3ca096de`):
+     * a live-pool page is on the wire and this scope has no rows yet. The blank
+     * state is a claim about the *account*, so it waits behind this exactly as
+     * Desktop's does at `:1426-1427,1912`.
+     */
+    sessionsLoading: Boolean = false,
     onMarkAllRead: () -> Unit = {},
     /**
      * Rail chrome above the section header — the connection switcher. A slot
@@ -392,13 +401,29 @@ fun SessionList(
                     NoResultsNote(query.trim())
                 }
 
-                rows.isEmpty() -> EmptyState(
-                    title = "No sessions",
-                    description = if (canCreate) {
-                        "Start one with the + above."
-                    } else {
-                        "Connect to a Gateway to start a session."
-                    },
+                // Desktop's `SidebarSessionSkeletons`
+                // (`section-states.tsx:11-24` @ `3ca096de`), and the reason the
+                // blank state below cannot be reached during a fetch:
+                // `showSessionSections` is true while `showSessionSkeletons` is
+                // (`sidebar/index.tsx:1426-1427`), so `No sessions yet` is never
+                // the sentence on screen during the first list read or after a
+                // reconnect. This app's rail says the same thing the same way.
+                rows.isEmpty() && sessionsLoading ->
+                    Box(listSlot) { SidebarSessionSkeletons(SESSION_SKELETON_TAG) }
+
+                // Desktop's `SidebarBlankState`
+                // (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`
+                // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), which it
+                // renders on exactly this condition: nothing filtered, nothing
+                // loading, no sessions and no projects (`sidebar/index.tsx:1427,1912`).
+                rows.isEmpty() -> SidebarBlankState(
+                    canCreateProject = canCreate && projectsAvailable == true,
+                    onNewProject = { projectCreateVisible = true },
+                    // Desktop's sidebar is never disconnected, so it has no
+                    // sentence for this. A phone's is, and losing the one line
+                    // that says which action comes first would cost more than
+                    // the divergence does. See `docs/parity/empty-states.md`.
+                    disconnectedNote = "Connect to a Gateway to start a session.".takeIf { !canCreate },
                     modifier = listSlot,
                 )
 
@@ -452,7 +477,8 @@ fun SessionList(
 
                                 is SessionListRow.NoResultsNote -> NoResultsNote(row.query)
 
-                                is SessionListRow.SearchSkeletons -> SearchSkeletons()
+                                is SessionListRow.SearchSkeletons ->
+                                    SidebarSessionSkeletons(SEARCH_SKELETON_TAG)
 
                                 is SessionListRow.Row -> SessionRow(
                                     session = row.session,
@@ -840,6 +866,121 @@ internal const val ARCHIVED_LOADING_STATE = "Archived loading state"
 internal const val ARCHIVED_FAILED_STATE = "Archived failed state"
 internal const val ARCHIVED_UNSUPPORTED_STATE = "Archived unsupported state"
 
+/** Desktop's `SidebarBlankState`: no filter, no sessions, no projects. */
+internal const val SIDEBAR_BLANK_STATE = "Sidebar blank state"
+
+/** The same five bars, standing in for the live list read rather than a search. */
+internal const val SESSION_SKELETON_TAG = "Session skeletons"
+
+/**
+ * `sidebar.noSessions` and `sidebar.projects.newButton`, verbatim
+ * (`apps/desktop/src/i18n/en.ts:2218,2223` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Note the missing full stop:
+ * `commandCenter.noSessions` at `:1560` reads `No sessions yet.` **with** one,
+ * and the sidebar's is the other string.
+ */
+internal const val NO_SESSIONS_YET = "No sessions yet"
+internal const val NEW_PROJECT_BUTTON = "New project"
+
+/**
+ * Desktop's `SidebarBlankState`
+ * (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): a `root-folder` codicon in the
+ * quaternary ink, the caption in the tertiary, and a ghost `New project` under
+ * them, all `place-items-center` in the height the list section leaves.
+ *
+ * @param canCreateProject the same gate the header's `+` uses in project mode.
+ *   A Gateway that serves no project RPC leaves the button visible and
+ *   disabled rather than removing it.
+ * @param disconnectedNote this app's own extra line, and null whenever Desktop
+ *   would have nothing to add. Ledgered in `docs/parity/empty-states.md`.
+ */
+@Composable
+private fun SidebarBlankState(
+    canCreateProject: Boolean,
+    onNewProject: () -> Unit,
+    modifier: Modifier = Modifier,
+    disconnectedNote: String? = null,
+) {
+    val tokens = HermesTheme.tokens
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .testTag(SIDEBAR_BLANK_STATE),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            HermesIconGlyph(
+                icon = HermesIcon.RootFolder,
+                color = tokens.textQuaternary,
+                size = 20.sp,
+            )
+            Text(
+                text = NO_SESSIONS_YET,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+                textAlign = TextAlign.Center,
+            )
+            if (disconnectedNote != null) {
+                Text(
+                    text = disconnectedNote,
+                    style = HermesTheme.type.caption,
+                    color = tokens.textQuaternary,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            GhostAction(
+                label = NEW_PROJECT_BUTTON,
+                icon = HermesIcon.Add,
+                enabled = canCreateProject,
+                onClick = onNewProject,
+            )
+        }
+    }
+}
+
+/**
+ * Desktop's `variant="ghost"` button: no fill, no border, the glyph inside the
+ * label's own target. One target, not two — [HermesIconGlyph] clears itself out
+ * of the tree, so the label is the only thing left to name the control.
+ *
+ * There is deliberately **no** `contentDescription` here. `clickable` merges its
+ * descendants, and a name set on the merging node *concatenates* with the
+ * label's own text rather than replacing it — the second-name hazard
+ * `OutlineButton` documents. Desktop's ghost button is named by its text too.
+ */
+@Composable
+private fun GhostAction(
+    label: String,
+    icon: HermesIcon,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    val ink = if (enabled) tokens.textSecondary else tokens.textQuaternary
+    Row(
+        modifier = modifier
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            // `clickable(enabled = false)` drops the click action but publishes
+            // no disabled state, so a screen reader announces an ordinary
+            // button that silently does nothing.
+            .semantics { if (!enabled) disabled() }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        HermesIconGlyph(icon, color = ink, size = 12.sp)
+        Text(text = label, style = HermesTheme.type.caption, color = ink)
+    }
+}
+
 /**
  * Desktop's `SidebarSessionSkeletons`, at this rail's scale
  * (`apps/desktop/src/app/chat/sidebar/section-states.tsx:12-24` @
@@ -852,11 +993,16 @@ internal const val ARCHIVED_UNSUPPORTED_STATE = "Archived unsupported state"
  * Hidden from the accessibility tree, exactly as Desktop hides it
  * (`aria-hidden` at `:14`): there is nothing here to read out, and the
  * surrounding `Results` label already says what is happening.
+ *
+ * @param tag which wait this stands in for. Desktop draws one component for
+ *   both — the search read and the list read — and so does this; the tag keeps
+ *   the two distinguishable in a journey without a second drawing of the same
+ *   five bars.
  */
 @Composable
-private fun SearchSkeletons() {
+private fun SidebarSessionSkeletons(tag: String) {
     val tokens = HermesTheme.tokens
-    Column(Modifier.testTag(SEARCH_SKELETON_TAG).clearAndSetSemantics {}) {
+    Column(Modifier.testTag(tag).clearAndSetSemantics {}) {
         SKELETON_WIDTHS.forEach { width ->
             Row(
                 modifier = Modifier

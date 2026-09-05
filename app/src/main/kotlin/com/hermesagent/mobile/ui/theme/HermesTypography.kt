@@ -46,6 +46,17 @@ data class HermesTypeScale(
     /** Accent sidebar panel heading: uppercase, wide tracking, semibold. */
     val panelLabel: TextStyle,
     val screenTitle: TextStyle,
+    /**
+     * The empty chat's display lettering. Desktop's `.wordmark`
+     * (`apps/desktop/src/styles.css:1628-1634` @ `3ca096de`): weight 700,
+     * line-height 0.9, uppercase, tracking 0.08em.
+     *
+     * The size here is only Desktop's `--fit-min` floor. `.fit-text` sizes the
+     * lettering to its column and so does
+     * [com.hermesagent.mobile.ui.chat.Wordmark], which overrides both the size
+     * and the line height it derives from it.
+     */
+    val wordmark: TextStyle,
 )
 
 /** Layout rhythm. Same provenance as the type scale. */
@@ -101,6 +112,17 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
             letterSpacing = 0.16.em,
         ),
         screenTitle = TextStyle(fontFamily = sans, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+        // Collapse is not bundled — see `Wordmark` — so this is Desktop's own
+        // declared fallback, `var(--font-sans)`, at Desktop's weight, tracking
+        // and 0.9 line height.
+        wordmark = TextStyle(
+            fontFamily = sans,
+            fontSize = 44.sp,
+            lineHeight = 39.6f.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.08.em,
+            textAlign = TextAlign.Center,
+        ),
     )
 }
 

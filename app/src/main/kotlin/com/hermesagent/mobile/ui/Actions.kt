@@ -123,6 +123,8 @@ class RelayActions(
 class AppearanceActions(
     val onSelectTheme: (String) -> Unit = {},
     val onSelectMode: (HermesThemeMode) -> Unit = {},
+    /** Desktop's `setIntroSplash` (`store/intro-splash.ts:11-13` @ `3ca096de`). */
+    val onSetIntroSplash: (Boolean) -> Unit = {},
 )
 
 class GatewayActions(

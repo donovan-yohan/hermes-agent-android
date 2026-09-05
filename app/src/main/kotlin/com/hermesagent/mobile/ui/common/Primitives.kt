@@ -61,6 +61,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -602,21 +603,70 @@ fun TextButton(
     }
 }
 
-/** Plain-body empty state. Centered, no icon pile, no card. */
+/**
+ * Plain-body empty state. Horizontally centred, no icon pile, no card.
+ *
+ * @param centered also centre **vertically** in the slot the caller gave. Off by
+ *   default, and deliberately: nine of this primitive's callers already pass a
+ *   height-filling modifier — the session list's `listSlot` and Relay's panes —
+ *   and turning the centring on for all of them would move nine states this
+ *   change has no Desktop render of. Desktop centres the two states this port
+ *   is about (`section-states.tsx:31` and `styles.css:1603-1607` @
+ *   `3ca096de5f8183cb2e0ec23673f294d5978656a3`); whether its archived, project
+ *   and Relay empties are centred too is a question for their own pages and
+ *   their own renders. Passing `false` leaves every existing caller pixel-exact.
+ * @param icon Desktop hangs a quiet glyph above the sentence where the empty
+ *   state is a whole pane rather than a note inside one. Absent by default,
+ *   because most of these are the note.
+ */
 @Composable
-fun EmptyState(title: String, description: String, modifier: Modifier = Modifier) {
-    Column(
+fun EmptyState(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    centered: Boolean = false,
+    icon: HermesIcon? = null,
+) {
+    // `TextAlign.Center` travels with [centered] rather than applying to every
+    // caller. A wrapping description in the default presentation renders
+    // left-ragged inside its centred box, and straightening that would move
+    // nine states this change has no render of — the same objection [centered]
+    // itself answers.
+    val body: @Composable () -> Unit = {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (icon != null) {
+                HermesIconGlyph(
+                    icon = icon,
+                    color = HermesTheme.tokens.textQuaternary,
+                    size = 20.sp,
+                )
+            }
+            Text(
+                title,
+                style = HermesTheme.type.bodyStrong,
+                color = HermesTheme.tokens.textSecondary,
+                textAlign = if (centered) TextAlign.Center else null,
+            )
+            Text(
+                description,
+                style = HermesTheme.type.caption,
+                color = HermesTheme.tokens.textTertiary,
+                textAlign = if (centered) TextAlign.Center else null,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
+    }
+    // `TopCenter` is the layout this primitive has always had — horizontally
+    // centred, stacked from the top of whatever slot it was given. `Center`
+    // only adds the vertical half.
+    Box(
         modifier = modifier.fillMaxWidth().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        contentAlignment = if (centered) Alignment.Center else Alignment.TopCenter,
     ) {
-        Text(title, style = HermesTheme.type.bodyStrong, color = HermesTheme.tokens.textSecondary)
-        Text(
-            description,
-            style = HermesTheme.type.caption,
-            color = HermesTheme.tokens.textTertiary,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        body()
     }
 }
 
