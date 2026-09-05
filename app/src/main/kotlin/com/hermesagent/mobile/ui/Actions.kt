@@ -29,6 +29,7 @@ class ChatActions(
     val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
     val onSelectSession: (String) -> Unit = {},
     val onCreateSession: () -> Unit = {},
+    val onBranchFromReply: ((String) -> Unit)? = null,
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
     /**

@@ -389,6 +389,7 @@ class MainActivity : ComponentActivity() {
                     onCreateProject = chatViewModel::createProject,
                     onSelectSession = chatViewModel::selectSession,
                     onCreateSession = { chatViewModel.createSession() },
+                    onBranchFromReply = chatViewModel::branchFromReply,
                     onRenameSession = chatViewModel::renameSessionAsync,
                     onDeleteSession = chatViewModel::deleteSessionAsync,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,
