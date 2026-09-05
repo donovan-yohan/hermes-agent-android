@@ -1,6 +1,6 @@
 {
-  "capturedAt": "2026-09-05T06:54:27.648714+00:00",
-  "name": "empty-chat-intro-light",
+  "capturedAt": "2026-09-05T06:55:27.130110+00:00",
+  "name": "chat-top-bar-meter-dark",
   "serial": "emulator-5554",
   "application": {
     "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",

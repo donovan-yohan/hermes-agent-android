@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import java.util.Locale
 
 /**
  * The shared primitives. DESIGN.md's rule is "one primitive per concern"
@@ -93,6 +94,43 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         modifier = modifier,
     )
 }
+
+/**
+ * The heading over one section of a menu or a popover.
+ *
+ * Desktop's `DropdownMenuLabel` is a quiet tertiary row above a separator
+ * (`apps/desktop/src/components/ui/dropdown-menu.tsx:183-198` @ `3ca096de`).
+ * Android renders that row in this app's own panel-label treatment — uppercase,
+ * tracked, semibold — which is already what a heading over a list is here, and
+ * gives it a band tall enough to read as a heading rather than a cramped first
+ * row. One composable, so a menu heading cannot drift from a menu heading.
+ *
+ * [inset] is the text column the heading belongs to: Desktop's heading shares
+ * an inset with its rows because Desktop's selected mark is trailing, and where
+ * this app puts a mark in front of a row the heading follows the row's words
+ * rather than its box.
+ */
+@Composable
+fun MenuSectionLabel(text: String, modifier: Modifier = Modifier, inset: Dp = 12.dp) {
+    Box(
+        modifier.fillMaxWidth().height(MENU_SECTION_LABEL_HEIGHT).padding(horizontal = inset),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            // Compose has no text-transform, so an uppercase treatment is an
+            // uppercase string. `Locale.ROOT` because this is a typographic
+            // transform of product copy, not a localized word.
+            text = text.uppercase(Locale.ROOT),
+            style = HermesTheme.type.panelLabel,
+            color = HermesTheme.tokens.textTertiary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Two lines of tracked 11sp, so the heading is a band and not a line. */
+private val MENU_SECTION_LABEL_HEIGHT = 32.dp
 
 /** One labelled, single-line settings field with the shared touch target and input policy. */
 @Composable

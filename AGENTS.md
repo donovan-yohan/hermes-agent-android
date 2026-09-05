@@ -199,6 +199,7 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/workflows/port-desktop-surface.md` | Porting any Desktop UI/capability: pinning, source-and-test reading, state classification, mobile adaptation, evidence |
 | `docs/workflows/review-desktop-parity.md` | The review gate for any UI change: rendering Desktop at the pin, verbatim copy and menu-order diffs, the three divergence classes, the reviewer's verdict |
 | `docs/workflows/sync-desktop-themes.md` | Desktop theme/token changes: inventory diff, mapping, fonts, parity, visual checks |
+| `docs/fonts.md` | The two fonts bundled in the APK: provenance, digests, the woff2 conversion and the licence line |
 | `docs/adr/0002-shared-remote-gateway.md` | Preferred Remote Gateway topology, native authentication, and multi-client boundary |
 | `docs/adr/0001-ssh-probe-to-tunnel.md` | Managed SSH transport, remote ownership, Gateway readiness, and restart limitation |
 | `.chalk/README.md` | chalkbag source-of-truth rules |

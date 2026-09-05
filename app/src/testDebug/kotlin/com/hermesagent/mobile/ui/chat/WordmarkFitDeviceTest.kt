@@ -6,11 +6,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
+import androidx.test.core.app.ApplicationProvider
+import android.content.Context
+import com.hermesagent.mobile.R
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -20,20 +28,17 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The wordmark fit against the **real platform face**, at every phone width.
+ * The stacked wordmark against the **real loaded face**, at every phone width.
  *
- * `WordmarkFitTest` proves the arithmetic from the ratio the pinned Desktop
- * capture recorded. This proves the same thing in the font Android actually
- * draws, which is the one that has to fit.
+ * `WordmarkFitTest` proves the arithmetic from the advances the shipped font
+ * file reports. This proves the same thing through the font Android actually
+ * loads from `res/font`, which is the one that has to fit — and, first of all,
+ * that it loads at all.
  *
  * `@GraphicsMode(NATIVE)` is load-bearing and not decoration. Robolectric's
  * default legacy graphics has no font: it measures the whole twelve-character
  * wordmark at `32.5px` when asked for `48sp`, and not even linearly in the
- * size, so a fit asserted under it measures the stub. Under NATIVE the same
- * probe measures `405px` — `8.44 em` for Roboto Bold at `0.08em` tracking,
- * against Collapse's `7.756 em`. The platform face is the wider of the two,
- * which is why Desktop's `2.75rem` floor is even less reachable here than the
- * Desktop-derived table suggests.
+ * size, so a fit asserted under it measures the stub.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -44,6 +49,42 @@ class WordmarkFitDeviceTest {
     val compose = createComposeRule()
 
     private data class Fit(val screenDp: Int, val columnDp: Float, val fontSp: Float, val runDp: Float)
+
+    /**
+     * The resource resolves to a real typeface.
+     *
+     * `res/font/collapse_bold.otf` is a binary this repo carries. A truncated,
+     * mis-flavoured or unparseable one fails here with an exception rather than
+     * silently falling back to the platform sans on a device, which is a
+     * difference nothing else in this suite could see.
+     */
+    @Test
+    fun `the bundled Collapse Bold loads as a platform typeface`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertNotNull(ResourcesCompat.getFont(context, R.font.collapse_bold))
+    }
+
+    /** The face is the wordmark's whatever the preset asks for. */
+    @Test
+    fun `the monospace-everything preset still sets the wordmark in Collapse`() {
+        var cyberpunk: Float by mutableStateOf(-1f)
+        var nous: Float by mutableStateOf(-1f)
+        compose.setContent {
+            val measurer = rememberTextMeasurer()
+            HermesTheme(AppearanceSelection("cyberpunk", HermesThemeMode.Dark)) {
+                cyberpunk = probeRun(measurer, HermesTheme.type.wordmark)
+            }
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                nous = probeRun(measurer, HermesTheme.type.wordmark)
+            }
+        }
+        compose.waitForIdle()
+        assertTrue("nothing measured", cyberpunk > 0f)
+        // `cyberpunk` sets both theme families to a monospace, so if the
+        // wordmark took the preset's sans this run would be the wider of the
+        // two rather than identical to `nous`'s.
+        assertEquals(nous, cyberpunk, 0.5f)
+    }
 
     @Test
     fun `the fitted wordmark fits the column on every phone width`() {
@@ -57,26 +98,58 @@ class WordmarkFitDeviceTest {
     }
 
     /**
-     * The reason there is no floor. If this ever fails, either the type scale
-     * moved or the platform face did, and the table in
-     * `docs/parity/empty-states.md` needs recomputing.
+     * Stacking is what makes Desktop's `--fit-min` affordable. On one line this
+     * same suite asserted the opposite — that the two narrow columns could only
+     * fit *below* the floor — and the fix was not a clamp but a second line.
      */
     @Test
-    fun `the two narrow phone columns cannot hold Desktop's floor`() {
-        for (fit in fits().filter { it.screenDp < 411 }) {
+    fun `every phone width now clears Desktop's floor without reaching the ceiling`() {
+        for (fit in fits()) {
             assertTrue(
-                "w${fit.screenDp}dp fitted to ${fit.fontSp}sp; a ${WORDMARK_MIN_FONT_SIZE_DESKTOP.value}sp " +
-                    "floor would have raised it and clipped the run",
-                fit.fontSp < WORDMARK_MIN_FONT_SIZE_DESKTOP.value,
+                "w${fit.screenDp}dp fitted to ${fit.fontSp}sp, below Desktop's " +
+                    "${WORDMARK_MIN_FONT_SIZE_DESKTOP.value}sp floor",
+                fit.fontSp >= WORDMARK_MIN_FONT_SIZE_DESKTOP.value,
             )
+            assertTrue(fit.fontSp <= WORDMARK_MAX_FONT_SIZE.value + TOLERANCE_DP)
         }
     }
 
+    /**
+     * Two lines, one size, stacked — the layout claim, made on the string the
+     * composable actually hands to `Text`.
+     */
     @Test
-    fun `the widest phone column clears the floor without reaching the ceiling`() {
-        val widest = fits().last()
-        assertTrue(widest.fontSp > WORDMARK_MIN_FONT_SIZE_DESKTOP.value)
-        assertTrue(widest.fontSp < WORDMARK_MAX_FONT_SIZE.value)
+    fun `the wordmark lays out as two stacked lines at one size`() {
+        var layout: TextLayoutResult? = null
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                val measurer = rememberTextMeasurer()
+                val style = HermesTheme.type.wordmark
+                val size = 60.sp
+                layout = measurer.measure(
+                    text = AnnotatedString(INTRO_WORDMARK_LINES.joinToString("\n")),
+                    style = style.copy(
+                        fontSize = size,
+                        lineHeight = (size.value * WORDMARK_LINE_HEIGHT).sp,
+                    ),
+                    softWrap = false,
+                    maxLines = INTRO_WORDMARK_LINES.size,
+                )
+            }
+        }
+        compose.waitForIdle()
+
+        val measured = requireNotNull(layout)
+        assertEquals(INTRO_WORDMARK_LINES.size, measured.lineCount)
+        assertTrue(
+            "the second line is not below the first",
+            measured.getLineTop(1) > measured.getLineTop(0),
+        )
+        // The wider line is the one that sets the block's width, and it is
+        // `HERMES` — the fit measures that one for exactly this reason.
+        val hermes = measured.getLineRight(0) - measured.getLineLeft(0)
+        val agent = measured.getLineRight(1) - measured.getLineLeft(1)
+        assertTrue("AGENT is not narrower than HERMES", agent < hermes)
     }
 
     /**
@@ -107,16 +180,18 @@ class WordmarkFitDeviceTest {
                         val columnDp = screenDp.dp - INTRO_SPLASH_GUTTER * 2 - WORDMARK_INSET
                         val size = fitWordmarkFontSize(
                             measurer,
-                            INTRO_WORDMARK,
+                            INTRO_WORDMARK_LINES,
                             style,
                             columnDp.toPx(),
                         )
-                        val runPx = measurer.measure(
-                            text = AnnotatedString(INTRO_WORDMARK),
-                            style = style.copy(fontSize = size),
-                            softWrap = false,
-                            maxLines = 1,
-                        ).size.width.toFloat()
+                        val runPx = INTRO_WORDMARK_LINES.maxOf { line ->
+                            measurer.measure(
+                                text = AnnotatedString(line),
+                                style = style.copy(fontSize = size),
+                                softWrap = false,
+                                maxLines = 1,
+                            ).size.width.toFloat()
+                        }
                         Fit(
                             screenDp = screenDp,
                             columnDp = columnDp.value,
@@ -131,6 +206,16 @@ class WordmarkFitDeviceTest {
         assertTrue("no widths measured", measured.size == PHONE_WIDTHS_DP.size)
         return measured
     }
+
+    private fun probeRun(
+        measurer: androidx.compose.ui.text.TextMeasurer,
+        style: androidx.compose.ui.text.TextStyle,
+    ): Float = measurer.measure(
+        text = AnnotatedString(INTRO_WORDMARK_LINES.first()),
+        style = style.copy(fontSize = WORDMARK_PROBE_FONT_SIZE),
+        softWrap = false,
+        maxLines = 1,
+    ).size.width.toFloat()
 
     private companion object {
         /** The narrowest supported phone, the common baseline, and a large one. */

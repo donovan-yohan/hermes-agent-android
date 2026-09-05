@@ -16,9 +16,9 @@ rather than clobber.
 
 ## Desktop theme font substitutions
 
-Desktop may load the listed web fonts; Android bundles no webfont and makes no
-runtime font request. The preset still records the requested role, then uses
-the matching platform family:
+Desktop may load the listed web fonts; Android bundles no *theme* webfont and
+makes no runtime font request. The preset still records the requested role,
+then uses the matching platform family:
 
 | Desktop preset / font | Android result |
 |---|---|
@@ -30,3 +30,9 @@ the matching platform family:
 
 `cyberpunk` is load-bearing: because Desktop assigns Courier to both roles,
 Android also renders its body text with the monospace family.
+
+The empty-chat wordmark is the exception, and it is not a preset font: Desktop's
+`.wordmark` overrides `var(--font-sans)` for every skin, so Android ships
+Desktop's own Collapse Bold and uses it whatever the preset asks for —
+`cyberpunk` included. Provenance and licence are in
+[`fonts.md`](fonts.md).

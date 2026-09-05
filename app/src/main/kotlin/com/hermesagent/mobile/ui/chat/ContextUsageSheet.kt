@@ -2,6 +2,7 @@
 
 package com.hermesagent.mobile.ui.chat
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -26,14 +28,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.session.ContextBreakdown
 import com.hermesagent.mobile.data.session.ContextMeterState
 import com.hermesagent.mobile.data.session.ContextUsageCategory
 import com.hermesagent.mobile.data.session.SessionUsage
+import com.hermesagent.mobile.ui.common.touchTargetOverflow
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 internal const val CONTEXT_METER_TAG = "context-meter"
@@ -50,51 +59,107 @@ internal fun contextUsageSegmentTag(id: String): String = "context-usage-segment
 /**
  * Top-bar Context Meter component in the ChatTopBar.
  *
- * Pinned to upstream `apps/desktop/src/lib/statusbar.tsx:44-60` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * Pinned to upstream `apps/desktop/src/lib/statusbar.tsx:37-60` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, which spells the three facts out
+ * as text — `30k/200k`, then `[████░░░░░░] 40%` — in a footer that runs the
+ * width of a desktop window.
+ *
+ * The phone draws them instead of spelling them: the same proportion as a ring
+ * that fills with the percentage, the percentage beside it, and the figures one
+ * tap away in [ContextUsageSheet] and in what a screen reader speaks. The
+ * text form is 24 characters wide, and the chrome's status line is one
+ * phone-width row that also carries the connection line and the approval chip —
+ * it squeezed both out. Ledgered in `docs/parity/context-usage.md`.
  */
 @Composable
 fun ContextMeter(
-    label: String,
-    detail: String,
+    state: ContextMeterState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = HermesTheme.tokens
-    // `clickable` already merges this row's children into one semantics node, so
-    // a blanket `contentDescription` here would *replace* the figures a sighted
-    // user reads with the bare name. The name rides on `onClickLabel` instead,
-    // which is what Desktop's own accessible name for the item is
-    // (`en.ts:2963` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), and the
-    // merged children keep speaking `30k/200k` and `[████░░░░░░] 40%`.
+    // No context window means no proportion to draw — a resumed session with no
+    // compressor reports `context_max: 0` and the label is a bare `12k tok`
+    // (`usageContextLabel`). That case keeps Desktop's own words.
+    val percent = state.usage.contextPercent
+        ?.takeIf { (state.usage.contextMax ?: 0L) > 0L }
+        ?.coerceIn(0, 100)
+    // `clickable` merges this row's children into one semantics node. What that
+    // node says used to be the figures themselves, because the row rendered
+    // them; now the row draws them, so the figures are what the description
+    // carries. Desktop's own accessible name for the item (`en.ts:2963`) still
+    // rides on `onClickLabel`, which is where the action a tap performs belongs.
+    val spoken = if (percent == null) {
+        state.label
+    } else {
+        ContextUsageCopy.spokenUsage(
+            compactNumber(state.usage.contextUsed ?: 0L),
+            compactNumber(state.usage.contextMax ?: 0L),
+            percent,
+        )
+    }
     Row(
         modifier = modifier
+            // The floor is a hit area, not a line height: the status row is one
+            // line tall and this must not push it apart.
+            .touchTargetOverflow(HermesTheme.spacing.touchTarget)
             .testTag(CONTEXT_METER_TAG)
             .clickable(
                 role = Role.Button,
                 onClick = onClick,
                 onClickLabel = ContextUsageCopy.CONTEXT_USAGE,
             )
+            .semantics { contentDescription = spoken }
+            .wrapContentHeight(Alignment.CenterVertically)
             .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (percent != null) {
+            ContextRing(percent = percent)
+        }
         Text(
-            text = label,
+            text = if (percent == null) state.label else ContextUsageCopy.percent(percent),
             style = HermesTheme.type.caption,
             color = tokens.textSecondary,
             maxLines = 1,
         )
-        if (detail.isNotEmpty()) {
-            Text(
-                text = detail,
-                style = HermesTheme.type.caption,
-                color = tokens.textTertiary,
-                maxLines = 1,
+    }
+}
+
+/**
+ * Desktop's ten-cell glyph bar (`statusbar.tsx:37-42`) as the one mark a phone
+ * chrome has room for: a track ring in the stroke ink, and the used proportion
+ * swept clockwise from twelve o'clock in the same ink the percentage is set in.
+ */
+@Composable
+private fun ContextRing(percent: Int, modifier: Modifier = Modifier) {
+    val track = HermesTheme.tokens.strokeSecondary
+    val fill = HermesTheme.tokens.textSecondary
+    Canvas(modifier.size(RingSize)) {
+        val stroke = RingStroke.toPx()
+        val diameter = size.minDimension - stroke
+        drawCircle(color = track, radius = diameter / 2f, style = Stroke(stroke))
+        // A pie, not a second ring: the wedge fills the disc inside the track
+        // as the window fills, which is the "how full" read a glance wants.
+        if (percent > 0) {
+            val inner = diameter - stroke
+            drawArc(
+                color = fill,
+                startAngle = -90f,
+                sweepAngle = 360f * percent.coerceIn(0, 100) / 100f,
+                useCenter = true,
+                topLeft = Offset(stroke, stroke),
+                size = Size(inner, inner),
+                style = Fill,
             )
         }
     }
 }
+
+/** The ring reads at a glance beside 11sp type without crowding the line. */
+private val RingSize = 14.dp
+private val RingStroke = 2.dp
 
 /**
  * Context Usage popover analog from Hermes Desktop

@@ -8,11 +8,13 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.Dp
 import com.hermesagent.mobile.data.gateway.ApprovalMode
 import com.hermesagent.mobile.data.gateway.ApprovalModeOutcome
 import com.hermesagent.mobile.data.gateway.ApprovalModeState
@@ -133,6 +135,36 @@ class ApprovalModeJourneyTest {
         assertEquals(true, meter.left < chip.left)
     }
 
+    /**
+     * Desktop's `DropdownMenuLabel` is left-aligned at the same inset as the
+     * words in its rows, because Desktop's selected mark is trailing
+     * (`components/ui/dropdown-menu.tsx:169-198` @ `3ca096de`). This app's mark
+     * leads the row, so the heading follows the words rather than the box, and
+     * wears the app's own uppercase panel-label treatment. Ledgered in
+     * `docs/parity/approval-mode.md`.
+     */
+    @Test
+    fun `the menu heading is uppercase, centred in its band and on the rows' text column`() {
+        launch(ApprovalMode.Off)
+
+        compose.onNodeWithTag(APPROVAL_MODE_CHIP_TAG).performClick()
+        compose.waitForIdle()
+
+        val heading = compose.onNodeWithText("APPROVAL MODE", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val band = compose.onNodeWithTag(APPROVAL_MODE_MENU_HEADER_TAG, useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val label = compose.onNodeWithText("Manual", useUnmergedTree = true).getUnclippedBoundsInRoot()
+
+        assertClose("the heading sits on the rows' text column", label.left, heading.left)
+        assertClose(
+            "the heading is centred in its band",
+            (band.top + band.bottom) / 2,
+            (heading.top + heading.bottom) / 2,
+        )
+    }
+
     @Test
     fun `the menu holds Desktop's title and its three rows in Desktop's order`() {
         launch(ApprovalMode.Manual)
@@ -140,7 +172,7 @@ class ApprovalModeJourneyTest {
         compose.onNodeWithTag(APPROVAL_MODE_CHIP_TAG).performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithText("Approval mode").assertIsDisplayed()
+        compose.onNodeWithText("APPROVAL MODE").assertIsDisplayed()
 
         // Each row speaks its bold label and its secondary description, so the
         // rows are addressed by that pair rather than by a word the chip also
@@ -174,6 +206,10 @@ class ApprovalModeJourneyTest {
         assertEquals(listOf(ApprovalMode.Off), repository.writes)
         // Desktop highlights only `off` and it is the label the chip now shows.
         compose.onNodeWithTag(APPROVAL_MODE_CHIP_TAG).assertIsDisplayed()
+    }
+
+    private fun assertClose(what: String, expected: Dp, actual: Dp) {
+        assertEquals("$what: expected $expected, was $actual", 0f, (expected - actual).value, 1f)
     }
 
     private class JourneyRepository : GatewaySessionRepository {

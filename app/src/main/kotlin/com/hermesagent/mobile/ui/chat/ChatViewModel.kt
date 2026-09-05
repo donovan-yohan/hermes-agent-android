@@ -311,6 +311,17 @@ data class ChatUiState(
      * not landed" — the intro splash does — has to read this, not that.
      */
     val activeSessionId: String? = null,
+    /**
+     * The project the homed session belongs to, when the catalog has been
+     * hydrated far enough to say.
+     *
+     * Not [selectedProject], which is the sidebar's own browsing state: a
+     * session opened from search or from a rehome belongs to whatever project
+     * claims it, and the sidebar may be looking at a different one or at none.
+     * Null whenever the membership is simply not known — the intro splash, its
+     * only reader, then says nothing rather than guessing.
+     */
+    val activeSessionProject: ProjectSummary? = null,
     val transcript: List<TranscriptEntry> = emptyList(),
     val query: String = "",
     val draft: String = "",
@@ -732,6 +743,15 @@ internal class ChatViewModel(
             projectLoading = selectedProject != null && navigation.loadingProjectId == selectedProject.id,
             activeSession = active,
             activeSessionId = displayedActiveId,
+            // `memberships` is projectId -> sessionIds and only hydrated for
+            // projects that have been read, so this resolves for a session
+            // opened from its project and is null otherwise. That is the
+            // honest answer: the catalog has not been asked.
+            activeSessionProject = displayedActiveId?.let { id ->
+                cacheState.projects.projects.values.firstOrNull { project ->
+                    id in cacheState.projects.memberships[project.id].orEmpty()
+                }
+            },
             transcript = displayedActiveId?.let(cacheState.transcripts::get).orEmpty(),
             query = searchState.query,
             draft = draftText,

@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -111,17 +112,29 @@ class ContextUsageJourneyTest {
     }
 
     @Test
-    fun `top bar renders context meter with label, detail and its spoken name`() {
+    fun `top bar renders the compact meter, and speaks the figures it draws`() {
         launch()
-        compose.onNodeWithText("4k/20k").assertIsDisplayed()
-        compose.onNodeWithText("[\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 20%").assertIsDisplayed()
-        // The name rides on the click action, so a screen reader keeps reading
-        // the figures a sighted user sees rather than replacing them.
+        // The phone draws Desktop's `4k/20k [\u2588\u2588\u2591\u2591...] 20%`
+        // as a ring and the percentage; the figures stay in the sheet a tap away.
+        compose.onNodeWithText("20%", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("4k/20k", useUnmergedTree = true).assertDoesNotExist()
+        // What a screen reader hears is the whole reading, not the one figure
+        // the row has room to draw.
+        compose.onNodeWithContentDescription("4k of 20k, 20%").assertExists()
+        // Desktop's own name for the item rides on the click action.
         compose.onNodeWithTag(CONTEXT_METER_TAG).assert(
             SemanticsMatcher("has the Context usage click label") { node ->
                 node.config.getOrNull(SemanticsActions.OnClick)?.label == "Context usage"
             },
         )
+    }
+
+    /** No context window, no proportion: Desktop's own words are what is left. */
+    @Test
+    fun `a session with no context window keeps the token count Desktop shows`() {
+        launch(usage = SessionUsage(total = 12_000, model = "test-model"))
+
+        compose.onNodeWithText("12k tok", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test

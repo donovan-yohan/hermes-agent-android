@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hermesagent.mobile.ui.chat.ComposerBusyKind
+import com.hermesagent.mobile.ui.chat.INTRO_WORDMARK
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -292,7 +293,12 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.onNodeWithContentDescription("New session").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("No messages yet").assertIsDisplayed()
+        // A session the Gateway has just created is empty, and an empty homed
+        // session now draws the intro splash rather than the plain
+        // `No messages yet` note it replaced. That rule and its guards belong
+        // to `EmptyStateJourneyTest`; here the wordmark is only the marker that
+        // the composer really left `live-a` for the created session.
+        compose.onNodeWithContentDescription(INTRO_WORDMARK).assertIsDisplayed()
         assertEquals("created-live", viewModel.uiState.value.activeSession?.id)
     }
 

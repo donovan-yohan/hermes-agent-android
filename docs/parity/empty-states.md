@@ -40,7 +40,8 @@ this port carries is the one without it.
 | Sidebar loading skeletons | the same file, `SidebarSessionSkeletons` |
 | Appearance row | `ui/appearance/AppearanceScreen.kt`, `IntroSplashRow` |
 | Persistence | `data/prefs/HermesPreferences.kt`, `appearance.introSplash` |
-| Tests | `app/src/test/kotlin/.../ui/chat/IntroSplashTest.kt` and `WordmarkFitTest.kt`, `app/src/test/kotlin/.../data/prefs/HermesPreferencesTest.kt`, `app/src/testDebug/kotlin/.../ui/chat/EmptyStateJourneyTest.kt`, `app/src/testDebug/kotlin/.../ui/appearance/IntroSplashSettingJourneyTest.kt` |
+| Bundled wordmark face | `app/src/main/res/font/collapse_bold.otf`; provenance in `docs/fonts.md` |
+| Tests | `app/src/test/kotlin/.../ui/chat/IntroSplashTest.kt`, `WordmarkFitTest.kt` and `CollapseBoldFontTest.kt`, `app/src/test/kotlin/.../data/prefs/HermesPreferencesTest.kt`, `app/src/testDebug/kotlin/.../ui/chat/EmptyStateJourneyTest.kt`, `app/src/testDebug/kotlin/.../ui/appearance/IntroSplashSettingJourneyTest.kt` |
 
 ### Visibility, mapped honestly
 
@@ -64,10 +65,30 @@ the composer a frame or two before `session.info` publishes the row, and
 `activeSession` is null for exactly that gap. `ChatUiState.activeSessionId` was
 added for it. `EmptyStateJourneyTest` pins both halves.
 
-What that session *does* see in the gap is the pre-existing
-`No messages yet` / `Start a conversation with Hermes.` note, unchanged by this
-port and now centred rather than top-anchored. Desktop shows `ChatEmptySlot`
-there instead; that surface is not ported and is out of this slice's scope.
+What that session sees in the gap is the pre-existing
+`No messages yet` / `Start a conversation with Hermes.` note, centred rather
+than top-anchored. Desktop shows `ChatEmptySlot` there instead; that surface is
+not ported.
+
+**And once the gap closes, the splash is what an empty session gets.** Desktop
+would show `ChatEmptySlot`; this app has never had it, so the alternative here
+was that note, which says less than the wordmark does. The owner's call is the
+splash — for a homed session as for a fresh draft. Three things guard it, and
+none of them is new:
+
+- the Appearance toggle still outranks everything, so `Off` restores the note
+  exactly as before;
+- `turnRunning` still refuses to paint over the progress row;
+- and the loading flash is now refused by the Gateway's own count.
+  `ChatUiState.transcript` is read straight from the cache
+  (`ChatViewModel.kt:735`), so a session whose history is still being fetched is
+  *also* an empty transcript. There is no "history loaded" fact in this state,
+  so `SessionSummary.messageCount` — `session.info`'s `message_count` — is what
+  vouches for the emptiness: null while the row has not landed at all, non-zero
+  while a resumed session's rows are in flight, and zero only when the backend
+  has said the session is empty. A Gateway that reports no `message_count`
+  defaults it to zero and can still flash for the frames of the first read; that
+  is the same window Desktop's own `messagesEmpty` has.
 
 ### The sidebar's own loading window
 
@@ -89,31 +110,62 @@ one component for both cases too.
 ## The wordmark's fit
 
 Desktop's `.fit-text` clamps between `--fit-min: 2.75rem` and no maximum
-(`wordmark.tsx:22-24`, `styles.css:1653-1661`). This port clamps the **ceiling
-only**, and the floor is the reason.
+(`wordmark.tsx:22-24`, `styles.css:1653-1661`), and sets the whole string on one
+line. This port stacks it — `HERMES` over `AGENT` — and that one change is what
+the rest of this section is about.
 
-The pinned light capture measures the visible lettering at `1052.0px` in a
-`135.637px` face (`contract.json`, node 4), so `HERMES AGENT` spans **7.756 em**
-in Collapse. Roboto Bold at the same `0.08em` tracking measures `405px` at
-`48sp` — **8.4375 em**, the wider of the two, which is the face this app draws.
-`Wordmark` receives `screen - 2 x 2dp gutter - 16dp inset`, i.e. `screen - 20dp`:
+**Why stack it.** The pinned light capture measures the visible lettering at
+`1052.0px` in a `135.637px` face (`contract.json`, node 4), so `HERMES AGENT`
+spans **7.756 em** in Collapse. `Wordmark` receives
+`screen - 2 x 2dp gutter - 16dp inset`, i.e. `screen - 20dp`, so on a `w320dp`
+phone the single line fits at about `38.7 sp` — a heading, not a wordmark — and
+Desktop's own `2.75rem` floor was *unreachable*, needing `341dp` of glyph run
+against `300dp` of column. Under `maxLines = 1, softWrap = false` an overrun is
+clipped at both ends in silence, so this port could not clamp to the floor and
+said so.
 
-| Screen | Column | Fitted (Roboto) | Fitted (Collapse) | Floor needs, Roboto | Floor reachable |
+**What stacking changes.** The run that has to fit is now the wider *line*.
+`HERMES` spans `3.727 em` of glyph advance in the shipped face plus
+`.wordmark`'s `0.08em` per character — **4.207 em**; `AGENT` spans `3.261 em`
+and is never the constraint. Both numbers are read off
+`res/font/collapse_bold.otf` by `CollapseBoldFont`, and
+`CollapseBoldFontTest` reproduces the capture's `7.756 em` from the same
+advances, so the table below and the pinned Desktop render are the same
+measurement:
+
+| Screen | Column | Widest line | Fitted | Block at `0.9` leading | Desktop's `2.75rem` floor |
 |---|---|---|---|---|---|
-| `w320dp` | 300 dp | 35.6 sp | 38.7 sp | 371.2 dp | no — overruns by 71 dp |
-| `w360dp` | 340 dp | 40.3 sp | 43.8 sp | 371.2 dp | no — overruns by 31 dp |
-| `w411dp` | 391 dp | 46.3 sp | 50.4 sp | 371.2 dp | yes |
+| `w320dp` | 300 dp | `HERMES`, 4.207 em | 71.3 sp | 128.3 dp | cleared |
+| `w360dp` | 340 dp | `HERMES`, 4.207 em | 72 sp — the ceiling | 129.6 dp | cleared |
+| `w411dp` | 391 dp | `HERMES`, 4.207 em | 72 sp — the ceiling | 129.6 dp | cleared |
 
-With a floor clamp the two narrow columns would have been raised back to `44sp`
-and clipped at both ends in silence, because the wordmark is laid out
-`maxLines = 1, softWrap = false`. A font scale above 1.0 widens the run
-further; the fit is measured rather than assumed, so it absorbs that too.
+So the floor is honoured on every phone width, and honoured by being *met*
+rather than by a clamp. There is still no clamp, and the reason is arithmetic:
+`fitWordmarkSp` returns the size at which the run exactly fills the column, so a
+result below the floor would mean a column that cannot hold the floor, and
+raising it would only clip.
 
-Two tests hold this, for two different reasons. `WordmarkFitTest` is plain JVM
-and drives `fitWordmarkSp` from the ratio the Desktop capture recorded, so the
-provenance of the number is the capture rather than the host. `WordmarkFitDeviceTest`
-runs under Robolectric with `@GraphicsMode(NATIVE)` and measures the real
-platform face at all three widths.
+**The two ceilings are this port's.** Desktop needs none, because `.fit-text`
+runs inside a column bounded by `--composer-width`.
+
+- `WORDMARK_MAX_FONT_SIZE`, 72 sp per line, which binds on every phone at or
+  above `w360dp`.
+- A height guard, which one line did not need. Two lines are twice as tall, and
+  a short slot — a phone in landscape — is where filling the width would push
+  the line of copy the wordmark titles off the surface. The lettering may take
+  at most half the height its slot offers; on every upright phone the guard is
+  slack and the ceiling binds first.
+
+A font scale above 1.0 widens the run; the fit is measured rather than assumed,
+so it absorbs that too.
+
+Three tests hold this, for three different reasons. `CollapseBoldFontTest` pins
+the shipped face by digest and reports its advances, so the ems above are
+properties of a committed file. `WordmarkFitTest` is plain JVM and drives
+`fitWordmarkSp` from those advances. `WordmarkFitDeviceTest` runs under
+Robolectric with `@GraphicsMode(NATIVE)`, loads `R.font.collapse_bold` through
+`ResourcesCompat`, measures the real face at all three widths, and checks that
+the lettering lays out as two stacked lines at one size.
 
 **Font scale is proved in the pure test only.** Robolectric does not plumb one
 into text layout — a scaled `Density` provided through `LocalDensity`, and one
@@ -121,51 +173,54 @@ handed straight to a constructed `TextMeasurer`, both return exactly the
 unscaled size — so the device test does not claim it. What matters is the
 invariant, not the platform: a run that measures wider yields a proportionally
 smaller fit, and `WordmarkFitTest` asserts that with the widened run supplied
-directly. On a real device the emulator's own scale is 1.0, which is what the
-`w320dp` capture below was taken at.
+directly. On a real device the emulator's own scale is 1.0.
 
 `NATIVE` there is load-bearing: Robolectric's **default legacy** graphics has no
 font at all and measures the whole twelve-character wordmark at `32.5px` when
 asked for `48sp` — about `0.68em` for twelve glyphs, and not even linearly in
-the size. A fit asserted under legacy graphics would be measuring the stub. The
-`405px` above is the same probe under `NATIVE`.
+the size. A fit asserted under legacy graphics would be measuring the stub.
 
 The device render at `w320dp` below is the third proof, and the one that is not
 a measurement at all.
 
 ## The font
 
-Desktop draws the wordmark in **Collapse**, loaded from
-`@nous-research/ui`'s `dist/fonts/Collapse-Bold.woff2` (`styles.css:61-68`,
-`apps/desktop/package.json` pins `@nous-research/ui@0.18.2`). It is not bundled
-here, and the reason is not effort:
+**Resolved.** Desktop draws the wordmark in **Collapse**, loaded from
+`@nous-research/ui`'s `dist/fonts/Collapse-Bold.woff2` (`styles.css:62-68`), and
+this app now draws it in the same file. `res/font/collapse_bold.otf` is that
+woff2 with the container removed and nothing else changed — no subsetting, no
+re-hinting, no outline conversion, no name-table edit. Digests, the exact
+command and the licence line are in [`../fonts.md`](../fonts.md).
 
-- `@nous-research/ui@0.18.2` declares `"license": "MIT"` in its `package.json`
-  and ships **no** `LICENSE`, `OFL.txt` or any font-specific notice — verified
-  against both the npm tarball and the copy installed in the reference
-  checkout's `node_modules`. An MIT declaration on a design-system package does
-  not, on its own, grant redistribution of a third-party typeface inside it.
-- Collapse is a **retail typeface from Blaze Type** (designed by Axel Andre),
-  sold commercially. Nothing in the package documents a licence that would let
-  this repo ship it in an APK.
-- Android's `res/font` cannot read woff2 at all, and woff2 is the only format
-  the package ships. Bundling would mean *converting* the face — a modification
-  most retail font EULAs forbid outright.
+Collapse is a commercial Blaze Type face; the repo owner states permission to
+use it in this app.
 
-So the licence could not be established, and the rule was to not bundle.
-Android draws Desktop's own declared fallback, `var(--font-sans)`, at Desktop's
-weight (700), casing (uppercase), tracking (0.08em) and line height (0.9).
-`THIRD_PARTY_NOTICES.md` is unchanged, because nothing was added to it.
+The divergence ledger below used to carry a row for this: the wordmark set in
+Desktop's declared fallback, `var(--font-sans)`, because the licence could not
+be established from `@nous-research/ui`'s own metadata. That row is gone,
+because the difference it recorded is gone. What replaces it is a stricter
+claim than "same weight and tracking": `CollapseBoldFontTest` pins the shipped
+bytes by digest and reproduces the pinned Desktop capture's `7.756 em` from
+them, so the two sides are provably the same outlines.
 
-This is the largest visible difference in this port and the one the Android
-half of the report is most needed for: Collapse is a high-contrast display face
-and a platform bold sans is not, so the two silhouettes differ even though
-every measurable property matches.
+The face is fixed to the wordmark rather than taken from the preset's font
+choice, because `.wordmark` names `'Collapse', var(--font-sans)` and therefore
+overrides the theme sans for every skin upstream — including `cyberpunk`, which
+sets the rest of the UI in a monospace. `WordmarkFitDeviceTest` asserts that.
+
+`THIRD_PARTY_NOTICES.md` carries the notice.
 
 ## Visual report
 
 - report: docs/parity/visual/empty-states/empty-chat-intro-light/report.html
 - commit: 1d37f46
+- captures: the Android halves of `empty-chat-intro-light`, `empty-chat-intro-dark`
+  and `empty-chat-intro-w320dp-dark` were retaken on `emulator-5554` from this
+  branch's debug build after the bundled Collapse Bold, the stacked wordmark
+  and the session lines; the Desktop halves are unchanged, because Desktop did
+  not move. The retaken Android halves show a homed empty session (title
+  `New session`, the cwd line beneath the body), which is the case this branch
+  adds; Desktop's half is its fresh-draft intro.
 
 Four rendered side-by-sides, one per surface per mode; the table below lists
 them all. #152 is closed by this packet.
@@ -191,8 +246,10 @@ Each `report.html` sits beside its two halves under
 The last two are Android-only on purpose. `empty-chat-intro-w320dp-dark` is the
 narrowest supported phone, taken with `wm size 960x2140` at density 480 and
 reset afterwards; its `contract.json` records the override. It is the render the
-fit table above exists for: the lettering fits its column with margin at a size
-below Desktop's `2.75rem` floor. Desktop has no `w320dp` to compare it against.
+fit table above exists for. It was taken when the wordmark was one line, and it
+shows what that cost: the lettering fits its column only at a size *below*
+Desktop's `2.75rem` floor. It is the before half of this change and is owed a
+retake. Desktop has no `w320dp` to compare it against.
 `appearance-intro-splash-row-light` is the Appearance row, evidence that the
 `Intro Splash` title, description and Off/On control ship verbatim.
 
@@ -219,11 +276,14 @@ the `7.756 em` the fit table above is built on.
 
 ### What the side-by-side shows
 
-- The wordmark fills the column on both sides, and the face is the visible
-  difference: Desktop's Collapse is a high-contrast display serif, Android's is
-  Roboto Bold. Every other property — uppercase, weight 700, `0.08em` tracking,
-  `0.9` line height, the midground/foreground colour roles — matches. That row
-  is the ledger's first, and it is the one a reviewer should look hardest at.
+- **This bullet describes the captures as they stand, which is before this
+  change.** In them the wordmark fills the column on both sides and the face is
+  the visible difference: Desktop's Collapse against Android's Roboto Bold,
+  every other property — uppercase, weight 700, `0.08em` tracking, `0.9` line
+  height, the midground/foreground colour roles — matching. Both halves of that
+  sentence are what the retake has to settle: the face is now Desktop's own
+  file, and Android's lettering is two lines where Desktop's is one. Those are
+  the two rows a reviewer should look hardest at.
 - The body line sits directly under the lettering on both, centred, in the
   tertiary ink. Desktop's fits one line in a `1132px` column; Android's wraps to
   two or three in a phone column, which is the measure doing its job.
@@ -241,8 +301,10 @@ the `7.756 em` the fit table above is built on.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| The wordmark is set in Collapse, a Blaze Type retail face loaded from `@nous-research/ui` (`styles.css:61-68`) | mobile-adaptation | Desktop's own declared fallback, `var(--font-sans)`, at the same weight, casing, tracking and line height | The licence could not be established: the package declares MIT and ships no font notice, Collapse is sold commercially by Blaze Type, and `res/font` cannot read the only format shipped (woff2), so bundling would require converting a face this repo has no right to convert. The full finding is in **The font** above. The silhouette difference is real, and the light and dark side-by-sides above are what a reviewer judges it on |
-| `.fit-text` sizes the lettering from a container query, unbounded above, floor `2.75rem` (`wordmark.tsx:22-24`, `styles.css:1633-1661`) | mobile-adaptation | One measured layout pass at a probe size scaled to the column, clamped at 72 sp and **not** floored | Compose has no container query, so the fit is measured. The ceiling is this port's, because Desktop's column is bounded by `--composer-width` and a tablet column here is not. The floor is dropped because a phone column cannot hold it: at `7.756 em` the run needs `341 dp` at `2.75rem` against `300 dp` on a `w320dp` screen, and `maxLines = 1, softWrap = false` clips an overrun in silence. The per-width table is in **The wordmark's fit** above and `WordmarkFitTest` holds it |
+| The wordmark is one line, `HERMES AGENT`, fitted to `calc(100% - 1rem)` (`wordmark.tsx:15-45`) | mobile-adaptation | Two lines, `HERMES` over `AGENT`, one shared size, same `0.9` leading and `0.08em` tracking, both centred | Viewport space. Twelve characters plus a space across the `300 dp` a `w320dp` phone leaves sets the lettering at about `38.7 sp` — a heading, not display type — and Desktop's own `2.75rem` floor is unreachable there. Stacking puts the wider of a six- and a five-character run across the same column, so the same fill rule yields `71.3 sp` and clears the floor on every phone width; the table is in **The wordmark's fit** above. Wide layouts stack too rather than reverting to one line, because a tablet is the same app and one identity beats a breakpoint. `INTRO_WORDMARK` stays the accessibility name, so a screen reader hears `HERMES AGENT` once and never the split |
+| `.fit-text` sizes the lettering from a container query, unbounded above, floor `2.75rem` (`wordmark.tsx:22-24`, `styles.css:1633-1661`) | mobile-adaptation | One measured layout pass per line at a probe size scaled to the column, clamped at 72 sp per line and by half the slot's height, and still not floored | Compose has no container query, so the fit is measured. Both ceilings are this port's: Desktop's column is bounded by `--composer-width` and a tablet column here is not, and two lines are twice as tall, so a landscape phone would otherwise push the copy line off the surface. The floor is not clamped because a clamp could only ever raise a size the column has already been measured as unable to hold — but stacked, the fit now *meets* the floor everywhere, which is the difference from the one-line port. `WordmarkFitTest`, `WordmarkFitDeviceTest` and `CollapseBoldFontTest` hold it |
+| The intro renders only for a fresh draft; a session that owns the view gets `ChatEmptySlot` (`intro-visibility.ts:12-33`, `thread/index.tsx:155`) | mobile-adaptation | The splash also renders for a homed session whose transcript is empty and whose turn is not running | `ChatEmptySlot` has never been ported, so the alternative here was not Desktop's empty slot but the plain `No messages yet` note, which says less than the wordmark and the intro line do. The three guards are unchanged: the Appearance toggle still restores the note when it is `Off`, a running turn still wins, and the loading flash is refused by `SessionSummary.messageCount` — `session.info`'s own count — rather than by assuming an unread transcript is an empty one. `IntroSplashTest` and `EmptyStateJourneyTest` hold each clause |
+| The session's working directory and project live in Desktop's own chrome (`app/chat/index.tsx:419,675,734`) | mobile-adaptation | Two small centred lines under the intro copy — the project label in `type.caption`, the cwd's last two segments in the terminal family — and only when a session is homed | Viewport space. Desktop's window has room for a status bar carrying both facts at all times; a phone's chat chrome does not, and the splash is the one moment a session has nothing else on screen. So an opened session says which project it belongs to and which directory it will act in *before* the first instruction, rather than after. A fresh draft has neither and renders exactly what it rendered before. The path is shortened head-first because the tail identifies it, and the project resolves only when the catalog has been read — unknown says nothing rather than guessing |
 | The lettering renders twice, the `aria-hidden` twin acting as the `.fit-text` width reference (`wordmark.tsx:38-43`) | mobile-adaptation | Rendered once | The doubled span exists only to feed a CSS container query. Compose measures directly, so the second copy would be a node with no purpose and a second thing for the semantics tree to trip over |
 | `mix-blend-plus-lighter` on the wordmark (`wordmark.tsx:33`) | mobile-adaptation | Not painted | Compose has no plus-lighter blend for text without rendering the glyphs into a layer and compositing by hand. The colour role is unchanged: midground in light, foreground in dark |
 | The dark wordmark is `text-foreground/90` — 0.90 alpha over the foreground (`wordmark.tsx:33`) | mobile-adaptation | `tokens.textPrimary`, which is 0.94 over the same base (`HermesTokens.kt`) | Four points lighter, and deliberately not compounded: multiplying Desktop's 0.90 into a token already at 0.94 lands at 0.85 and matches neither. The alternative is a raw alpha in a component, which the token rule forbids. the dark side-by-side above is what judges whether four points is visible |
@@ -258,5 +320,5 @@ the `7.756 em` the fit table above is built on.
 | The sidebar blank state carries a `New project` button and nothing else (`section-states.tsx:26-42`) | mobile-adaptation | The same glyph, caption and ghost button, plus one extra line — `Connect to a Gateway to start a session.` — and only while the Gateway is not connected | Desktop's sidebar is never disconnected; a phone's routinely is, and the blank state is then the only place on screen that says which action comes first. The line is absent whenever Desktop would have nothing to add, so a connected Android blank state is Desktop's exactly |
 | `New project` is always live in Desktop's blank state | mobile-adaptation | Disabled when the Gateway is not connected or serves no project RPC | Same gate the sidebar header's `+` already uses in project mode. The control stays visible and keeps its glyph and label rather than disappearing |
 | `SidebarSessionSkeletons` renders while the unfiltered session set is still loading (`section-states.tsx:11-24`, gated at `sidebar/index.tsx:1423,1426`) | mobile-adaptation | The same five placeholder bars, from the same composable this rail already uses for a search read, gated on `ChatUiState.sessionsLoading` | Desktop draws one component for both waits and so does this; the only difference is that Android tags the two cases apart so a journey can tell which wait it is looking at. Without the gate `rows.isEmpty()` rendered `No sessions yet` with a live `+ New project` during the first fetch and after every reconnect — a claim about the account made before the account had answered |
-| `ChatEmptySlot` fills an empty *selected* session when the intro is not showing (`components/assistant-ui/thread/index.tsx:155`) | omission | The pre-existing `No messages yet` note, now centred | out-of-scope: #157 — that surface has never been ported and this slice did not add it. The note it replaces was already there and its copy is unchanged, per the port brief |
+| `ChatEmptySlot` fills an empty *selected* session when the intro is not showing (`components/assistant-ui/thread/index.tsx:155`) | omission | The pre-existing `No messages yet` note, centred — now reached only with the Appearance toggle `Off`, or while a session's row and history are still landing | out-of-scope: #157 — that surface has never been ported and this slice did not add it. Its copy is unchanged; what changed is how rarely it is seen, because the row above gives an empty homed session the splash instead |
 | The Appearance rows Desktop has and this app does not (UI scale, Terminal font, Session density, Tab strip, Translucency, Backdrop, Composer pop-out, Reactions, Tips, Tours, Vibe hearts, Tool view, Reasoning disclosure, Embeds) | omission | Absent | out-of-scope: #157 — pre-existing gaps in the Appearance surface that this slice neither introduced nor is scoped to close. This page ledgers the Intro Splash row it added; the surface as a whole owes its own parity page |
