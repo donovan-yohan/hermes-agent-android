@@ -270,7 +270,15 @@ private fun CompactLayout(
                 onSelectApprovalMode = actions.onSelectApprovalMode,
                 modifier = Modifier.statusBarsPadding(),
             )
-    TranscriptPane(state, actions.onShowEarlierMessages, actions.onBranchFromReply, actions.onRegenerateReply, introSplashEnabled, Modifier.weight(1f))
+            TranscriptPane(
+                state = state,
+                onShowEarlier = actions.onShowEarlierMessages,
+                onBranchFromReply = actions.onBranchFromReply,
+                onRegenerateReply = actions.onRegenerateReply,
+                onToggleReadAloud = actions.onToggleReadAloud,
+                introSplashEnabled = introSplashEnabled,
+                modifier = Modifier.weight(1f),
+            )
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -332,7 +340,15 @@ private fun WideLayout(
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
             )
-    TranscriptPane(state, actions.onShowEarlierMessages, actions.onBranchFromReply, actions.onRegenerateReply, introSplashEnabled, Modifier.weight(1f))
+            TranscriptPane(
+                state = state,
+                onShowEarlier = actions.onShowEarlierMessages,
+                onBranchFromReply = actions.onBranchFromReply,
+                onRegenerateReply = actions.onRegenerateReply,
+                onToggleReadAloud = actions.onToggleReadAloud,
+                introSplashEnabled = introSplashEnabled,
+                modifier = Modifier.weight(1f),
+            )
             ComposerPane(state, actions, gatewayDoor)
         }
     }
@@ -396,6 +412,7 @@ private fun TranscriptPane(
     onShowEarlier: () -> Unit,
     onBranchFromReply: ((String) -> Unit)?,
     onRegenerateReply: ((String) -> Unit)?,
+    onToggleReadAloud: (String) -> Unit,
     introSplashEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -542,6 +559,8 @@ private fun TranscriptPane(
                     onShowEarlier()
                 }
             },
+            readAloud = state.readAloud,
+            onToggleReadAloud = onToggleReadAloud,
             isWorking = state.activeSession?.status == SessionStatus.Working,
             activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
             progress = state.activeSession?.progress,

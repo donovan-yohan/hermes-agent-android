@@ -46,6 +46,11 @@ import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.updates.GatewaySystemApi
 import com.hermesagent.mobile.data.updates.GatewayUpdateController
 import com.hermesagent.mobile.data.updates.RestGatewaySystemApi
+import com.hermesagent.mobile.data.voice.GatewayReplySpeaker
+import com.hermesagent.mobile.data.voice.GatewayVoiceRepository
+import com.hermesagent.mobile.data.voice.ReplySpeaker
+import com.hermesagent.mobile.data.voice.SpeechPlayer
+import com.hermesagent.mobile.data.voice.WakeWordRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -188,8 +193,15 @@ class HermesApplication : Application() {
         )
     }
 
-    internal val voiceRepository: com.hermesagent.mobile.data.voice.GatewayVoiceRepository by lazy {
-        com.hermesagent.mobile.data.voice.GatewayVoiceRepository { gatewayHttp }
+    internal val voiceRepository: GatewayVoiceRepository by lazy {
+        GatewayVoiceRepository { gatewayHttp }
+    }
+
+    internal val replySpeaker: ReplySpeaker by lazy {
+        GatewayReplySpeaker(
+            voiceRepository,
+            SpeechPlayer(this, Dispatchers.IO)
+        )
     }
 
     internal val codingContextProvider: com.hermesagent.mobile.ui.chat.CodingContextProvider by lazy {
@@ -222,8 +234,8 @@ class HermesApplication : Application() {
         )
     }
 
-    internal val wakeWordRepository: com.hermesagent.mobile.data.voice.WakeWordRepository by lazy {
-        com.hermesagent.mobile.data.voice.WakeWordRepository(rpc = { gatewayConnection.client.value })
+    internal val wakeWordRepository: WakeWordRepository by lazy {
+        WakeWordRepository(rpc = { gatewayConnection.client.value })
     }
 
     internal val sessionRepository: LiveGatewaySessionRepository by lazy {
