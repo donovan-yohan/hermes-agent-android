@@ -13,7 +13,7 @@ produced, so a later pass can reproduce or replace it.
 | Package | `com.hermesagent.mobile.debug`, versionName `0.2.0-phase2` |
 | Device | `emulator-5554`, AVD `Pixel_10_Pro`, 1280×2856 @480dpi, Android 17 |
 | Backend | A Remote Gateway row labelled `QA Remote`, Hermes 0.21.0, profile `kame-qa` |
-| Captured | 2026-09-04 |
+| Captured | 2026-09-04; `sessions-light.png` and `sessions-dark.png` recaptured 2026-09-05 |
 
 Screenshots were taken with:
 
@@ -59,8 +59,8 @@ pillarboxes the frame in black.
 
 | File | Size | Shows | Real host name visible? |
 |---|---|---|---|
-| `sessions-light.png` | 288 KB | The sessions drawer over a transcript: `PINNED` / `TODAY` / `THIS WEEK` / `LAST WEEK` / `OLDER` calendar sections, the active row highlighted, one unread dot, the profile chip at the foot | No |
-| `sessions-dark.png` | 289 KB | The same drawer in dark mode | No |
+| `sessions-light.png` | 152 KB | The sessions drawer over a transcript: the `PINNED`, `TODAY` and `THIS WEEK` calendar sections, the active row highlighted, one unread dot, the profile chip at the foot | No |
+| `sessions-dark.png` | 150 KB | The same drawer in dark mode | No |
 | `chat-light.png` | 174 KB | One turn in a session: the sent prompt, the reply with inline code spans, the per-message action row with its `WIP` markers, the collapsed reasoning row, and the composer with its model chip | No |
 | `chat-dark.png` | 174 KB | The same transcript in dark mode | No |
 | `composer-completions-dark.png` | 230 KB | The slash-command completion popup open over the composer after typing `/`: `/new`, `/reset`, `/clear`, `/redraw`, `/history` with their descriptions | No |
@@ -70,6 +70,43 @@ pillarboxes the frame in black.
 The keyboard was dismissed before `composer-completions-dark.png` so the frame
 is the app's own surface rather than half Gboard; the completion popup survives
 losing the input method.
+
+### What the two sessions frames show, and why the list is short
+
+The `kame-qa` profile had accumulated months of QA runs — rows named after
+pull requests, Kanban task ids and relay smoke tests, plus a long tail of
+untitled `New session` rows. None of it is what a README should lead with, so
+before the recapture every row outside the profile's synthetic set was
+**archived** from its own row menu. Archive, not delete: the rows are still
+there under the drawer's `Filters ▸ Archived` view and each one's menu offers
+`Unarchive`. 132 rows were archived across three sweeps; the list backfills
+lazily from the Gateway, so a sweep that ends quiet is not proof on its own and
+the sweeps were repeated until two consecutive full passes archived nothing and
+a forced refetch still showed only the five rows below.
+
+What remains, and what the two frames show:
+
+| Section | Row |
+|---|---|
+| `PINNED` | `Weekly planning`, `Design review notes` |
+| `TODAY` | `Show Kotlin data class example #2` — active, and the session the demo clips use |
+| `THIS WEEK` | `Release checklist`, `Refactor auth middleware` — the latter carrying the unread dot |
+
+Two states in those frames were set deliberately rather than found. `Release
+checklist` was archived by the sweep and then restored with the row's own
+`Unarchive`, because it is part of the synthetic set. `Refactor auth
+middleware`'s unread dot had been consumed by an earlier capture opening that
+session, and was put back with `Mark as unread` so the frame shows the unread
+affordance it is there to show. Both are ordinary app actions on synthetic
+sessions, and both are reversible from the same menus.
+
+One consequence worth naming: `chat-light.png` and `chat-dark.png` were taken
+before that cleanup, from a session called `Summarise Kotlin data class` that
+the sweep archived. The frames themselves are clean and were kept — they show a
+prose reply with inline code spans and a collapsed reasoning row, which the
+remaining demo session does not — but their title will not be found in the
+sessions frames. Recapturing them from `Show Kotlin data class example #2` would
+make the set title-consistent at the cost of a plainer chat frame.
 
 ## Demos
 
