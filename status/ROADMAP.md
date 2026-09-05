@@ -313,7 +313,7 @@ lifecycle.
 
 ### Appearance and Android adaptation
 
-- All six built-in Desktop themes at the pinned theme authority, in the same
+- All eleven built-in Desktop themes at the pinned theme authority, in the same
   registry order, with light/dark/system mode and mobile chat-chrome choices.
 - Phone drawer and wide persistent session rail, IME-aware composer layouts,
   48 dp semantic actions, and desktop-keyboard shortcuts guarded against IME

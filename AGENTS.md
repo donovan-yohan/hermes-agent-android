@@ -207,4 +207,6 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/parity/system-panel.md` | System panel and the backend updates sheet: pin, HTTP contract, adaptation, deviations |
 | `docs/parity/approval-mode.md` | The Manual/Smart/Off control: `approvals.mode` contract, profile scoping, optimistic write and rollback |
 | `docs/parity/model-visibility.md` | The model shortlist and the Models sheet: stored keys, sentinels, family collapse, picker filtering |
+| `docs/guides/getting-started.md` | The public setup path: installing the rolling APK, choosing a route, the Gateway's HTTPS and `native_pkce` requirements, and the Tailscale `serve` recipe |
 | `docs/guides/termux-local-gateway.md` | Standing up a Termux `hermes serve` on the phone and adding it as a Local connection |
+| `docs/media/README.md` | What the committed screenshots and demos are, and the clean-profile capture rule they are taken under |

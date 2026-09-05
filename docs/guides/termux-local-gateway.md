@@ -19,6 +19,10 @@ Use another route instead when:
 - **Hermes lives on a machine you reach over SSH** — use Managed SSH
   ([ADR 0001](../adr/0001-ssh-probe-to-tunnel.md)).
 
+If you have not installed the app yet, or you are still choosing between the
+three routes, start at [Getting started](getting-started.md) and come back here
+once Local is the one you want.
+
 > **Support tier.** Upstream maintains Android/Termux on a best-effort basis:
 > "Termux (Android) is a Tier 2 platform … Commits to `main` may break these
 > packages at any point in time"
