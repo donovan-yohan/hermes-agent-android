@@ -722,11 +722,11 @@ private const val REFRESH_REPLY = "Refresh"
 /**
  * `Copy file` (`i18n/en.ts:3340`, `assistant.tool.copyFile` @ `3ca096de`).
  *
- * Desktop labels this slot through `toolCopyPayload`, which for a file-edit
- * tool holding an inline diff returns `copy.file` rather than the generic
- * `common.copy` (`components/assistant-ui/tool/fallback-model/index.ts:1253-1256`).
- * It is the same word this app already puts on a live file payload
- * (`ToolView.kt:124`), so the marked control and the built one agree.
+ * The label of the live Copy control over an inline diff. Desktop's
+ * `toolCopyPayload` resolves a file-edit tool holding an inline diff to
+ * `copy.file` with the diff itself as the payload
+ * (`fallback-model/index.ts:1253-1256 @ 3ca096de`), the same word this app
+ * puts on a live file payload (`ToolView.kt:124`).
  */
 private const val COPY_DIFF = "Copy file"
 
@@ -1269,17 +1269,11 @@ private fun InlineDiffPanel(
             )
         }
         if (expanded) {
-            // The slot #71 S35's real control lands in, holding Desktop's own
-            // placement: its diff Copy sits over the top-right of the payload,
-            // which is where `ToolCopyControl` already puts this app's. Nothing
-            // to hand over yet — the panel renders the diff it was given rather
-            // than owning the text — so it ships dimmed behind the `WIP` chip
-            // instead of absent.
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                ComingSoonIconAction(HermesIcon.Copy, COPY_DIFF)
+            // Desktop's `copy.file` payload for a file-edit tool
+            // (`fallback-model/index.ts:1253-1256 @ 3ca096de`): the whole diff,
+            // headers included, while the display filters the `---`/`+++` lines.
+            Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                ToolCopyControl(ToolCopyAction(COPY_DIFF, "File copied", diff))
             }
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
