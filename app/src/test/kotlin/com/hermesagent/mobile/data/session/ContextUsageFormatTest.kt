@@ -68,6 +68,23 @@ class ContextUsageFormatTest {
         assertEquals("", contextBarLabel(47.0, 0L))
     }
 
+    /**
+     * What the compact meter speaks, in both of the shapes `session.info` can
+     * arrive in.
+     *
+     * The second is the edge: a Gateway may send `context_percent` and
+     * `context_max` with no `context_used` at all. The meter used to substitute
+     * a zero for the missing figure and speak "0 of 200k, 40%" — a reading in
+     * which two of the three numbers contradict the third, heard only by the
+     * people who cannot see the ring that would have corrected it.
+     */
+    @Test
+    fun `the spoken meter reads both figures, or the proportion alone when there is no count`() {
+        assertEquals("30k of 200k, 40%", ContextUsageCopy.spokenUsage("30k", "200k", 40))
+        assertEquals("40%", ContextUsageCopy.spokenPercent(40))
+        assertEquals("0%", ContextUsageCopy.spokenPercent(0))
+    }
+
     @Test
     fun `parseHexColor parses 3, 6, and 8 character hex and returns null for CSS variables`() {
         assertEquals(Color(0xFF26C6DA), parseHexColor("#26c6da"))

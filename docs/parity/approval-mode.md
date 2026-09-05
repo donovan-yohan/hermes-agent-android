@@ -63,12 +63,18 @@ Every `path:line` below is against that SHA.
 | The YOLO bypass is reachable from the command palette and the `/yolo` slash command (`lib/yolo-session.ts:1-76`); nothing under `app/shell` renders it as a status item at this pin | omission | `session.info.yolo` is parsed; nothing renders it and nothing can turn it on | non-goal: a global approval bypass on a phone is a one-tap irreversible security change with no keyboard modifier to gate it, and this app ships neither a command palette nor slash-command entry for it; Desktop's own `yoloOn`/`yoloOff` strings (`en.ts:2982-2983`) are already dead here |
 | Settings → Safety → `Approval Mode` enum row (`settings/constants.ts:235,418,580,670`) | omission | Absent | deferred: #73 — the schema-driven settings sections are that issue; the control ships in the chrome where the status-bar item was adapted |
 | Status-bar customise menu can hide the Approvals item (`en.ts:2941`) | omission | The chip is always shown once the mode is known | deferred: #73 — the status-bar preference surface is that issue |
+| `DropdownMenuLabel` heading is sentence-case 12px medium tertiary (`components/ui/dropdown-menu.tsx:183-198`) | drift | `MenuSectionLabel`: the same words in this app's uppercase, tracked, semibold panel-label treatment, in a 32dp band, so `Approval mode` reads `APPROVAL MODE` | #161. Reclassified from mobile-adaptation: Desktop **owns** an uppercase menu-heading idiom — `dropdownMenuSectionLabel`, `uppercase tracking-wide` (`components/ui/dropdown-menu.tsx:13`) — and `approval-mode-menu.tsx:54` deliberately does not use it, taking the plain sentence-case `DropdownMenuLabel` instead. The casing is therefore the surface owner's decision and not a gap in Desktop's vocabulary, which is what a mobile adaptation would have to argue against. The legibility case for uppercase at reading distance is real and is why the treatment ships today, but it does not make this Desktop's choice rendered for touch; #161 decides whether Android follows `approval-mode-menu.tsx` or Desktop adopts its own section-label idiom here |
+| The heading shares its left inset with the words in its rows, because the selected mark is trailing (`components/ui/dropdown-menu.tsx:169-179`) | mobile-adaptation | The heading is inset to the rows' text column, past the leading mark | Touch: this app's selected mark leads the row rather than trailing it (the row above), which moves the rows' text column right; keeping Desktop's *relationship* — heading on the same column as the words — is what preserves the read, and `ApprovalModeJourneyTest` asserts the two columns are the same |
 | Menu row shows a radio dot only via the shadcn radio-group indicator | mobile-adaptation | An 8dp accent dot plus `Role.RadioButton` and a `selected` semantics flag | Touch surfaces are read by screen readers that need the selection state on the row, not only its ink |
 | A `config.set` echo with no `value` normalises to `manual` like any other unknown (`store/approval-mode.ts:82`) | mobile-adaptation | An accepted write whose echo omits `value` confirms the mode that was written | The phone chip is the only place the posture is named — there is no second surface to correct it — so a write the host accepted must not appear to revert; the Gateway always echoes `value` at this pin (`server.py:14598`), which makes this the failure-shape guard, not a behaviour change |
 
 ## Visual report
 
 - pending: #73
+
+Android half only, owed its Desktop side by #73:
+`docs/parity/visual/approval-mode/approval-mode-menu-light/android/reference.png` with its
+`contract.json` — the open menu with its `APPROVAL MODE` heading, light, on `emulator-5554` from this branch's debug build.
 
 ## Executable evidence
 
@@ -85,3 +91,5 @@ Every `path:line` below is against that SHA.
 | A launch-profile `session.info` racing that scope change cannot repaint the profile just left: the scope test and the publish are one critical section | `ApprovalModeRepositoryTest` |
 | An accepted write whose echo omits `value` keeps the mode that was written rather than confirming Manual | `ApprovalModeRepositoryTest` |
 | The chip's label and Desktop's `Approval mode: {mode}` spoken name; the menu title; three rows in Desktop's order with every label and description verbatim; picking a row writes that mode; the chip sits to the right of the context meter | `ApprovalModeJourneyTest` under Robolectric |
+| The menu heading is uppercase, vertically centred in its band, and on the same text column as the rows' words | `ApprovalModeJourneyTest` under Robolectric |
+| The chip's 48dp touch band overflows the status line instead of heightening it, and the chip keeps its full word on a 360dp line | `ChatTopBarAlignmentTest` under Robolectric |

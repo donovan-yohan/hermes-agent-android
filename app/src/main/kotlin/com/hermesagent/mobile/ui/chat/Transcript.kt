@@ -156,6 +156,8 @@ fun Transcript(
      * [shouldShowIntroSplash].
      */
     showIntroSplash: Boolean = false,
+    /** What the splash may say about the homed session; empty on a fresh draft. */
+    introSplashContext: IntroSplashContext = IntroSplashContext(),
 ) {
     val spacing = HermesTheme.spacing
     // Progress has exactly one owner: the live transcript tail. A running tool
@@ -170,7 +172,7 @@ fun Transcript(
     // and centre inside it, so the caller's slot decides the geometry.
     if (entries.isEmpty() && !showTurnProgress) {
         if (showIntroSplash) {
-            IntroSplash(modifier.fillMaxSize())
+            IntroSplash(modifier.fillMaxSize(), context = introSplashContext)
         } else {
             EmptyState(
                 title = "No messages yet",

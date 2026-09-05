@@ -159,6 +159,30 @@ object ContextUsageCopy {
     /** Token summary count in panel header (`en.ts:2979`). */
     fun tokenSummary(used: String, max: String): String = "$used / $max Tokens"
 
+    /**
+     * The compact meter's own figure. Desktop trails the same number after its
+     * glyph bar (`statusbar.tsx:52-60`); the phone draws the bar as a ring and
+     * this is what is left to read.
+     */
+    fun percent(percent: Int): String = "$percent%"
+
+    /**
+     * What the compact meter speaks, because a ring and a percentage are what
+     * it draws: "30k of 200k, 40%". Desktop has room to spell the same figures
+     * out beside the bar (`statusbar.tsx:44-60`).
+     */
+    fun spokenUsage(used: String, max: String, percent: Int): String = "$used of $max, $percent%"
+
+    /**
+     * The same meter when the host reports a proportion and no token count.
+     *
+     * `session.info` may carry `context_percent` without `context_used`, and
+     * the ring still has a proportion to draw. Speaking a zero in the count's
+     * place would name a figure the Gateway never sent and contradict the
+     * percentage in the same breath, so only what is known is spoken.
+     */
+    fun spokenPercent(percent: Int): String = "$percent%"
+
     /** Standard breakdown category labels (`en.ts:2966-2973`). */
     val CATEGORIES: Map<String, String> = mapOf(
         "conversation" to "Conversation",

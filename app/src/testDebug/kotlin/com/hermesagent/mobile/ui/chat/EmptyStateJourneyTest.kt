@@ -8,12 +8,14 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -59,7 +61,9 @@ class EmptyStateJourneyTest {
         launch()
 
         compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
-        compose.onNodeWithText(INTRO_WORDMARK).assertIsDisplayed()
+        // By its name, not by its text: the lettering is drawn as two lines and
+        // a screen reader must still hear `HERMES AGENT` once.
+        compose.onNodeWithContentDescription(INTRO_WORDMARK).assertIsDisplayed()
         compose.onAllNodesWithText("No messages yet").assertCountEquals(0)
     }
 
@@ -77,7 +81,7 @@ class EmptyStateJourneyTest {
         launch()
 
         compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
-        val wordmark = compose.onNodeWithText(INTRO_WORDMARK).fetchSemanticsNode().boundsInRoot
+        val wordmark = compose.onNodeWithContentDescription(INTRO_WORDMARK).fetchSemanticsNode().boundsInRoot
         val splash = compose.onNodeWithTag(INTRO_SPLASH_TAG).fetchSemanticsNode().boundsInRoot
         assertTrue(
             "wordmark starts at ${wordmark.left}, left of the splash at ${splash.left}",
@@ -110,12 +114,77 @@ class EmptyStateJourneyTest {
         compose.onNodeWithText("First reply").assertIsDisplayed()
     }
 
+    /**
+     * Desktop splashes only a fresh draft (`intro-visibility.ts:12-33` @
+     * `3ca096de`) because a homed session gets `ChatEmptySlot` instead — a
+     * surface this app has never ported. The owner's call is that the wordmark
+     * is the better thing to show there than a note that says less. The reason
+     * this is safe is the message count: a session still reading its history
+     * carries a non-zero one and is covered by `IntroSplashTest`.
+     */
     @Test
-    fun `a homed session with nothing in it yet keeps the plain note, never the splash`() {
+    fun `a homed session with nothing in it shows the splash, not the plain note`() {
         launch(activeSessionId = "session-a")
+
+        compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
+        compose.onNodeWithContentDescription(INTRO_WORDMARK).assertIsDisplayed()
+        compose.onAllNodesWithText("No messages yet").assertCountEquals(0)
+    }
+
+    /** The toggle is still the one off switch, for a session as for a draft. */
+    @Test
+    fun `the toggle off returns a homed empty session to the plain note`() {
+        launch(activeSessionId = "session-a", introSplashEnabled = false)
 
         compose.onAllNodesWithTag(INTRO_SPLASH_TAG).assertCountEquals(0)
         compose.onNodeWithText("No messages yet").assertIsDisplayed()
+    }
+
+    /**
+     * Where the session is working, under the line of copy. Desktop carries the
+     * same two facts in its own chrome (`app/chat/index.tsx:419,675,734` @
+     * `3ca096de`); a phone has no room for that, and the splash is the one
+     * moment the session has nothing else to say.
+     */
+    @Test
+    fun `a homed session names its project and the tail of its working directory`() {
+        launch(
+            activeSessionId = "session-a",
+            project = ProjectSummary(id = "project-a", label = "hermes-mobile", path = null),
+            worktreePath = "/data/data/com.example/files/work/hermes-mobile",
+        )
+
+        compose.onNodeWithText("hermes-mobile").assertIsDisplayed()
+        compose.onNodeWithText("…/work/hermes-mobile").assertIsDisplayed()
+    }
+
+    /**
+     * The rendered cwd carries no account name.
+     *
+     * A Gateway on a Linux or macOS host reports the host user's own home in
+     * every path, and the splash is the surface a screenshot is most likely to
+     * catch. `displayWorktreePath` — the rule the coding status row above the
+     * composer already applies — runs before the tail is taken, so what is
+     * drawn begins at `~`.
+     */
+    @Test
+    fun `the working directory a host reports is drawn from its home mark, not its account`() {
+        launch(
+            activeSessionId = "session-a",
+            worktreePath = "/home/someone/work/hermes-mobile",
+        )
+
+        compose.onNodeWithText("~/work/hermes-mobile").assertIsDisplayed()
+        compose.onAllNodesWithText("someone", substring = true).assertCountEquals(0)
+    }
+
+    /** A fresh draft has neither, so Desktop's own case renders unchanged. */
+    @Test
+    fun `a fresh draft shows no project and no path`() {
+        launch()
+
+        compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
+        compose.onAllNodesWithText("hermes-mobile").assertCountEquals(0)
     }
 
     @Test
@@ -199,6 +268,8 @@ class EmptyStateJourneyTest {
         activeSessionId: String? = null,
         transcript: List<TranscriptEntry> = emptyList(),
         introSeed: Int? = null,
+        project: ProjectSummary? = null,
+        worktreePath: String? = null,
     ) {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
@@ -217,8 +288,14 @@ class EmptyStateJourneyTest {
                                     preview = "",
                                     lastActiveAtMillis = NOW,
                                     status = SessionStatus.Idle,
+                                    // Default zero: the Gateway has said this
+                                    // session is empty, which is what lets it
+                                    // splash rather than flash.
+                                    messageCount = transcript.size,
+                                    worktreePath = worktreePath,
                                 )
                             },
+                            activeSessionProject = project,
                             transcript = transcript,
                         ),
                         actions = ChatActions(),

@@ -64,14 +64,26 @@ the palette the next time `NOUS_BLUE` moves.
 
 ## 5. Fonts
 
-Android bundles no webfont and makes **no runtime font request**. Every
-`fontUrl` upstream becomes a platform-family substitution, recorded in the
-preset comment and in `docs/phase-1-architecture.md`.
+Android makes **no runtime font request** in any build. Every preset `fontUrl`
+upstream becomes a platform-family substitution, recorded in the preset comment
+and in `docs/phase-1-architecture.md`.
 
 The trap: a font choice can be load-bearing. `cyberpunk` sets `fontSans` *and*
 `fontMono` to Courier, which makes the entire UI monospace. That behaviour is
 preserved through `HermesFontChoice.sans`, and `ThemeParityTest` asserts that
 cyberpunk is the only preset with a monospace body.
+
+### Bundled fonts
+
+Two faces do ship in the APK, and neither is a preset font: Codicons, and
+Desktop's wordmark face Collapse Bold. A preset may not reach either. The
+wordmark in particular is fixed to Collapse for **every** skin, because
+`.wordmark` overrides `var(--font-sans)` upstream — so a theme sync that
+changes `fontSans` must not change what the empty-chat splash is set in.
+
+Provenance, digests, the woff2 conversion command and the licence line are in
+[`../fonts.md`](../fonts.md). A theme sync touches that file only if Desktop
+changes which face `.wordmark` names.
 
 ## 6. Verify
 

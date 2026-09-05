@@ -81,6 +81,7 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.LabelledField
+import com.hermesagent.mobile.ui.common.MenuSectionLabel
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.ProfileTag
 import com.hermesagent.mobile.ui.common.SearchField
@@ -548,12 +549,11 @@ private fun SidebarViewMenu(
         shadowElevation = 0.dp,
     ) {
         Column(Modifier.selectableGroup()) {
-            Text(
-                text = "GROUPING",
-                style = HermesTheme.type.panelLabel,
-                color = tokens.textTertiary,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            )
+            // The same heading composable the approval menu uses, so a menu
+            // heading in this app cannot drift from a menu heading. This one
+            // keeps Desktop's own inset: its rows lead with a glyph rather than
+            // a selected mark, and the glyph column is where the heading sat.
+            MenuSectionLabel("Grouping")
             SidebarGroupingOption(
                 label = "Updated",
                 icon = HermesIcon.Clock,

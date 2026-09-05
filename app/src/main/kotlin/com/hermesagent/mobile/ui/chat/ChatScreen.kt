@@ -184,6 +184,15 @@ private val WIDE_BREAKPOINT: Dp = 720.dp
 private val RAIL_WIDTH: Dp = 300.dp
 private const val WIDE_RAIL_TAG = "Wide sessions rail"
 
+/** The chrome's title line, so a test can measure where the block sits. */
+internal const val CHAT_TITLE_TAG = "chat-title"
+
+/** The chrome's status line. */
+internal const val CHAT_SUBTITLE_TAG = "chat-subtitle"
+
+/** The status line and the two figures that share it. */
+internal const val CHAT_SUBTITLE_ROW_TAG = "chat-subtitle-row"
+
 @Composable
 private fun CompactLayout(
     state: ChatUiState,
@@ -540,12 +549,19 @@ private fun TranscriptPane(
             ),
             // Read from the homed id rather than from the summary: a session
             // created a frame ago has an id and no row yet, and that is exactly
-            // the frame a splash must not appear in.
+            // the frame a splash must not appear in. The count comes from the
+            // summary for the same reason in reverse — a null one means the
+            // row has not landed, so an empty transcript proves nothing yet.
             showIntroSplash = shouldShowIntroSplash(
                 enabled = introSplashEnabled,
                 activeSessionId = state.activeSessionId,
                 transcriptEmpty = state.transcriptIsEmpty,
                 turnRunning = state.activeSession?.status == SessionStatus.Working,
+                sessionMessageCount = state.activeSession?.messageCount,
+            ),
+            introSplashContext = IntroSplashContext(
+                projectLabel = state.activeSessionProject?.label,
+                worktreePath = state.activeSession?.worktreePath,
             ),
         )
         if (showJump) {
@@ -921,6 +937,11 @@ private fun ChatTopBar(
                     onClick = onOpenSessions,
                 )
             }
+            // The title and its status line are one block, centred on the icon
+            // row's centre line. Every interactive part of the status line
+            // takes its touch floor as overflow rather than as height
+            // (`touchTargetOverflow`), so this Column is exactly two lines of
+            // type tall and the title cannot float above the chrome's middle.
             Column(
                 Modifier
                     .weight(1f)
@@ -933,19 +954,26 @@ private fun ChatTopBar(
                     color = tokens.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(CHAT_TITLE_TAG),
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag(CHAT_SUBTITLE_ROW_TAG),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
+                    // The only flexible child, so the two figures keep their
+                    // full words on a 360dp phone and the prose is what gives
+                    // way: a truncated `Sm` names no approval posture at all.
                     Text(
                         text = subtitle,
                         style = HermesTheme.type.scaffoldMeta,
                         color = tokens.scaffoldMeta,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false).statusAction(subtitle, gatewayDoor),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .testTag(CHAT_SUBTITLE_TAG)
+                            .statusAction(subtitle, gatewayDoor),
                     )
                     // Desktop's right-hand statusbar array is ordered
                     // `context-usage`, `session-timer`, then `approval-mode`
@@ -954,16 +982,19 @@ private fun ChatTopBar(
                     // array order is left to right
                     // (`apps/desktop/src/app/shell/statusbar-controls.tsx:119-123`):
                     // Approvals sits *after* the meter, and the subtitle row
-                    // keeps that order.
-                    if (contextMeter != null && contextMeter.label.isNotEmpty()) {
-                        ContextMeter(
-                            label = contextMeter.label,
-                            detail = contextMeter.detail,
-                            onClick = onOpenContextUsage,
-                        )
-                    }
-                    if (approvalMode != null) {
-                        ApprovalModeChip(mode = approvalMode, onSelect = onSelectApprovalMode)
+                    // keeps that order. They travel as one cluster, because
+                    // `SpaceBetween` would otherwise push the two figures to
+                    // opposite ends of a line Desktop keeps together.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        if (contextMeter != null && contextMeter.label.isNotEmpty()) {
+                            ContextMeter(state = contextMeter, onClick = onOpenContextUsage)
+                        }
+                        if (approvalMode != null) {
+                            ApprovalModeChip(mode = approvalMode, onSelect = onSelectApprovalMode)
+                        }
                     }
                 }
             }
