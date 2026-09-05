@@ -1,11 +1,11 @@
 {
-  "capturedAt": "2026-09-05T06:55:03.072895+00:00",
+  "capturedAt": "2026-09-05T07:29:39.590996+00:00",
   "name": "empty-chat-intro-dark",
   "serial": "emulator-5554",
   "application": {
     "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
     "resolvedActivity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
-    "focusedWindow": "mCurrentFocus=Window{4d956b4 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}\nmFocusedApp=ActivityRecord{251066230 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t511}"
+    "focusedWindow": "mCurrentFocus=Window{36f2c72 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}\nmFocusedApp=ActivityRecord{149312949 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t512}"
   },
   "device": {
     "model": "sdk_gphone16k_arm64",

@@ -213,7 +213,7 @@ sets the rest of the UI in a monospace. `WordmarkFitDeviceTest` asserts that.
 ## Visual report
 
 - report: docs/parity/visual/empty-states/empty-chat-intro-light/report.html
-- commit: fee586c
+- commit: 0471e03
 - captures: the Android halves of `empty-chat-intro-light`, `empty-chat-intro-dark`
   and `empty-chat-intro-w320dp-dark` were retaken on `emulator-5554` from this
   branch's debug build after the bundled Collapse Bold, the stacked wordmark
