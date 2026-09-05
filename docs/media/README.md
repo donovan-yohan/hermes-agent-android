@@ -22,24 +22,15 @@ can show the GIF while a reader can still open the sharper MP4.
 
 ## Contents
 
-`screenshots/`
+`screenshots/` holds PNGs of the session list, the transcript, the composer,
+the Appearance screen and the System panel, dark and light where both were
+taken. `demo/` holds the short recordings, each committed twice under one base
+name — `.gif` for the README, `.mp4` beside it for anyone who wants the sharper
+version.
 
-| File | Shows |
-|---|---|
-| `sessions-dark.png` | Session list, dark |
-| `sessions-light.png` | Session list, light |
-| `chat-dark.png` | Live transcript, dark |
-| `chat-light.png` | Live transcript, light |
-| `composer-completions-dark.png` | Composer with completions open |
-| `appearance-themes-dark.png` | Appearance screen and the built-in themes |
-| `system-panel-dark.png` | System panel |
-
-`demo/` — each base name below is committed twice, as `.gif` and as `.mp4`:
-
-| Base name | Shows |
-|---|---|
-| `live-turn` | Sending a turn and watching it stream back |
-| `switch-sessions` | Switching sessions while a turn keeps running |
+**[`CAPTURE.md`](CAPTURE.md) is the per-file log**: what each asset shows, and
+the device, build and conditions it was taken under. Add a row there when you
+add an asset; this page stays the short index and the rule.
 
 **The Gateways surfaces are not captured, and cannot be.** They set
 `FLAG_SECURE` for as long as they are on screen

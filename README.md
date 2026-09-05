@@ -18,7 +18,10 @@ run, and gives you that agent's sessions, live turns and tools on a phone.
   <img src="docs/media/demo/switch-sessions.gif" alt="Switching sessions while a turn runs" width="40%">
 </p>
 
-<p align="center"><sub>More captures, and the rule they are taken under, in
+<p align="center"><sub>Shown in dark; the same two screens in light are
+<a href="docs/media/screenshots/sessions-light.png">sessions-light</a> and
+<a href="docs/media/screenshots/chat-light.png">chat-light</a>. More captures,
+and the rule they are taken under, in
 <a href="docs/media/README.md"><code>docs/media/</code></a>.</sub></p>
 
 ## Three ways to connect
@@ -79,8 +82,8 @@ are in [Status and roadmap](status/ROADMAP.md).
 |---|---|---|
 | Connecting | Local and remote Gateway workflows | **Supported** — Remote Gateway over HTTPS with independent browser PKCE, Managed SSH as a private fallback, and Local over loopback to a Termux Hermes |
 | Sessions and projects | Create, browse, search, group, rename, pin, archive, and project views | **Partial** — list, create, open, paged history, date and project grouping, unread and running state, rename, delete, pin, archive/restore, read-state, and backend session search; no branch, export, move-to-project or bulk selection |
-| Live chat and transcript | Streaming conversation, Markdown, tools, progress, and media | **Supported** — streamed messages, reasoning and tool rows, ANSI terminal output, Markdown tables and code, inline diffs, image thumbnails and a lightbox, plus paged backfill and per-reply copy |
-| Composer and model controls | Rich editor, references, completions, model, effort, and fast mode | **Supported** — multiline drafts, history and undo, a per-connection model shortlist, the full reasoning scale, fast mode, slash/path/session/emoji completion, a context meter, and the Manual/Smart/Off approval mode |
+| Live chat and transcript | Streaming conversation, Markdown, tools, progress, and media | **Partial** — streamed messages, reasoning and tool rows, ANSI terminal output, Markdown tables and code, inline diffs, image thumbnails and a lightbox, paged backfill and per-reply copy; no syntax highlighting, and tool output, diffs and reasoning are not text-selectable |
+| Composer and model controls | Rich editor, references, completions, model, effort, and fast mode | **Partial** — multiline drafts, history and undo, a per-connection model shortlist, the full reasoning scale, fast mode, slash/path/session/emoji completion, a context meter, and the Manual/Smart/Off approval mode; adding a provider is disabled, and the YOLO bypass toggle is not ported |
 | Turn control and queues | Send, stop, redirect/steer, queue, park, and send next | **Supported** — target-session isolation, concurrent sends to distinct sessions, durable text queues, edit/delete/park/resume, redirect, steer, stop, and send next |
 | Required input | Clarification, approvals, sudo, and secret prompts | **Supported** — single and batch clarification, Gateway-offered approval choices, and secure wiped sudo/secret entry |
 | Attachments | Files, images, folders, paste, and drag/drop | **Partial** — Android file and image picking, bounded staging, preview chips, image-only send, thumbnails and lightbox; no folders, clipboard images or drag/drop |
@@ -91,7 +94,7 @@ are in [Status and roadmap](status/ROADMAP.md).
 | Notifications | Desktop notifications from a persistent process | **Partial** — approvals, questions, sudo/secret prompts and finished turns while a Gateway socket is live, answerable from the shade; nothing arrives once the socket is gone |
 | System panel and updates | Gateway status, restart, backend update, and logs | **Partial** — status, messaging-gateway restart and `hermes update` with a grouped changelog; `Recent logs` ships disabled, and none of it has run against a real host yet |
 | Relay channels | Full plugin surface | **Partial** — channel list, one channel's transcript and sending; no editing, threads or Harnesses inspector |
-| Appearance | Built-in and custom themes plus Desktop chrome | **Partial** — all six built-in themes at the pinned Desktop authority, system/light/dark mode, and mobile chat chrome; no custom themes |
+| Appearance | Built-in and custom themes plus Desktop chrome | **Partial** — all eleven built-in themes at the pinned Desktop authority, system/light/dark mode, and mobile chat chrome; no custom themes |
 | Desktop workbench | Multi-pane files, terminal/PTY, review, and desktop window workflows | **Not yet** — the changed-file sheet is the only native workspace view |
 | Other management surfaces | Bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugins, Kanban, and messaging settings | **Not yet** — no dedicated mobile screens; agents can still use Gateway-exposed capabilities in chat |
 | Background lifecycle | Persistent desktop process | **Partial** — reconnect, a turn-scoped foreground service and a wake-word service exist, but uninterrupted background connectivity is not claimed |

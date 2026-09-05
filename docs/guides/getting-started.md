@@ -70,7 +70,7 @@ so the error messages make sense.
 accepts only an `https` scheme, with no username or password in the URL, no
 query string and no fragment. Anything else is refused before a request is
 made, with `Enter a valid HTTPS Gateway URL.`
-(`RemoteGateway.kt:481`, `RemoteGateway.kt:1330`). There is no loopback
+(`RemoteGateway.kt:482`, `RemoteGateway.kt:1333`). There is no loopback
 exception on this route — a Hermes on the phone itself is the Local route
 instead.
 
@@ -131,18 +131,37 @@ dashboard:
     username: admin
     # Preferred: a precomputed scrypt hash, so no plaintext sits at rest.
     password_hash: "scrypt$..."
+    # Set this. See below.
+    secret: "<32+ random bytes, base64 or hex>"
 ```
 
-Generate the hash on the host with:
+**Do not skip `secret`.** Without it a random one is generated per process at
+startup, which means **every session is invalidated whenever the backend
+restarts** — including the restart the System panel's `Update Hermes` performs —
+and you would have to sign in again on the phone each time
+(`plugins/dashboard_auth/basic/__init__.py:41-45` @ the pin). Any 32-plus bytes
+of randomness will do: `openssl rand -base64 32`.
+
+Generate the password hash on the host. The import is relative to the Hermes
+install, so either run it from there:
 
 ```bash
+cd /path/to/hermes-agent
 python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))"
 ```
 
-(`plugins/dashboard_auth/basic/__init__.py:19-40,115-121` @ the pin. A plaintext
-`password:` key is accepted and hashed at load, and the same values can come
-from `HERMES_DASHBOARD_BASIC_AUTH_USERNAME` /
-`HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH` instead.)
+…or skip the hash entirely and pass the password through the environment
+instead, which needs no `config.yaml` entry at all:
+
+```bash
+export HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD='your-password'
+export HERMES_DASHBOARD_BASIC_AUTH_SECRET="$(openssl rand -base64 32)"
+```
+
+(`plugins/dashboard_auth/basic/__init__.py:19-45,115-121` @ the pin. A plaintext
+`password:` key in `config.yaml` is accepted too and hashed at load; the
+env vars win over the file when set.)
 
 *OAuth.* Run `hermes dashboard register` on the host and follow it; pass
 `--redirect-uri` with your public HTTPS callback
@@ -162,18 +181,23 @@ hermes serve --host 127.0.0.1 --port 9119
 |---|---|
 | `--host` | Bind address, default `127.0.0.1` |
 | `--port` | Bind port, default `9119`; `0` lets the OS choose |
-| `--skip-build` | Serve the prebuilt web assets — useful on a host with no npm |
 | `--isolated` | Run a dedicated per-profile server instead of the machine-level one |
 | `--status` / `--stop` | List or stop running Gateway processes |
 
-Check what you got:
+`serve` is the headless path: it skips the web UI build and never serves the
+browser dashboard, so the build-related flags on `hermes dashboard` have nothing
+to do here (`hermes_cli/subcommands/dashboard.py:166-170` @ the pin).
+
+Check what you got, through the same URL the phone will use:
 
 ```bash
 curl -s https://gateway.example.ts.net/api/status
 ```
 
 You are ready when the response has `"auth_required": true` and `"native_pkce"`
-inside `auth_flows`.
+inside `auth_flows`. A `400` with `Invalid Host header` instead means
+`dashboard.public_url` is missing or does not match — see the Tailscale section
+below, which is where that bites.
 
 ### Tailscale tips
 
@@ -217,9 +241,23 @@ long as the command does. The result is
 > `tailscale serve --help` on the host and the
 > [Serve documentation](https://tailscale.com/kb/1242/tailscale-serve).
 
-Set that same URL as `dashboard.public_url` in the host's `config.yaml`
-(the previous step). Without it the Gateway is bound to loopback, the auth gate
-never engages, `auth_required` stays `false`, and the app refuses to sign in.
+**Set that same URL as `dashboard.public_url`** in the host's `config.yaml`
+(the previous step), spelled exactly as it is served —
+`https://gateway.example.ts.net`, same scheme and host. It is doing two jobs at
+once here, and forgetting it fails on the second one first:
+
+- it is what **engages the auth gate** on a loopback bind, as above; and
+- it is the **Host-header allowlist**. `_is_accepted_host`
+  (`hermes_cli/web_server.py:914` @ the pin) accepts, for a loopback bind, only
+  a loopback `Host` header or an exact match against the operator-declared
+  public hosts. `tailscale serve` forwards your MagicDNS name in `Host`, which
+  is neither — so `host_header_middleware` (`web_server.py:951` @ the pin)
+  answers **`400`, `Invalid Host header`**, on every request. That is a DNS
+  rebinding defence doing its job, not a misconfigured proxy.
+
+So the symptom of a missing or mistyped `dashboard.public_url` is not a sign-in
+that refuses — it is a `400` on everything, including the `curl .../api/status`
+above. If you see one, that is the line to check first.
 
 **On the phone**, install the Tailscale Android app and sign in to the same
 tailnet. The Remote gateway route then works unchanged — the app just sees an
@@ -344,7 +382,9 @@ rather than silently missing.
 
 To connect:
 
-1. Open the Nous portal and go to its **Agents** page (`/agents`).
+1. Open the Nous portal — [portal.nousresearch.com](https://portal.nousresearch.com),
+   which is Hermes' own default (`hermes_cli/auth.py:113` @ the pin) — and go to
+   its **Agents** page (`/agents`).
 2. Copy the instance's dashboard URL.
 3. In the app, add a **Remote gateway** connection and paste that URL.
 4. Connect. Sign in when the browser tab opens — if that browser already holds
