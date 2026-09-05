@@ -57,6 +57,7 @@ import com.hermesagent.mobile.data.gateway.ApprovalModeOutcome
 import com.hermesagent.mobile.data.gateway.ApprovalModeState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayImageLoader
+import com.hermesagent.mobile.data.gateway.SessionListPaging
 import com.hermesagent.mobile.data.gateway.ProfileRouting
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
@@ -276,6 +277,20 @@ data class ChatUiState(
     val archivedPool: ArchivedPoolState = ArchivedPoolState.Idle,
     /** Loaded, non-archived rows that are still unread, by either source. */
     val unreadCount: Int = 0,
+    /**
+     * A live-pool page is on the wire and this scope has no rows yet — Desktop's
+     * `showSessionSkeletons` (`apps/desktop/src/app/chat/sidebar/index.tsx:1423`
+     * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     *
+     * Keyed off the UNFILTERED scoped set, exactly as Desktop's is and for the
+     * same reason it records: keyed off the filtered one, a filter that matches
+     * nothing would show skeletons on every background refresh instead of the
+     * state that says the filter is why the list is bare.
+     *
+     * It exists so an empty list during the first fetch, and after every
+     * reconnect, is not mistaken for an empty account.
+     */
+    val sessionsLoading: Boolean = false,
     /** The foot rail: this Gateway's profiles and the scope the sidebar is in. */
     val profileRail: ProfileRailState = ProfileRailState(),
     /** How the project catalog relates to the profile scope the sidebar is in. */
@@ -512,7 +527,12 @@ internal class ChatViewModel(
         draft,
         activeSessionId,
         combine(
-            combine(repository.imageLoader, repository.sessionsWithEarlierMessages, ::TranscriptWindowBundle),
+            combine(
+                repository.imageLoader,
+                repository.sessionsWithEarlierMessages,
+                repository.sessionPaging,
+                ::TranscriptWindowBundle,
+            ),
             combine(
                 composer,
                 voice,
@@ -688,6 +708,7 @@ internal class ChatViewModel(
             unreadCount = scopedSessions.count {
                 it.archived != true && it.displayStatus() == SessionStatus.Unread
             },
+            sessionsLoading = bundle.second.sessionPaging.loading && scopedSessions.isEmpty(),
             projects = projects,
             projectsAvailable = cacheState.projects.available,
             sidebarGrouping = navigation.sidebarView.grouping,
@@ -3277,10 +3298,15 @@ internal class ChatViewModel(
         val chrome: ChromeBundle,
     )
 
-    /** Connection-owned transcript projections: the image loader and the window. */
+    /**
+     * Connection-owned projections: the image loader, the transcript window, and
+     * whether a live-pool page is on the wire. The third rides along because
+     * `combine` takes a fixed arity and this assembly is already at it.
+     */
     private data class TranscriptWindowBundle(
         val imageLoader: GatewayImageLoader?,
         val sessionsWithEarlierMessages: Set<String>,
+        val sessionPaging: SessionListPaging,
     )
 
     /**

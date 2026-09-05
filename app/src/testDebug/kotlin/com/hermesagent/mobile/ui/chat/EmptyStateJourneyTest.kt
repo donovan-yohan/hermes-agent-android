@@ -3,11 +3,16 @@ package com.hermesagent.mobile.ui.chat
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -16,6 +21,7 @@ import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.sessions.NEW_PROJECT_BUTTON
 import com.hermesagent.mobile.ui.sessions.NO_SESSIONS_YET
+import com.hermesagent.mobile.ui.sessions.SESSION_SKELETON_TAG
 import com.hermesagent.mobile.ui.sessions.SIDEBAR_BLANK_STATE
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -33,9 +39,12 @@ import org.robolectric.annotation.Config
  * (`apps/desktop/src/components/chat/intro.tsx:160-179`) and
  * `SidebarBlankState` (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`),
  * both @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ *
+ * The class runs wide enough for the persistent rail, so the session list is on
+ * screen without a drawer gesture and the transcript column is beside it. The
+ * narrow phone gets its own `@Config` below, because the splash's whole risk is
+ * a column that cannot hold the wordmark.
  */
-// Wide enough for the persistent rail, so the session list is on screen without
-// a drawer gesture and the transcript column is beside it.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w900dp-h800dp")
 class EmptyStateJourneyTest {
@@ -50,6 +59,29 @@ class EmptyStateJourneyTest {
         compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
         compose.onNodeWithText(INTRO_WORDMARK).assertIsDisplayed()
         compose.onAllNodesWithText("No messages yet").assertCountEquals(0)
+    }
+
+    /**
+     * The narrowest phone this app supports. Robolectric cannot measure the
+     * device font — `WordmarkFitTest` carries the arithmetic — but it can prove
+     * the splash still lays out and stays inside the screen at this width,
+     * which is where the old floor clamp overflowed.
+     */
+    @Test
+    @Config(sdk = [34], qualifiers = "w320dp-h640dp")
+    fun `the splash renders on the narrowest phone without leaving the screen`() {
+        launch()
+
+        compose.onNodeWithTag(INTRO_SPLASH_TAG).assertIsDisplayed()
+        val wordmark = compose.onNodeWithText(INTRO_WORDMARK).fetchSemanticsNode()
+        val root = compose.onNodeWithTag(INTRO_SPLASH_TAG).fetchSemanticsNode()
+        val bounds = wordmark.boundsInRoot
+        assert(bounds.left >= root.boundsInRoot.left - 1f) {
+            "wordmark starts at ${bounds.left}, left of the splash at ${root.boundsInRoot.left}"
+        }
+        assert(bounds.right <= root.boundsInRoot.right + 1f) {
+            "wordmark ends at ${bounds.right}, right of the splash at ${root.boundsInRoot.right}"
+        }
     }
 
     @Test
@@ -98,6 +130,43 @@ class EmptyStateJourneyTest {
         compose.onNodeWithText(NO_SESSIONS_YET).assertIsDisplayed()
         compose.onNodeWithText(NEW_PROJECT_BUTTON).assertIsDisplayed()
         compose.onAllNodesWithText("No sessions").assertCountEquals(0)
+    }
+
+    /** A Gateway that is not there cannot make a project, and says so by shape. */
+    @Test
+    fun `New project is disabled and announced disabled while disconnected`() {
+        launchSidebar()
+
+        compose.onNodeWithText(NEW_PROJECT_BUTTON).assertIsNotEnabled()
+        compose.onNodeWithText("Connect to a Gateway to start a session.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `New project opens the create dialog when the Gateway serves projects`() {
+        launchSidebar(connected = true, projectsAvailable = true)
+
+        compose.onNodeWithText(NEW_PROJECT_BUTTON).assertIsEnabled()
+        compose.onAllNodesWithText("Connect to a Gateway to start a session.").assertCountEquals(0)
+        compose.onNodeWithText(NEW_PROJECT_BUTTON).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Projects group sessions by a folder on the connected Gateway.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Create project").assertIsDisplayed()
+    }
+
+    /**
+     * Desktop keeps the blank state behind `showSessionSkeletons`
+     * (`sidebar/index.tsx:1426-1427,1912`) so an account that has not answered
+     * yet is never described as empty. This is that rule.
+     */
+    @Test
+    fun `a list still being read shows skeletons, never the blank state`() {
+        launchSidebar(connected = true, sessionsLoading = true)
+
+        compose.onNodeWithTag(SESSION_SKELETON_TAG).assertIsDisplayed()
+        compose.onAllNodesWithTag(SIDEBAR_BLANK_STATE).assertCountEquals(0)
+        compose.onAllNodesWithText(NO_SESSIONS_YET).assertCountEquals(0)
     }
 
     @Test
@@ -160,11 +229,27 @@ class EmptyStateJourneyTest {
     }
 
     /** The rail, which is where the session list is without opening a drawer. */
-    private fun launchSidebar(rows: List<SessionListRow> = emptyList()) {
+    private fun launchSidebar(
+        rows: List<SessionListRow> = emptyList(),
+        connected: Boolean = false,
+        projectsAvailable: Boolean? = null,
+        sessionsLoading: Boolean = false,
+    ) {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 ChatScreen(
-                    state = ChatUiState(sessionRows = rows),
+                    state = ChatUiState(
+                        sessionRows = rows,
+                        projectsAvailable = projectsAvailable,
+                        sessionsLoading = sessionsLoading,
+                        connection = GatewayConnectionState(
+                            status = if (connected) {
+                                GatewayConnectionStatus.Connected
+                            } else {
+                                GatewayConnectionStatus.Disconnected
+                            },
+                        ),
+                    ),
                     actions = ChatActions(),
                     onOpenSettings = {},
                     wideRailInsets = WindowInsets(0, 0, 0, 0),

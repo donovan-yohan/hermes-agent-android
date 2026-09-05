@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -115,7 +116,10 @@ fun shouldShowIntroSplash(
 @Composable
 fun IntroSplash(
     modifier: Modifier = Modifier,
-    seed: Int = remember { Random.nextInt(0, 100_000) },
+    // `rememberSaveable`, not `remember`: Desktop's `useState` seed lives as
+    // long as the mounted component, and a rotation here would otherwise
+    // reroll the line mid-conversation — a remount Desktop never performs.
+    seed: Int = rememberSaveable { Random.nextInt(0, 100_000) },
 ) {
     val tokens = HermesTheme.tokens
     Box(
@@ -123,9 +127,9 @@ fun IntroSplash(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            // `px-0.5 py-6` — the intro's own padding at the narrow breakpoint
-            // (`intro.tsx:170`); the wordmark carries its own 1rem inset.
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = INTRO_SPLASH_GUTTER, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -133,12 +137,24 @@ fun IntroSplash(
             Text(
                 text = pickIntroCopy(seed),
                 // `[data-slot='aui_intro'] p:last-child` @ `styles.css:1609-1614`:
-                // tertiary ink, caption size, centred, and held to Desktop's
-                // own `max-width: 34rem` reading measure — which a phone column
+                // tertiary ink, centred, and held to Desktop's own
+                // `max-width: 34rem` reading measure — which a phone column
                 // never reaches and a tablet's does.
-                style = HermesTheme.type.caption,
+                //
+                // `body`, not `caption`. Desktop sets this line at `0.875rem` —
+                // 14px, a step ABOVE its 13px `--conversation-text-font-size`,
+                // confirmed by the pinned contract's node 6. This app's largest
+                // prose step is `body` at 15sp, so the line lands one step lower
+                // relative to its own scale than Desktop's does; `caption`
+                // (13sp, Desktop's 12px) would put it two steps lower still.
+                // Ledgered in `docs/parity/empty-states.md`.
+                style = HermesTheme.type.body,
                 color = tokens.textTertiary,
                 textAlign = TextAlign.Center,
+                // Desktop needs no gutter: `mx-auto` centres the 34rem measure
+                // inside a column already inset by the thread's own padding.
+                // The splash slot here runs to the screen edge, so the line
+                // carries its own. Ledgered.
                 modifier = Modifier.widthIn(max = 544.dp).padding(horizontal = 12.dp),
             )
         }
@@ -169,14 +185,18 @@ fun IntroSplash(
 fun Wordmark(
     text: String,
     modifier: Modifier = Modifier,
-    minFontSize: TextUnit = WORDMARK_MIN_FONT_SIZE,
     maxFontSize: TextUnit = WORDMARK_MAX_FONT_SIZE,
 ) {
     val tokens = HermesTheme.tokens
     val base = HermesTheme.type.wordmark
     // `text-midground` in light, `text-foreground/90` in dark
     // (`wordmark.tsx:33` @ `3ca096de`). `tokens.accent` IS the resolved
-    // midground — `--ui-accent: var(--theme-midground)` (`styles.css:207`).
+    // midground — `--ui-accent: var(--theme-midground)` (`styles.css:207`) —
+    // and the pinned light contract computes `rgb(0, 83, 253)`, which is `nous`
+    // `#0053FD` exactly. The dark half is `textPrimary`, this app's own 0.94
+    // alpha over the same base against Desktop's 0.90; the four points are
+    // ledgered rather than compounded, because multiplying 0.9 into a token
+    // that is already 0.94 would land at 0.85 and match neither.
     val ink = if (HermesTheme.isDark) tokens.textPrimary else tokens.accent
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -184,8 +204,8 @@ fun Wordmark(
         val targetPx = with(density) {
             (this@BoxWithConstraints.maxWidth - WORDMARK_INSET).coerceAtLeast(0.dp).toPx()
         }
-        val size = remember(text, targetPx, density.fontScale, base) {
-            fitFontSize(measurer, text, base, targetPx, minFontSize, maxFontSize)
+        val size = remember(text, targetPx, density.fontScale, base, maxFontSize) {
+            fitWordmarkFontSize(measurer, text, base, targetPx, maxFontSize)
         }
         Text(
             text = text,
@@ -198,41 +218,85 @@ fun Wordmark(
     }
 }
 
-/** Desktop's `--fit-min`, `2.75rem` at a 16px root (`wordmark.tsx:22`). */
-private val WORDMARK_MIN_FONT_SIZE = 44.sp
+/**
+ * This port's ceiling. Desktop has none, because `.fit-text` runs inside a
+ * column bounded by `--composer-width`; a tablet column here is not, and
+ * unbounded fitting sets the wordmark taller than the surface it titles.
+ */
+internal val WORDMARK_MAX_FONT_SIZE = 72.sp
 
 /**
- * This port's ceiling. Desktop has none because its column is bounded by
- * `--composer-width`; a tablet column here is not, and unbounded fitting sets
- * the wordmark larger than the surface it titles.
+ * Desktop's `--fit-min`, `2.75rem` at a 16px root (`wordmark.tsx:22`), recorded
+ * because it is the value this port deliberately does **not** enforce.
+ *
+ * A floor is safe on Desktop because its narrowest chat column is still wider
+ * than the run: the pinned contract measures `HERMES AGENT` at `135.6px` in a
+ * `1132px` column, so the lettering spans about `7.8em` in Collapse and more in
+ * a platform sans. At `2.75rem` that is over `340dp` of glyph run against a
+ * `302dp` column on a `w320dp` phone, and a run wider than its box under
+ * `maxLines = 1, softWrap = false` is clipped at both ends in silence — worse
+ * at a font scale above 1.0. So the fit clamps the ceiling only and lets the
+ * size fall below this when the column cannot hold the run.
+ * `WordmarkFitTest` measures it; `docs/parity/empty-states.md` has the
+ * per-width numbers.
  */
-private val WORDMARK_MAX_FONT_SIZE = 72.sp
+internal val WORDMARK_MIN_FONT_SIZE_DESKTOP = 44.sp
 
 /** Desktop's `calc(100% - 1rem)` (`wordmark.tsx:24`). */
-private val WORDMARK_INSET = 16.dp
+internal val WORDMARK_INSET = 16.dp
+
+/** `px-0.5` — the intro's own padding at the narrow breakpoint (`intro.tsx:170`). */
+internal val INTRO_SPLASH_GUTTER = 2.dp
 
 /**
- * One layout pass at a probe size, then the ratio the column asks for. A
- * measurement of zero — an unmeasured column, a zero-width slot — falls to the
- * floor rather than dividing by it.
+ * One layout pass at a probe size, handed to [fitWordmarkSp] for the arithmetic.
  */
-private fun fitFontSize(
+internal fun fitWordmarkFontSize(
     measurer: TextMeasurer,
     text: String,
     style: TextStyle,
     targetWidthPx: Float,
-    minFontSize: TextUnit,
-    maxFontSize: TextUnit,
+    maxFontSize: TextUnit = WORDMARK_MAX_FONT_SIZE,
 ): TextUnit {
-    if (targetWidthPx <= 0f) return minFontSize
-    val probe = 48.sp
+    val probe = WORDMARK_PROBE_FONT_SIZE
     val measured = measurer.measure(
         text = AnnotatedString(text),
         style = style.copy(fontSize = probe),
         softWrap = false,
         maxLines = 1,
     ).size.width.toFloat()
-    if (measured <= 0f) return minFontSize
-    val fitted = probe.value * (targetWidthPx / measured)
-    return fitted.coerceIn(minFontSize.value, maxFontSize.value).sp
+    return fitWordmarkSp(probe.value, measured, targetWidthPx, maxFontSize.value).sp
 }
+
+/**
+ * The fit itself: scale the probe by the ratio the column asks for, and clamp
+ * **above only**.
+ *
+ * Kept separate from the measuring so it can be tested against real type
+ * metrics. Robolectric loads no device font — its stub measures the whole
+ * twelve-character wordmark at 32.5 px when asked for 48 sp, and not even
+ * linearly in the size — so an on-device fit cannot be asserted through it. The
+ * ratios that matter come from the pinned Desktop contract instead, and
+ * `WordmarkFitTest` applies them here. See `docs/parity/empty-states.md`.
+ *
+ * There is no floor. Desktop's `--fit-min` is safe upstream because its chat
+ * column always exceeds the run; a phone column does not, and under
+ * `maxLines = 1, softWrap = false` a run wider than its box is clipped at both
+ * ends in silence.
+ *
+ * A probe run or target of zero — an unmeasured column, a zero-width slot, a
+ * font with no metrics — has no ratio to scale by, so it yields nothing to draw
+ * rather than a guess that would overflow.
+ */
+internal fun fitWordmarkSp(
+    probeSp: Float,
+    probeRunPx: Float,
+    targetWidthPx: Float,
+    maxSp: Float,
+): Float {
+    if (targetWidthPx <= 0f || probeRunPx <= 0f || probeSp <= 0f) return 0f
+    return (probeSp * (targetWidthPx / probeRunPx)).coerceAtMost(maxSp)
+}
+
+/** Arbitrary, and cancels out of the ratio; large enough to keep hinting noise small. */
+internal val WORDMARK_PROBE_FONT_SIZE = 48.sp

@@ -313,6 +313,14 @@ class MainActivity : ComponentActivity() {
             val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
+            // The initial value is the same default the store applies to an
+            // absent key, so a person who turned the splash OFF can see it for
+            // the one frame before DataStore answers. That is the shape the
+            // `appearance` collection above already has — it paints the default
+            // skin for the same frame — so this follows the surface's existing
+            // behaviour rather than inventing a second startup policy. Closing
+            // it means holding the first frame until both reads land, which is
+            // a decision about app launch, not about this preference.
             val introSplash by preferences.introSplash.collectAsStateWithLifecycle(true)
             // Collected from the shell, not from the Relay screen: the Settings
             // entry point has to be able to say Relay is unavailable on this

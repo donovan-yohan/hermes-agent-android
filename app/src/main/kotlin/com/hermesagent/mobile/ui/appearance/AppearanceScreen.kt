@@ -139,21 +139,27 @@ fun AppearanceScreen(
 @Composable
 private fun IntroSplashRow(on: Boolean, onChange: (Boolean) -> Unit) {
     val tokens = HermesTheme.tokens
+    // The screen's own row idiom, borrowed from [ThemeRow]: a title in
+    // `sessionTitle`, a `caption` description under it, page-inset padding, and
+    // a trailing hairline inset to match. Not `SectionLabel` — that treatment is
+    // uppercase, and `Intro Splash` is Desktop copy whose casing is the parity
+    // claim.
     Column {
-        Hairline(Modifier.padding(bottom = 4.dp))
         Column(
             modifier = Modifier.padding(
                 horizontal = HermesTheme.spacing.pageInset,
-                vertical = 10.dp,
+                vertical = 12.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Intro Splash", style = HermesTheme.type.sessionTitle, color = tokens.textPrimary)
-            Text(
-                "The wordmark and prompt shown on an empty chat.",
-                style = HermesTheme.type.caption,
-                color = tokens.textTertiary,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Intro Splash", style = HermesTheme.type.sessionTitle, color = tokens.textPrimary)
+                Text(
+                    "The wordmark and prompt shown on an empty chat.",
+                    style = HermesTheme.type.caption,
+                    color = tokens.textTertiary,
+                )
+            }
             SegmentedControl(
                 options = listOf(false, true),
                 selected = on,
@@ -162,6 +168,7 @@ private fun IntroSplashRow(on: Boolean, onChange: (Boolean) -> Unit) {
                 onSelect = onChange,
             )
         }
+        Hairline(Modifier.padding(start = HermesTheme.spacing.pageInset))
     }
 }
 

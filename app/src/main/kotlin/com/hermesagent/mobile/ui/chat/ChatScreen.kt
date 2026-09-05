@@ -366,6 +366,7 @@ private fun SessionsPane(
         archivedPool = state.archivedPool,
         onArchivedVisibleChange = actions.onArchivedVisibleChange,
         unreadCount = state.unreadCount,
+        sessionsLoading = state.sessionsLoading,
         onMarkAllRead = actions.onMarkAllSessionsRead,
         header = header,
         profileRail = state.profileRail,

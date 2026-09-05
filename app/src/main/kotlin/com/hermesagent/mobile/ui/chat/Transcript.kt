@@ -176,6 +176,7 @@ fun Transcript(
                 title = "No messages yet",
                 description = "Start a conversation with Hermes.",
                 modifier = modifier.fillMaxSize(),
+                centered = true,
             )
         }
         return

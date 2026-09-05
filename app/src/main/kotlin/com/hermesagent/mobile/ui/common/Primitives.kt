@@ -604,17 +604,17 @@ fun TextButton(
 }
 
 /**
- * Plain-body empty state. Centred, no icon pile, no card.
+ * Plain-body empty state. Horizontally centred, no icon pile, no card.
  *
- * Centred on **both** axes, which is what Desktop's empty states are: every one
- * of them is `grid place-items-center` in the height its section leaves —
- * `SidebarBlankState` (`apps/desktop/src/app/chat/sidebar/section-states.tsx:31`
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and the intro slot
- * (`styles.css:1603-1607`) both. So the caller decides the slot and this
- * centres inside it: pass `Modifier.fillMaxSize()` or a `weight(1f)` and the
- * body lands in the middle of the space; pass nothing and it wraps its content
- * exactly as before.
- *
+ * @param centered also centre **vertically** in the slot the caller gave. Off by
+ *   default, and deliberately: nine of this primitive's callers already pass a
+ *   height-filling modifier — the session list's `listSlot` and Relay's panes —
+ *   and turning the centring on for all of them would move nine states this
+ *   change has no Desktop render of. Desktop centres the two states this port
+ *   is about (`section-states.tsx:31` and `styles.css:1603-1607` @
+ *   `3ca096de5f8183cb2e0ec23673f294d5978656a3`); whether its archived, project
+ *   and Relay empties are centred too is a question for their own pages and
+ *   their own renders. Passing `false` leaves every existing caller pixel-exact.
  * @param icon Desktop hangs a quiet glyph above the sentence where the empty
  *   state is a whole pane rather than a note inside one. Absent by default,
  *   because most of these are the note.
@@ -624,9 +624,15 @@ fun EmptyState(
     title: String,
     description: String,
     modifier: Modifier = Modifier,
+    centered: Boolean = false,
     icon: HermesIcon? = null,
 ) {
-    Box(modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+    // `TextAlign.Center` travels with [centered] rather than applying to every
+    // caller. A wrapping description in the default presentation renders
+    // left-ragged inside its centred box, and straightening that would move
+    // nine states this change has no render of — the same objection [centered]
+    // itself answers.
+    val body: @Composable () -> Unit = {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -642,16 +648,25 @@ fun EmptyState(
                 title,
                 style = HermesTheme.type.bodyStrong,
                 color = HermesTheme.tokens.textSecondary,
-                textAlign = TextAlign.Center,
+                textAlign = if (centered) TextAlign.Center else null,
             )
             Text(
                 description,
                 style = HermesTheme.type.caption,
                 color = HermesTheme.tokens.textTertiary,
-                textAlign = TextAlign.Center,
+                textAlign = if (centered) TextAlign.Center else null,
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
         }
+    }
+    // `TopCenter` is the layout this primitive has always had — horizontally
+    // centred, stacked from the top of whatever slot it was given. `Center`
+    // only adds the vertical half.
+    Box(
+        modifier = modifier.fillMaxWidth().padding(32.dp),
+        contentAlignment = if (centered) Alignment.Center else Alignment.TopCenter,
+    ) {
+        body()
     }
 }
 
