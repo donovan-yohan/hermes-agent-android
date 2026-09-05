@@ -269,6 +269,63 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `regenerate truncates optimistic transcript by entry id and rolls back rejection`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val originalTranscript = listOf(
+            UserTurn("u1", "first", CLOCK, rowId = TranscriptRowId(7L)),
+            AssistantTurn("a1", "reply", CLOCK),
+        )
+        cache.setTranscript("durable-a", originalTranscript)
+
+        assertEquals(
+            GatewaySubmitOutcome.Accepted,
+            repository.regenerate("durable-a", "first", TranscriptRowId(7L), "u1"),
+        )
+
+        val regenerateParams = rpc.calls.last { it.method == "prompt.submit" }.params
+        assertEquals("runtime-a", regenerateParams.string("session_id"))
+        assertEquals("first", regenerateParams.string("text"))
+        assertTrue(requireNotNull(regenerateParams["confirm_truncate"]).jsonPrimitive.boolean)
+        assertEquals(7L, requireNotNull(regenerateParams["truncate_before_row_id"]).jsonPrimitive.content.toLong())
+        assertTrue(requireNotNull(regenerateParams["confirm_empty_truncate"]).jsonPrimitive.boolean)
+        assertFalse("truncate_before_user_ordinal" in regenerateParams)
+        val optimisticTranscript = cache.transcript("durable-a")
+        assertEquals(1, optimisticTranscript.size)
+        assertEquals("first", (optimisticTranscript.single() as UserTurn).text)
+        assertFalse(optimisticTranscript.any { it.id == "a1" })
+
+        rpc.emit("message.complete", "runtime-a", "{}")
+        runCurrent()
+        cache.setTranscript("durable-a", originalTranscript)
+        rpc.promptFailures = 1
+
+        assertTrue(
+            runCatching {
+                repository.regenerate("durable-a", "first", TranscriptRowId(7L), "u1")
+            }.isFailure,
+        )
+        assertEquals(originalTranscript, cache.transcript("durable-a"))
+
+        repository.submit("durable-a", "hello")
+        val plainSubmitParams = rpc.calls.last { it.method == "prompt.submit" }.params
+        assertEquals("runtime-a", plainSubmitParams.string("session_id"))
+        assertEquals("hello", plainSubmitParams.string("text"))
+        assertFalse("confirm_truncate" in plainSubmitParams)
+        assertFalse("truncate_before_row_id" in plainSubmitParams)
+        assertFalse("confirm_empty_truncate" in plainSubmitParams)
+    }
+
+    @Test
     fun `completion methods use documented payloads and mapped items`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {

@@ -223,7 +223,12 @@ interface GatewaySessionRepository {
         error("Slash completion is not implemented by this repository.")
     suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult =
         error("Path completion is not implemented by this repository.")
-    suspend fun regenerate(durableId: String, text: String, truncateBeforeRowId: TranscriptRowId): GatewaySubmitOutcome = error("Regenerate is not implemented by this repository.")
+    suspend fun regenerate(
+        durableId: String,
+        text: String,
+        truncateBeforeRowId: TranscriptRowId,
+        truncateBeforeEntryId: String,
+    ): GatewaySubmitOutcome = error("Regenerate is not implemented by this repository.")
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
     /** A queue drain opts into the Gateway's non-interrupting busy behavior. */
     suspend fun submit(durableId: String, text: String, queued: Boolean): GatewaySubmitOutcome =
@@ -2703,7 +2708,8 @@ internal class LiveGatewaySessionRepository(
     override suspend fun regenerate(
         durableId: String,
         text: String,
-        truncateBeforeRowId: TranscriptRowId
+        truncateBeforeRowId: TranscriptRowId,
+        truncateBeforeEntryId: String,
     ): GatewaySubmitOutcome {
         val prompt = text.trim()
         val interruptEpoch = submitInterruptEpoch(durableId)
@@ -2711,7 +2717,11 @@ internal class LiveGatewaySessionRepository(
             require(prompt.isNotEmpty())
             val binding = ensureRuntime(durableId)
             val connection = connectionSnapshot()
-            val optimisticTranscriptPrefix = cache.transcript(durableId).takeWhile { it.rowId != truncateBeforeRowId }
+            val currentTranscript = cache.transcript(durableId)
+            val prefixCutoff = currentTranscript.indexOfFirst { it.id == truncateBeforeEntryId }.let { index ->
+                if (index >= 0) index else currentTranscript.indexOfFirst { it.rowId == truncateBeforeRowId }
+            }
+            val optimisticTranscriptPrefix = if (prefixCutoff >= 0) currentTranscript.take(prefixCutoff) else null
             submitInternalLocked(
                 binding,
                 connection,

@@ -637,9 +637,10 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  *
  * The bar is rendered in the same order as Desktop's: Branch, Copy, Read aloud,
  * Refresh (`assistant-message.tsx:625-642` @ `3ca096de`).
- * Branch is live (`session.branch`) through [onBranchFromReply] and stays
- * enabled unless a turn is working, streaming, or this surface is not wired.
- * Read aloud is still a placeholder behind a `WIP` chip with unchanged reasons from previous work.
+ * Branch is live over `session.branch` via [onBranchFromReply]. Refresh is live
+ * over `prompt.submit` with `truncate_before_row_id` via [onRegenerateReply],
+ * enabled only on the newest reply (#69). Read aloud remains behind the `WIP`
+ * chip because it needs speech synthesis and a playback store.
  */
 @Composable
 private fun ReplyActions(
@@ -649,7 +650,6 @@ private fun ReplyActions(
     streaming: Boolean,
     onBranchFromReply: ((entryId: String) -> Unit)?,
     onRegenerateReply: ((entryId: String) -> Unit)?,
-
 ) {
     val tokens = HermesTheme.tokens
     val platformContext = LocalContext.current

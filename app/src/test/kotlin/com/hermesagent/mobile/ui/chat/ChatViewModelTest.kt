@@ -39,11 +39,10 @@ import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
-import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
-import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
 import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
 import com.hermesagent.mobile.data.composer.ComposerQueueController
 import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
@@ -2011,21 +2010,27 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect { } }
     }
 
+    private fun kotlinx.coroutines.test.TestScope.collectState(viewModel: ChatViewModel) {
+        backgroundScope.launch { viewModel.uiState.collect { } }
+    }
+
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
-        val regenerates = mutableListOf<Triple<String, String, TranscriptRowId>>()
+        val regenerateCalls = mutableListOf<Triple<String, String, TranscriptRowId>>()
+        val regenerateEntryIds = mutableListOf<String>()
+        val regenerateFailures = ArrayDeque<GatewayRpcException>()
         var regenerateFailsWithOther = false
-        val interrupts = mutableListOf<String>()
-        val histories = mutableMapOf<String, List<TranscriptEntry>>()
-        override suspend fun regenerate(durableId: String, text: String, truncateBeforeRowId: TranscriptRowId): GatewaySubmitOutcome {
-            if (regenerateFailsWithOther) throw GatewayRpcException("Regenerate failed", "other")
-            regenerates.add(Triple(durableId, text, truncateBeforeRowId))
-            return GatewaySubmitOutcome.Submitted
+        override suspend fun regenerate(
+            durableId: String,
+            text: String,
+            truncateBeforeRowId: TranscriptRowId,
+            truncateBeforeEntryId: String,
+        ): GatewaySubmitOutcome {
+            if (regenerateFailsWithOther) throw GatewayRpcException("Regenerate failed")
+            regenerateFailures.removeFirstOrNull()?.let { throw it }
+            regenerateCalls.add(Triple(durableId, text, truncateBeforeRowId))
+            regenerateEntryIds.add(truncateBeforeEntryId)
+            return GatewaySubmitOutcome.Accepted
         }
-        override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
-            interrupts.add(durableId)
-            return GatewayInterruptOutcome.Interrupted
-        }
-        override suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> = histories[durableId] ?: emptyList()
 
         val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs =
@@ -2208,7 +2213,8 @@ class ChatViewModelTest {
 
 
         var branchResult = "new-durable"
-        var historyResult = emptyList<com.hermesagent.mobile.data.session.TranscriptEntry>()
+        var historyResult = emptyList<TranscriptEntry>()
+        var historyGate: CompletableDeferred<List<TranscriptEntry>>? = null
         val branchCalls = mutableListOf<Pair<String, Int?>>()
 
         override suspend fun branchSession(durableId: String, count: Int?): String {
@@ -2217,8 +2223,8 @@ class ChatViewModelTest {
             return branchResult
         }
 
-        override suspend fun fetchSessionHistory(durableId: String): List<com.hermesagent.mobile.data.session.TranscriptEntry> {
-            return historyResult
+        override suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> {
+            return historyGate?.await() ?: historyResult
         }
         override suspend fun createSession(workspacePath: String?): String {
             created++
@@ -2471,10 +2477,11 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `regenerateReply on newest reply with known row id`() = runTest {
+    fun `regenerateReply on newest reply with known row id`() = runTest(dispatcher) {
         val cache = SessionCache()
         val repository = FakeRepository(cache)
         val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
         cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
         cache.setTranscript("a", listOf(
             UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
@@ -2486,46 +2493,50 @@ class ChatViewModelTest {
         vm.regenerateReply("2")
         runCurrent()
         
-        assertEquals(1, repository.regenerates.size)
-        assertEquals(Triple("a", "first", TranscriptRowId(1L)), repository.regenerates.first())
+        assertEquals(1, repository.regenerateCalls.size)
+        assertEquals(Triple("a", "first", TranscriptRowId(1L)), repository.regenerateCalls.first())
+        assertEquals(listOf("1"), repository.regenerateEntryIds)
         assertNull(vm.uiState.value.notice)
     }
 
     @Test
-    fun `regenerateReply fetches history for missing row id`() = runTest {
+    fun `regenerateReply fetches history for missing row id`() = runTest(dispatcher) {
         val cache = SessionCache()
         val repository = FakeRepository(cache)
         val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
         cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
         cache.setTranscript("a", listOf(
             UserTurn("1", "first", CLOCK),
             AssistantTurn("2", "reply", CLOCK)
         ))
-        repository.histories["a"] = listOf(UserTurn("3", "first", CLOCK, rowId = TranscriptRowId(10L)))
+        repository.historyResult = listOf(UserTurn("3", "first", CLOCK, rowId = TranscriptRowId(10L)))
         vm.selectSession("a")
         runCurrent()
         
         vm.regenerateReply("2")
         runCurrent()
         
-        assertEquals(1, repository.regenerates.size)
-        assertEquals(Triple("a", "first", TranscriptRowId(10L)), repository.regenerates.first())
+        assertEquals(1, repository.regenerateCalls.size)
+        assertEquals(Triple("a", "first", TranscriptRowId(10L)), repository.regenerateCalls.first())
     }
 
     @Test
-    fun `regenerateReply ambiguous history refusal`() = runTest {
+    fun `regenerateReply ambiguous history refusal`() = runTest(dispatcher) {
         val cache = SessionCache()
         val repository = FakeRepository(cache)
         val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
         cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
         cache.setTranscript("a", listOf(
             UserTurn("1", "first", CLOCK),
             AssistantTurn("2", "reply", CLOCK)
         ))
-        repository.histories["a"] = listOf(
+        repository.historyResult = listOf(
             UserTurn("3", "first", CLOCK, rowId = TranscriptRowId(10L)),
             UserTurn("4", "first", CLOCK, rowId = TranscriptRowId(20L)),
-            AssistantTurn("5", "reply", CLOCK, rowId = TranscriptRowId(30L))
+            UserTurn("5", "different", CLOCK, rowId = TranscriptRowId(30L)),
+            AssistantTurn("6", "reply", CLOCK, rowId = TranscriptRowId(40L)),
         )
         vm.selectSession("a")
         runCurrent()
@@ -2533,15 +2544,16 @@ class ChatViewModelTest {
         vm.regenerateReply("2")
         runCurrent()
         
-        assertEquals(0, repository.regenerates.size)
+        assertEquals(0, repository.regenerateCalls.size)
         assertEquals("Refresh could not find this turn in the session history. Reopen the session and try again.", vm.uiState.value.notice)
     }
 
     @Test
-    fun `regenerateReply working session interrupts first`() = runTest {
+    fun `regenerateReply working session interrupts after planning`() = runTest(dispatcher) {
         val cache = SessionCache()
         val repository = FakeRepository(cache)
         val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
         cache.upsertSession(SessionSummary("a", status = SessionStatus.Working, title = "", preview = "", lastActiveAtMillis = CLOCK))
         cache.setTranscript("a", listOf(
             UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
@@ -2553,31 +2565,224 @@ class ChatViewModelTest {
         vm.regenerateReply("2")
         runCurrent()
         
-        assertEquals(1, repository.interrupts)
-        assertEquals(1, repository.regenerates.size)
+        assertEquals(1, repository.interrupted.size)
+        assertEquals(1, repository.regenerateCalls.size)
     }
 
     @Test
-    fun `regenerateReply needs input session refused`() = runTest {
+    fun `regenerateReply interrupts when session becomes working during history resolution`() = runTest(dispatcher) {
         val cache = SessionCache()
         val repository = FakeRepository(cache)
         val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
+        cache.setTranscript(
+            "a",
+            listOf(
+                UserTurn("1", "first", CLOCK),
+                AssistantTurn("2", "reply", CLOCK),
+            ),
+        )
+        repository.historyGate = CompletableDeferred()
+        vm.selectSession("a")
+        runCurrent()
+
+        vm.regenerateReply("2")
+        runCurrent()
+        assertTrue(repository.interrupted.isEmpty())
+        assertTrue(repository.regenerateCalls.isEmpty())
+
+        cache.upsertSession(requireNotNull(cache.session("a")).copy(status = SessionStatus.Working))
+        repository.historyGate?.complete(
+            listOf(UserTurn("history-user", "first", CLOCK, rowId = TranscriptRowId(10L))),
+        )
+        runCurrent()
+
+        assertEquals(listOf("a"), repository.interrupted)
+        assertEquals(1, repository.regenerateCalls.size)
+    }
+
+    @Test
+    fun `regenerateReply skips stale interrupt when session settles during history resolution`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(
+            SessionSummary(
+                "a",
+                status = SessionStatus.Working,
+                title = "",
+                preview = "",
+                lastActiveAtMillis = CLOCK,
+            ),
+        )
+        cache.setTranscript(
+            "a",
+            listOf(
+                UserTurn("1", "first", CLOCK),
+                AssistantTurn("2", "reply", CLOCK),
+            ),
+        )
+        repository.historyGate = CompletableDeferred()
+        vm.selectSession("a")
+        runCurrent()
+
+        vm.regenerateReply("2")
+        runCurrent()
+        assertTrue(repository.regenerateCalls.isEmpty())
+
+        cache.upsertSession(requireNotNull(cache.session("a")).copy(status = SessionStatus.Idle))
+        repository.historyGate?.complete(
+            listOf(UserTurn("history-user", "first", CLOCK, rowId = TranscriptRowId(10L))),
+        )
+        runCurrent()
+
+        assertTrue(repository.interrupted.isEmpty())
+        assertEquals(1, repository.regenerateCalls.size)
+    }
+
+    @Test
+    fun `regenerateReply does not interrupt a working session without a source`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(
+            SessionSummary(
+                "a",
+                status = SessionStatus.Working,
+                title = "",
+                preview = "",
+                lastActiveAtMillis = CLOCK,
+            ),
+        )
+        cache.setTranscript("a", listOf(AssistantTurn("2", "reply", CLOCK, rowId = TranscriptRowId(2L))))
+        vm.selectSession("a")
+        runCurrent()
+
+        vm.regenerateReply("2")
+        runCurrent()
+
+        assertTrue(repository.interrupted.isEmpty())
+        assertTrue(repository.regenerateCalls.isEmpty())
+        assertNull(vm.uiState.value.notice)
+    }
+
+    @Test
+    fun `regenerateReply reports interrupt refusal and does not regenerate`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(
+            SessionSummary(
+                "a",
+                status = SessionStatus.Working,
+                title = "",
+                preview = "",
+                lastActiveAtMillis = CLOCK,
+            ),
+        )
+        cache.setTranscript(
+            "a",
+            listOf(
+                UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
+                AssistantTurn("2", "reply", CLOCK, rowId = TranscriptRowId(2L)),
+            ),
+        )
+        repository.interruptOutcome = GatewayInterruptOutcome.Rejected
+        vm.selectSession("a")
+        runCurrent()
+
+        vm.regenerateReply("2")
+        runCurrent()
+
+        assertEquals(listOf("a"), repository.interrupted)
+        assertTrue(repository.regenerateCalls.isEmpty())
+        assertEquals("Hermes could not be stopped. Check the Gateway connection.", vm.uiState.value.notice)
+    }
+
+    @Test
+    fun `regenerateReply retries the Gateway busy response after interrupting`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
+        cache.setTranscript(
+            "a",
+            listOf(
+                UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
+                AssistantTurn("2", "reply", CLOCK, rowId = TranscriptRowId(2L)),
+            ),
+        )
+        repository.regenerateFailures.add(GatewayRpcException("Gateway 4090: session busy"))
+        vm.selectSession("a")
+        runCurrent()
+
+        vm.regenerateReply("2")
+        runCurrent()
+
+        assertEquals(listOf("a"), repository.interrupted)
+        assertEquals(1, repository.regenerateCalls.size)
+    }
+
+    @Test
+    fun `regenerateReply tells a disconnected user to connect`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
+        cache.setTranscript(
+            "a",
+            listOf(
+                UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
+                AssistantTurn("2", "reply", CLOCK, rowId = TranscriptRowId(2L)),
+            ),
+        )
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        vm.selectSession("a")
+        runCurrent()
+
+        vm.regenerateReply("2")
+        runCurrent()
+
+        assertTrue(repository.regenerateCalls.isEmpty())
+        assertEquals("Connect to a Gateway before refreshing this reply.", vm.uiState.value.notice)
+    }
+
+    @Test
+    fun `regenerateReply needs input session refused`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
         cache.upsertSession(SessionSummary("a", status = SessionStatus.NeedsInput, title = "", preview = "", lastActiveAtMillis = CLOCK))
+        cache.setTranscript(
+            "a",
+            listOf(
+                UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
+                AssistantTurn("2", "reply", CLOCK, rowId = TranscriptRowId(2L)),
+            ),
+        )
         vm.selectSession("a")
         runCurrent()
         
         vm.regenerateReply("2")
         runCurrent()
         
-        assertEquals(0, repository.regenerates.size)
+        assertEquals(0, repository.regenerateCalls.size)
         assertEquals("Hermes needs a response. Answer the request above.", vm.uiState.value.notice)
     }
 
     @Test
-    fun `regenerateReply rejection notice`() = runTest {
+    fun `regenerateReply rejection notice`() = runTest(dispatcher) {
         val cache = SessionCache()
         val repository = FakeRepository(cache)
         val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
         cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
         cache.setTranscript("a", listOf(
             UserTurn("1", "first", CLOCK, rowId = TranscriptRowId(1L)),
