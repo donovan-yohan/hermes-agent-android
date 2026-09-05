@@ -230,15 +230,16 @@ internal val WORDMARK_MAX_FONT_SIZE = 72.sp
  * because it is the value this port deliberately does **not** enforce.
  *
  * A floor is safe on Desktop because its narrowest chat column is still wider
- * than the run: the pinned contract measures `HERMES AGENT` at `135.6px` in a
- * `1132px` column, so the lettering spans about `7.8em` in Collapse and more in
- * a platform sans. At `2.75rem` that is over `340dp` of glyph run against a
- * `302dp` column on a `w320dp` phone, and a run wider than its box under
- * `maxLines = 1, softWrap = false` is clipped at both ends in silence — worse
- * at a font scale above 1.0. So the fit clamps the ceiling only and lets the
- * size fall below this when the column cannot hold the run.
- * `WordmarkFitTest` measures it; `docs/parity/empty-states.md` has the
- * per-width numbers.
+ * than the run: the pinned capture measures `HERMES AGENT` at `1052.0px` in a
+ * `135.637px` face, `7.756 em` in Collapse; Roboto Bold at the same tracking is
+ * `8.4375 em`. At `2.75rem` that is `341dp` of glyph run in Collapse and
+ * `371dp` in Roboto, against the `300dp` column a `w320dp` phone leaves — and a
+ * run wider than its box under `maxLines = 1, softWrap = false` is clipped at
+ * both ends in silence, worse at a font scale above 1.0. So the fit clamps the
+ * ceiling only and lets the size fall below this when the column cannot hold
+ * the run. `WordmarkFitTest` and `WordmarkFitDeviceTest` measure it;
+ * `docs/parity/empty-states.md` has the per-width table and a device render at
+ * `w320dp`.
  */
 internal val WORDMARK_MIN_FONT_SIZE_DESKTOP = 44.sp
 
@@ -273,11 +274,12 @@ internal fun fitWordmarkFontSize(
  * **above only**.
  *
  * Kept separate from the measuring so it can be tested against real type
- * metrics. Robolectric loads no device font — its stub measures the whole
- * twelve-character wordmark at 32.5 px when asked for 48 sp, and not even
- * linearly in the size — so an on-device fit cannot be asserted through it. The
- * ratios that matter come from the pinned Desktop contract instead, and
- * `WordmarkFitTest` applies them here. See `docs/parity/empty-states.md`.
+ * metrics: `WordmarkFitTest` drives it from the ratio the pinned Desktop
+ * capture recorded, and `WordmarkFitDeviceTest` from the platform face under
+ * Robolectric's `NATIVE` graphics. Robolectric's *default* graphics loads no
+ * font at all — it measures the whole twelve-character wordmark at 32.5 px when
+ * asked for 48 sp, and not even linearly in the size — so a fit asserted under
+ * it would be measuring the stub. See `docs/parity/empty-states.md`.
  *
  * There is no floor. Desktop's `--fit-min` is safe upstream because its chat
  * column always exceeds the run; a phone column does not, and under

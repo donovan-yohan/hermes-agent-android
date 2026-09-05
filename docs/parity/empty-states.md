@@ -94,30 +94,35 @@ only**, and the floor is the reason.
 
 The pinned light capture measures the visible lettering at `1052.0px` in a
 `135.637px` face (`contract.json`, node 4), so `HERMES AGENT` spans **7.756 em**
-in Collapse. `Wordmark` receives `screen - 2 x 2dp gutter - 16dp inset`, i.e.
-`screen - 20dp`:
+in Collapse. Roboto Bold at the same `0.08em` tracking measures `405px` at
+`48sp` — **8.4375 em**, the wider of the two, which is the face this app draws.
+`Wordmark` receives `screen - 2 x 2dp gutter - 16dp inset`, i.e. `screen - 20dp`:
 
-| Screen | Column | Fitted size | Desktop's floor needs | Floor reachable |
-|---|---|---|---|---|
-| `w320dp` | 300 dp | 38.7 sp | 341.3 dp | no — overruns by 41 dp |
-| `w360dp` | 340 dp | 43.8 sp | 341.3 dp | no — overruns by 1.3 dp |
-| `w411dp` | 391 dp | 50.4 sp | 341.3 dp | yes |
+| Screen | Column | Fitted (Roboto) | Fitted (Collapse) | Floor needs, Roboto | Floor reachable |
+|---|---|---|---|---|---|
+| `w320dp` | 300 dp | 35.6 sp | 38.7 sp | 371.2 dp | no — overruns by 71 dp |
+| `w360dp` | 340 dp | 40.3 sp | 43.8 sp | 371.2 dp | no — overruns by 31 dp |
+| `w411dp` | 391 dp | 46.3 sp | 50.4 sp | 371.2 dp | yes |
 
-Collapse is a narrow display face and a bold platform sans is wider, so every
-`no` above only gets worse in the face this app actually draws. With a floor
-clamp the two narrow columns would have been raised back to `44sp` and clipped
-at both ends in silence, because the wordmark is laid out `maxLines = 1,
-softWrap = false`. A font scale above 1.0 widens the run further; the fit is
-measured rather than assumed, so it absorbs that too.
+With a floor clamp the two narrow columns would have been raised back to `44sp`
+and clipped at both ends in silence, because the wordmark is laid out
+`maxLines = 1, softWrap = false`. A font scale above 1.0 widens the run
+further; the fit is measured rather than assumed, so it absorbs that too.
 
-`WordmarkFitTest` holds this table. It is a plain JVM test, not a Robolectric
-one, and deliberately: Robolectric loads no device font, and its stub measures
-the whole twelve-character wordmark at `32.5px` when asked for `48sp` — about
-`0.68em` for twelve glyphs, and not even linearly in the size. An on-device fit
-asserted through it would be measuring the stub. The arithmetic is therefore
-separated into `fitWordmarkSp` and driven from the ratio the capture recorded;
-`EmptyStateJourneyTest` still renders the splash at `w320dp` and checks the
-lettering stays inside the slot.
+Two tests hold this, for two different reasons. `WordmarkFitTest` is plain JVM
+and drives `fitWordmarkSp` from the ratio the Desktop capture recorded, so the
+provenance of the number is the capture rather than the host. `WordmarkFitDeviceTest`
+runs under Robolectric with `@GraphicsMode(NATIVE)` and measures the real
+platform face at all three widths, including at font scale 1.5.
+
+`NATIVE` there is load-bearing: Robolectric's **default legacy** graphics has no
+font at all and measures the whole twelve-character wordmark at `32.5px` when
+asked for `48sp` — about `0.68em` for twelve glyphs, and not even linearly in
+the size. A fit asserted under legacy graphics would be measuring the stub. The
+`405px` above is the same probe under `NATIVE`.
+
+The device render at `w320dp` below is the third proof, and the one that is not
+a measurement at all.
 
 ## The font
 
@@ -150,41 +155,88 @@ every measurable property matches.
 
 ## Visual report
 
-- pending: #152
+- report: docs/parity/visual/empty-states/empty-chat-intro-light/report.html
+- commit: 1d37f46
 
-**The Desktop halves exist and are stored in this repo**, captured from a
-disposable pinned export at `3ca096de5f8183cb2e0ec23673f294d5978656a3` against
-seeded state with no host, credential, fingerprint or private session text:
+Four rendered side-by-sides, one per surface per mode; the table below lists
+them all. #152 is closed by this packet.
 
-| Name | Path |
-|---|---|
-| Empty chat, intro splash, light | `docs/parity/visual/empty-states/empty-chat-intro-light/desktop/` |
-| Empty chat, intro splash, dark | `docs/parity/visual/empty-states/empty-chat-intro-dark/desktop/` |
-| Sidebar blank state, light | `docs/parity/visual/empty-states/sidebar-blank-state-light/desktop/` |
-| Sidebar blank state, dark | `docs/parity/visual/empty-states/sidebar-blank-state-dark/desktop/` |
+Desktop was captured from a disposable pinned export at
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`; Android from `emulator-5554`
+(`sdk_gphone16k_arm64`, Android 17, `1280x2856` at density 480 — `426dp` wide,
+font scale 1.0) running this branch's own debug build. Neither side carries a
+host, credential, fingerprint or private session text.
 
-Each carries `reference.png` and `contract.json`. They are deliberately **not**
-recorded as `report:` — `scripts/check-parity-evidence.py` refuses a page that
-claims a report and owes one at the same time, and there is no `report.html`
-because a side-by-side needs two sides. The Android half is owed by #152: the
-emulator was in another lane's hands when this branch landed and no device was
-touched.
+| Packet | Desktop | Android | Report |
+|---|---|---|---|
+| `empty-chat-intro-light` | yes | yes | yes |
+| `empty-chat-intro-dark` | yes | yes | yes |
+| `sidebar-blank-state-light` | yes | yes | yes |
+| `sidebar-blank-state-dark` | yes | yes | yes |
+| `empty-chat-intro-w320dp-dark` | — | yes | — |
+| `appearance-intro-splash-row-light` | — | yes | — |
+
+Each `report.html` sits beside its two halves under
+`docs/parity/visual/empty-states/<name>/`.
+
+The last two are Android-only on purpose. `empty-chat-intro-w320dp-dark` is the
+narrowest supported phone, taken with `wm size 960x2140` at density 480 and
+reset afterwards; its `contract.json` records the override. It is the render the
+fit table above exists for: the lettering fits its column with margin at a size
+below Desktop's `2.75rem` floor. Desktop has no `w320dp` to compare it against.
+`appearance-intro-splash-row-light` is the Appearance row, evidence that the
+`Intro Splash` title, description and Off/On control ship verbatim.
+
+**How the blank state was reached on a device.** It needs a session list with
+zero rows, and every Hermes profile on the QA Gateway carried sessions; the
+`Archived` filter renders `Nothing archived`, a different empty state, and a
+never-connected saved connection would have reached only the *disconnected*
+variant. A `demo` profile with no sessions was added to the Gateway for the
+capture, and the app switched to it — so what is rendered is the state Desktop
+renders: connected, projects available, the ghost `New project` live and no
+extra line. The disabled variant is covered by `EmptyStateJourneyTest` rather
+than by a picture.
+
+The roster is fetched once per connection, so a profile added while the app is
+running does not appear until it re-reads; the capture restarted the app to pick
+`demo` up. Worth knowing before anyone tries to reproduce this.
 
 Two facts the Desktop contracts settle, so the ledger below is not arguing from
 source alone. In the `nous` light skin the wordmark computes to
 `rgb(0, 83, 253)` — `#0053FD`, which is `--theme-midground` and therefore this
-app's `tokens.accent`. And the fitted lettering measures `1052.0px` wide in a
-`135.637px` face, which is the `7.756 em` the fit table above is built on.
+app's `tokens.accent`; the Android light capture draws it in the same blue. And
+the fitted lettering measures `1052.0px` wide in a `135.637px` face, which is
+the `7.756 em` the fit table above is built on.
+
+### What the side-by-side shows
+
+- The wordmark fills the column on both sides, and the face is the visible
+  difference: Desktop's Collapse is a high-contrast display serif, Android's is
+  Roboto Bold. Every other property — uppercase, weight 700, `0.08em` tracking,
+  `0.9` line height, the midground/foreground colour roles — matches. That row
+  is the ledger's first, and it is the one a reviewer should look hardest at.
+- The body line sits directly under the lettering on both, centred, in the
+  tertiary ink. Desktop's fits one line in a `1132px` column; Android's wraps to
+  two or three in a phone column, which is the measure doing its job.
+- Android's splash is centred in the transcript slot between the chrome and the
+  composer; Desktop reserves `--composer-measured-height` to achieve the same
+  thing in a single scroll container.
+- The blank state matches closely: same `root-folder` glyph at the same visual
+  size in the quaternary ink, the same caption in the tertiary, the same ghost
+  button with an `add` glyph before its label, all centred in the full remaining
+  height of the list. Android's target is the 48 dp touch floor rather than
+  Desktop's `size="sm"` button, which is the ledgered adaptation and the only
+  difference visible in the pair.
 
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| The wordmark is set in Collapse, a Blaze Type retail face loaded from `@nous-research/ui` (`styles.css:61-68`) | mobile-adaptation | Desktop's own declared fallback, `var(--font-sans)`, at the same weight, casing, tracking and line height | The licence could not be established: the package declares MIT and ships no font notice, Collapse is sold commercially by Blaze Type, and `res/font` cannot read the only format shipped (woff2), so bundling would require converting a face this repo has no right to convert. The full finding is in **The font** above. The silhouette difference is real and is what #152 owes a render of |
+| The wordmark is set in Collapse, a Blaze Type retail face loaded from `@nous-research/ui` (`styles.css:61-68`) | mobile-adaptation | Desktop's own declared fallback, `var(--font-sans)`, at the same weight, casing, tracking and line height | The licence could not be established: the package declares MIT and ships no font notice, Collapse is sold commercially by Blaze Type, and `res/font` cannot read the only format shipped (woff2), so bundling would require converting a face this repo has no right to convert. The full finding is in **The font** above. The silhouette difference is real, and the light and dark side-by-sides above are what a reviewer judges it on |
 | `.fit-text` sizes the lettering from a container query, unbounded above, floor `2.75rem` (`wordmark.tsx:22-24`, `styles.css:1633-1661`) | mobile-adaptation | One measured layout pass at a probe size scaled to the column, clamped at 72 sp and **not** floored | Compose has no container query, so the fit is measured. The ceiling is this port's, because Desktop's column is bounded by `--composer-width` and a tablet column here is not. The floor is dropped because a phone column cannot hold it: at `7.756 em` the run needs `341 dp` at `2.75rem` against `300 dp` on a `w320dp` screen, and `maxLines = 1, softWrap = false` clips an overrun in silence. The per-width table is in **The wordmark's fit** above and `WordmarkFitTest` holds it |
 | The lettering renders twice, the `aria-hidden` twin acting as the `.fit-text` width reference (`wordmark.tsx:38-43`) | mobile-adaptation | Rendered once | The doubled span exists only to feed a CSS container query. Compose measures directly, so the second copy would be a node with no purpose and a second thing for the semantics tree to trip over |
 | `mix-blend-plus-lighter` on the wordmark (`wordmark.tsx:33`) | mobile-adaptation | Not painted | Compose has no plus-lighter blend for text without rendering the glyphs into a layer and compositing by hand. The colour role is unchanged: midground in light, foreground in dark |
-| The dark wordmark is `text-foreground/90` — 0.90 alpha over the foreground (`wordmark.tsx:33`) | mobile-adaptation | `tokens.textPrimary`, which is 0.94 over the same base (`HermesTokens.kt`) | Four points lighter, and deliberately not compounded: multiplying Desktop's 0.90 into a token already at 0.94 lands at 0.85 and matches neither. The alternative is a raw alpha in a component, which the token rule forbids. #152's dark render is what judges whether four points is visible |
+| The dark wordmark is `text-foreground/90` — 0.90 alpha over the foreground (`wordmark.tsx:33`) | mobile-adaptation | `tokens.textPrimary`, which is 0.94 over the same base (`HermesTokens.kt`) | Four points lighter, and deliberately not compounded: multiplying Desktop's 0.90 into a token already at 0.94 lands at 0.85 and matches neither. The alternative is a raw alpha in a component, which the token rule forbids. the dark side-by-side above is what judges whether four points is visible |
 | The intro body is `0.875rem` — 14 px, a step ABOVE Desktop's 13 px body (`styles.css:1610-1613`, contract node 6) | mobile-adaptation | `type.body`, 15 sp, which is this app's rendering of Desktop's 13 px | This scale is stepped up ~1.15x for a phone and `body` is its largest prose step, so the line lands one step lower relative to its own scale than Desktop's does. `caption` — 13 sp, this app's 12 px — would put it two steps lower still |
 | The intro body has no gutter of its own: `mx-auto` centres a 34 rem measure inside a column the thread has already inset (`intro.tsx:176`, `styles.css:1609-1613`) | mobile-adaptation | The same 34 rem measure, plus 12 dp of horizontal padding | The splash slot here is a `weight(1f)` sibling of the composer with no inset of its own, so it runs to the screen edge; on a `w320dp` phone the line would otherwise wrap against the bezel |
 | Every Desktop empty state is `place-items-center` in its section's height | mobile-adaptation | `EmptyState` centres vertically only when its caller asks (`centered = true`), which today is the transcript's plain note | Nine other callers — the session list's loading, archived and project states, and Relay's four panes — already pass a height-filling modifier, and switching them on would move nine surfaces this change has no render of. Whether Desktop centres *those* is a question for `docs/parity/session-list-sections.md` and `docs/parity/relay-channels-surface.md` and their own renders, not something to settle by side effect here. `TextAlign.Center` travels with the same flag for the same reason |
@@ -196,5 +248,5 @@ app's `tokens.accent`. And the fitted lettering measures `1052.0px` wide in a
 | The sidebar blank state carries a `New project` button and nothing else (`section-states.tsx:26-42`) | mobile-adaptation | The same glyph, caption and ghost button, plus one extra line — `Connect to a Gateway to start a session.` — and only while the Gateway is not connected | Desktop's sidebar is never disconnected; a phone's routinely is, and the blank state is then the only place on screen that says which action comes first. The line is absent whenever Desktop would have nothing to add, so a connected Android blank state is Desktop's exactly |
 | `New project` is always live in Desktop's blank state | mobile-adaptation | Disabled when the Gateway is not connected or serves no project RPC | Same gate the sidebar header's `+` already uses in project mode. The control stays visible and keeps its glyph and label rather than disappearing |
 | `SidebarSessionSkeletons` renders while the unfiltered session set is still loading (`section-states.tsx:11-24`, gated at `sidebar/index.tsx:1423,1426`) | mobile-adaptation | The same five placeholder bars, from the same composable this rail already uses for a search read, gated on `ChatUiState.sessionsLoading` | Desktop draws one component for both waits and so does this; the only difference is that Android tags the two cases apart so a journey can tell which wait it is looking at. Without the gate `rows.isEmpty()` rendered `No sessions yet` with a live `+ New project` during the first fetch and after every reconnect — a claim about the account made before the account had answered |
-| `ChatEmptySlot` fills an empty *selected* session when the intro is not showing (`components/assistant-ui/thread/index.tsx:155`) | omission | The pre-existing `No messages yet` note, now centred | out-of-scope: #152 — that surface has never been ported and this slice did not add it. The note it replaces was already there and its copy is unchanged, per the port brief |
-| The Appearance rows Desktop has and this app does not (UI scale, Terminal font, Session density, Tab strip, Translucency, Backdrop, Composer pop-out, Reactions, Tips, Tours, Vibe hearts, Tool view, Reasoning disclosure, Embeds) | omission | Absent | out-of-scope: #152 — pre-existing gaps in the Appearance surface that this slice neither introduced nor is scoped to close. This page ledgers the Intro Splash row it added; the surface as a whole owes its own parity page |
+| `ChatEmptySlot` fills an empty *selected* session when the intro is not showing (`components/assistant-ui/thread/index.tsx:155`) | omission | The pre-existing `No messages yet` note, now centred | out-of-scope: #157 — that surface has never been ported and this slice did not add it. The note it replaces was already there and its copy is unchanged, per the port brief |
+| The Appearance rows Desktop has and this app does not (UI scale, Terminal font, Session density, Tab strip, Translucency, Backdrop, Composer pop-out, Reactions, Tips, Tours, Vibe hearts, Tool view, Reasoning disclosure, Embeds) | omission | Absent | out-of-scope: #157 — pre-existing gaps in the Appearance surface that this slice neither introduced nor is scoped to close. This page ledgers the Intro Splash row it added; the surface as a whole owes its own parity page |

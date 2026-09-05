@@ -17,12 +17,18 @@ import org.junit.Test
  * leaves. Under `maxLines = 1, softWrap = false` an overrun is clipped at both
  * ends in silence, so a floor that cannot fit is an invisible failure.
  *
- * **Why this is not a Robolectric test.** Robolectric loads no device font: its
- * stub measures the whole twelve-character wordmark at `32.5px` when asked for
- * `48sp` — about `0.68em` for twelve glyphs — and not even linearly in the
- * size. Any on-device fit asserted through it would be measuring the stub. So
- * the arithmetic is separated into [fitWordmarkSp] and driven here from the
- * ratio the Desktop contract actually recorded.
+ * **Why the ratio comes from the capture rather than from a font.** Robolectric
+ * in its **default legacy** graphics mode loads no device font: it measures the
+ * whole twelve-character wordmark at `32.5px` when asked for `48sp` — about
+ * `0.68em` for twelve glyphs — and not even linearly in the size. So the
+ * arithmetic is separated into [fitWordmarkSp] and driven here from the ratio
+ * the Desktop contract actually recorded, which is a number a reader can check
+ * against a stored file.
+ *
+ * The real platform face is measured too, in
+ * `app/src/testDebug/.../WordmarkFitDeviceTest.kt`, which asks Robolectric for
+ * `@GraphicsMode(NATIVE)` and gets `405px` for the same probe — `8.4375 em` for
+ * Roboto Bold, wider than Collapse and therefore the stricter case.
  *
  * Collapse is a **narrow** display face; a bold platform sans is wider. Every
  * assertion below is therefore stated so that a wider face only strengthens it:
