@@ -7,11 +7,6 @@ import com.hermesagent.mobile.data.session.UserTurn
 /**
  * What `session.branch` is asked for: keep `count` messages, the whole chat,
  * or nothing because the reply cannot be located.
- *
- * @param localTranscript The transcript as currently held in the app's cache.
- * @param authoritativeTranscript The transcript returned by the backend's `session.history`.
- * @param targetId The ID of the tapped `AssistantTurn`.
- * @return The branching instruction to apply to `session.branch`.
  */
 sealed interface BranchPlan {
     data class Keep(val count: Int) : BranchPlan
@@ -21,9 +16,16 @@ sealed interface BranchPlan {
 
 /**
  * Derives the `count` parameter for `session.branch`, mirroring Desktop's
- * `selectBranchMessages` implementation in
- * `apps/desktop/src/app/session/hooks/use-session-actions/utils.ts:selectBranchMessages`
- * at `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `selectBranchMessages` (`apps/desktop/src/app/session/hooks/use-session-actions/utils.ts`
+ * @ `3ca096de`): the tapped reply is located in the authoritative persisted
+ * transcript by durable row id first, then by role plus trimmed text taking the
+ * same ordinal among identical local turns; `count` is its 1-based position
+ * among visible (non-blank user/assistant) messages, the last visible message
+ * means the whole chat, and a reply that cannot be located is never guessed.
+ *
+ * @param localTranscript the transcript as currently held in the app's cache.
+ * @param authoritativeTranscript the transcript returned by `session.history`.
+ * @param targetId the id of the tapped [AssistantTurn].
  */
 fun deriveBranchCount(
     localTranscript: List<TranscriptEntry>,
