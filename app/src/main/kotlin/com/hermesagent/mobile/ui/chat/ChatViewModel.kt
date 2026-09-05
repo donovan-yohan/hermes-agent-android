@@ -1822,7 +1822,7 @@ internal class ChatViewModel(
             fun setInterruptNotice(interrupt: GatewayInterruptOutcome) {
                 when (interrupt) {
                     GatewayInterruptOutcome.Interrupted -> Unit
-                    GatewayInterruptOutcome.NeedsInput -> notice.value = "Hermes needs a response. Your queue remains parked."
+                    GatewayInterruptOutcome.NeedsInput -> notice.value = "Hermes needs a response. Answer the request above."
                     else -> notice.value = "Hermes could not be stopped. Check the Gateway connection."
                 }
             }
@@ -1893,7 +1893,7 @@ internal class ChatViewModel(
                         repository.regenerate(sessionId, plan.sourceText, targetRowId, plan.sourceEntryId)
                         break
                     } catch (e: GatewayRpcException) {
-                        // Match GatewaySessionRepository.kt:2747 `already working` and the Gateway's 4090 `busy`.
+                        // Match the repository's own refusal ("Hermes is already working in this session.") and the Gateway's 4090 busy refusal.
                         val isBusy = e.message?.contains("already working", ignoreCase = true) == true ||
                             e.message?.contains("busy", ignoreCase = true) == true
                         if (retries > 0 && isBusy) {

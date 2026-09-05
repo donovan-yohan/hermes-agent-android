@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -2010,7 +2011,7 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect { } }
     }
 
-    private fun kotlinx.coroutines.test.TestScope.collectState(viewModel: ChatViewModel) {
+    private fun TestScope.collectState(viewModel: ChatViewModel) {
         backgroundScope.launch { viewModel.uiState.collect { } }
     }
 

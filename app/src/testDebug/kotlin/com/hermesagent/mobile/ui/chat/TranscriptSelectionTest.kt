@@ -463,7 +463,7 @@ class TranscriptSelectionTest {
     }
 
     @Test
-    fun `the action bar renders Desktop's two remaining controls, disabled and marked`() {
+    fun `the action bar renders Desktop's one remaining control, disabled and marked`() {
         launch()
 
         val floor = HermesSpacing().touchTarget
@@ -474,7 +474,7 @@ class TranscriptSelectionTest {
                 .assertHeightIsAtLeast(floor)
         }
         UNBUILT_ACTIONS.forEach { name ->
-            // The two of those this build cannot perform.
+            // The one of those this build cannot perform.
             // Whole, not matched: `onNodeWithContentDescription` tests the
             // description list with `any { }`, so a control that also named
             // itself into the merge would announce twice and still be found.
@@ -638,7 +638,7 @@ class TranscriptSelectionTest {
             "Refresh",
         )
 
-        /** The two of those this build cannot perform. */
+        /** The one of those this build cannot perform. */
         val UNBUILT_ACTIONS = DESKTOP_ACTION_BAR.filter { it.endsWith(WIP_SPOKEN) }
         const val FIRST_PARAGRAPH = "First paragraph of the reply."
 
