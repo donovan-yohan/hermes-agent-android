@@ -77,9 +77,9 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 // A phone-width screen, because the reply action bar is a fixed row of four
-// 48dp targets carrying three chips and the only way it can fail is by running
-// off the right edge. Robolectric's default screen is narrower than any device
-// this ships to, which would have made that assertion untestable.
+// live 48dp controls and the only way it can fail is by running off the right
+// edge. Robolectric's default screen is narrower than any device this ships to,
+// which would have made that assertion untestable.
 @Config(sdk = [34], qualifiers = "w411dp-h891dp", shadows = [ShadowSelectionMagnifier::class])
 // A live selection draws Compose's two vector handles. Robolectric's legacy
 // graphics pipeline hands the vector rasteriser a null Bitmap and the draw
