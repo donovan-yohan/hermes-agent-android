@@ -149,6 +149,7 @@ fun Transcript(
      */
     onShowEarlier: (() -> Unit)? = null,
     onBranchFromReply: ((entryId: String) -> Unit)? = null,
+    onRegenerateReply: ((entryId: String) -> Unit)? = null,
     /**
      * Whether an empty transcript is the *intro splash* rather than the plain
      * note. Desktop decides this outside the thread too and hands the component
@@ -185,6 +186,7 @@ fun Transcript(
         return
     }
 
+    val newestAssistantEntryId = remember(entries) { entries.findLast { it is AssistantTurn }?.id }
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxWidth(),
@@ -197,7 +199,7 @@ fun Transcript(
         items(items = entries, key = { it.id }) { entry ->
             when (entry) {
                 is UserTurn -> UserBubble(entry, imageLoader)
-                is AssistantTurn -> AssistantProse(entry, isWorking, onBranchFromReply)
+                is AssistantTurn -> AssistantProse(entry, isWorking, onBranchFromReply, if (entry.id == newestAssistantEntryId) onRegenerateReply else null)
                 is ReasoningActivity -> ReasoningRow(entry)
                 is ToolActivity -> ToolRow(entry)
             }
@@ -526,7 +528,12 @@ private fun FullSizeImageOverlay(
  * readable as ordinary text once it lands.
  */
 @Composable
-private fun AssistantProse(turn: AssistantTurn, isWorking: Boolean, onBranchFromReply: ((entryId: String) -> Unit)?) {
+private fun AssistantProse(
+    turn: AssistantTurn,
+    isWorking: Boolean,
+    onBranchFromReply: ((entryId: String) -> Unit)?,
+    onRegenerateReply: ((entryId: String) -> Unit)?,
+) {
     val blocks = remember(turn.markdown) { parseMarkdown(turn.markdown) }
     // Whether this turn draws any prose at all. One gate, read twice below, so
     // the container and the copy control can never disagree about it.
@@ -591,7 +598,7 @@ private fun AssistantProse(turn: AssistantTurn, isWorking: Boolean, onBranchFrom
         // line as prose, and text on screen with no way to lift it is the bug
         // this control exists to fix.
         if (hasProse) {
-            ReplyActions(reply, turn.id, isWorking, turn.streaming, onBranchFromReply)
+            ReplyActions(reply, turn.id, isWorking, turn.streaming, onBranchFromReply, onRegenerateReply)
         }
     }
 }
@@ -632,8 +639,7 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * Refresh (`assistant-message.tsx:625-642` @ `3ca096de`).
  * Branch is live (`session.branch`) through [onBranchFromReply] and stays
  * enabled unless a turn is working, streaming, or this surface is not wired.
- * Read aloud and Refresh are still placeholders behind a `WIP` chip with unchanged
- * reasons from previous work.
+ * Read aloud is still a placeholder behind a `WIP` chip with unchanged reasons from previous work.
  */
 @Composable
 private fun ReplyActions(
@@ -642,6 +648,8 @@ private fun ReplyActions(
     isWorking: Boolean,
     streaming: Boolean,
     onBranchFromReply: ((entryId: String) -> Unit)?,
+    onRegenerateReply: ((entryId: String) -> Unit)?,
+
 ) {
     val tokens = HermesTheme.tokens
     val platformContext = LocalContext.current
@@ -713,7 +721,13 @@ private fun ReplyActions(
             modifier = Modifier.semantics { customActions = replyActions },
         )
         ComingSoonIconAction(HermesIcon.Unmute, READ_ALOUD)
-        ComingSoonIconAction(HermesIcon.Refresh, REFRESH_REPLY)
+        HermesIconButton(
+            icon = HermesIcon.Refresh,
+            contentDescription = REFRESH_REPLY,
+            onClick = { onRegenerateReply?.invoke(entryId) },
+            enabled = !isWorking && !streaming && onRegenerateReply != null,
+            tint = tokens.scaffoldMeta,
+        )
     }
 }
 

@@ -30,6 +30,7 @@ class ChatActions(
     val onSelectSession: (String) -> Unit = {},
     val onCreateSession: () -> Unit = {},
     val onBranchFromReply: ((String) -> Unit)? = null,
+    val onRegenerateReply: ((String) -> Unit)? = null,
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
     /**

@@ -115,6 +115,7 @@ class TranscriptSelectionTest {
     private fun launch(
         transcript: List<TranscriptEntry> = reply(),
         onBranchFromReply: ((entryId: String) -> Unit)? = null,
+        onRegenerateReply: ((entryId: String) -> Unit)? = null,
         isWorking: Boolean = false,
     ) {
         state = ChatUiState(
@@ -577,11 +578,57 @@ class TranscriptSelectionTest {
          * app's own word for Desktop's `Copy` — a rendered-text projection
          * rather than the markdown source, ledgered on the parity page.
          */
+    @Test
+    fun `refresh control is enabled when not streaming and invokes the callback for newest reply`() {
+        var tapped = false
+        launch(
+            transcript = reply(),
+            onRegenerateReply = { entryId ->
+                assertEquals("${SESSION}-a1", entryId)
+                tapped = true
+            },
+        )
+
+        compose.onNodeWithContentDescription("Refresh")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        assertTrue(tapped)
+    }
+
+    @Test
+    fun `refresh control is disabled for older reply`() {
+        launch(
+            transcript = reply() + listOf(AssistantTurn("${SESSION}-a2", "newer", NOW, null, false)),
+            onRegenerateReply = { },
+        )
+
+        compose.onAllNodesWithContentDescription("Refresh")[0]
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun `refresh control is disabled when streaming`() {
+        launch(
+            transcript = reply(streaming = true),
+            onRegenerateReply = { },
+        )
+
+        compose.onNodeWithContentDescription("Refresh")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+    }
+
         val DESKTOP_ACTION_BAR = listOf(
             "Branch in new chat",
             "Copy reply",
             "Read aloud. Work in progress.",
-            "Refresh. Work in progress.",
+            "Refresh",
         )
 
         /** The two of those this build cannot perform. */
