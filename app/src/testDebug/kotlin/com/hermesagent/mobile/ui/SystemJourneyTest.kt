@@ -230,7 +230,7 @@ class SystemJourneyTest {
                                     SettingsRow(
                                         label = "Relay channels",
                                         description = "Channels, transcripts, and messaging live in their own workspace.",
-                                        traversalIndex = 3f,
+                                        traversalIndex = 4f,
                                         onClick = {},
                                     )
                                 },
