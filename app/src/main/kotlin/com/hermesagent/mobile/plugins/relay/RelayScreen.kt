@@ -1,4 +1,4 @@
-package com.hermesagent.mobile.ui.relay
+package com.hermesagent.mobile.plugins.relay
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -41,7 +41,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hermesagent.mobile.ui.OverlayScaffold
-import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.EmptyState
@@ -53,6 +52,33 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.flow.first
+
+/**
+ * The Relay workspace's own actions. Navigation is deliberately absent: this
+ * surface asks the ViewModel for data and the app shell decides where "back"
+ * and "sign in" go.
+ */
+class RelayActions(
+    val onSelectChannel: (String) -> Unit = {},
+    val onClearSelection: () -> Unit = {},
+    val onRetry: () -> Unit = {},
+    /** The open channel's draft. Per channel, UI-only, never persisted. */
+    val onDraftChange: (String) -> Unit = {},
+    val onSend: () -> Unit = {},
+    /**
+     * Re-send the attempt whose outcome is unknown, under its original
+     * `clientMessageId`. Separate from [onSend] because it deliberately carries
+     * that attempt's own text rather than whatever is in the field now.
+     */
+    val onRetrySend: () -> Unit = {},
+    /**
+     * The surface became visible, or stopped being visible. Relay's contract is
+     * a poll rather than a stream, so this is what bounds it: nothing keeps
+     * asking the Gateway once the screen is gone.
+     */
+    val onResume: () -> Unit = {},
+    val onPause: () -> Unit = {},
+)
 
 /**
  * The Relay workspace: channels, then one channel's transcript.

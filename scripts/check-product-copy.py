@@ -35,8 +35,8 @@ RENDERED_DATA_SOURCES = (
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteGateway.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteLifecycle.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/notifications/NotificationCopy.kt",
-    "app/src/main/kotlin/com/hermesagent/mobile/data/relay/RelayAvailabilityController.kt",
-    "app/src/main/kotlin/com/hermesagent/mobile/data/relay/RelayPluginRepository.kt",
+    "app/src/main/kotlin/com/hermesagent/mobile/plugins/relay/RelayAvailabilityController.kt",
+    "app/src/main/kotlin/com/hermesagent/mobile/plugins/relay/RelayPluginRepository.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/KeyImport.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshDestination.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshjProbe.kt",
@@ -166,12 +166,17 @@ def violations(source: str) -> list[Violation]:
 
 def default_paths(root: pathlib.Path) -> list[pathlib.Path]:
     ui = root / "app/src/main/kotlin/com/hermesagent/mobile/ui"
+    plugins = root / "app/src/main/kotlin/com/hermesagent/mobile/plugins"
     data_sources = [root / relative for relative in RENDERED_DATA_SOURCES]
     missing = [path for path in data_sources if not path.is_file()]
     if missing:
         rendered = ", ".join(str(path.relative_to(root)) for path in missing)
         raise AssertionError(f"rendered product-copy source is missing: {rendered}")
-    return sorted([*(path for path in ui.rglob("*.kt") if path.is_file()), *data_sources])
+    return sorted(set([
+        *(path for path in ui.rglob("*.kt") if path.is_file()),
+        *(path for path in plugins.rglob("*.kt") if path.is_file()),
+        *data_sources,
+    ]))
 
 
 def self_test() -> None:

@@ -22,42 +22,59 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
-import com.hermesagent.mobile.data.gateway.GatewayConnectionState
-import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
-import com.hermesagent.mobile.data.relay.RelayAvailability
-import com.hermesagent.mobile.data.relay.RelayAvailabilityController
-import com.hermesagent.mobile.data.relay.RelayAvailabilityState
-import com.hermesagent.mobile.data.relay.RelayCredentialRefresher
-import com.hermesagent.mobile.data.relay.TRANSPORT_DOWN_MESSAGE
-import com.hermesagent.mobile.data.relay.RelayChannel
-import com.hermesagent.mobile.data.relay.RelayChannelsStatus
-import com.hermesagent.mobile.data.relay.RelayLaneState
-import com.hermesagent.mobile.data.relay.RelayMessage
-import com.hermesagent.mobile.data.relay.RelayMessageFormat
-import com.hermesagent.mobile.data.relay.RelaySignInReason
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.SignInOrigin
+import com.hermesagent.mobile.plugins.Contribution
+import com.hermesagent.mobile.plugins.ContributionRegistry
+import com.hermesagent.mobile.plugins.PluginAreas
+import com.hermesagent.mobile.plugins.relay.CHANNEL_LIST_TAG
+import com.hermesagent.mobile.plugins.relay.COMPOSER_FIELD_TAG
+import com.hermesagent.mobile.plugins.relay.NOTICE_TAG
+import com.hermesagent.mobile.plugins.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
+import com.hermesagent.mobile.plugins.relay.RelayActions
+import com.hermesagent.mobile.plugins.relay.RelayAvailability
+import com.hermesagent.mobile.plugins.relay.RelayAvailabilityController
+import com.hermesagent.mobile.plugins.relay.RelayAvailabilityState
+import com.hermesagent.mobile.plugins.relay.RelayChannel
+import com.hermesagent.mobile.plugins.relay.RelayChannelRow
+import com.hermesagent.mobile.plugins.relay.RelayChannelsStatus
+import com.hermesagent.mobile.plugins.relay.RelayComposerUiState
+import com.hermesagent.mobile.plugins.relay.RelayCredentialRefresher
+import com.hermesagent.mobile.plugins.relay.RelayLaneState
+import com.hermesagent.mobile.plugins.relay.RelayMessage
+import com.hermesagent.mobile.plugins.relay.RelayMessageFormat
+import com.hermesagent.mobile.plugins.relay.RelayScreen
+import com.hermesagent.mobile.plugins.relay.RelaySenderKind
+import com.hermesagent.mobile.plugins.relay.RelaySignInReason
+import com.hermesagent.mobile.plugins.relay.RelayTimeLabels
+import com.hermesagent.mobile.plugins.relay.RelayTranscriptRow
+import com.hermesagent.mobile.plugins.relay.RelayUiState
+import com.hermesagent.mobile.plugins.relay.SEND_TAG
+import com.hermesagent.mobile.plugins.relay.STALE_TAG
+import com.hermesagent.mobile.plugins.relay.TRANSCRIPT_TAG
+import com.hermesagent.mobile.plugins.relay.TRANSPORT_DOWN_MESSAGE
+import com.hermesagent.mobile.plugins.relay.relayChannelRows
+import com.hermesagent.mobile.plugins.relay.relayNotice
+import com.hermesagent.mobile.plugins.relay.relayTranscriptRows
+import com.hermesagent.mobile.ui.AppearanceActions
+import com.hermesagent.mobile.ui.ChatActions
+import com.hermesagent.mobile.ui.GatewayActions
+import com.hermesagent.mobile.ui.HermesApp
+import com.hermesagent.mobile.ui.HermesDestination
+import com.hermesagent.mobile.ui.LocalPluginNavigation
+import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
-import com.hermesagent.mobile.ui.relay.CHANNEL_LIST_TAG
-import com.hermesagent.mobile.ui.relay.COMPOSER_FIELD_TAG
-import com.hermesagent.mobile.ui.relay.NOTICE_TAG
-import com.hermesagent.mobile.ui.relay.RelayChannelRow
-import com.hermesagent.mobile.ui.relay.RelayComposerUiState
-import com.hermesagent.mobile.ui.relay.RelayScreen
-import com.hermesagent.mobile.ui.relay.RelaySenderKind
-import com.hermesagent.mobile.ui.relay.RelayTimeLabels
-import com.hermesagent.mobile.ui.relay.RelayTranscriptRow
-import com.hermesagent.mobile.ui.relay.RelayUiState
-import com.hermesagent.mobile.ui.relay.SEND_TAG
-import com.hermesagent.mobile.ui.relay.STALE_TAG
-import com.hermesagent.mobile.ui.relay.TRANSCRIPT_TAG
-import com.hermesagent.mobile.ui.relay.relayChannelRows
-import com.hermesagent.mobile.ui.relay.relayNotice
-import com.hermesagent.mobile.ui.relay.relayTranscriptRows
+import com.hermesagent.mobile.ui.settings.SettingsRow
+import com.hermesagent.mobile.ui.ssh.SshUiState
+import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.theme.HermesSpacing
+import com.hermesagent.mobile.ui.theme.HermesTheme
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
@@ -68,10 +85,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import com.hermesagent.mobile.ui.ssh.SshUiState
-import com.hermesagent.mobile.ui.theme.AppearanceSelection
-import com.hermesagent.mobile.ui.theme.HermesTheme
-import com.hermesagent.mobile.ui.theme.HermesSpacing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -682,6 +695,71 @@ class RelayJourneyTest {
             // Stands in for the ViewModel: selection is state the surface is
             // given, and it is never written anywhere.
             var state by remember { mutableStateOf(initial) }
+            val registry = remember {
+                ContributionRegistry().apply {
+                    registerMany(
+                        listOf(
+                            Contribution(
+                                id = "hermes-plugin-relay:route",
+                                area = PluginAreas.ROUTES_AREA,
+                                source = "plugin:hermes-plugin-relay",
+                                title = "Relay channels",
+                                render = {
+                                    val nav = LocalPluginNavigation.current
+                                    RelayScreen(
+                                        state = state,
+                                        actions = RelayActions(
+                                            onSelectChannel = { id ->
+                                                state = state.copy(
+                                                    selectedChannelId = id,
+                                                    selectedChannelTitle = state.channels.first { it.id == id }.title,
+                                                    transcript = TRANSCRIPT,
+                                                    transcriptLoaded = true,
+                                                )
+                                            },
+                                            onClearSelection = {
+                                                state = state.copy(
+                                                    selectedChannelId = null,
+                                                    selectedChannelTitle = null,
+                                                    transcript = emptyList(),
+                                                    transcriptLoaded = false,
+                                                )
+                                            },
+                                            onRetry = { retries++ },
+                                            onResume = { resumes++ },
+                                            onPause = { pauses++ },
+                                        ),
+                                        onLeave = nav.onBack,
+                                        onOpenGateways = { nav.onOpenGateways(SignInOrigin.Gateways) },
+                                    )
+                                },
+                            ),
+                            Contribution(
+                                id = "hermes-plugin-relay:sidebar-nav",
+                                area = PluginAreas.SIDEBAR_NAV_AREA,
+                                source = "plugin:hermes-plugin-relay",
+                                title = "Relay channels",
+                                order = 300,
+                                render = {
+                                    val nav = LocalPluginNavigation.current
+                                    val relayAvailable = !state.unavailableOnGateway
+                                    SettingsRow(
+                                        label = "Relay channels",
+                                        description = if (relayAvailable) {
+                                            "Channels, transcripts, and messaging live in their own workspace."
+                                        } else {
+                                            RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
+                                        },
+                                        traversalIndex = 3f,
+                                        enabled = relayAvailable,
+                                        onClick = { nav.onNavigate("hermes-plugin-relay:route") },
+                                    )
+                                },
+                            ),
+                        ),
+                    )
+                }
+            }
             HermesApp(
                 chatState = ChatUiState(),
                 gatewayState = GatewaySettingsUiState(),
@@ -691,28 +769,7 @@ class RelayJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
-                relayState = state,
-                relayActions = RelayActions(
-                    onSelectChannel = { id ->
-                        state = state.copy(
-                            selectedChannelId = id,
-                            selectedChannelTitle = state.channels.first { it.id == id }.title,
-                            transcript = TRANSCRIPT,
-                            transcriptLoaded = true,
-                        )
-                    },
-                    onClearSelection = {
-                        state = state.copy(
-                            selectedChannelId = null,
-                            selectedChannelTitle = null,
-                            transcript = emptyList(),
-                            transcriptLoaded = false,
-                        )
-                    },
-                    onRetry = { retries++ },
-                    onResume = { resumes++ },
-                    onPause = { pauses++ },
-                ),
+                pluginRegistry = registry,
             )
         }
         compose.waitForIdle()

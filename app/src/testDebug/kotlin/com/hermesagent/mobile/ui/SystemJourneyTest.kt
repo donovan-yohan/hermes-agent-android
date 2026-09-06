@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui
 
+import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -16,10 +17,13 @@ import androidx.compose.ui.test.performScrollTo
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayStatusSummary
+import com.hermesagent.mobile.plugins.Contribution
+import com.hermesagent.mobile.plugins.ContributionRegistry
+import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.WIP_PILL
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
-import com.hermesagent.mobile.ui.relay.RelayUiState
+import com.hermesagent.mobile.ui.settings.SettingsRow
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.system.SYSTEM_ACTION_TAG
 import com.hermesagent.mobile.ui.system.SYSTEM_ERROR_TAG
@@ -209,6 +213,29 @@ class SystemJourneyTest {
         system: SystemUiState = SystemUiState(),
     ) {
         compose.setContent {
+            val registry = remember {
+                ContributionRegistry().apply {
+                    registerMany(
+                        listOf(
+                            Contribution(
+                                id = "hermes-plugin-relay:sidebar-nav",
+                                area = PluginAreas.SIDEBAR_NAV_AREA,
+                                source = "plugin:hermes-plugin-relay",
+                                title = "Relay channels",
+                                order = 300,
+                                render = {
+                                    SettingsRow(
+                                        label = "Relay channels",
+                                        description = "Channels, transcripts, and messaging live in their own workspace.",
+                                        traversalIndex = 3f,
+                                        onClick = {},
+                                    )
+                                },
+                            ),
+                        ),
+                    )
+                }
+            }
             HermesApp(
                 chatState = ChatUiState(),
                 gatewayState = GatewaySettingsUiState(
@@ -226,10 +253,9 @@ class SystemJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
-                relayState = RelayUiState(),
-                relayActions = RelayActions(),
                 systemState = system,
                 systemActions = SystemActions(),
+                pluginRegistry = registry,
             )
         }
         compose.waitForIdle()

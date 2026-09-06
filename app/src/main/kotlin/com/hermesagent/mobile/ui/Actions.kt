@@ -95,33 +95,6 @@ class ChatActions(
     val onToggleVoiceMute: () -> Unit = {},
 )
 
-/**
- * The Relay workspace's own actions. Navigation is deliberately absent: this
- * surface asks the ViewModel for data and the app shell decides where "back"
- * and "sign in" go.
- */
-class RelayActions(
-    val onSelectChannel: (String) -> Unit = {},
-    val onClearSelection: () -> Unit = {},
-    val onRetry: () -> Unit = {},
-    /** The open channel's draft. Per channel, UI-only, never persisted. */
-    val onDraftChange: (String) -> Unit = {},
-    val onSend: () -> Unit = {},
-    /**
-     * Re-send the attempt whose outcome is unknown, under its original
-     * `clientMessageId`. Separate from [onSend] because it deliberately carries
-     * that attempt's own text rather than whatever is in the field now.
-     */
-    val onRetrySend: () -> Unit = {},
-    /**
-     * The surface became visible, or stopped being visible. Relay's contract is
-     * a poll rather than a stream, so this is what bounds it: nothing keeps
-     * asking the Gateway once the screen is gone.
-     */
-    val onResume: () -> Unit = {},
-    val onPause: () -> Unit = {},
-)
-
 class AppearanceActions(
     val onSelectTheme: (String) -> Unit = {},
     val onSelectMode: (HermesThemeMode) -> Unit = {},
@@ -147,8 +120,9 @@ class GatewayActions(
 /**
  * The saved-connections registry and the session-rail switcher.
  *
- * Navigation is deliberately absent for the same reason [RelayActions] omits
- * it: the shell decides where "Manage gateways…" goes, not the rail.
+ * Navigation is deliberately absent for the same reason
+ * [com.hermesagent.mobile.plugins.relay.RelayActions] omits it: the shell
+ * decides where "Manage gateways…" goes, not the rail.
  */
 class ConnectionsActions(
     val onSelect: (String) -> Unit = {},

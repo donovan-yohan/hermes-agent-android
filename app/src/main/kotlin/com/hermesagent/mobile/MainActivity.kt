@@ -38,17 +38,12 @@ import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
 import com.hermesagent.mobile.ui.HermesNavigationAsk
-import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
 import com.hermesagent.mobile.ui.common.NotificationPermissionPrompt
 import com.hermesagent.mobile.ui.gateway.ConnectionsViewModel
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsViewModel
 import com.hermesagent.mobile.ui.handBackDestination
-import com.hermesagent.mobile.ui.relay.RelayChannelReader
-import com.hermesagent.mobile.data.relay.RelayMessageFormat
-import com.hermesagent.mobile.ui.relay.RelayPoster
-import com.hermesagent.mobile.ui.relay.RelayViewModel
 import com.hermesagent.mobile.ui.system.SystemActions
 import com.hermesagent.mobile.ui.system.SystemViewModel
 import com.hermesagent.mobile.ui.ssh.SshViewModel
@@ -119,32 +114,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    /**
-     * The Relay surface reads and posts through the process-scoped plugin
-     * client and the process-scoped availability controller; it owns neither.
-     * Both seams stay this thin on purpose: the surface's whole retry policy is
-     * expressed against one result type, never against a transport.
-     */
-    private val relayViewModel: RelayViewModel by viewModels {
-        RelayViewModel.factory(
-            availability = app.relayAvailability.state,
-            refreshAvailability = app.relayAvailability::refresh,
-            reader = object : RelayChannelReader {
-                override suspend fun channels() = app.relayRepository.channels()
-
-                override suspend fun history(channelId: String, limit: Int) =
-                    app.relayRepository.history(channelId, limit)
-            },
-            poster = object : RelayPoster {
-                override suspend fun post(
-                    channelId: String,
-                    text: String,
-                    format: RelayMessageFormat,
-                    clientMessageId: String,
-                ) = app.relayRepository.post(channelId, text, format, clientMessageId)
-            },
-        )
-    }
     /**
      * The System panel. It owns the restart poll and the status read; the
      * six-minute update engine it drives is app-scoped, so nothing here can
@@ -326,9 +295,6 @@ class MainActivity : ComponentActivity() {
             val introSplash by preferences.introSplash.collectAsStateWithLifecycle(true)
             // Collected from the shell, not from the Relay screen: the Settings
             // entry point has to be able to say Relay is unavailable on this
-            // Gateway before anyone opens it. Availability probes on connection
-            // edges only, so holding this costs nothing.
-            val relayState by relayViewModel.uiState.collectAsStateWithLifecycle()
             val connectionsState by connectionsViewModel.uiState.collectAsStateWithLifecycle()
             val systemState by systemViewModel.uiState.collectAsStateWithLifecycle()
             val systemActions = remember {
@@ -358,21 +324,6 @@ class MainActivity : ComponentActivity() {
                     onCancelRemove = connectionsViewModel::cancelRemove,
                     onConfirmRemove = connectionsViewModel::confirmRemove,
                     onLeaveScreen = connectionsViewModel::releaseScreen,
-                )
-            }
-            // Remembered so the instance is stable: rebuilding it every
-            // recomposition would invalidate every per-row click lambda in the
-            // channel list while Relay is open.
-            val relayActions = remember {
-                RelayActions(
-                    onSelectChannel = relayViewModel::selectChannel,
-                    onClearSelection = relayViewModel::clearSelection,
-                    onRetry = relayViewModel::retry,
-                    onDraftChange = relayViewModel::setDraft,
-                    onSend = relayViewModel::sendDraft,
-                    onRetrySend = relayViewModel::retrySend,
-                    onResume = relayViewModel::surfaceResumed,
-                    onPause = relayViewModel::surfacePaused,
                 )
             }
 
@@ -463,12 +414,11 @@ class MainActivity : ComponentActivity() {
                     onDisconnect = gatewaySettingsViewModel::disconnect,
                     onForgetSignIn = gatewaySettingsViewModel::forgetSignIn,
                 ),
-                relayState = relayState,
-                relayActions = relayActions,
                 systemState = systemState,
                 systemActions = systemActions,
                 connectionsState = connectionsState,
                 connectionsActions = connectionsActions,
+                pluginRegistry = app.pluginRegistry,
                 navigationAsk = navigationAsk,
                 onSignInOriginChange = { signInOrigin = it },
                 sshActions = SshActions(

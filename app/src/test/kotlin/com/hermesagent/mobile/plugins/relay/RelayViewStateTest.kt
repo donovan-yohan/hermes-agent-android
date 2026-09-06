@@ -1,17 +1,5 @@
-package com.hermesagent.mobile.ui.relay
+package com.hermesagent.mobile.plugins.relay
 
-import com.hermesagent.mobile.data.relay.RELAY_SIGN_IN_MESSAGE
-import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
-import com.hermesagent.mobile.data.relay.RelayAvailability
-import com.hermesagent.mobile.data.relay.RelayAvailabilityState
-import com.hermesagent.mobile.data.relay.RelayChannel
-import com.hermesagent.mobile.data.relay.RelayChannelsStatus
-import com.hermesagent.mobile.data.relay.RelayLaneState
-import com.hermesagent.mobile.data.relay.RelayLastMessage
-import com.hermesagent.mobile.data.relay.RelayMessage
-import com.hermesagent.mobile.data.relay.RelayMessageFormat
-import com.hermesagent.mobile.data.relay.RelaySignInReason
-import com.hermesagent.mobile.data.relay.TRANSPORT_DOWN_MESSAGE
 import java.time.ZoneId
 import java.util.Locale
 import org.junit.Assert.assertEquals

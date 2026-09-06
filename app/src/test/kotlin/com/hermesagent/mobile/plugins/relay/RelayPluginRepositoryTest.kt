@@ -1,4 +1,4 @@
-package com.hermesagent.mobile.data.relay
+package com.hermesagent.mobile.plugins.relay
 
 import com.hermesagent.mobile.data.gateway.GatewayHttpResult
 import com.hermesagent.mobile.data.gateway.RecordingGatewayHttp
@@ -198,8 +198,8 @@ class RelayPluginRepositoryTest {
                     {"id":"team/general","title":"General","kind":"standard","visibility":"public",
                      "archived":false,"latestSeq":41,"messageCount":12,"threadCount":2,
                      "lastMessage":{"id":"m-9","seq":41,"preview":"hello there","senderKind":"member",
-                                    "status":"sent","createdAt":"2026-08-26T00:00:00Z",
-                                    "senderDisplayName":"Ada"}},
+                                     "status":"sent","createdAt":"2026-08-26T00:00:00Z",
+                                     "senderDisplayName":"Ada"}},
                     {"id":"dm-1","title":"Direct"}
                 ]}""",
             ),
@@ -648,5 +648,3 @@ private suspend fun postRefusal(statusCode: Int, envelope: String): RelayPostRes
         .failure()
 
 private fun RelayPostResult.failure(): RelayPostResult.Failed = this as RelayPostResult.Failed
-
-/** Records every request and replays queued results; extra calls get an empty 200. */

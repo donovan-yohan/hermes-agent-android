@@ -1,26 +1,17 @@
-package com.hermesagent.mobile.ui.relay
+package com.hermesagent.mobile.plugins.relay
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.hermesagent.mobile.data.relay.MAX_HISTORY_LIMIT
-import com.hermesagent.mobile.data.relay.RelayAvailability
-import com.hermesagent.mobile.data.relay.RelayAvailabilityState
-import com.hermesagent.mobile.data.relay.RelayChannel
-import com.hermesagent.mobile.data.relay.RelayHistory
-import com.hermesagent.mobile.data.relay.RelayMessage
-import com.hermesagent.mobile.data.relay.RelayMessageFormat
-import com.hermesagent.mobile.data.relay.RelayPostResult
-import com.hermesagent.mobile.data.relay.TRANSPORT_DOWN_MESSAGE
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -36,10 +27,10 @@ import kotlinx.coroutines.launch
  * on virtual time. `null` from either call is the repository's fail-closed
  * answer — "nothing usable came back" — never an empty result.
  */
-internal interface RelayChannelReader {
+interface RelayChannelReader {
     suspend fun channels(): List<RelayChannel>?
 
-    suspend fun history(channelId: String, limit: Int): RelayHistory?
+    suspend fun history(channelId: String, limit: Int = 50): RelayHistory?
 }
 
 /**
@@ -49,7 +40,7 @@ internal interface RelayChannelReader {
  * this seam, so the retry policy above it never has to read a status code out
  * of a transport.
  */
-internal interface RelayPoster {
+interface RelayPoster {
     suspend fun post(
         channelId: String,
         text: String,
@@ -144,7 +135,7 @@ private data class RelayData(
  * (`desktop/plugin.js:302-318`), which on a phone would land someone inside a
  * transcript they never chose.
  */
-internal class RelayViewModel(
+class RelayViewModel(
     private val availability: StateFlow<RelayAvailabilityState>,
     private val refreshAvailability: () -> Unit,
     private val reader: RelayChannelReader,

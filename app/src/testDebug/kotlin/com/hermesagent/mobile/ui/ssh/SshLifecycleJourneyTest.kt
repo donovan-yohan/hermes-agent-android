@@ -33,11 +33,9 @@ import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
-import com.hermesagent.mobile.ui.RelayActions
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
-import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -288,8 +286,6 @@ class SshLifecycleJourneyTest {
                         viewModel.releaseScreen()
                     },
                 ),
-                relayState = RelayUiState(),
-                relayActions = RelayActions(),
             )
         }
         compose.waitForIdle()

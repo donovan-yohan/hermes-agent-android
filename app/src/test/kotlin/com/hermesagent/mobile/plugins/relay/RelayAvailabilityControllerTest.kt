@@ -1,4 +1,4 @@
-package com.hermesagent.mobile.data.relay
+package com.hermesagent.mobile.plugins.relay
 
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus

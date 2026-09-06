@@ -60,6 +60,8 @@ import com.hermesagent.mobile.plugins.PluginRest
 import com.hermesagent.mobile.plugins.PluginSocket
 import com.hermesagent.mobile.plugins.PluginStore
 import com.hermesagent.mobile.plugins.ScopedPluginStorage
+import com.hermesagent.mobile.plugins.relay.RelayCredentialRefresher
+import com.hermesagent.mobile.plugins.relay.RelayPlugin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -217,32 +219,6 @@ class HermesApplication : Application() {
         com.hermesagent.mobile.ui.chat.GatewayCodingContextProvider { gatewayHttp }
     }
 
-    internal val relayRepository: com.hermesagent.mobile.data.relay.RelayPluginRepository by lazy {
-        com.hermesagent.mobile.data.relay.RelayPluginRepository { gatewayHttp }
-    }
-
-    /**
-     * Availability is process-scoped because it follows the one live Gateway
-     * connection, not a screen. It probes on a connection edge and on an
-     * explicit refresh only — never on a timer — so holding it costs nothing
-     * while no Relay surface is looking.
-     */
-    internal val relayAvailability: com.hermesagent.mobile.data.relay.RelayAvailabilityController by lazy {
-        com.hermesagent.mobile.data.relay.RelayAvailabilityController(
-            scope = appScope,
-            probe = relayRepository,
-            connection = gatewayConnection.state,
-            configured = com.hermesagent.mobile.data.gateway.gatewayConfigured(
-                profiles = preferences,
-                hosts = preferences,
-            ),
-            credentials = object : com.hermesagent.mobile.data.relay.RelayCredentialRefresher {
-                override suspend fun refreshOnce(): Boolean = gatewayConnection.refreshCredential()
-                override suspend fun signInAvailable(): Boolean = gatewayConnection.signInAvailable()
-            },
-        )
-    }
-
     internal val pluginRegistry: ContributionRegistry by lazy { ContributionRegistry() }
 
     internal val pluginStore: PluginStore by lazy {
@@ -358,6 +334,15 @@ class HermesApplication : Application() {
         )
         startSessionNotifier()
         startTurnProtection()
+        RelayPlugin.defaultConnection = gatewayConnection.state
+        RelayPlugin.defaultConfigured = com.hermesagent.mobile.data.gateway.gatewayConfigured(
+            profiles = preferences,
+            hosts = preferences,
+        )
+        RelayPlugin.defaultCredentials = object : RelayCredentialRefresher {
+            override suspend fun refreshOnce(): Boolean = gatewayConnection.refreshCredential()
+            override suspend fun signInAvailable(): Boolean = gatewayConnection.signInAvailable()
+        }
         pluginLoader.discover()
         appScope.launch {
             followActiveConnection(

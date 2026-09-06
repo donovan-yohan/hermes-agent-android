@@ -19,7 +19,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.unit.dp
-import com.hermesagent.mobile.data.relay.RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
+import com.hermesagent.mobile.plugins.Contribution
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.system.SystemCopy
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -30,13 +30,6 @@ fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenGateways: () -> Unit,
     onOpenSystem: () -> Unit,
-    onOpenRelay: () -> Unit,
-    /**
-     * Whether this Gateway exposes the Relay plugin. A Gateway without it is a
-     * fact about that Gateway, so the row stays where Relay lives and says so,
-     * rather than disappearing or raising an error somewhere else.
-     */
-    relayAvailable: Boolean,
     /**
      * Whether a Gateway is connected. The System panel reads the backend's own
      * version, session count and messaging-gateway state over HTTP, so with no
@@ -45,6 +38,7 @@ fun SettingsScreen(
      * disabled, rather than appearing and disappearing under the person.
      */
     systemAvailable: Boolean,
+    contributions: List<Contribution> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     val tokens = HermesTheme.tokens
@@ -73,25 +67,15 @@ fun SettingsScreen(
             enabled = systemAvailable,
             onClick = onOpenSystem,
         )
-        SettingsRow(
-            label = "Relay channels",
-            description = if (relayAvailable) {
-                // Desktop's own launcher wording (hermes-plugin-relay @
-                // `563a8c8`, `desktop/plugin.js:377`).
-                "Channels, transcripts, and messaging live in their own workspace."
-            } else {
-                RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
-            },
-            traversalIndex = 3f,
-            enabled = relayAvailable,
-            onClick = onOpenRelay,
-        )
+        contributions.forEach { contribution ->
+            contribution.render?.invoke()
+        }
     }
 }
 
 /** Flat, full-width Settings destination row: one target and one spoken label. */
 @Composable
-private fun SettingsRow(
+internal fun SettingsRow(
     label: String,
     description: String,
     traversalIndex: Float,

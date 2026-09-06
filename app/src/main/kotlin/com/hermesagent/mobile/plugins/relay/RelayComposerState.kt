@@ -1,22 +1,5 @@
-package com.hermesagent.mobile.ui.relay
+package com.hermesagent.mobile.plugins.relay
 
-import com.hermesagent.mobile.data.relay.EMPTY_TEXT_MESSAGE
-import com.hermesagent.mobile.data.relay.ERROR_AUTH_REQUIRED
-import com.hermesagent.mobile.data.relay.ERROR_INVALID_CHANNEL
-import com.hermesagent.mobile.data.relay.ERROR_INVALID_FORMAT
-import com.hermesagent.mobile.data.relay.ERROR_INVALID_TEXT
-import com.hermesagent.mobile.data.relay.ERROR_REQUEST_TOO_LARGE
-import com.hermesagent.mobile.data.relay.ERROR_TEXT_TOO_LARGE
-import com.hermesagent.mobile.data.relay.LARGE_TEXT_MESSAGE
-import com.hermesagent.mobile.data.relay.MAX_CHANNEL_ID_BYTES
-import com.hermesagent.mobile.data.relay.PICK_CHANNEL_MESSAGE
-import com.hermesagent.mobile.data.relay.RelayAvailability
-import com.hermesagent.mobile.data.relay.RelayLaneState
-import com.hermesagent.mobile.data.relay.RelayMessageFormat
-import com.hermesagent.mobile.data.relay.RelayPostResult
-import com.hermesagent.mobile.data.relay.UNSUPPORTED_FORMAT_MESSAGE
-import com.hermesagent.mobile.data.relay.relayPostBody
-import com.hermesagent.mobile.data.relay.relayPostBodyTooLarge
 import java.util.UUID
 
 /**

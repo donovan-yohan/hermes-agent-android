@@ -1,10 +1,9 @@
-package com.hermesagent.mobile.data.relay
+package com.hermesagent.mobile.plugins.relay
 
 import com.hermesagent.mobile.data.gateway.GatewayHttp
-import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
-import com.hermesagent.mobile.data.gateway.GatewayHttpResult
-import com.hermesagent.mobile.data.gateway.consumeBody
-import com.hermesagent.mobile.data.gateway.consumeEnvelope
+import com.hermesagent.mobile.plugins.GatewayPluginRest
+import com.hermesagent.mobile.plugins.PluginRestOptions
+import com.hermesagent.mobile.plugins.PluginRestResult
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,7 +17,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /** Message wire format accepted by Relay's frozen channels.post contract. */
@@ -220,16 +218,30 @@ internal data class RelayErrorEnvelope(val code: String, val retryable: Boolean)
  * projected field fails the whole parse so callers keep their previous data
  * instead of painting a half-truth.
  */
-class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailabilityProbe {
+class RelayPluginRepository(
+    private val rest: suspend (String, PluginRestOptions) -> PluginRestResult,
+) : RelayAvailabilityProbe, RelayChannelReader, RelayPoster {
+
+    /** Bridge constructor for test setups using [GatewayHttp]. */
+    constructor(http: () -> GatewayHttp?) : this({ path, options ->
+        GatewayPluginRest(http).execute(PLUGIN_ID, path, options)
+    })
 
     /** Probe the plugin without touching channel data. Cheap enough to poll. */
     override suspend fun availability(): RelayAvailability = withContext(Dispatchers.IO) {
-        val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
-        when (val result = transport.execute(relayRequest(CONNECTION_STATUS, captureEnvelope = true))) {
-            is GatewayHttpResult.Rejected ->
-                result.consumeEnvelope { refusalToAvailability(result.statusCode, it) }
-
-            is GatewayHttpResult.Success -> result.consumeBody(::parseAvailability)
+        when (
+            val result = rest(
+                CONNECTION_STATUS,
+                PluginRestOptions(
+                    captureEnvelope = true,
+                    timeoutMillis = TIMEOUT_MILLIS,
+                    maxResponseBytes = MAX_RESPONSE_BYTES,
+                ),
+            )
+        ) {
+            is PluginRestResult.UnavailableOnGateway -> RelayAvailability.Missing
+            is PluginRestResult.Refused -> refusalToAvailability(result.statusCode, result.envelopeBytes)
+            is PluginRestResult.Success -> parseAvailability(result.bodyBytes)
         }
     }
 
@@ -246,41 +258,58 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
      * reachable at all" — three outcomes with three different next steps.
      */
     suspend fun reauthorize(): RelayAvailability = withContext(Dispatchers.IO) {
-        val transport = http() ?: return@withContext RelayAvailability.GatewayUnreachable
         val empty = ByteArray(0).toRequestBody(null)
-        when (val result = transport.execute(relayRequest(CONNECTION_AUTHORIZE, method = "POST", body = empty, captureEnvelope = true))) {
-            is GatewayHttpResult.Rejected ->
-                result.consumeEnvelope { refusalToAvailability(result.statusCode, it) }
-
-            is GatewayHttpResult.Success -> result.consumeBody(::parseAvailability)
+        when (
+            val result = rest(
+                CONNECTION_AUTHORIZE,
+                PluginRestOptions(
+                    method = "POST",
+                    body = empty,
+                    captureEnvelope = true,
+                    timeoutMillis = TIMEOUT_MILLIS,
+                    maxResponseBytes = MAX_RESPONSE_BYTES,
+                ),
+            )
+        ) {
+            is PluginRestResult.UnavailableOnGateway -> RelayAvailability.Missing
+            is PluginRestResult.Refused -> refusalToAvailability(result.statusCode, result.envelopeBytes)
+            is PluginRestResult.Success -> parseAvailability(result.bodyBytes)
         }
     }
 
     /** Projected channel inventory; null on any failure (keep prior data). */
-    suspend fun channels(): List<RelayChannel>? = withContext(Dispatchers.IO) {
-        val transport = http() ?: return@withContext null
-        when (val result = transport.execute(relayRequest(CHANNELS))) {
-            is GatewayHttpResult.Rejected -> null
-            is GatewayHttpResult.Success -> result.consumeBody(::parseChannels)
+    override suspend fun channels(): List<RelayChannel>? = withContext(Dispatchers.IO) {
+        when (
+            val result = rest(
+                CHANNELS,
+                PluginRestOptions(
+                    timeoutMillis = TIMEOUT_MILLIS,
+                    maxResponseBytes = MAX_RESPONSE_BYTES,
+                ),
+            )
+        ) {
+            is PluginRestResult.UnavailableOnGateway, is PluginRestResult.Refused -> null
+            is PluginRestResult.Success -> parseChannels(result.bodyBytes)
         }
     }
 
     /** Bounded newest-first window; [limit] clamps to the server's 1–50 range. */
-    suspend fun history(channelId: String, limit: Int = MAX_HISTORY_LIMIT): RelayHistory? =
+    override suspend fun history(channelId: String, limit: Int): RelayHistory? =
         withContext(Dispatchers.IO) {
             val safeChannel = validChannelId(channelId) ?: return@withContext null
             val clamped = limit.coerceIn(1, MAX_HISTORY_LIMIT)
-            val transport = http() ?: return@withContext null
             when (
-                val result = transport.execute(
-                    relayRequest(
-                        "${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages",
+                val result = rest(
+                    "${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages",
+                    PluginRestOptions(
                         query = mapOf("limit" to clamped.toString()),
+                        timeoutMillis = TIMEOUT_MILLIS,
+                        maxResponseBytes = MAX_RESPONSE_BYTES,
                     ),
                 )
             ) {
-                is GatewayHttpResult.Rejected -> null
-                is GatewayHttpResult.Success -> result.consumeBody(::parseHistory)
+                is PluginRestResult.UnavailableOnGateway, is PluginRestResult.Refused -> null
+                is PluginRestResult.Success -> parseHistory(result.bodyBytes)
             }
         }
 
@@ -290,7 +319,7 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
      * refused before any network call, under the same status and the same
      * code the wire would have answered with.
      */
-    suspend fun post(
+    override suspend fun post(
         channelId: String,
         text: String,
         format: RelayMessageFormat,
@@ -336,17 +365,27 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
                 code = ERROR_REQUEST_TOO_LARGE,
             )
         }
-        val transport = http() ?: return@withContext RelayPostResult.Failed(0, TRANSPORT_DOWN_MESSAGE)
         val body = encoded.toRequestBody(JSON_MEDIA_TYPE)
-        val request = relayRequest(
-            "${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages",
-            method = "POST",
-            body = body,
-            captureEnvelope = true,
-        )
-        when (val result = transport.execute(request)) {
-            is GatewayHttpResult.Rejected -> {
-                val envelope = result.consumeEnvelope(::parseRelayError)
+        when (
+            val result = rest(
+                "${CHANNELS_PREFIX}${encodeSegment(safeChannel)}/messages",
+                PluginRestOptions(
+                    method = "POST",
+                    body = body,
+                    captureEnvelope = true,
+                    timeoutMillis = TIMEOUT_MILLIS,
+                    maxResponseBytes = MAX_RESPONSE_BYTES,
+                ),
+            )
+        ) {
+            is PluginRestResult.UnavailableOnGateway -> RelayPostResult.Failed(
+                404,
+                RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE,
+                retryable = false,
+            )
+
+            is PluginRestResult.Refused -> {
+                val envelope = parseRelayError(result.envelopeBytes)
                 RelayPostResult.Failed(
                     result.statusCode,
                     result.safeMessage,
@@ -364,7 +403,7 @@ class RelayPluginRepository(private val http: () -> GatewayHttp?) : RelayAvailab
                 )
             }
 
-            is GatewayHttpResult.Success -> result.consumeBody(::parsePost)
+            is PluginRestResult.Success -> parsePost(result.bodyBytes)
         }
     }
 }
@@ -612,27 +651,6 @@ internal fun relayPostBodyTooLarge(payload: String): Boolean =
 private fun encodeSegment(raw: String): String =
     URLEncoder.encode(raw, Charsets.UTF_8.name()).replace("+", "%20")
 
-/**
- * [captureEnvelope] is set only by the three callers that actually classify a
- * refusal with [consumeEnvelope]. The two that answer `null` on any rejection
- * must not ask for a body they would then drop un-wiped.
- */
-private fun relayRequest(
-    suffix: String,
-    method: String = "GET",
-    body: RequestBody? = null,
-    query: Map<String, String> = emptyMap(),
-    captureEnvelope: Boolean = false,
-) = GatewayHttpRequest(
-    path = "$BASE_PATH/$suffix",
-    method = method,
-    body = body,
-    timeoutMillis = TIMEOUT_MILLIS,
-    query = query,
-    maxResponseBytes = MAX_RESPONSE_BYTES,
-    captureEnvelope = captureEnvelope,
-)
-
 private fun JsonObject.string(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.contentOrNull
 
@@ -734,8 +752,7 @@ internal const val ERROR_INVALID_CLIENT_MESSAGE_ID = "invalid_client_message_id"
 /** 413 for a retry id over its bound (`:195-198`). */
 internal const val ERROR_CLIENT_MESSAGE_ID_TOO_LARGE = "client_message_id_too_large"
 
-private const val PLUGIN_ID = "hermes-plugin-relay"
-private const val BASE_PATH = "api/plugins/$PLUGIN_ID"
+internal const val PLUGIN_ID = "hermes-plugin-relay"
 private const val CONNECTION_STATUS = "connection/status"
 private const val CONNECTION_AUTHORIZE = "connection/authorize"
 private const val CHANNELS = "channels"
