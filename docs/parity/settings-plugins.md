@@ -42,7 +42,7 @@ Android implementation:
 
 - pending: #169
 
-Android-only capture is acceptable for this slice; until an emulator/device
-capture is attached, the Desktop half is evidenced from source + verbatim copy
-citation above and the ordered-row shape is covered by the Robolectric journey.
-
+Android half only, owed its Desktop side by #169:
+`docs/parity/visual/settings-plugins/settings-plugins-light/android/reference.png` with its
+`contract.json` — Settings ▸ Plugins listing the bundled Relay plugin with its `bundled` pill and
+enabled switch, light, on `emulator-5554` from this branch's debug build (head 7022e2b).
