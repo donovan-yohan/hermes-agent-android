@@ -88,4 +88,4 @@ private fun MarkdownBlock.plainText(): String = when (this) {
 }
 
 /** Erasure makes this a clash with the block projection, hence the name. */
-private fun List<InlineSpan>.spansText(): String = joinToString("") { it.text }
+internal fun List<InlineSpan>.spansText(): String = joinToString("") { it.text }
