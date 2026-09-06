@@ -19,6 +19,7 @@ Phase 2 ships all three connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../data/gateway/` | Remote lifecycle, HTTP/JSON-RPC connection, live session repository, network monitor | Gateway startup, ownership, forwarding, sessions, live turns |
 | `app/src/main/kotlin/.../data/profiles/` | Hermes profile roster, identity colour, active scope, session-RPC routing | Which profile the sidebar is in, or what a session RPC is scoped to |
 | `app/src/main/kotlin/.../data/updates/` | Backend update engine, the System panel's host calls, Desktop's changelog grouping | Anything about `hermes update`, the update receipt, or the backend's version |
+| `app/src/main/kotlin/.../plugins/` | Bundled plugin SDK, contribution registry, plugin store, lifecycle, REST/socket/storage/OS doors | Extending the app with bundled plugins or contributing UI/capabilities |
 | `app/src/test/kotlin/` | JVM unit tests, incl. the offline theme-parity gate | Adding or fixing tests |
 | `app/src/testDebug/kotlin/` | Compose journeys under Robolectric | UI tests (debug-only: `ui-test-manifest` is a debug artifact) |
 | `app/src/androidTest/kotlin/` | The instrumented emulator lane: real display density, the platform accessibility tree, a real input-method binding, real rotation, real Activity recreate | A claim Robolectric structurally cannot make |
@@ -203,6 +204,7 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/fonts.md` | The two fonts bundled in the APK: provenance, digests, the woff2 conversion and the licence line |
 | `docs/adr/0002-shared-remote-gateway.md` | Preferred Remote Gateway topology, native authentication, and multi-client boundary |
 | `docs/adr/0001-ssh-probe-to-tunnel.md` | Managed SSH transport, remote ownership, Gateway readiness, and restart limitation |
+| `docs/adr/0003-bundled-plugin-sdk.md` | Bundled-only plugin SDK architecture, Desktop contract mapping, error isolation, and non-goals |
 | `.chalk/README.md` | chalkbag source-of-truth rules |
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |
 | `docs/parity/profile-switcher.md` | Profile rail, active-profile scope, and the read-only roster: pin, adaptation, deviations |

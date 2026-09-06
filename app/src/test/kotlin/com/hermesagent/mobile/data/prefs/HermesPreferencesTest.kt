@@ -546,6 +546,29 @@ class HermesPreferencesTest {
         }
     }
 
+    @Test
+    fun `plugin decisions persist and update in DataStore`() = runBlocking {
+        preferences.savePluginDecision("test-plugin", true)
+        var decisions = preferences.pluginDecisions.first()
+        assertEquals(true, decisions["test-plugin"])
+
+        preferences.savePluginDecision("test-plugin", false)
+        decisions = preferences.pluginDecisions.first()
+        assertEquals(false, decisions["test-plugin"])
+    }
+
+    @Test
+    fun `plugin key-value storage persists reads and removes keys`() = runBlocking {
+        val key = "hermes.plugin.test-plugin.custom_key"
+        assertNull(preferences.read(key))
+
+        preferences.write(key, "custom_value")
+        assertEquals("custom_value", preferences.read(key))
+
+        preferences.write(key, null)
+        assertNull(preferences.read(key))
+    }
+
     /** DataStore emits on its own scope; this waits for the route under test to arrive. */
     private suspend fun awaitRoute(seen: List<ActiveGatewayRoute>, id: String) {
         withTimeout(ROUTE_TIMEOUT_MILLIS) {

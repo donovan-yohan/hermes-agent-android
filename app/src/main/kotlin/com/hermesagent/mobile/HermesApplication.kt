@@ -51,6 +51,15 @@ import com.hermesagent.mobile.data.voice.GatewayVoiceRepository
 import com.hermesagent.mobile.data.voice.ReplySpeaker
 import com.hermesagent.mobile.data.voice.SpeechPlayer
 import com.hermesagent.mobile.data.voice.WakeWordRepository
+import com.hermesagent.mobile.plugins.AndroidPluginOs
+import com.hermesagent.mobile.plugins.ContributionRegistry
+import com.hermesagent.mobile.plugins.GatewayPluginRest
+import com.hermesagent.mobile.plugins.GatewayPluginSocket
+import com.hermesagent.mobile.plugins.PluginLoader
+import com.hermesagent.mobile.plugins.PluginRest
+import com.hermesagent.mobile.plugins.PluginSocket
+import com.hermesagent.mobile.plugins.PluginStore
+import com.hermesagent.mobile.plugins.ScopedPluginStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -234,6 +243,34 @@ class HermesApplication : Application() {
         )
     }
 
+    internal val pluginRegistry: ContributionRegistry by lazy { ContributionRegistry() }
+
+    internal val pluginStore: PluginStore by lazy {
+        PluginStore(
+            scope = appScope,
+            decisionStore = preferences,
+        )
+    }
+
+    internal val pluginRest: PluginRest by lazy {
+        GatewayPluginRest { gatewayHttp }
+    }
+
+    internal val pluginSocket: PluginSocket by lazy {
+        GatewayPluginSocket()
+    }
+
+    internal val pluginLoader: PluginLoader by lazy {
+        PluginLoader(
+            registry = pluginRegistry,
+            store = pluginStore,
+            rest = pluginRest,
+            socket = pluginSocket,
+            storageFactory = { pluginId -> ScopedPluginStorage(pluginId, preferences) },
+            osFactory = { pluginId -> AndroidPluginOs(this, notificationSurface, pluginId) },
+        )
+    }
+
     internal val wakeWordRepository: WakeWordRepository by lazy {
         WakeWordRepository(rpc = { gatewayConnection.client.value })
     }
@@ -321,6 +358,7 @@ class HermesApplication : Application() {
         )
         startSessionNotifier()
         startTurnProtection()
+        pluginLoader.discover()
         appScope.launch {
             followActiveConnection(
                 connections = preferences,
