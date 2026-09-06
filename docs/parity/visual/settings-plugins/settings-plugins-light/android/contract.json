@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-09-06T17:45:40.599671+00:00",
+  "name": "settings-plugins-light",
+  "serial": "emulator-5554",
+  "application": {
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
+    "resolvedActivity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
+    "focusedWindow": "mCurrentFocus=Window{d91886e u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}\n  mFocusedApp=ActivityRecord{184436658 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t513}"
+  },
+  "device": {
+    "model": "sdk_gphone16k_arm64",
+    "manufacturer": "Google",
+    "android": "17",
+    "sdk": "37",
+    "size": "Physical size: 1280x2856",
+    "density": "Physical density: 480",
+    "fontScale": "1.0"
+  }
+}

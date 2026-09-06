@@ -386,6 +386,7 @@ class ProfileRailJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
+                pluginStore = testPluginStore(),
             )
         }
         compose.waitForIdle()

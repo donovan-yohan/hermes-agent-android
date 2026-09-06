@@ -157,6 +157,7 @@ class SignInHandBackJourneyTest {
                 sshActions = SshActions(),
                 connectionsState = twoConnections,
                 connectionsActions = ConnectionsActions(),
+                pluginStore = testPluginStore(),
                 navigationAsk = ask,
                 onSignInOriginChange = { reported += it },
             )

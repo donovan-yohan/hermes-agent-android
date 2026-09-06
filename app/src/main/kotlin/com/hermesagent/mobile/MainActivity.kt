@@ -419,6 +419,7 @@ class MainActivity : ComponentActivity() {
                 connectionsState = connectionsState,
                 connectionsActions = connectionsActions,
                 pluginRegistry = app.pluginRegistry,
+                pluginStore = app.pluginStore,
                 navigationAsk = navigationAsk,
                 onSignInOriginChange = { signInOrigin = it },
                 sshActions = SshActions(

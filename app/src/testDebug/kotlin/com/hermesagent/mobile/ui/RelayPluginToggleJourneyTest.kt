@@ -121,6 +121,7 @@ class RelayPluginToggleJourneyTest {
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
                 pluginRegistry = registry,
+                pluginStore = pluginStore,
             )
         }
         compose.waitForIdle()

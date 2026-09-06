@@ -394,6 +394,7 @@ class UpdatesOverlayJourneyTest {
                 sshActions = SshActions(),
                 systemState = state,
                 systemActions = SystemActions(onCloseUpdates = { closes += 1 }),
+                pluginStore = testPluginStore(),
             )
         }
         compose.waitForIdle()

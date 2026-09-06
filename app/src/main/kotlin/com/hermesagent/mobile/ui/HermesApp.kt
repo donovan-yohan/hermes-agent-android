@@ -35,6 +35,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.SignInOrigin
 import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.PluginAreas
+import com.hermesagent.mobile.plugins.PluginStore
 import com.hermesagent.mobile.ui.appearance.AppearanceScreen
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
@@ -46,6 +47,8 @@ import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.profiles.ProfilesScreen
 import com.hermesagent.mobile.ui.profiles.profileCount
 import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
+import com.hermesagent.mobile.ui.settings.PluginsCopy
+import com.hermesagent.mobile.ui.settings.PluginsScreen
 import com.hermesagent.mobile.ui.settings.SettingsScreen
 import com.hermesagent.mobile.ui.system.SystemActions
 import com.hermesagent.mobile.ui.system.SystemCopy
@@ -77,6 +80,7 @@ sealed interface HermesDestination {
     data object Appearance : HermesDestination
     data object Gateways : HermesDestination
     data object System : HermesDestination
+    data object Plugins : HermesDestination
     data object Profiles : HermesDestination
     data class Route(val id: String) : HermesDestination
 }
@@ -89,6 +93,7 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             HermesDestination.Appearance -> "Appearance"
             HermesDestination.Gateways -> "Gateways"
             HermesDestination.System -> "System"
+            HermesDestination.Plugins -> "Plugins"
             HermesDestination.Profiles -> "Profiles"
             is HermesDestination.Route -> "Route:${destination.id}"
         }
@@ -100,6 +105,7 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             value == "Appearance" -> HermesDestination.Appearance
             value == "Gateways" -> HermesDestination.Gateways
             value == "System" -> HermesDestination.System
+            value == "Plugins" -> HermesDestination.Plugins
             value == "Profiles" -> HermesDestination.Profiles
             value == "Relay" -> HermesDestination.Route("hermes-plugin-relay:route")
             value.startsWith("Route:") -> HermesDestination.Route(value.removePrefix("Route:"))
@@ -150,6 +156,7 @@ fun HermesApp(
     connectionsState: ConnectionsUiState = ConnectionsUiState(),
     connectionsActions: ConnectionsActions = ConnectionsActions(),
     pluginRegistry: ContributionRegistry = ContributionRegistry(),
+    pluginStore: PluginStore,
     /**
      * Appearance's saved `Intro Splash`. Separate from [appearance] because it
      * paints nothing: it is a preference the chat reads, not a theme value the
@@ -259,6 +266,7 @@ fun HermesApp(
                         onOpenAppearance = { destination = HermesDestination.Appearance },
                         onOpenGateways = onOpenGateways,
                         onOpenSystem = { destination = HermesDestination.System },
+                        onOpenPlugins = { destination = HermesDestination.Plugins },
                         systemAvailable =
                             gatewayState.connection.status == GatewayConnectionStatus.Connected,
                         contributions = sidebarNavContributions,
@@ -288,6 +296,17 @@ fun HermesApp(
                         connectionsState = connectionsState,
                         connectionsActions = connectionsActions,
                     )
+                }
+
+                HermesDestination.Plugins -> OverlayScaffold(
+                    // Mobile adaptation of `settings.plugins.title`
+                    // (`i18n/en.ts:411` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`):
+                    // Desktop says “Desktop plugins” because disk installs
+                    // exist; Android ships bundled-only.
+                    title = PluginsCopy.TITLE,
+                    onBack = onBack,
+                ) {
+                    PluginsScreen(store = pluginStore)
                 }
 
                 // The updates sheet is hosted here rather than beside the panel's
@@ -416,6 +435,7 @@ internal fun HermesDestination.backDestination(): HermesDestination = when (this
     HermesDestination.Appearance,
     HermesDestination.Gateways,
     HermesDestination.System,
+    HermesDestination.Plugins,
     is HermesDestination.Route,
     -> HermesDestination.Settings
 }

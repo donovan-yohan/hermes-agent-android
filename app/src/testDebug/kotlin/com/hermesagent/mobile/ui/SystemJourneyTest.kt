@@ -65,15 +65,18 @@ class SystemJourneyTest {
 
         // Desktop's palette has no phone form, so the panel becomes a Settings
         // destination — placed with the Gateway rows it is about, and before
-        // Relay, which is a workspace rather than a setting.
+        // Plugins and Relay, which are a plugin inventory and a workspace.
         compose.onNodeWithTag(GATEWAYS).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 1f),
         )
         compose.onNodeWithTag(SYSTEM_ROW).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 2f),
         )
-        compose.onNodeWithTag(RELAY_ROW).assert(
+        compose.onNodeWithTag(PLUGINS_ROW).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 3f),
+        )
+        compose.onNodeWithTag(RELAY_ROW).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 4f),
         )
 
         compose.onNodeWithTag(SYSTEM_ROW)
@@ -227,7 +230,7 @@ class SystemJourneyTest {
                                     SettingsRow(
                                         label = "Relay channels",
                                         description = "Channels, transcripts, and messaging live in their own workspace.",
-                                        traversalIndex = 3f,
+                                        traversalIndex = 4f,
                                         onClick = {},
                                     )
                                 },
@@ -256,6 +259,7 @@ class SystemJourneyTest {
                 systemState = system,
                 systemActions = SystemActions(),
                 pluginRegistry = registry,
+                pluginStore = testPluginStore(),
             )
         }
         compose.waitForIdle()
@@ -264,6 +268,7 @@ class SystemJourneyTest {
     private companion object {
         const val GATEWAYS = "settings-row-gateways"
         const val SYSTEM_ROW = "settings-row-system panel"
+        const val PLUGINS_ROW = "settings-row-plugins"
         const val RELAY_ROW = "settings-row-relay channels"
     }
 }
