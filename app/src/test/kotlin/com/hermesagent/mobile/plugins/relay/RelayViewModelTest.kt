@@ -1,18 +1,5 @@
-package com.hermesagent.mobile.ui.relay
+package com.hermesagent.mobile.plugins.relay
 
-import com.hermesagent.mobile.data.relay.EMPTY_TEXT_MESSAGE
-import com.hermesagent.mobile.data.relay.LARGE_TEXT_MESSAGE
-import com.hermesagent.mobile.data.relay.MAX_HISTORY_LIMIT
-import com.hermesagent.mobile.data.relay.MAX_REQUEST_BODY_BYTES
-import com.hermesagent.mobile.data.relay.RelayAvailability
-import com.hermesagent.mobile.data.relay.RelayAvailabilityState
-import com.hermesagent.mobile.data.relay.RelayChannel
-import com.hermesagent.mobile.data.relay.RelayChannelsStatus
-import com.hermesagent.mobile.data.relay.RelayHistory
-import com.hermesagent.mobile.data.relay.RelayLaneState
-import com.hermesagent.mobile.data.relay.RelayMessage
-import com.hermesagent.mobile.data.relay.RelayMessageFormat
-import com.hermesagent.mobile.data.relay.RelayPostResult
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -137,7 +124,6 @@ class RelayViewModelTest {
         viewModel.surfaceResumed()
         settle()
         val whileVisible = reader.channelCalls
-
         viewModel.surfacePaused()
         tick(5)
         assertEquals(whileVisible, reader.channelCalls)

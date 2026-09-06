@@ -1,14 +1,5 @@
-package com.hermesagent.mobile.ui.relay
+package com.hermesagent.mobile.plugins.relay
 
-import com.hermesagent.mobile.data.relay.RelayAvailability
-import com.hermesagent.mobile.data.relay.RelayAvailabilityState
-import com.hermesagent.mobile.data.relay.RelayChannel
-import com.hermesagent.mobile.data.relay.RelayChannelsStatus
-import com.hermesagent.mobile.data.relay.RelayLaneState
-import com.hermesagent.mobile.data.relay.RelayMessage
-import com.hermesagent.mobile.data.relay.TRANSPORT_DOWN_MESSAGE
-import com.hermesagent.mobile.data.relay.statusDetail
-import com.hermesagent.mobile.data.relay.statusMessage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter

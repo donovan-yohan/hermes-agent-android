@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.plugins
 
+import com.hermesagent.mobile.plugins.relay.RelayPlugin
+
 /**
  * Roster of compiled-in plugins available on Android.
  *
@@ -8,5 +10,7 @@ package com.hermesagent.mobile.plugins
  * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  */
 object BundledPlugins {
-    val ALL: List<HermesPlugin> = emptyList()
+    val ALL: List<HermesPlugin> = listOf(
+        RelayPlugin(),
+    )
 }

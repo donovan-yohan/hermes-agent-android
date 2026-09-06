@@ -101,10 +101,13 @@ class GatewayPluginRest(
             captureEnvelope = options.captureEnvelope,
         )
 
+        // A bare 404 is the Gateway's plugin runtime gate (missing or disabled
+        // plugin); a 404 carrying a JSON envelope is the plugin itself refusing
+        // and is returned as Refused.
         return when (val result = transport.execute(request)) {
             is GatewayHttpResult.Success -> PluginRestResult.Success(result.statusCode, result.bodyBytes)
             is GatewayHttpResult.Rejected -> {
-                if (result.statusCode == 404) {
+                if (result.statusCode == 404 && result.envelopeBytes.isEmpty()) {
                     PluginRestResult.UnavailableOnGateway
                 } else {
                     PluginRestResult.Refused(result.statusCode, result.safeMessage, result.envelopeBytes)

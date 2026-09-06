@@ -19,7 +19,6 @@ import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.ConnectionsCopy
 import com.hermesagent.mobile.ui.gateway.ConnectionsUiState
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
-import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import org.junit.Assert.assertEquals
@@ -156,8 +155,6 @@ class SignInHandBackJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
-                relayState = RelayUiState(),
-                relayActions = RelayActions(),
                 connectionsState = twoConnections,
                 connectionsActions = ConnectionsActions(),
                 navigationAsk = ask,

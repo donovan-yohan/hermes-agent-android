@@ -18,7 +18,6 @@ import com.hermesagent.mobile.data.updates.GatewayUpdateStatusKey
 import com.hermesagent.mobile.data.updates.buildCommitChangelog
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
-import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.system.UPDATES_APPLY_TAG
 import com.hermesagent.mobile.ui.system.UPDATES_CLOSE_TAG
@@ -393,8 +392,6 @@ class UpdatesOverlayJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
-                relayState = RelayUiState(),
-                relayActions = RelayActions(),
                 systemState = state,
                 systemActions = SystemActions(onCloseUpdates = { closes += 1 }),
             )

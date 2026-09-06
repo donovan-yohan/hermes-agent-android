@@ -17,17 +17,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.SignInOrigin
+import com.hermesagent.mobile.plugins.ContributionRegistry
+import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.ui.appearance.AppearanceScreen
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
@@ -38,8 +45,6 @@ import com.hermesagent.mobile.ui.gateway.GatewayScreen
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.profiles.ProfilesScreen
 import com.hermesagent.mobile.ui.profiles.profileCount
-import com.hermesagent.mobile.ui.relay.RelayScreen
-import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
 import com.hermesagent.mobile.ui.settings.SettingsScreen
 import com.hermesagent.mobile.ui.system.SystemActions
@@ -52,10 +57,56 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
- * Chat is home. Settings has two short child surfaces, so a saved destination
- * is sufficient without a navigation graph.
+ * Navigation actions available to plugin-contributed composables.
  */
-enum class HermesDestination { Chat, Settings, Appearance, Gateways, System, Relay, Profiles }
+data class PluginNavigation(
+    val onBack: () -> Unit = {},
+    val onOpenGateways: (SignInOrigin) -> Unit = {},
+    val onNavigate: (String) -> Unit = {},
+)
+
+val LocalPluginNavigation = staticCompositionLocalOf { PluginNavigation() }
+
+/**
+ * Chat is home. Settings has short child surfaces, and plugin routes
+ * contribute overlay destinations via [Route].
+ */
+sealed interface HermesDestination {
+    data object Chat : HermesDestination
+    data object Settings : HermesDestination
+    data object Appearance : HermesDestination
+    data object Gateways : HermesDestination
+    data object System : HermesDestination
+    data object Profiles : HermesDestination
+    data class Route(val id: String) : HermesDestination
+}
+
+val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
+    save = { destination ->
+        when (destination) {
+            HermesDestination.Chat -> "Chat"
+            HermesDestination.Settings -> "Settings"
+            HermesDestination.Appearance -> "Appearance"
+            HermesDestination.Gateways -> "Gateways"
+            HermesDestination.System -> "System"
+            HermesDestination.Profiles -> "Profiles"
+            is HermesDestination.Route -> "Route:${destination.id}"
+        }
+    },
+    restore = { value ->
+        when {
+            value == "Chat" -> HermesDestination.Chat
+            value == "Settings" -> HermesDestination.Settings
+            value == "Appearance" -> HermesDestination.Appearance
+            value == "Gateways" -> HermesDestination.Gateways
+            value == "System" -> HermesDestination.System
+            value == "Profiles" -> HermesDestination.Profiles
+            value == "Relay" -> HermesDestination.Route("hermes-plugin-relay:route")
+            value.startsWith("Route:") -> HermesDestination.Route(value.removePrefix("Route:"))
+            else -> HermesDestination.Chat
+        }
+    },
+)
 
 /**
  * A navigation ask from outside the composition — today, a sign-in coming back
@@ -94,12 +145,11 @@ fun HermesApp(
     appearanceActions: AppearanceActions,
     gatewayActions: GatewayActions,
     sshActions: SshActions,
-    relayState: RelayUiState,
-    relayActions: RelayActions,
     systemState: SystemUiState = SystemUiState(),
     systemActions: SystemActions = SystemActions(),
     connectionsState: ConnectionsUiState = ConnectionsUiState(),
     connectionsActions: ConnectionsActions = ConnectionsActions(),
+    pluginRegistry: ContributionRegistry = ContributionRegistry(),
     /**
      * Appearance's saved `Intro Splash`. Separate from [appearance] because it
      * paints nothing: it is a preference the chat reads, not a theme value the
@@ -115,7 +165,13 @@ fun HermesApp(
      */
     onSignInOriginChange: (SignInOrigin) -> Unit = {},
 ) {
-    var destination by rememberSaveable { mutableStateOf(HermesDestination.Chat) }
+    var destination by rememberSaveable(stateSaver = HermesDestinationSaver) {
+        mutableStateOf<HermesDestination>(HermesDestination.Chat)
+    }
+    val routesContributions by pluginRegistry.areaFlow(PluginAreas.ROUTES_AREA)
+        .collectAsStateWithLifecycle(emptyList())
+    val sidebarNavContributions by pluginRegistry.areaFlow(PluginAreas.SIDEBAR_NAV_AREA)
+        .collectAsStateWithLifecycle(emptyList())
 
     /**
      * Where a sign-in started, which is where the Gateways pane was entered
@@ -144,111 +200,121 @@ fun HermesApp(
     }
     val onOpenGateways = { openGateways(SignInOrigin.Gateways) }
     val onOpenGatewaysFromSessions = { openGateways(SignInOrigin.Sessions) }
+    val pluginNavigation = remember(openGateways) {
+        PluginNavigation(
+            onBack = onBack,
+            onOpenGateways = openGateways,
+            onNavigate = { target ->
+                destination = HermesDestination.Route(target)
+            },
+        )
+    }
     BackHandler(enabled = destination != HermesDestination.Chat) {
         onBack()
     }
 
     HermesTheme(appearance) {
-        when (destination) {
-            HermesDestination.Chat -> ChatScreen(
-                state = chatState,
-                actions = chatActions,
-                onOpenSettings = { destination = HermesDestination.Settings },
-                onOpenProfiles = { destination = HermesDestination.Profiles },
-                // The chat chrome's connection line is the failure site; this
-                // is the same destination its sidebar's "Manage gateways…"
-                // reaches, so both routes out of a broken connection land in
-                // one place rather than two. Both leave from sessions, so both
-                // mark the journey as one: this is the owner's Scenario A —
-                // a drawer switch to a signed-out gateway, and the sign-in it
-                // leads to belongs back here.
-                onOpenGateways = onOpenGatewaysFromSessions,
-                introSplashEnabled = introSplash,
-                sidebarHeader = {
-                    ConnectionSwitcherBar(
-                        state = connectionsState,
-                        actions = connectionsActions,
-                        onManage = onOpenGatewaysFromSessions,
+        CompositionLocalProvider(LocalPluginNavigation provides pluginNavigation) {
+            when (destination) {
+                HermesDestination.Chat -> ChatScreen(
+                    state = chatState,
+                    actions = chatActions,
+                    onOpenSettings = { destination = HermesDestination.Settings },
+                    onOpenProfiles = { destination = HermesDestination.Profiles },
+                    // The chat chrome's connection line is the failure site; this
+                    // is the same destination its sidebar's "Manage gateways…"
+                    // reaches, so both routes out of a broken connection land in
+                    // one place rather than two. Both leave from sessions, so both
+                    // mark the journey as one: this is the owner's Scenario A —
+                    // a drawer switch to a signed-out gateway, and the sign-in it
+                    // leads to belongs back here.
+                    onOpenGateways = onOpenGatewaysFromSessions,
+                    introSplashEnabled = introSplash,
+                    sidebarHeader = {
+                        ConnectionSwitcherBar(
+                            state = connectionsState,
+                            actions = connectionsActions,
+                            onManage = onOpenGatewaysFromSessions,
+                        )
+                    },
+                )
+
+                // "Manage profiles…" is a sidebar affordance, so its back goes home
+                // rather than through Settings.
+                HermesDestination.Profiles -> OverlayScaffold(
+                    title = "Profiles",
+                    subtitle = chatState.profiles.profiles.size
+                        .takeIf { chatState.profiles.loaded && it > 0 }
+                        ?.let(::profileCount),
+                    onBack = onBack,
+                ) {
+                    ProfilesScreen(chatState.profiles)
+                }
+
+                HermesDestination.Settings -> OverlayScaffold(
+                    title = "Settings",
+                    onBack = onBack,
+                ) {
+                    SettingsScreen(
+                        onOpenAppearance = { destination = HermesDestination.Appearance },
+                        onOpenGateways = onOpenGateways,
+                        onOpenSystem = { destination = HermesDestination.System },
+                        systemAvailable =
+                            gatewayState.connection.status == GatewayConnectionStatus.Connected,
+                        contributions = sidebarNavContributions,
                     )
-                },
-            )
+                }
 
-            // "Manage profiles…" is a sidebar affordance, so its back goes home
-            // rather than through Settings.
-            HermesDestination.Profiles -> OverlayScaffold(
-                title = "Profiles",
-                subtitle = chatState.profiles.profiles.size
-                    .takeIf { chatState.profiles.loaded && it > 0 }
-                    ?.let(::profileCount),
-                onBack = onBack,
-            ) {
-                ProfilesScreen(chatState.profiles)
-            }
+                HermesDestination.Appearance -> OverlayScaffold(
+                    title = "Appearance",
+                    onBack = onBack,
+                ) {
+                    AppearanceScreen(
+                        selection = appearance,
+                        actions = appearanceActions,
+                        introSplash = introSplash,
+                    )
+                }
 
-            HermesDestination.Settings -> OverlayScaffold(
-                title = "Settings",
-                onBack = onBack,
-            ) {
-                SettingsScreen(
-                    onOpenAppearance = { destination = HermesDestination.Appearance },
-                    onOpenGateways = onOpenGateways,
-                    onOpenSystem = { destination = HermesDestination.System },
-                    onOpenRelay = { destination = HermesDestination.Relay },
-                    relayAvailable = !relayState.unavailableOnGateway,
-                    systemAvailable =
-                        gatewayState.connection.status == GatewayConnectionStatus.Connected,
-                )
-            }
+                HermesDestination.Gateways -> OverlayScaffold(
+                    title = "Gateways",
+                    onBack = onBack,
+                ) {
+                    GatewayScreen(
+                        state = gatewayState,
+                        gatewayActions = gatewayActions,
+                        sshState = sshState,
+                        sshActions = sshActions,
+                        connectionsState = connectionsState,
+                        connectionsActions = connectionsActions,
+                    )
+                }
 
-            HermesDestination.Appearance -> OverlayScaffold(
-                title = "Appearance",
-                onBack = onBack,
-            ) {
-                AppearanceScreen(
-                    selection = appearance,
-                    actions = appearanceActions,
-                    introSplash = introSplash,
-                )
-            }
+                // The updates sheet is hosted here rather than beside the panel's
+                // own content, because it is a window of its own: hosting it inside
+                // the scaffold would put it under the scaffold's insets, and an
+                // apply outlives the screen that started it anyway.
+                HermesDestination.System -> OverlayScaffold(
+                    title = SystemCopy.TITLE,
+                    onBack = onBack,
+                ) {
+                    SystemScreen(state = systemState, actions = systemActions)
+                    if (systemState.sheetOpen) {
+                        UpdatesOverlay(state = systemState, actions = systemActions)
+                    }
+                }
 
-            HermesDestination.Gateways -> OverlayScaffold(
-                title = "Gateways",
-                onBack = onBack,
-            ) {
-                GatewayScreen(
-                    state = gatewayState,
-                    gatewayActions = gatewayActions,
-                    sshState = sshState,
-                    sshActions = sshActions,
-                    connectionsState = connectionsState,
-                    connectionsActions = connectionsActions,
-                )
-            }
-
-            // The updates sheet is hosted here rather than beside the panel's
-            // own content, because it is a window of its own: hosting it inside
-            // the scaffold would put it under the scaffold's insets, and an
-            // apply outlives the screen that started it anyway.
-            HermesDestination.System -> OverlayScaffold(
-                title = SystemCopy.TITLE,
-                onBack = onBack,
-            ) {
-                SystemScreen(state = systemState, actions = systemActions)
-                if (systemState.sheetOpen) {
-                    UpdatesOverlay(state = systemState, actions = systemActions)
+                is HermesDestination.Route -> {
+                    val route = routesContributions.firstOrNull { it.id == (destination as HermesDestination.Route).id }
+                    if (route?.render != null) {
+                        route.render.invoke()
+                    } else {
+                        LaunchedEffect(destination) {
+                            destination = HermesDestination.Settings
+                        }
+                    }
                 }
             }
-
-            // Relay wears the same overlay chrome as its peers but supplies
-            // its own back meaning: it drills one level deeper, and one header
-            // whose affordance means "the pane you came from" is clearer than
-            // two stacked back arrows.
-            HermesDestination.Relay -> RelayScreen(
-                state = relayState,
-                actions = relayActions,
-                onLeave = onBack,
-                onOpenGateways = onOpenGateways,
-            )
         }
     }
 }
@@ -350,6 +416,6 @@ internal fun HermesDestination.backDestination(): HermesDestination = when (this
     HermesDestination.Appearance,
     HermesDestination.Gateways,
     HermesDestination.System,
-    HermesDestination.Relay,
+    is HermesDestination.Route,
     -> HermesDestination.Settings
 }

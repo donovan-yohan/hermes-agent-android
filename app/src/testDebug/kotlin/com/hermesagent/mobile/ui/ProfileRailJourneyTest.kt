@@ -41,7 +41,6 @@ import com.hermesagent.mobile.ui.sessions.ProfileRailActions
 import com.hermesagent.mobile.ui.sessions.ProfileRailState
 import com.hermesagent.mobile.ui.sessions.profilePickerRowTag
 import com.hermesagent.mobile.ui.sessions.PROJECT_PROFILE_SCOPE_NOTE
-import com.hermesagent.mobile.ui.relay.RelayUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -387,8 +386,6 @@ class ProfileRailJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
-                relayState = RelayUiState(),
-                relayActions = RelayActions(),
             )
         }
         compose.waitForIdle()

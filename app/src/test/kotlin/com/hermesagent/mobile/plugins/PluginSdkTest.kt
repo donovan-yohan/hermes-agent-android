@@ -256,6 +256,28 @@ class PluginSdkTest {
     }
 
     @Test
+    fun `GatewayHttpResult Rejected with status 404 and non-empty envelope maps to PluginRestResult Refused`() = runTest {
+        val mock404WithEnvelope = object : GatewayHttp {
+            override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+                return GatewayHttpResult.Rejected(
+                    statusCode = 404,
+                    safeMessage = "Not Found",
+                    envelopeBytes = """{"error":"channel_not_found"}""".toByteArray(),
+                )
+            }
+        }
+
+        val rest = GatewayPluginRest { mock404WithEnvelope }
+        val result = rest.execute("test-plugin", "/channels/c99")
+        assertTrue(result is PluginRestResult.Refused)
+        val refused = result as PluginRestResult.Refused
+        assertEquals(404, refused.statusCode)
+        assertEquals("Not Found", refused.safeMessage)
+        assertEquals("""{"error":"channel_not_found"}""", String(refused.envelopeBytes))
+    }
+
+
+    @Test
     fun `socket on OAuth leg returns no-op disposer and rejects traversal`() {
         val socket = GatewayPluginSocket(isOAuthLeg = { true })
 
