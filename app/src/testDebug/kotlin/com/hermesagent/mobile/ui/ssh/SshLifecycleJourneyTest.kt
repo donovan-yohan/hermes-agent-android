@@ -286,6 +286,7 @@ class SshLifecycleJourneyTest {
                         viewModel.releaseScreen()
                     },
                 ),
+                pluginStore = com.hermesagent.mobile.ui.testPluginStore(),
             )
         }
         compose.waitForIdle()

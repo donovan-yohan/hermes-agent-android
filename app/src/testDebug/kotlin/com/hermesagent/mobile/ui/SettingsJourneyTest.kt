@@ -72,6 +72,7 @@ class SettingsJourneyTest {
         assertEquals(HermesDestination.Chat, HermesDestination.Settings.backDestination())
         assertEquals(HermesDestination.Settings, HermesDestination.Appearance.backDestination())
         assertEquals(HermesDestination.Settings, HermesDestination.Gateways.backDestination())
+        assertEquals(HermesDestination.Settings, HermesDestination.Plugins.backDestination())
         assertEquals(HermesDestination.Chat, HermesDestination.Chat.backDestination())
     }
 
@@ -101,6 +102,7 @@ class SettingsJourneyTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
+                pluginStore = testPluginStore(),
             )
         }
         compose.waitForIdle()

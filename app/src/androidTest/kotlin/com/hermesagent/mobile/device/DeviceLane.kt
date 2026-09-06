@@ -11,6 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.plugins.PluginDecisionStore
+import com.hermesagent.mobile.plugins.PluginStore
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.GatewayActions
@@ -20,6 +22,11 @@ import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * What this lane is, and what it deliberately is not.
@@ -99,8 +106,18 @@ internal fun HermesAppUnderTest(
         appearanceActions = AppearanceActions(),
         gatewayActions = GatewayActions(),
         sshActions = SshActions(),
+        pluginStore = deviceLanePluginStore(),
     )
 }
+
+private fun deviceLanePluginStore(): PluginStore =
+    PluginStore(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+        decisionStore = object : PluginDecisionStore {
+            override val pluginDecisions: Flow<Map<String, Boolean>> = flowOf(emptyMap())
+            override suspend fun savePluginDecision(id: String, enabled: Boolean) = Unit
+        },
+    )
 
 /**
  * Runs [block] on the main thread and returns its value.

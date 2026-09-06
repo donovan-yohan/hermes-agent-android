@@ -50,6 +50,7 @@ class SavedStateRestoreTest {
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
+                pluginStore = testPluginStore(),
             )
         }
 

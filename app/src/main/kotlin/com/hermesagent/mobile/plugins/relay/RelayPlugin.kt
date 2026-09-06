@@ -106,7 +106,7 @@ class RelayPlugin(
                             } else {
                                 RELAY_UNAVAILABLE_ON_GATEWAY_MESSAGE
                             },
-                            traversalIndex = 3f,
+                            traversalIndex = 4f,
                             enabled = relayAvailable,
                             onClick = { nav.onNavigate("hermes-plugin-relay:route") },
                         )
