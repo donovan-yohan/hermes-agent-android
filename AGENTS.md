@@ -13,6 +13,7 @@ Phase 2 ships all three connection routes, backend sessions, and live turns.
 | `app/src/main/kotlin/.../ui/theme/` | Theme registry, palette, semantic tokens, type scale | Any colour, font or spacing question |
 | `app/src/main/kotlin/.../ui/` | Compose surfaces: `chat/`, `sessions/`, `appearance/`, `ssh/`, `common/` primitives | Changing what the app looks like or does |
 | `app/src/main/kotlin/.../data/session/` | `SessionCache` (backend-authoritative), model, calendar grouping | Anything about sessions or transcripts |
+| `app/src/main/kotlin/.../data/markdown/` | Transcript markdown model, ANSI parsing, transcript directives | Anything about transcript rendering, copy text, or directives |
 | `app/src/main/kotlin/.../data/ssh/` | sshj transport/opener/probe, destination parser, TOFU policy, redaction | SSH, destinations, host keys, secrets |
 | `app/src/main/kotlin/.../data/connections/` | Saved connections registry, dedupe/display rules, the connection switch | Adding, editing, removing or switching a saved Gateway |
 | `app/src/main/kotlin/.../data/gateway/` | Remote lifecycle, HTTP/JSON-RPC connection, live session repository, network monitor | Gateway startup, ownership, forwarding, sessions, live turns |
