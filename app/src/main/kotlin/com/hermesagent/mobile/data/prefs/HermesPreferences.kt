@@ -29,11 +29,15 @@ import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.GatewayInstallStore
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfileStore
+import com.hermesagent.mobile.plugins.PluginDecisionStore
+import com.hermesagent.mobile.plugins.PluginDecisionsCodec
+import com.hermesagent.mobile.plugins.PluginKeyValueStore
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -70,6 +74,7 @@ private val LEGACY_REMOTE_GATEWAY_PROVIDER = stringPreferencesKey("gateway.singl
 
 internal val CONNECTIONS = stringPreferencesKey("connections.v1.saved")
 internal val ACTIVE_CONNECTION_ID = stringPreferencesKey("connections.v1.activeId")
+internal val PLUGIN_DECISIONS = stringPreferencesKey("hermes.plugin.decisions.v1")
 
 /** What an unnamed connection is called until someone renames it. */
 internal const val DEFAULT_CONNECTION_LABEL = "Gateway"
@@ -208,7 +213,9 @@ class HermesPreferences(private val context: Context) :
     ConnectionRegistryStore,
     SidebarViewStore,
     ProfileScopeStore,
-    ComposerControlsStore {
+    ComposerControlsStore,
+    PluginDecisionStore,
+    PluginKeyValueStore {
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
         AppearanceSelection(
@@ -543,6 +550,33 @@ class HermesPreferences(private val context: Context) :
                 val index = rows.indexOfFirst { it.id == activeId }.takeIf { it >= 0 } ?: 0
                 val updated = rows.toMutableList().also { it[index] = transform(it[index]).copy(id = it[index].id) }
                 updated to updated[index].id
+            }
+        }
+    }
+
+    override val pluginDecisions: Flow<Map<String, Boolean>> = context.hermesDataStore.data.map { prefs ->
+        PluginDecisionsCodec.decode(prefs[PLUGIN_DECISIONS])
+    }
+
+    override suspend fun savePluginDecision(id: String, enabled: Boolean) {
+        context.hermesDataStore.edit { prefs ->
+            val current = PluginDecisionsCodec.decode(prefs[PLUGIN_DECISIONS]).toMutableMap()
+            current[id] = enabled
+            prefs[PLUGIN_DECISIONS] = PluginDecisionsCodec.encode(current)
+        }
+    }
+
+    override suspend fun read(scopedKey: String): String? {
+        return context.hermesDataStore.data.first()[stringPreferencesKey(scopedKey)]
+    }
+
+    override suspend fun write(scopedKey: String, value: String?) {
+        context.hermesDataStore.edit { prefs ->
+            val key = stringPreferencesKey(scopedKey)
+            if (value == null) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = value
             }
         }
     }
