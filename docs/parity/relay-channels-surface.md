@@ -1,6 +1,6 @@
 # Relay channels + transcript: source and deviation ledger
 
-The read-only Relay workspace (`ui/relay/`), ported per
+The read-only Relay workspace (`plugins/relay/`), ported per
 `docs/workflows/port-desktop-surface.md`.
 
 ## Pin
@@ -178,6 +178,6 @@ and the local SDK has no `emulator` package. The capture is therefore recorded
 as **missing**, not fabricated, and belongs to the device-QA slice (issue #43).
 
 What this slice does ship instead: `@Preview` composables for both panes in
-phone light and dark (`ui/relay/RelayScreen.kt`), which is the same in-source
+phone light and dark (`plugins/relay/RelayScreen.kt`), which is the same in-source
 affordance `ChatScreen.kt` uses. The fixtures in them are invented; no host,
 channel, person or credential in this repo corresponds to anything real.
