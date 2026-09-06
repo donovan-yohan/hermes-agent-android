@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -86,8 +87,10 @@ import com.hermesagent.mobile.data.markdown.MarkdownBlock
 import com.hermesagent.mobile.data.markdown.TableSizing
 import com.hermesagent.mobile.data.markdown.hasAnsiCodes
 import com.hermesagent.mobile.data.markdown.parseAnsi
+import com.hermesagent.mobile.data.markdown.parseTranscriptDirective
 import com.hermesagent.mobile.data.markdown.replyPlainText
 import com.hermesagent.mobile.data.markdown.parseMarkdown
+import com.hermesagent.mobile.data.markdown.spansText
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionProgress
@@ -96,6 +99,10 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.plugins.Contribution
+import com.hermesagent.mobile.plugins.PluginAreas
+import com.hermesagent.mobile.plugins.TranscriptDirectiveContribution
+import com.hermesagent.mobile.HermesApplication
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.ErrorState
@@ -115,6 +122,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -566,6 +574,13 @@ private fun AssistantProse(
     // delta costs one CommonMark pass, not two.
     val reply = remember(blocks) { blocks.replyPlainText() }
 
+    val context = LocalContext.current
+    val registry = remember(context) { (context.applicationContext as? HermesApplication)?.pluginRegistry }
+    val emptyContributions = remember { MutableStateFlow(emptyList<Contribution>()) }
+    val transcriptDirectiveContributions by remember(registry) {
+        registry?.areaFlow(PluginAreas.TRANSCRIPT_DIRECTIVE_AREA) ?: emptyContributions
+    }.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -602,7 +617,10 @@ private fun AssistantProse(
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
                     for (block in blocks) {
-                        MarkdownBlockView(block)
+                        MarkdownBlockView(
+                            block = block,
+                            transcriptDirectiveContributions = transcriptDirectiveContributions,
+                        )
                     }
                 }
             }
@@ -1473,11 +1491,34 @@ private fun String?.jsonStringField(name: String): String? {
 }
 
 @Composable
-private fun MarkdownBlockView(block: MarkdownBlock) {
+private fun MarkdownBlockView(
+    block: MarkdownBlock,
+    transcriptDirectiveContributions: List<Contribution> = emptyList(),
+) {
     val tokens = HermesTheme.tokens
     when (block) {
-        is MarkdownBlock.Paragraph ->
+        is MarkdownBlock.Paragraph -> {
+            val plainText = remember(block.spans) { block.spans.spansText() }
+            val directive = remember(plainText) { parseTranscriptDirective(plainText) }
+            if (directive != null && transcriptDirectiveContributions.isNotEmpty()) {
+                val contribution = transcriptDirectiveContributions.firstOrNull {
+                    (it.data as? TranscriptDirectiveContribution)?.name == directive.name
+                }
+                val data = contribution?.data as? TranscriptDirectiveContribution
+                if (data != null) {
+                    TranscriptDirectiveRenderBoundary(
+                        content = {
+                            // Markdown blocks do not currently carry per-block streaming.
+                            data.render(directive.attrs, directive.source, false)
+                        },
+                        onFailure = { PluginRenderFailedChip() },
+                    )
+                    return
+                }
+            }
+
             Text(block.spans.annotated(), style = HermesTheme.type.body, color = tokens.textPrimary)
+        }
 
         is MarkdownBlock.Heading ->
             Text(
@@ -1517,6 +1558,51 @@ private fun MarkdownBlockView(block: MarkdownBlock) {
         is MarkdownBlock.Table -> TableView(block)
 
         is MarkdownBlock.CodeFence -> CodeFenceView(block)
+    }
+}
+
+@Composable
+private fun TranscriptDirectiveRenderBoundary(
+    content: @Composable () -> Unit,
+    onFailure: @Composable () -> Unit,
+) {
+    SubcomposeLayout { constraints ->
+        // Keep the composable invocations OUTSIDE any try/catch in this function:
+        // Compose's compiler plugin does not support try/catch around composable calls.
+        val contentSlot: @Composable () -> Unit = { Box { content() } }
+        val failureSlot: @Composable () -> Unit = { Box { onFailure() } }
+
+        val placeables = try {
+            subcompose("directive", contentSlot).map { it.measure(constraints) }
+        } catch (_: Throwable) {
+            subcompose("directive-failed", failureSlot).map { it.measure(constraints) }
+        }
+
+        val width = placeables.maxOfOrNull { it.width } ?: 0
+        val height = placeables.maxOfOrNull { it.height } ?: 0
+        layout(width, height) {
+            for (p in placeables) p.place(0, 0)
+        }
+    }
+}
+
+@Composable
+private fun PluginRenderFailedChip() {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier = Modifier
+            .background(tokens.chatSurface, RoundedCornerShape(percent = 50))
+            .border(1.dp, tokens.destructive.copy(alpha = 0.4f), RoundedCornerShape(percent = 50))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Plugin render failed",
+            style = HermesTheme.type.caption,
+            color = tokens.destructive,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
