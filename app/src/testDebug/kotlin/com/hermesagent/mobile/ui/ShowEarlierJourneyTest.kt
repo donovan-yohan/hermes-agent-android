@@ -35,8 +35,8 @@ import org.robolectric.annotation.Config
  * Desktop's control is a plain text pill at the top of the transcript content,
  * inside the scroll, with no glyph, no spinner and no disabled state — it
  * simply stops existing once a session is exhausted
- * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:834-842` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:1033-1041` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -281,7 +281,7 @@ class ShowEarlierJourneyTest {
         const val SESSION = "durable-a"
         const val NOW = 1_800_000_000_000L
 
-        /** `apps/desktop/src/i18n/en.ts:3218` @ `3ca096de`, verbatim. */
+        /** `apps/desktop/src/i18n/en.ts:3520` @ `72a3277cd7`, verbatim. */
         const val LABEL = "Show earlier messages"
 
         /** The user turn the reader is parked on when the page is asked for. */

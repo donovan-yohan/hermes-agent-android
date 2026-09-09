@@ -55,7 +55,7 @@ object PluginDecisionsCodec {
  *
  * Direct Kotlin port of Desktop's `plugins-store.ts`
  * (`apps/desktop/src/contrib/plugins-store.ts:1-118` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 class PluginStore(
     private val scope: CoroutineScope,

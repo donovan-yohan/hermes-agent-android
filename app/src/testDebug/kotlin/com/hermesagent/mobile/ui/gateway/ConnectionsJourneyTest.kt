@@ -569,7 +569,7 @@ class ConnectionsJourneyTest {
 
     /**
      * Desktop's page-level controls, both disabled: the update fan-out beside
-     * `Add connection` (`connections-registry.tsx:968-988` @ `3ca096de`) and
+     * `Add connection` (`connections-registry.tsx:968-988` @ `72a3277cd7`) and
      * the launch-mode toggle in its own section below it (`:992-1006`).
      */
     @Test

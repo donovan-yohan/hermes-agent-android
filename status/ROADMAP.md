@@ -321,6 +321,47 @@ lifecycle.
 - Custom Desktop themes and the final physical TalkBack, large-font, reduced
   motion, orientation, and keyboard matrix remain open.
 
+> **Upstream pin moved to `72a3277cd7` (2026-09-08).** Nothing the app speaks to
+> the Gateway changed shape: every JSON-RPC method, every subscribed event
+> payload, every REST route, the native PKCE flow, the Managed-SSH ownership
+> lockfile and the Local loopback token are unchanged across 6016 commits. The
+> range's bulk is upstream's September decomposition — `tui_gateway/server.py`
+> and `hermes_cli/web_server.py` each lost about 20 000 lines to focused
+> modules — which upstream itself scopes to Python import paths in
+> `COMPAT_MANIFEST.md`, not to the wire.
+>
+> Two behaviours a connected phone can observe did change, and neither is a
+> shape break.
+>
+> **A session is now mirrored, not stolen.** Previously the newest client to
+> attach to a live session took the transport slot and the earlier viewer went
+> silent until the other disconnected. Upstream now holds both in a
+> `FanoutTransport`, so a phone and a Desktop watching the same session both
+> receive its live frames. This is the better behaviour for us — a turn the user
+> also has open on Desktop no longer goes dark on the phone — but it widens what
+> foreground isolation has to reason about: the phone can now receive
+> `message.delta` for a session another client is driving, and upstream applies
+> no entitlement check on who may mirror what. The unread-dot rule and the
+> per-target send gate are unchanged and still correct; what is new is that
+> "another client holds this session" is a state the phone can sit in rather
+> than one it only discovers by being refused with `4090`.
+>
+> **An unknown profile is now refused rather than silently answered.** A
+> `profile` param naming a profile that does not exist on the host used to fall
+> back to the launch profile; it now raises, surfacing as an RPC error on
+> `config.get`, `config.set`, `model.options`, `projects.tree` and
+> `projects.project_sessions`. Blank still means the launch profile, which is
+> what the app relies on, so the sidebar's normal path is untouched — but a
+> profile deleted on the host between roster refreshes now fails visibly instead
+> of quietly answering for someone else.
+>
+> Themes are unaffected: `apps/desktop/src/themes/presets.ts` is byte-identical
+> across the range, so the 11 built-ins keep their names, labels, descriptions
+> and order and `BuiltinThemes.ALL` needs no data edit. Product copy is
+> unaffected: `apps/desktop/src/i18n/en.ts` gained 265 keys and changed **zero**
+> values, and the two keys it removed are a Desktop tour card this app never
+> reproduced.
+
 ## Known limitations
 
 | Limitation | What is true now | Exit condition |

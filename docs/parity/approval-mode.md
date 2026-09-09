@@ -19,15 +19,15 @@ Every `path:line` below is against that SHA.
 | Question | Path |
 |---|---|
 | The item, its glyph states, its menu and the row order | `apps/desktop/src/app/shell/approval-mode-menu.tsx:21-76` |
-| Where the item lives and when it is hidden | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:270,568-572` |
+| Where the item lives and when it is hidden | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:289,610-614` |
 | Where it sits among the other right-hand items, and that array order is left to right | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:536-586`, `apps/desktop/src/app/shell/statusbar-controls.tsx:119-123` |
 | The RPC contract, the optimistic write, the rollback and the revision fence | `apps/desktop/src/store/approval-mode.ts:1-97` |
-| Every visible string | `apps/desktop/src/i18n/en.ts:2897-2906` |
+| Every visible string | `apps/desktop/src/i18n/en.ts:3186-3195` |
 | `config.get` answering `approvals.mode`, and that the handler is profile-scoped | `tui_gateway/methods_config.py:181-182,290-294` |
 | `config.set` validating the enum, writing it, and re-emitting `session.info` | `tui_gateway/server.py:14225-14226,14584-14598` |
 | What `profile` does to either handler | `tui_gateway/server.py:2463-2482` |
-| The three valid modes, and that an unknown one resolves to `manual` | `hermes_cli/approval_mode.py:16`, `tools/approval.py:3405-3432`, `tui_gateway/server.py:5953-5971` |
-| `session.info` carrying `approval_mode` and the effective `yolo` | `tui_gateway/server.py:7616-7631,7659-7660` |
+| The three valid modes, and that an unknown one resolves to `manual` | `hermes_cli/approval_mode.py:16`, `tools/approval_context.py:200-214`, `tui_gateway/server.py:1679-1684` |
+| `session.info` carrying `approval_mode` and the effective `yolo` | `tui_gateway/server.py:2033-2041,7659-7660` |
 | Which streamed `session.info` may reconcile the cache, and why it is gated | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/session-info.ts:184-191` |
 | The separate YOLO bypass this port does not take | `apps/desktop/src/lib/yolo-session.ts:1-76`, `tui_gateway/server.py:14600-14665` |
 
@@ -38,7 +38,7 @@ Every `path:line` below is against that SHA.
 | `mode` | `config.get {key: 'approvals.mode'}`, then the `config.set` echo | `ApprovalModeState.mode` on the repository's `approvalMode` flow; null until answered |
 | unresolved mode before the first read | local default `'smart'` (`store/approval-mode.ts:32`) | null, and the control is not rendered |
 | revision fence and confirmed value | `revisions` / `confirmedModes` maps (`:7-8`) | `approvalModeRevision` / `confirmedApprovalMode`, guarded by the repository's state lock. A reconcile bumps the fence and so discards an in-flight write's echo, exactly as `reconcileApprovalModeForProfile` does (`:40-48`) |
-| `hidden` | `gatewayState !== 'open'` (`use-statusbar-items.tsx:569`) | `ChatUiState.approvalMode` is null unless the connection is `Connected` |
+| `hidden` | `gatewayState !== 'open'` (`use-statusbar-items.tsx:612`) | `ChatUiState.approvalMode` is null unless the connection is `Connected` |
 | `yolo` | a separate status item over `config.set {key: 'yolo'}` | `ApprovalModeState.bypassActive` is parsed from `session.info` and rendered nowhere |
 | profile keying | client-side cache key only; neither RPC sends `profile` (`:56,77-80`) | the active profile is sent on both calls, and a change of active profile clears the published mode, the confirmed value and the fence together |
 
@@ -64,7 +64,7 @@ Every `path:line` below is against that SHA.
 | Settings → Safety → `Approval Mode` enum row (`settings/constants.ts:235,418,580,670`) | omission | Absent | deferred: #73 — the schema-driven settings sections are that issue; the control ships in the chrome where the status-bar item was adapted |
 | Status-bar customise menu can hide the Approvals item (`en.ts:2941`) | omission | The chip is always shown once the mode is known | deferred: #73 — the status-bar preference surface is that issue |
 | `DropdownMenuLabel` heading is sentence-case 12px medium tertiary (`components/ui/dropdown-menu.tsx:183-198`) | drift | `MenuSectionLabel`: the same words in this app's uppercase, tracked, semibold panel-label treatment, in a 32dp band, so `Approval mode` reads `APPROVAL MODE` | #161. Reclassified from mobile-adaptation: Desktop **owns** an uppercase menu-heading idiom — `dropdownMenuSectionLabel`, `uppercase tracking-wide` (`components/ui/dropdown-menu.tsx:13`) — and `approval-mode-menu.tsx:54` deliberately does not use it, taking the plain sentence-case `DropdownMenuLabel` instead. The casing is therefore the surface owner's decision and not a gap in Desktop's vocabulary, which is what a mobile adaptation would have to argue against. The legibility case for uppercase at reading distance is real and is why the treatment ships today, but it does not make this Desktop's choice rendered for touch; #161 decides whether Android follows `approval-mode-menu.tsx` or Desktop adopts its own section-label idiom here |
-| The heading shares its left inset with the words in its rows, because the selected mark is trailing (`components/ui/dropdown-menu.tsx:169-179`) | mobile-adaptation | The heading is inset to the rows' text column, past the leading mark | Touch: this app's selected mark leads the row rather than trailing it (the row above), which moves the rows' text column right; keeping Desktop's *relationship* — heading on the same column as the words — is what preserves the read, and `ApprovalModeJourneyTest` asserts the two columns are the same |
+| The heading shares its left inset with the words in its rows, because the selected mark is trailing (`components/ui/dropdown-menu.tsx:173-183`) | mobile-adaptation | The heading is inset to the rows' text column, past the leading mark | Touch: this app's selected mark leads the row rather than trailing it (the row above), which moves the rows' text column right; keeping Desktop's *relationship* — heading on the same column as the words — is what preserves the read, and `ApprovalModeJourneyTest` asserts the two columns are the same |
 | Menu row shows a radio dot only via the shadcn radio-group indicator | mobile-adaptation | An 8dp accent dot plus `Role.RadioButton` and a `selected` semantics flag | Touch surfaces are read by screen readers that need the selection state on the row, not only its ink |
 | A `config.set` echo with no `value` normalises to `manual` like any other unknown (`store/approval-mode.ts:82`) | mobile-adaptation | An accepted write whose echo omits `value` confirms the mode that was written | The phone chip is the only place the posture is named — there is no second surface to correct it — so a write the host accepted must not appear to revert; the Gateway always echoes `value` at this pin (`server.py:14598`), which makes this the failure-shape guard, not a behaviour change |
 

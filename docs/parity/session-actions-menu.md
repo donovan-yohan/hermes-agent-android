@@ -211,8 +211,9 @@ Everything else in the table above is absent, and its group slot is present.
 | Archive | Danger | `Archive` | `Archive` | `en.ts:2312`; `:431-440` |
 | …when the row is archived | Danger | `Archive` | `Unarchive` | `en.ts:1156` — Desktop's **settings page**, not this menu. Desktop's row menu renders `Archive` in both directions (`session-actions-menu.tsx:431-435`), so this swap is drift: [#138](https://github.com/donovan-yohan/hermes-agent-android/issues/138) |
 
-Each is one PATCH on `PATCH /api/sessions/{id}` (`hermes_cli/web_routers/sessions.py:825-832`
-@ the pin), written optimistically and repainted on refusal. The unread row
+Each is one PATCH on `PATCH /api/sessions/{id}` (`hermes_cli/web_routers/sessions.py:608-620`
+@ `72a3277cd7` — this one citation was re-resolved at the new pin; the flag-setter dispatch table `_RENAME_FLAG_SETTERS` the old inline
+if-chain was refactored into), written optimistically and repainted on refusal. The unread row
 drives off **both** unread sources exactly as Desktop's does (`:311,314-315`):
 this client's transient finished-turn dot and the backend's durable watermark,
 and marking read clears both in one action.

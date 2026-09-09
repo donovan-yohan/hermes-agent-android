@@ -5,7 +5,7 @@ package com.hermesagent.mobile.plugins
  *
  * Direct Kotlin port of Desktop's `PluginContext`
  * (`apps/desktop/src/contrib/plugin.ts:60-75` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface PluginContext {
     /** The resolved plugin source tag, e.g. `'plugin:kanban'`. */
@@ -41,7 +41,7 @@ interface PluginContext {
  *
  * Direct Kotlin port of Desktop's `HermesPlugin`
  * (`apps/desktop/src/contrib/plugin.ts:77-83` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface HermesPlugin {
     /** Stable slug — becomes the `plugin:<id>` source and id namespace. */

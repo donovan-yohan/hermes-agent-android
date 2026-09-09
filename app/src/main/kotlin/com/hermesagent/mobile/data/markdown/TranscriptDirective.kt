@@ -2,7 +2,7 @@ package com.hermesagent.mobile.data.markdown
 
 /**
  * Parse transcript directives (a whole paragraph of the form `::name{key="value"}`) as a narrow,
- * plugin-addressed contribution shape. Ported from `apps/desktop/src/lib/transcript-directives.ts:19-45 @ 3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * plugin-addressed contribution shape. Ported from `apps/desktop/src/lib/transcript-directives.ts:19-45 @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  */
 data class ParsedTranscriptDirective(
     val name: String,

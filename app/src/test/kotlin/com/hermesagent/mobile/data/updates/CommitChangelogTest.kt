@@ -9,7 +9,7 @@ import org.junit.Test
  * Desktop's own changelog fixtures, run against this port.
  *
  * Every case below is `apps/desktop/src/lib/commit-changelog.test.ts` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, translated and nothing else. The
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, translated and nothing else. The
  * point is not that the grouping is reasonable — it is that it is *identical*,
  * because the output is product copy and two implementations of the same
  * release notes are two different products.

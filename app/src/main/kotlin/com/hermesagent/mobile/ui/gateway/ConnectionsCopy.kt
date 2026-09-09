@@ -6,8 +6,8 @@ import com.hermesagent.mobile.data.connections.SavedConnection
 
 /**
  * The Connections vocabulary, taken from Desktop's `i18n/en.ts` at pinned SHA
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3` (`settings.connections`,
- * lines 761-822; `profiles.switchConnectionFailed` and
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` (`settings.connections`,
+ * lines 808-869; `profiles.switchConnectionFailed` and
  * `profiles.connectGateway`).
  *
  * Kept in one object so the parity of this surface's words can be audited
@@ -21,7 +21,7 @@ import com.hermesagent.mobile.data.connections.SavedConnection
  * and sit about 58 lines above the string they name; they are corrected as each
  * constant is touched rather than in one sweep that would touch every line of
  * this file for no change in behaviour. Every constant this surface's current
- * work added or moved carries a verified `@ 3ca096de` number.
+ * work added or moved carries a verified `@ 72a3277cd7` number.
  */
 internal object ConnectionsCopy {
     /** `en.ts:704`. */
@@ -31,8 +31,8 @@ internal object ConnectionsCopy {
      * The switcher trigger's accessible name on the Gateways screen.
      *
      * Desktop names that trigger with the registry's own section title
-     * (`connection-switcher.tsx:154,248,264` passes `t.settings.connections.title`
-     * @ `3ca096de`), and the rail's mount still does — there the two never meet,
+     * (`connection-switcher.tsx:139,159,266` passes `t.settings.connections.title`
+     * @ `72a3277cd7`), and the rail's mount still does — there the two never meet,
      * because the switcher is in the statusbar and the registry is a settings
      * page. On this app's Gateways screen they are on one surface, so that name
      * reaches a screen reader twice: once as this control, once as the heading
@@ -125,11 +125,11 @@ internal object ConnectionsCopy {
      */
     const val NEEDS_CONNECT = "This gateway did not reconnect on its own. Check its address above, then Connect."
 
-    /** `en.ts:774` @ `3ca096de`. */
+    /** `en.ts:821` @ `72a3277cd7`. */
     const val ADD_CONNECTION = "Add connection"
 
     /**
-     * `en.ts:786` @ `3ca096de`, rendered disabled behind
+     * `en.ts:833` @ `72a3277cd7`, rendered disabled behind
      * [com.hermesagent.mobile.ui.common.WIP_PILL].
      *
      * Desktop fans an update out over every registered instance through its
@@ -142,7 +142,7 @@ internal object ConnectionsCopy {
     const val UPDATE_ALL = "Update all instances"
 
     /**
-     * `en.ts:766-767` @ `3ca096de`, the launch-mode toggle, rendered disabled
+     * `en.ts:813-814` @ `72a3277cd7`, the launch-mode toggle, rendered disabled
      * behind the same chip.
      *
      * `registry.launchMode` and `registry.primary` are Desktop registry fields
@@ -176,7 +176,7 @@ internal object ConnectionsCopy {
     const val URL_TITLE = "Gateway URL"
 
     /**
-     * Desktop's own placeholder (`connections-registry.tsx:803` @ `3ca096de`),
+     * Desktop's own placeholder (`connections-registry.tsx:803` @ `72a3277cd7`),
      * with its scheme narrowed.
      *
      * Upstream writes `http://homelab.lan:9119`; this app refuses a plain-HTTP
@@ -265,13 +265,13 @@ internal object ConnectionsCopy {
     const val LOCAL_INTRO =
         "Connect to a Hermes you run on this phone in Termux. This app never starts or stops it, and nothing on this route leaves the device."
 
-    /** `en.ts:818` @ `3ca096de`. */
+    /** `en.ts:865` @ `72a3277cd7`. */
     const val SAVE = "Save connection"
 
-    /** `en.ts:820` @ `3ca096de`. */
+    /** `en.ts:867` @ `72a3277cd7`. */
     const val CANCEL = "Cancel"
 
-    /** `en.ts:821` @ `3ca096de`. */
+    /** `en.ts:868` @ `72a3277cd7`. */
     const val EMPTY = "No connections registered yet."
 
     /**
@@ -313,7 +313,7 @@ internal object ConnectionsCopy {
      * Puts the switch-failure line away.
      *
      * Desktop's failure is a toast that dismisses itself
-     * (`connection-switcher.tsx:127` @ `3ca096de`). This app has no
+     * (`connection-switcher.tsx:132` @ `72a3277cd7`). This app has no
      * notification stack to toast into (#73), so the sentence is an inline line
      * that stays until it is answered or dismissed — which means it needs a
      * way to be dismissed. Desktop's own word for that control
@@ -394,9 +394,9 @@ internal object ConnectionsCopy {
 
 /**
  * The **Connection mode** cards' vocabulary, from Desktop's `settings.gateway`
- * i18n block at pinned SHA `3ca096de5f8183cb2e0ec23673f294d5978656a3`
- * (`apps/desktop/src/i18n/en.ts:777-784`, `:865-868`), as rendered by
- * `apps/desktop/src/app/settings/gateway-settings.tsx:1044-1084`.
+ * i18n block at pinned SHA `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
+ * (`apps/desktop/src/i18n/en.ts:899-906`, `:997-1000`), as rendered by
+ * `apps/desktop/src/app/settings/gateway-settings.tsx:1137-1177`.
  *
  * Separate from [ConnectionsCopy], which is the `settings.connections` block
  * below it on the same page. Two Desktop blocks, two objects, so a line here

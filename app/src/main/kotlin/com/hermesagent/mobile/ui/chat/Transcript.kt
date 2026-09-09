@@ -132,7 +132,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * The transcript.
  *
  * Grammar taken from Desktop, and the two halves are deliberately asymmetric
- * (`apps/desktop/src/components/assistant-ui/thread/` @ `3ca096de`):
+ * (`apps/desktop/src/components/assistant-ui/thread/` @ `72a3277cd7`):
  *
  * - **The user speaks in a bubble** — a soft `--dt-user-bubble` fill with a
  *   hairline, aligned to the end (`user-message.tsx:67`).
@@ -165,7 +165,7 @@ fun Transcript(
      * Whether an empty transcript is the *intro splash* rather than the plain
      * note. Desktop decides this outside the thread too and hands the component
      * an `intro` prop or nothing (`components/assistant-ui/thread/index.tsx:155`
-     * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`); the decision itself is
+     * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`); the decision itself is
      * [shouldShowIntroSplash].
      */
     showIntroSplash: Boolean = false,
@@ -180,7 +180,7 @@ fun Transcript(
 
     // Desktop's empty thread is vertically centred in the whole slot, not
     // stacked at the top of it: the intro is `align-items:center;
-    // justify-content:center` (`styles.css:1603-1607` @ `3ca096de`) and
+    // justify-content:center` (`styles.css:1612-1617` @ `72a3277cd7`) and
     // `ChatEmptySlot` sits in the same box. Both halves below fill the height
     // and centre inside it, so the caller's slot decides the geometry.
     if (entries.isEmpty() && !showTurnProgress) {
@@ -249,9 +249,9 @@ fun Transcript(
  * transcript content, inside the scroll rather than pinned over it, with no
  * glyph, no spinner, no disabled state and no loading label — it simply stops
  * rendering once a session is exhausted
- * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:834-842` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`; copy verbatim from
- * `apps/desktop/src/i18n/en.ts:3218`).
+ * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:1033-1041` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`; copy verbatim from
+ * `apps/desktop/src/i18n/en.ts:3520`).
  *
  * The ink is the muted rung (`text-muted-foreground` → `--dt-muted-foreground`
  * → `--ui-text-tertiary`, `styles.css:393`) and the hairline is
@@ -299,10 +299,10 @@ private fun ShowEarlierRow(onClick: () -> Unit) {
 /** The share of `--dt-background` in `--composer-fill` (`styles.css:1789`). */
 private const val COMPOSER_FILL_GROUND = 0.1f
 
-/** `rounded-full` on a one-line pill (`list.tsx:836`). */
+/** `rounded-full` on a one-line pill (`list.tsx:1035`). */
 private val ShowEarlierShape = RoundedCornerShape(percent = 50)
 
-/** `apps/desktop/src/i18n/en.ts:3218` @ `3ca096de`, verbatim. */
+/** `apps/desktop/src/i18n/en.ts:3520` @ `72a3277cd7`, verbatim. */
 private const val SHOW_EARLIER_LABEL = "Show earlier messages"
 private const val SHOW_EARLIER_KEY = "show-earlier"
 
@@ -326,7 +326,7 @@ internal fun UserTurnBubble(
     /**
      * Whether the message text may be selected. Opt-in, and off for the pinned
      * prompt: Desktop makes the *message* selectable and leaves chrome
-     * `user-select: none` (`styles.css:1176-1194` @ `3ca096de`), and the pin is
+     * `user-select: none` (`styles.css:1229-1245` @ `72a3277cd7`), and the pin is
      * chrome — it owns a vertical drag and a return tap that a selection
      * gesture would compete with.
      */
@@ -370,9 +370,9 @@ internal fun UserTurnBubble(
             )
         }
         // Desktop selects the user bubble too, and tests it there
-        // (`user-message-selection.test.ts` @ `3ca096de`): the bubble is a
+        // (`user-message-selection.test.ts` @ `72a3277cd7`): the bubble is a
         // button, so the blanket `button { user-select: none }` is undone for
-        // the message text alone (`styles.css:1188-1194`).
+        // the message text alone (`styles.css:1247-1254`).
         if (selectable) SelectionContainer { text() } else text()
         overlay()
     }
@@ -599,8 +599,8 @@ private fun AssistantProse(
     ) {
         // One container per turn, which is the whole of Desktop's rule ported:
         // `[data-selectable-text='true']` makes the message subtree — and only
-        // that subtree — `user-select: text` (`styles.css:1176-1180` @
-        // `3ca096de`). A selection may therefore run across this reply's
+        // that subtree — `user-select: text` (`styles.css:1235-1239` @
+        // `72a3277cd7`). A selection may therefore run across this reply's
         // paragraphs, lists and fences and stops at its edge; it can never span
         // two turns or swallow the scaffolding between them, because a sibling
         // turn is a different container and chrome is in none at all.
@@ -627,7 +627,7 @@ private fun AssistantProse(
         }
 
         // Deliberately outside the container. Desktop keeps every control
-        // `user-select: none` (`styles.css:1182-1186`), and a stop notice or a
+        // `user-select: none` (`styles.css:1241-1245`), and a stop notice or a
         // failure banner is chrome about the turn, not the reply's words.
         turn.termination?.let { termination -> ScaffoldRow(label = terminationNotice(termination)) }
 
@@ -670,7 +670,7 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * The per-reply action bar.
  *
  * Desktop mounts one under every assistant message and reveals it on hover
- * (`assistant-message.tsx:245-293` @ `3ca096de`). A phone has no hover, so the
+ * (`assistant-message.tsx:245-293` @ `72a3277cd7`). A phone has no hover, so the
  * mobile form of "revealed on hover" is "always mounted, always quiet": the
  * control wears the scaffold meta ink and reads as scaffolding until it is
  * touched, and the height it occupies is the height Desktop already reserves.
@@ -687,7 +687,7 @@ internal fun terminationNotice(termination: TurnTermination): String = when (ter
  * still handles "copy this sentence".
  *
  * All four controls are live in Desktop's order: Branch, Copy, Read aloud,
- * Refresh (`assistant-message.tsx:625-642` @ `3ca096de`). Branch uses
+ * Refresh (`assistant-message.tsx:625-642` @ `72a3277cd7`). Branch uses
  * `session.branch` through [onBranchFromReply], Copy copies the rendered reply,
  * and Read aloud uses the Gateway's `POST api/audio/speak` with Preparing,
  * Speaking and Idle states and one playback at a time. Refresh uses
@@ -809,26 +809,26 @@ private fun ReplyActions(
     }
 }
 
-/** `Branch in new chat` (`i18n/en.ts:3234` @ `3ca096de`). */
+/** `Branch in new chat` (`i18n/en.ts:3538` @ `72a3277cd7`). */
 private const val BRANCH_IN_NEW_CHAT = "Branch in new chat"
 
 /**
- * `Read aloud` (`i18n/en.ts:3260` @ `3ca096de`) — the idle label of Desktop's
+ * `Read aloud` (`i18n/en.ts:3564` @ `72a3277cd7`) — the idle label of Desktop's
  * `ReadAloudButton`, whose Preparing and Speaking states use `Preparing
- * audio...` and `Stop reading` (`:3258-3259`) here too.
+ * audio...` and `Stop reading` (`:3562-3563`) here too.
  */
 private const val READ_ALOUD = "Read aloud"
 
-/** `Refresh` (`i18n/en.ts:3232` @ `3ca096de`), Desktop's word for re-running the turn. */
+/** `Refresh` (`i18n/en.ts:3536` @ `72a3277cd7`), Desktop's word for re-running the turn. */
 private const val REFRESH_REPLY = "Refresh"
 
 /**
- * `Copy file` (`i18n/en.ts:3340`, `assistant.tool.copyFile` @ `3ca096de`).
+ * `Copy file` (`i18n/en.ts:3644`, `assistant.tool.copyFile` @ `72a3277cd7`).
  *
  * The label of the live Copy control over an inline diff. Desktop's
  * `toolCopyPayload` resolves a file-edit tool holding an inline diff to
  * `copy.file` with the diff itself as the payload
- * (`fallback-model/index.ts:1253-1256 @ 3ca096de`), the same word this app
+ * (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`), the same word this app
  * puts on a live file payload (`ToolView.kt:124`).
  */
 private const val COPY_DIFF = "Copy file"
@@ -965,7 +965,7 @@ private fun DisclosureRow(
 
 /**
  * The expanded tool row: `fallback.tsx:597-707` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, in Desktop's order — Copy, the
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, in Desktop's order — Copy, the
  * `$` transcript, structured search hits, then exactly one detail form.
  */
 @Composable
@@ -1373,7 +1373,7 @@ private fun InlineDiffPanel(
         }
         if (expanded) {
             // Desktop's `copy.file` payload for a file-edit tool
-            // (`fallback-model/index.ts:1253-1256 @ 3ca096de`): the whole diff,
+            // (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`): the whole diff,
             // headers included, while the display filters the `---`/`+++` lines.
             Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                 ToolCopyControl(ToolCopyAction(COPY_DIFF, "File copied", diff))
@@ -1381,7 +1381,7 @@ private fun InlineDiffPanel(
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
                     // diff-lines.tsx:41-51 @
-                    // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — a changed line
+                    // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — a changed line
                     // is its own tint plus its own ink, from the theme's
                     // green/red and never statusUnread/destructive. Why those
                     // were the wrong semantic: docs/parity/inline-diff-tokens.md.
@@ -1613,7 +1613,7 @@ internal const val MarkdownTableScrollerTag = "markdown_table_scroller"
  * A pipe table rendered as an actual grid.
  *
  * Desktop lets a wide table overflow its message with an inner scroller
- * (`apps/desktop/src/styles.css`, `.md table` @ `3ca096de`); a phone has less
+ * (`apps/desktop/src/styles.css`, `.md table` @ `72a3277cd7`); a phone has less
  * width still, so the same contract applies as code fences: the block owns its
  * horizontal scroll and the page body never moves sideways. Columns size to
  * their content and shrink toward their widest unbreakable run under a tight

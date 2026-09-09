@@ -239,7 +239,7 @@ private fun ModelControlSheet(
         ?.models?.firstOrNull { it.id == selected?.model }
     // Desktop's `pickerProviders`/`shownKeys` pair, resolved once per catalog
     // rather than per keystroke, the way the memo upstream and this app's own
-    // Models sheet both do (`model-catalog-menu.tsx:172-185` @ `3ca096de`,
+    // Models sheet both do (`model-catalog-menu.tsx:249-280` @ `72a3277cd7`,
     // `ModelVisibilitySheet.kt`). The `moa` row is dropped before the
     // resolution, or the curated default would expand MoA presets into a
     // picker that cannot select one.
@@ -304,7 +304,7 @@ private fun ModelControlSheet(
                 // curated default); typing spans every family regardless of
                 // visibility, and the current model is always kept. All three
                 // rules are `visibleModelGroups`, ported from Desktop's own
-                // `groupModels` (`model-catalog-menu.tsx:546-601` @ `3ca096de`).
+                // `groupModels` (`model-catalog-menu.tsx:715-770` @ `72a3277cd7`).
                 //
                 // Both the provider list and the shortlist are the resolved
                 // ones from above, exactly as Desktop groups `pickerProviders`
@@ -341,7 +341,7 @@ private fun ModelControlSheet(
                 }
             }
             // Desktop closes the catalog with a separator and this one row
-            // (`model-catalog-menu.tsx:527-535`): wherever a model can be
+            // (`model-catalog-menu.tsx:658-666`): wherever a model can be
             // picked, which models are on offer can be said.
             HorizontalDivider(color = tokens.strokeTertiary)
             EditModelsRow(onClick = onEditModels)
@@ -446,7 +446,7 @@ private fun ModelOptionRow(
     val tokens = HermesTheme.tokens
     // A `-fast` sibling is collapsed into its base row, so a session running
     // the fast variant still lights the family it belongs to — the same
-    // family lookup Desktop's `groupModels` pin uses (`:584-587` @ `3ca096de`).
+    // family lookup Desktop's `groupModels` pin uses (`:754-757` @ `72a3277cd7`).
     val chosen = provider.id == selected?.provider &&
         (option.id == selected.model || "${option.id}-fast".equals(selected.model, ignoreCase = true))
     Row(

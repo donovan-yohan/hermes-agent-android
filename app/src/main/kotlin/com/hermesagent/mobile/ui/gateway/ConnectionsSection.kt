@@ -56,9 +56,9 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
  * The saved-connections registry, ported from Desktop's
- * `ConnectionsRegistrySection` (`apps/desktop/src/app/settings/connections-registry.tsx:221-888`
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), which lives at the foot of the
- * same Gateways page there (`gateway-settings.tsx:1499-1502`).
+ * `ConnectionsRegistrySection` (`apps/desktop/src/app/settings/connections-registry.tsx:237-1030`
+ * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), which lives at the foot of the
+ * same Gateways page there (`gateway-settings.tsx:1640`).
  *
  * Same grammar: a `SectionHeading` over `ListRow`s, one kind glyph per row,
  * an `EmptyState` when there is nothing (or nothing matching), search once the
@@ -183,7 +183,7 @@ internal fun ConnectionsSection(
             // Desktop's `mt-4 flex items-center gap-2` foot: a bordered
             // `size="sm" variant="outline"` Add carrying a Plus glyph, and
             // beside it the update fan-out — the same treatment, disabled
-            // (`connections-registry.tsx:957-988` @ `3ca096de`). The glyph and
+            // (`connections-registry.tsx:957-988` @ `72a3277cd7`). The glyph and
             // the label stay one target rather than becoming two.
             //
             // A `FlowRow` for the same reason the row cluster is one: at 411dp
@@ -213,7 +213,7 @@ internal fun ConnectionsSection(
 
         // Desktop's launch-mode block: its own bordered section below the list,
         // the editor and the add row (`connections-registry.tsx:992-1006` @
-        // `3ca096de`), and deliberately *not* gated on the connection count —
+        // `72a3277cd7`), and deliberately *not* gated on the connection count —
         // upstream's own comment there says a registry that drifted down to one
         // row is exactly where someone needs to see this. Held back until the
         // registry has loaded, like the list above it, so the section does not
@@ -442,7 +442,7 @@ private fun ConnectionEditor(
     ) {
         if (editor.id == null) {
             // Desktop's `grid grid-cols-2 gap-2 @2xl:grid-cols-4`
-            // (`connections-registry.tsx:648` @ `3ca096de`). That one *is* a
+            // (`connections-registry.tsx:758` @ `72a3277cd7`). That one *is* a
             // container query — unlike the mode grid above, which is a viewport
             // query — so this reads the editor's own width, not the window's.
             BoxWithConstraints {
@@ -527,7 +527,7 @@ private fun ConnectionEditor(
             // The address and the one credential this route has. Desktop's
             // Local connection needs no credential at all — it is the runtime
             // its own app manages — so this pairs Desktop's *remote* token
-            // field (`connections-registry.tsx:721-733` @ `3ca096de`) with the
+            // field (`connections-registry.tsx:830-842` @ `72a3277cd7`) with the
             // loopback address, which is what the route actually is.
             ConnectionKind.Local -> {
                 LabelledField(
@@ -565,8 +565,8 @@ private fun ConnectionEditor(
 
         // Desktop's `flex justify-end gap-2`: Cancel first as a quiet ghost,
         // then the filled Save at the right edge, disabled while the name is
-        // blank (`connections-registry.tsx:947-954` @ `3ca096de`; `en.ts:818`
-        // save, `:820` cancel). This shipped reversed — a full-width Save on
+        // blank (`connections-registry.tsx:947-954` @ `72a3277cd7`; `en.ts:865`
+        // save, `:867` cancel). This shipped reversed — a full-width Save on
         // the left, Cancel to its right — which put the commit under the thumb
         // that was reaching for the way out (#85).
         Row(
@@ -592,7 +592,7 @@ private fun SavedConnection.summary(): String {
 
 /**
  * One button in Desktop's registry kind chooser
- * (`connections-registry.tsx:652-665` @ `3ca096de`).
+ * (`connections-registry.tsx:763-773` @ `72a3277cd7`).
  *
  * [kind] is `null` for a kind Desktop offers that a row here cannot be. Like
  * the mode cards above, it renders anyway — disabled, behind a `WIP`
@@ -606,7 +606,7 @@ internal data class ConnectionKindChoice(
 
 /**
  * The four kinds Desktop offers on create, in Desktop's order: local, cloud,
- * remote, ssh (`connections-registry.tsx:652` @ `3ca096de`).
+ * remote, ssh (`connections-registry.tsx:762` @ `72a3277cd7`).
  *
  * Total over [ConnectionKind], and asserted to be. The chooser used to be a
  * `SegmentedControl`, which has no way to render a `selected` value that is
@@ -648,7 +648,7 @@ private val KIND_CHOOSER_FOUR_COLUMN = 672.dp
 
 /**
  * Desktop's `KIND_ICONS`, restricted to the kinds Android ships
- * (`connections-registry.tsx:42-47` @ `3ca096de`).
+ * (`connections-registry.tsx:42-47` @ `72a3277cd7`).
  *
  * Desktop disagrees with itself about the remote kind: the registry maps it to
  * `Globe` (`:45`) while the sidebar's own `ConnectionGlyph` maps it to

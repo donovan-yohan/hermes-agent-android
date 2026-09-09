@@ -144,7 +144,7 @@ class ContextBreakdownRepositoryTest {
         repository.setProfileRouting(ProfileRouting(activeProfile = "research"))
         // The read never opens a session itself, so navigation has to have
         // bound the runtime first — Desktop only ever passes an active one
-        // (`use-context-breakdown.ts:41` @ `3ca096de`).
+        // (`use-context-breakdown.ts:41` @ `72a3277cd7`).
         repository.openSession("session-1")
         runCurrent()
 
@@ -394,8 +394,8 @@ class ContextBreakdownRepositoryTest {
         assertEquals(10000L, cache.session("session-1")?.usage?.contextUsed)
 
         // `_start_usage_ticker` is stopped and joined before this event
-        // (`tui_gateway/server.py:12820-12822` @ 3ca096de), so the figure it
-        // carries (`:13431`) is the one the turn ended on.
+        // (`tui_gateway/server.py:2990-2991` @ 72a3277cd7), so the figure it
+        // carries (`tui_gateway/prompt_turn.py:624`) is the one the turn ended on.
         rpc.emit(
             "message.complete",
             "runtime-1",

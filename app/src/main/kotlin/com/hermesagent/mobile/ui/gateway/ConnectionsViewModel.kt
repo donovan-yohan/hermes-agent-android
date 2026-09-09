@@ -37,8 +37,8 @@ import kotlinx.coroutines.launch
  * Adding, editing or removing a saved connection.
  *
  * The kind is chosen on create and fixed afterwards, as Desktop's editor fixes
- * it (`apps/desktop/src/app/settings/connections-registry.tsx:649-654` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): the fields a row carries, the
+ * it (`apps/desktop/src/app/settings/connections-registry.tsx:759-764` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`): the fields a row carries, the
  * trust it has accepted and the secret slot it owns all belong to one kind, and
  * changing it under them would quietly invalidate all three.
  */
@@ -79,7 +79,7 @@ data class ConnectionEditorState(
  *
  * A product decision, so it lives with the surface rather than with the
  * controller: Desktop toasts exactly the case where the target "did not become
- * active" (`store/connections.ts:198-200` @ `3ca096de`). A switch nobody asked
+ * active" (`store/connections.ts:415` @ `72a3277cd7`). A switch nobody asked
  * for reports nothing, and a row nothing was going to dial already explains
  * itself on the row.
  */
@@ -113,7 +113,7 @@ data class ConnectionsUiState(
      * The switch that just failed, or null.
      *
      * Desktop toasts this and the toast expires
-     * (`connection-switcher.tsx:123-128` @ `3ca096de`). Here it is state,
+     * (`connection-switcher.tsx:131-132` @ `72a3277cd7`). Here it is state,
      * because an inline line has to be told when to go: it is cleared by the
      * next switch, by a connection that does come up, and by the person.
      */
@@ -264,7 +264,7 @@ internal class ConnectionsViewModel(
 
     /**
      * The kind is a choice only while creating, and refused rather than quietly
-     * applied afterwards (`connections-registry.tsx:649-654` @ `3ca096de`, whose
+     * applied afterwards (`connections-registry.tsx:759-764` @ `72a3277cd7`, whose
      * buttons disable on edit): the fields a row carries, the trust it has
      * accepted and the secret slot it owns all belong to one kind.
      *
@@ -542,7 +542,7 @@ internal class ConnectionsViewModel(
     /**
      * What a kind's address field starts as. Only the Local route has one worth
      * guessing: upstream documents exactly one `hermes serve` on one port
-     * (`website/docs/getting-started/termux.md` @ `3ca096de`), and it is still
+     * (`website/docs/getting-started/termux.md` @ `72a3277cd7`), and it is still
      * editable — the address rule refuses whatever it cannot use.
      */
     private fun prefilledUrl(kind: ConnectionKind): String =

@@ -73,7 +73,7 @@ import java.util.Locale
 
 /**
  * The shared primitives. DESIGN.md's rule is "one primitive per concern"
- * (`apps/desktop/DESIGN.md:32-34` @ `3ca096de`), and these are the concerns
+ * (`apps/desktop/DESIGN.md:32-34` @ `72a3277cd7`), and these are the concerns
  * this slice actually has. Anything that needs a padding or a colour override
  * at the call site belongs here instead, as a variant.
  */
@@ -99,7 +99,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
  * The heading over one section of a menu or a popover.
  *
  * Desktop's `DropdownMenuLabel` is a quiet tertiary row above a separator
- * (`apps/desktop/src/components/ui/dropdown-menu.tsx:183-198` @ `3ca096de`).
+ * (`apps/desktop/src/components/ui/dropdown-menu.tsx:187-202` @ `72a3277cd7`).
  * Android renders that row in this app's own panel-label treatment — uppercase,
  * tracked, semibold — which is already what a heading over a list is here, and
  * gives it a band tall enough to read as a heading rather than a cramped first
@@ -250,7 +250,7 @@ fun StatusDot(
  *
  * Desktop's `SearchField` carries a leading search glyph and a trailing clear
  * button (`apps/desktop/src/components/ui/search-field.tsx:69,90-100` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Only the clear button is a
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). Only the clear button is a
  * Codicon (`close`, `:98`); the leading glyph is Tabler's `IconSearch`
  * (`apps/desktop/src/lib/icons.ts:102`), so [HermesIcon.Search] stands in for
  * it the way [HermesIcon.Globe] stands in for its lucide original. It also
@@ -320,8 +320,8 @@ fun SearchField(
             }
             if (value.isNotEmpty()) {
                 // Desktop's `close` Codicon, named `Clear search`
-                // (`components/ui/search-field.tsx:92,98`, `i18n/en.ts:2202`
-                // and `:3565` @ `3ca096de`).
+                // (`components/ui/search-field.tsx:92,98`, `i18n/en.ts:2395`
+                // and `:3870` @ `72a3277cd7`).
                 HermesIconButton(
                     icon = HermesIcon.Close,
                     contentDescription = "Clear search",
@@ -334,7 +334,7 @@ fun SearchField(
     }
 }
 
-/** Desktop's leading search glyph (`components/ui/search-field.tsx:69` @ `3ca096de`). */
+/** Desktop's leading search glyph (`components/ui/search-field.tsx:69` @ `72a3277cd7`). */
 internal const val SEARCH_FIELD_GLYPH = "Search field glyph"
 
 /** Centers natural-height text inside a full-size editor without changing its wrap width. */
@@ -483,7 +483,7 @@ fun PrimaryButton(
 /**
  * Desktop's `size="sm" variant="outline"` button: a bordered, transparent
  * action with an optional leading glyph
- * (`components/ui/button.tsx:22-23,39` @ `3ca096de`).
+ * (`components/ui/button.tsx:22-23,39` @ `72a3277cd7`).
  *
  * The registry's `Add connection` and `Update all instances` are both this
  * (`app/settings/connections-registry.tsx:958-967,969-987`), and the border is
@@ -546,8 +546,8 @@ fun OutlineButton(
  * the Gateways page renders a permanently disabled one, and two drawings of one
  * affordance is how a switch starts meaning two different things.
  *
- * @param enabled Desktop's `disabled` (`app/settings/primitives.tsx:158-181` @
- *   `3ca096de`). A disabled switch drops to the quaternary ink rather than
+ * @param enabled Desktop's `disabled` (`app/settings/primitives.tsx:176-199` @
+ *   `72a3277cd7`). A disabled switch drops to the quaternary ink rather than
  *   compositing at an alpha nothing in the token set controls — the same rule
  *   the disabled mode cards follow.
  */
@@ -649,8 +649,8 @@ fun TextButton(
  *   height-filling modifier — the session list's `listSlot` and Relay's panes —
  *   and turning the centring on for all of them would move nine states this
  *   change has no Desktop render of. Desktop centres the two states this port
- *   is about (`section-states.tsx:31` and `styles.css:1603-1607` @
- *   `3ca096de5f8183cb2e0ec23673f294d5978656a3`); whether its archived, project
+ *   is about (`section-states.tsx:31` and `styles.css:1618-1622` @
+ *   `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`); whether its archived, project
  *   and Relay empties are centred too is a question for their own pages and
  *   their own renders. Passing `false` leaves every existing caller pixel-exact.
  * @param icon Desktop hangs a quiet glyph above the sentence where the empty
@@ -796,7 +796,7 @@ fun VerticalHairline(modifier: Modifier = Modifier) {
 
 /**
  * Desktop's shared card emphasis, `selectableCardClass({ active, prominent })`
- * (`apps/desktop/src/lib/selectable-card.ts:22-31` @ `3ca096de`).
+ * (`apps/desktop/src/lib/selectable-card.ts:22-31` @ `72a3277cd7`).
  *
  * Three tiers there, two of them used here: `active` is the strongest —
  * `border-primary bg-primary/[0.06] ring-2 ring-primary/20`; `prominent` is
@@ -805,7 +805,7 @@ fun VerticalHairline(modifier: Modifier = Modifier) {
  *
  * One colour role is **not** matched, and it is a divergence rather than a
  * translation. Desktop's `--ui-bg-quinary` is a translucent accent-tinted wash
- * (`styles.css:288-292` @ `3ca096de`: an accent mix over 3% of the base); the
+ * (`styles.css:302-306` @ `72a3277cd7`: an accent mix over 3% of the base); the
  * nearest thing this app's token layer has is `widgetSurface`, which is opaque
  * and derived from the card fill. The port skill's rule is to add the missing
  * token with its Desktop provenance rather than reach past the layer — but the
@@ -832,8 +832,8 @@ fun selectableCardModifier(active: Boolean, shape: RoundedCornerShape): Modifier
 private val ModeCardShape = RoundedCornerShape(10.dp)
 
 /**
- * Desktop's `ModeCard` (`apps/desktop/src/app/settings/gateway-settings.tsx:88-135`
- * @ `3ca096de`): a selectable card carrying an icon, a medium-weight title, an
+ * Desktop's `ModeCard` (`apps/desktop/src/app/settings/gateway-settings.tsx:108-155`
+ * @ `72a3277cd7`): a selectable card carrying an icon, a medium-weight title, an
  * optional hint, a check when it is the active one, and a description.
  *
  * Two mechanics change and nothing else does.
@@ -968,8 +968,8 @@ fun ModeCard(
 /**
  * Desktop's mode grid steps at `sm` (40rem / 640px) and `min-[72rem]`
  * (1152px), and both are **viewport** media queries — not the container query
- * its registry kind chooser uses (`gateway-settings.tsx:1048` versus
- * `connections-registry.tsx:648` @ `3ca096de`). So this reads the window too.
+ * its registry kind chooser uses (`gateway-settings.tsx:1141` versus
+ * `connections-registry.tsx:758` @ `72a3277cd7`). So this reads the window too.
  *
  * `640px` lands on 600dp because that is Android's own compact/medium boundary
  * — the platform's "this is no longer a phone" line, and the nearest standard
@@ -995,7 +995,7 @@ internal const val MODE_CARD_WIDE_DP = 720
 
 /**
  * `grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4`
- * (`gateway-settings.tsx:1048` @ `3ca096de`).
+ * (`gateway-settings.tsx:1141` @ `72a3277cd7`).
  *
  * `auto-rows-fr` is what makes every card in a row the same height regardless
  * of how long its description is; `IntrinsicSize.Min` plus `fillMaxHeight` is
@@ -1033,7 +1033,7 @@ fun <T> ModeCardGrid(
 /**
  * Desktop's `Button` in the two variants its registry kind chooser uses:
  * `variant="default"` for the chosen kind and `variant="outline"` for the rest
- * (`connections-registry.tsx:653-664` @ `3ca096de`).
+ * (`connections-registry.tsx:763-774` @ `72a3277cd7`).
  *
  * Not a [ModeCard]: Desktop deliberately renders the *registry* chooser as a
  * plain button row, and the mode cards only on the Gateways page above it.
@@ -1065,7 +1065,7 @@ fun ChoiceButton(
             .background(
                 // Desktop's `variant="default"` is a solid `bg-primary`, not a
                 // wash (`components/ui/button.tsx` via
-                // `connections-registry.tsx:661` @ `3ca096de`). This app's
+                // `connections-registry.tsx:771` @ `72a3277cd7`). This app's
                 // segmented control uses a 16% accent tint for *its* selected
                 // segment, but that is a different control; matching Desktop
                 // here costs nothing and removes a divergence.

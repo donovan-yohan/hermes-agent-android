@@ -1,7 +1,7 @@
 # ADR 0003 — Bundled-only plugin SDK and Desktop contribution contract
 
 **Status:** implemented for issue #167, 2026-09-06  
-**Authority:** `NousResearch/hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`  
+**Authority:** `NousResearch/hermes-agent` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`  
 **Related:** Issue #166 (Epic: Desktop-compatible plugin SDK), Issue #167 (SDK core), `docs/spikes/plugin-surface-relay.md`
 
 ## Context
@@ -56,7 +56,7 @@ Every plugin defines a stable `id` which namespaces its contributions (`<pluginI
 
 Direct correspondence with Desktop's source contracts:
 
-| Desktop contract (`3ca096de5f8183cb2e0ec23673f294d5978656a3`) | Android Kotlin SDK (`com.hermesagent.mobile.plugins`) |
+| Desktop contract (`72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) | Android Kotlin SDK (`com.hermesagent.mobile.plugins`) |
 |---|---|
 | `contrib/plugin.ts:77-83` `HermesPlugin` | `interface HermesPlugin` |
 | `contrib/plugin.ts:60-75` `PluginContext` | `interface PluginContext` |

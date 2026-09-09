@@ -7,8 +7,8 @@ package com.hermesagent.mobile.data.gateway
  * bubble.
  *
  * The `session.history` RPC already projects it away
- * (`tui_gateway/server.py:9653-9661,9801-9808` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The REST transcript route hands
+ * (`tui_gateway/session_history.py:139-141,226-228` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). The REST transcript route hands
  * back the stored rows themselves (`hermes_cli/web_routers/sessions.py:672`),
  * so a client reading that contract needs the twin — which is exactly why
  * Desktop ships one (`apps/shared/src/skill-scaffold.ts:1-14`, consumed at
@@ -41,7 +41,7 @@ private fun between(text: String, marker: String, end: String, fromEnd: Boolean 
 /**
  * The invocation a scaffolded turn came from (`/work fix the leak`), or null
  * when [text] is ordinary prose that should render as written
- * (`apps/shared/src/skill-scaffold.ts:46-69` @ `3ca096de`).
+ * (`apps/shared/src/skill-scaffold.ts:46-69` @ `72a3277cd7`).
  */
 internal fun skillInvocationText(text: String): String? {
     if (!text.startsWith(INVOCATION_PREFIX)) return null

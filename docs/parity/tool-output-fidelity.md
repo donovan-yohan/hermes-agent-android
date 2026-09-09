@@ -11,7 +11,7 @@ selection of tool output is S35. Both have rows in the deferral table.
 ## Pin and source contract
 
 Desktop authority is `NousResearch/hermes-agent` at
-`3ca096de5f8183cb2e0ec23673f294d5978656a3` (read-only checkout; read with
+`72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` (read-only checkout; read with
 `git -C ~/.hermes/hermes-agent show <sha>:<path>`). Files read for this port:
 
 | Desktop source | What it decides |
@@ -59,7 +59,7 @@ throwing. Tool output is untrusted input.
 | `title` / `subtitle` / `titleAction` | `dynamicTitle` + `toolSubtitle` (~250 lines) | **Not ported.** Android keeps its own `displayTitle()`. See D8 |
 | `imageUrl` | `toolImageUrl` | **Not ported** — inline image results are an explicit non-goal of #71 |
 | `previewTarget` | `toolPreviewTarget` | **Not ported** — artifact detection is an explicit non-goal of #71 |
-| — | `toolCopyPayload(part, view)` (`fallback.tsx:599-609`) | Carried on the view as `copy: ToolCopyAction?`, so the row's control and its label come from the same projection. The `isFileEditTool` branch is ported in `InlineDiffPanel`, and its Copy hands over the whole `inlineDiff` through the same `ToolCopyControl` (`fallback-model/index.ts:1253-1256 @ 3ca096de`) |
+| — | `toolCopyPayload(part, view)` (`fallback.tsx:599-609`) | Carried on the view as `copy: ToolCopyAction?`, so the row's control and its label come from the same projection. The `isFileEditTool` branch is ported in `InlineDiffPanel`, and its Copy hands over the whole `inlineDiff` through the same `ToolCopyControl` (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`) |
 | — | `stripAnsi` (`ansi.ts:177-186`) | **Not ported here.** Every surface this slice owns paints escapes as colour rather than as text. One surface it does *not* own still needs the strip: `InlineDiffPanel` (`Transcript.kt:1071,1079`) renders `inlineDiff` raw, where upstream strips SGR first (`fallback-model/index.ts:781-789`). That is S34's, and it is listed under Deferred |
 
 ### Icons

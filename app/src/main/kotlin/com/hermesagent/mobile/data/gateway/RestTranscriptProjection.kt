@@ -15,8 +15,8 @@ import kotlinx.serialization.json.longOrNull
  * `session.history` ships the Gateway's own **display projection** — one
  * `{role, text, row_id, timestamp}` per visible turn, tool rows already
  * resolved to `{role, name, context, args}`
- * (`tui_gateway/server.py:9720-9823` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The paged REST route
+ * (`tui_gateway/session_history.py:180-238` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). The paged REST route
  * `GET /api/sessions/{id}/messages` ships the **stored rows** instead —
  * `SELECT * FROM messages` with compaction display applied and nothing else
  * (`hermes_cli/web_routers/sessions.py:672-708` →
@@ -84,9 +84,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             // (`server.py:9743-9754`).
             //
             // The presence test is the ARRAY, never the key. `SessionDB.get_messages`
-            // builds each row as `dict(row)` (`hermes_state.py:13001-13002` @
-            // `3ca096de`) over a `SELECT *` (`:12926`, and `:12943` on the
-            // `include_compacted` read this app always makes), so every column of
+            // builds each row as `dict(row)` (`hermes_state_messages.py:616` @
+            // `72a3277cd7`) over a `SELECT *` (`hermes_state_messages.py:649`, and
+            // `:646` on the `include_compacted` read this app always makes), so every column of
             // the `messages` table rides the wire and `"tool_calls": null` is on
             // every row that made no call. Reading the key's presence would drop every
             // reasoning-only assistant turn — the row upstream keeps deliberately

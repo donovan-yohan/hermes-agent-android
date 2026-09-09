@@ -7,7 +7,7 @@ package com.hermesagent.mobile.data.session
  * for the page before it and prepends the rows the store is missing. Ported
  * from `apps/desktop/src/app/chat/transcript-backfill.ts` and
  * `apps/desktop/src/store/transcript-tail.ts` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * Offsets follow the route's `order=latest` semantics: measured back from the
  * NEWEST persisted row, with each page returned in chronological order
@@ -122,8 +122,8 @@ internal data class TranscriptPageState(
  * (`transcript-tail.ts:82-96`).
  *
  * The wire carries no `has_more`: `pagination` reports `limit`, `offset` and
- * `returned` and nothing else (`hermes_cli/web_routers/sessions.py:709-714` @
- * `3ca096de`), so truncation is inferred from a page that came back full.
+ * `returned` and nothing else (`hermes_cli/web_routers/sessions.py:558-561` @
+ * `72a3277cd7`), so truncation is inferred from a page that came back full.
  * A missing or non-positive `limit` is a backend that ignored the paging query
  * and answered the whole transcript: nothing is truncated, and the next offset
  * is simply everything it returned.

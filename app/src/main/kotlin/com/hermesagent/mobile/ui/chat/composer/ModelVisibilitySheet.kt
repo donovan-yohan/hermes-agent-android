@@ -59,7 +59,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 /**
  * The Models sheet — Desktop's `ModelVisibilityDialog`
  * (`apps/desktop/src/components/model-visibility-dialog.tsx:81-190` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) as the bottom sheet this app uses
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) as the bottom sheet this app uses
  * for every searchable list.
  *
  * Nothing here reaches the Gateway: `model.options` carries no visibility field,
@@ -67,13 +67,13 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * ledger is `docs/parity/model-visibility.md`.
  */
 
-/** `Models` (`i18n/en.ts:2848` @ `3ca096de`). */
+/** `Models` (`i18n/en.ts:3137` @ `72a3277cd7`). */
 const val MODEL_VISIBILITY_TITLE = "Models"
 
-/** `Search models` (`i18n/en.ts:2849` @ `3ca096de`). */
+/** `Search models` (`i18n/en.ts:3138` @ `72a3277cd7`). */
 private const val SEARCH_MODELS = "Search models"
 
-/** `No authenticated providers.` (`i18n/en.ts:2850` @ `3ca096de`). */
+/** `No authenticated providers.` (`i18n/en.ts:3139` @ `72a3277cd7`). */
 private const val NO_AUTHENTICATED_PROVIDERS = "No authenticated providers."
 
 /**
@@ -83,10 +83,10 @@ private const val NO_AUTHENTICATED_PROVIDERS = "No authenticated providers."
  */
 private const val MODELS_LOADING = "Loading model choices…"
 
-/** `Add provider…` (`i18n/en.ts:2851` @ `3ca096de`). */
+/** `Add provider…` (`i18n/en.ts:3140` @ `72a3277cd7`). */
 const val ADD_PROVIDER = "Add provider…"
 
-/** `Edit models…` (`i18n/en.ts:2861` @ `3ca096de`). */
+/** `Edit models…` (`i18n/en.ts:3150` @ `72a3277cd7`). */
 const val EDIT_MODELS = "Edit models…"
 
 internal const val MODEL_VISIBILITY_SHEET_TAG = "Models sheet"

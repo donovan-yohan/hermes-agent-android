@@ -303,7 +303,7 @@ class ProfileRailJourneyTest {
      * collapsed away from is a default-to-all toggle whose face reads the
      * *scope*, so from the unified view the only route home wears a `layers`
      * mark. Desktop's fleet groups head a gateway's list with its default agent
-     * for the same reason (`profile-switcher.tsx:808-824` @ `3ca096de`).
+     * for the same reason (`profile-switcher.tsx:808-824` @ `72a3277cd7`).
      */
     @Test
     fun `the collapsed sheet heads its list with the default profile`() {

@@ -13,7 +13,7 @@ import org.junit.Test
  * Desktop's own and the whole point of the port is that it stays Desktop's.
  * Every string below is a `personality: "none"` record of
  * `apps/desktop/src/components/chat/intro-copy.jsonl:71-75` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, in file order.
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, in file order.
  */
 class IntroSplashTest {
 
@@ -87,7 +87,7 @@ class IntroSplashTest {
     /**
      * **Inverted on purpose, and this is the deviation from Desktop.**
      *
-     * `intro-visibility.ts:12-33` @ `3ca096de` shows the intro only for a fresh
+     * `intro-visibility.ts:12-33` @ `72a3277cd7` shows the intro only for a fresh
      * draft, because a homed session gets `ChatEmptySlot` instead. This app has
      * never ported that surface, so the alternative here was the plain
      * `No messages yet` note — and the owner's call is that an empty session is

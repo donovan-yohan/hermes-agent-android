@@ -28,8 +28,8 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
  * The settings grammar Desktop's `app/settings/primitives.tsx` defines
- * (`SectionHeading:31-52`, `ListRow:108-155`, and `Badge`-backed `Pill:27-29`
- * @ `3ca096de…` — pinned SHA `3ca096de5f8183cb2e0ec23673f294d5978656a3`),
+ * (`SectionHeading:49-70`, `ListRow:126-173`, and `Badge`-backed `Pill:37-47`
+ * @ `72a3277cd7…` — pinned SHA `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`),
  * rendered for a phone.
  *
  * `ListRow` is a container query, not a viewport one: it puts the control
@@ -198,7 +198,7 @@ fun ComingSoonIconAction(icon: HermesIcon, label: String, modifier: Modifier = M
 /**
  * [ComingSoonAction] where Desktop's control is a bordered outline button —
  * the registry's `Update all instances`
- * (`app/settings/connections-registry.tsx:969-987` @ `3ca096de`).
+ * (`app/settings/connections-registry.tsx:969-987` @ `72a3277cd7`).
  *
  * The border is the point: it sits beside a live `Add connection` drawn the
  * same way, and a boxless marker there would read as a different class of
@@ -231,7 +231,7 @@ fun ComingSoonOutlineAction(icon: HermesIcon, label: String, modifier: Modifier 
 }
 
 /**
- * Desktop's `ToggleRow` (`app/settings/primitives.tsx:158-181` @ `3ca096de`)
+ * Desktop's `ToggleRow` (`app/settings/primitives.tsx:176-206` @ `72a3277cd7`)
  * as the marked, permanently-off form this app can honestly render.
  *
  * A preference whose *state* this app does not persist cannot be shown on:

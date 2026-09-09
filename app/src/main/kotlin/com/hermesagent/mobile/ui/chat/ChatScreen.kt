@@ -99,7 +99,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Chat is the home surface (`apps/desktop/DESIGN.md:48-49` @ `3ca096de`).
+ * Chat is the home surface (`apps/desktop/DESIGN.md:48-49` @ `72a3277cd7`).
  *
  * Two layouts, one content:
  * - **compact** (< 720dp wide): top bar + transcript + composer, with sessions
@@ -141,7 +141,7 @@ fun ChatScreen(
      */
     imeInsets: WindowInsets = WindowInsets.ime,
     /**
-     * Appearance's `Intro Splash` (`i18n/en.ts:588` @ `3ca096de`). On, an empty
+     * Appearance's `Intro Splash` (`i18n/en.ts:628` @ `72a3277cd7`). On, an empty
      * chat is the wordmark; off, it is the plain note. It is a saved appearance
      * preference rather than chat state, so it arrives beside the theme.
      */
@@ -512,8 +512,8 @@ private fun TranscriptPane(
     // added. Desktop anchors before the prepend and re-applies the anchor in
     // the same commit the taller tree lands in, because otherwise the view is
     // stranded near the top for a frame or two
-    // (`apps/desktop/src/components/assistant-ui/thread/list.tsx:497-505,762-770`
-    // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The `LazyListState`
+    // (`apps/desktop/src/components/assistant-ui/thread/list.tsx:502-518,957-969`
+    // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). The `LazyListState`
     // equivalent of its distance-from-bottom is the row that was on top and how
     // far into that row the viewport began — keyed on the row, so the rows
     // inserted above it cannot invalidate it.
@@ -1000,8 +1000,8 @@ private fun ChatTopBar(
                     )
                     // Desktop's right-hand statusbar array is ordered
                     // `context-usage`, `session-timer`, then `approval-mode`
-                    // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:547-572`
-                    // @ `3ca096de`) and is laid out in a plain flex row, so
+                    // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:567-614`
+                    // @ `72a3277cd7`) and is laid out in a plain flex row, so
                     // array order is left to right
                     // (`apps/desktop/src/app/shell/statusbar-controls.tsx:119-123`):
                     // Approvals sits *after* the meter, and the subtitle row

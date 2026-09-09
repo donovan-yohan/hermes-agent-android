@@ -9,9 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
  * Three states, not a boolean: Desktop's own type is
  * `ApprovalMode = 'manual' | 'off' | 'smart'`
  * (`apps/desktop/src/store/approval-mode.ts:3` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), and the backend validates the
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), and the backend validates the
  * same three (`hermes_cli/approval_mode.py:16`,
- * `tui_gateway/server.py:14586-14591`).
+ * `tui_gateway/methods_config_set.py:326`).
  */
 enum class ApprovalMode(val wireValue: String) {
     Manual("manual"),
@@ -22,7 +22,7 @@ enum class ApprovalMode(val wireValue: String) {
     companion object {
         /**
          * The three modes in the order Desktop's menu renders them
-         * (`approval-mode-menu.tsx:62` @ `3ca096de`). Declaration order here is
+         * (`approval-mode-menu.tsx:62` @ `72a3277cd7`). Declaration order here is
          * already that order; naming it stops the menu reordering by accident.
          */
         val MENU_ORDER: List<ApprovalMode> = listOf(Manual, Smart, Off)
@@ -31,8 +31,8 @@ enum class ApprovalMode(val wireValue: String) {
          * Anything unrecognised is [Manual] — the safe end of the scale, and
          * what both sides of the wire already do: Desktop's
          * `normalizeApprovalMode` (`store/approval-mode.ts:23-29`), the
-         * Gateway's `_load_approval_mode` (`tui_gateway/server.py:5971`) and
-         * the canonical resolver (`tools/approval.py:3405-3432`) all fall back
+         * Gateway's `_load_approval_mode` (`tui_gateway/server.py:1684`) and
+         * the canonical resolver (`tools/approval_context.py:200-214`) all fall back
          * to `manual` rather than to the permissive end.
          */
         fun fromWire(raw: String?): ApprovalMode {
@@ -52,7 +52,7 @@ enum class ApprovalMode(val wireValue: String) {
  * @param bypassActive `session.info.yolo`: the effective approval bypass, which
  *   the Gateway ORs from three sources — the frozen process `--yolo`, the
  *   per-session flag and `approvals.mode == "off"`
- *   (`tui_gateway/server.py:7616-7631` @ `3ca096de`). Parsed because the field
+ *   (`tui_gateway/server.py:2033-2041` @ `72a3277cd7`). Parsed because the field
  *   is on the contract and the first two sources are invisible from [mode]
  *   alone; nothing renders it, because Desktop shows it on a separate YOLO
  *   status item this app does not port (`docs/parity/approval-mode.md`).

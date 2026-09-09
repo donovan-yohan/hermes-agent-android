@@ -2,7 +2,7 @@ package com.hermesagent.mobile.data.ssh
 
 /**
  * Secret redaction, ported from Desktop's `redactSecrets`
- * (`apps/desktop/electron/ssh-connection.ts:130-157` @ `3ca096de`).
+ * (`apps/desktop/electron/ssh-connection.ts:130-157` @ `72a3277cd7`).
  *
  * Everything the SSH layer surfaces — error messages, probe output, anything
  * that could reach a screen, a bug report or a log — goes through [redact]

@@ -42,8 +42,8 @@ import org.junit.Test
  * The active profile scope as this app's own state: what it shows, what it
  * routes, and what it must never disturb.
  *
- * Desktop reference at `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
- * `apps/desktop/src/store/profile.ts:437-483` and
+ * Desktop reference at `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`:
+ * `apps/desktop/src/store/profile.ts:450-496` and
  * `apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`.
  */
 @OptIn(ExperimentalCoroutinesApi::class)

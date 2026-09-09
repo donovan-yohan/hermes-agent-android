@@ -7,10 +7,10 @@ Desktop authority is `NousResearch/hermes-agent` at
 
 | Contract | Desktop source | Android port |
 |---|---|---|
-| Owner | `apps/desktop/src/store/session-dot-state.ts:70-80` | `SessionStatus.Working` and `SessionStatus.Stalled` only |
+| Owner | `apps/desktop/src/store/session-dot-state.ts:72-82` | `SessionStatus.Working` and `SessionStatus.Stalled` only |
 | Rendering | `apps/desktop/src/app/chat/sidebar/session-row.tsx:254-258,404` | `SessionRow` paint sibling, including project preview rows |
-| Geometry and bright stop | `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,116-140`; `src/styles.css:1011-1040,1129-1144` | Flush 6dp rounded host; 1.25dp inset stroke; semantic `sessionRunningOutline` is foreground in dark mode and accent in light mode |
-| Motion | `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113` | 300% 160-degree gradient, -10% to -50% travel, 2.23s linear infinite |
+| Geometry and bright stop | `apps/desktop/src/app/chat/sidebar/chrome.tsx:21-42,116-140`; `src/styles.css:1026-1055,1144-1159` | Flush 6dp rounded host; 1.25dp inset stroke; semantic `sessionRunningOutline` is foreground in dark mode and accent in light mode |
+| Motion | `apps/desktop/src/styles.css:1009-1023,1026-1055,1100-1128` | 300% 160-degree gradient, -10% to -50% travel, 2.23s linear infinite |
 | Reduced motion | `apps/desktop/src/styles.css:1157-1161` | `ValueAnimator.areAnimatorsEnabled()` omits the Compose infinite clock; phase zero remains a visible static ring |
 
 ## State and mobile deviation ledger

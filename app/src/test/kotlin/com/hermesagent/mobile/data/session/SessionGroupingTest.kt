@@ -174,8 +174,8 @@ class SessionGroupingTest {
     // -----------------------------------------------------------------------
     // Search. A live query is a different list, not a filtered one: Desktop
     // answers it in one `Results` section and hides Pinned and the buckets
-    // (`apps/desktop/src/app/chat/sidebar/index.tsx:1611-1638,1640,1664` @
-    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+    // (`apps/desktop/src/app/chat/sidebar/index.tsx:1603-1630,1632,1657` @
+    // `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
     // -----------------------------------------------------------------------
 
     @Test
@@ -359,7 +359,7 @@ class SessionGroupingTest {
 
     /**
      * The leading Pinned section, ported from Desktop's own
-     * (`apps/desktop/src/app/chat/sidebar/index.tsx:1640-1661` @ `3ca096de`).
+     * (`apps/desktop/src/app/chat/sidebar/index.tsx:1632-1653` @ `72a3277cd7`).
      * Membership is the backend's `pinned` flag alone; ordering is this list's,
      * because a phone has no drag reorder to hint with.
      */
@@ -419,8 +419,8 @@ class SessionGroupingTest {
     }
 
     /**
-     * Desktop's empty-recents line, verbatim (`i18n/en.ts:2214`, chosen at
-     * `sidebar/index.tsx:1697-1699` @ `3ca096de`). Without it an all-pinned
+     * Desktop's empty-recents line, verbatim (`i18n/en.ts:2407`, chosen at
+     * `sidebar/index.tsx:1690-1692` @ `72a3277cd7`). Without it an all-pinned
      * account reads as a broken list rather than an explained one.
      */
     @Test
@@ -461,7 +461,7 @@ class SessionGroupingTest {
 
     /**
      * Archived is a view of its own set, flat: no pinned section and no
-     * dividers (`sidebar/index.tsx:488-495,1723` @ `3ca096de`).
+     * dividers (`sidebar/index.tsx:511-518,1716` @ `72a3277cd7`).
      */
     @Test
     fun `the archived view swaps the pool rather than filtering it`() {
@@ -492,8 +492,8 @@ class SessionGroupingTest {
 
     /**
      * Desktop's `Results` section is not gated on the archived toggle
-     * (`sidebar/index.tsx:1611` @ `3ca096de`, over the pool swap at
-     * `:491-495`), so a query there answers over the archived pool *and* the
+     * (`sidebar/index.tsx:1603` @ `72a3277cd7`, over the pool swap at
+     * `:514-518`), so a query there answers over the archived pool *and* the
      * server's hits. This app's archived pool is its own capped read and the
      * search contract carries no `archived` field
      * (`types/hermes.ts:1193-1208`), so a query inside that view stays a local

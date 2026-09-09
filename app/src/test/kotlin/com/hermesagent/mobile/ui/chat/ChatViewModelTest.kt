@@ -1642,7 +1642,7 @@ class ChatViewModelTest {
     /**
      * Opening a session retires both unread sources: the transient dot here and
      * now, and the durable watermark behind it — Desktop's `clearUnreadOnOpen`
-     * (`apps/desktop/src/store/session-unread-remote.ts:65-79` @ `3ca096de`),
+     * (`apps/desktop/src/store/session-unread-remote.ts:65-79` @ `72a3277cd7`),
      * best-effort because the reader did not ask for it.
      */
     @Test
@@ -1691,7 +1691,7 @@ class ChatViewModelTest {
 
     /**
      * Desktop's mark-all fans out one write per row
-     * (`app/chat/sidebar/index.tsx:1735-1741` @ `3ca096de`) and has no string
+     * (`app/chat/sidebar/index.tsx:1728-1734` @ `72a3277cd7`) and has no string
      * for a partial failure, so the outcome is this app's own: the number that
      * did not move, never a blanket success.
      */
@@ -1737,7 +1737,7 @@ class ChatViewModelTest {
      * The `Archived` filter is a view choice: turning it on reads the archived
      * pool and the list renders that set instead of the live one. Turning it
      * back off asks for nothing — the live list was never carrying these rows,
-     * which is Desktop's own shape (`sidebar/index.tsx:1352-1358` @ `3ca096de`,
+     * which is Desktop's own shape (`sidebar/index.tsx:1325-1331` @ `72a3277cd7`,
      * `if (showArchived) void loadArchivedSessions()`).
      */
     @Test
@@ -1928,7 +1928,7 @@ class ChatViewModelTest {
      * (`GatewaySessionRepository.readSessionPages`), so this marker is the only
      * thing that can hold that sentence back. Desktop keeps the same marker
      * (`$archivedSessionsLoading`, `store/sidebar-archive.ts:12,19,28` @
-     * `3ca096de`) but renders nothing with it.
+     * `72a3277cd7`) but renders nothing with it.
      */
     @Test
     fun `the Archived view is loading until its pool answers`() = runTest(dispatcher) {
@@ -3145,11 +3145,11 @@ class ChatViewModelTest {
     }
     // -----------------------------------------------------------------------
     // Backend session search: Desktop's 200 ms debounce and its local-first
-    // merge (`apps/desktop/src/app/chat/sidebar/index.tsx:619-678` @
-    // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). All of it on virtual time.
+    // merge (`apps/desktop/src/app/chat/sidebar/index.tsx:643-702` @
+    // `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). All of it on virtual time.
     // -----------------------------------------------------------------------
 
-    /** `setTimeout(…, 200)` at `sidebar/index.tsx:647`, and no minimum length. */
+    /** `setTimeout(…, 200)` at `sidebar/index.tsx:671`, and no minimum length. */
     @Test
     fun `no backend search is issued before the debounce elapses`() = runTest(dispatcher) {
         collectState()
@@ -3410,8 +3410,8 @@ class ChatViewModelTest {
 
     /**
      * The unified browse view has no union to ask for: the route opens exactly
-     * one profile's database (`hermes_cli/web_routers/sessions.py:227` @
-     * `3ca096de`). Sending the active profile there would merge one profile's
+     * one profile's database (`hermes_cli/web_routers/sessions.py:268` @
+     * `72a3277cd7`). Sending the active profile there would merge one profile's
      * server hits into an all-profile list, so it sends none — ledgered in
      * `docs/parity/session-search.md`.
      */

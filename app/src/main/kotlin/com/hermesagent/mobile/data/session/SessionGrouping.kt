@@ -6,7 +6,7 @@ import java.util.TimeZone
 
 /**
  * Calendar buckets for the session list, ported from Desktop's `calendarBucket`
- * (`apps/desktop/src/lib/time.ts:125-165` @ `3ca096de`).
+ * (`apps/desktop/src/lib/time.ts:125-165` @ `72a3277cd7`).
  *
  * Desktop additionally leaves the newest *run* of sessions unlabelled above the
  * first divider (`session-date-groups.ts`, `headRunCutoffMs`) — a gap-scoring
@@ -34,14 +34,14 @@ sealed interface SessionListRow {
 
     /**
      * Desktop's leading `Pinned` section, label `Pinned`
-     * (`apps/desktop/src/i18n/en.ts:2205`, rendered at
-     * `apps/desktop/src/app/chat/sidebar/index.tsx:1640-1661` @ `3ca096de`).
+     * (`apps/desktop/src/i18n/en.ts:2398`, rendered at
+     * `apps/desktop/src/app/chat/sidebar/index.tsx:1632-1653` @ `72a3277cd7`).
      */
     data object PinnedLabel : SessionListRow
 
     /**
      * Desktop's empty-recents line when everything loaded is pinned
-     * (`en.ts:2214`, chosen at `sidebar/index.tsx:1697-1699` @ `3ca096de`). It
+     * (`en.ts:2407`, chosen at `sidebar/index.tsx:1690-1692` @ `72a3277cd7`). It
      * is the honest explanation of an otherwise confusing empty list, so it
      * ships with the feature rather than after it.
      */
@@ -49,17 +49,17 @@ sealed interface SessionListRow {
 
     /**
      * The one section a live query renders, label `Results`
-     * (`apps/desktop/src/i18n/en.ts:2204`, rendered at
-     * `apps/desktop/src/app/chat/sidebar/index.tsx:1611-1638` @ `3ca096de`).
+     * (`apps/desktop/src/i18n/en.ts:2397`, rendered at
+     * `apps/desktop/src/app/chat/sidebar/index.tsx:1603-1630` @ `72a3277cd7`).
      * It replaces Pinned and Recents rather than joining them — both are gated
-     * on `!trimmedQuery` (`:1640,1664`).
+     * on `!trimmedQuery` (`:1632,1657`).
      */
     data object ResultsLabel : SessionListRow
 
     /**
      * Desktop's settled-empty sentence for a search, `No sessions match
-     * “{query}”.` (`en.ts:2203`, chosen at `sidebar/index.tsx:1618-1622` @
-     * `3ca096de`). It carries the query as the reader typed it — trimmed, not
+     * “{query}”.` (`en.ts:2396`, chosen at `sidebar/index.tsx:1610-1614` @
+     * `72a3277cd7`). It carries the query as the reader typed it — trimmed, not
      * lower-cased — because the sentence quotes them back.
      */
     data class NoResultsNote(val query: String) : SessionListRow
@@ -67,25 +67,25 @@ sealed interface SessionListRow {
     /**
      * Desktop's `SidebarSessionSkeletons`: five placeholder rows borrowing the
      * session row's own chrome (`sidebar/section-states.tsx:12-24` @
-     * `3ca096de`). It stands in for the *server* answer only, so it renders
+     * `72a3277cd7`). It stands in for the *server* answer only, so it renders
      * exactly where Desktop puts it — as the section's empty state, while the
      * debounced query is still in flight and nothing loaded matched.
      */
     data object SearchSkeletons : SessionListRow
 }
 
-/** `Everything here is pinned…` (`apps/desktop/src/i18n/en.ts:2214` @ `3ca096de`). */
+/** `Everything here is pinned…` (`apps/desktop/src/i18n/en.ts:2407` @ `72a3277cd7`). */
 const val ALL_PINNED_NOTE = "Everything here is pinned. Unpin a chat to show it in recents."
 
-/** `Pinned` (`apps/desktop/src/i18n/en.ts:2205` @ `3ca096de`). */
+/** `Pinned` (`apps/desktop/src/i18n/en.ts:2398` @ `72a3277cd7`). */
 const val PINNED_SECTION_LABEL = "Pinned"
 
-/** `Results` (`apps/desktop/src/i18n/en.ts:2204` @ `3ca096de`). */
+/** `Results` (`apps/desktop/src/i18n/en.ts:2397` @ `72a3277cd7`). */
 const val RESULTS_SECTION_LABEL = "Results"
 
 /**
- * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2203` @
- * `3ca096de`), with Desktop's own typographic quotes.
+ * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2396` @
+ * `72a3277cd7`), with Desktop's own typographic quotes.
  */
 fun noSessionsMatch(query: String): String = "No sessions match “$query”."
 
@@ -125,8 +125,8 @@ fun calendarBucket(
  *
  * A live query is a different list, not a filtered one. Desktop answers a
  * search in a single `Results` section and hides Pinned and Recents while it
- * stands (`apps/desktop/src/app/chat/sidebar/index.tsx:1611-1638,1640,1664` @
- * `3ca096de`) — there is no calendar bucket to read once the order is the
+ * stands (`apps/desktop/src/app/chat/sidebar/index.tsx:1603-1630,1632,1657` @
+ * `72a3277cd7`) — there is no calendar bucket to read once the order is the
  * search's rather than the day's.
  *
  * @param query what the reader typed. Trimmed and lower-cased into the needle;
@@ -139,12 +139,12 @@ fun calendarBucket(
  *   different facts and only one of them means "nothing matched".
  * @param archivedView Desktop's `Archived` toggle. Archived is a view of its
  *   own set rather than a filter over the live one
- *   (`apps/desktop/src/app/chat/sidebar/index.tsx:488-495` @ `3ca096de`), so it
- *   swaps the pool wholesale and renders it without date dividers (`:1723`,
+ *   (`apps/desktop/src/app/chat/sidebar/index.tsx:511-518` @ `72a3277cd7`), so it
+ *   swaps the pool wholesale and renders it without date dividers (`:1716`,
  *   `grouping='none'` while archived). This returns a **flat** list, which goes
  *   further than upstream does and is a known divergence, not the port of that
  *   line: Desktop's `Pinned` section is its own section gated only on
- *   `!trimmedQuery` (`:1640-1661`), so a pinned + archived row still files
+ *   `!trimmedQuery` (`:1632-1653`), so a pinned + archived row still files
  *   under `PINNED` there. See
  *   [#146](https://github.com/donovan-yohan/hermes-agent-android/issues/146) and
  *   the drift row in `docs/parity/session-list-sections.md`. A query inside that
@@ -214,7 +214,7 @@ fun buildSessionRows(
  *
  * Local matches first, in the list's own newest-first order, then the server's
  * hits in the order the Gateway ranked them — Desktop's exact merge
- * (`apps/desktop/src/app/chat/sidebar/index.tsx:655-678` @ `3ca096de`): the
+ * (`apps/desktop/src/app/chat/sidebar/index.tsx:679-702` @ `72a3277cd7`): the
  * loaded row object always wins, because a stub knows only what the search
  * contract carries while the loaded row knows its title, its flags and its
  * real activity.
@@ -265,7 +265,7 @@ private fun searchRows(
 
 /**
  * Desktop's `sessionMatchesSearch` (`apps/desktop/src/lib/session-search.ts:7-23`
- * @ `3ca096de`): the durable id, the compression lineage root, the title, the
+ * @ `72a3277cd7`): the durable id, the compression lineage root, the title, the
  * preview, the working directory and the git branch, plus every term the row's
  * source answers to. Substring, case-insensitive, on the same normalised needle
  * — `trim().toLowerCase()` (`apps/desktop/src/lib/text.ts:11`).
@@ -291,7 +291,7 @@ private fun SessionSummary.matches(needle: String, locale: Locale): Boolean {
 
 /**
  * Desktop's source labels, keyed by the id the Gateway reports
- * (`apps/desktop/src/lib/session-source.ts:3-27` @ `3ca096de`).
+ * (`apps/desktop/src/lib/session-source.ts:3-27` @ `72a3277cd7`).
  */
 private val SOURCE_LABELS: Map<String, String> = mapOf(
     "api_server" to "API",
@@ -321,7 +321,7 @@ private val SOURCE_LABELS: Map<String, String> = mapOf(
 
 /**
  * The other names a reader might type for a source
- * (`apps/desktop/src/lib/session-source.ts:29-40` @ `3ca096de`). Searching
+ * (`apps/desktop/src/lib/session-source.ts:29-40` @ `72a3277cd7`). Searching
  * `imessage` has to find a BlueBubbles chat, because that is what the person
  * on the other end calls it.
  */
@@ -352,7 +352,7 @@ private val SOURCE_WORD_START = Regex("\\b\\w")
 /**
  * Desktop's `sessionSourceLabel` fallback for a source it has no label for:
  * word-break on `_`/`-`, then uppercase every word start
- * (`session-source.ts:111-119`, `lib/text.ts:7` @ `3ca096de`). An unknown
+ * (`session-source.ts:111-119`, `lib/text.ts:7` @ `72a3277cd7`). An unknown
  * source is still searchable under the name the row shows.
  *
  * The casing itself cannot change a match — [sessionSourceSearchTerms] feeds a
@@ -367,7 +367,7 @@ private fun prettySourceName(id: String): String =
 
 /**
  * Desktop's `sessionSourceSearchTerms` (`session-source.ts:121-130` @
- * `3ca096de`): the normalised id, its label, and its aliases, with empties
+ * `72a3277cd7`): the normalised id, its label, and its aliases, with empties
  * dropped. Normalisation is Desktop's `normalize` — `trim().toLowerCase()`
  * (`lib/text.ts:11`) — which is root-locale by construction in JavaScript, so
  * it is root-locale here: these are wire ids, not the reader's prose.

@@ -13,7 +13,7 @@ import org.junit.Test
  * order and the separator placement are pinned here rather than in a rendered
  * assertion. Every expectation is transcribed from
  * `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, not derived from production code.
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, not derived from production code.
  */
 class SessionActionsMenuTest {
 
@@ -192,7 +192,7 @@ class SessionActionsMenuTest {
     /**
      * Desktop's slots, in Desktop's order: Rename, Pin, read-state, Copy ID in
      * identity; Archive above Delete in danger
-     * (`session-actions-menu.tsx:285-334,431-460` @ `3ca096de`).
+     * (`session-actions-menu.tsx:285-334,431-460` @ `72a3277cd7`).
      */
     @Test
     fun `the ported menu sits in Desktop's slots`() {
@@ -217,7 +217,7 @@ class SessionActionsMenuTest {
 
     /**
      * One slot, one glyph, both directions — the label carries the direction
-     * (`session-actions-menu.tsx:297-305` @ `3ca096de`).
+     * (`session-actions-menu.tsx:297-305` @ `72a3277cd7`).
      */
     @Test
     fun `a pinned row offers the way back out of the section`() {

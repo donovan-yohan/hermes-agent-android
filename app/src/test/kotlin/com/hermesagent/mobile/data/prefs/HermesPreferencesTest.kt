@@ -87,7 +87,7 @@ class HermesPreferencesTest {
     /**
      * Desktop's `$introSplash` defaults to **on**
      * (`apps/desktop/src/store/intro-splash.ts:8` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so an install that has never
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), so an install that has never
      * touched the toggle gets the splash.
      */
     @Test
