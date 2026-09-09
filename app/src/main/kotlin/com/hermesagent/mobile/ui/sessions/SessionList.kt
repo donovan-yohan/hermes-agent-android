@@ -98,7 +98,7 @@ import kotlin.math.abs
  * On a phone this is a drawer; on a wide screen it is the persistent rail.
  * Same composable either way — the layout decides where it lives, not what it
  * is, which is what keeps "switching context is a re-home, not a reboot"
- * (`apps/desktop/AGENTS.md` @ `3ca096de`) true on both.
+ * (`apps/desktop/AGENTS.md` @ `72a3277cd7`) true on both.
  *
  * Flat by construction: dividers only where the calendar bucket changes, no
  * per-row card, no nested rounded boxes. The active row is marked by fill and
@@ -137,10 +137,10 @@ fun SessionList(
     /** Loaded rows that are still unread; Desktop hides the action at zero. */
     unreadCount: Int = 0,
     /**
-     * Desktop's `showSessionSkeletons` (`sidebar/index.tsx:1423` @ `3ca096de`):
+     * Desktop's `showSessionSkeletons` (`sidebar/index.tsx:1396` @ `72a3277cd7`):
      * a live-pool page is on the wire and this scope has no rows yet. The blank
      * state is a claim about the *account*, so it waits behind this exactly as
-     * Desktop's does at `:1426-1427,1912`.
+     * Desktop's does at `:1399-1400,1911`.
      */
     sessionsLoading: Boolean = false,
     onMarkAllRead: () -> Unit = {},
@@ -239,7 +239,7 @@ fun SessionList(
                         archivedVisible = archivedVisible,
                         unreadCount = unreadCount,
                         // Desktop's option rows deliberately keep the menu open
-                        // (`filter-menu.tsx:124-126` @ `3ca096de`); only the
+                        // (`filter-menu.tsx:124-126` @ `72a3277cd7`); only the
                         // actions at the bottom dismiss it.
                         onToggleArchived = { onArchivedVisibleChange(!archivedVisible) },
                         onMarkAllRead = {
@@ -262,9 +262,9 @@ fun SessionList(
 
             if (searchIsVisible) {
                 // Desktop's own field, verbatim: placeholder `Search sessions…`
-                // with the ellipsis (`i18n/en.ts:2201`), spoken as `Search
-                // sessions` (`:2200`), behind the leading search glyph
-                // (`components/ui/search-field.tsx:69`) — all @ `3ca096de`.
+                // with the ellipsis (`i18n/en.ts:2394`), spoken as `Search
+                // sessions` (`:2393`), behind the leading search glyph
+                // (`components/ui/search-field.tsx:69`) — all @ `72a3277cd7`.
                 // `Search projects` is this app's own: Desktop has no
                 // project-overview search field to copy, and the ledger in
                 // `docs/parity/session-search.md` says so.
@@ -349,7 +349,7 @@ fun SessionList(
                 // chats. `Nothing archived` is a claim about the account, so it
                 // waits — exactly as the project slot above waits on its own
                 // load. Desktop keeps the same marker but spends it only on
-                // re-entry (`store/sidebar-archive.ts:12,19,28` @ `3ca096de`:
+                // re-entry (`store/sidebar-archive.ts:12,19,28` @ `72a3277cd7`:
                 // `$archivedSessionsLoading` gates the fetch and nothing
                 // renders it), and its `catch` sets the set to `[]` — so on
                 // Desktop a failed read reads as an empty account. On a phone,
@@ -378,7 +378,7 @@ fun SessionList(
                     )
 
                     // Desktop's archived empty state, verbatim
-                    // (`i18n/en.ts:1154-1155` @ `3ca096de`). The Archived view
+                    // (`i18n/en.ts:1324-1325` @ `72a3277cd7`). The Archived view
                     // is its own set, so "no sessions" would be the wrong
                     // sentence: there are sessions, none of them archived.
                     ArchivedPoolState.Loaded -> EmptyState(
@@ -394,7 +394,7 @@ fun SessionList(
                 // says the same thing either way, so this is the same note the
                 // `Results` section draws — one sentence and no second line,
                 // exactly as Desktop's search empty has none
-                // (`sidebar/index.tsx:1618-1622` @ `3ca096de`). It is the
+                // (`sidebar/index.tsx:1610-1614` @ `72a3277cd7`). It is the
                 // section's own note rather than a shared [EmptyState], so the
                 // centring the wrapped sentence needs stays here instead of
                 // reaching every other empty state in the app.
@@ -403,10 +403,10 @@ fun SessionList(
                 }
 
                 // Desktop's `SidebarSessionSkeletons`
-                // (`section-states.tsx:11-24` @ `3ca096de`), and the reason the
+                // (`section-states.tsx:11-24` @ `72a3277cd7`), and the reason the
                 // blank state below cannot be reached during a fetch:
                 // `showSessionSections` is true while `showSessionSkeletons` is
-                // (`sidebar/index.tsx:1426-1427`), so `No sessions yet` is never
+                // (`sidebar/index.tsx:1399-1400`), so `No sessions yet` is never
                 // the sentence on screen during the first list read or after a
                 // reconnect. This app's rail says the same thing the same way.
                 rows.isEmpty() && sessionsLoading ->
@@ -414,9 +414,9 @@ fun SessionList(
 
                 // Desktop's `SidebarBlankState`
                 // (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`
-                // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), which it
+                // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), which it
                 // renders on exactly this condition: nothing filtered, nothing
-                // loading, no sessions and no projects (`sidebar/index.tsx:1427,1912`).
+                // loading, no sessions and no projects (`sidebar/index.tsx:1400,1911`).
                 rows.isEmpty() -> SidebarBlankState(
                     canCreateProject = canCreate && projectsAvailable == true,
                     onNewProject = { projectCreateVisible = true },
@@ -578,7 +578,7 @@ private fun SidebarViewMenu(
                     contentDescription = when {
                         searchVisible -> "Hide search"
                         searchesProjects -> "Search projects"
-                        // `Search sessions` (`i18n/en.ts:2200` @ `3ca096de`).
+                        // `Search sessions` (`i18n/en.ts:2393` @ `72a3277cd7`).
                         else -> "Search sessions"
                     }
                 }
@@ -595,8 +595,8 @@ private fun SidebarViewMenu(
             )
         }
         // Desktop's own checkbox row and its own bare label, at the foot of the
-        // filter group (`app/chat/sidebar/filter-menu.tsx:393-397` @
-        // `3ca096de`) — the word is a literal there, not an i18n key, and the
+        // filter group (`app/chat/sidebar/filter-menu.tsx:397-401` @
+        // `72a3277cd7`) — the word is a literal there, not an i18n key, and the
         // option carries no glyph: `OptionGlyph` returns `null` without an
         // `icon` or a `dot` (`:116-122`).
         SidebarToggleOption(
@@ -607,7 +607,7 @@ private fun SidebarViewMenu(
         )
         // Desktop's own item, in Desktop's own place: last, after the rule that
         // closes the option group, plain, no glyph, and *disabled* rather than
-        // hidden at zero unread (`filter-menu.tsx:404,411-413` @ `3ca096de`).
+        // hidden at zero unread (`filter-menu.tsx:408,415-417` @ `72a3277cd7`).
         Hairline()
         SidebarActionOption(
             label = MARK_ALL_READ,
@@ -620,7 +620,7 @@ private fun SidebarViewMenu(
 
 /**
  * A checkbox row in the filter menu: Desktop's `OptionCheckbox`
- * (`filter-menu.tsx:128-141` @ `3ca096de`). Selecting one deliberately leaves
+ * (`filter-menu.tsx:128-141` @ `72a3277cd7`). Selecting one deliberately leaves
  * the menu open — `keepOpen` (`:124-126`: "Every option row … leaves the menu
  * open, so a whole view can be set up in one pass. Only the actions at the
  * bottom dismiss it").
@@ -655,7 +655,7 @@ private fun SidebarToggleOption(
 
 /**
  * A plain action row at the foot of the filter menu: Desktop's
- * `DropdownMenuItem` (`filter-menu.tsx:411-413` @ `3ca096de`). No glyph, and it
+ * `DropdownMenuItem` (`filter-menu.tsx:415-417` @ `72a3277cd7`). No glyph, and it
  * stays mounted when it cannot act — a control that vanishes at zero teaches
  * nobody it exists.
  */
@@ -686,10 +686,10 @@ private fun SidebarActionOption(
     }
 }
 
-/** Desktop's own literal for the archived filter (`filter-menu.tsx:396` @ `3ca096de`). */
+/** Desktop's own literal for the archived filter (`filter-menu.tsx:400` @ `72a3277cd7`). */
 private const val ARCHIVED_FILTER = "Archived"
 
-/** `Mark all as read` (`i18n/en.ts:2356` @ `3ca096de`). */
+/** `Mark all as read` (`i18n/en.ts:2550` @ `72a3277cd7`). */
 private const val MARK_ALL_READ = "Mark all as read"
 
 internal const val ARCHIVED_FILTER_OPTION = "Archived filter option"
@@ -874,9 +874,9 @@ internal const val SESSION_SKELETON_TAG = "Session skeletons"
 
 /**
  * `sidebar.noSessions` and `sidebar.projects.newButton`, verbatim
- * (`apps/desktop/src/i18n/en.ts:2218,2223` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Note the missing full stop:
- * `commandCenter.noSessions` at `:1560` reads `No sessions yet.` **with** one,
+ * (`apps/desktop/src/i18n/en.ts:2412,2417` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). Note the missing full stop:
+ * `commandCenter.noSessions` at `:1742` reads `No sessions yet.` **with** one,
  * and the sidebar's is the other string.
  */
 internal const val NO_SESSIONS_YET = "No sessions yet"
@@ -885,7 +885,7 @@ internal const val NEW_PROJECT_BUTTON = "New project"
 /**
  * Desktop's `SidebarBlankState`
  * (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): a `root-folder` codicon in the
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`): a `root-folder` codicon in the
  * quaternary ink, the caption in the tertiary, and a ghost `New project` under
  * them, all `place-items-center` in the height the list section leaves.
  *
@@ -984,7 +984,7 @@ private fun GhostAction(
 /**
  * Desktop's `SidebarSessionSkeletons`, at this rail's scale
  * (`apps/desktop/src/app/chat/sidebar/section-states.tsx:12-24` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): five placeholder rows, each a
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`): five placeholder rows, each a
  * short title bar and a trailing action square, in the session row's own
  * chrome. The widths are Desktop's five — `w-32 w-40 w-28 w-36 w-24`, which is
  * Tailwind's 8/10/7/9/6 rem — so the ragged edge that says "these are
@@ -1033,7 +1033,7 @@ private val SKELETON_WIDTHS = listOf(128.dp, 160.dp, 112.dp, 144.dp, 96.dp)
 
 /**
  * The `Results` section settled on nothing: `No sessions match “{query}”.`
- * (`i18n/en.ts:2203`, chosen at `sidebar/index.tsx:1618-1622` @ `3ca096de`).
+ * (`i18n/en.ts:2396`, chosen at `sidebar/index.tsx:1610-1614` @ `72a3277cd7`).
  *
  * Centred, because the sentence quotes the reader's own query and a long one
  * wraps; centring it here rather than in the shared `EmptyState` keeps the
@@ -1071,7 +1071,7 @@ private fun SessionRow(
     val dot = status.dot(tokens)
     // The dot is the *resolved* state, where a louder one outranks unread; the
     // menu item reads the two raw sources instead, exactly as Desktop does
-    // (`session-actions-menu.tsx:314-315,319` @ `3ca096de` — `unread ||
+    // (`session-actions-menu.tsx:314-315,319` @ `72a3277cd7` — `unread ||
     // isUnread`, the row's own flag or membership of the finished-unread set).
     // A row that is working and carries the watermark is still unread, and must
     // still offer `Mark as read`.
@@ -1088,7 +1088,7 @@ private fun SessionRow(
                 .testTag("Session row ${session.id}")
                 .background(
                     // `--ui-row-active-background` at styles.css:308-312 @
-                    // 3ca096de5f8183cb2e0ec23673f294d5978656a3. This must be
+                    // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd. This must be
                     // a semantic token: all skins use the same Desktop mix.
                     color = if (active) tokens.sessionRowActiveSurface else tokens.sidebarSurface,
                     shape = SessionRowShape,
@@ -1127,7 +1127,7 @@ private fun SessionRow(
             // glyph takes the lead slot the dot would occupy rather than adding
             // a column of its own — Desktop's own rule and its own ink
             // (`apps/desktop/src/app/chat/sidebar/session-row.tsx:284-290` @
-            // `3ca096de`, `--ui-text-quaternary`).
+            // `72a3277cd7`, `--ui-text-quaternary`).
             if (archived) {
                 HermesIconGlyph(
                     HermesIcon.Archive,
@@ -1232,8 +1232,8 @@ internal fun SessionStatus.showsRunningOutline(): Boolean = this == SessionStatu
 
 /**
  * Paint-only Android port of Desktop's `.arc-border.arc-row` at
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
- * `apps/desktop/src/styles.css:994-1008,1011-1040,1085-1113,1129-1144`.
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`:
+ * `apps/desktop/src/styles.css:1009-1023,1026-1055,1100-1128,1144-1159`.
  *
  * The 300%-sized, 160-degree gradient travels from -10% to -50% over 2.23s,
  * matching Desktop's compositor travel. A Canvas layer keeps the 1.25dp ring

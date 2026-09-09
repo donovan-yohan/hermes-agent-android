@@ -37,9 +37,9 @@ import org.robolectric.annotation.Config
 
 /**
  * The `Edit models…` row and the Models sheet, against Desktop's catalog footer
- * (`apps/desktop/src/app/shell/model-catalog-menu.tsx:527-535`) and its
+ * (`apps/desktop/src/app/shell/model-catalog-menu.tsx:658-666`) and its
  * `ModelVisibilityDialog` (`apps/desktop/src/components/model-visibility-dialog.tsx:81-190`)
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
@@ -152,7 +152,7 @@ class ModelVisibilityJourneyTest {
 
         // The second half of the claim: the picker itself, reopened, no longer
         // offers the row. Desktop resolves the same set for its own catalog
-        // menu (`model-catalog-menu.tsx:179-188` @ `3ca096de`).
+        // menu (`model-catalog-menu.tsx:271-280` @ `72a3277cd7`).
         dismissSheet()
         openPicker()
         compose.onNodeWithContentDescription("Use beta from Acme").assertDoesNotExist()
@@ -163,7 +163,7 @@ class ModelVisibilityJourneyTest {
     fun `a provider added after the last customisation still reaches the picker`() {
         // The stored set names Acme only. Resolving it against the catalog
         // expands the untouched provider's curated default, which is what keeps
-        // a newly authenticated provider from vanishing (`:179-188`).
+        // a newly authenticated provider from vanishing (`:271-280`).
         launch(initial = setOf(modelVisibilityKey("acme", "alpha")), catalog = CATALOG_WITH_NEWCOMER)
         openPicker()
 
@@ -175,7 +175,7 @@ class ModelVisibilityJourneyTest {
     @Test
     fun `the picker's default is the host's featured shortlist, not a bare top-N`() {
         // Never customised, so the picker resolves the default itself
-        // (`model-catalog-menu.tsx:179-188` @ `3ca096de`) and
+        // (`model-catalog-menu.tsx:271-280` @ `72a3277cd7`) and
         // `expandProviderDefaults` cuts the provider that ships a
         // `featured_models` manifest down to it (`model-visibility.ts:114-132`).
         launch(catalog = CATALOG_WITH_FEATURED)

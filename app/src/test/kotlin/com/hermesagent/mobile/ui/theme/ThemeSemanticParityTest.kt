@@ -19,7 +19,7 @@ import kotlin.math.sqrt
  * raw palette fields where Desktop mixes each seed with a per-mode neutral.
  *
  * **Where the expected values come from.** Each one is derived from the pinned
- * Desktop sources (`3ca096de5f8183cb2e0ec23673f294d5978656a3`), never from
+ * Desktop sources (`72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), never from
  * this app's own output, by re-walking the
  * chain by hand:
  *
@@ -149,10 +149,10 @@ class ThemeSemanticParityTest {
     @Test
     fun `the selection highlight is one fixed amber per mode, never the accent`() {
         // styles.css:382 / :root.dark:564 @ DesktopThemeLedger.PINNED_SHA
-        // (3ca096de), where every other expectation in this file is read, pins
+        // (72a3277cd7), where every other expectation in this file is read, pins
         // color-mix(in srgb, #ffd24a 55%|38%, transparent) for every skin, so a
         // highlight cannot vanish into a warm palette or follow the brand hue.
-        // Byte-identical at 3ca096de (styles.css:386 / :root.dark:564), the SHA
+        // Byte-identical at 72a3277cd7 (styles.css:386 / :root.dark:564), the SHA
         // the rest of the port cites, so the two pins do not disagree here.
         for ((dark, expected) in listOf(false to "#8cffd24a", true to "#61ffd24a")) {
             for (preset in BuiltinThemes.ALL) {
@@ -168,7 +168,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `the modal scrim is black in every skin and mode, never the foreground`() {
         // `app/overlays/overlay-view.tsx:77` @ DesktopThemeLedger.PINNED_SHA
-        // (3ca096de) paints `bg-black/22 backdrop-blur-[0.125rem]`, and
+        // (72a3277cd7) paints `bg-black/22 backdrop-blur-[0.125rem]`, and
         // `components/session-picker.tsx:48` `bg-black/15 backdrop-blur-[1px]`:
         // a literal black in both, never a theme variable. Seeding the scrim
         // from `textPrimary` — which every sheet here used to do — makes a dark
@@ -196,7 +196,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `the diff palette derives from desktop's green and red in each mode`() {
         // styles.css:196-199,222-227 and `:root.dark:528-532` @
-        // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — byte-identical at upstream
+        // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — byte-identical at upstream
         // HEAD, checked 2026-08-26. Desktop names no diff colour of its own: the
         // border IS `--ui-green`/`--ui-red`, the background is that seed at 12%,
         // and the foreground mixes the seed toward the page (70% toward #000 in
@@ -238,7 +238,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `the ansi ladder derives from desktop's named colour set in each mode`() {
         // Desktop maps ANSI to fixed Tailwind classes (`lib/ansi.ts:144-164` @
-        // 3ca096de5f8183cb2e0ec23673f294d5978656a3). Android cannot: those are a
+        // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd). Android cannot: those are a
         // CSS framework's palette tuned against one surface, and this app paints
         // tool output on a per-preset `widgetSurface`. So the ladder is derived
         // from Desktop's *own* named colours — `--ui-red`, `--ui-yellow`,
@@ -453,7 +453,7 @@ class ThemeSemanticParityTest {
     @Test
     fun `running outline uses the desktop bright stop in each rendered mode`() {
         // styles.css:1011-1040,1129-1144 @
-        // 3ca096de5f8183cb2e0ec23673f294d5978656a3: `.arc-row` keeps
+        // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd: `.arc-row` keeps
         // --arc-c1 at --dt-foreground in dark mode and --dt-midground in light.
         for (preset in BuiltinThemes.ALL) {
             for (dark in listOf(false, true)) {
@@ -470,7 +470,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `accent foreground preserves Desktop's independent palette semantic`() {
-        // context.tsx:238-245 @ 3ca096de5f8183cb2e0ec23673f294d5978656a3:
+        // context.tsx:238-245 @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd:
         // --dt-accent-foreground is c.accentForeground, not the separate
         // c.midgroundForeground token.
         for (preset in BuiltinThemes.ALL) {
@@ -487,7 +487,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `Nous palette and selected-session fill match the Desktop sidebar`() {
-        // `presets.ts:174-277` @ 3ca096de5f8183cb2e0ec23673f294d5978656a3.
+        // `presets.ts:174-277` @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd.
         assertPalette(
             BuiltinThemes.Nous.colors,
             mapOf(
@@ -638,7 +638,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `the context usage inks derive from desktop's css variables in each mode`() {
-        // styles.css:217-224 @ 3ca096de5f8183cb2e0ec23673f294d5978656a3 — the
+        // styles.css:217-224 @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — the
         // eight `--context-usage-*` variables, each an expression over the named
         // colour set at `styles.css:210-216` / `:root.dark:556-558`. The Gateway
         // never sends a value for a category, only one of these names

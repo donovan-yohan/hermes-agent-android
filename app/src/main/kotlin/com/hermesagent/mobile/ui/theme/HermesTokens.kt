@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
  *
  * Every value is derived, not invented, and the derivation is Desktop's own.
  * Provenance (upstream `NousResearch/hermes-agent` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`):
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`):
  *
  *  - `apps/desktop/src/styles.css:192-193` — `--ui-base` is the theme
  *    foreground, `--ui-accent` the theme midground. Every ladder below is a
@@ -62,7 +62,7 @@ data class HermesTokens(
      *
      * Desktop's scrim is **black in every skin**, not an ink derived from the
      * theme: `apps/desktop/src/app/overlays/overlay-view.tsx:77` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3` paints
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` paints
      * `bg-black/22 backdrop-blur-[0.125rem]`, and the session picker's dialog
      * overlay `bg-black/15 backdrop-blur-[1px]`
      * (`apps/desktop/src/components/session-picker.tsx:48` @ the same SHA).
@@ -86,9 +86,9 @@ data class HermesTokens(
 
     /**
      * The highlight painted behind selected transcript text
-     * (`--ui-selection-background`, `styles.css:382` / `:root.dark:564` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, the theme ledger's pin;
-     * confirmed at `3ca096de`, `styles.css:386` / `564`). Like inline code, this is a
+     * (`--ui-selection-background`, `styles.css:386` / `:root.dark:578` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, the theme ledger's pin;
+     * confirmed at `72a3277cd7`, `styles.css:386` / `578`). Like inline code, this is a
      * *fixed* ink per mode rather than the theme accent, so a highlight reads
      * the same in every skin and never disappears into a warm palette.
      */
@@ -148,7 +148,7 @@ data class HermesTokens(
 
         /**
          * [overlayScrim]. One value for every preset and both modes, because
-         * `overlay-view.tsx:77` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` is
+         * `overlay-view.tsx:77` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` is
          * a literal `bg-black/22`, not a theme variable.
          */
         private val OverlayScrim = Color.Black.withAlpha(0.32f)
@@ -181,8 +181,8 @@ data class HermesTokens(
                 knobs.neutralCard,
             )
 
-            // styles.css:196-199,528-529 @
-            // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — `--ui-green` /
+            // styles.css:210,213,561-562 @
+            // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — `--ui-green` /
             // `--ui-red` are fixed per mode, so a diff reads the same in every
             // skin. They are also the diff *border* seeds (`:222,225`).
             val diffAdded = if (dark) Color(0xFF55A583) else Color(0xFF1F8A65)
@@ -212,7 +212,7 @@ data class HermesTokens(
             // `bright` follows Desktop's direction rather than an intuition
             // about what "bright" ought to mean. For the six hues this serves
             // — `lib/ansi.ts:149-154` against their bright rungs at `:157-162`
-            // @ 3ca096de5f8183cb2e0ec23673f294d5978656a3 — Desktop steps the
+            // @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — Desktop steps the
             // bright rung one Tailwind step *lighter* in both modes, never a
             // step darker: `red-700 → rose-600` (`:149` → `:157`) in light,
             // `emerald-300 → emerald-200` (`:150` → `:158`) in dark. Android
@@ -255,7 +255,7 @@ data class HermesTokens(
                 // never shows.
                 sidebarSurface = palette.sidebarBackground ?: palette.background,
                 // `--ui-row-active-background` at styles.css:308-312 @
-                // 3ca096de5f8183cb2e0ec23673f294d5978656a3: keep the
+                // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd: keep the
                 // Desktop nested color-mix expression rather than resolving a
                 // Nous-only literal at the session-row call site.
                 sessionRowActiveSurface = mixPremultiplied(
@@ -284,12 +284,12 @@ data class HermesTokens(
                 accent = accent,
                 // `--dt-accent-foreground` is a palette semantic of its own;
                 // it must not inherit the distinct midground foreground.
-                // context.tsx:238-245 @ 3ca096de5f8183cb2e0ec23673f294d5978656a3.
+                // context.tsx:249-256 @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd.
                 accentForeground = palette.accentForeground,
                 statusNeedsInput = Amber500,
                 statusWorking = accent,
-                // `styles.css:1011-1040,1129-1144` @
-                // 3ca096de5f8183cb2e0ec23673f294d5978656a3: the sidebar
+                // `styles.css:1026-1055,1144-1159` @
+                // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd: the sidebar
                 // outline's bright stop is --dt-foreground in dark mode and
                 // --dt-midground in light mode.
                 sessionRunningOutline = if (dark) palette.foreground else accent,
@@ -348,7 +348,7 @@ data class HermesTokens(
                     brightCyan = ansiBright(uiCyan),
                 ),
                 // styles.css:217-224 @
-                // 3ca096de5f8183cb2e0ec23673f294d5978656a3 — the eight
+                // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — the eight
                 // `--context-usage-*` variables, each one an expression over
                 // the named colour set above rather than a literal. Only
                 // `system` tracks the preset (it is a wash of `--ui-base`);
@@ -421,7 +421,7 @@ private data class ModeKnobs(
  *
  * Desktop maps the ANSI palette to fixed Tailwind classes
  * (`apps/desktop/src/lib/ansi.ts:144-164` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) — `red-700 dark:red-300` and so
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) — `red-700 dark:red-300` and so
  * on, with a note that they are "tuned for legibility against the muted
  * bg-(--ui-bg-tertiary) surface" and that pure `#000`/`#fff` are avoided
  * because they disappear into it.

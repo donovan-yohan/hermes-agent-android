@@ -37,7 +37,7 @@ enum class HermesIcon(val glyph: String) {
     Add("\uEA60"),
     Edit("\uEA73"),
     File("\uEA7B"),
-    /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `3ca096de`). */
+    /** Desktop's `remote` connection kind glyph (`connections-registry.tsx:29` @ `72a3277cd7`). */
     Globe("\uEB01"),
     /**
      * Desktop's `local` kind and Local-gateway mode glyph

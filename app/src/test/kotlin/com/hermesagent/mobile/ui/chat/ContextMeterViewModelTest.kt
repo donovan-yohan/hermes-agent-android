@@ -98,7 +98,7 @@ class ContextMeterViewModelTest {
         assertEquals(16_000L, meter?.usage?.contextMax)
         assertEquals(19, meter?.usage?.contextPercent)
         // `gaugeUsage` spreads the streamed figure and overrides only the three
-        // context fields (`use-statusbar-items.tsx:254-265` @ `3ca096de`):
+        // context fields (`use-statusbar-items.tsx:267-280` @ `72a3277cd7`):
         // `total` and `model` are never taken from the breakdown.
         assertEquals(5_000L, meter?.usage?.total)
         assertEquals("streamed-model", meter?.usage?.model)
@@ -234,7 +234,7 @@ class ContextMeterViewModelTest {
 
     @Test
     fun `a resumed session whose breakdown reports no context window stays hidden`() = runTest(dispatcher) {
-        // `agent/context_breakdown.py:130-131` @ `3ca096de`: no
+        // `agent/context_breakdown.py:142-143` @ `72a3277cd7`: no
         // `context_compressor` means `context_max: 0`, and such a session has no
         // measured usage either. Desktop renders '' and hides the item; taking
         // `estimated_total` as `total` here would show "45k tok" instead.

@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Direct Kotlin port of Desktop's bundled plugin loader
  * (`apps/desktop/src/contrib/plugins.ts:25-63` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 class PluginLoader(
     private val registry: ContributionRegistry,

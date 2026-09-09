@@ -121,7 +121,7 @@ sealed interface GatewayRestResult<out T> {
  * fails the whole page rather than rendering a half-truth.
  *
  * Envelope shape: `{"sessions": [...], "total": N, "limit": L, "offset": O}`
- * (`sessions.py:159` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * (`sessions.py:222` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
  */
 data class GatewaySessionPage(
     val rows: List<JsonObject>,
@@ -449,7 +449,7 @@ class GatewayRestClient(
 
     /**
      * Full-text session search through `GET /api/sessions/search`
-     * (`sessions.py:205-213` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     * (`sessions.py:254-257` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
      *
      * The route answers over *every* session the profile owns, not only the
      * page this client has loaded: direct session-id hits first, then FTS5

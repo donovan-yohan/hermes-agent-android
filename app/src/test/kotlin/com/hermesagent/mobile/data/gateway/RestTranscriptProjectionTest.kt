@@ -10,8 +10,8 @@ import org.junit.Test
 /**
  * The paged transcript route hands back stored rows, not the Gateway's display
  * projection. These are the rules that projection applies
- * (`tui_gateway/server.py:9720-9823` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), asserted on the row shapes
+ * (`tui_gateway/session_history.py:180-238` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), asserted on the row shapes
  * `SELECT * FROM messages` actually produces (`hermes_state.py:13000-13016`).
  */
 class RestTranscriptProjectionTest {
@@ -105,8 +105,8 @@ class RestTranscriptProjectionTest {
 
     /**
      * The shape the route actually emits. `SessionDB.get_messages` builds each
-     * row as `dict(row)` (`hermes_state.py:13001-13002` @ `3ca096de`) over a
-     * `SELECT *` (`:12926`, and `:12943` on the `include_compacted` read this
+     * row as `dict(row)` (`hermes_state_messages.py:616` @ `72a3277cd7`) over a
+     * `SELECT *` (`hermes_state_messages.py:649`, and `:646` on the `include_compacted` read this
      * app always makes), so every column rides the wire and a row that made no call
      * carries `"tool_calls": null` rather than omitting the key. Reading the
      * key's presence rather than the array's would drop exactly the row upstream

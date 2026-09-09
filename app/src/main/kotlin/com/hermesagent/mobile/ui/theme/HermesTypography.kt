@@ -14,7 +14,7 @@ import com.hermesagent.mobile.R
 /**
  * Desktop's conversation type scale, adapted for a phone.
  *
- * Desktop values (`apps/desktop/src/styles.css:440-447` @ `3ca096de`, 1rem = 16px):
+ * Desktop values (`apps/desktop/src/styles.css:473-482` @ `72a3277cd7`, 1rem = 16px):
  *
  * | Desktop token                     | Desktop | Android |
  * |-----------------------------------|---------|---------|
@@ -50,7 +50,7 @@ data class HermesTypeScale(
     val screenTitle: TextStyle,
     /**
      * The empty chat's display lettering. Desktop's `.wordmark`
-     * (`apps/desktop/src/styles.css:1629-1635` @ `3ca096de`): Collapse Bold,
+     * (`apps/desktop/src/styles.css:1644-1650` @ `72a3277cd7`): Collapse Bold,
      * weight 700, line-height 0.9, uppercase, tracking 0.08em.
      *
      * The family is [CollapseBold] whatever the preset asks for, because
@@ -109,7 +109,7 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
             fontWeight = FontWeight.Medium,
             letterSpacing = 0.08.em,
         ),
-        // SidebarPanelLabel at 3ca096de: 0.64rem, semibold, uppercase,
+        // SidebarPanelLabel at 72a3277cd7: 0.64rem, semibold, uppercase,
         // tracking 0.16em. The one-sp bump is the phone readability adaptation.
         panelLabel = TextStyle(
             fontFamily = sans,
@@ -135,7 +135,7 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
 /**
  * Desktop's wordmark face, bundled.
  *
- * `styles.css:62-68` @ `3ca096de` loads `Collapse-Bold.woff2` from
+ * `styles.css:62-68` @ `72a3277cd7` loads `Collapse-Bold.woff2` from
  * `@nous-research/ui`; `res/font/collapse_bold.otf` is that same file with the
  * woff2 container removed, because Android's `res/font` cannot read woff2.
  * Only the Bold is shipped, because only the Bold is what `.wordmark` asks

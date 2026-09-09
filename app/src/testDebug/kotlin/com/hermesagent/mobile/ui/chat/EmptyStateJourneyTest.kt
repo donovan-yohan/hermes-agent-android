@@ -40,9 +40,9 @@ import org.robolectric.annotation.GraphicsMode
  * The two vertically centred empty states, rendered.
  *
  * Desktop's originals are `Intro`
- * (`apps/desktop/src/components/chat/intro.tsx:160-179`) and
+ * (`apps/desktop/src/components/chat/intro.tsx:160-176`) and
  * `SidebarBlankState` (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`),
- * both @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * both @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * The class runs wide enough for the persistent rail, so the session list is on
  * screen without a drawer gesture and the transcript column is beside it. The
@@ -115,8 +115,8 @@ class EmptyStateJourneyTest {
     }
 
     /**
-     * Desktop splashes only a fresh draft (`intro-visibility.ts:12-33` @
-     * `3ca096de`) because a homed session gets `ChatEmptySlot` instead — a
+     * Desktop splashes only a fresh draft (`intro-visibility.ts:12-32` @
+     * `72a3277cd7`) because a homed session gets `ChatEmptySlot` instead — a
      * surface this app has never ported. The owner's call is that the wordmark
      * is the better thing to show there than a note that says less. The reason
      * this is safe is the message count: a session still reading its history
@@ -142,8 +142,8 @@ class EmptyStateJourneyTest {
 
     /**
      * Where the session is working, under the line of copy. Desktop carries the
-     * same two facts in its own chrome (`app/chat/index.tsx:419,675,734` @
-     * `3ca096de`); a phone has no room for that, and the splash is the one
+     * same two facts in its own chrome (`app/chat/index.tsx:434,690,749` @
+     * `72a3277cd7`); a phone has no room for that, and the splash is the one
      * moment the session has nothing else to say.
      */
     @Test

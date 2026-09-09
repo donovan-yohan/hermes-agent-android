@@ -50,7 +50,7 @@ import org.robolectric.annotation.Config
  * and that the Copy control hands over the output the display had to truncate.
  *
  * Desktop's own renderer is `assistant-ui/tool/fallback.tsx:597-744` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w360dp-h844dp")
@@ -286,7 +286,7 @@ class ToolRowFidelityTest {
      *
      * `InlineDiffPanel` carries this same slot and `toolCopyPayload` makes
      * file-edit inline diffs resolve to `copy.file`
-     * (`fallback-model/index.ts:1253-1256 @ 3ca096de`), so this app ships the
+     * (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`), so this app ships the
      * full diff through `ToolCopyControl` and names it `Copy file`.
      */
     @Test

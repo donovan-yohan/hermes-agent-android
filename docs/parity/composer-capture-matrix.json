@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "Capture planning only. These are deterministic test fixtures, not production sessions, and may never contain user text, hosts, paths, credentials, tokens, or fingerprints.",
-  "desktop_sha": "3ca096de5f8183cb2e0ec23673f294d5978656a3",
+  "desktop_sha": "72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd",
   "states": [
     {
       "id": "editor-empty",

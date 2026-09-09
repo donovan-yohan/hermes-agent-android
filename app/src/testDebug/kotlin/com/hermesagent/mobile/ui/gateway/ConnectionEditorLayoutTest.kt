@@ -42,7 +42,7 @@ import org.robolectric.annotation.GraphicsMode
  * Desktop puts the editor's actions in a `flex justify-end gap-2` — Cancel as a
  * ghost, then the filled Save at the right edge
  * (`apps/desktop/src/app/settings/connections-registry.tsx:947-954` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) — and its foot in a
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) — and its foot in a
  * `flex items-center gap-2` holding an outline `Add connection` and, once there
  * is more than one instance, the update fan-out (`:957-988`). This shipped with
  * Save reversed onto the left at full width and Add drawn as a borderless link

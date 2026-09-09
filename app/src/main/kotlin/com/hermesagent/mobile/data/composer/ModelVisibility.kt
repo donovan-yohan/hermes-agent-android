@@ -3,10 +3,10 @@ package com.hermesagent.mobile.data.composer
 /**
  * Which models the picker offers, ported from Desktop's
  * `apps/desktop/src/store/model-visibility.ts` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * A pure client preference: `model.options` carries no visibility field
- * (`apps/desktop/src/types/hermes.ts:384-427`), so nothing here is Gateway
+ * (`apps/desktop/src/types/hermes.ts:399-442`), so nothing here is Gateway
  * truth and nothing here is ever sent. The whole file is the arithmetic
  * Desktop's store does, with its own names kept so the two can be diffed.
  */
@@ -80,7 +80,7 @@ fun collapseModelFamilies(models: List<String>): List<ModelFamily> {
  * flagship per lab, so an aggregator serving dozens of models across many labs
  * does not flood the default view — and the top-N collapsed families are the
  * fallback for a provider with no manifest entry
- * (`hermes_cli/inventory.py:513-568` @ `3ca096de`).
+ * (`hermes_cli/inventory.py:324-358` @ `72a3277cd7`).
  */
 private fun expandProviderDefaults(provider: ModelProvider, target: MutableSet<String>) {
     val families = collapseModelFamilies(provider.models.map(ModelOption::id))
@@ -203,23 +203,23 @@ fun providerVisibility(
 
 /**
  * The catalog's virtual Mixture-of-Agents provider. Its `models` are MoA preset
- * *names*, not model ids (`hermes_cli/inventory.py:1000-1015` @ `3ca096de`).
+ * *names*, not model ids (`hermes_cli/inventory.py:736-743` @ `72a3277cd7`).
  */
 const val MOA_PROVIDER_ID = "moa"
 
 /**
  * The providers the picker groups: the catalog minus the virtual `moa` row
- * (`model-catalog-menu.tsx:172-175` @ `3ca096de`, `providers?.filter(provider
+ * (`model-catalog-menu.tsx:249-259` @ `72a3277cd7`, `providers?.filter(provider
  * => provider.slug.toLowerCase() !== 'moa')`).
  *
  * Desktop drops it there because it renders presets as their own searchable
- * section instead (`:165-170,194-200`); this app has not ported presets at all
+ * section instead (`:242-247,284-290`); this app has not ported presets at all
  * (`docs/parity/model-visibility.md`), so dropping the row is what keeps them
  * off a surface that cannot honour them — a tap would send a preset name where
  * a model id belongs.
  *
  * It has to happen **before** [effectiveVisibleKeys] resolves, exactly as it
- * does upstream (`:182-185` resolves over `pickerProviders`): resolving over
+ * does upstream (`:274-277` resolves over `pickerProviders`): resolving over
  * the raw catalog expands `Mixture of Agents` into the curated default for
  * everyone, including the customised people whose stored set never named it.
  *
@@ -232,7 +232,7 @@ fun pickerProviders(providers: List<ModelProvider>): List<ModelProvider> =
 
 /**
  * The provider-grouped rows the picker shows, ported from `groupModels`
- * (`apps/desktop/src/app/shell/model-catalog-menu.tsx:546-601` @ `3ca096de`).
+ * (`apps/desktop/src/app/shell/model-catalog-menu.tsx:715-770` @ `72a3277cd7`).
  *
  * [providers] is [pickerProviders], never the raw catalog, and [visible] is the
  * **resolved** display set, never the raw stored one: Desktop resolves both

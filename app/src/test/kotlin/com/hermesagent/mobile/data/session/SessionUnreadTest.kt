@@ -11,7 +11,7 @@ import org.junit.Test
  * Desktop resolves them once so the sidebar, the tabs and the switcher cannot
  * disagree about what a session is doing
  * (`apps/desktop/src/store/session-dot-state.ts:19-23,125-158` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Every expectation below is
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). Every expectation below is
  * transcribed from that priority list, not derived from production code.
  */
 class SessionUnreadTest {

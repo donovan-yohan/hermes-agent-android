@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.session
  * The shapes the chat surface renders.
  *
  * These are deliberately modelled on what the Hermes gateway is authoritative
- * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `3ca096de`),
+ * for (`apps/desktop/AGENTS.md`, "Decide state by authority" @ `72a3277cd7`),
  * not on UI-local convenience. The live Gateway repository maps protocol data
  * into these types while [SessionCache] preserves backend authority.
  */
@@ -40,7 +40,7 @@ enum class SessionStatus {
  * Unread has two sources and Desktop resolves them in one place rather than at
  * each call site, so the sidebar, the tabs and the switcher cannot disagree
  * (`apps/desktop/src/store/session-dot-state.ts:19-23,131-158` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`): this client's transient
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`): this client's transient
  * finished-turn marker ([SessionStatus.Unread]) and the backend's durable read
  * watermark ([SessionSummary.unread]). Both claim the same tier — "there is
  * something here you haven't opened" — and everything louder (a background
@@ -61,7 +61,7 @@ fun SessionSummary.displayStatus(): SessionStatus =
  * `unread` is the row's own flag and `isUnread` is membership of
  * `$unreadFinishedSessionIds`
  * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:314-315,319` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). [displayStatus] is the dot's
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). [displayStatus] is the dot's
  * question, where a louder state outranks unread; using it here would leave a
  * row that is working, backgrounded or waiting on input offering `Mark as
  * unread` while its watermark already says unread — and no way to clear it.
@@ -110,8 +110,8 @@ data class SessionSummary(
     val activityStartedAtMillis: Long? = null,
     /**
      * Durable server-side soft-archive flag (`sessions.archived`, exposed as a
-     * real JSON boolean at hermes-agent @ `3ca096de`,
-     * `hermes_cli/web_routers/sessions.py:154`).
+     * real JSON boolean at hermes-agent @ `72a3277cd7`,
+     * `hermes_cli/web_routers/sessions.py:218`).
      *
      * Null is not `false`: it means this Gateway's list contract never said.
      * The `session.list` RPC an older Gateway answers carries no such column
@@ -254,10 +254,10 @@ data class ComposerPreviewArtifact(
 /**
  * The Gateway's durable address for one persisted message — the `messages.id`
  * it stamps onto a history row when the transcript is read with row ids
- * (NousResearch/hermes-agent @ `3ca096de`,
- * `tui_gateway/methods_session.py:2611-2620`: "the durable row id is how
+ * (NousResearch/hermes-agent @ `72a3277cd7`,
+ * `tui_gateway/methods_session.py:1655-1656`: "the durable row id is how
  * clients address a specific persisted turn"; the wire value is projected at
- * `tui_gateway/server.py:7752-7758`).
+ * `tui_gateway/session_history.py:223-224`).
  *
  * A separate type because it is not interchangeable with [TranscriptEntry.id]:
  * that id is a rendering key this client mints, and it exists for every row —
@@ -377,7 +377,7 @@ internal fun TranscriptEntry.withRowId(rowId: TranscriptRowId?): TranscriptEntry
  *
  * A replace keyed on the rendering id is wholesale, so an unstamped entry
  * landing on a stamped one would erase the only address the backend gave us for
- * that row (`transcript-backfill.ts:44-57` @ `3ca096de` dedupes on exactly that
+ * that row (`transcript-backfill.ts:44-57` @ `72a3277cd7` dedupes on exactly that
  * address). Null on the incoming entry means "the backend has not written this
  * down yet", never "this row has no durable identity" — so it may not overwrite
  * one that was.

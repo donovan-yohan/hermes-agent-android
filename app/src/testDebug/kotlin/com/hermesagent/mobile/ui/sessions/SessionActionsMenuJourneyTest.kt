@@ -274,7 +274,7 @@ class SessionActionsMenuJourneyTest {
     /**
      * The four verbs Desktop renders that this build cannot perform ship
      * visible, dimmed, marked, and inert — the #101 rule, in the menu's own
-     * slots (`session-actions-menu.tsx:337-359,467-475,488-496` @ `3ca096de`).
+     * slots (`session-actions-menu.tsx:337-359,467-475,488-496` @ `72a3277cd7`).
      */
     @Test
     fun `an unbuilt verb renders marked, keeps the touch floor and refuses the tap`() {
@@ -693,7 +693,7 @@ class SessionActionsMenuJourneyTest {
         /**
          * Desktop's row menu top to bottom, minus the open and tab groups this
          * platform declares non-goals (`session-actions-menu.tsx:462-504` @
-         * `3ca096de`). `SessionActionsMenuTest` holds the same order as a spec;
+         * `72a3277cd7`). `SessionActionsMenuTest` holds the same order as a spec;
          * this file asserts it against what is drawn.
          */
         val DESKTOP_MENU_LABELS = listOf(

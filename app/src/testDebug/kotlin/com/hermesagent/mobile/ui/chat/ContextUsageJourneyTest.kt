@@ -167,7 +167,7 @@ class ContextUsageJourneyTest {
     @Test
     fun `clicking context meter opens context usage sheet with metrics and categories`() {
         // The colours are the strings the Gateway actually sends
-        // (`agent/context_breakdown.py:19-28` @ `3ca096de`), and the ids are
+        // (`agent/context_breakdown.py:18-27` @ `72a3277cd7`), and the ids are
         // its own, so the eight `en.ts` labels are what has to render.
         val breakdown = ContextBreakdown(
             contextUsed = 4_000,

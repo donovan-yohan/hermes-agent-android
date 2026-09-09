@@ -9,7 +9,7 @@ import org.junit.Test
  *
  * Desktop loads `Collapse-Bold.woff2` from `@nous-research/ui`
  * (`apps/desktop/src/styles.css:62-68` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`); the same file is in the pinned
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`); the same file is in the pinned
  * checkout at `web/public/fonts/Collapse-Bold.woff2`. Android's `res/font`
  * cannot read woff2, so what ships is that file with the container removed and
  * nothing else touched. This is the gate on "and nothing else touched":
@@ -103,7 +103,7 @@ class CollapseBoldFontTest {
         const val HERMES_EM = 3.727f
         const val AGENT_EM = 2.861f
 
-        /** `.wordmark`'s `letter-spacing: 0.08em` (`styles.css:1634` @ `3ca096de`). */
+        /** `.wordmark`'s `letter-spacing: 0.08em` (`styles.css:1649` @ `72a3277cd7`). */
         const val WORDMARK_TRACKING_EM = 0.08f
 
         /** `contract.json` node 4: the visible fitted span, and the face it was set in. */

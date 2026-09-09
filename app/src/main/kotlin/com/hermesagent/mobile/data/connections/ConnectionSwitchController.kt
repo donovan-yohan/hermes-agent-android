@@ -20,9 +20,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * Desktop reports exactly one of these to the person: `selectConnection` throws
  * when the target "did not become active" and the switcher toasts
- * `switchConnectionFailed` (`apps/desktop/src/store/connections.ts:198-200`,
- * `app/chat/sidebar/connection-switcher.tsx:123-128` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`). The cases are separated rather
+ * `switchConnectionFailed` (`apps/desktop/src/store/connections.ts:415`,
+ * `app/chat/sidebar/connection-switcher.tsx:131-132` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). The cases are separated rather
  * than collapsed into a boolean because two of them are not failures to report:
  * a switch nobody asked for, and a row whose own line already explains that
  * nothing was going to dial it.
@@ -142,7 +142,7 @@ internal class ConnectionSwitchController(
     /**
      * The outcome is returned rather than swallowed: Desktop's switcher only
      * knows to toast because `selectConnection` throws
-     * (`connection-switcher.tsx:123-128` @ `3ca096de`), and a switch that
+     * (`connection-switcher.tsx:131-132` @ `72a3277cd7`), and a switch that
      * silently does nothing is the bug this reports.
      */
     suspend fun select(id: String): ConnectionSwitchOutcome =
@@ -255,7 +255,7 @@ internal class ConnectionSwitchController(
         } else {
             // Desktop draws no line between "asked for attention" and "never
             // answered" either: both are `did not become active`
-            // (`store/connections.ts:198-200` @ `3ca096de`).
+            // (`store/connections.ts:415` @ `72a3277cd7`).
             ConnectionSwitchOutcome.NotConnected
         }
     }

@@ -273,7 +273,7 @@ interface GatewaySessionRepository {
      * A no-op when nothing older is known to exist, when a page for that
      * session is already in flight, or on a Gateway with no paged transcript
      * route. A failure is not raised: the control stays available and the next
-     * press retries (`transcript-backfill.ts:143-148` @ `3ca096de`).
+     * press retries (`transcript-backfill.ts:143-148` @ `72a3277cd7`).
      */
     suspend fun loadEarlierMessages(durableId: String) = Unit
 
@@ -288,7 +288,7 @@ interface GatewaySessionRepository {
      *
      * Rows returned here are UI state, never [SessionCache] truth. A hit this
      * app has not loaded is a *stub* carrying only what the search contract
-     * says (`apps/desktop/src/types/hermes.ts:1193-1208` @ `3ca096de`).
+     * says (`apps/desktop/src/types/hermes.ts:1223-1238` @ `72a3277cd7`).
      */
     suspend fun searchSessions(query: String, profile: String? = null): List<SessionSummary>? = null
 
@@ -299,14 +299,14 @@ interface GatewaySessionRepository {
 
     /**
      * Pin or unpin one conversation through `PATCH /api/sessions/{id}`
-     * (`hermes_cli/web_routers/sessions.py:829-830` @ `3ca096de`). Optimistic:
+     * (`hermes_cli/web_routers/sessions.py:613` @ `72a3277cd7`). Optimistic:
      * the row is painted first and repainted if the write is refused.
      */
     suspend fun setSessionPinned(durableId: String, pinned: Boolean): Unit =
         error("Session pinning is not implemented by this repository.")
 
     /**
-     * Archive or restore one conversation (`sessions.py:825-826` @ `3ca096de`).
+     * Archive or restore one conversation (`sessions.py:611` @ `72a3277cd7`).
      * Archiving evicts the row through the cache's explicit tombstone and puts
      * it back if the write is refused; restoring clears the flag in place.
      */
@@ -314,10 +314,10 @@ interface GatewaySessionRepository {
         error("Session archiving is not implemented by this repository.")
 
     /**
-     * Arm or retire the backend read watermark (`sessions.py:831-832`, which
-     * writes `set_session_read(read = !unread)` @ `3ca096de`). Marking read
+     * Arm or retire the backend read watermark (`sessions.py:614`, which
+     * writes `set_session_read(read = !unread)` @ `72a3277cd7`). Marking read
      * also clears this client's transient finished-turn dot, in Desktop's order
-     * (`app/chat/sidebar/session-actions-menu.tsx:316-332` @ `3ca096de`), so a
+     * (`app/chat/sidebar/session-actions-menu.tsx:316-332` @ `72a3277cd7`), so a
      * later list page cannot repaint what was just dismissed.
      */
     suspend fun setSessionUnread(durableId: String, unread: Boolean): Unit =
@@ -329,7 +329,7 @@ interface GatewaySessionRepository {
      * Archived rows are excluded from the session list itself, so the Archived
      * view has to fetch its own set rather than filter the live one — Desktop's
      * `loadArchivedSessions` (`apps/desktop/src/store/sidebar-archive.ts:7-30` @
-     * `3ca096de`: "Archived rows are excluded from the sessions query, so the
+     * `72a3277cd7`: "Archived rows are excluded from the sessions query, so the
      * Archived view has to fetch its own set. Capped: it's a lookup surface, not
      * a feed."). One `archived=only` request per profile leg, capped, layered
      * into the cache and never mixed into the live page's window.
@@ -404,7 +404,7 @@ data class SessionRehome(
  * How far through the backend's session list this connection has read.
  *
  * Paging is explicit here for the same reason it is on Desktop: the list foot
- * carries a control the user presses (`load-more-row.tsx:15` @ `3ca096de`),
+ * carries a control the user presses (`load-more-row.tsx:15` @ `72a3277cd7`),
  * never a scroll that quietly asks for more. So this describes a button, and
  * the three things a button needs to know — whether pressing it would do
  * anything, whether a press is in flight, and how many rows are still out
@@ -462,7 +462,7 @@ private enum class GatewayOptionalCapability {
      * contract that can hydrate a session with its newest page instead of the
      * whole conversation, and the only one `Show earlier messages` can read
      * (`session.history` takes a session id and nothing else,
-     * `tui_gateway/methods_session.py:2827-2856` @ `3ca096de`). A `404` here is
+     * `tui_gateway/methods_session.py:1649-1663` @ `72a3277cd7`). A `404` here is
      * this backend saying it has no such route; every other refusal falls back
      * to the RPC for that one read without demoting the connection, because
      * opening a session must not become less reliable than it was before the
@@ -490,7 +490,7 @@ private enum class SessionPageRead {
  * route's own default — never mentions an archived row, so the Archived view
  * cannot be a filter over the live page. Desktop draws the same line, fetching
  * its archived set with a second `archived: 'only'` query into a store of its
- * own (`apps/desktop/src/store/sidebar-archive.ts:7-30` @ `3ca096de`).
+ * own (`apps/desktop/src/store/sidebar-archive.ts:7-30` @ `72a3277cd7`).
  */
 private enum class SessionPool {
     /** The live list: paged, and the only pool `Load more` walks. */
@@ -543,7 +543,7 @@ private data class PendingFlagWrite(
 /**
  * How long a fenced write outranks a list page, matching Desktop's
  * `UNREAD_WRITE_GUARD_MS` (`apps/desktop/src/store/session-unread-remote.ts:28`
- * @ `3ca096de`). The fence normally clears the moment a page confirms it; the
+ * @ `72a3277cd7`). The fence normally clears the moment a page confirms it; the
  * expiry is what stops a backend that never agrees from making this client
  * permanently disbelieve it.
  */
@@ -553,7 +553,7 @@ private const val FLAG_WRITE_GUARD_MILLIS = 10_000L
  * Where one session's transcript window stands on this connection.
  *
  * @param pagingSessionId the id the route resolved the compression chain
- *   forward to (`hermes_cli/web_routers/sessions.py:663,707` @ `3ca096de`).
+ *   forward to (`hermes_cli/web_routers/sessions.py:540,556` @ `72a3277cd7`).
  *   Every later page addresses it, so a page can never be read off a parent.
  * @param profile the scope that served the tail, so an older page routes its
  *   read to the same backend store.
@@ -596,8 +596,8 @@ private data class TranscriptHydrationPlan(
      * A row that names a profile is read scoped to it, and that name is the
      * canonicalised one the leg that listed it asked for: the list route writes
      * `row_profile = profile_name or _cron_default_profile()` onto every row it
-     * serves as `s["profile"]` (`hermes_cli/web_routers/sessions.py:182-189` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     * serves as `s["profile"]` (`hermes_cli/web_routers/sessions.py:211-219` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      *
      * A row that names NONE is read unscoped, and an unscoped read lands on
      * exactly the launch profile's own `state.db`. Naming none is the ordinary
@@ -861,7 +861,7 @@ internal class LiveGatewaySessionRepository(
      * back the moment it was dismissed. Desktop fences the same two flags the
      * same way (`apps/desktop/src/store/session-unread-remote.ts:28-31` and the
      * `unconfirmedPinWrites` fence honoured at
-     * `app/chat/sidebar/session-index.ts:51-56,83-88` @ `3ca096de`).
+     * `app/chat/sidebar/session-index.ts:51-56,83-88` @ `72a3277cd7`).
      *
      * Keyed under the live id *and* the compression lineage root, because a
      * page can name the same conversation under either and a pin that only
@@ -1201,8 +1201,8 @@ internal class LiveGatewaySessionRepository(
                     // That route stamps *every* row with a profile even when
                     // the request named none: `row_profile = profile_name or
                     // _cron_default_profile()`, written onto each row as
-                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:182-189`
-                    // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). That
+                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:211-219`
+                    // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). That
                     // fallback resolves the Gateway process's *own* active
                     // profile, and answers `"default"` only when that profile
                     // is literally `default` or `custom` — otherwise the
@@ -1318,7 +1318,7 @@ internal class LiveGatewaySessionRepository(
                 minMessages = 0,
                 // Desktop reads its archived view out of a second `only` query
                 // into a store of its own (`store/sidebar-archive.ts:7-30` @
-                // `3ca096de`), and so does this. The live page is what decides
+                // `72a3277cd7`), and so does this. The live page is what decides
                 // whether an archived row is *present at all*: `exclude` never
                 // mentions one, and folding them into the same LIMIT window
                 // would make the Archived view empty for anyone whose newest
@@ -1368,9 +1368,9 @@ internal class LiveGatewaySessionRepository(
         }
         // The older `session.list` contract has no archived filter at all: it
         // reads `limit` and `include_hidden` and nothing else
-        // (`tui_gateway/methods_session.py:246-266` @ `3ca096de`), and the rows
+        // (`tui_gateway/methods_session.py:396-399` @ `72a3277cd7`), and the rows
         // it emits carry `id/title/preview/started_at/message_count/source`
-        // with no `archived` field to read back (`:267-282`). A backend that
+        // with no `archived` field to read back (`:124-129`). A backend that
         // only serves it cannot answer this question. An empty pool would
         // render `Nothing archived`, which is a claim about the account rather
         // than about the Gateway, so this says so instead.
@@ -1523,7 +1523,7 @@ internal class LiveGatewaySessionRepository(
 
                 // A 404 here is TWO different answers wearing one status. The
                 // route raises it for a session id it could not resolve
-                // (`sessions.py:660-662,683-684` @ `3ca096de`) as readily as a
+                // (`sessions.py:537-539,551-552` @ `72a3277cd7`) as readily as a
                 // backend with no such route does, and the read is scoped by
                 // `owningProfileParam`, which answers null for a row whose
                 // owning profile is not known yet — sending the read to a
@@ -1568,7 +1568,7 @@ internal class LiveGatewaySessionRepository(
      *
      * `session.history` merges the chain
      * (`get_messages_as_conversation(..., include_ancestors=True)`,
-     * `tui_gateway/methods_session.py:2843-2847` @ `3ca096de`); the paged route
+     * `tui_gateway/methods_session.py:1661-1662` @ `72a3277cd7`); the paged route
      * resolves the chain FORWARD to its tip and reads that session's rows alone
      * (`hermes_cli/web_routers/sessions.py:660-663,672-678`). Windowing such a
      * session would put turns Android used to show out of reach behind a control
@@ -1600,7 +1600,7 @@ internal class LiveGatewaySessionRepository(
      * reconnect resume, a restored active id, a session opened straight from a
      * notification. Such a session is windowed on the evidence available at the
      * time, and the list is the only contract that ever says otherwise
-     * (`hermes_state.py:11586-11605` @ `3ca096de`). So the moment it does, the
+     * (`hermes_state_sessions.py:956-973` @ `72a3277cd7`). So the moment it does, the
      * window goes: the control stops being offered rather than paging to a first
      * row that is not the conversation's first row. The transcript already on
      * screen stays as it is, and the next open hydrates it whole.
@@ -1693,8 +1693,8 @@ internal class LiveGatewaySessionRepository(
      * A hit that this app has not loaded arrives as a *stub*: an id, a lineage
      * root, a snippet, a model and a source, and nothing else the row contract
      * would normally carry. Desktop builds the same stub and keeps it in the
-     * sidebar's own memo (`apps/desktop/src/app/chat/sidebar/index.tsx:272-293,
-     * 655-678` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`), never in its
+     * sidebar's own memo (`apps/desktop/src/app/chat/sidebar/index.tsx:279-300,
+     * 679-702` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), never in its
      * session store. Filing one under this cache's backend-authoritative rules
      * would make a row with an invented message count, no archive flag and no
      * pin flag indistinguishable from a listed one — and it would survive the
@@ -2361,7 +2361,7 @@ internal class LiveGatewaySessionRepository(
 
     /**
      * Reconcile the `approval_mode` / `yolo` pair a streamed `session.info`
-     * carries (`tui_gateway/server.py:7659-7660` @ `3ca096de`).
+     * carries (`tui_gateway/server.py:2051` @ `72a3277cd7`).
      *
      * **Only while the app is scoped to the Gateway's launch profile.** Those
      * two fields come from `_load_approval_mode()`, which resolves under
@@ -2526,7 +2526,7 @@ internal class LiveGatewaySessionRepository(
                         // submitted text. The gateway already holds the bytes
                         // via image.attach_bytes and persists the `@image:`
                         // refs itself at turn end (`_build_persist_message_with_image_refs`,
-                        // tui_gateway/server.py @ 3ca096de). The attach response's
+                        // tui_gateway/session_history.py @ 72a3277cd7). The attach response's
                         // `text` field is placeholder prose for the model and
                         // must never be echoed into the user-visible turn.
                         is OutgoingAttachment.Image -> {
@@ -3503,9 +3503,9 @@ internal class LiveGatewaySessionRepository(
      * Either id would do. `set_session_pinned` flips the whole compression
      * lineage as a unit — "the whole compression chain is flipped as a unit, so
      * pinning the surfaced tip protects the root (and vice-versa) no matter
-     * which id the caller holds" (`hermes_state.py:10877-10888` @ `3ca096de`)
+     * which id the caller holds" (`hermes_state_sessions.py:878-880` @ `72a3277cd7`)
      * — and the list projects the *root's* `pinned` onto the tip it surfaces
-     * (`:11596-11603`, where `pinned` is not among the fields the tip replaces).
+     * (`:964-970`, where `pinned` is not among the fields the tip replaces).
      * Desktop happens to PATCH the root (`store/session.ts:352-356`); this
      * PATCHes whatever the row is filed under, which is the id the reader
      * pressed on. What actually has to know about the lineage is the fence,
@@ -3539,8 +3539,8 @@ internal class LiveGatewaySessionRepository(
      * verb may destroy and none of which a rollback could put back. The live
      * list stops showing an archived row because `buildSessionRows` filters
      * the pool it draws from (`data/session/SessionGrouping.kt:112`), which is
-     * where Desktop draws the same line (`sidebar/index.tsx:488-495` @
-     * `3ca096de`: "Archived is a view of its own set rather than a filter over
+     * where Desktop draws the same line (`sidebar/index.tsx:511-518` @
+     * `72a3277cd7`: "Archived is a view of its own set rather than a filter over
      * this one").
      */
     override suspend fun setSessionArchived(durableId: String, archived: Boolean) {
@@ -3571,7 +3571,7 @@ internal class LiveGatewaySessionRepository(
         fenceFlagWrite(previous, PendingFlagWrite(unread = unread, atMillis = clock()))
         // Both unread sources move in one action, in Desktop's order: the
         // transient finished-turn dot is cleared with the watermark rather than
-        // after it (`session-actions-menu.tsx:316-332` @ `3ca096de`), so no
+        // after it (`session-actions-menu.tsx:316-332` @ `72a3277cd7`), so no
         // refresh in between can repaint what was just dismissed.
         cache.upsertSession(
             previous.copy(
@@ -3640,7 +3640,7 @@ internal class LiveGatewaySessionRepository(
      *
      * Desktop keeps its guard as a read-side projection
      * (`store/session-dot-state.ts:142-156`, `sidebar/session-index.ts:83-88` @
-     * `3ca096de`), so when the window closes the row it renders is the server's
+     * `72a3277cd7`), so when the window closes the row it renders is the server's
      * again with nothing further to do. This fence writes through to
      * [SessionCache] instead, which is the backend-authoritative store — so a
      * write the Gateway acknowledged but has never echoed in a list page would
@@ -5324,7 +5324,7 @@ internal fun parseModelCatalog(result: JsonElement): ModelCatalog {
             label = provider.string("name")?.trim()?.takeIf(String::isNotEmpty) ?: id,
             models = models,
             // The backend's own shortlist, when it ships one
-            // (`hermes_cli/inventory.py:513-568` @ `3ca096de`). It decides what
+            // (`hermes_cli/inventory.py:323-358` @ `72a3277cd7`). It decides what
             // the Models sheet shows before anyone customises it, so an
             // aggregator's hundred rows are not the default view.
             // Strings only, kept verbatim: the field is typed `string[]`
@@ -6271,8 +6271,8 @@ internal val NO_ACTIVE_TURNS: StateFlow<Set<String>> = MutableStateFlow(emptySet
 /**
  * What a refused flag write says.
  *
- * Desktop has one such string, `unreadFailed` (`apps/desktop/src/i18n/en.ts:2307`
- * @ `3ca096de`), and it is used verbatim. It has no counterpart for pin or
+ * Desktop has one such string, `unreadFailed` (`apps/desktop/src/i18n/en.ts:2501`
+ * @ `72a3277cd7`), and it is used verbatim. It has no counterpart for pin or
  * archive — a failed pin there raises the generic action-failed notice — so
  * those two follow this app's own error rule instead: what did not happen, and
  * a safe next step, never the transport's own words.
@@ -6307,9 +6307,9 @@ private const val SESSION_PAGE_SIZE = 50
  *
  * Desktop asks for 200 (`store/sidebar-archive.ts:9`), which its route allows:
  * `/api/profiles/sessions` caps at 500 precisely because "real desktop callers
- * use limit=200" (`hermes_cli/web_routers/profiles.py:222-228` @ `3ca096de`).
+ * use limit=200" (`hermes_cli/web_routers/profiles.py:360-364` @ `72a3277cd7`).
  * This app reads one profile leg at a time through `/api/sessions`, which caps
- * at 100 (`hermes_cli/web_routers/sessions.py:91-94`), so 100 is the whole
+ * at 100 (`hermes_cli/web_routers/sessions.py:162-163`), so 100 is the whole
  * window that route will give — and the same cap this client already enforces
  * (`MAX_SESSION_PAGE`).
  */

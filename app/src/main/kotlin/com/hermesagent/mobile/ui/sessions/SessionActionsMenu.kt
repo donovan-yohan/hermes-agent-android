@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
  * The per-session actions menu, ported from Desktop's `SessionActionsMenu`
  * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx` and the
  * `ActionsMenu` kit at `apps/desktop/src/components/ui/actions-menu.tsx`)
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * This slice ships the container, not the verbs: every session row and the
  * chat header get one 48dp control opening one menu, and the *group order* is
@@ -57,33 +57,33 @@ import kotlinx.coroutines.delay
  * `docs/parity/session-actions-menu.md`.
  */
 
-/** Desktop's spoken name for the control (`i18n/en.ts:2319` @ `3ca096de`). */
+/** Desktop's spoken name for the control (`i18n/en.ts:2513` @ `72a3277cd7`). */
 const val SESSION_ACTIONS_LABEL = "Session actions"
 
 internal const val SESSION_ACTIONS_MENU_TAG = "Session actions menu"
 
-/** `Copy ID` (`i18n/en.ts:2308` @ `3ca096de`). */
+/** `Copy ID` (`i18n/en.ts:2502` @ `72a3277cd7`). */
 private const val COPY_ID = "Copy ID"
 
-/** `Rename…` (`i18n/en.ts:2311` @ `3ca096de`). */
+/** `Rename…` (`i18n/en.ts:2505` @ `72a3277cd7`). */
 const val RENAME = "Rename…"
 
-/** `Delete` (`i18n/en.ts:24` @ `3ca096de`). */
+/** `Delete` (`i18n/en.ts:58` @ `72a3277cd7`). */
 const val DELETE = "Delete"
 
-/** `Pin` / `Unpin` (`i18n/en.ts:2303-2304` @ `3ca096de`). */
+/** `Pin` / `Unpin` (`i18n/en.ts:2497-2498` @ `72a3277cd7`). */
 const val PIN = "Pin"
 const val UNPIN = "Unpin"
 
-/** `Mark as unread` / `Mark as read` (`i18n/en.ts:2305-2306` @ `3ca096de`). */
+/** `Mark as unread` / `Mark as read` (`i18n/en.ts:2499-2500` @ `72a3277cd7`). */
 const val MARK_UNREAD = "Mark as unread"
 const val MARK_READ = "Mark as read"
 
-/** `Archive` (`i18n/en.ts:2312` @ `3ca096de`). */
+/** `Archive` (`i18n/en.ts:2506` @ `72a3277cd7`). */
 const val ARCHIVE = "Archive"
 
 /**
- * `Appearance` (`i18n/en.ts:2242` @ `3ca096de`) — Desktop's per-session colour
+ * `Appearance` (`i18n/en.ts:2436` @ `72a3277cd7`) — Desktop's per-session colour
  * submenu, rendered disabled behind the `WIP` chip.
  *
  * Desktop opens a swatch grid from this trigger (`session-actions-menu.tsx:467-475`).
@@ -93,20 +93,20 @@ const val ARCHIVE = "Archive"
  */
 const val APPEARANCE = "Appearance"
 
-/** `Branch` (`i18n/en.ts:2310` @ `3ca096de`), the first of Desktop's work verbs. */
+/** `Branch` (`i18n/en.ts:2504` @ `72a3277cd7`), the first of Desktop's work verbs. */
 const val BRANCH = "Branch"
 
-/** `Export` (`i18n/en.ts:2309` @ `3ca096de`), the second. */
+/** `Export` (`i18n/en.ts:2503` @ `72a3277cd7`), the second. */
 const val EXPORT = "Export"
 
 /**
- * `Move to project` (`i18n/en.ts:2247` @ `3ca096de`), Desktop's second nested
+ * `Move to project` (`i18n/en.ts:2441` @ `72a3277cd7`), Desktop's second nested
  * submenu, after the work verbs.
  */
 const val MOVE_TO_PROJECT = "Move to project"
 
 /**
- * `Unarchive` (`i18n/en.ts:1156` @ `3ca096de`).
+ * `Unarchive` (`i18n/en.ts:1326` @ `72a3277cd7`).
  *
  * Desktop's row menu never says this word: its restore lives on the Archived
  * Chats settings page (`app/settings/sessions-settings.tsx:148-154`), which is
@@ -119,7 +119,7 @@ const val UNARCHIVE = "Unarchive"
 /**
  * The copy confirmation. Desktop's `CopyButton` swaps the item's own icon and
  * label rather than raising a notice, and the label it swaps in is
- * `t.common.copied` (`components/ui/copy-button.tsx:147-148`; `i18n/en.ts:21`)
+ * `t.common.copied` (`components/ui/copy-button.tsx:147-148`; `i18n/en.ts:55`)
  * — the same word, verbatim. Confirming in place is also this app's established
  * clipboard grammar (`Transcript.kt`, `CodingStatusRow.kt`): Android 13+ already
  * raises a system clipboard notice and a second one would be the app talking
@@ -134,7 +134,7 @@ private const val COPY_ID_DONE = "Copied"
  * and a desktop notification (`session-actions-menu.tsx:482,486`). Touch has no
  * hover and this build has no notification centre, so the one slot on screen
  * carries the specific message rather than the bare word — `copyIdFailed`
- * verbatim (`i18n/en.ts:2318` @ `3ca096de`).
+ * verbatim (`i18n/en.ts:2512` @ `72a3277cd7`).
  */
 private const val COPY_ID_FAILED = "Could not copy session ID"
 
@@ -261,7 +261,7 @@ fun sessionActionItems(
         if (pinned) Unpin else Pin,
         // One item, both unread sources, Desktop's own pairing: the label and
         // the glyph both name the *action*, so `Mark as read` carries the open
-        // envelope (`session-actions-menu.tsx:310-333` @ `3ca096de`).
+        // envelope (`session-actions-menu.tsx:310-333` @ `72a3277cd7`).
         if (unread) MarkRead else MarkUnread,
         Appearance,
         when (copyStatus) {
@@ -286,14 +286,14 @@ internal fun hasSessionActions(sessionId: String): Boolean = sessionId.isNotBlan
 
 /**
  * `Rename…` in the identity group (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:288-296`
- * @ `3ca096de`).
+ * @ `72a3277cd7`).
  */
 private val Rename = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Edit, RENAME)
 
 /**
  * `Pin` / `Unpin` in the identity group, one slot below Rename
  * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:297-305` @
- * `3ca096de`). One glyph for both states, as upstream: the label carries the
+ * `72a3277cd7`). One glyph for both states, as upstream: the label carries the
  * direction.
  */
 private val Pin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, PIN)
@@ -301,7 +301,7 @@ private val Pin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin
 private val Unpin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, UNPIN)
 
 /**
- * The read-state row (`session-actions-menu.tsx:310-333` @ `3ca096de`).
+ * The read-state row (`session-actions-menu.tsx:310-333` @ `72a3277cd7`).
  *
  * Codicon has no `mail-unread` glyph, which is why closed `mail` and open
  * `mail-read` are the pair upstream chose — and why inventing a third would
@@ -313,7 +313,7 @@ private val MarkUnread = SessionActionItem(SessionActionsGroup.Identity, HermesI
 
 /**
  * Desktop's `Appearance` submenu trigger, in the identity group between the
- * read-state row and Copy ID (`session-actions-menu.tsx:467-475` @ `3ca096de`).
+ * read-state row and Copy ID (`session-actions-menu.tsx:467-475` @ `72a3277cd7`).
  *
  * Flattened to one row: a nested pointer submenu is not what ships on a phone,
  * and with no per-session colour to persist there is nothing for a second level
@@ -325,7 +325,7 @@ private val Appearance =
 
 /**
  * Desktop's two work verbs, in Desktop's order
- * (`session-actions-menu.tsx:337-359` @ `3ca096de`): `Branch` on `repo-forked`
+ * (`session-actions-menu.tsx:337-359` @ `72a3277cd7`): `Branch` on `repo-forked`
  * — the codicon this font has, since it ships no `git-fork` — then `Export` on
  * `cloud-download`.
  *
@@ -342,7 +342,7 @@ private val Export =
 
 /**
  * Desktop's second submenu, after the work verbs and before the tab group
- * (`session-actions-menu.tsx:488-496` @ `3ca096de`), flattened for the same
+ * (`session-actions-menu.tsx:488-496` @ `72a3277cd7`), flattened for the same
  * reason [Appearance] is. Android has no projects roster to move a session
  * into.
  */
@@ -351,7 +351,7 @@ private val MoveToProject =
 
 /**
  * `Archive` in the danger group *above* Delete and deliberately not
- * destructive-red (`session-actions-menu.tsx:431-440,441-459` @ `3ca096de`):
+ * destructive-red (`session-actions-menu.tsx:431-440,441-459` @ `72a3277cd7`):
  * putting a chat away and destroying it must not read alike.
  */
 private val Archive = SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Archive, ARCHIVE)
@@ -360,7 +360,7 @@ private val Unarchive = SessionActionItem(SessionActionsGroup.Danger, HermesIcon
 
 /**
  * `Delete` in the danger group, destructive-styled (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:441-459`
- * @ `3ca096de`).
+ * @ `72a3277cd7`).
  */
 private val Delete =
     SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Trash, DELETE, destructive = true)

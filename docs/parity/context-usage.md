@@ -11,27 +11,27 @@ Hermes Desktop's top-bar **Context Meter** and its **Context Usage panel**
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer, Gateway HTTP, CLI | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; every citation taken with `git show <sha>:<path>` |
+| Desktop renderer, Gateway HTTP, CLI | `hermes-agent` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` | read-only checkout; every citation taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
 ## Paths that settled the port
 
-Every row was re-read with `git show 3ca096de5f8183cb2e0ec23673f294d5978656a3:<path>`.
+Every row was re-read with `git show 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd:<path>`.
 
 | Question | Path |
 |---|---|
 | Top bar Context Meter status label and glyph bar | `apps/desktop/src/lib/statusbar.tsx:37-60` |
-| Context Usage panel layout, header, token metrics, category list, segment bar | `apps/desktop/src/app/shell/context-usage-panel.tsx:19-99` |
+| Context Usage panel layout, header, token metrics, category list, segment bar | `apps/desktop/src/app/shell/context-usage-panel.tsx:19-105` |
 | Context breakdown fetch lifecycle, gating, caching | `apps/desktop/src/app/shell/hooks/use-context-breakdown.ts:31-62` |
-| `gaugeUsage`: which figures the breakdown overrides, and which it never does | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:238-268` |
+| `gaugeUsage`: which figures the breakdown overrides, and which it never does | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:251-283` |
 | Number compacting logic and scale thresholds | `apps/desktop/src/lib/format.ts:4-24` |
-| Gateway RPC method `session.context_breakdown`, and that it routes on `session_id` alone | `tui_gateway/methods_session.py:1756-1783`, `tui_gateway/server.py:3564-3584` |
-| Gateway event `session.usage`, and that its ticker is joined before `message.complete` | `tui_gateway/server.py:12815-12851` |
-| `message.complete` carries the authoritative end-of-turn usage | `tui_gateway/server.py:13431` |
-| Which colour the Gateway sends for a category, and that it filters `tokens > 0` | `agent/context_breakdown.py:19-28,152-162` |
-| What those eight CSS variables resolve to | `apps/desktop/src/styles.css:210-224`, `:root.dark:556-558` |
-| Localized category names and panel copy | `apps/desktop/src/i18n/en.ts:2963-2980` |
+| Gateway RPC method `session.context_breakdown`, and that it routes on `session_id` alone | `tui_gateway/methods_session.py:1146-1169`, `tui_gateway/server.py:1051-1067` |
+| Gateway event `session.usage`, and that its ticker is joined before `message.complete` | `tui_gateway/server.py:2989-3009` |
+| `message.complete` carries the authoritative end-of-turn usage | `tui_gateway/prompt_turn.py:624` |
+| Which colour the Gateway sends for a category, and that it filters `tokens > 0` | `agent/context_breakdown.py:18-27,165-171` |
+| What those eight CSS variables resolve to | `apps/desktop/src/styles.css:210-224`, `:root.dark:561-563` |
+| Localized category names and panel copy | `apps/desktop/src/i18n/en.ts:3266-3282` |
 
 ## State classification
 
@@ -40,7 +40,7 @@ Every row was re-read with `git show 3ca096de5f8183cb2e0ec23673f294d5978656a3:<p
 | `contextUsed`, `contextMax`, `contextPercent`, `estimatedTotal`, `model` | `session.context_breakdown` RPC or streamed `session.info` / `session.usage` | `ContextBreakdown` and `SessionUsage` on `SessionSummary` / `ChatUiState.contextMeter` |
 | `categories` | `session.context_breakdown` | `List<ContextUsageCategory>` (capped at 16, safe hex color fallback) |
 | `loading` | `useContextBreakdown` fetch in-flight | `ContextMeterState.loading` |
-| routing | Desktop sends `{ session_id }` alone (`use-context-breakdown.ts:41`) | Android also sends `profile`. It is defensive and unread: `_sess_nowait` resolves the session from `session_id` alone (`tui_gateway/server.py:3564-3584`), and this keeps the routing shape every other session RPC in `GatewaySessionRepository` sends |
+| routing | Desktop sends `{ session_id }` alone (`use-context-breakdown.ts:41`) | Android also sends `profile`. It is defensive and unread: `_sess_nowait` resolves the session from `session_id` alone (`tui_gateway/server.py:1051-1067`), and this keeps the routing shape every other session RPC in `GatewaySessionRepository` sends |
 | `empty` | `categories.isEmpty() && !loading` | `ContextUsageSheet` empty state |
 
 ## Mobile adaptation ledger
@@ -50,7 +50,7 @@ Every row was re-read with `git show 3ca096de5f8183cb2e0ec23673f294d5978656a3:<p
 | Context meter rendered in the Electron window footer / status bar | Subtitle row in the top bar beside connection status | Android uses an app top bar rather than an Electron footer; the status bar is where context consumption is visible at a glance |
 | Meter reads `30k/200k` then `[████░░░░░░] 40%` as text (`statusbar.tsx:37-60`) | A 14dp pie that fills with the percentage, then the percentage; the figures move into the sheet and into what the meter speaks | The Electron footer is a desktop window wide; the phone's status line is one row that also carries the connection line and the approval chip, and the 24-character text form pushed both off it — the ring is the same proportion in the space a phone has |
 | Dropdown / popover panel | Modal bottom sheet (`ContextUsageSheet`) | The app's consistent pattern for secondary inspectable metadata on mobile |
-| Category colours are CSS variables the browser resolves at paint (`styles.css:217-224`) | The same eight expressions resolved once in the semantic token layer, `HermesTokens.contextUsage` | Android has no CSS custom properties. The Gateway sends only variable *names* (`context_breakdown.py:19-28`), so the names are resolved through the token group; a literal hex still parses and anything unrecognised falls back to `textTertiary`, which is what Desktop's own `var(--ui-text-tertiary)` default resolves to |
+| Category colours are CSS variables the browser resolves at paint (`styles.css:217-224`) | The same eight expressions resolved once in the semantic token layer, `HermesTokens.contextUsage` | Android has no CSS custom properties. The Gateway sends only variable *names* (`context_breakdown.py:18-27`), so the names are resolved through the token group; a literal hex still parses and anything unrecognised falls back to `textTertiary`, which is what Desktop's own `var(--ui-text-tertiary)` default resolves to |
 
 ## Divergences
 
@@ -62,8 +62,8 @@ Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the a
 | Meter spells the figures out beside a ten-cell glyph bar — `30k/200k [████░░░░░░] 40%` (`statusbar.tsx:37-60`) | mobile-adaptation | A 14dp pie filled to the same percentage, then the percentage; `used / max` stays in the sheet's header and in the meter's spoken description | Viewport space: the desktop footer runs the width of a window, the phone's status line is one row shared with the connection line and the approval chip, and the text form squeezed both out — the chip truncated to `Sm`. `ChatTopBarAlignmentTest` holds the figures' width on a 360dp line and `ContextUsageJourneyTest` holds what the pie speaks |
 | Context usage details display as a dropdown popover | mobile-adaptation | Displays as a modal bottom sheet | Mobile touch viewports use bottom sheets rather than hoverable dropdown popovers |
 | Popover fixed width (`w-72` / 18rem) | mobile-adaptation | Bottom sheet spans display width | Mobile bottom sheet spans device width rather than desktop popover width |
-| Category colour is a CSS variable resolved by the browser (`styles.css:217-224`) | mobile-adaptation | The same eight expressions resolved in `HermesTokens.contextUsage`, joined to the Gateway's variable names by `resolveCategoryColor` | Android has no CSS custom properties, and the Gateway sends a name rather than a value (`agent/context_breakdown.py:19-28`); `ThemeSemanticParityTest` re-derives all eight per preset and mode, and `ContextUsageSwatchInkTest` reads the painted pixels back |
-| Every category gets `min-w-px`, so a zero-token one still shows a 1px sliver (`context-usage-panel.tsx:89`) | mobile-adaptation | A zero-token category paints no segment | `Modifier.weight` has no minimum-width floor, and the producer already filters `if tokens > 0` (`agent/context_breakdown.py:161`), so no such category reaches this client at the pin |
+| Category colour is a CSS variable resolved by the browser (`styles.css:217-224`) | mobile-adaptation | The same eight expressions resolved in `HermesTokens.contextUsage`, joined to the Gateway's variable names by `resolveCategoryColor` | Android has no CSS custom properties, and the Gateway sends a name rather than a value (`agent/context_breakdown.py:18-27`); `ThemeSemanticParityTest` re-derives all eight per preset and mode, and `ContextUsageSwatchInkTest` reads the painted pixels back |
+| Every category gets `min-w-px`, so a zero-token one still shows a 1px sliver (`context-usage-panel.tsx:95`) | mobile-adaptation | A zero-token category paints no segment | `Modifier.weight` has no minimum-width floor, and the producer already filters `if tokens > 0` (`agent/context_breakdown.py:169`), so no such category reaches this client at the pin |
 | Panel type is 12px medium / 11px (`context-usage-panel.tsx:38,42`) | mobile-adaptation | 17sp SemiBold title / 13sp body (`HermesTypography.kt:103,75`) | A desktop popover is read at arm's length with a pointer on it; the app's own type scale is what every other sheet uses, and 11px does not survive a phone at a metre |
 | Meter hidden by default behind statusbar preference toggle | omission | Shown whenever context usage data exists | deferred: #73 — statusbar preference toggle surface is that issue; on mobile the meter is displayed when data is present |
 | Statusbar item right-click context menu | omission | Absent | non-goal: mobile touch surfaces do not support desktop statusbar right-click context menus |

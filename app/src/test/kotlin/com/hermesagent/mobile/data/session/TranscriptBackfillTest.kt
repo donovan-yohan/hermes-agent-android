@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * The two rules the older-page prepend is made of, asserted directly:
  * Desktop's merge (`apps/desktop/src/app/chat/transcript-backfill.ts:36-64` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and its tail bookkeeping
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) and its tail bookkeeping
  * (`apps/desktop/src/store/transcript-tail.ts:82-96`).
  */
 class TranscriptBackfillTest {
@@ -115,8 +115,8 @@ class TranscriptBackfillTest {
 
     /**
      * The route decides the window, not the caller: it clamps any `limit` to
-     * 500 and picks one when none was given (`sessions.py:669-671` @
-     * `3ca096de`), so truncation is read off what came back.
+     * 500 and picks one when none was given (`sessions.py:543-545` @
+     * `72a3277cd7`), so truncation is read off what came back.
      */
     @Test
     fun `the echoed window decides truncation, not the one that was asked for`() {

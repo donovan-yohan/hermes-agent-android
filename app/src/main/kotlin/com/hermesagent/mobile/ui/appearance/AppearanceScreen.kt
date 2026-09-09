@@ -119,8 +119,8 @@ fun AppearanceScreen(
             // Desktop's Appearance list runs Language → Themes → UI scale →
             // Terminal font → Session density → Tab strip → Translucency →
             // Backdrop → **Intro Splash** → Composer pop-out → …
-            // (`apps/desktop/src/app/settings/appearance-settings.tsx:461-737`
-            // @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). This app ships
+            // (`apps/desktop/src/app/settings/appearance-settings.tsx:509-803`
+            // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). This app ships
             // none of the rows between the theme picker and this one, so
             // "after the skins" is the same position, not a new one.
             item {
@@ -131,10 +131,10 @@ fun AppearanceScreen(
 }
 
 /**
- * `Intro Splash` (`i18n/en.ts:588-589` @ `3ca096de`), verbatim, behind Desktop's
+ * `Intro Splash` (`i18n/en.ts:628-629` @ `72a3277cd7`), verbatim, behind Desktop's
  * own control for it: an Off/On segmented pair, not a switch
- * (`appearance-settings.tsx:715-736`). `Off` and `On` are `common.off` /
- * `common.on` (`i18n/en.ts:44-45`).
+ * (`appearance-settings.tsx:781-802` @ `72a3277cd7`). `Off` and `On` are `common.off` /
+ * `common.on` (`i18n/en.ts:78-79` @ `72a3277cd7`).
  */
 @Composable
 private fun IntroSplashRow(on: Boolean, onChange: (Boolean) -> Unit) {

@@ -39,8 +39,8 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
  * One of Desktop's four **Connection mode** cards
- * (`apps/desktop/src/app/settings/gateway-settings.tsx:1049-1082` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * (`apps/desktop/src/app/settings/gateway-settings.tsx:1142-1175` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  *
  * [mode] is `null` for a mode Desktop offers and this app cannot be on. That
  * is not an absence: the card still renders, disabled, behind a `WIP`
@@ -60,7 +60,7 @@ internal data class GatewayModeCard(
 
 /**
  * The four cards, in Desktop's order: Local gateway, Hermes Cloud, Remote
- * gateway, Connect via SSH (`gateway-settings.tsx:1049-1082` @ `3ca096de`).
+ * gateway, Connect via SSH (`gateway-settings.tsx:1142-1175` @ `72a3277cd7`).
  *
  * Total over [GatewayConnectionMode], and asserted to be. The old segmented
  * control could render a `selected` value that was not among its `options` —
@@ -124,20 +124,20 @@ fun GatewayScreen(
     // lifetime, before the window stops being secure.
     SecureScreenLifetime(onLeave = connectionsActions.onLeaveScreen)
     // Desktop keeps the mode grid in the page's own scroll, above the panel
-    // for the chosen mode (`gateway-settings.tsx:1044-1089` @ `3ca096de`).
+    // for the chosen mode (`gateway-settings.tsx:1137-1182` @ `72a3277cd7`).
     // This used to be a pinned header, which a single segmented control could
     // afford; four cards one-per-row on a phone cannot — they would leave the
     // route's own form a sliver of what is left. So the chooser travels into
     // whichever route is showing, exactly as the registry already does.
     val chooser: @Composable ColumnScope.() -> Unit = {
         // Desktop mounts its `ConnectionSwitcher` in the statusbar and nowhere
-        // else (`app/shell/hooks/use-statusbar-items.tsx:411,617-621` @
-        // `3ca096de`); this second mount is the owner-approved mobile
+        // else (`app/shell/hooks/use-statusbar-items.tsx:433,664-668` @
+        // `72a3277cd7`); this second mount is the owner-approved mobile
         // adaptation of 2026-08-30, argued in `docs/parity/gateway-connections.md`.
         // The same composable, not a copy: a forked trigger is how two
         // switchers end up disagreeing about which gateway you are on. It
         // hides itself below two connections, exactly as the rail's does
-        // (`connection-switcher.tsx:118-120`) — with one saved row this pane is
+        // (`connection-switcher.tsx:123-125`) — with one saved row this pane is
         // already showing it — and it is handed no `onManage`, because that
         // item navigates here. Its accessible name is this screen's, not the
         // rail's: only here does the registry heading carry Desktop's trigger
@@ -197,8 +197,8 @@ fun GatewayScreen(
     Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
         Box(Modifier.weight(1f)) {
             // Desktop puts the registry at the foot of this same page, below the
-            // window connection controls (`gateway-settings.tsx:1499-1502` @
-            // `3ca096de`). On a phone the page is one scroll per route, so the
+            // window connection controls (`gateway-settings.tsx:1638-1640` @
+            // `72a3277cd7`). On a phone the page is one scroll per route, so the
             // section travels into whichever route is showing rather than
             // becoming a second, separately-scrolling band.
             // Whether the pane above this footer is offering Connect right now.
@@ -239,7 +239,7 @@ fun GatewayScreen(
                     state = state,
                     actions = gatewayActions,
                     // The registry's own save path rejects a duplicate outright
-                    // (`connections-registry.tsx:120-168` @ `3ca096de`). This
+                    // (`connections-registry.tsx:144-181` @ `72a3277cd7`). This
                     // form autosaves while someone is still typing, so the same
                     // rule surfaces as a warning beside the field instead.
                     duplicateOf = connectionsState.duplicateRemoteLabel(state.remote.baseUrl),

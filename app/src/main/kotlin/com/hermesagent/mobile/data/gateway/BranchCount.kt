@@ -17,7 +17,7 @@ sealed interface BranchPlan {
 /**
  * Derives the `count` parameter for `session.branch`, mirroring Desktop's
  * `selectBranchMessages` (`apps/desktop/src/app/session/hooks/use-session-actions/utils.ts`
- * @ `3ca096de`): the tapped reply is located in the authoritative persisted
+ * @ `72a3277cd7`): the tapped reply is located in the authoritative persisted
  * transcript by durable row id first, then by role plus trimmed text taking the
  * same ordinal among identical local turns; `count` is its 1-based position
  * among visible (non-blank user/assistant) messages, the last visible message

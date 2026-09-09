@@ -82,8 +82,8 @@ class GatewaySessionRepositoryTest {
     @Test
     fun `model catalog keeps the backend's featured strings verbatim and drops non-strings`() {
         // `featured_models` is the host's own curated list — one flagship per
-        // lab (`hermes_cli/inventory.py:513-568`, `apps/desktop/src/types/
-        // hermes.ts:391-395` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`). It
+        // lab (`hermes_cli/inventory.py:323-358`, `apps/desktop/src/types/
+        // hermes.ts:406-410` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). It
         // is what the Models sheet shows before anyone customises it, so a
         // provider that ships one must not be capped at the top-N fallback.
         val catalog = parseModelCatalog(
@@ -5083,7 +5083,7 @@ class GatewaySessionRepositoryTest {
 
     /**
      * Both unread sources move in one action, in Desktop's order
-     * (`app/chat/sidebar/session-actions-menu.tsx:316-332` @ `3ca096de`): the
+     * (`app/chat/sidebar/session-actions-menu.tsx:316-332` @ `72a3277cd7`): the
      * transient finished-turn dot is cleared *with* the watermark, not after
      * it, so nothing in between can repaint what was just dismissed.
      */
@@ -5192,7 +5192,7 @@ class GatewaySessionRepositoryTest {
      * compression lineage root, because the next page can surface the same
      * conversation under a *different* id — the REST list projects a chain
      * forward to its latest continuation and reports the root separately
-     * (`hermes_state.py:11596-11603` @ `3ca096de`). A fence that only knew the
+     * (`hermes_state_sessions.py:964-970` @ `72a3277cd7`). A fence that only knew the
      * id it was written against would lose the pin on the first compression.
      */
     @Test
@@ -5227,7 +5227,7 @@ class GatewaySessionRepositoryTest {
      * The guard is not decoration. Past ten seconds the fence retires itself
      * and the Gateway is authoritative again, even though no page ever agreed
      * (`FLAG_WRITE_GUARD_MILLIS`, Desktop's `UNREAD_WRITE_GUARD_MS`
-     * `store/session-unread-remote.ts:28` @ `3ca096de`).
+     * `store/session-unread-remote.ts:28` @ `72a3277cd7`).
      */
     @Test
     fun `a fence past the guard lets the server win`() = runTest {
@@ -5385,7 +5385,7 @@ class GatewaySessionRepositoryTest {
     /**
      * The Archived view is its own pool, read with its own request: Desktop's
      * `listAllProfileSessions(ARCHIVED_FETCH_LIMIT, 0, 'only')`
-     * (`store/sidebar-archive.ts:7-30` @ `3ca096de` — "Archived rows are
+     * (`store/sidebar-archive.ts:7-30` @ `72a3277cd7` — "Archived rows are
      * excluded from the sessions query, so the Archived view has to fetch its
      * own set. Capped: it's a lookup surface, not a feed."). The live list
      * keeps asking `exclude`, which is where its pager's offsets live.
@@ -5407,7 +5407,7 @@ class GatewaySessionRepositoryTest {
         assertEquals("0", http.requests.last().query["offset"])
         // Desktop asks for 200 through a route that caps at 500; this app reads
         // one profile leg through `/api/sessions`, which caps at 100
-        // (`hermes_cli/web_routers/sessions.py:91-94` @ `3ca096de`).
+        // (`hermes_cli/web_routers/sessions.py:162-163` @ `72a3277cd7`).
         assertEquals("100", http.requests.last().query["limit"])
 
         // And the pool it reads never becomes the live list's page: a later
@@ -5759,7 +5759,7 @@ class GatewaySessionRepositoryTest {
      * The next offset is stored-row arithmetic, and the kept prefix is projected
      * entries. The projection drops rows — a `[System: …]` notice is persisted as
      * a `role=user` row and is runtime metadata, never a bubble
-     * (`tui_gateway/server.py:9639-9650` @ `3ca096de`) — so re-deriving the
+     * (`tui_gateway/session_history.py:128-135` @ `72a3277cd7`) — so re-deriving the
      * offset from the entries that survived would step the next page back onto
      * rows the reader already holds. The window's own offsets are the only place
      * the row count still exists.
@@ -5845,7 +5845,7 @@ class GatewaySessionRepositoryTest {
         assertTrue("durable-a" in repository.sessionsWithEarlierMessages.value)
 
         // The list catches up and reports the row is a tip projected forward
-        // from `root-a` (`hermes_state.py:11586-11605` @ `3ca096de`).
+        // from `root-a` (`hermes_state_sessions.py:956-973` @ `72a3277cd7`).
         lineageListed = true
         repository.refreshSessions()
         runCurrent()
@@ -5972,7 +5972,7 @@ class GatewaySessionRepositoryTest {
     /**
      * The default topology is one profile and an unscoped list, and its rows name
      * no profile at all: the route stamps every row it serves
-     * (`hermes_cli/web_routers/sessions.py:182-189` @ `3ca096de`) and this app
+     * (`hermes_cli/web_routers/sessions.py:211-219` @ `72a3277cd7`) and this app
      * strips that stamp back off the unscoped leg, because there it describes the
      * Gateway rather than the row. So "did this read go to the store that listed
      * the row?" cannot be asked of the stamp. It is asked of the unscoped leg's
@@ -6031,7 +6031,7 @@ class GatewaySessionRepositoryTest {
 
     /**
      * The route raises `404 "Session not found"` for an id it cannot resolve in
-     * the store it opened (`sessions.py:660-662,683-684` @ `3ca096de`), and the
+     * the store it opened (`sessions.py:537-539,551-552` @ `72a3277cd7`), and the
      * store it opens is the one `?profile=` names. A row this connection has
      * never listed names no store at all: its read goes out unscoped and can land
      * where the session genuinely is not. Demoting on that would cost the whole
@@ -6115,7 +6115,7 @@ class GatewaySessionRepositoryTest {
     /**
      * `session.history` merges a compression chain's ancestors
      * (`get_messages_as_conversation(..., include_ancestors=True)`,
-     * `methods_session.py:2843-2847` @ `3ca096de`); the paged route resolves the
+     * `methods_session.py:1661-1662` @ `72a3277cd7`); the paged route resolves the
      * chain forward and reads the tip alone (`sessions.py:660-663,672-678`).
      * Windowing such a session would put turns Android used to show out of reach
      * behind a control that retires at the tip's first row.
@@ -6299,9 +6299,9 @@ class GatewaySessionRepositoryTest {
 
     /**
      * One page of `GET /api/sessions/{id}/messages`: the stored rows as
-     * `SessionDB.get_messages` hands them back (`hermes_state.py:13000-13016`
-     * @ `3ca096de`) under the `pagination` the route stamps
-     * (`sessions.py:709-714`).
+     * `SessionDB.get_messages` hands them back (`hermes_state_messages.py:612-624`
+     * @ `72a3277cd7`) under the `pagination` the route stamps
+     * (`sessions.py:555-561`).
      */
     private fun restTranscript(sessionId: String, rowIds: List<Int>, limit: Int, offset: Int): GatewayHttpResult =
         restTranscriptOf(sessionId, rowIds.map { it to "turn $it" }, limit, offset)
@@ -6310,7 +6310,7 @@ class GatewaySessionRepositoryTest {
      * The same page, with each row's body given, so a page can carry a row the
      * display projection drops — a `[System: …]` notice is persisted as a
      * `role=user` row and is runtime metadata, never a bubble
-     * (`tui_gateway/server.py:9639-9650` @ `3ca096de`).
+     * (`tui_gateway/session_history.py:128-135` @ `72a3277cd7`).
      */
     private fun restTranscriptOf(
         sessionId: String,
@@ -6576,7 +6576,7 @@ class GatewaySessionRepositoryTest {
         /**
          * The same conversation projected forward onto a fresh compression tip,
          * in the shape the REST list actually emits: the tip's id, with the
-         * root reported separately (`hermes_state.py:11596-11603` @ `3ca096de`).
+         * root reported separately (`hermes_state_sessions.py:964-970` @ `72a3277cd7`).
          */
         const val REST_TIP_ID_PAGE = """{"sessions":[
             {"id":"tip-a","_lineage_root_id":"root-a","title":"Tip","preview":"",
@@ -6651,7 +6651,7 @@ class GatewaySessionRepositoryTest {
         /**
          * `durable-a` as the list reports it once the Gateway has compressed the
          * conversation onto it: `_lineage_root_id` names the root it was
-         * projected forward from (`hermes_state.py:11586-11605` @ `3ca096de`).
+         * projected forward from (`hermes_state_sessions.py:956-973` @ `72a3277cd7`).
          */
         const val REST_PAGE_LINEAGE_TIP = """{"sessions":[
             {"id":"durable-a","_lineage_root_id":"root-a","title":"Long chat","preview":"a",

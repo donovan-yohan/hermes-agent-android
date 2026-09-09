@@ -63,8 +63,8 @@ import org.robolectric.annotation.GraphicsMode
  * Lifting text out of a reply.
  *
  * Desktop gets this from the browser: the message subtree is `user-select:
- * text` and everything else is `user-select: none` (`styles.css:1176-1186` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), and its own test asserts the
+ * text` and everything else is `user-select: none` (`styles.css:1229-1245` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), and its own test asserts the
  * behaviour on the user bubble (`user-message-selection.test.ts`). Compose
  * inverts that default — nothing selects unless a `SelectionContainer` says so
  * — which moves the risk: the tests below pin *both* halves, that prose selects
@@ -420,7 +420,7 @@ class TranscriptSelectionTest {
     /**
      * Desktop mounts four controls under every assistant reply, in this order:
      * Branch, Copy, Read aloud, Refresh
-     * (`assistant-message.tsx:625-642` @ `3ca096de`). All four are live in
+     * (`assistant-message.tsx:625-642` @ `72a3277cd7`). All four are live in
      * this build.
      */
     @Test

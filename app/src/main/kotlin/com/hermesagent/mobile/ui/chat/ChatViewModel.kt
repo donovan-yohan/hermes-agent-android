@@ -180,7 +180,7 @@ data class ComposerUiState(
      * The person's saved `provider::model` shortlist, or null while they have
      * never customised it — in which case the curated default applies
      * (`apps/desktop/src/store/model-visibility.ts:87-89` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      */
     val visibleModels: Set<String>? = null,
 )
@@ -219,8 +219,8 @@ data class BackgroundPendingInput(
  * How the project catalog relates to the profile scope on screen.
  *
  * `projects.tree` and `projects.project_sessions` take no `profile` and resolve
- * through the Gateway's own home (`tui_gateway/methods_config.py:108-132,135` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so the catalog is always one
+ * through the Gateway's own home (`tui_gateway/methods_config.py:85-113` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), so the catalog is always one
  * profile's. Desktop never has to say so: its backend is per profile.
  */
 enum class ProjectProfileScope {
@@ -244,7 +244,7 @@ enum class ProjectProfileScope {
  * the sidebar is standing in.
  *
  * Desktop keeps `$archivedSessionsLoading` beside `$archivedSessions`
- * (`apps/desktop/src/store/sidebar-archive.ts:12,19,28` @ `3ca096de`) but only
+ * (`apps/desktop/src/store/sidebar-archive.ts:12,19,28` @ `72a3277cd7`) but only
  * to refuse a second concurrent fetch; nothing renders it, and its `catch`
  * publishes an empty set (`:25-27`). Here the marker is rendered, because
  * `Nothing archived` is a statement about the *account* — and a read in
@@ -300,7 +300,7 @@ data class ChatUiState(
     /**
      * A live-pool page is on the wire and this scope has no rows yet — Desktop's
      * `showSessionSkeletons` (`apps/desktop/src/app/chat/sidebar/index.tsx:1423`
-     * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      *
      * Keyed off the UNFILTERED scoped set, exactly as Desktop's is and for the
      * same reason it records: keyed off the filtered one, a filter that matches
@@ -361,14 +361,14 @@ data class ChatUiState(
      * in-flight or exhausted variant: Desktop's control carries neither, and an
      * exhausted session simply stops offering it
      * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:834` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      */
     val canShowEarlierMessages: Boolean = false,
     /**
      * How often this host asks before it acts, or null while that is not known
      * or the Gateway is not connected — Desktop hides its own statusbar item on
-     * exactly the second condition (`use-statusbar-items.tsx:568-572` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+     * exactly the second condition (`use-statusbar-items.tsx:610-613` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      */
     val approvalMode: ApprovalMode? = null,
 ) {
@@ -422,7 +422,7 @@ internal class ChatViewModel(
      *
      * Search stubs never reach [SessionCache]. A stub carries an id, a lineage
      * root and a snippet and nothing else the row contract wants
-     * (`apps/desktop/src/app/chat/sidebar/index.tsx:272-293` @ `3ca096de`), so
+     * (`apps/desktop/src/app/chat/sidebar/index.tsx:272-293` @ `72a3277cd7`), so
      * filing one under backend authority would make an invented row
      * indistinguishable from a listed one — and it would outlive the query.
      */
@@ -697,8 +697,8 @@ internal class ChatViewModel(
         // nothing else, so the meter and the panel can never disagree —
         //   `contextBreakdown ? { ...currentUsage, context_max, context_percent,
         //    context_used } : currentUsage`
-        // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:254-265` @
-        // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). `total` and `model` stay
+        // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:267-280` @
+        // `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). `total` and `model` stay
         // the streamed ones: a resumed session whose breakdown reports
         // `context_max: 0` (no compressor, `agent/context_breakdown.py:130-131`)
         // has no measured usage either, and Desktop hides the item rather than
@@ -741,7 +741,7 @@ internal class ChatViewModel(
             archivedVisible = navigation.sidebarView.archivedVisible,
             archivedPool = navigation.sidebarView.archivedPool,
             // Desktop counts listed, non-archived rows whose resolved dot is
-            // unread (`store/session-dot-state.ts:186-200` @ `3ca096de`) and
+            // unread (`store/session-dot-state.ts:186-200` @ `72a3277cd7`) and
             // hides the mark-all action at zero.
             unreadCount = scopedSessions.count {
                 it.archived != true && it.displayStatus() == SessionStatus.Unread
@@ -808,7 +808,7 @@ internal class ChatViewModel(
         // *all* sessions (not just the loaded page) so 699 sessions stay
         // findable. Debounced; loaded sessions are matched instantly
         // client-side and merged ahead of the server hits."
-        // (`apps/desktop/src/app/chat/sidebar/index.tsx:619-653` @ `3ca096de`).
+        // (`apps/desktop/src/app/chat/sidebar/index.tsx:643-677` @ `72a3277cd7`).
         //
         // Three things scope the answer that Desktop's effect does not have to
         // think about, and all three belong in the key rather than in the body:
@@ -828,8 +828,8 @@ internal class ChatViewModel(
                     scope = SessionSearchScope(
                         // The unified view has no union to ask for: the route
                         // opens exactly one profile's database
-                        // (`hermes_cli/web_routers/sessions.py:227` @
-                        // `3ca096de`), so sending the *active* profile there
+                        // (`hermes_cli/web_routers/sessions.py:268` @
+                        // `72a3277cd7`), so sending the *active* profile there
                         // would merge one profile's server hits into an
                         // all-profile list. Send none, which is the launch
                         // profile — the same leg `sessionListProfiles` asks
@@ -878,7 +878,7 @@ internal class ChatViewModel(
         // The breakdown is a *transition* reader, not a poller. Desktop's effect
         // re-runs only when the focused session or `busy` changes
         // (`apps/desktop/src/app/shell/hooks/use-context-breakdown.ts:31-57` @
-        // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). `cache.state` here is
+        // `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). `cache.state` here is
         // not that: it republishes on every transcript append of *any* session
         // (`SessionCache.kt:207-242`), so a background turn's `message.delta`
         // stream would re-enter this body dozens of times a second. The guard
@@ -951,7 +951,7 @@ internal class ChatViewModel(
                     try {
                         val breakdown = repository.loadContextBreakdown(sessionId)
                         // A resolved-null answer never clears a good breakdown:
-                        // `use-context-breakdown.ts:43` @ 3ca096de only sets
+                        // `use-context-breakdown.ts:43` @ 72a3277cd7 only sets
                         // fetched when the payload is truthy.
                         if (activeSessionId.value == sessionId && breakdown != null) {
                             activeContextBreakdown.value = breakdown
@@ -1038,8 +1038,8 @@ internal class ChatViewModel(
                     // the re-read carries the scope the reader just chose.
                     if (!first) invalidateArchivedPool()
                     // `approvals.mode` is read and written through a
-                    // `@_profile_scoped` handler (`tui_gateway/methods_config.py:181-182`,
-                    // `tui_gateway/server.py:14225-14226` @ `3ca096de`), so a
+                    // `@_profile_scoped` handler (`tui_gateway/methods_config.py:228-229`,
+                    // `tui_gateway/methods_config_set.py:458-459` @ `72a3277cd7`), so a
                     // scope change is a change of subject: re-read it. The
                     // first routing is the connection collector's to read.
                     if (!first &&
@@ -2012,7 +2012,7 @@ internal class ChatViewModel(
      *
      * The read happens on the way *in* only, exactly as Desktop's
      * `useEffect(… if (showArchived) void loadArchivedSessions(), [showArchived])`
-     * does (`app/chat/sidebar/index.tsx:1352-1358` @ `3ca096de`): turning the
+     * does (`app/chat/sidebar/index.tsx:1325-1331` @ `72a3277cd7`): turning the
      * view off changes nothing about what the Gateway was asked, because the
      * live list was never the thing carrying these rows.
      */
@@ -2034,7 +2034,7 @@ internal class ChatViewModel(
      * things — none of them "nothing is archived".
      *
      * Desktop keeps the same marker (`$archivedSessionsLoading`,
-     * `store/sidebar-archive.ts:12,19,28` @ `3ca096de`) but spends it on
+     * `store/sidebar-archive.ts:12,19,28` @ `72a3277cd7`) but spends it on
      * re-entry alone, and its `catch` sets the archived set to `[]`
      * (`:25-27`) — so there a failed read renders as an empty account. That is
      * the divergence this ships, ledgered in
@@ -2099,7 +2099,7 @@ internal class ChatViewModel(
      * when some of them refuse.
      *
      * Desktop's own control does the same fan-out
-     * (`app/chat/sidebar/index.tsx:1735-1741` @ `3ca096de`) and has no string
+     * (`app/chat/sidebar/index.tsx:1728-1734` @ `72a3277cd7`) and has no string
      * for a partial failure, so the outcome is this app's own: the number that
      * did not move, never a blanket success.
      */
@@ -3152,7 +3152,7 @@ internal class ChatViewModel(
      * when the page lands — the repository writes the page into that
      * transcript, so a switch mid-fetch cannot paint it into the wrong one. A
      * failure is silent by design: the control simply stays, and the next press
-     * retries (`transcript-backfill.ts:143-148` @ `3ca096de`).
+     * retries (`transcript-backfill.ts:143-148` @ `72a3277cd7`).
      */
     fun showEarlierMessages() {
         val activeId = activeSessionId.value ?: return
@@ -3483,7 +3483,7 @@ internal class ChatViewModel(
      * Opening a session clears both unread sources, in Desktop's order: the
      * transient finished-turn dot here and now, and the durable watermark
      * best-effort behind it (`store/session-unread-remote.ts:65-79` @
-     * `3ca096de` — "a failed PATCH is healed by the next honest refresh", and
+     * `72a3277cd7` — "a failed PATCH is healed by the next honest refresh", and
      * it is not worth a notice for something the reader did not ask for).
      */
     private fun markRead(id: String) {
@@ -3610,7 +3610,7 @@ internal class ChatViewModel(
     companion object {
         /**
          * Desktop's own sidebar-search debounce, `setTimeout(…, 200)`
-         * (`apps/desktop/src/app/chat/sidebar/index.tsx:647` @ `3ca096de`).
+         * (`apps/desktop/src/app/chat/sidebar/index.tsx:671` @ `72a3277cd7`).
          * There is no minimum query length: one character is a legitimate
          * search, and the wait is what keeps it from being a request per
          * keystroke.
@@ -3686,7 +3686,7 @@ private fun transientQueueController(): ComposerQueueController = ComposerQueueC
 /** Slash commands follow their own capability path; only ordinary text can redirect a live turn. */
 private fun String.isRedirectEligible(): Boolean = trim().isNotEmpty() && !trimStart().startsWith('/')
 
-/** `Could not update unread state` (`apps/desktop/src/i18n/en.ts:2307` @ `3ca096de`). */
+/** `Could not update unread state` (`apps/desktop/src/i18n/en.ts:2501` @ `72a3277cd7`). */
 private const val UNREAD_FAILED = "Could not update unread state"
 
 /** What the Archived view says when its own read did not come back. */

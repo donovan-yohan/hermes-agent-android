@@ -34,10 +34,10 @@ import kotlin.random.Random
  * The empty-chat intro splash.
  *
  * Desktop's `Intro` (`apps/desktop/src/components/chat/intro.tsx:160-179` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`) is two things stacked and centred
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) is two things stacked and centred
  * in the transcript slot: the oversized `HERMES AGENT` wordmark, and exactly
  * one line of intro body copy. Its `headline` field is parsed and never
- * rendered — `intro.tsx:176` draws `copy.body` alone — so this port carries the
+ * rendered — `intro.tsx:172` draws `copy.body` alone — so this port carries the
  * bodies and nothing else.
  *
  * Android does not know the Hermes profile's personality, so only the neutral
@@ -48,7 +48,7 @@ import kotlin.random.Random
  */
 
 /**
- * Desktop's `WORDMARK` (`intro.tsx:150` @ `3ca096de`), and the name this splash
+ * Desktop's `WORDMARK` (`intro.tsx:150` @ `72a3277cd7`), and the name this splash
  * publishes to a screen reader.
  *
  * It is deliberately still one string: [INTRO_WORDMARK_LINES] is how the
@@ -60,7 +60,7 @@ const val INTRO_WORDMARK = "HERMES AGENT"
  * How the wordmark is drawn here: `HERMES` over `AGENT`, one shared size.
  *
  * Desktop fits the whole string onto one line (`wordmark.tsx:15-45` @
- * `3ca096de`), which its chat column has the width for. A phone column does
+ * `72a3277cd7`), which its chat column has the width for. A phone column does
  * not: twelve characters plus a space across `300dp` sets the lettering at
  * roughly the size of a heading, not a wordmark. Two lines put the wider of a
  * six- and a five-character run across the same column, so the same rule —
@@ -74,7 +74,7 @@ const val INTRO_SPLASH_TAG = "Intro splash"
 
 /**
  * The neutral intro bodies, verbatim from the `personality: "none"` records of
- * `apps/desktop/src/components/chat/intro-copy.jsonl:71-75` @ `3ca096de`, in
+ * `apps/desktop/src/components/chat/intro-copy.jsonl:71-75` @ `72a3277cd7`, in
  * file order — the order `pickCopy` indexes into.
  */
 val NEUTRAL_INTRO_COPY: List<String> = listOf(
@@ -88,7 +88,7 @@ val NEUTRAL_INTRO_COPY: List<String> = listOf(
 )
 
 /**
- * Desktop's `pickCopy` (`intro.tsx:146-148` @ `3ca096de`): the seed indexes the
+ * Desktop's `pickCopy` (`intro.tsx:146-148` @ `72a3277cd7`): the seed indexes the
  * set, and a seed larger than the set wraps.
  *
  * `abs` is taken in `Long` because `abs(Int.MIN_VALUE)` is still negative and
@@ -101,7 +101,7 @@ fun pickIntroCopy(seed: Int): String =
  * Whether the splash renders.
  *
  * Desktop's `shouldShowIntro` (`apps/desktop/src/app/chat/intro-visibility.ts:12-33`
- * @ `3ca096de`) takes eight inputs. Four of them are one fact on a phone and two
+ * @ `72a3277cd7`) takes eight inputs. Four of them are one fact on a phone and two
  * do not exist here at all:
  *
  * - `enabled` is the Appearance toggle and outranks everything, exactly as it
@@ -234,7 +234,7 @@ fun IntroSplash(
  * Where the homed session is working, under the line of copy.
  *
  * Desktop puts the same two facts in its own chrome rather than under the
- * wordmark (`apps/desktop/src/app/chat/index.tsx:419,675,734` @ `3ca096de`),
+ * wordmark (`apps/desktop/src/app/chat/index.tsx:434,690,749` @ `72a3277cd7`),
  * because its window has room for a status bar that carries them all the time.
  * This app's chat chrome does not, and the splash is the one moment a session
  * has nothing else to show — so a session that has just been opened says which
@@ -317,7 +317,7 @@ private fun SessionContextLines(context: IntroSplashContext) {
  * `~/code/personal/app` becomes `~/…/personal/app`.
  *
  * Desktop shortens a path far later and by a different rule — `compactPath`
- * (`apps/desktop/src/lib/statusbar.tsx:19` @ `3ca096de`) leaves anything up to
+ * (`apps/desktop/src/lib/statusbar.tsx:19` @ `72a3277cd7`) leaves anything up to
  * 44 characters untouched — because its status bar is a window wide. Ledgered
  * in `docs/parity/empty-states.md`.
  */
@@ -337,7 +337,7 @@ private const val HOME_MARK = "~"
 
 /**
  * Desktop's display lettering (`components/chat/wordmark.tsx:15-45` and
- * `styles.css:1616-1673` @ `3ca096de`), stacked.
+ * `styles.css:1631-1688` @ `72a3277cd7`), stacked.
  *
  * `.fit-text` sizes the lettering from a container query so it fills
  * `calc(100% - 1rem)` of its column, with a `2.75rem` floor. Compose has no
@@ -376,7 +376,7 @@ fun Wordmark(
     val tokens = HermesTheme.tokens
     val base = HermesTheme.type.wordmark
     // `text-midground` in light, `text-foreground/90` in dark
-    // (`wordmark.tsx:33` @ `3ca096de`). `tokens.accent` IS the resolved
+    // (`wordmark.tsx:33` @ `72a3277cd7`). `tokens.accent` IS the resolved
     // midground — `--ui-accent: var(--theme-midground)` (`styles.css:207`) —
     // and the pinned light contract computes `rgb(0, 83, 253)`, which is `nous`
     // `#0053FD` exactly. The dark half is `textPrimary`, this app's own 0.94
@@ -429,7 +429,7 @@ fun Wordmark(
 internal val WORDMARK_MAX_FONT_SIZE = 72.sp
 
 /**
- * Desktop's `.wordmark` line height, `0.9` (`styles.css:1631` @ `3ca096de`).
+ * Desktop's `.wordmark` line height, `0.9` (`styles.css:1647` @ `72a3277cd7`).
  * The block a stacked wordmark occupies is `lines x this x size`.
  */
 internal const val WORDMARK_LINE_HEIGHT = 0.9f

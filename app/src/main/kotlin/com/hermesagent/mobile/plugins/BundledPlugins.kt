@@ -7,7 +7,7 @@ import com.hermesagent.mobile.plugins.relay.RelayPlugin
  *
  * Mirror of Desktop's `import.meta.glob` over `plugins/<id>/plugin.{js,ts,tsx}`
  * (`apps/desktop/src/contrib/plugins.ts:18` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 object BundledPlugins {
     val ALL: List<HermesPlugin> = listOf(

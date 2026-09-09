@@ -13,7 +13,7 @@ import org.junit.Test
 
 /**
  * The rules a registry row obeys, ported from Desktop's dedupe and display
- * helpers at `3ca096de5f8183cb2e0ec23673f294d5978656a3`
+ * helpers at `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
  * (`app/settings/connections-registry.tsx:89-168`,
  * `lib/connection-display.ts:3-75`) plus the one Android rule Desktop has no
  * equivalent for: host-key trust is scoped to a host and a port, per row.

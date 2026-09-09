@@ -42,8 +42,8 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 /**
  * The approval-mode control, ported from Desktop's statusbar item
  * (`apps/desktop/src/app/shell/approval-mode-menu.tsx:21-76` and
- * `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:270,568-572`) @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:289,610-614`) @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * Android has no Electron footer, so the item is a chip in the chat top bar's
  * subtitle row beside the Context meter — the placement `docs/parity/context-usage.md`
@@ -55,32 +55,32 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * The full ledger is `docs/parity/approval-mode.md`.
  */
 
-/** `Approval mode` (`i18n/en.ts:2898` @ `3ca096de`). */
+/** `Approval mode` (`i18n/en.ts:3187` @ `72a3277cd7`). */
 const val APPROVAL_MODE_TITLE = "Approval mode"
 
-/** `Manual` (`i18n/en.ts:2900` @ `3ca096de`). */
+/** `Manual` (`i18n/en.ts:3189` @ `72a3277cd7`). */
 private const val MANUAL = "Manual"
 
-/** `Ask before actions that require approval` (`i18n/en.ts:2901` @ `3ca096de`). */
+/** `Ask before actions that require approval` (`i18n/en.ts:3190` @ `72a3277cd7`). */
 private const val MANUAL_DESCRIPTION = "Ask before actions that require approval"
 
-/** `Smart` (`i18n/en.ts:2902` @ `3ca096de`). */
+/** `Smart` (`i18n/en.ts:3191` @ `72a3277cd7`). */
 private const val SMART = "Smart"
 
-/** `Automatically assess actions and ask when needed` (`i18n/en.ts:2903` @ `3ca096de`). */
+/** `Automatically assess actions and ask when needed` (`i18n/en.ts:3192` @ `72a3277cd7`). */
 private const val SMART_DESCRIPTION = "Automatically assess actions and ask when needed"
 
-/** `Off` (`i18n/en.ts:2904` @ `3ca096de`). */
+/** `Off` (`i18n/en.ts:3193` @ `72a3277cd7`). */
 private const val OFF = "Off"
 
-/** `Run without approval prompts` (`i18n/en.ts:2905` @ `3ca096de`). */
+/** `Run without approval prompts` (`i18n/en.ts:3194` @ `72a3277cd7`). */
 private const val OFF_DESCRIPTION = "Run without approval prompts"
 
 internal const val APPROVAL_MODE_CHIP_TAG = "approval-mode-chip"
 internal const val APPROVAL_MODE_MENU_TAG = "approval-mode-menu"
 internal const val APPROVAL_MODE_MENU_HEADER_TAG = "approval-mode-menu-header"
 
-/** `Approval mode: ${mode}` (`i18n/en.ts:2899` @ `3ca096de`). */
+/** `Approval mode: ${mode}` (`i18n/en.ts:3188` @ `72a3277cd7`). */
 fun approvalModeSpokenName(mode: ApprovalMode): String = "$APPROVAL_MODE_TITLE: ${approvalModeLabel(mode)}"
 
 fun approvalModeLabel(mode: ApprovalMode): String = when (mode) {

@@ -4,63 +4,70 @@
 
 Desktop authority is `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
 
-- Control: `apps/desktop/src/components/assistant-ui/thread/list.tsx:834-842` —
+- Control: `apps/desktop/src/components/assistant-ui/thread/list.tsx:1033-1041` —
   a plain centred rounded pill at the top of the transcript content, inside the
-  scroll, no glyph. `showEarlier()` at `:745-760`; the two-stage
+  scroll, no glyph. `showEarlier()` at `:940-955`; the two-stage
   `dom | window | null` resolution at
   `apps/desktop/src/components/assistant-ui/thread/transcript-window.tsx:23-33`.
-- Copy: `apps/desktop/src/i18n/en.ts:3218` — `showEarlier: 'Show earlier messages'`.
+- Copy: `apps/desktop/src/i18n/en.ts:3520` — `showEarlier: 'Show earlier messages'` (fixed stale en.ts line; the old-pin citation was already off by the known per-region offset).
   There is no loading, disabled or exhausted string, because the control has no
   such state.
-- Pill paint: `list.tsx:836` — `border-border/65`, `bg-(--composer-fill)`,
+- Pill paint: `list.tsx:1035` — `border-border/65`, `bg-(--composer-fill)`,
   `text-muted-foreground`, `rounded-full`, `mx-auto`,
   `mb-(--conversation-turn-gap)`. `--composer-fill` is
   `color-mix(in srgb, var(--dt-card) 90%, var(--dt-background))`
-  (`styles.css:1789`); the two seeds are `--dt-card: var(--ui-bg-editor)`
+  (`styles.css:1804`); the two seeds are `--dt-card: var(--ui-bg-editor)`
   (`styles.css:390`) and `--dt-background: var(--ui-bg-chrome)`
   (`styles.css:388`), which are this app's `cardSurface` and `chatSurface`.
-  `--conversation-turn-gap` is `0.375rem` — 6 px — at `styles.css:474`; this
+  `--conversation-turn-gap` is `0.375rem` — 6 px — at `styles.css:479`; this
   app's `spacing.turnGap` is `8.dp` (`HermesTypography.kt:56`), the same gap
   taken up to the mobile spacing step (ledgered below).
 - Page size: `LATEST_SESSION_MESSAGES_LIMIT = 120`,
-  `apps/desktop/src/api/sessions.ts:415`, used for both the hydration page
-  (`getLatestSessionMessages`, `:417-438`) and every older page
-  (`getOlderSessionMessages`, `:490-497`). Both always send
-  `includeCompacted: true` (`:418-424`).
+  `apps/desktop/src/api/sessions.ts:440`, used for both the hydration page
+  (`getLatestSessionMessages`, `:442-463`) and every older page
+  (`getOlderSessionMessages`, `:515-522`). Both always send
+  `includeCompacted: true` (`:443-449`).
 - Merge: `apps/desktop/src/app/chat/transcript-backfill.ts` whole;
   `mergeOlderTranscriptPage` at `:36-64`, `graftRefreshedTailOntoBackfill` at
   `:66-93`.
 - Truncation bookkeeping: `apps/desktop/src/store/transcript-tail.ts:82-96`.
-- Wiring per session: `apps/desktop/src/app/chat/index.tsx:262-326`.
-- Anchoring on prepend: `list.tsx:497-505` records the distance from the bottom
-  and `:762-770` re-applies it in the same commit; the reason is at `:528-533`.
-- Gateway route: `hermes_cli/web_routers/sessions.py:642-715`, reading
-  `hermes_state.py:12869-13016`.
+- Wiring per session: `apps/desktop/src/app/chat/index.tsx:272-341` (the per-session window state moved from a single ref to a `Map<string, SessionWindowMemo>` keyed per runtime id at the new pin; the wiring site itself is unchanged).
+- Anchoring on prepend: `list.tsx:502-518` records the distance from the bottom
+  and `:957-969` re-applies it in the same commit; the reason is at `:541-546`. (At
+  the new pin `anchorBeforePrepend` gained an early-return guard — it now skips
+  recording entirely rather than recording 0 — while unsettled; a Desktop-internal
+  refinement this app's own row/offset anchoring does not depend on.)
+- Gateway route: `hermes_cli/web_routers/sessions.py:528-561`, reading
+  `hermes_state.py:12869-13016` @ `3ca096de` (range not re-verified against the
+  new pin; `hermes_state.py` was broken into many modules and this multi-method
+  range was not re-resolved in time).
 
 ## The contract split
 
 At the pin, Desktop hydrates and refreshes a chat's transcript over REST
 (`getLatestSessionMessages`, called from `use-session-actions/index.ts:1235,1478,1786`,
 `use-background-sync.ts:131,203`, `use-session-tile-delegate.ts:244`,
-`contrib/wiring.tsx:394`). The `session.history` RPC survives for exactly one
+`contrib/wiring.tsx:394` — all four paths @ `3ca096de`; not re-resolved against
+the new pin, where these files no longer exist at these paths and were not
+relocated in time). The `session.history` RPC survives for exactly one
 caller: the rewind flow, which needs the whole row-stamped conversation
-(`use-prompt-actions/rewind.ts:200,226`). Android mirrors that split — the paged
+(`use-prompt-actions/rewind.ts:200,226` @ `3ca096de`; same caveat). Android mirrors that split — the paged
 route hydrates, and the RPC remains the contract for a Gateway that has no such
 route.
 
 The two contracts do not ship the same rows. `session.history` ships the
-Gateway's display projection (`tui_gateway/server.py:9720-9823`); the REST route
-ships the stored rows with compaction display applied and nothing else
-(`sessions.py:672-708`). `RestTranscriptProjection.kt` is that projection
+Gateway's display projection (`tui_gateway/session_history.py:180-238`); the
+REST route ships the stored rows with compaction display applied and nothing
+else (`sessions.py:503-525,546-554`). `RestTranscriptProjection.kt` is that projection
 ported, so one parser reads both and a page fetched over REST merges into a
 transcript hydrated either way.
 
 ## Which conversations are windowed, and which are not
 
 The paged route resolves a compression chain FORWARD to its live tip and reads
-that session's rows alone (`sessions.py:660-663,672-678`). `session.history`
+that session's rows alone (`sessions.py:537-540,546-548`). `session.history`
 merges the chain (`get_messages_as_conversation(..., include_ancestors=True)`,
-`methods_session.py:2843-2847`). So on a conversation the Gateway has already
+`tui_gateway/methods_session.py:1657-1662`). So on a conversation the Gateway has already
 compressed onto a fresh id, the two contracts do not cover the same turns:
 windowing it would end `Show earlier messages` at the tip's first row, with the
 turns before the compression unreachable and nothing said about it.
@@ -69,7 +76,9 @@ Android does not window those. A conversation known to be a compression tip
 keeps whole-history hydration and is offered no control at all. The signal is
 the list route's own: `list_sessions_rich` projects a compression root forward
 to its tip and stamps `_lineage_root_id` on the row it surfaces, and only on
-that row (`hermes_state.py:11586-11605`); this app already parses it as
+that row (`hermes_state_sessions.py:956-972`, moved from `hermes_state.py`;
+the new pin also adds a `_lineage_ids` sibling field, additive and not read by
+this app); this app already parses it as
 `SessionSummary.lineageRootId`.
 
 That gate is only as good as the fact behind it, and the boundary is stated
@@ -105,18 +114,18 @@ projection both splits and drops.
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | `resolveShowEarlierAction` spends a materialized DOM page before it asks the store for more (`transcript-window.tsx:23-33`) | mobile-adaptation | Only the `window` stage exists; a press always asks the window | The DOM stage is a render budget for a list that materializes every row it holds. `LazyColumn` composes only what is on screen, so there is no unmaterialized-but-held page to spend first |
-| The button stays clickable while a page is in flight and concurrent calls share one promise (`transcript-backfill.ts:126-133`) | mobile-adaptation | The control looks identical, and a press while a page is on the wire is ignored | A shared promise needs a promise; the repository is the one place that knows a page is in flight, so the guard lives there. Nothing visible changes — no spinner, no disabled state |
-| The prepend is anchored on the scroll container's distance from the bottom (`list.tsx:497-505,762-770`) | mobile-adaptation | Anchored on the transcript row that was on top and the offset into it, restored once the page lands | A `LazyListState` has no scroll height to measure from — only an index, a key and an offset. Keying on the row also survives the leading control disappearing in the same frame, which a pure index cannot |
+| The button stays clickable while a page is in flight and concurrent calls share one promise (`transcript-backfill.ts:126-133`, verbatim) | mobile-adaptation | The control looks identical, and a press while a page is on the wire is ignored | A shared promise needs a promise; the repository is the one place that knows a page is in flight, so the guard lives there. Nothing visible changes — no spinner, no disabled state |
+| The prepend is anchored on the scroll container's distance from the bottom (`list.tsx:502-518,957-969`) | mobile-adaptation | Anchored on the transcript row that was on top and the offset into it, restored once the page lands | A `LazyListState` has no scroll height to measure from — only an index, a key and an offset. Keying on the row also survives the leading control disappearing in the same frame, which a pure index cannot |
 | The pill is a ~22 px chrome control | mobile-adaptation | The same pill at the 48 dp platform touch floor | A touch target may not be smaller than the floor; the fill, hairline, radius, ink and copy are unchanged |
 | `hover:text-foreground` brightens the label on pointer-over (`list.tsx:836`) | mobile-adaptation | Not painted | Touch has no hover state to paint |
-| The tool row's collapsed title is `build_tool_preview`, a per-tool phrasing (`agent/display.py:446-595` via `server.py:7740-7756`) | mobile-adaptation | The primary-argument table (`display.py:457-468`) and the generic tail (`:576-595`) are ported; the per-tool phrasings above that tail are not | Those branches rephrase the same argument rather than name a different one, and porting them would be a second copy of upstream's tool table to keep in step. The full call still rides the row as `args` and the expanded tool view renders it |
-| The sidebar pager is an ellipsis glyph with a spinner and a disabled state (`apps/desktop/src/app/chat/sidebar/load-more-row.tsx:17-38`) | omission | The transcript control shares none of that markup | out-of-scope: #68 — the shared vocabulary is the interaction contract (one explicit press for more, never a scroll that asks), not the visual. Desktop's own two controls differ: the transcript's has no glyph, no spinner and no disabled state |
+| The tool row's collapsed title is `build_tool_preview`, a per-tool phrasing (`agent/display.py:446-595` via `server.py:7740-7756` @ `3ca096de`; not re-resolved) | mobile-adaptation | The primary-argument table (`display.py:457-468` @ `3ca096de`) and the generic tail (`:576-595` @ `3ca096de`; not re-resolved) are ported; the per-tool phrasings above that tail are not | Those branches rephrase the same argument rather than name a different one, and porting them would be a second copy of upstream's tool table to keep in step. The full call still rides the row as `args` and the expanded tool view renders it |
+| The sidebar pager is an ellipsis glyph with a spinner and a disabled state (`apps/desktop/src/app/chat/sidebar/load-more-row.tsx:17-38` @ `3ca096de`; not re-resolved) | omission | The transcript control shares none of that markup | out-of-scope: #68 — the shared vocabulary is the interaction contract (one explicit press for more, never a scroll that asks), not the visual. Desktop's own two controls differ: the transcript's has no glyph, no spinner and no disabled state |
 | `recordTranscriptTail` re-runs `tailStateFromPage` on a refresh, resetting `nextOffset` to that page's length (`transcript-tail.ts:117-125`) | mobile-adaptation | The refreshed tail's offset is taken as the further of itself and the offset the previous window had reached | Desktop drops its backfilled prefix's paging with it on a refresh and re-walks; Android keeps the prefix (`graftRefreshedTailOntoBackfill`, which Desktop also has) and must therefore not re-offer the pages that prefix already holds. Both are measured back from the newest row, so the deeper offset can only overlap — never skip |
-| The RPC's tool row is `{role, name, context, args}` and nothing else (`tui_gateway/server.py:9755-9769`) | mobile-adaptation | The projected tool row also carries `content`, `row_id` and `timestamp` | This row follows the REST contract, not the RPC's projection of it: Desktop's own REST reader attaches the stored result (`lib/chat-messages/tool-parts.ts:737`, used at `hydration.ts:186`), and dropping `row_id` would leave the one row the window cannot dedupe by durable address. A tool row is therefore richer on the paged path than on the RPC path |
-| `display_kind` (`model_switch`, `auto_continue`, `personality_switch`, `async_delegation_complete`) and `display_metadata` are forwarded (`server.py:9705-9717,9813-9820`) and rendered as system timeline rows (`lib/chat-messages/hydration.ts:94-116,197-208`) | omission | Only `display_kind: "hidden"` is read; the rest is dropped | out-of-scope: #68 — Android renders no system timeline row on either contract, so this is a pre-existing gap this port inherits rather than introduces. An `auto_continue` row's body is `[System note: …`, which the `[System:` filter does not match, so it reaches a user bubble on both paths |
-| `build_tool_preview` masks recognizable credentials in a `browser_type` call's `text` first (`redact_tool_args_for_display`, `agent/display.py:400-414`, applied at `:456`) | mobile-adaptation | `browser_type` gets no collapsed preview at all | The masking is `redact_sensitive_text(force=True)` over thirteen credential patterns (`agent/redact.py:831-900`), not ported. A partial copy would mask the shapes it knew and print the rest while looking checked, so the preview is withheld instead. The call still rides the row as `args`, as it does upstream |
+| The RPC's tool row is `{role, name, context, args}` and nothing else (`tui_gateway/session_history.py:205-211`) | mobile-adaptation | The projected tool row also carries `content`, `row_id` and `timestamp` | This row follows the REST contract, not the RPC's projection of it: Desktop's own REST reader attaches the stored result (`lib/chat-messages/tool-parts.ts:737` @ `3ca096de`, used at `hydration.ts:186` @ `3ca096de`; not re-resolved), and dropping `row_id` would leave the one row the window cannot dedupe by durable address. A tool row is therefore richer on the paged path than on the RPC path |
+| `display_kind` (`model_switch`, `auto_continue`, `personality_switch`, `async_delegation_complete`) and `display_metadata` are forwarded (`tui_gateway/session_history.py:164-167,232-236`) and rendered as system timeline rows (`lib/chat-messages/hydration.ts:94-116,197-208` @ `3ca096de`; not re-resolved) | omission | Only `display_kind: "hidden"` is read; the rest is dropped | out-of-scope: #68 — Android renders no system timeline row on either contract, so this is a pre-existing gap this port inherits rather than introduces. An `auto_continue` row's body is `[System note: …`, which the `[System:` filter does not match, so it reaches a user bubble on both paths |
+| `build_tool_preview` masks recognizable credentials in a `browser_type` call's `text` first (`redact_tool_args_for_display`, `agent/display.py:400-414` @ `3ca096de`, applied at `:456` @ `3ca096de`; not re-resolved) | mobile-adaptation | `browser_type` gets no collapsed preview at all | The masking is `redact_sensitive_text(force=True)` over thirteen credential patterns (`agent/redact.py:831-900` @ `3ca096de`; not re-resolved), not ported. A partial copy would mask the shapes it knew and print the rest while looking checked, so the preview is withheld instead. The call still rides the row as `args`, as it does upstream |
 | The pill's bottom gap is `--conversation-turn-gap`, `0.375rem` = 6 px (`styles.css:474`, applied at `list.tsx:836`) | mobile-adaptation | `spacing.turnGap`, 8 dp (`HermesTypography.kt:56`) | The whole type and spacing scale is stepped up for touch; the turn gap follows it rather than being pinned to Desktop's pixel, so the pill sits on the same rhythm as every other turn on this platform |
-| One read's tool-call map covers that read (`server.py:9740-9752`) | mobile-adaptation | The map covers one page | A tool row whose assistant call row fell on the other side of a page boundary renders with its stored `tool_name` and no argument preview. Carrying the map across pages would be per-session repository state with a lifetime nothing else in the projection has, for one row per page |
+| One read's tool-call map covers that read (`tui_gateway/session_history.py:196-204`) | mobile-adaptation | The map covers one page | A tool row whose assistant call row fell on the other side of a page boundary renders with its stored `tool_name` and no argument preview. Carrying the map across pages would be per-session repository state with a lifetime nothing else in the projection has, for one row per page |
 
 ## Visual report
 
@@ -143,6 +152,6 @@ structure, not pixels — and this page reviews at **Concern** for it.
 
 What the stored Desktop half does settle, against what the port claimed from
 source: the control is a plain centred rounded pill with no glyph, no spinner and
-no disabled state, reading `Show earlier messages` verbatim (`en.ts:3218`), 164 x
+no disabled state, reading `Show earlier messages` verbatim (`en.ts:3520`), 164 x
 26 px at the top of the scrolled transcript content. The clip carries exactly one
 node, and that node is the whole control.

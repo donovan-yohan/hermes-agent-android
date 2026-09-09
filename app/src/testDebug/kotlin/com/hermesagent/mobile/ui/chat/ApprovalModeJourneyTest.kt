@@ -45,8 +45,8 @@ import org.robolectric.annotation.Config
 /**
  * The approval-mode chip in the chat top bar and the menu it opens, against
  * Desktop's statusbar item (`apps/desktop/src/app/shell/approval-mode-menu.tsx`
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and the copy at
- * `apps/desktop/src/i18n/en.ts:2897-2906`.
+ * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) and the copy at
+ * `apps/desktop/src/i18n/en.ts:3186-3195`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -138,7 +138,7 @@ class ApprovalModeJourneyTest {
     /**
      * Desktop's `DropdownMenuLabel` is left-aligned at the same inset as the
      * words in its rows, because Desktop's selected mark is trailing
-     * (`components/ui/dropdown-menu.tsx:169-198` @ `3ca096de`). This app's mark
+     * (`components/ui/dropdown-menu.tsx:173-202` @ `72a3277cd7`). This app's mark
      * leads the row, so the heading follows the words rather than the box, and
      * wears the app's own uppercase panel-label treatment. Ledgered in
      * `docs/parity/approval-mode.md`.

@@ -7,7 +7,7 @@ import com.hermesagent.mobile.data.session.UserTurn
 
 /**
  * Mirrors Desktop's `planReload`
- * (`apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts @ 3ca096de`)
+ * (`apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts @ 72a3277cd7`)
  * when deciding whether a single assistant bubble can be regenerated.
  *
  * The current app keeps this control on the newest assistant reply only under
@@ -27,7 +27,7 @@ sealed interface RegeneratePlan {
 
 /**
  * Plans the Android equivalent of Desktop's `planReload`
- * (`apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts @ 3ca096de`).
+ * (`apps/desktop/src/app/session/hooks/use-prompt-actions/rewind.ts @ 72a3277cd7`).
  * Unlike Desktop, #69 restricts refresh to the newest assistant reply.
  */
 fun planRegenerate(transcript: List<TranscriptEntry>, entryId: String): RegeneratePlan {
