@@ -113,6 +113,7 @@ import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.matchesProjectQuery
 import com.hermesagent.mobile.data.session.sortProjectsForOverview
+import com.hermesagent.mobile.data.composer.maskComposerReferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -3349,7 +3350,7 @@ internal class ChatViewModel(
 
     private fun completionRequest(text: String, start: Int, end: Int): CompletionRequest? {
         if (start != end) return null
-        val before = com.hermesagent.mobile.data.composer.maskComposerReferences(text).substring(0, start)
+        val before = maskComposerReferences(text).substring(0, start)
         val slash = SLASH_COMPLETION.find(before)
         if (slash != null) {
             val tokenGroup = requireNotNull(slash.groups[1])

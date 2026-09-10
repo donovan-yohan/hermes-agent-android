@@ -610,11 +610,11 @@ class ChatViewModelTest {
     fun `completion ignores a caret right after a reference chip`() = runTest(dispatcher) {
         collectState()
         runCurrent()
-        
+
         viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`", 32, 32)
         testScheduler.advanceTimeBy(120)
         runCurrent()
-        
+
         assertNull(viewModel.uiState.value.composer.completion.trigger)
         assertEquals(0, repository.pathCalls)
     }
@@ -629,7 +629,7 @@ class ChatViewModelTest {
         assertEquals(CompletionTrigger.At, viewModel.uiState.value.composer.completion.trigger)
         assertEquals("", viewModel.uiState.value.composer.completion.query)
         assertEquals(32, viewModel.uiState.value.composer.completion.replaceStart)
-        
+
         viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`/", 33, 33)
         testScheduler.advanceTimeBy(120)
         runCurrent()

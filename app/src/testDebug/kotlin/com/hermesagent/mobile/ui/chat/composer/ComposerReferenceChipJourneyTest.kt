@@ -1,85 +1,166 @@
 package com.hermesagent.mobile.ui.chat.composer
 
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performTextInputSelection
-import androidx.compose.ui.test.performKeyPress
-import androidx.compose.ui.text.TextRange
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.key.NativeKeyEvent
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.Modifier
 import com.hermesagent.mobile.ui.chat.Composer
+import com.hermesagent.mobile.ui.theme.HermesTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
-@RunWith(org.robolectric.RobolectricTestRunner::class)
-@org.robolectric.annotation.Config(sdk = [34])
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ComposerReferenceChipJourneyTest {
 
     @get:Rule
-    val composeTestRule = androidx.compose.ui.test.junit4.v2.createComposeRule()
+    val composeTestRule = createComposeRule()
 
     @Test
-    fun testReferenceChipJourney() {
-        var draft = "see @url:`https://example.dev/a`"
-        
+    fun pastedUrlPaintsChipAndKeepsWireDraft() {
+        var draft by mutableStateOf("")
+
         composeTestRule.setContent {
-            com.hermesagent.mobile.ui.theme.HermesTheme {
+            HermesTheme {
                 Composer(
                     draft = draft,
                     onDraftChange = { draft = it },
                     onSend = {},
-                    onStop = {},
-                    isStreaming = false,
-                    canSend = true,
-                    connected = true,
-                    statusLine = ""
+                    onStop = {}, isStreaming = false, canSend = true, connected = true, statusLine = "",
+                    modifier = Modifier
                 )
             }
         }
-        
-        val node = composeTestRule.onNodeWithTag("Composer field shell")
-        
-        val semantics = node.fetchSemanticsNode().config
-        val inputText = semantics.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text
-        // InputText == draft -> Wait, Jetpack Compose uses `Text` for `InputText`. 
-        // Wait, the brief says `InputText == draft`, meaning `SemanticsProperties.Text`?
-        // Or wait, `EditableText`? The brief says "InputText == draft, EditableText hides https://..."
-        
-        // I will assert what it asked for:
-        val editableText = semantics.getOrNull(SemanticsProperties.EditableText)?.text
-        if (editableText != null) {
-            assertFalse(editableText.contains("https://"))
-            assertFalse(editableText.any { it in '\uE000'..'\uF8FF' })
-        }
-        
-        // "backspace removes the whole chip on the second press"
-        // In Robolectric, Compose doesn't always send IME backspace when we send KEYCODE_DEL unless we use `performKeyPress`.
-        // Let's just do text selection changes.
-        node.performTextInputSelection(TextRange(12, 12))
+
+        composeTestRule.onNodeWithContentDescription("Message Hermes")
+            .performTextInput("see https://example.dev/a ")
+
         composeTestRule.waitForIdle()
-        
-        val newSelection = composeTestRule.onNodeWithTag("Composer field shell").fetchSemanticsNode().config.getOrNull(SemanticsProperties.TextSelectionRange)
-        assertTrue(newSelection == TextRange(4) || newSelection == TextRange(32))
-        
+
+        assertEquals("see @url:`https://example.dev/a` ", draft)
+
+        val config = composeTestRule.onNodeWithContentDescription("Message Hermes").fetchSemanticsNode().config
+        val inputText = config[SemanticsProperties.InputText].text
+        assertEquals(draft, inputText)
+
+        val editableText = config[SemanticsProperties.EditableText].text
+        assertNotEquals(draft, editableText)
+        assertTrue(editableText.contains("example.dev/a"))
+        assertFalse(editableText.contains("https://"))
+        assertFalse(editableText.any { it in '\uE000'..'\uF8FF' })
+    }
+
+    @Test
+    fun addSheetInsertsPaddedUrlChip() {
+        var draft by mutableStateOf("")
+
+        composeTestRule.setContent {
+            HermesTheme {
+                Composer(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onSend = {},
+                    onStop = {}, isStreaming = false, canSend = true, connected = true, statusLine = "",
+                    modifier = Modifier
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Add to message").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Add a remote URL reference", substring = true).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithContentDescription("URL to add").performTextInput("https://example.dev/a")
+        composeTestRule.onNodeWithContentDescription("Add URL reference").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("@url:`https://example.dev/a` ", draft)
+        composeTestRule.onNodeWithContentDescription("Message Hermes").assertIsFocused()
+    }
+
+    @Test
+    fun backspaceRemovesChipWhole() {
+        var draft by mutableStateOf("")
+
+        composeTestRule.setContent {
+            HermesTheme {
+                Composer(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onSend = {},
+                    onStop = {}, isStreaming = false, canSend = true, connected = true, statusLine = "",
+                    modifier = Modifier
+                )
+            }
+        }
+
+        val node = composeTestRule.onNodeWithContentDescription("Message Hermes")
+        node.performTextInput("see https://example.dev/a ")
+        composeTestRule.waitForIdle()
+        assertEquals("see @url:`https://example.dev/a` ", draft)
+
+        node.performKeyInput { pressKey(Key.Backspace) }
+        composeTestRule.waitForIdle()
+        assertEquals("see @url:`https://example.dev/a`", draft)
+
+        node.performKeyInput { pressKey(Key.Backspace) }
+        composeTestRule.waitForIdle()
+        assertEquals("see ", draft)
+    }
+
+    @Test
+    fun caretInsideChipSnapsToEdge() {
+        var draft by mutableStateOf("")
+
+        composeTestRule.setContent {
+            HermesTheme {
+                Composer(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onSend = {},
+                    onStop = {}, isStreaming = false, canSend = true, connected = true, statusLine = "",
+                    modifier = Modifier
+                )
+            }
+        }
+
+        val node = composeTestRule.onNodeWithContentDescription("Message Hermes")
+        node.performTextInput("see https://example.dev/a ")
+        composeTestRule.waitForIdle()
+
+        node.performTextInputSelection(TextRange(12))
+        composeTestRule.waitForIdle()
+
+        val config = node.fetchSemanticsNode().config
+        val selection = config[SemanticsProperties.TextSelectionRange]
+        assertTrue(selection == TextRange(4) || selection == TextRange(32))
+
         node.performTextInputSelection(TextRange(6, 12))
         composeTestRule.waitForIdle()
-        val rangeSelection = composeTestRule.onNodeWithTag("Composer field shell").fetchSemanticsNode().config.getOrNull(SemanticsProperties.TextSelectionRange)
-        assertEquals(TextRange(4, 32), rangeSelection)
-        
-        // second press... I will simulate sending backspace via KEYCODE_DEL
-        node.performTextInputSelection(TextRange(32, 32))
-        node.performKeyPress(KeyEvent(NativeKeyEvent(NativeKeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DEL)))
-        composeTestRule.waitForIdle()
-        // Wait, Compose `BasicTextField` handles backspace natively via KEYCODE_DEL when using `performKeyPress` on an empty composition.
-        // It should delete the chip.
-        assertEquals("see ", draft)
+
+        val config2 = node.fetchSemanticsNode().config
+        val selection2 = config2[SemanticsProperties.TextSelectionRange]
+        assertEquals(TextRange(4, 32), selection2)
     }
 }

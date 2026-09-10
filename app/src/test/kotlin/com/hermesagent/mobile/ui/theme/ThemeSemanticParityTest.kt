@@ -644,19 +644,24 @@ class ThemeSemanticParityTest {
                 val palette = preset.paletteFor(dark)
                 val tokens = HermesTokens.from(palette, dark)
                 val where = "${preset.name}/${if (dark) "dark" else "light"}"
-                
-                val textPrimary = palette.foreground.withAlpha(0.94f)
+
+                val textPrimary = tokens.textPrimary
                 val expected = mixPremultiplied(palette.primary, 82f, textPrimary)
                 assertEquals("$where: referenceInk", expected.argb(), tokens.referenceInk.argb())
-                
+
                 assertNotEquals("$where: not raw palette.primary", palette.primary.argb(), tokens.referenceInk.argb())
                 assertNotEquals("$where: not textPrimary", textPrimary.argb(), tokens.referenceInk.argb())
-                
+
                 val ratio = contrastRatio(tokens.referenceInk.over(tokens.cardSurface), tokens.cardSurface)
                 if (where !in knownBelowFloor) {
                     assertTrue(
                         "$where: referenceInk contrast ${"%.2f".format(ratio)}:1 >= 3.0f",
                         ratio >= 3.0f
+                    )
+                } else {
+                    assertTrue(
+                        "$where: referenceInk contrast ${"%.2f".format(ratio)}:1 < 3.0f",
+                        ratio < 3.0f
                     )
                 }
             }

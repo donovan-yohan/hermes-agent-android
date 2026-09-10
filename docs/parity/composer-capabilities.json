@@ -85,8 +85,8 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose text input and Gateway session identity",
       "android_status": "partial",
-      "android_behavior": "Composer provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Inline reference chips are implemented; native file/image acquisition is tracked by the attachments capability.",
-      "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, ChatJourneyTest, and ComposerReferenceTextTest cover draft retention/fencing, process recreation, multiline input, keyboard guards, canonical reference text, and Android-local path exclusions.",
+      "android_behavior": "Composer provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Fenced URL, file and folder references paint as inline chips over the same wire text (identity offset mapping, atomic caret and backspace); native file/image acquisition is tracked by the attachments capability.",
+      "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, ChatJourneyTest, ComposerReferenceTextTest, ComposerReferenceSyntaxTest, ComposerReferenceChipsTest, and ComposerReferenceChipJourneyTest cover draft retention/fencing, process recreation, multiline input, keyboard guards, canonical reference text, Android-local path exclusions, chip painting and atomic editing.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/index.tsx:880-1085",
@@ -257,7 +257,7 @@
         "completion-no-results"
       ],
       "deviation": {
-        "reason": "Android replaces Desktop hover/nested menus and rich chips with accessible bottom sheets and canonical plain text. File/image acquisition uses SAF-backed staged attachments; folder and arbitrary Desktop JS contributions remain unavailable.",
+        "reason": "Android replaces Desktop hover/nested menus with accessible bottom sheets; references stay canonical wire text and paint as inline chips. File/image acquisition uses SAF-backed staged attachments; folder and arbitrary Desktop JS contributions remain unavailable.",
         "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/CompletionPopup.kt:18-55",
         "approved_by": "Slice 3 mobile adaptation contract"
       },

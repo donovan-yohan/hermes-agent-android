@@ -13,6 +13,7 @@ import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.unit.em
 import com.hermesagent.mobile.data.composer.ComposerReferenceSpan
 import com.hermesagent.mobile.data.composer.hiddenUrlLabelRanges
+import com.hermesagent.mobile.data.composer.composerReferenceSpans
 import kotlin.math.min
 
 internal const val REFERENCE_SPACER = '\u2005'
@@ -24,31 +25,31 @@ internal fun paintComposerReferences(
     pathInk: Color,
     glyphFamily: FontFamily
 ): AnnotatedString {
-    val spans = com.hermesagent.mobile.data.composer.composerReferenceSpans(text)
+    val spans = composerReferenceSpans(text)
     if (spans.isEmpty()) return AnnotatedString(text)
-    
+
     val builder = AnnotatedString.Builder(text.length)
     var current = 0
-    
+
     for (span in spans) {
         if (current < span.start) {
             builder.append(text.substring(current, span.start))
         }
-        
+
         val glyph = when (span.kind) {
             "url" -> '\uEB15'
             "file" -> '\uEA7B'
             "folder" -> '\uEA83'
             else -> null
         }
-        
+
         val ink = when (span.kind) {
             "url", "session" -> referenceInk
             else -> pathInk
         }
-        
+
         builder.pushStyle(SpanStyle(color = ink))
-        
+
         if (glyph != null) {
             builder.pushStyle(SpanStyle(
                 fontFamily = glyphFamily,
@@ -59,18 +60,18 @@ internal fun paintComposerReferences(
             builder.append(glyph.toString())
             builder.pop()
             builder.append(REFERENCE_SPACER.toString())
-            
+
             for (i in span.start + 2 until span.valueStart) {
                 builder.append(REFERENCE_HIDDEN.toString())
             }
-            
+
             val value = span.value
             val hiddenRanges = when (span.kind) {
                 "url" -> hiddenUrlLabelRanges(value)
                 "file", "folder" -> if (value.startsWith("./")) listOf(0 until 2) else emptyList()
                 else -> emptyList()
             }
-            
+
             for (i in value.indices) {
                 if (hiddenRanges.any { it.contains(i) }) {
                     builder.append(REFERENCE_HIDDEN.toString())
@@ -78,22 +79,22 @@ internal fun paintComposerReferences(
                     builder.append(value[i].toString())
                 }
             }
-            
+
             for (i in span.valueEnd until span.end) {
                 builder.append(REFERENCE_HIDDEN.toString())
             }
         } else {
             builder.append(text.substring(span.start, span.end))
         }
-        
+
         builder.pop() // ink style
         current = span.end
     }
-    
+
     if (current < text.length) {
         builder.append(text.substring(current))
     }
-    
+
     return builder.toAnnotatedString()
 }
 
@@ -129,21 +130,22 @@ internal fun snapSelectionToReferenceEdges(
     spans: List<ComposerReferenceSpan>
 ): TextFieldValue {
     if (previous.text != proposed.text) return proposed
-    
+
     val pSelection = previous.selection
     val nSelection = proposed.selection
-    
+
     if (nSelection.collapsed) {
         val p = nSelection.start
         for (span in spans) {
             if (p > span.start && p < span.end) {
-                val newStart = if (pSelection.collapsed && pSelection.start == span.start && p == span.start + 1) {
+                val newStart = if (p > pSelection.start) {
                     span.end
-                } else if (pSelection.collapsed && pSelection.start == span.end && p == span.end - 1) {
+                } else if (p < pSelection.start) {
                     span.start
                 } else {
-                    val mid = span.start + (span.end - span.start) / 2
-                    if (p < mid) span.start else span.end
+                    val distToStart = p - span.start
+                    val distToEnd = span.end - p
+                    if (distToEnd <= distToStart) span.end else span.start
                 }
                 return proposed.copy(selection = TextRange(newStart))
             }
@@ -152,10 +154,10 @@ internal fun snapSelectionToReferenceEdges(
         var newStart = nSelection.start
         var newEnd = nSelection.end
         var reversed = nSelection.reversed
-        
+
         val actualStart = nSelection.min
         val actualEnd = nSelection.max
-        
+
         var adjStart = actualStart
         for (span in spans) {
             if (actualStart > span.start && actualStart < span.end) {
@@ -163,7 +165,7 @@ internal fun snapSelectionToReferenceEdges(
                 break
             }
         }
-        
+
         var adjEnd = actualEnd
         for (span in spans) {
             if (actualEnd > span.start && actualEnd < span.end) {
@@ -171,7 +173,7 @@ internal fun snapSelectionToReferenceEdges(
                 break
             }
         }
-        
+
         if (adjStart != actualStart || adjEnd != actualEnd) {
             val range = if (reversed) TextRange(adjEnd, adjStart) else TextRange(adjStart, adjEnd)
             return proposed.copy(selection = range)
@@ -190,31 +192,29 @@ internal fun atomizeReferenceDeletion(
     var p = 0
     val minLen = min(prevText.length, propText.length)
     while (p < minLen && prevText[p] == propText[p]) p++
-    
+
     var s = 0
     while (s < minLen - p && prevText[prevText.length - 1 - s] == propText[propText.length - 1 - s]) s++
-    
+
     val removed = p until (prevText.length - s)
     val inserted = propText.substring(p, propText.length - s)
-    
+
     if (inserted.isNotEmpty()) return null
     if (removed.isEmpty()) return null
-    
+
     // Attempt to align the removed range with the previous cursor if possible
     val pSelection = previous.selection
     var bestP = p
     var bestS = s
     var bestRemoved = removed
-    
+
     if (pSelection.collapsed) {
         val len = removed.last - removed.first + 1
-        var candidateP = p
-        var candidateS = s
-        
+
         // Find alternative placements
         val alternatives = mutableListOf<Int>()
         alternatives.add(p)
-        
+
         // Try shifting left
         var checkP = p - 1
         var checkS = s + 1
@@ -223,7 +223,7 @@ internal fun atomizeReferenceDeletion(
             checkP--
             checkS++
         }
-        
+
         // Try shifting right
         checkP = p + 1
         checkS = s - 1
@@ -232,7 +232,7 @@ internal fun atomizeReferenceDeletion(
             checkP++
             checkS--
         }
-        
+
         // Prefer ending at previous cursor
         val endingAtCursor = alternatives.find { it + len == pSelection.start }
         if (endingAtCursor != null) {
@@ -249,24 +249,24 @@ internal fun atomizeReferenceDeletion(
             }
         }
     }
-    
+
     val overlappedSpans = spans.filter { it.start < bestRemoved.last + 1 && it.end > bestRemoved.first }
     if (overlappedSpans.isEmpty()) return null
-    
+
     var widenedStart = bestRemoved.first
     var widenedEnd = bestRemoved.last + 1
-    
+
     for (span in overlappedSpans) {
         widenedStart = min(widenedStart, span.start)
         widenedEnd = Math.max(widenedEnd, span.end)
     }
-    
+
     if (pSelection.collapsed && bestRemoved.first == widenedEnd - 1 && bestRemoved.last == widenedEnd - 1) {
         if (prevText.getOrNull(widenedEnd) == ' ') {
             widenedEnd++
         }
     }
-    
+
     val newText = prevText.substring(0, widenedStart) + prevText.substring(widenedEnd)
     return TextFieldValue(newText, TextRange(widenedStart), null)
 }
@@ -279,22 +279,22 @@ internal fun canonicalizePastedComposerText(
     var p = 0
     val minLen = min(previous.length, proposed.length)
     while (p < minLen && previous[p] == proposed[p]) p++
-    
+
     var s = 0
     while (s < minLen - p && previous[previous.length - 1 - s] == proposed[proposed.length - 1 - s]) s++
-    
+
     val removed = p until (previous.length - s)
     val inserted = proposed.substring(p, proposed.length - s)
-    
+
     if (!removed.isEmpty()) return null
     if (inserted.length < 2 || !inserted.contains("://")) return null
-    
+
     val canonical = canonicalizeComposerUrls(inserted)
     if (canonical == inserted) return null
-    
-    val spans = com.hermesagent.mobile.data.composer.composerReferenceSpans(previous)
+
+    val spans = composerReferenceSpans(previous)
     val prefix = previous.substring(0, p)
-    
+
     if (prefix.endsWith("@url:")) {
         val starterStart = prefix.length - 5
         val insideSpan = spans.any { it.start <= starterStart && it.end > starterStart }
@@ -304,7 +304,7 @@ internal fun canonicalizePastedComposerText(
             return TextFieldValue(newText, TextRange(starterStart + canonical.length))
         }
     }
-    
+
     val newText = prefix + canonical + previous.substring(previous.length - s)
     return TextFieldValue(newText, TextRange(p + canonical.length))
 }
@@ -312,11 +312,11 @@ internal fun canonicalizePastedComposerText(
 internal fun canonicalizeOnSpaceKeepingCaret(value: TextFieldValue): TextFieldValue {
     val canonical = canonicalizeComposerTextOnSpace(value.text)
     if (canonical == value.text) return value
-    
+
     val first = value.text.commonPrefixWith(canonical).length
     val delta = canonical.length - value.text.length
     val caret = value.selection.start
-    
+
     val newCaret = if (caret > first) caret + delta else caret
     return TextFieldValue(canonical, TextRange(newCaret.coerceIn(0, canonical.length)), value.composition)
 }
@@ -328,12 +328,12 @@ internal fun padComposerReferenceInsert(text: String, start: Int, end: Int, inse
         paddedInsert = " " + paddedInsert
         insertedBefore = true
     }
-    
+
     val after = text.substring(end)
     if (after.isEmpty() || !after[0].isWhitespace()) {
         paddedInsert = paddedInsert + " "
     }
-    
+
     val newText = text.substring(0, start) + paddedInsert + text.substring(end)
     val newCursor = start + paddedInsert.length
     return Pair(newText, newCursor)

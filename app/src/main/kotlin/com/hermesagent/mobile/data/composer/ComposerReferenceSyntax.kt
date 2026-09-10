@@ -39,7 +39,7 @@ fun hiddenUrlLabelRanges(value: String): List<IntRange> {
     val schemeIdx = value.indexOf("://")
     if (schemeIdx == -1) return emptyList()
     val schemeEnd = schemeIdx + 3
-    
+
     var authEnd = value.length
     for (i in schemeEnd until value.length) {
         val c = value[i]
@@ -48,13 +48,13 @@ fun hiddenUrlLabelRanges(value: String): List<IntRange> {
             break
         }
     }
-    
+
     val host = value.substring(schemeEnd, authEnd)
     if (host.isEmpty()) return emptyList()
-    
+
     val hidden = mutableListOf<IntRange>()
     hidden.add(0 until schemeEnd)
-    
+
     val userInfoIdx = value.lastIndexOf('@', authEnd - 1)
     val hostStart = if (userInfoIdx >= schemeEnd) {
         hidden.add(schemeEnd..userInfoIdx) // up to and including @
@@ -62,7 +62,7 @@ fun hiddenUrlLabelRanges(value: String): List<IntRange> {
     } else {
         schemeEnd
     }
-    
+
     val portIdx = if (value.getOrNull(hostStart) == '[') {
         val bracketEnd = value.indexOf(']', hostStart)
         if (bracketEnd != -1 && bracketEnd < authEnd) {
@@ -73,30 +73,30 @@ fun hiddenUrlLabelRanges(value: String): List<IntRange> {
     } else {
         value.indexOf(':', hostStart)
     }
-    
+
     if (portIdx != -1 && portIdx < authEnd) {
         hidden.add(portIdx until authEnd)
     }
-    
+
     val wwwStr = "www."
-    if (value.length >= hostStart + wwwStr.length && 
+    if (value.length >= hostStart + wwwStr.length &&
         value.substring(hostStart, hostStart + wwwStr.length).equals(wwwStr, ignoreCase = true) &&
         hostStart + wwwStr.length < authEnd &&
         (portIdx == -1 || hostStart + wwwStr.length < portIdx)
     ) {
         hidden.add(hostStart until (hostStart + wwwStr.length))
     }
-    
+
     val hashIdx = value.indexOf('#', authEnd)
     if (hashIdx != -1) {
         hidden.add(hashIdx until value.length)
     }
-    
+
     val pathEnd = if (hashIdx != -1) hashIdx else value.length
     if (pathEnd > authEnd && value[pathEnd - 1] == '/') {
         hidden.add((pathEnd - 1) until pathEnd)
     }
-    
+
     return hidden.sortedBy { it.first }
 }
 

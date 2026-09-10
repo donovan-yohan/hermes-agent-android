@@ -72,6 +72,16 @@ import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import com.hermesagent.mobile.data.composer.composerReferenceSpans
+import com.hermesagent.mobile.data.composer.fenceCompletionReference
+import com.hermesagent.mobile.ui.chat.composer.padComposerReferenceInsert
+import com.hermesagent.mobile.ui.chat.composer.ReferenceChipTransformation
+import com.hermesagent.mobile.ui.chat.composer.snapSelectionToReferenceEdges
+import com.hermesagent.mobile.ui.chat.composer.atomizeReferenceDeletion
+import com.hermesagent.mobile.ui.chat.composer.canonicalizePastedComposerText
+import com.hermesagent.mobile.ui.chat.composer.canonicalizeOnSpaceKeepingCaret
+import com.hermesagent.mobile.ui.chat.composer.accessibleComposerText
+import com.hermesagent.mobile.ui.common.CodiconFont
 
 private const val IME_PROCESS_KEY_CODE = 229
 
@@ -441,9 +451,9 @@ private fun ComposerEditor(
     }
     fun insertAtSelection(value: String): Boolean {
         if (editorValue.composition != null) return false
-        val spans = com.hermesagent.mobile.data.composer.composerReferenceSpans(value)
+        val spans = composerReferenceSpans(value)
         if (spans.size == 1 && spans[0].start == 0 && spans[0].end == value.length) {
-            val (updated, cursor) = com.hermesagent.mobile.ui.chat.composer.padComposerReferenceInsert(editorValue.text, editorValue.selection.start, editorValue.selection.end, value)
+            val (updated, cursor) = padComposerReferenceInsert(editorValue.text, editorValue.selection.start, editorValue.selection.end, value)
             publish(TextFieldValue(updated, TextRange(cursor)), notifyInsert = value)
             return true
         }
@@ -458,8 +468,8 @@ private fun ComposerEditor(
     }
     fun acceptCompletion(item: CompletionItem) {
         if (editorValue.composition != null) return
-        val fenced = com.hermesagent.mobile.data.composer.fenceCompletionReference(item.text)
-        val spans = com.hermesagent.mobile.data.composer.composerReferenceSpans(fenced)
+        val fenced = fenceCompletionReference(item.text)
+        val spans = composerReferenceSpans(fenced)
         val replacement = if (spans.size == 1 && spans[0].start == 0 && spans[0].end == fenced.length) {
             "$fenced "
         } else {
@@ -475,10 +485,10 @@ private fun ComposerEditor(
         publish(TextFieldValue(updated, TextRange(cursor)), completion = item)
     }
     val chipTransformation = remember(tokens.referenceInk, tokens.textSecondary) {
-        com.hermesagent.mobile.ui.chat.composer.ReferenceChipTransformation(
-            tokens.referenceInk, 
-            tokens.textSecondary, 
-            com.hermesagent.mobile.ui.common.CodiconFont
+        ReferenceChipTransformation(
+            tokens.referenceInk,
+            tokens.textSecondary,
+            CodiconFont
         )
     }
     Column(modifier) {
@@ -494,17 +504,17 @@ private fun ComposerEditor(
             visualTransformation = chipTransformation,
             onValueChange = { value ->
                 val before = editorValue
-                val spans = com.hermesagent.mobile.data.composer.composerReferenceSpans(before.text)
+                val spans = composerReferenceSpans(before.text)
                 val textChanged = value.text != before.text
                 val next = if (!textChanged) {
-                    com.hermesagent.mobile.ui.chat.composer.snapSelectionToReferenceEdges(before, value, spans)
+                    snapSelectionToReferenceEdges(before, value, spans)
                 } else {
-                    com.hermesagent.mobile.ui.chat.composer.atomizeReferenceDeletion(before, value, spans)
+                    atomizeReferenceDeletion(before, value, spans)
                         ?: if (value.composition != null) {
                             value
                         } else {
-                            com.hermesagent.mobile.ui.chat.composer.canonicalizePastedComposerText(before.text, value.text, value.selection.start)
-                                ?: com.hermesagent.mobile.ui.chat.composer.canonicalizeOnSpaceKeepingCaret(value)
+                            canonicalizePastedComposerText(before.text, value.text, value.selection.start)
+                                ?: canonicalizeOnSpaceKeepingCaret(value)
                         }
                 }
                 editorValue = next
@@ -597,7 +607,7 @@ private fun ComposerEditor(
             .semantics {
                 contentDescription = "Message Hermes"
                 editableText = AnnotatedString(
-                    com.hermesagent.mobile.ui.chat.composer.accessibleComposerText(
+                    accessibleComposerText(
                         chipTransformation.filter(editorValue.annotatedString).text.text
                     )
                 )
