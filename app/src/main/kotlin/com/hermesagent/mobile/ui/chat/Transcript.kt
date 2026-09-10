@@ -1517,7 +1517,10 @@ internal fun String.paintableDiffLines(): List<DiffLine> {
     val (body, notice) = clampForDisplayParts(this)
     if (notice == null) return parseDiff(body)
     // A payload with no newline at all is one long line; there is no boundary
-    // to pull back to, and painting the prefix beats painting nothing.
+    // to pull back to, and painting the prefix beats painting nothing. The
+    // notice keeps the character count of the original cut, so it can
+    // under-report by up to one line — a bound on the row count is the
+    // contract here, not an exact character total.
     val whole = when {
         body.endsWith("\n") -> body.dropLast(1)
         body.contains('\n') -> body.substringBeforeLast('\n')
@@ -1628,9 +1631,13 @@ private fun String.filePath(): String? = lineSequence()
     ?.takeIf { it.isNotBlank() && it != "/dev/null" }
 
 /**
- * The first of [names] holding a non-blank string. `index.ts:598-608` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` — `firstStringField`, which is how
- * Desktop reads a path off args or result.
+ * The first of [names] holding a non-blank string: Desktop's
+ * `firstStringField` (`apps/desktop/src/lib/text.ts:19-27` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, imported at
+ * `fallback-model/index.ts:4`), which is how Desktop reads a path off args or
+ * result. One difference: Desktop returns the value trimmed; this returns it as
+ * stored, because every caller here either paints it in a single-line slot or
+ * matches it whole.
  */
 private fun String?.jsonStringField(vararg names: String): String? {
     val text = this ?: return null

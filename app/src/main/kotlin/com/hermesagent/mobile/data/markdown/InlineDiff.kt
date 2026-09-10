@@ -86,7 +86,7 @@ fun countDiffLineStats(diff: String): DiffLineStats {
 }
 
 /**
- * Drop the file-header preamble. `diff-lines.tsx:114-134` @ `72a3277cd7`.
+ * Drop the file-header preamble. `diff-lines.tsx:114-133` @ `72a3277cd7`.
  *
  * A git-style unified diff opens with `diff --git`, `index …`, `--- a/path`,
  * `+++ b/path`; Hermes' renderer collapses that pair into its own `a/path →
@@ -215,7 +215,7 @@ internal fun stripDiffMarker(line: String): String =
     if (diffKind(line) != DiffKind.Context || line.startsWith(" ")) line.drop(1) else line
 
 /**
- * Split the body into hunks. `diff-lines.tsx:135-166` @ `72a3277cd7`.
+ * Split the body into hunks. `diff-lines.tsx:135-163` @ `72a3277cd7`.
  *
  * A `@@` line whose header does not parse closes the current hunk rather than
  * opening one, so its body is dropped instead of being mislabelled; `\` lines
