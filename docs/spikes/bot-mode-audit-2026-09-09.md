@@ -123,7 +123,8 @@ section, *separator*, New section…, then Remove from section when assigned) �
 entirely for the default bot).
 
 **Group row context menu** (`bot-row.tsx:550-567`): Open Group Chat →
-*separator* → Delete group (destructive).
+*separator* → Delete (destructive; `deleteAction`,
+`apps/desktop/src/plugins/hermes-bots/i18n.ts:388`).
 
 **Roster toolbar "New…" dropdown** (`roster-pane-toolbar.tsx:85-113`): New Bot
 (`hubot`) → New Group (`organization`, disabled below two bots) → *separator* →
@@ -354,7 +355,7 @@ ship read-only" is a false dichotomy: the gateway ships a second, bounded round
 engine with the same caps (2 to 6 members, 3 rounds, 10 member messages, a
 24-line delta: `gateway/hosted_room_discussion.py:23-28`), driven by an
 in-process worker that runs "independently of Desktop connections"
-(`tui_gateway/hosted_room_driver.py:92-96`). Its mention rule resolves handles
+(`tui_gateway/hosted_room_driver.py:95-96`). Its mention rule resolves handles
 only (`hosted_room_discussion.py:37, 291-303`), it has no per-member holds (a stop is a
 room-wide seq fence, `:559-569`), and it exposes the room as a typed log
 (section 3.4). The two engines do not share rooms: Desktop's live in
@@ -571,11 +572,12 @@ order: `groups.capabilities`, `groups.list`, `groups.create`, `groups.state`,
 `groups.replicate`, `groups.replica_state`, `groups.promote`, `groups.demote`,
 `groups.stop`, `groups.retry`, `groups.approve`, `groups.peer.invite`,
 `groups.peer.revoke`, `groups.peer.register`. Every one runs on the RPC thread
-pool (`:23`; `tui_gateway/server.py:762-785`), and all share one error envelope
-(`:184-215`): a `HostedRoomError` maps to the method's `room_code` with
-`data.reason` only for `room_history_expired` and `authority_conflict`
-(`gateway/hosted_rooms.py:185-198`); anything else maps to the method's 5xxx
-`code`.
+pool (`:23`; joined into `server._LONG_HANDLERS` at
+`tui_gateway/methods_bot_relay.py:167`; `tui_gateway/server.py:762-785`), and
+all share one error envelope (`:184-215`): a `HostedRoomError` maps to the
+method's `room_code` with `data.reason` only for `room_history_expired` and
+`authority_conflict` (`gateway/hosted_rooms.py:185-198`); anything else maps to
+the method's 5xxx `code`.
 
 `groups.capabilities` (`:218-247`) is a feature-detect with narrow semantics.
 `driver` is true only while the worker thread is alive (`:222-223`).
@@ -616,7 +618,7 @@ invisible to the pinned Desktop, because the gateway never reads
 build. Any non-internal `prompt.submit` into a session titled
 `Group: <room_id>` whose id is a hosted room returns 4122 "This room is managed
 by its gateway. Update Hermes Desktop to continue it."; a probe failure returns
-5122 (`tui_gateway/methods_prompt.py:206-243`;
+5122 (`tui_gateway/methods_prompt.py:206-239`;
 `tests/tui_gateway/test_hosted_room_prompt_fence.py:1`). Nothing under `apps/`
 handles 4122 or 5122. An Android hosted room and a Desktop blob room must never
 share a `room_id`, because the fence keys on the shared `Group: <room_id>`
@@ -1188,9 +1190,10 @@ threads); `create-dialog.tsx:1116-1352` (the create-group picker);
 semantics.
 **en.ts keys.** The write half of `i18n.ts:376-438`: `composerPlaceholder`,
 `stop`, `newThreadPlaceholder` and the `disband*` family are used as written;
-`stopHint`, `allHeldStatus`, `heldMembersStatus` and `holdReleaseHint` describe
-per-member holds the hosted engine does not have, so each is a `drift` row with
-an issue number rather than a verbatim reuse.
+`stopHint`, `allHeldStatus`, `heldMembersStatus` and `holdReleaseHint`
+(`apps/desktop/src/plugins/hermes-bots/i18n.ts:403-406`) describe per-member
+holds the hosted engine does not have, so each is a `drift` row with an issue
+number rather than a verbatim reuse.
 **Gateway methods.** `groups.create`, `groups.send`, `groups.stop`,
 `groups.rename`, `groups.disband`, `groups.retry`, `groups.approve`
 (`tui_gateway/methods_groups.py:359-366, 383-395, 398-464, 485-488` @
@@ -1220,7 +1223,7 @@ edits (members are frozen at create), per-member holds, the clarify card, and
 peer members with route status in rooms created on another gateway.
 
 **Never.** `prompt.submit` into a `Group: <room_id>` session (4122 fence,
-`tui_gateway/methods_prompt.py:206-243`); reusing a Desktop `roomId`; the seven
+`tui_gateway/methods_prompt.py:206-239`); reusing a Desktop `roomId`; the seven
 replication and peer methods (non-goals per ADR 0004).
 
 **Acceptance evidence.** Virtual-time unit tests: idempotent retry keeps its
