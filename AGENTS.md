@@ -205,6 +205,7 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/adr/0002-shared-remote-gateway.md` | Preferred Remote Gateway topology, native authentication, and multi-client boundary |
 | `docs/adr/0001-ssh-probe-to-tunnel.md` | Managed SSH transport, remote ownership, Gateway readiness, and restart limitation |
 | `docs/adr/0003-bundled-plugin-sdk.md` | Bundled-only plugin SDK architecture, Desktop contract mapping, error isolation, and non-goals |
+| `docs/adr/0004-hosted-rooms-for-group-chats.md` | Group chats ride the gateway's hosted-room protocol: the groups.* contract, per-route reachability, Desktop UI kept, ledgered as drift |
 | `.chalk/README.md` | chalkbag source-of-truth rules |
 | `docs/workflows/review-product-copy.md` | Reviewing rendered product copy and reasoned gate exceptions |
 | `docs/parity/profile-switcher.md` | Profile rail, active-profile scope, and the read-only roster: pin, adaptation, deviations |
