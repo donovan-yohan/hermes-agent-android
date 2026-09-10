@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.compositeOver
@@ -85,7 +86,12 @@ import com.hermesagent.mobile.data.markdown.AnsiColor
 import com.hermesagent.mobile.data.markdown.InlineSpan
 import com.hermesagent.mobile.data.markdown.MarkdownBlock
 import com.hermesagent.mobile.data.markdown.TableSizing
+import com.hermesagent.mobile.data.markdown.DiffKind
+import com.hermesagent.mobile.data.markdown.countDiffLineStats
 import com.hermesagent.mobile.data.markdown.hasAnsiCodes
+import com.hermesagent.mobile.data.markdown.isArrowHeaderLine
+import com.hermesagent.mobile.data.markdown.parseDiff
+import com.hermesagent.mobile.data.markdown.stripInlineDiffChrome
 import com.hermesagent.mobile.data.markdown.parseAnsi
 import com.hermesagent.mobile.data.markdown.parseTranscriptDirective
 import com.hermesagent.mobile.data.markdown.replyPlainText
@@ -1317,6 +1323,21 @@ private fun ToolStatus.spokenState(): String = when (this) {
     ToolStatus.Stopped -> "stopped"
 }
 
+/** One painted diff line, so a test can read the tint and the gutter it draws. */
+internal fun inlineDiffLineTag(index: Int): String = "inline-diff-line-$index"
+
+/**
+ * Desktop's file-edit tool card body: the header's `+N`/`−N` stats and the
+ * compact `FileDiffPanel` under it (`fallback.tsx:481-486,585-594,636-637` and
+ * `chat/diff-lines.tsx:583-633` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ *
+ * The `inlineDiff` the Gateway sends is written for a TTY, so everything the
+ * panel reads is the *cleaned* diff — `stripInlineDiffChrome` first, exactly as
+ * `fallback.tsx:375` does before anything renders. Copy hands over that same
+ * cleaned text, because Desktop's `copy.file` is `view.inlineDiff`, which is
+ * already chrome-stripped by the time the payload is built
+ * (`fallback-model/index.ts:1254-1257`).
+ */
 @Composable
 private fun InlineDiffPanel(
     diff: String,
@@ -1326,10 +1347,24 @@ private fun InlineDiffPanel(
     contentDescription: String,
 ) {
     val tokens = HermesTheme.tokens
-    val lines = remember(diff) { diff.lines() }
-    val added = remember(lines) { lines.count { it.startsWith("+") && !it.startsWith("+++") } }
-    val removed = remember(lines) { lines.count { it.startsWith("-") && !it.startsWith("---") } }
-    val path = remember(diff, argsText) { diff.filePath() ?: argsText.jsonStringField("path") ?: "Patched file" }
+    // `fallback.tsx:375` — the ESC byte is invisible in Compose, so an unstripped
+    // payload paints its parameter bytes as `[38;2;125;187;255m`. This is the
+    // one place the strip can happen: everything below reads `cleaned`.
+    val cleaned = remember(diff) { stripInlineDiffChrome(diff) }
+    // `fallback.tsx:481-486` — the stats are counted on the cleaned diff, before
+    // markers are stripped, and only shown when there is something to show.
+    val stats = remember(cleaned) { countDiffLineStats(cleaned) }
+    // Desktop parks the body in a `max-h-[12rem]` box that scrolls internally
+    // (`diff-lines.tsx:66-67`); a nested vertical scroller inside a `LazyColumn`
+    // is the wrong trade on touch (#56), so the phone clamps what it *paints*
+    // instead and parses the clamped text. Copy is unaffected: it reads
+    // `cleaned`, which the clamp never touches.
+    val painted = remember(cleaned) { parseDiff(clampForDisplay(cleaned)) }
+    val path = remember(cleaned, argsText) {
+        // `fallback-model/index.ts:61-66` — the tool's own `path` argument wins;
+        // the diff is only consulted when the args carry none.
+        argsText.jsonStringField("path") ?: cleaned.filePath() ?: "Patched file"
+    }
 
     Column(
         modifier = Modifier
@@ -1359,11 +1394,24 @@ private fun InlineDiffPanel(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Text(
-                text = "+$added  −$removed",
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.scaffoldMeta,
-            )
+            // `fallback.tsx:585-594` — two independent slots, each drawn only
+            // when its own count is positive, and the removal uses U+2212 rather
+            // than a hyphen. A file edit shows no duration beside them (`:596`).
+            if (stats.added > 0) {
+                Text(
+                    text = "+${stats.added}",
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.diffAdded,
+                )
+            }
+            if (stats.added > 0 && stats.removed > 0) Spacer(Modifier.width(4.dp))
+            if (stats.removed > 0) {
+                Text(
+                    text = "\u2212${stats.removed}",
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.diffRemoved,
+                )
+            }
             Spacer(Modifier.width(8.dp))
             HermesIconGlyph(
                 icon = if (expanded) HermesIcon.ChevronDown else HermesIcon.ChevronRight,
@@ -1373,42 +1421,74 @@ private fun InlineDiffPanel(
         }
         if (expanded) {
             // Desktop's `copy.file` payload for a file-edit tool
-            // (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`): the whole diff,
-            // headers included, while the display filters the `---`/`+++` lines.
+            // (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`) is
+            // `view.inlineDiff` — the chrome-stripped diff, file headers still
+            // present. Not the raw wire payload: nobody wants ESC bytes on a
+            // clipboard, and Desktop never puts them there.
             Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-                ToolCopyControl(ToolCopyAction(COPY_DIFF, "File copied", diff))
+                ToolCopyControl(ToolCopyAction(COPY_DIFF, "File copied", cleaned))
             }
             Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                lines.filterNot { it.startsWith("--- ") || it.startsWith("+++ ") }.forEach { line ->
-                    // diff-lines.tsx:41-51 @
+                painted.forEachIndexed { index, line ->
+                    // diff-lines.tsx:42-52 @
                     // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — a changed line
-                    // is its own tint plus its own ink, from the theme's
-                    // green/red and never statusUnread/destructive. Why those
-                    // were the wrong semantic: docs/parity/inline-diff-tokens.md.
-                    val background = when {
-                        line.startsWith("+") -> tokens.diffAddedBackground
-                        line.startsWith("-") -> tokens.diffRemovedBackground
-                        else -> Color.Transparent
+                    // is a `border-l-2` in the seed, its own tint and its own
+                    // ink, from the theme's green/red and never
+                    // statusUnread/destructive. Why those were the wrong
+                    // semantic: docs/parity/inline-diff-tokens.md.
+                    val background = when (line.kind) {
+                        DiffKind.Add -> tokens.diffAddedBackground
+                        DiffKind.Remove -> tokens.diffRemovedBackground
+                        DiffKind.Context -> Color.Transparent
                     }
-                    val foreground = when {
-                        line.startsWith("+") -> tokens.diffAddedForeground
-                        line.startsWith("-") -> tokens.diffRemovedForeground
-                        else -> tokens.textSecondary
+                    val foreground = when (line.kind) {
+                        DiffKind.Add -> tokens.diffAddedForeground
+                        DiffKind.Remove -> tokens.diffRemovedForeground
+                        DiffKind.Context -> tokens.textSecondary
+                    }
+                    // `diff-lines.tsx:43` — a context row's border is
+                    // transparent, not absent: the gutter still occupies its
+                    // 2 px so every row's text starts on the same column.
+                    val gutter = when (line.kind) {
+                        DiffKind.Add -> tokens.diffAdded
+                        DiffKind.Remove -> tokens.diffRemoved
+                        DiffKind.Context -> Color.Transparent
                     }
                     Text(
-                        text = line.ifEmpty { " " },
+                        // `diff-lines.tsx:279-291` — an empty line still paints
+                        // a row, so a blank hunk separator keeps its height.
+                        text = line.text.ifEmpty { " " },
                         style = HermesTheme.type.code,
                         color = foreground,
+                        // `DIFF_LINE_BASE`'s `whitespace-pre` (`:54`): the text
+                        // is pre-formatted and the panel already scrolls
+                        // sideways, so a long line must not wrap.
+                        softWrap = false,
                         modifier = Modifier
+                            .testTag(inlineDiffLineTag(index))
                             .background(background)
+                            .drawBehind {
+                                drawRect(
+                                    color = gutter,
+                                    size = Size(DIFF_GUTTER_WIDTH.toPx(), size.height),
+                                )
+                            }
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 1.dp),
+                            .padding(
+                                start = 10.dp + DIFF_GUTTER_WIDTH,
+                                end = 10.dp,
+                                top = 1.dp,
+                                bottom = 1.dp,
+                            ),
                     )
                 }
             }
         }
     }
 }
+
+/** `diff-lines.tsx:54` @ `72a3277cd7` — `border-l-2`, in the seed colour. */
+private val DIFF_GUTTER_WIDTH = 2.dp
 
 @Composable
 private fun TurnProgressRow(startedAtMillis: Long?, progress: SessionProgress?) {
@@ -1477,11 +1557,30 @@ private fun ToolActivity.displayTitle(): String {
     }
 }
 
+/**
+ * The path a diff is about, read out of the diff itself.
+ *
+ * `fallback-model/index.ts:61-66` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
+ * consults the diff only after the tool's own `path` argument, which is why the
+ * caller tries `argsText` first.
+ *
+ * Two shapes reach here. A plain unified diff still carries `+++ b/path`. The
+ * Gateway's rendered `inline_diff` does not: `agent/display.py:672-690` @ the
+ * same SHA collapses the `---`/`+++` pair into one `a/path → b/path` arrow line,
+ * so without the arrow arm every gateway diff would fall back to the literal
+ * "Patched file". The `b/` side is the file as it now stands, matching what
+ * `+++` meant.
+ */
 private fun String.filePath(): String? = lineSequence()
-    .firstOrNull { it.startsWith("+++ ") }
-    ?.removePrefix("+++ ")
+    .firstNotNullOfOrNull { line ->
+        when {
+            line.startsWith("+++ ") -> line.removePrefix("+++ ")
+            isArrowHeaderLine(line) -> line.trim().substringAfterLast('\u2192').trim()
+            else -> null
+        }
+    }
     ?.removePrefix("b/")
-    ?.takeIf { it != "/dev/null" }
+    ?.takeIf { it.isNotBlank() && it != "/dev/null" }
 
 private fun String?.jsonStringField(name: String): String? {
     val text = this ?: return null

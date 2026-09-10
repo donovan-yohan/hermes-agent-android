@@ -222,10 +222,14 @@ lifecycle.
 - Full task-list rows and completion counts, goals, subagents, background
   processes, previews, generic progress, compaction, and queued prompts in the
   composer status stack.
-- Gateway-supplied inline diffs render in transcript tool rows. The dedicated
-  coding/review surface does not yet provide repository file contents,
-  changed-file patches, an editor, terminal/PTY, or a full Desktop-style review
-  pane.
+- Gateway-supplied inline diffs render in transcript tool rows: the terminal
+  chrome the Gateway renders them with — the `review diff` banner, the colour
+  escapes, the file headers and the `@@` hunk lines — is stripped, each changed
+  line carries its own gutter, tint and ink, and the row header counts the
+  change. The dedicated coding/review surface does not yet provide repository
+  file contents, changed-file patches, an editor, terminal/PTY, or a full
+  Desktop-style review pane. Large diffs are clamped rather than windowed, and
+  diff bodies are not syntax-highlighted.
 
 ### Relay channels
 

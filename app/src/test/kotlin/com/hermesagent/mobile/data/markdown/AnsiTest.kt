@@ -336,4 +336,91 @@ class AnsiTest {
             rebuildCost > smallParse.charactersCopied * 1_000,
         )
     }
+
+    // -- stripAnsi (ansi.ts:177-186) ------------------------------------------
+
+    // Desktop's `ansi.test.ts` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
+    // exercises `parseAnsi`, `hasAnsiCodes` and `ansiColorClass` only — it has
+    // no `stripAnsi` case at all. So these mirror the *rule set* the two
+    // functions share rather than fixtures that exist upstream, and add the two
+    // properties this port owes over upstream's regex pair: a truncated escape
+    // is dropped rather than leaked, and a megabyte terminates.
+
+    @Test
+    fun `plain text survives the strip untouched`() {
+        assertEquals("hello world", stripAnsi("hello world"))
+        assertEquals("", stripAnsi(""))
+    }
+
+    @Test
+    fun `a foreground sequence and its reset are removed, leaving the text`() {
+        assertEquals("error ok", stripAnsi("${esc}[31merror${esc}[0m ok"))
+    }
+
+    @Test
+    fun `truecolour foreground and tinted background payloads are removed whole`() {
+        // The gateway's rendered `inline_diff` shape (`agent/display.py:75-81` @
+        // `72a3277cd7`): this is the exact payload that leaked as text.
+        val line = "${esc}[38;2;255;255;255;48;2;20;90;20m+new line${esc}[0m"
+
+        assertEquals("+new line", stripAnsi(line))
+        assertFalse(stripAnsi(line).contains("[38;2"))
+        assertFalse(stripAnsi(line).contains("[48;2"))
+    }
+
+    @Test
+    fun `a non-sgr control sequence is removed with its final byte`() {
+        // `ansi.ts:56` matches any final byte, not just `m`: a cursor move and
+        // an erase carry no text and must not print their parameters either.
+        assertEquals("ab", stripAnsi("a${esc}[2Kb"))
+        assertEquals("ab", stripAnsi("a${esc}[1;2Hb"))
+    }
+
+    @Test
+    fun `an osc payload is consumed rather than printed`() {
+        // `ansi.ts:59`'s OSC arm: a window title is not output.
+        assertEquals("after", stripAnsi("${esc}]0;a titleafter"))
+        assertEquals("after", stripAnsi("${esc}]8;;file:///tmp/x${esc}\\after"))
+    }
+
+    @Test
+    fun `a two-byte escape is dropped as a pair`() {
+        assertEquals("ab", stripAnsi("a${esc}Mb"))
+    }
+
+    @Test
+    fun `a truncated escape is dropped rather than leaking its parameters`() {
+        // This file's header rule, and the reason the port does not use
+        // upstream's regexes: `ESC[3` at the tail of a streamed delta would
+        // otherwise print as `[3`.
+        assertEquals("still alive", stripAnsi("still alive${esc}[3"))
+        assertEquals("still alive", stripAnsi("still alive$esc"))
+        assertEquals("still alive", stripAnsi("still alive${esc}]0;unterminated"))
+    }
+
+    @Test
+    fun `the strip agrees with the parser on what text survives`() {
+        // The two share a scanner, and this is the property that keeps them
+        // honest: whatever `parseAnsi` would render is exactly what `stripAnsi`
+        // returns.
+        val input = "${esc}[1;31mFAILED${esc}[0m 2 of 40${esc}[32m ok${esc}[0m${esc}[2K${esc}[3"
+
+        assertEquals(parseAnsi(input).joinToString("") { it.text }, stripAnsi(input))
+    }
+
+    @Test
+    fun `a megabyte of escape-dense output strips well inside a frame budget`() {
+        val hostile = buildString {
+            repeat(20_000) {
+                append("${esc}[38;2;255;255;255;48;2;20;90;20m").append("x".repeat(20)).append("${esc}[0m")
+            }
+        }
+        assertTrue("the fixture must actually be about a megabyte", hostile.length > 1_000_000)
+
+        var stripped = ""
+        val elapsed = measureTimeMillis { stripped = stripAnsi(hostile) }
+
+        assertEquals(20_000 * 20, stripped.length)
+        assertTrue("stripping 1 MB took ${elapsed}ms", elapsed < 2_000)
+    }
 }
