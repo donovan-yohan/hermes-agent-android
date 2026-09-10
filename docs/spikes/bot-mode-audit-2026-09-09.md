@@ -355,7 +355,7 @@ engine with the same caps (2 to 6 members, 3 rounds, 10 member messages, a
 24-line delta: `gateway/hosted_room_discussion.py:23-28`), driven by an
 in-process worker that runs "independently of Desktop connections"
 (`tui_gateway/hosted_room_driver.py:92-96`). Its mention rule resolves handles
-only (`hosted_room_discussion.py:38`), it has no per-member holds (a stop is a
+only (`hosted_room_discussion.py:37, 291-303`), it has no per-member holds (a stop is a
 room-wide seq fence, `:559-569`), and it exposes the room as a typed log
 (section 3.4). The two engines do not share rooms: Desktop's live in
 `hermes-bots-groups`, the gateway's in `state.db`.
@@ -1135,7 +1135,7 @@ shape Desktop draws, not for the wire.
 **What it builds.** A capability gate on `protocol_version == 2` and `driver`;
 the room list from `groups.list` (ordered `updated_at DESC`, paged by
 `next_offset`); the room header from `groups.state.room`; the transcript from
-`groups.log` paged on `has_more` from a per-room cursor, rendering the eleven
+`groups.log` paged on `has_more` from a per-room cursor, rendering the twelve
 produced event kinds in the ADR's table (user and member bubbles by thread,
 terminal rows, `room.activity` dividers, stop and rename lines) and a generic
 system line for any unknown kind; the working/blocked indicator from
