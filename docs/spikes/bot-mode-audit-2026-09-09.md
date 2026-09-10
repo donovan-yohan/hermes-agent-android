@@ -23,6 +23,15 @@ checkout is read-only; nothing here was fetched, checked out, or written.
 checkout; a third is verifying this app's *existing* wire surface in depth.
 Section 4 is deliberately short because that verifier owns it.
 
+**Decision (2026-09-09).** The epic has decided the question sections 1.6 and
+3.4 leave open: Android's Bot Mode group chats use the gateway's hosted-room
+protocol (`groups.*`), keep Desktop's UI treatment, and record the difference
+from the pinned Desktop as drift on the parity ledger. The durable record is
+[ADR 0004](../adr/0004-hosted-rooms-for-group-chats.md); the corrections from
+#199 are applied to sections 1.6 and 3.4 and to slices 6 and 7 below. Where an
+older sentence in this document still says a slice "reimplements" Desktop's
+engine or writes `hermes-bots-groups`, the ADR wins.
+
 ---
 
 ## 1. What Bot Mode is at `72a3277cd7`
@@ -114,7 +123,8 @@ section, *separator*, New section…, then Remove from section when assigned) �
 entirely for the default bot).
 
 **Group row context menu** (`bot-row.tsx:550-567`): Open Group Chat →
-*separator* → Delete group (destructive).
+*separator* → Delete (destructive; `deleteAction`,
+`apps/desktop/src/plugins/hermes-bots/i18n.ts:388`).
 
 **Roster toolbar "New…" dropdown** (`roster-pane-toolbar.tsx:85-113`): New Bot
 (`hubot`) → New Group (`organization`, disabled below two bots) → *separator* →
@@ -339,9 +349,25 @@ reports `inflight` or `running` up to `GROUP_TURN_HARD_CAP_MS = 20 * 60000`. A
 turn that times out anyway is recorded as `stranded` and harvested later rather
 than lost.
 
-**This engine is the client's, not the gateway's.** Every scheduling decision
-above runs in the Desktop renderer. An Android port either reimplements it or
-ships group chats read-only.
+**This engine is the Desktop client's; the gateway carries its own.** Every
+scheduling decision above runs in the Desktop renderer. But "reimplement it or
+ship read-only" is a false dichotomy: the gateway ships a second, bounded round
+engine with the same caps (2 to 6 members, 3 rounds, 10 member messages, a
+24-line delta: `gateway/hosted_room_discussion.py:23-28`), driven by an
+in-process worker that runs "independently of Desktop connections"
+(`tui_gateway/hosted_room_driver.py:95-96`). Its mention rule resolves handles
+only (`hosted_room_discussion.py:37, 291-303`), it has no per-member holds (a stop is a
+room-wide seq fence, `:559-569`), and it exposes the room as a typed log
+(section 3.4). The two engines do not share rooms: Desktop's live in
+`hermes-bots-groups`, the gateway's in `state.db`.
+
+**The `Group: <roomId>` title namespace is shared on purpose.** The hosted
+driver reuses Desktop's member-session title "so a local-to-hosted migration
+keeps one transcript" (`tui_gateway/hosted_room_driver.py:6-7`;
+`gateway/platforms/api_server_room_dispatch.py:17-19`), which is exactly why the
+4122 fence in section 3.4 keys on it. An Android port on the hosted engine
+therefore renders from the log and never prompts into those sessions. The epic
+has chosen the hosted engine: [ADR 0004](../adr/0004-hosted-rooms-for-group-chats.md).
 
 ---
 
@@ -538,28 +564,76 @@ immediate drain (250 ms) instead of waiting the poll out. Because the router
 needs a socket per connection, cross-connection relay is blocked on a
 multi-connection Android client, not on any missing method.
 
-### 3.4 The hosted-room protocol, which Desktop does not use
+### 3.4 The hosted-room protocol, which the pinned Desktop does not use
 
-`tui_gateway/methods_groups.py:19-22` registers nineteen methods:
-`groups.capabilities`, `groups.list`, `groups.create`, `groups.state`,
+`tui_gateway/methods_groups.py:18-22` registers **eighteen** methods, in wire
+order: `groups.capabilities`, `groups.list`, `groups.create`, `groups.state`,
 `groups.send`, `groups.rename`, `groups.log`, `groups.disband`,
 `groups.replicate`, `groups.replica_state`, `groups.promote`, `groups.demote`,
 `groups.stop`, `groups.retry`, `groups.approve`, `groups.peer.invite`,
-`groups.peer.revoke`, `groups.peer.register`. `groups.capabilities` (`:218-246`)
-is a clean feature-detect returning `protocol_version`, `driver`,
-`persistent_process`, `authority_gateway_id`, a `room_link` (or a `reason` such
-as `durable_run_storage_required` or `gateway_roomlink_secret_unavailable`), a
-`features` list (`authority_epoch`, `coordinator_fencing`, `room_identity`,
-`monotonic_log`, `idempotent_send`, `replayable_disband`, `typed_events`,
-`actor_identity`, `log_replication`, `authority_takeover`), the live `methods`
-list and `max_log_limit`.
+`groups.peer.revoke`, `groups.peer.register`. Every one runs on the RPC thread
+pool (`:23`; joined into `server._LONG_HANDLERS` at
+`tui_gateway/methods_bot_relay.py:167`; `tui_gateway/server.py:762-785`), and
+all share one error envelope (`:184-215`): a `HostedRoomError` maps to the
+method's `room_code` with `data.reason` only for `room_history_expired` and
+`authority_conflict` (`gateway/hosted_rooms.py:185-198`); anything else maps to
+the method's 5xxx `code`.
 
-This is arguably a *better* substrate for a mobile group chat than Desktop's
-client-driven engine — a monotonic replicated log with idempotent send is
-exactly what an app that loses the network wants. **But shipping on it would be
-a divergence from Desktop, not a port of it**, and this repo's rule is that
-Desktop is the spec. Recorded here as a decision the epic must make explicitly,
-not one a slice may take on its own.
+`groups.capabilities` (`:218-247`) is a feature-detect with narrow semantics.
+`driver` is true only while the worker thread is alive (`:222-223`).
+`persistent_process` is forced false under `HERMES_DESKTOP=1`
+(`gateway/hosted_room_peer.py:250-251`), which is how this app spawns its
+Managed SSH `hermes serve`. `room_link` has exactly two failure reasons, and
+every non-storage failure (foreign profile unavailable, execution policy
+unresolvable, approvals mode `off`, malformed secret) collapses into the second:
+`durable_run_storage_required` or `gateway_roomlink_secret_unavailable`
+(`:224-238`; the approvals-`off` refusal is `hosted_room_peer.py:255-258`).
+The rest is `protocol_version` (2), `authority_gateway_id`, a `features` list
+(`authority_epoch`, `coordinator_fencing`, `room_identity`, `monotonic_log`,
+`idempotent_send`, `replayable_disband`, `typed_events`, `actor_identity`,
+`log_replication`, `authority_takeover`), the eighteen `methods` and
+`max_log_limit` (500).
+
+**Capability gates.** Three coordinator writes need the live worker or return
+4123 "Group Chat worker is unavailable. Restart the Hermes gateway and try
+again.": `groups.create`, `groups.send`, `groups.disband` (`:30, 359-366,
+383-395, 398-428`). `groups.stop`, `groups.retry` and `groups.approve` need it or
+return 4115 (`:31, 431-464`). The read methods and `groups.rename` are db-only
+and answer without a worker (`:346-356, 369-380, 485-495`).
+
+**A better substrate for a phone, with qualifiers.** A monotonic replicated log
+with idempotent send is what an app that loses the network wants, but:
+`groups.send` accepts only an inert `message.user` `{text, thread_id}` and
+stamps a server-owned actor `{"kind":"user","id":"desktop"}` (`:383-395`;
+`tui_gateway/hosted_room_service.py:446-452`); there are **no push events**, so a
+client polls `groups.state` and `groups.log`; `groups.send` always returns
+`driver_started: true` and the truthful signal is `groups.state.driver_status`
+(`:393-395`; `hosted_room_service.py:528-548`); coordinator writes need the
+live worker; members are local profiles or peer targets on the authority
+gateway (`gateway/hosted_room_discussion.py:24-27, 43-48`); and hosted rooms are
+invisible to the pinned Desktop, because the gateway never reads
+`hermes-bots-groups` and Desktop never calls `groups.*`.
+
+**The 4122 fence.** The gateway already treats the pinned Desktop as an older
+build. Any non-internal `prompt.submit` into a session titled
+`Group: <room_id>` whose id is a hosted room returns 4122 "This room is managed
+by its gateway. Update Hermes Desktop to continue it."; a probe failure returns
+5122 (`tui_gateway/methods_prompt.py:206-239`;
+`tests/tui_gateway/test_hosted_room_prompt_fence.py:1`). Nothing under `apps/`
+handles 4122 or 5122. An Android hosted room and a Desktop blob room must never
+share a `room_id`, because the fence keys on the shared `Group: <room_id>`
+title.
+
+**Divergence from the pinned Desktop code, not from the product.** Shipping on
+this protocol diverges from the pinned Desktop *code*: no file under
+`apps/desktop/src` calls `groups.*`. It does not diverge from upstream's stated
+direction. Upstream names Desktop as the protocol's intended client (the
+`desktop` actor id; `cancel_id` default `desktop-stop`, `:431-436`; the fence
+text above), and `website/docs/user-guide/bot-mode.md:105` already claims
+Desktop "catches up from the room's log". The epic has taken this decision:
+see the Decision note at the top of this document and
+[ADR 0004](../adr/0004-hosted-rooms-for-group-chats.md). It is ledgered as
+drift, not mobile-adaptation.
 
 ### 3.5 What is genuinely Desktop-only
 
@@ -1043,75 +1117,125 @@ cause. A Robolectric journey over the six pane states.
 
 ### Slice 6 — Group chats, read-only
 
-**Blocked?** **Yes, softly.** Reading needs `profiles.list` to return `ui_meta`.
-If a gateway omits `ui_meta_revisions`, this slice still renders; slice 7 must
-not run at all.
+**Decision applied.** [ADR 0004](../adr/0004-hosted-rooms-for-group-chats.md):
+this slice reads the gateway's hosted rooms, not `hermes-bots-groups`.
 
-**Desktop source.** `group-chat.ts:47,839-877,1210-1216`; `types.ts:160-188`;
-`group-activity.ts:87-129`; `group-chat-view.tsx`; `group-hold-status.tsx:16-60`;
-`bot-row.tsx:483-528,550-567`; `group-order.ts`.
+**Blocked?** **No.** Every method it needs is db-only and answers without the
+worker (`tui_gateway/methods_groups.py:184-215, 346-356, 369-380, 489-495`). A
+gateway that answers `groups.capabilities` with -32601 renders the section
+empty with a "needs a newer gateway" state.
+
+**Desktop source (UI treatment only).** `group-chat-view.tsx`;
+`group-activity.ts:87-129`; `group-hold-status.tsx:16-60`;
+`bot-row.tsx:483-528,550-567`; `group-order.ts`; `types.ts:160-188` for the
+shape Desktop draws, not for the wire.
 **en.ts keys.** `i18n.ts:376-438` (group), plus the roster's `groupChats`.
-**Gateway methods.** `profiles.list {include_sessions:false}` only.
+**Gateway methods.** `groups.capabilities`, `groups.list`, `groups.state`,
+`groups.log` (`tui_gateway/methods_groups.py:218-247, 346-356, 369-380,
+489-495` @ `72a3277cd7`).
 
-**What it builds.** A parser for the `hermes-bots-groups` blob that **round-trips
-unknown fields untouched**, and a read-only surface: the room list with the
-"N of M available" badge, the ordered room log, the twelve-kind activity feed,
-the hold-status banner, and the group row context menu.
+**What it builds.** A capability gate on `protocol_version == 2` and `driver`;
+the room list from `groups.list` (ordered `updated_at DESC`, paged by
+`next_offset`); the room header from `groups.state.room`; the transcript from
+`groups.log` paged on `has_more` from a per-room cursor, rendering the twelve
+produced event kinds in the ADR's table (user and member bubbles by thread,
+terminal rows, `room.activity` dividers, stop and rename lines) and a generic
+system line for any unknown kind; the working/blocked indicator from
+`driver_status`; polling at the ADR's cadence with no push events; and the
+group row context menu in Desktop's order (Open Group Chat, separator, Delete
+group, with Delete disabled behind the WIP chip in this slice).
 
-**Mobile adaptation.** The parser is a wire contract, not a local model: a room
-with an unrecognised field renders rather than being dropped, and a malformed
-room is skipped with a per-room error rather than failing the list. No writes at
-all in this slice, so a Desktop client cannot be corrupted by it.
+**Mobile adaptation.** Polling stops in the background and the room catches up
+on return. A `since_seq is ahead` error resets the cursor rather than failing
+the room.
 
-**Ships WIP-disabled.** The composer, Stop, thread replies, attachments, Disband,
-Group settings and Manage groups — every write control renders behind the WIP
-chip, so the surface is honest about being read-only.
+**Ships WIP-disabled.** Every write control: the composer, Stop, thread
+replies, attachments, Disband, Group settings, Manage groups, retry and
+approve. Desktop's holds banner, clarify card and "N of M available" badge
+render disabled behind the WIP chip too, because the hosted protocol has no
+source for them.
 
-**Acceptance evidence.** Unit tests over synthetic, host-free blob fixtures:
-unknown-field round trip, malformed-room isolation, activity-feed epoch
-filtering, and ordering. A Robolectric journey rendering a room with held members
-and a pending clarify. `docs/parity/bot-group-chat.md`, with every disabled
-control classified as `coming soon`.
+**Not rendered.** Desktop's `hermes-bots-groups` blob rooms. The ledger records
+this as a `drift` row with evidence `#192 — not read by decision (ADR 0004);
+may return as a read-only mirror`.
+
+**Acceptance evidence.** Unit tests over synthetic, host-free `groups.log` and
+`groups.state` fixtures: contiguous-seq paging on `has_more`, a short page
+under the byte cap, unknown-kind tolerance, `room_history_expired` tombstoning,
+`authority_conflict` read-only marking, and cursor reset. A Robolectric journey
+rendering a room with a `working` driver, a `blocked` room with a pending retry,
+and a disbanded tombstone. `docs/parity/bot-group-chat.md` whose first
+`## Divergences` row is the hosted-versus-blob integration difference classified
+`drift` (#193), whose blob-rooms row is `drift` with the `#192` evidence above,
+and in which every hosted-caused row is `drift` with an issue number; the
+disabled controls are `omission` rows carrying `coming soon`. Nothing
+hosted-caused is classified `mobile-adaptation`.
 
 ### Slice 7 — Group chats, participating
 
-**Blocked?** **Yes.** Requires `ui_meta_revisions` CAS on the target gateway, and
-requires the epic to have decided in writing whether Android reimplements
-Desktop's client-side round engine or diverges onto the gateway's hosted-room
-protocol (section 3.4). Do not start this slice before that decision exists.
+**Decision applied.** [ADR 0004](../adr/0004-hosted-rooms-for-group-chats.md):
+Android participates through the hosted protocol. No round engine, no
+`hermes-bots-groups` write, no `prompt.submit` into a `Group:` session.
 
-**Desktop source.**
-`group-rounds.ts:42-104,106-141,143-152,154-259,352-414,421-594`;
-`group-round-prompt.ts`; `group-round-members.ts`;
-`group-turns.ts:268-320,357-382,444-520`; `group-chat.ts:857-877,960,1027`.
-**en.ts keys.** the write half of `i18n.ts:376-438` — `composerPlaceholder`,
-`stop`, `stopHint`, `allHeldStatus`, `heldMembersStatus`, `holdReleaseHint`,
-`newThreadPlaceholder` and the `disband*` family.
-**Gateway methods.** `session.create`, `session.resume`, `session.title`,
-`prompt.submit`, `session.interrupt`, `clarify.respond`, `approval.respond`,
-`profiles.configure`.
+**Blocked?** **On slice 6 only**, plus two narrow unknowns that do not block a
+start: whether a local member turn under `approvals.mode: off` bypasses
+approval so the approval card is unreachable on that profile (ADR 0004 open
+question 1), and a rendered Desktop capture of the room surface for the parity
+page. `ui_meta_revisions` CAS and `profiles.configure` write semantics no longer
+matter to this slice.
 
-**What it builds.** Mention parsing, responder resolution, speaker rotation,
-holds, the epoch-fenced stop, the three-round / ten-message / two-continuation
-caps, per-member hidden `Group: <roomId>` sessions with the 4007-only create
-fallback and the one-shot 4001 retry, the turn timeout extending to its
-twenty-minute hard cap, stranded-reply harvesting, and CAS writes back to
-`hermes-bots-groups`.
+**Desktop source (UI treatment only).** `group-chat-view.tsx` (composer, Stop,
+threads); `create-dialog.tsx:1116-1352` (the create-group picker);
+`group-hold-status.tsx:16-60` for what the banner looks like, not for its
+semantics.
+**en.ts keys.** The write half of `i18n.ts:376-438`: `composerPlaceholder`,
+`stop`, `newThreadPlaceholder` and the `disband*` family are used as written;
+`stopHint`, `allHeldStatus`, `heldMembersStatus` and `holdReleaseHint`
+(`apps/desktop/src/plugins/hermes-bots/i18n.ts:403-406`) describe per-member
+holds the hosted engine does not have, so each is a `drift` row with an issue
+number rather than a verbatim reuse.
+**Gateway methods.** `groups.create`, `groups.send`, `groups.stop`,
+`groups.rename`, `groups.disband`, `groups.retry`, `groups.approve`
+(`tui_gateway/methods_groups.py:359-366, 383-395, 398-464, 485-488` @
+`72a3277cd7`), all needing the live worker except `groups.rename`.
 
-**Mobile adaptation.** Desktop drives rounds from a renderer that is always
-awake. A phone is not. The round driver must be cancellable, resumable from
-durable room state, and must never assume it survived a process death — the
-`epoch` and the per-member watermarks are what make that recoverable, and both
-are already in the schema.
+**What it builds.** Create with a client-minted `room_id` (required; the gateway
+never mints one, `gateway/hosted_rooms.py:206-207`), a name, and 2 to 6 local
+members mapped by `member.profile == HermesProfile.name`, reading `latest_seq`
+from `groups.state` afterwards because the create result omits it
+(`gateway/hosted_rooms.py:862-866`). Idempotent send: one `event_id` minted and
+persisted with the draft, reused on every retry, replaced only on a 4111
+"different content"; `thread_id` per thread. Stop as a room-wide fence with
+the `cancelled` count. Rename with its own `event_id`. Disband with the 5114
+"still stopping" retry. Retry and approve from `driver_status.pending_actions`,
+the approval card offering exactly `once` and `deny`. Polling tightens to 1 to
+2 s after a send and while `working` or `blocked`. Error handling per the ADR's
+table: 4123 keeps the draft and disables writes until capabilities report
+`driver: true` again; `authority_conflict` (4111/4113, or 5116 from stop)
+marks the room read-only; `room_history_expired` tombstones it.
 
-**Ships WIP-disabled.** Room attachments, and thread replies if the round driver
-lands before threading.
+**Mobile adaptation.** The phone never drives a round. A send is one RPC; the
+gateway schedules the turns and the phone catches up from the log after sleep.
 
-**Acceptance evidence.** Unit tests on virtual time for every scheduling rule
-above, plus a CAS-conflict test proving a losing write re-reads instead of
-clobbering. A Robolectric journey: send, watch two members answer in arrival
-order, stop, observe holds. `docs/parity/bot-group-chat.md` updated, its
-divergence ledger stating plainly which caps and timeouts Android matches.
+**Ships WIP-disabled.** Attachments (`catalog.attachments` is false and the
+payload is `{text, thread_id}`), room pictures, Manage groups and membership
+edits (members are frozen at create), per-member holds, the clarify card, and
+peer members with route status in rooms created on another gateway.
+
+**Never.** `prompt.submit` into a `Group: <room_id>` session (4122 fence,
+`tui_gateway/methods_prompt.py:206-239`); reusing a Desktop `roomId`; the seven
+replication and peer methods (non-goals per ADR 0004).
+
+**Acceptance evidence.** Virtual-time unit tests: idempotent retry keeps its
+`event_id` and a 4111 conflict mints a new one; the stop fence renders every
+older user message as fenced; 4123 preserves the draft and re-enables on
+`driver: true`; `authority_conflict` and `room_history_expired` transitions;
+approval and retry actions consume `pending_actions` exactly. A Robolectric
+journey: create, send, watch two `message.member` events arrive from a fixture
+log in seq order, stop, see the divider. `docs/parity/bot-group-chat.md` updated
+with every changed copy string above as its own `drift` row with an issue
+number, and stating which caps the hosted engine enforces (3 rounds, 10
+messages, 6 members) against Desktop's.
 
 ### Slice 8 — Avatars, pets and bot identity
 
