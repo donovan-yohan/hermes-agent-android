@@ -3349,7 +3349,7 @@ internal class ChatViewModel(
 
     private fun completionRequest(text: String, start: Int, end: Int): CompletionRequest? {
         if (start != end) return null
-        val before = text.substring(0, start)
+        val before = com.hermesagent.mobile.data.composer.maskComposerReferences(text).substring(0, start)
         val slash = SLASH_COMPLETION.find(before)
         if (slash != null) {
             val tokenGroup = requireNotNull(slash.groups[1])
@@ -3619,9 +3619,9 @@ internal class ChatViewModel(
         private const val DRAFT_DEBOUNCE_MILLIS = 400L
         private const val COMPLETION_DEBOUNCE_MILLIS = 120L
         /** A slash directive may include arguments; @ and : stay one token. */
-        private val SLASH_COMPLETION = Regex("(?:^|\\s)(/[^\\n]*)$")
-        private val AT_COMPLETION = Regex("(?:^|\\s)(@[^\\s]*)$")
-        private val EMOJI_COMPLETION = Regex("(?:^|\\s)(:[^\\s:]*)$")
+        private val SLASH_COMPLETION = Regex("(?:^|[\\s\\uFFFC])(/[^\\n\\uFFFC]*)$")
+        private val AT_COMPLETION = Regex("(?:^|[\\s\\uFFFC])(@[^\\s\\uFFFC]*)$")
+        private val EMOJI_COMPLETION = Regex("(?:^|[\\s\\uFFFC])(:[^\\s:\\uFFFC]*)$")
         private val STREAMING_STATUSES = setOf(
             SessionStatus.Working,
             SessionStatus.Stalled,

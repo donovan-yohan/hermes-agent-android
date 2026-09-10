@@ -178,7 +178,7 @@ enum class HermesIcon(val glyph: String) {
     Unmute("\uEB75"),
 }
 
-private val CodiconFont = FontFamily(Font(R.font.codicon))
+internal val CodiconFont = FontFamily(Font(R.font.codicon))
 
 /** A decorative Codicon. The owning control supplies its spoken label. */
 @Composable

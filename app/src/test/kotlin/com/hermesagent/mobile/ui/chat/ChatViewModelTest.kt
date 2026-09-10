@@ -7,6 +7,7 @@ import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.CompletionResult
+import com.hermesagent.mobile.data.composer.CompletionTrigger
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.ControlMutationResult
 import com.hermesagent.mobile.data.composer.FastMode
@@ -603,6 +604,37 @@ class ChatViewModelTest {
         repository.pathGate?.complete(Unit)
         runCurrent()
         assertEquals(null, viewModel.uiState.value.composer.completion.trigger)
+    }
+
+    @Test
+    fun `completion ignores a caret right after a reference chip`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        
+        viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`", 32, 32)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        
+        assertNull(viewModel.uiState.value.composer.completion.trigger)
+        assertEquals(0, repository.pathCalls)
+    }
+
+    @Test
+    fun `completion triggers for at right after a reference chip`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`@", 33, 33)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        assertEquals(CompletionTrigger.At, viewModel.uiState.value.composer.completion.trigger)
+        assertEquals("", viewModel.uiState.value.composer.completion.query)
+        assertEquals(32, viewModel.uiState.value.composer.completion.replaceStart)
+        
+        viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`/", 33, 33)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        assertEquals(CompletionTrigger.Slash, viewModel.uiState.value.composer.completion.trigger)
+        assertEquals(32, viewModel.uiState.value.composer.completion.replaceStart)
     }
 
     @Test
@@ -2287,6 +2319,7 @@ class ChatViewModelTest {
         var firstSlashGate: CompletableDeferred<Unit>? = null
         var slashReplaceFrom: Int? = null
         var pathGate: CompletableDeferred<Unit>? = null
+        var pathCalls = 0
         var lastPathDurableId: String? = null
         val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
         val queuedSubmissions = mutableListOf<Pair<String, Boolean>>()
@@ -2476,6 +2509,7 @@ class ChatViewModelTest {
         }
 
         override suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult {
+            pathCalls++
             lastPathDurableId = durableId
             lastPathCwd = cwd
             pathGate?.await()

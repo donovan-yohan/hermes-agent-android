@@ -85,7 +85,7 @@
       "state_authority": "ui-only",
       "platform_dependency": "Compose text input and Gateway session identity",
       "android_status": "partial",
-      "android_behavior": "Composer provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Rich inline reference chips remain missing; native file/image acquisition is tracked by the attachments capability.",
+      "android_behavior": "Composer provides a multiline editor, IME-safe hardware shortcuts, private text-only drafts keyed by canonical durable session id with a 50-entry MRU/no-backup store, and canonical plain-text remote URL/path/session/Git references. Inline reference chips are implemented; native file/image acquisition is tracked by the attachments capability.",
       "android_tests": "SessionDraftStoreTest, ComposerContractTest, ChatViewModelTest, BackupRulesTest, ChatJourneyTest, and ComposerReferenceTextTest cover draft retention/fencing, process recreation, multiline input, keyboard guards, canonical reference text, and Android-local path exclusions.",
       "desktop_citations": {
         "source": [
@@ -105,7 +105,8 @@
         "editor-validation-error",
         "editor-ime-open",
         "editor-disabled",
-        "editor-disconnected"
+        "editor-disconnected",
+        "editor-url-chip"
       ],
       "category": "editor/draft/references"
     },
@@ -235,7 +236,7 @@
       "state_authority": "ui-only",
       "platform_dependency": "Gateway completion/context providers and Android accessible menus",
       "android_status": "partial",
-      "android_behavior": "Android provides a phone-safe Add bottom sheet for URL and prompt snippets, canonical plain-text URL/path/session/Git references, Gateway slash/path completions, local emoji search, explicit loading/error/no-result rows, and generation/session/cwd fencing. File and image contributions use the staged attachment flow; folder contributions, rich chips, and arbitrary Desktop JS contributions are not ported.",
+      "android_behavior": "Android provides a phone-safe Add bottom sheet for URL and prompt snippets, canonical plain-text URL/path/session/Git references, Gateway slash/path completions, local emoji search, explicit loading/error/no-result rows, and generation/session/cwd fencing. File and image contributions use the staged attachment flow; folder contributions and arbitrary Desktop JS contributions are not ported.",
       "android_tests": "ComposerReferenceTextTest, ComposerControlsTest, GatewaySessionRepositoryTest, ChatViewModelTest, and ComposerControlsAccessibilityTest cover canonical wire text, URL/path boundaries, emoji ranking, mapped slash/path requests, stale generation fencing, accessible popup rows, and safe Add-sheet omissions.",
       "desktop_citations": {
         "source": [

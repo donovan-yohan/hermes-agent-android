@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui
 
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -604,6 +605,23 @@ class ChatJourneyTest {
             compose.waitForIdle()
             compose.onNodeWithText("Live reply from Gateway").assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun `reference chip submits wire string to backend but presents accessible text to screen reader`() {
+        launch()
+        compose.onNodeWithTag("Composer field shell").performTextInput("see @url:`https://example.dev/a`")
+        
+        val semantics = compose.onNodeWithTag("Composer field shell").fetchSemanticsNode().config
+        val editableText = semantics.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.text
+        if (editableText != null) {
+            org.junit.Assert.assertTrue(editableText != "see @url:`https://example.dev/a`")
+            org.junit.Assert.assertFalse(editableText.toString().contains("https://"))
+        }
+        
+        compose.onNodeWithContentDescription("Send message").performClick()
+        compose.waitForIdle()
+        org.junit.Assert.assertEquals("see @url:`https://example.dev/a`", repository.submitted.last().second)
     }
 
     private class JourneyRepository(

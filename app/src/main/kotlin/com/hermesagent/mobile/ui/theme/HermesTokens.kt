@@ -83,6 +83,12 @@ data class HermesTokens(
     val composerRing: Color,
     val inlineCodeBackground: Color,
     val inlineCodeForeground: Color,
+    /**
+     * Desktop's reference ink for URLs and sessions: `--ui-accent-secondary` mixed 82% toward the
+     * 94% foreground wash (`--foreground`). See `styles.css:836-841` -> `:208` ->
+     * `themes/context.tsx:235`; `:542` -> `:389` -> `:331` -> `:206` @ `72a3277cd7`.
+     */
+    val referenceInk: Color,
 
     /**
      * The highlight painted behind selected transcript text
@@ -238,6 +244,8 @@ data class HermesTokens(
             val textTertiary = base.withAlpha(0.54f)
             val textQuaternary = base.withAlpha(0.36f)
 
+            val referenceInk = mixPremultiplied(palette.primary, 82f, textPrimary)
+
             return HermesTokens(
                 textPrimary = textPrimary,
                 textSecondary = textSecondary,
@@ -250,33 +258,21 @@ data class HermesTokens(
                 strokeTertiary = stroke(10f, 0.05f),
                 strokeQuaternary = stroke(6f, 0.03f),
                 chatSurface = chrome,
-                // styles.css:255-259 — the sidebar's mix knob is 100% in both
-                // modes, so its seed paints unchanged and the neutral behind it
-                // never shows.
                 sidebarSurface = palette.sidebarBackground ?: palette.background,
-                // `--ui-row-active-background` at styles.css:308-312 @
-                // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd: keep the
-                // Desktop nested color-mix expression rather than resolving a
-                // Nous-only literal at the session-row call site.
                 sessionRowActiveSurface = mixPremultiplied(
                     accent,
                     8f,
                     base.withAlpha(0.05f),
                 ),
                 cardSurface = editor,
-                // styles.css:359 / :root.dark:550 — a dark card sits *above* the
-                // chrome, so a widget wearing the raw card fill reads as a lit
-                // panel. Dark knocks it toward black; light uses the card as is.
                 widgetSurface = if (dark) mixPremultiplied(editor, 88f, Color.Black) else editor,
                 overlayScrim = OverlayScrim,
                 userBubble = bubble,
                 userBubbleBorder = palette.userBubbleBorder ?: palette.border,
                 composerRing = palette.composerRing ?: accent,
-                // styles.css:366-367 / :root.dark:543-544 — inline code is a
-                // *fixed* ink per mode, not the theme foreground, so a fence
-                // reads the same in every skin.
                 inlineCodeBackground = mixPremultiplied(knobs.codeInk, knobs.codeBackgroundMix, Color.Transparent),
                 inlineCodeForeground = mixPremultiplied(knobs.codeInk, 88f, Color.Transparent),
+                referenceInk = referenceInk,
                 // styles.css:382 / :root.dark:564 @ the theme ledger's pin —
                 // one amber highlight for every skin, weaker in dark so it
                 // does not blow out.
