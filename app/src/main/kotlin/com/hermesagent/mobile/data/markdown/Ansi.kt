@@ -249,6 +249,62 @@ internal fun parseAnsiCounted(input: String): AnsiParse {
 /** Parse [input] into styled runs. Total: every input returns, none throws. */
 fun parseAnsi(input: String): List<AnsiSegment> = parseAnsiCounted(input).segments
 
+/**
+ * Remove every escape sequence, returning plain text.
+ *
+ * `ansi.ts:177-186` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` — for a
+ * surface that renders its payload as *text* rather than as styled runs. The
+ * ESC byte is invisible in Compose, so without this the parameter bytes leak
+ * as literal `[38;2;125;187;255m`; that is exactly the bug the gateway's
+ * rendered `inline_diff` produced in `InlineDiffPanel`.
+ *
+ * Upstream runs two global regexes (`ansi.ts:56,59`). This runs the same
+ * single-pass scanner [parseAnsiCounted] already uses, so the two functions
+ * agree byte for byte on what an escape *is* — including this port's deliberate
+ * additions over upstream, documented in this file's header: a truncated escape
+ * is dropped rather than leaked, and OSC/DCS/SOS/PM/APC payloads are consumed
+ * rather than printed. The scan is total and linear: escape openers, parameter
+ * bytes and final bytes are disjoint classes, so no character is re-read.
+ *
+ * There is no segment cap here — the cap in [parseAnsiCounted] bounds *objects*,
+ * and this produces one string — so a hostile input costs one pass and at most
+ * one copy of its printable length.
+ */
+fun stripAnsi(input: String): String {
+    // `ansi.ts:181-183` — upstream's own guard: an empty input is returned as
+    // it came, rather than run through two regexes to produce itself.
+    if (input.isEmpty()) return input
+    // Upstream has no equivalent, because a `String.replace` that matches
+    // nothing already returns the receiver. This scanner would copy, so the
+    // cheap check ([hasAnsiCodes]'s, widened from CSI to any escape) earns its
+    // line: almost all output is plain.
+    if (!input.contains(ESC)) return input
+
+    val out = StringBuilder(input.length)
+    var i = 0
+    val n = input.length
+    while (i < n) {
+        val ch = input[i]
+        if (ch != ESC) {
+            out.append(ch)
+            i += 1
+            continue
+        }
+        val next = if (i + 1 < n) input[i + 1] else null
+        when {
+            // A bare trailing ESC carries no sequence: dropped with the tail.
+            next == null -> i = n
+            next == '[' -> i = scanControlSequence(input, i + 2).next
+            next == ']' || next == 'P' || next == 'X' || next == '^' || next == '_' ->
+                i = scanStringSequence(input, i + 2)
+            // A doubled ESC drops only the first, so the second still gets to
+            // introduce whatever follows it.
+            else -> i += if (next == ESC) 1 else 2
+        }
+    }
+    return out.toString()
+}
+
 /** Where a control sequence ended, and what its final byte was. */
 private class ControlSequence(val paramsEnd: Int, val next: Int, val final: Char?)
 

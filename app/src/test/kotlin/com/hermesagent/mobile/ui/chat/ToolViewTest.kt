@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.ui.chat
 
+import com.hermesagent.mobile.data.markdown.DiffKind
+import com.hermesagent.mobile.data.markdown.parseDiff
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import org.junit.Assert.assertEquals
@@ -356,6 +358,65 @@ class ToolViewTest {
         val value = "x".repeat(MAX_TOOL_RENDER_CHARS + 8)
 
         assertEquals(value, clampForDisplay(value))
+    }
+
+    // ── The inline diff's clamp ──────────────────────────────────────────────
+
+    @Test
+    fun `a diff cut mid hunk header still paints its truncation notice`() {
+        // Regression: `clampForDisplay`'s 20,000-character cut lands wherever
+        // the budget runs out. A diff whose lines are long enough to reach that
+        // cut before the 200-line one can be cut inside a `@@` header, and
+        // `parseHunks` reads a header it cannot parse as the end of the hunk —
+        // dropping every row behind it, the notice among them. The panel now
+        // pulls the cut back to the last whole line and paints the notice
+        // itself.
+        val longAddition = "+" + "x".repeat(MAX_TOOL_RENDER_CHARS - 30)
+        val diff = buildString {
+            append("@@ -1,1 +1,1 @@\n")
+            append(longAddition).append('\n')
+            append("@@ -2,2 +2,2 @@\n")
+            repeat(50) { append("-dropped ").append(it).append('\n') }
+        }
+        // The cut has to land inside the second header for this to be the case
+        // it claims to be.
+        val (body, notice) = clampForDisplayParts(diff)
+        assertNotNull("the fixture must actually be truncated", notice)
+        val tail = body.substringAfterLast('\n')
+        assertTrue("the cut must land inside the second `@@` header, got: $tail", tail.startsWith("@@"))
+        assertTrue("and must have truncated it, got: $tail", !tail.endsWith("@@ -2,2 +2,2 @@"))
+
+        val painted = diff.paintableDiffLines()
+
+        assertEquals("the long addition survives", DiffKind.Add, painted.first().kind)
+        assertEquals(
+            "the notice is the last row, so the reader is told the body is short",
+            notice,
+            painted.last().text,
+        )
+        assertEquals("and it is a context row, not a change", DiffKind.Context, painted.last().kind)
+    }
+
+    @Test
+    fun `an unclamped diff paints exactly what it parses, with no notice row`() {
+        val diff = "@@ -1,2 +1,2 @@\n-old\n+new"
+
+        assertEquals(parseDiff(diff), diff.paintableDiffLines())
+    }
+
+    @Test
+    fun `a ten thousand line diff paints a bounded number of rows`() {
+        // #71 S34's acceptance: the clamp bounds the row count before Compose
+        // ever measures it. One hunk header, then 10,000 additions.
+        val diff = "@@ -1,10000 +1,10000 @@\n" + (0 until 10_000).joinToString("\n") { "+line $it" }
+
+        val painted = diff.paintableDiffLines()
+
+        // At most the line cap, the hunk-separator rows a multi-hunk payload
+        // would add, and the notice.
+        assertTrue("a 10k-line diff painted ${painted.size} rows", painted.size <= MAX_TOOL_RENDER_LINES + 3)
+        assertTrue("the head of the diff is what survives", painted.first().text == "line 0")
+        assertTrue("the reader is told the rest was dropped", painted.last().text.contains("more characters truncated"))
     }
 
     // ── Tolerant reads ───────────────────────────────────────────────────────

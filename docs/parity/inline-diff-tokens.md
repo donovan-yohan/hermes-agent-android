@@ -14,12 +14,12 @@ checkout's drift from the pin does not reach any value on this page.
 
 | Contract | Desktop source | Android port |
 |---|---|---|
-| Seeds | `apps/desktop/src/styles.css:196,199` (light), `:528-529` (`:root.dark`) | `HermesTokens.diffAdded` / `diffRemoved` — fixed per mode, not per preset |
-| Border | `apps/desktop/src/styles.css:222,225` — the border **is** the seed | `HermesTokens.diffAdded` / `diffRemoved`, unchanged |
-| Background | `apps/desktop/src/styles.css:223,226` — `color-mix(in srgb, seed 12%, transparent)` | `HermesTokens.diffAddedBackground` / `diffRemovedBackground` via `mixPremultiplied(seed, 12f, Color.Transparent)` |
-| Foreground | `apps/desktop/src/styles.css:224,227` (light, 70% toward `#000`), `:531-532` (dark, 62% toward `#fff`) | `HermesTokens.diffAddedForeground` / `diffRemovedForeground` via `mixPremultiplied` on the same knobs |
-| Application | `apps/desktop/src/components/chat/diff-lines.tsx:41-51` — `DIFF_KIND_TINT` paints border + background, `DIFF_KIND_TEXT` paints the ink on the colour-only renderer | `InlineDiffPanel` in `ui/chat/Transcript.kt` — colour-only, so both apply |
-| Context line | `diff-lines.tsx:43,49` — transparent border, no tint, inherits `DIFF_BOX_CLASS`'s `--ui-text-secondary` (`:66`) | `Color.Transparent` behind `tokens.textSecondary` |
+| Seeds | `apps/desktop/src/styles.css:213,210` (light `--ui-green`, `--ui-red`), `:562,561` (`:root.dark`) | `HermesTokens.diffAdded` / `diffRemoved` — fixed per mode, not per preset |
+| Border | `apps/desktop/src/styles.css:236,239` — the border **is** the seed | `HermesTokens.diffAdded` / `diffRemoved`, unchanged |
+| Background | `apps/desktop/src/styles.css:237,240` — `color-mix(in srgb, seed 12%, transparent)` | `HermesTokens.diffAddedBackground` / `diffRemovedBackground` via `mixPremultiplied(seed, 12f, Color.Transparent)` |
+| Foreground | `apps/desktop/src/styles.css:238,241` (light, 70% toward `#000`), `:564-565` (dark, 62% toward `#fff`) | `HermesTokens.diffAddedForeground` / `diffRemovedForeground` via `mixPremultiplied` on the same knobs |
+| Application | `apps/desktop/src/components/chat/diff-lines.tsx:42-52` — `DIFF_KIND_TINT` paints `border-l-2` + background, `DIFF_KIND_TEXT` paints the ink on the colour-only renderer | `InlineDiffPanel` in `ui/chat/Transcript.kt` — colour-only, so both apply. Since #71 S34 the border applies too: a 2 dp left gutter in the seed, transparent on a context row |
+| Context line | `diff-lines.tsx:44,50` — transparent border, no tint, inherits `DIFF_BOX_CLASS`'s `--ui-text-secondary` (`:67`) | `Color.Transparent` behind `tokens.textSecondary` |
 
 ## Resolved values
 
@@ -68,12 +68,17 @@ This is the correction, not a regression.
   reflects over every `Color` property and rejects a fully transparent one, so
   the four new tokens are covered for all eleven presets in both modes without
   the test having to name them.
-- `scripts/check-repo-invariants.sh` check 10 scans the `InlineDiffPanel` body.
+- `scripts/check-repo-invariants.sh` check 11 scans the `InlineDiffPanel` body.
   It fails if `statusUnread` or `destructive` reappears there, and it fails
-  unless each marker is paired with its *own* tint and ink — a presence-only
-  check would let a transposed add/remove pair through. Mutation-checked twice:
-  red when the old tint is put back, red again when the add and remove tints
-  are swapped.
+  unless each `DiffKind` is paired with its *own* gutter seed, tint and ink — a
+  presence-only check would let a transposed add/remove pair through. It keys on
+  the kind rather than on a `+`/`-` marker since #71 S34, because the marker is
+  stripped before a line is painted. Mutation-checked: red when the add and
+  remove tints are swapped, green again when they are restored.
+- `InlineDiffPanelInkTest` reads the painted pixels back off a native-canvas
+  draw: each kind's gutter is its seed, each kind's tint is its token
+  composited over what the row sits on, a context row paints neither, and
+  neither gutter is `statusUnread` or `destructive`.
 - `scripts/check-theme-parity.py --upstream ~/.hermes/hermes-agent` is clean
   (11 presets, same order); it diffs the preset registry, which this change does
   not touch.
@@ -82,10 +87,7 @@ This is the correction, not a regression.
 
 | Deferred | Why | Lands in |
 |---|---|---|
-| The 2 px left gutter accent using the border tokens | It is a geometry change, and issue #71 S34 makes it an acceptance criterion alongside windowing | #71 S34 |
-| Stripping file headers and `@@` hunk lines (`diff-lines.tsx:95-132`) | Same slice; the panel currently drops only `--- ` / `+++ ` lines | #71 S34 |
-| Windowed rendering of large diffs | Same slice | #71 S34 |
-| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:468-479`) | Explicit non-goal of #71: a size/cold-start decision of its own | Not scheduled |
+| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:469-487`) | Explicit non-goal of #71: a size/cold-start decision of its own | Not scheduled |
 | Long-press selection of diff text | Needs real-device gesture arbitration evidence | #71 S35 |
 
 No device capture is claimed here: every value on this page is decided offline
@@ -95,16 +97,15 @@ by the derivation and asserted by the tests above.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| 2 px left gutter accent from the border tokens | drift | No gutter accent | A geometry change #71 S34 makes an acceptance criterion |
-| File headers and `@@` hunk lines are stripped (`diff-lines.tsx:95-132`) | drift | Only `--- ` / `+++ ` lines are dropped | #71 S34 |
-| Large diffs render windowed | drift | Rendered whole | #71 S34 |
+| The tool card paints every diff line inside a `max-h-[12rem]` box that scrolls internally (`diff-lines.tsx:66-67,583-641`; the card is not the windowed path — `fallback.tsx:637` passes neither `showLineNumbers` nor `virtualized`) | mobile-adaptation | Rendered inline and clamped before parsing, so the row count is bounded before Compose measures anything | A nested vertical scroller inside a `LazyColumn` competes with the transcript's drag on touch (#56); see `docs/parity/tool-output-fidelity.md` for the full reasoning |
 | Long-press selection of diff text | drift | Not selectable | Needs real-device gesture arbitration evidence; #71 S35 |
-| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:468-479`) | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own; nothing about the platform refuses it |
+| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:469-487`) | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own; nothing about the platform refuses it |
 
 ## Visual report
 
-- pending: #71
+- pending: #201
 
 No device capture is claimed here: every value on this page is decided offline
-by the derivation and asserted by the tests above. The rendered side-by-side
-belongs with the panel geometry in #71 S34.
+by the derivation and asserted by the tests above. The panel geometry landed in
+#71 S34, so the rendered side-by-side is now #201's: a file-edit row with a
+gateway-rendered diff, light and dark, Desktop at the pin beside Android.

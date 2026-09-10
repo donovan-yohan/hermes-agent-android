@@ -499,7 +499,10 @@ class ChatJourneyTest {
         compose.onNodeWithContentDescription("Tool Ran ./gradlew test + 1 command, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Patched file, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("A.kt").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("+1  −1").performScrollTo().assertIsDisplayed()
+        // `fallback.tsx:585-594` @ `72a3277cd7` — two independent slots, not one
+        // joined string; each is drawn only when its own count is positive.
+        compose.onNodeWithText("+1", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("\u22121", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         assertEquals(0, compose.countWithText("done"))
     }
 
@@ -525,7 +528,9 @@ class ChatJourneyTest {
         )
         compose.waitForIdle()
 
-        compose.onNodeWithText("+new").performScrollTo().assertIsDisplayed()
+        // `diff-lines.tsx:83-93` @ `72a3277cd7` — the `+` gutter is stripped
+        // before the line is painted; colour carries the meaning instead.
+        compose.onNodeWithText("new").performScrollTo().assertIsDisplayed()
     }
 
     @Test

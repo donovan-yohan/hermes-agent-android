@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -320,7 +322,163 @@ class ToolRowFidelityTest {
         compose.onNodeWithContentDescription("Copy file")
             .performClick()
         compose.waitForIdle()
-        assertEquals(DIFF, clipboardText)
+        // Desktop's `copy.file` is `view.inlineDiff` — already chrome-stripped
+        // by `fallback.tsx:375` before the payload is built. Nobody wants ESC
+        // bytes on a clipboard, and Desktop never puts them there.
+        assertEquals(CLEANED_DIFF, clipboardText)
+        assertTrue("the clipboard must carry no escape byte", clipboardText?.contains(KESC) != true)
+    }
+
+    @Test
+    fun `a gateway rendered diff paints its lines without the tty chrome`() {
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "apply_patch",
+                argsText = """{"path":"notes.md"}""",
+                inlineDiff = DIFF,
+                startedAtMillis = NOW,
+            ),
+        )
+
+        val painted = renderedText()
+
+        assertTrue("the diff body must survive: $painted", painted.contains(REMOVED_LINE))
+        assertTrue("the diff body must survive: $painted", painted.contains(ADDED_LINE))
+        assertTrue("no CSI introducer may reach the screen", !painted.contains(KESC))
+        assertTrue("no truecolour payload may reach the screen: $painted", !painted.contains("[38;2"))
+        assertTrue("no tinted background payload may reach the screen: $painted", !painted.contains("[48;2"))
+        // `index.ts:775-781` and `diff-lines.tsx:114-163`: the TTY banner, the
+        // collapsed header line and the hunk header are all chrome.
+        assertTrue("the review-diff banner is chrome: $painted", !painted.contains("┊ review diff"))
+        assertTrue("the hunk header is chrome: $painted", !painted.contains("@@"))
+        assertTrue("the arrow header line is chrome: $painted", !painted.contains("→"))
+        // `diff-lines.tsx:83-93` — the gutter marker is dropped; colour carries
+        // the meaning instead.
+        assertTrue("the gutter marker must be stripped: $painted", !painted.contains("-$REMOVED_LINE"))
+        assertTrue("the gutter marker must be stripped: $painted", !painted.contains("+$ADDED_LINE"))
+    }
+
+    @Test
+    fun `the diff header counts the change and shows no duration`() {
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                elapsedSeconds = 4.0,
+                toolName = "apply_patch",
+                argsText = """{"path":"notes.md"}""",
+                inlineDiff = DIFF,
+                startedAtMillis = NOW,
+            ),
+        )
+
+        // `fallback.tsx:585-594` — two independent slots, `+N` and `−N` with
+        // U+2212, each drawn only when its own count is positive; `:596` — a
+        // file edit shows no duration beside them.
+        compose.onNodeWithText("+1", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("\u22121", useUnmergedTree = true).assertIsDisplayed()
+
+        val painted = renderedText()
+        assertTrue("a file edit shows no duration: $painted", !painted.contains("4.0s"))
+        assertTrue("a file edit shows no duration: $painted", !painted.contains("4s"))
+    }
+
+    @Test
+    fun `a diff with only additions shows no removal count`() {
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "write_file",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "write_file",
+                argsText = """{"path":"fresh.md"}""",
+                inlineDiff = "$KESC[38;2;255;255;255;48;2;10;45;10m+only this$KESC[0m",
+                startedAtMillis = NOW,
+            ),
+        )
+
+        compose.onNodeWithText("+1", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(
+            "a zero removal count has no slot at all",
+            0,
+            compose.onAllNodes(hasText("\u22120")).fetchSemanticsNodes().size,
+        )
+    }
+
+    @Test
+    fun `a ten thousand line diff composes a bounded number of rows`() {
+        // #71 S34's acceptance: the clamp bounds the row count before Compose
+        // measures anything. The panel's body is an ordinary `Column`, not a
+        // lazy one, so every row it holds is a real composition — which is
+        // exactly why the count has to be bounded rather than trusted.
+        val diff = "@@ -1,10000 +1,10000 @@\n" + (0 until 10_000).joinToString("\n") { "+line $it" }
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "apply_patch",
+                argsText = """{"path":"huge.md"}""",
+                inlineDiff = diff,
+                startedAtMillis = NOW,
+            ),
+        )
+
+        val rows = compose.onAllNodes(
+            SemanticsMatcher("carries an inline diff line tag") { node ->
+                node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("inline-diff-line-") == true
+            },
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().size
+
+        assertTrue("a 10,000-line diff composed $rows rows", rows in 1..(MAX_TOOL_RENDER_LINES + 3))
+
+        val painted = renderedText()
+        assertTrue("the head of the diff is painted", painted.contains("line 0"))
+        assertTrue("the tail is not: ${painted.takeLast(120)}", !painted.contains("line 9999"))
+        assertTrue("the reader is told the rest was dropped", painted.contains("more characters truncated"))
+
+        // The action rather than a tap: this panel is taller than the root, so
+        // a coordinate-based click on a row inside it lands nowhere.
+        compose.onNodeWithContentDescription("Copy file").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+
+        val copied = clipboardText.orEmpty()
+        assertTrue(
+            "Copy carries the tail the display dropped; got ${copied.length} chars",
+            copied.contains("line 9999"),
+        )
+        assertTrue("and is longer than what is painted", copied.length > painted.length)
+    }
+
+    @Test
+    fun `sgr parameter bytes with no escape byte in front of them are painted`() {
+        // The mirror of the bug: `[38;2;1;2;3m` with no ESC before it is not an
+        // escape sequence, it is a line of the file being edited. Stripping it
+        // would be deleting the reader's own text.
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "apply_patch",
+                argsText = """{"path":"palette.css"}""",
+                inlineDiff = "@@ -1 +1 @@\n+[38;2;1;2;3m\n-x",
+                startedAtMillis = NOW,
+            ),
+        )
+
+        val painted = renderedText()
+        assertTrue("content that merely looks like SGR must survive: $painted", painted.contains("[38;2;1;2;3m"))
     }
 
     // ── Web search ───────────────────────────────────────────────────────────
@@ -392,14 +550,45 @@ class ToolRowFidelityTest {
         const val ESC = "\\u001B"
         val TOUCH_FLOOR = 48.dp
 
-        const val REMOVED_LINE = "-old line"
+        /** The Kotlin escape for `ESC`. `inlineDiff` is not a JSON payload. */
+        const val KESC = "\u001B"
 
-        /** One hunk with both markers, so the panel has a body to draw. */
-        val DIFF = """
-            --- a/notes.md
-            +++ b/notes.md
-            $REMOVED_LINE
-            +new line
-        """.trimIndent()
+        /** What the panel is expected to paint once the chrome is gone. */
+        const val REMOVED_LINE = "old line"
+        const val ADDED_LINE = "new line"
+
+        /**
+         * What the Gateway actually sends: `tool.complete`'s `inline_diff` is the
+         * TUI renderer's output (`tui_gateway/tool_progress.py:233-237` @
+         * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), so it carries the
+         * `  ┊ review diff` banner (`agent/display.py:656-664`), the collapsed
+         * `a/x → b/x` arrow line in place of the `---`/`+++` pair, a `@@` hunk
+         * header, and truecolour SGR around every classified line — a tinted
+         * background as well as a foreground on the `+`/`-` rows
+         * (`agent/display.py:63-81,669-690`).
+         *
+         * The ESC byte is invisible in Compose, which is the whole bug: painted
+         * raw, this fixture puts `[38;2;180;160;255m` on the screen.
+         */
+        val DIFF = listOf(
+            "  ┊ review diff",
+            "$KESC[38;2;180;160;255ma/notes.md → b/notes.md$KESC[0m",
+            "$KESC[38;2;120;120;140m@@ -1,2 +1,2 @@$KESC[0m",
+            "$KESC[38;2;255;255;255;48;2;60;10;10m-$REMOVED_LINE$KESC[0m",
+            "$KESC[38;2;255;255;255;48;2;10;45;10m+$ADDED_LINE$KESC[0m",
+        ).joinToString("\n")
+
+        /**
+         * `stripInlineDiffChrome(DIFF)` — Desktop's `view.inlineDiff`, which is
+         * both what its body renders and what its `copy.file` hands over
+         * (`fallback.tsx:375`, `fallback-model/index.ts:1254-1257`). File headers
+         * survive the strip; only the escapes and the banner do not.
+         */
+        val CLEANED_DIFF = listOf(
+            "a/notes.md → b/notes.md",
+            "@@ -1,2 +1,2 @@",
+            "-$REMOVED_LINE",
+            "+$ADDED_LINE",
+        ).joinToString("\n")
     }
 }

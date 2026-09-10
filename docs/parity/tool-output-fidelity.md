@@ -5,8 +5,9 @@ every place the Android port deliberately says something different.
 
 Scope is issue #71 slice S33: ANSI parsing, stdout/stderr sections, the exit
 code, the `$ cmd` prompt line, structured web-search hits, the tool-tone icon
-set and the status glyph vocabulary. Diff windowing is S34; long-press
-selection of tool output is S35. Both have rows in the deferral table.
+set and the status glyph vocabulary — and, since S34, the inline diff panel,
+which has a section of its own below. Long-press selection of tool output is
+S35 and still has a row in the deferral table.
 
 ## Pin and source contract
 
@@ -59,8 +60,8 @@ throwing. Tool output is untrusted input.
 | `title` / `subtitle` / `titleAction` | `dynamicTitle` + `toolSubtitle` (~250 lines) | **Not ported.** Android keeps its own `displayTitle()`. See D8 |
 | `imageUrl` | `toolImageUrl` | **Not ported** — inline image results are an explicit non-goal of #71 |
 | `previewTarget` | `toolPreviewTarget` | **Not ported** — artifact detection is an explicit non-goal of #71 |
-| — | `toolCopyPayload(part, view)` (`fallback.tsx:599-609`) | Carried on the view as `copy: ToolCopyAction?`, so the row's control and its label come from the same projection. The `isFileEditTool` branch is ported in `InlineDiffPanel`, and its Copy hands over the whole `inlineDiff` through the same `ToolCopyControl` (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`) |
-| — | `stripAnsi` (`ansi.ts:177-186`) | **Not ported here.** Every surface this slice owns paints escapes as colour rather than as text. One surface it does *not* own still needs the strip: `InlineDiffPanel` (`Transcript.kt:1071,1079`) renders `inlineDiff` raw, where upstream strips SGR first (`fallback-model/index.ts:781-789`). That is S34's, and it is listed under Deferred |
+| — | `toolCopyPayload(part, view)` (`fallback.tsx:599-609`) | Carried on the view as `copy: ToolCopyAction?`, so the row's control and its label come from the same projection. The `isFileEditTool` branch is ported in `InlineDiffPanel`, and its Copy hands over the same payload Desktop does — `view.inlineDiff`, chrome-stripped by `fallback.tsx:375` before `copy.file` is built, file headers still present (`fallback-model/index.ts:1254-1257 @ 72a3277cd7`) — through the same `ToolCopyControl` |
+| — | `stripAnsi` (`ansi.ts:177-186`) | Ported in S34 as `data/markdown/Ansi.kt`'s `stripAnsi`, on the same single-pass scanner `parseAnsi` already uses. Every surface *this* slice owns paints escapes as colour rather than as text, so the strip has exactly one caller: the inline diff panel. See **Inline diff (S34)** below |
 
 ### Icons
 
@@ -347,13 +348,76 @@ No device capture is claimed here. Everything on this page is decided offline
 and asserted by the tests above; the gesture arbitration that needs a physical
 device is S35's, not this slice's.
 
+## Inline diff (S34)
+
+A file-edit tool row shows the diff the Gateway rendered, not a diff this app
+computed. `tool.complete` carries `inline_diff` as the joined output of Hermes'
+*terminal* renderer (`tui_gateway/tool_progress.py:233-237`), so it arrives with
+chrome written for a TTY. The ESC byte is invisible in Compose, so painting that
+payload raw put `[38;2;125;187;255m` and a `┊ review diff` header on the screen,
+with `+0  −0` in the row's header and no tint on any line.
+
+### Source contract
+
+| Contract | Source at the pin | Android |
+|---|---|---|
+| The payload | `tui_gateway/tool_progress.py:233-237` — `inline_diff` is `"\n".join(rendered)` from `render_edit_diff_with_delta` | `ToolActivity.inlineDiff`, unchanged on the wire |
+| The banner | `agent/display.py:656-664` — the first line is exactly `  ┊ review diff`; the TUI may wrap it in `ESC[33m…ESC[0m` (`ui-tui/src/__tests__/createGatewayEventHandler.test.ts:758`) | Removed by `stripInlineDiffChrome` |
+| The colours | `agent/display.py:63-81,84-105` — truecolour `ESC[38;2;r;g;bm`, plus a tinted `ESC[48;2;r;g;bm` background on `+`/`-` rows | Removed by `stripAnsi`; the tint is re-derived from the theme's own diff tokens |
+| The header pair | `agent/display.py:672-690` — `--- `/`+++ ` collapse into one `a/x → b/x` arrow line | Skipped by `stripDiffFileHeaders`; `filePath()` reads the `b/` side when the tool args carry no `path` |
+| The cap trailer | `agent/display.py:703-731` — `… omitted N diff line(s)[ across M additional file(s)/section(s)]` in the hunk colour | Kept, as a context line: it is information about the payload, not chrome |
+| Chrome strip | `assistant-ui/tool/fallback-model/index.ts:771-781` — `stripAnsi`, then `/^\s*┊\s*review diff\s*\n/i`, then `trim` | `stripInlineDiffChrome`, the same three steps in the same order; step one is wider than the call site's SGR-only regex (see Divergences) |
+| Line stats | `fallback-model/index.ts:46-59` — `+` that is not `+++`, `-` that is not `---`, counted on the cleaned diff | `countDiffLineStats`, identical |
+| Header slots | `fallback.tsx:481-486,585-594` — `+N` and `−N` (U+2212) in their own slots, each only when its count is positive, and `:596` — a file edit shows no duration | Identical, with the ink from `tokens.diffAdded` / `tokens.diffRemoved` (see Divergences) |
+| Header zone | `chat/diff-lines.tsx:96-133` — `diff --git`, `index `, `--- `, `+++ `, similarity/rename/new-file/deleted-file, blank lines and the arrow line, up to the first `@@` | `stripDiffFileHeaders`, prefix for prefix |
+| Body parse | `chat/diff-lines.tsx:69-89,135-215` — kind per line, gutter marker stripped, `@@` headers dropped, `\` lines skipped, one blank context line between hunks, and a whole-payload fallback when nothing parses | `parseDiff` → `List<DiffLine>` |
+| Line paint | `chat/diff-lines.tsx:42-52,279-291` — `border-l-2` in `--ui-diff-*-border`, background, ink; a context row transparent on both and inheriting `--ui-text-secondary`; an empty line still paints a row | 2 dp gutter in `tokens.diffAdded` / `diffRemoved`, `diffAddedBackground` / `diffRemovedBackground`, `diffAddedForeground` / `diffRemovedForeground`; `Color.Transparent` behind `tokens.textSecondary`; empty text paints a space |
+| Copy | `fallback-model/index.ts:1254-1257` — `copy.file` is `view.inlineDiff`, which `fallback.tsx:375` already chrome-stripped | `ToolCopyControl` hands over the cleaned diff, file headers still present, no escapes |
+| Path | `fallback-model/index.ts:61-67` — args `path`/`file`/`filepath`, then result `path`/`file`/`filepath`/`resolved_path`, then `htmlPathFromInlineDiff` (`:783-795`), which mines the diff for an `.htm`/`.html` name **only** | The same two field arms, in the same key order. The diff arm is **not** the same and is ledgered as drift below: it reads any `+++ b/` or `a/x → b/x` path, because the Gateway's rendered diff carries no `+++` line and a diff-emitting tool whose args carry no `path` would otherwise leave the row reading the literal fallback. `/dev/null` still yields nothing |
+
+### What landed
+
+`data/markdown/Ansi.kt` gained `stripAnsi`, a port of `ansi.ts:177-186` on the
+scanner `parseAnsi` already uses, so the two agree byte for byte on what an
+escape is — including this port's two deliberate additions over upstream's
+regexes: a truncated escape is dropped rather than leaked, and OSC/DCS payloads
+are consumed rather than printed.
+
+`data/markdown/InlineDiff.kt` is new and Compose-free: `stripInlineDiffChrome`,
+`stripDiffFileHeaders`, `parseDiff` and `countDiffLineStats`, each citing the
+Desktop lines it mirrors.
+
+`InlineDiffPanel` now reads the cleaned diff for everything — header stats,
+body, path and Copy — and paints each line by kind rather than by marker, since
+the marker is stripped before the line reaches the screen.
+
+### Executable evidence
+
+| Claim | Test |
+|---|---|
+| The strip removes every escape shape, agrees with the parser on what survives, and a truncated escape leaks nothing | `AnsiTest` — the eight `stripAnsi` cases, incl. the 1 MB budget case |
+| Desktop's own two fixtures still hold | `InlineDiffTest.a clean unified diff passes through the chrome strip unchanged`, `.counts added and removed lines` |
+| The header zone is skipped, including the arrow line and an absolute path, and stops at the first content line | `InlineDiffTest.a git preamble is skipped up to the first hunk`, `.the arrow line the gateway emits instead of a header pair is skipped`, `.a diff line that happens to contain an arrow is not a header`, `.the header zone stops at the first line that is not a header` |
+| A gateway-shaped payload keeps no escape, no SGR payload, no banner, no `@@` and no arrow line; it counts +1/−1 and parses to exactly four lines, the cap trailer among them as context | `InlineDiffTest.no escape byte and no sgr payload survives the gateway diff`, `.the gateway diff counts one addition and one removal`, `.the gateway diff parses to its body with the markers and the noise gone` |
+| A yellow-wrapped banner is still recognised | `InlineDiffTest.a banner the tui wrapped in yellow is still recognised` |
+| Hunk rules: blank separator, `\` skipped, no-hunk fallback, malformed header | `InlineDiffTest.two hunks are separated by one blank context line`, `.git's no-newline marker is dropped`, `.a payload with no hunk header falls back to classifying every line`, `.an unparseable hunk header closes the hunk rather than opening one` |
+| 1 MB of rendered diff cleans and parses inside a frame budget | `InlineDiffTest.a megabyte of rendered diff is cleaned and parsed well inside a frame budget` |
+| A 32 KB line of arrows is refused as a header on length, before the quadratic regex sees it, and a real header at the cap still passes | `InlineDiffTest.a payload-sized line of arrows costs nothing to reject as a header`, `.a real arrow header is still recognised at the length cap` |
+| Only a *first-line* banner is chrome, and `[38;2;…m` with no escape byte in front of it is content | `InlineDiffTest.a review diff banner below the first line is content, not chrome`, `.sgr parameter bytes with no escape in front of them are content`, `ToolRowFidelityTest.sgr parameter bytes with no escape byte in front of them are painted` |
+| The wider strip's one visible consequence is pinned: an unterminated OSC drops the remainder, and the header count still agrees with the body because both read `cleaned` | `InlineDiffTest.an unterminated osc swallows the rest of the diff, and both halves agree` |
+| A 10,000-line diff composes a bounded number of rows, the notice says so, and Copy still carries the tail | `ToolRowFidelityTest.a ten thousand line diff composes a bounded number of rows` (counts the `inline-diff-line-*` nodes actually in the tree), `ToolViewTest.a ten thousand line diff paints a bounded number of rows` |
+| A cut landing inside a `@@` header does not silently swallow the rest of the body and the notice with it | `ToolViewTest.a diff cut mid hunk header still paints its truncation notice`, `.an unclamped diff paints exactly what it parses, with no notice row` |
+| The panel paints no chrome, strips the gutter markers, shows `+1`/`−1` and no duration, drops a zero count, and Copy hands over the cleaned diff | `ToolRowFidelityTest.a gateway rendered diff paints its lines without the tty chrome`, `.the diff header counts the change and shows no duration`, `.a diff with only additions shows no removal count`, `.an inline diff carries a live Copy control that hands over the whole diff` |
+| Each kind paints its own gutter and tint, a context row paints neither, and neither is the old lookalike semantic | `InlineDiffPanelInkTest` (4 cases, pixels read off a native-canvas draw) |
+| The panel is the thing reading those tokens, the right way round | `scripts/check-repo-invariants.sh` check 11, mutation-checked by transposing the add/remove tints |
+
+No device capture is claimed here. The rendered side-by-side is owed by #201.
+
 ## Deferred, with owners
 
 | Deferred | Why | Lands in |
 |---|---|---|
-| Windowed diff rendering, `+/-` gutters and `@@` headers stripped, the 2 px gutter accent | Its own slice | #71 S34 |
 | Long-press selection of tool payloads, and the select / horizontal-scroll / collapse-tap arbitration | Needs real-device evidence | #71 S35 |
-| `stripAnsi` for `InlineDiffPanel` | `inlineDiff` is rendered raw here while upstream strips SGR first (`fallback-model/index.ts:781-789`); the diff surface is S34's, and the strip belongs with it | #71 S34 |
 | `dynamicTitle` / `toolSubtitle` / `titleAction` | D8 | Not scheduled |
 | Inline image results (`imageUrl`) and artifact preview targets (`previewTarget`) | Explicit non-goals of #71 | Not scheduled |
 | Syntax highlighting | Explicit non-goal of #71: a size and cold-start decision of its own | Not scheduled |
@@ -374,20 +438,25 @@ argument and the citations.
 | `GlyphSpinner` replaces the tool icon while running (`fallback.tsx:184-192`) | mobile-adaptation | The tool glyph tinted with the accent, beside the live elapsed timer | The disclosure row has no spinner slot, and #71 says to extend that row rather than replace it; the timer already says "running" |
 | Status glyphs are aria-labelled Running / Error / Recovered / Done | mobile-adaptation | The same four words lower-cased into `"Tool ⟨title⟩, ⟨state⟩"`, plus `stopped` | The Android row is one merged semantics node, so the state has to arrive inside the sentence |
 | Search hit titles are `PrettyLink`s that open externally (D9) | drift | Title, URL and snippet as quiet structured text | Leaving a transcript for a browser is a new surface with its own consent question; not scheduled under #71 |
-| Windowed diff rendering, `+/-` gutters, `@@` headers, the 2 px gutter accent | drift | Absent | #71 S34 |
-| `stripAnsi` before `InlineDiffPanel` (`fallback-model/index.ts:781-789`) | drift | `inlineDiff` is rendered raw | The diff surface is S34's and the strip belongs with it; #71 S34 |
+| The tool card's diff body paints **every** line inside a `max-h-[12rem]` box that scrolls internally (`diff-lines.tsx:66-67,583-641`) | mobile-adaptation | Rendered inline, clamped before parsing — the same 20,000-character / 200-line cut every other tool payload takes — so the row count is bounded before Compose measures anything | A nested vertical scroller inside a `LazyColumn` competes with the transcript's own drag on touch, the gesture ambiguity #56 already deferred once; the clamp bounds what is *painted*, and Copy still hands over the whole cleaned diff. There is no Desktop windowing here to port: the card passes neither `showLineNumbers` nor `virtualized` (`fallback.tsx:637`), so `windowed` is false (`diff-lines.tsx:609`) and the compact body is a plain `DiffBody`. The virtualised chunk list (`PREVIEW_*` at `:56-58`, `useFixedRowWindow` at `:598-603`) belongs to the preview pane |
+| Header stats use one-off Tailwind rungs — `text-emerald-600 dark:text-emerald-400` and `text-rose-600 dark:text-rose-400` (`fallback.tsx:586-593`) | drift | `tokens.diffAdded` / `tokens.diffRemoved`, the same seeds the body's gutter uses | Those two rungs are outside Desktop's own token system: they are the only diff colours on the page that are *not* `--ui-diff-*`, and this app has no raw colours by rule (`AGENTS.md`). The seeds are the tokenised nearest colour, so the stat and the gutter beneath it now agree — which Desktop's do not. The visible delta is small and deliberate; recorded as drift rather than adaptation because nothing about a phone forced it. Owner #201 renders it side by side |
+| The call site's `stripAnsi` is SGR-only — one `ESC[…m` regex (`fallback-model/index.ts:771-773`) | mobile-adaptation | `Ansi.kt`'s `stripAnsi`, shared with `parseAnsi`: every CSI, the two-byte escapes, and OSC/DCS/SOS/PM/APC string payloads | One scanner means the strip and the parser can never disagree about what an escape *is*, which is the disagreement that made the leak possible. The one visible consequence is bounded and pinned by a test: an **unterminated** OSC has no terminator to stop at, so it drops the remainder of the diff, where Desktop would leave `ESC]junk` and the lines behind it on the page. The header count cannot drift from the body under it either way, because both read the same `cleaned` string |
+| `isArrowHeaderLine` runs `/^\S.*→\s*\S+$/` on a line of any length (`diff-lines.tsx:110`) | mobile-adaptation | The same regex, behind a 1,024-character refusal | That pattern backtracks quadratically: on a 32 KB line of arrows — the ingest cap, `GatewaySessionRepository`'s `MAX_TOOL_PAYLOAD` — it costs seconds, and here it runs inside a `remember {}` on the composition thread rather than in a browser worker. `AGENTS.md` treats tool output as untrusted, so the input's size has to bound the work. The cap refuses nothing a real header could carry: the line is two paths and an arrow, and `PATH_MAX` is 4096 |
+| The diff is mined for a path only when it names an `.htm`/`.html` file, and only after both the args and the result have been tried (`fallback-model/index.ts:61-67,783-795`) | drift | The args and the result are read in Desktop's key order; the diff arm then accepts **any** `+++ b/` or `a/x → b/x` path | Desktop's arm exists to find an artifact to preview; this one exists to title the row. The Gateway's rendered `inline_diff` has no `+++` line, so for a diff-emitting tool whose args carry no `path` — `skill_manage` is one, `agent/display.py:651` lists it — Desktop's arm would leave the row on its literal fallback where the diff plainly names the file. Recorded as drift, not adaptation: nothing about a phone forced it. Owner #201 renders both headers side by side |
+| Syntax-highlighted diff bodies (`SyntaxDiff`, `diff-lines.tsx:469-487`) | omission | Absent | non-goal: #71 named syntax highlighting a non-goal of that issue, being a size and cold-start decision of its own; nothing about the platform refuses it |
 | Long-press selection of tool payloads, and the select / horizontal-scroll / collapse-tap arbitration | drift | Not selectable | Needs real-device evidence; #71 S35, tracked as #56 |
-| A Copy control on an inline diff, labelled `copy.file` — `toolCopyPayload` resolves a file-edit tool holding an inline diff to `Copy file` (`fallback-model/index.ts:1253-1256`, `en.ts:3340`) rather than the generic `common.copy` | mobile-adaptation | `Copy file`, right-aligned above the diff body, now live in the slot `ToolCopyControl` occupies for an ordinary payload; the full diff is copied via `ToolCopyAction(COPY_DIFF, "File copied", diff)` | A phone has no hover, so the control is always mounted in the slot Desktop reveals on hover (the precedent every `ToolCopyControl` follows). The payload is Desktop's own: the whole `inlineDiff`, headers included, while the display filters the `---`/`+++` lines. `ToolRowFidelityTest` asserts the label, the 48 dp floor, the placement above the body and that the clipboard receives the diff verbatim |
+| A Copy control on an inline diff, labelled `copy.file` — `toolCopyPayload` resolves a file-edit tool holding an inline diff to `Copy file` (`fallback-model/index.ts:1254-1257`, `en.ts:3644`) rather than the generic `common.copy` | mobile-adaptation | `Copy file`, right-aligned above the diff body, now live in the slot `ToolCopyControl` occupies for an ordinary payload; the cleaned diff is copied via `ToolCopyAction(COPY_DIFF, "File copied", cleaned)` | A phone has no hover, so the control is always mounted in the slot Desktop reveals on hover (the precedent every `ToolCopyControl` follows). The payload is Desktop's own: `view.inlineDiff`, which `fallback.tsx:375` chrome-stripped before `copy.file` was built — escapes and banner gone, file headers still present. What is *painted* is stripped further, since `parseDiff` drops the header zone, the `@@` headers and the gutter markers, so the clipboard deliberately carries more than the screen does. `ToolRowFidelityTest` asserts the label, the 48 dp floor, the placement above the body, and that the clipboard receives exactly that chrome-stripped text with no escape byte in it |
 | `titleAction` (D8) | omission | Absent | deferred: #71 — #71 owns this surface and its title grammar, but its acceptance never names `titleAction` and no slice is scheduled for it, so the marker records an owner rather than a plan and `pill-owed:` would overstate it. The control also has no host here: it hangs off Desktop's tool *title* row, and this app's disclosure row has no action slot, so a chip would have to invent the surface it marks. That is what separates it from the inline-diff Copy above, which ships live — there the slot is Desktop's own, a `CopyButton` over the payload, and `ToolCopyControl` already occupies it for an ordinary payload. The retarget off #101 is an amendment to that issue's acceptance and is recorded in the PR body |
 | `dynamicTitle` / `toolSubtitle` (D8) | omission | Absent | deferred: #71 — title text, not a control; Android's title grammar is the disclosure row's |
 | Technical-mode raw args/result disclosure (`fallback.tsx:114-139`) | omission | Absent | non-goal: Android has no tool view mode toggle to hang it from |
 | Inline image results (`imageUrl`) and artifact preview targets (`previewTarget`) | omission | Absent | out-of-scope: #71 excluded both from its own scope; neither is refused by the platform |
-| Syntax highlighting | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own |
 
 ## Visual report
 
-- pending: #71
+- pending: #201
 
 Every colour on this page is derived and asserted offline by the tests above.
 The rendered side-by-side — ANSI ladder, status glyphs, truncation notice and
-the clamped payload at phone width — is owed by #71's device pass.
+the clamped payload at phone width — is owed by #71's device pass. #201 owes the
+inline diff panel specifically: a file-edit row with a gateway-rendered diff,
+light and dark, Desktop at the pin beside Android.

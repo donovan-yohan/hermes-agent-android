@@ -137,24 +137,30 @@ else
 fi
 
 # ── 11. Inline diffs read the diff tokens, not lookalike status colours ──────
-# ThemeSemanticParityTest proves the diff tokens hold Desktop's values; only a
-# source check can prove the diff *panel* is the thing reading them, and reading
-# them the right way round. The panel shipped tinting with `statusUnread` (the
-# unread-session dot) and `destructive` (the destructive-action red) — a
-# different semantic that merely happened to be green and red, and that moves
-# with the palette. Desktop derives every diff surface from `--ui-green` /
-# `--ui-red` instead (`styles.css:222-227` @
-# 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd).
+# ThemeSemanticParityTest proves the diff tokens hold Desktop's values, and
+# InlineDiffPanelInkTest proves the panel paints them; only a source check can
+# prove it reads them the right way *round*. The panel shipped tinting with
+# `statusUnread` (the unread-session dot) and `destructive` (the
+# destructive-action red) — a different semantic that merely happened to be
+# green and red, and that moves with the palette. Desktop derives every diff
+# surface from `--ui-green` / `--ui-red` instead (`styles.css:236-241` light,
+# `:564-565` dark, @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+#
+# The panel keys on `DiffKind` rather than on the raw `+`/`-` marker since #71
+# S34: the marker is stripped before a line is painted (`diff-lines.tsx:83-89`
+# @ the same SHA), so the kind is the only thing left to key on.
 transcript="app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt"
 panel="$(sed -n '/fun InlineDiffPanel(/,/^}$/p' "$transcript" 2>/dev/null || true)"
 
-# Presence is not enough: a transposed pair would still mention all four names,
-# so each marker must be paired with its own tint and its own ink.
+# Presence is not enough: a transposed pair would still mention all six names,
+# so each kind must be paired with its own gutter seed, its own tint and its own
+# ink. `-> tokens.diffAdded$` is anchored to the end of the line so it cannot be
+# satisfied by the `diffAddedBackground` arm two lines below it.
 unpaired=""
-for pair in "+:Added" "-:Removed"; do
-  for role in Background Foreground; do
-    token="diff${pair#*:}$role"
-    grep -qF "startsWith(\"${pair%%:*}\") -> tokens.$token" <<<"$panel" || unpaired="$unpaired $token"
+for kind in Add:Added Remove:Removed; do
+  for role in "" Background Foreground; do
+    token="diff${kind#*:}$role"
+    grep -qE "DiffKind\.${kind%%:*} -> tokens\.$token\$" <<<"$panel" || unpaired="$unpaired $token"
   done
 done
 
@@ -165,10 +171,10 @@ elif grep -qE 'tokens\.(statusUnread|destructive)' <<<"$panel"; then
   problem "InlineDiffPanel tints a diff line with statusUnread or destructive."
   note "fix: read tokens.diffAdded/diffRemoved and their derived Background/Foreground tokens."
 elif [[ -n "$unpaired" ]]; then
-  problem "InlineDiffPanel does not pair each diff marker with its own tint and ink:$unpaired."
-  note "fix: a '+' line takes diffAddedBackground behind diffAddedForeground; a '-' line takes the remove pair."
+  problem "InlineDiffPanel does not pair each diff kind with its own gutter, tint and ink:$unpaired."
+  note "fix: DiffKind.Add takes diffAddedBackground behind diffAddedForeground under a diffAdded gutter; DiffKind.Remove takes the remove set."
 else
-  ok "inline diffs read the diff tokens, each marker paired with its own tint and ink"
+  ok "inline diffs read the diff tokens, each kind paired with its own gutter, tint and ink"
 fi
 
 

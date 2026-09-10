@@ -147,15 +147,32 @@ internal const val MAX_TOOL_RENDER_LINES = 200
  * is one truncation sentence rather than two.
  */
 internal fun clampForDisplay(value: String): String {
+    val (body, notice) = clampForDisplayParts(value)
+    return if (notice == null) body else body + "\n\n" + notice
+}
+
+/**
+ * [clampForDisplay]'s two halves: the kept prefix, and the truncation notice —
+ * or `null` when nothing was dropped.
+ *
+ * A caller that *parses* what it paints cannot use the joined string. The
+ * character cut lands wherever the budget runs out, which for a diff can be
+ * inside a `@@` header; `parseHunks` reads a header it cannot parse as the end
+ * of its hunk and drops everything behind it, the notice included. Splitting
+ * the two lets `InlineDiffPanel` pull the cut back to a line boundary and paint
+ * the notice as a row of its own, while `clampForDisplay` stays the one
+ * implementation of the cut.
+ */
+internal fun clampForDisplayParts(value: String): Pair<String, String?> {
     val cut = minOf(MAX_TOOL_RENDER_CHARS, value.nthNewlineEnd(MAX_TOOL_RENDER_LINES))
     val omitted = value.length - cut
     // A notice longer than what it replaces is worse than the overrun: an
     // output of exactly 200 lines would otherwise gain sixty characters to
     // announce that it lost one.
-    if (omitted <= MIN_WORTH_TRUNCATING) return value
+    if (omitted <= MIN_WORTH_TRUNCATING) return value to null
 
     val count = String.format(Locale.US, "%,d", omitted)
-    return value.take(cut) + "\n\n… $count more characters truncated — use Copy for the full output."
+    return value.take(cut) to "… $count more characters truncated — use Copy for the full output."
 }
 
 /** Roughly the length of the notice itself. Below this, truncating is a loss. */
