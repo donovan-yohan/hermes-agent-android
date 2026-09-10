@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -408,6 +410,75 @@ class ToolRowFidelityTest {
             0,
             compose.onAllNodes(hasText("\u22120")).fetchSemanticsNodes().size,
         )
+    }
+
+    @Test
+    fun `a ten thousand line diff composes a bounded number of rows`() {
+        // #71 S34's acceptance: the clamp bounds the row count before Compose
+        // measures anything. The panel's body is an ordinary `Column`, not a
+        // lazy one, so every row it holds is a real composition — which is
+        // exactly why the count has to be bounded rather than trusted.
+        val diff = "@@ -1,10000 +1,10000 @@\n" + (0 until 10_000).joinToString("\n") { "+line $it" }
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "apply_patch",
+                argsText = """{"path":"huge.md"}""",
+                inlineDiff = diff,
+                startedAtMillis = NOW,
+            ),
+        )
+
+        val rows = compose.onAllNodes(
+            SemanticsMatcher("carries an inline diff line tag") { node ->
+                node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("inline-diff-line-") == true
+            },
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().size
+
+        assertTrue("a 10,000-line diff composed $rows rows", rows in 1..(MAX_TOOL_RENDER_LINES + 3))
+
+        val painted = renderedText()
+        assertTrue("the head of the diff is painted", painted.contains("line 0"))
+        assertTrue("the tail is not: ${painted.takeLast(120)}", !painted.contains("line 9999"))
+        assertTrue("the reader is told the rest was dropped", painted.contains("more characters truncated"))
+
+        // The action rather than a tap: this panel is taller than the root, so
+        // a coordinate-based click on a row inside it lands nowhere.
+        compose.onNodeWithContentDescription("Copy file").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+
+        val copied = clipboardText.orEmpty()
+        assertTrue(
+            "Copy carries the tail the display dropped; got ${copied.length} chars",
+            copied.contains("line 9999"),
+        )
+        assertTrue("and is longer than what is painted", copied.length > painted.length)
+    }
+
+    @Test
+    fun `sgr parameter bytes with no escape byte in front of them are painted`() {
+        // The mirror of the bug: `[38;2;1;2;3m` with no ESC before it is not an
+        // escape sequence, it is a line of the file being edited. Stripping it
+        // would be deleting the reader's own text.
+        launch(
+            ToolActivity(
+                id = "$SESSION-t1",
+                label = "apply_patch",
+                detail = "",
+                state = ToolState.Done,
+                toolName = "apply_patch",
+                argsText = """{"path":"palette.css"}""",
+                inlineDiff = "@@ -1 +1 @@\n+[38;2;1;2;3m\n-x",
+                startedAtMillis = NOW,
+            ),
+        )
+
+        val painted = renderedText()
+        assertTrue("content that merely looks like SGR must survive: $painted", painted.contains("[38;2;1;2;3m"))
     }
 
     // ── Web search ───────────────────────────────────────────────────────────

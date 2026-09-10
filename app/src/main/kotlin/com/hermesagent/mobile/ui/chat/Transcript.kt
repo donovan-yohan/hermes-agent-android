@@ -87,6 +87,7 @@ import com.hermesagent.mobile.data.markdown.InlineSpan
 import com.hermesagent.mobile.data.markdown.MarkdownBlock
 import com.hermesagent.mobile.data.markdown.TableSizing
 import com.hermesagent.mobile.data.markdown.DiffKind
+import com.hermesagent.mobile.data.markdown.DiffLine
 import com.hermesagent.mobile.data.markdown.countDiffLineStats
 import com.hermesagent.mobile.data.markdown.hasAnsiCodes
 import com.hermesagent.mobile.data.markdown.isArrowHeaderLine
@@ -886,6 +887,7 @@ private fun ToolRow(activity: ToolActivity) {
         InlineDiffPanel(
             diff = diff,
             argsText = activity.argsText,
+            resultText = activity.resultText,
             expanded = expanded,
             onToggle = { expanded = !expanded },
             contentDescription = "Tool $title, ${view.status.spokenState()}",
@@ -1329,7 +1331,7 @@ internal fun inlineDiffLineTag(index: Int): String = "inline-diff-line-$index"
 /**
  * Desktop's file-edit tool card body: the header's `+N`/`−N` stats and the
  * compact `FileDiffPanel` under it (`fallback.tsx:481-486,585-594,636-637` and
- * `chat/diff-lines.tsx:583-633` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `chat/diff-lines.tsx:583-641` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  *
  * The `inlineDiff` the Gateway sends is written for a TTY, so everything the
  * panel reads is the *cleaned* diff — `stripInlineDiffChrome` first, exactly as
@@ -1342,6 +1344,7 @@ internal fun inlineDiffLineTag(index: Int): String = "inline-diff-line-$index"
 private fun InlineDiffPanel(
     diff: String,
     argsText: String?,
+    resultText: String?,
     expanded: Boolean,
     onToggle: () -> Unit,
     contentDescription: String,
@@ -1359,11 +1362,15 @@ private fun InlineDiffPanel(
     // is the wrong trade on touch (#56), so the phone clamps what it *paints*
     // instead and parses the clamped text. Copy is unaffected: it reads
     // `cleaned`, which the clamp never touches.
-    val painted = remember(cleaned) { parseDiff(clampForDisplay(cleaned)) }
-    val path = remember(cleaned, argsText) {
-        // `fallback-model/index.ts:61-66` — the tool's own `path` argument wins;
-        // the diff is only consulted when the args carry none.
-        argsText.jsonStringField("path") ?: cleaned.filePath() ?: "Patched file"
+    val painted = remember(cleaned) { cleaned.paintableDiffLines() }
+    val path = remember(cleaned, argsText, resultText) {
+        // `fallback-model/index.ts:61-67` — the tool's own argument wins, then
+        // the result's, and only then the diff. See [String.filePath] for how
+        // far the diff arm diverges from Desktop's.
+        argsText.jsonStringField("path", "file", "filepath")
+            ?: resultText.jsonStringField("path", "file", "filepath", "resolved_path")
+            ?: cleaned.filePath()
+            ?: "Patched file"
     }
 
     Column(
@@ -1446,7 +1453,7 @@ private fun InlineDiffPanel(
                         DiffKind.Remove -> tokens.diffRemovedForeground
                         DiffKind.Context -> tokens.textSecondary
                     }
-                    // `diff-lines.tsx:43` — a context row's border is
+                    // `diff-lines.tsx:44` — a context row's border is
                     // transparent, not absent: the gutter still occupies its
                     // 2 px so every row's text starts on the same column.
                     val gutter = when (line.kind) {
@@ -1489,6 +1496,35 @@ private fun InlineDiffPanel(
 
 /** `diff-lines.tsx:54` @ `72a3277cd7` — `border-l-2`, in the seed colour. */
 private val DIFF_GUTTER_WIDTH = 2.dp
+
+/**
+ * The rows an inline diff is allowed to paint: the clamped body, parsed, with
+ * the clamp's own truncation notice appended as a context row.
+ *
+ * The clamp has to happen *before* the parse — that is what bounds the row
+ * count — but `clampForDisplay`'s joined string cannot be parsed safely. Its
+ * 20,000-character cut lands wherever the budget runs out, and a diff whose
+ * lines are long enough to reach that cut before the 200-line one can be cut
+ * mid-`@@`; `parseHunks` reads a header it cannot parse as the end of the hunk
+ * (`InlineDiff.kt`, after `diff-lines.tsx:140-147` @ `72a3277cd7`) and drops
+ * every row behind it — including the notice that would have said so. So the
+ * cut is pulled back to the last whole line, and the notice is painted as its
+ * own row rather than fed through the parser.
+ *
+ * Copy is unaffected either way: it hands over the unclamped cleaned diff.
+ */
+internal fun String.paintableDiffLines(): List<DiffLine> {
+    val (body, notice) = clampForDisplayParts(this)
+    if (notice == null) return parseDiff(body)
+    // A payload with no newline at all is one long line; there is no boundary
+    // to pull back to, and painting the prefix beats painting nothing.
+    val whole = when {
+        body.endsWith("\n") -> body.dropLast(1)
+        body.contains('\n') -> body.substringBeforeLast('\n')
+        else -> body
+    }
+    return parseDiff(whole) + DiffLine(DiffKind.Context, notice)
+}
 
 @Composable
 private fun TurnProgressRow(startedAtMillis: Long?, progress: SessionProgress?) {
@@ -1560,18 +1596,27 @@ private fun ToolActivity.displayTitle(): String {
 /**
  * The path a diff is about, read out of the diff itself.
  *
- * `fallback-model/index.ts:61-66` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
- * consults the diff only after the tool's own `path` argument, which is why the
- * caller tries `argsText` first.
+ * `fallback-model/index.ts:61-67` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
+ * consults the diff only after the tool's own `path`/`file`/`filepath` argument
+ * and the result's `path`/`file`/`filepath`/`resolved_path`, which is why the
+ * caller tries both of those first.
  *
- * Two shapes reach here. A plain unified diff still carries `+++ b/path`. The
- * Gateway's rendered `inline_diff` does not: `agent/display.py:672-690` @ the
- * same SHA collapses the `---`/`+++` pair into one `a/path → b/path` arrow line,
- * so without the arrow arm every gateway diff would fall back to the literal
- * "Patched file". The `b/` side is the file as it now stands, matching what
- * `+++` meant.
+ * The diff arm itself is **not** Desktop's. `htmlPathFromInlineDiff`
+ * (`index.ts:783-795` @ the same SHA) mines the diff for an `.htm`/`.html` name
+ * only, because on Desktop that arm exists to find an artifact to preview, not
+ * to title a row. Here it exists to title the row: two shapes reach it, and a
+ * plain unified diff still carries `+++ b/path`, but the Gateway's rendered
+ * `inline_diff` does not — `agent/display.py:672-690` collapses the
+ * `---`/`+++` pair into one `a/path → b/path` arrow line, so without the arrow
+ * arm every gateway diff from a tool whose args carry no `path` (`skill_manage`
+ * is one, `agent/display.py:651`) would read "Patched file". Ledgered as drift
+ * in `docs/parity/tool-output-fidelity.md`.
+ *
+ * The scan stops at the first `@@`: past the header zone there is no path left
+ * to find, and every line it does not stop at costs an [isArrowHeaderLine].
  */
 private fun String.filePath(): String? = lineSequence()
+    .takeWhile { !it.startsWith("@@") }
     .firstNotNullOfOrNull { line ->
         when {
             line.startsWith("+++ ") -> line.removePrefix("+++ ")
@@ -1582,11 +1627,19 @@ private fun String.filePath(): String? = lineSequence()
     ?.removePrefix("b/")
     ?.takeIf { it.isNotBlank() && it != "/dev/null" }
 
-private fun String?.jsonStringField(name: String): String? {
+/**
+ * The first of [names] holding a non-blank string. `index.ts:598-608` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` — `firstStringField`, which is how
+ * Desktop reads a path off args or result.
+ */
+private fun String?.jsonStringField(vararg names: String): String? {
     val text = this ?: return null
-    return runCatching {
-        Json.parseToJsonElement(text).jsonObject[name]?.jsonPrimitive?.contentOrNull
-    }.getOrNull()?.takeIf(String::isNotBlank)
+    val obj = runCatching { Json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
+    for (name in names) {
+        val value = runCatching { obj[name]?.jsonPrimitive?.contentOrNull }.getOrNull()
+        if (value != null && value.isNotBlank()) return value
+    }
+    return null
 }
 
 @Composable

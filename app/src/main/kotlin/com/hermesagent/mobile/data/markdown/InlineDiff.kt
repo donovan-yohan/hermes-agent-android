@@ -27,7 +27,7 @@ package com.hermesagent.mobile.data.markdown
  * paints it is the only thing that should need a theme.
  */
 
-/** What one rendered diff line *is*. `diff-lines.tsx:69-81` @ `72a3277cd7`. */
+/** What one rendered diff line *is*. `diff-lines.tsx:69-79` @ `72a3277cd7`. */
 enum class DiffKind { Add, Remove, Context }
 
 /**
@@ -36,13 +36,13 @@ enum class DiffKind { Add, Remove, Context }
  *
  * Desktop also carries `oldNo`/`newNo` on this record so its *preview* pane can
  * draw a line-number gutter. The compact panel inside a tool card renders no
- * numbers (`diff-lines.tsx:583-633`), and that compact panel is the only shape
+ * numbers (`diff-lines.tsx:583-641`), and that compact panel is the only shape
  * this app ships, so the two fields are deliberately absent rather than
  * computed and dropped.
  */
 data class DiffLine(val kind: DiffKind, val text: String)
 
-/** How many lines a diff adds and removes. `index.ts:40-43` @ `72a3277cd7`. */
+/** How many lines a diff adds and removes. `index.ts:41-44` @ `72a3277cd7`. */
 data class DiffLineStats(val added: Int, val removed: Int)
 
 /**
@@ -86,7 +86,7 @@ fun countDiffLineStats(diff: String): DiffLineStats {
 }
 
 /**
- * Drop the file-header preamble. `diff-lines.tsx:114-133` @ `72a3277cd7`.
+ * Drop the file-header preamble. `diff-lines.tsx:114-134` @ `72a3277cd7`.
  *
  * A git-style unified diff opens with `diff --git`, `index …`, `--- a/path`,
  * `+++ b/path`; Hermes' renderer collapses that pair into its own `a/path →
@@ -140,7 +140,7 @@ fun parseDiff(diff: String): List<DiffLine> {
 }
 
 /**
- * `index.ts:775-779` @ `72a3277cd7` — `/^\s*┊\s*review diff\s*\n/i`.
+ * `index.ts:778` @ `72a3277cd7` — `/^\s*┊\s*review diff\s*\n/i`.
  *
  * Kotlin's `^` and JavaScript's agree without a multiline flag (start of input),
  * and both `\s` classes include the newline, so the greedy `\s*\n` tail backs
@@ -160,25 +160,44 @@ private val DIFF_HEADER_PREFIXES = listOf(
     "deleted file",
 )
 
-/** `diff-lines.tsx:108-111` @ `72a3277cd7`. */
+/** `diff-lines.tsx:110` @ `72a3277cd7`. */
 private val ARROW_HEADER = Regex("""^\S.*→\s*\S+$""")
 
-/** `diff-lines.tsx:111` @ `72a3277cd7` — a diff line is never a header. */
+/** `diff-lines.tsx:110` @ `72a3277cd7` — a diff line is never a header. */
 private val DIFF_MARKER_START = Regex("""^[+\-@]""")
 
-/** `diff-lines.tsx:137-143` @ `72a3277cd7`. */
+/** `diff-lines.tsx:141` @ `72a3277cd7`. */
 private val HUNK_HEADER = Regex("""@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@""")
 
 /**
- * Hermes' collapsed `a/path → b/path` line. `diff-lines.tsx:107-112` @
+ * Hermes' collapsed `a/path → b/path` line. `diff-lines.tsx:107-111` @
  * `72a3277cd7`.
  */
 internal fun isArrowHeaderLine(line: String): Boolean {
     val trimmed = line.trim()
+    if (trimmed.length > MAX_ARROW_HEADER_LENGTH) return false
     return trimmed.contains('→') && ARROW_HEADER.matches(trimmed) && !DIFF_MARKER_START.containsMatchIn(trimmed)
 }
 
-/** `diff-lines.tsx:69-81` @ `72a3277cd7`. */
+/**
+ * The longest line still worth testing against [ARROW_HEADER].
+ *
+ * `^\S.*→\s*\S+$` is quadratic on a hostile line: the greedy `.*` walks back
+ * over every `→` in turn, and each attempt re-scans the tail. A 32 KB line of
+ * arrows — the ingest cap, `GatewaySessionRepository.MAX_TOOL_PAYLOAD` — costs
+ * seconds, and this runs inside a `remember {}` on the composition thread.
+ * `AGENTS.md` treats tool output as untrusted, so the size of the input has to
+ * bound the work rather than the shape of it.
+ *
+ * A cap is honest here because of what the line *is*: two file paths and an
+ * arrow. `PATH_MAX` is 4096 on Linux, so 1024 already refuses nothing a real
+ * header could carry, and the regex over 1 KB is microseconds. Desktop has no
+ * cap (`diff-lines.tsx:110` @ `72a3277cd7`) — a divergence ledgered in
+ * `docs/parity/tool-output-fidelity.md`.
+ */
+private const val MAX_ARROW_HEADER_LENGTH = 1024
+
+/** `diff-lines.tsx:69-79` @ `72a3277cd7`. */
 internal fun diffKind(line: String): DiffKind = when {
     line.startsWith("+") && !line.startsWith("+++") -> DiffKind.Add
     line.startsWith("-") && !line.startsWith("---") -> DiffKind.Remove
@@ -186,7 +205,7 @@ internal fun diffKind(line: String): DiffKind = when {
 }
 
 /**
- * Drop the leading `+`/`-`/space gutter. `diff-lines.tsx:83-93` @ `72a3277cd7`.
+ * Drop the leading `+`/`-`/space gutter. `diff-lines.tsx:83-89` @ `72a3277cd7`.
  *
  * Changes read by colour alone, and the rest of the indentation is kept. A
  * context line only loses a character when it actually *has* the space gutter:
@@ -196,7 +215,7 @@ internal fun stripDiffMarker(line: String): String =
     if (diffKind(line) != DiffKind.Context || line.startsWith(" ")) line.drop(1) else line
 
 /**
- * Split the body into hunks. `diff-lines.tsx:135-163` @ `72a3277cd7`.
+ * Split the body into hunks. `diff-lines.tsx:135-166` @ `72a3277cd7`.
  *
  * A `@@` line whose header does not parse closes the current hunk rather than
  * opening one, so its body is dropped instead of being mislabelled; `\` lines

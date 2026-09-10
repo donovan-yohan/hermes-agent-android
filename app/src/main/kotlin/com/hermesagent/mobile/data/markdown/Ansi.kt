@@ -271,8 +271,13 @@ fun parseAnsi(input: String): List<AnsiSegment> = parseAnsiCounted(input).segmen
  * one copy of its printable length.
  */
 fun stripAnsi(input: String): String {
+    // `ansi.ts:181-183` — upstream's own guard: an empty input is returned as
+    // it came, rather than run through two regexes to produce itself.
     if (input.isEmpty()) return input
-    // `ansi.ts:181-183` — an input with nothing to strip is returned as it came.
+    // Upstream has no equivalent, because a `String.replace` that matches
+    // nothing already returns the receiver. This scanner would copy, so the
+    // cheap check ([hasAnsiCodes]'s, widened from CSI to any escape) earns its
+    // line: almost all output is plain.
     if (!input.contains(ESC)) return input
 
     val out = StringBuilder(input.length)

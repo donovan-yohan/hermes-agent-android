@@ -14,12 +14,12 @@ checkout's drift from the pin does not reach any value on this page.
 
 | Contract | Desktop source | Android port |
 |---|---|---|
-| Seeds | `apps/desktop/src/styles.css:196,199` (light), `:528-529` (`:root.dark`) | `HermesTokens.diffAdded` / `diffRemoved` — fixed per mode, not per preset |
-| Border | `apps/desktop/src/styles.css:222,225` — the border **is** the seed | `HermesTokens.diffAdded` / `diffRemoved`, unchanged |
-| Background | `apps/desktop/src/styles.css:223,226` — `color-mix(in srgb, seed 12%, transparent)` | `HermesTokens.diffAddedBackground` / `diffRemovedBackground` via `mixPremultiplied(seed, 12f, Color.Transparent)` |
-| Foreground | `apps/desktop/src/styles.css:224,227` (light, 70% toward `#000`), `:531-532` (dark, 62% toward `#fff`) | `HermesTokens.diffAddedForeground` / `diffRemovedForeground` via `mixPremultiplied` on the same knobs |
+| Seeds | `apps/desktop/src/styles.css:213,210` (light `--ui-green`, `--ui-red`), `:562,561` (`:root.dark`) | `HermesTokens.diffAdded` / `diffRemoved` — fixed per mode, not per preset |
+| Border | `apps/desktop/src/styles.css:236,239` — the border **is** the seed | `HermesTokens.diffAdded` / `diffRemoved`, unchanged |
+| Background | `apps/desktop/src/styles.css:237,240` — `color-mix(in srgb, seed 12%, transparent)` | `HermesTokens.diffAddedBackground` / `diffRemovedBackground` via `mixPremultiplied(seed, 12f, Color.Transparent)` |
+| Foreground | `apps/desktop/src/styles.css:238,241` (light, 70% toward `#000`), `:564-565` (dark, 62% toward `#fff`) | `HermesTokens.diffAddedForeground` / `diffRemovedForeground` via `mixPremultiplied` on the same knobs |
 | Application | `apps/desktop/src/components/chat/diff-lines.tsx:42-52` — `DIFF_KIND_TINT` paints `border-l-2` + background, `DIFF_KIND_TEXT` paints the ink on the colour-only renderer | `InlineDiffPanel` in `ui/chat/Transcript.kt` — colour-only, so both apply. Since #71 S34 the border applies too: a 2 dp left gutter in the seed, transparent on a context row |
-| Context line | `diff-lines.tsx:43,49` — transparent border, no tint, inherits `DIFF_BOX_CLASS`'s `--ui-text-secondary` (`:66`) | `Color.Transparent` behind `tokens.textSecondary` |
+| Context line | `diff-lines.tsx:44,50` — transparent border, no tint, inherits `DIFF_BOX_CLASS`'s `--ui-text-secondary` (`:67`) | `Color.Transparent` behind `tokens.textSecondary` |
 
 ## Resolved values
 
@@ -87,7 +87,7 @@ This is the correction, not a regression.
 
 | Deferred | Why | Lands in |
 |---|---|---|
-| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:468-479`) | Explicit non-goal of #71: a size/cold-start decision of its own | Not scheduled |
+| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:469-487`) | Explicit non-goal of #71: a size/cold-start decision of its own | Not scheduled |
 | Long-press selection of diff text | Needs real-device gesture arbitration evidence | #71 S35 |
 
 No device capture is claimed here: every value on this page is decided offline
@@ -97,9 +97,9 @@ by the derivation and asserted by the tests above.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| Large diffs render windowed inside a `max-h-[12rem]` scroll box (`diff-lines.tsx:66-67`) | mobile-adaptation | Rendered inline and clamped before parsing, so there is nothing left to virtualise | A nested vertical scroller inside a `LazyColumn` competes with the transcript's drag on touch (#56); see `docs/parity/tool-output-fidelity.md` for the full reasoning |
+| The tool card paints every diff line inside a `max-h-[12rem]` box that scrolls internally (`diff-lines.tsx:66-67,583-641`; the card is not the windowed path — `fallback.tsx:637` passes neither `showLineNumbers` nor `virtualized`) | mobile-adaptation | Rendered inline and clamped before parsing, so the row count is bounded before Compose measures anything | A nested vertical scroller inside a `LazyColumn` competes with the transcript's drag on touch (#56); see `docs/parity/tool-output-fidelity.md` for the full reasoning |
 | Long-press selection of diff text | drift | Not selectable | Needs real-device gesture arbitration evidence; #71 S35 |
-| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:468-479`) | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own; nothing about the platform refuses it |
+| Syntax-highlighted diffs (`SyntaxDiff`, `diff-lines.tsx:469-487`) | omission | Absent | out-of-scope: #71 named it a non-goal of that issue, being a size and cold-start decision of its own; nothing about the platform refuses it |
 
 ## Visual report
 

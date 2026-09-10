@@ -228,8 +228,10 @@ lifecycle.
   line carries its own gutter, tint and ink, and the row header counts the
   change. The dedicated coding/review surface does not yet provide repository
   file contents, changed-file patches, an editor, terminal/PTY, or a full
-  Desktop-style review pane. Large diffs are clamped rather than windowed, and
-  diff bodies are not syntax-highlighted.
+  Desktop-style review pane. A large diff is clamped to a bounded number of
+  painted rows rather than scrolling inside its own box the way Desktop's card
+  does, and Copy still hands over the whole cleaned diff. Diff bodies are not
+  syntax-highlighted.
 
 ### Relay channels
 

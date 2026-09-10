@@ -10,9 +10,9 @@ import kotlin.system.measureTimeMillis
  * What the Gateway sends for a file edit, and what a phone is allowed to paint.
  *
  * Two fixture families. The first is Desktop's own, ported case for case:
- * `assistant-ui/tool/fallback-model.test.ts:176,180-183,451-454` @
+ * `assistant-ui/tool/fallback-model.test.ts:182,184-187,451-454` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, plus header-strip cases derived
- * from `chat/diff-lines.tsx:96-133` at the same SHA (its own
+ * from `chat/diff-lines.tsx:96-134` at the same SHA (its own
  * `diff-lines.test.tsx` covers only the lazy-chunk path).
  *
  * The second is the shape that actually arrives on the wire — built here exactly
@@ -43,12 +43,12 @@ class InlineDiffTest {
 
     // -- Desktop's fixtures ---------------------------------------------------
 
-    /** `fallback-model.test.ts:176` @ `72a3277cd7`. */
+    /** `fallback-model.test.ts:182` @ `72a3277cd7`. */
     private val patchDiff = "--- a/src/demo.ts\n+++ b/src/demo.ts\n@@ -1 +1 @@\n-old\n+new"
 
     @Test
     fun `a clean unified diff passes through the chrome strip unchanged`() {
-        // `fallback-model.test.ts:180-183` — `inlineDiffFromResult` reads the
+        // `fallback-model.test.ts:184-187` — `inlineDiffFromResult` reads the
         // field and returns `stripInlineDiffChrome` of it; the Android caller
         // reads the field off `ToolActivity`, so this pins the strip itself.
         assertEquals(patchDiff, stripInlineDiffChrome(patchDiff))
@@ -69,7 +69,7 @@ class InlineDiffTest {
         assertEquals(DiffLineStats(added = 0, removed = 0), countDiffLineStats(""))
     }
 
-    // -- The header zone (diff-lines.tsx:96-133) ------------------------------
+    // -- The header zone (diff-lines.tsx:96-134) ------------------------------
 
     @Test
     fun `a git preamble is skipped up to the first hunk`() {
@@ -90,7 +90,7 @@ class InlineDiffTest {
     fun `the arrow line the gateway emits instead of a header pair is skipped`() {
         // `agent/display.py:672-690` @ `72a3277cd7` collapses `---`/`+++` into
         // one arrow line, and an absolute path makes it `a//Users/...`, which is
-        // the case `diff-lines.tsx:98-101` names as reading especially badly.
+        // the case `diff-lines.tsx:91-95` names as reading especially badly.
         val diff = """
             a//Users/x/y → b//Users/x/y
 
@@ -105,7 +105,7 @@ class InlineDiffTest {
 
     @Test
     fun `a diff line that happens to contain an arrow is not a header`() {
-        // `diff-lines.tsx:111` — a line opening with a diff marker is content.
+        // `diff-lines.tsx:110` — a line opening with a diff marker is content.
         assertFalse(isArrowHeaderLine("+const arrow = a → b"))
         assertFalse(isArrowHeaderLine("-const arrow = a → b"))
         assertFalse(isArrowHeaderLine("@@ a → b @@"))
@@ -184,7 +184,7 @@ class InlineDiffTest {
                 DiffLine(DiffKind.Context, "context line"),
                 // `agent/display.py:727` — the cap trailer is not a diff line:
                 // it opens with an ellipsis, so it classifies as context and
-                // keeps every character (`diff-lines.tsx:83-93`).
+                // keeps every character (`diff-lines.tsx:83-89`).
                 DiffLine(DiffKind.Context, "… omitted 3 diff line(s) across 2 additional file(s)/section(s)"),
             ),
             lines,
@@ -222,7 +222,7 @@ class InlineDiffTest {
 
     @Test
     fun `git's no-newline marker is dropped`() {
-        // `diff-lines.tsx:154` — a backslash line is skipped rather than drawn.
+        // `diff-lines.tsx:155` — a backslash line is skipped rather than drawn.
         assertEquals(
             listOf(DiffLine(DiffKind.Remove, "a"), DiffLine(DiffKind.Add, "b")),
             parseDiff("@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b"),
@@ -244,12 +244,67 @@ class InlineDiffTest {
 
     @Test
     fun `an unparseable hunk header closes the hunk rather than opening one`() {
-        // `diff-lines.tsx:140-146` — the body of a malformed `@@` is dropped,
+        // `diff-lines.tsx:140-147` — the body of a malformed `@@` is dropped,
         // and with no hunk at all the fallback classifies what is left.
         assertEquals(
             listOf(DiffLine(DiffKind.Context, "@@ nonsense @@"), DiffLine(DiffKind.Add, "x")),
             parseDiff("@@ nonsense @@\n+x"),
         )
+    }
+
+    // -- What is chrome, and what only looks like it --------------------------
+
+    @Test
+    fun `a review diff banner below the first line is content, not chrome`() {
+        // `index.ts:778` @ `72a3277cd7` is neither global nor multiline: it is
+        // anchored at the start of the input and replaces once. A `┊ review
+        // diff` further down is a line of the file being edited, and deleting
+        // it would be deleting the reader's own text.
+        val diff = "@@ -1 +1 @@\n+a\n  ┊ review diff\n+b"
+
+        assertEquals(diff, stripInlineDiffChrome(diff))
+        assertEquals(
+            listOf(
+                DiffLine(DiffKind.Add, "a"),
+                DiffLine(DiffKind.Context, " ┊ review diff"),
+                DiffLine(DiffKind.Add, "b"),
+            ),
+            parseDiff(stripInlineDiffChrome(diff)),
+        )
+    }
+
+    @Test
+    fun `sgr parameter bytes with no escape in front of them are content`() {
+        // The exact bytes the bug put on the screen — but this time they really
+        // are in the file. Without the ESC there is no escape sequence, so the
+        // strip must leave every character where it is; a broader "looks like
+        // ANSI" pattern would eat a line of the reader's own source.
+        val diff = "@@ -1 +1 @@\n+[38;2;1;2;3m\n-x"
+
+        assertEquals(diff, stripInlineDiffChrome(diff))
+        assertEquals(DiffLineStats(added = 1, removed = 1), countDiffLineStats(diff))
+        assertEquals(
+            listOf(DiffLine(DiffKind.Add, "[38;2;1;2;3m"), DiffLine(DiffKind.Remove, "x")),
+            parseDiff(diff),
+        )
+    }
+
+    @Test
+    fun `an unterminated osc swallows the rest of the diff, and both halves agree`() {
+        // A ledgered divergence, pinned so it cannot change silently.
+        // `index.ts:771-773` @ `72a3277cd7` strips SGR only, so Desktop would
+        // leave `ESC]junk` and the two lines behind it in place. This port
+        // shares `parseAnsi`'s scanner (`Ansi.kt`), which consumes an OSC
+        // string until its terminator — and an unterminated one runs to the end
+        // of the input. The point of the test is that *one* thing reads the
+        // payload: the count and the body are both taken from `cleaned`, so the
+        // header can never disagree with what is under it.
+        val diff = "@@ -1 +1 @@\n+a\n$esc]junk\n+b\n+c"
+        val cleaned = stripInlineDiffChrome(diff)
+
+        assertEquals("@@ -1 +1 @@\n+a", cleaned)
+        assertEquals(DiffLineStats(added = 1, removed = 0), countDiffLineStats(cleaned))
+        assertEquals(listOf(DiffLine(DiffKind.Add, "a")), parseDiff(cleaned))
     }
 
     // -- Bounded work ---------------------------------------------------------
@@ -275,5 +330,42 @@ class InlineDiffTest {
 
         assertEquals(20_000, parsed)
         assertTrue("cleaning and parsing 1 MB took ${elapsed}ms", elapsed < 2_000)
+    }
+
+    @Test
+    fun `a payload-sized line of arrows costs nothing to reject as a header`() {
+        // `^\S.*→\s*\S+$` backtracks quadratically: the greedy `.*` walks back
+        // over every `→` and re-scans the tail from each. Tool output is
+        // untrusted (`AGENTS.md`) and bounded only by the ingest cap
+        // (`GatewaySessionRepository.MAX_TOOL_PAYLOAD`, 32,768), and this runs
+        // inside a `remember {}` on the composition thread — an unguarded
+        // regex costs seconds there. A real header is two paths, so a line this
+        // long is refused on length before the regex ever sees it.
+        val hostile = "\u2192".repeat(16_000) + "a".repeat(16_000) + " b"
+        assertEquals(32_002, hostile.length)
+
+        var arrow = true
+        var stripped = ""
+        val elapsed = measureTimeMillis {
+            arrow = isArrowHeaderLine(hostile)
+            stripped = stripDiffFileHeaders("$hostile\n@@ -1 +1 @@\n+x")
+        }
+
+        assertFalse("a 32 KB line is not a file header", arrow)
+        assertTrue("so it ends the header zone and survives", stripped.startsWith(hostile))
+        assertTrue("rejecting it took ${elapsed}ms", elapsed < 250)
+    }
+
+    @Test
+    fun `a real arrow header is still recognised at the length cap`() {
+        // The cap refuses nothing a header could carry: `PATH_MAX` is 4096, and
+        // 1,024 is the longest line still tested. Right at it, the answer is
+        // unchanged.
+        val path = "d".repeat(500)
+        val header = "a/$path → b/$path"
+        assertEquals(1_007, header.length)
+
+        assertTrue(isArrowHeaderLine(header))
+        assertFalse("one character past the cap is refused", isArrowHeaderLine(header + "e".repeat(20)))
     }
 }

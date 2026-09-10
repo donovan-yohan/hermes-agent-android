@@ -115,7 +115,7 @@ class InlineDiffPanelInkTest {
 
     /**
      * What the row's tint lands on. Read rather than assumed: a context row is
-     * transparent on both border and background (`diff-lines.tsx:43,49` @
+     * transparent on both border and background (`diff-lines.tsx:44,50` @
      * `72a3277cd7`), so whatever it paints there *is* the backdrop, and the two
      * changed rows must be exactly their token composited over it.
      */
@@ -179,7 +179,7 @@ class InlineDiffPanelInkTest {
     fun `a context row has no tint and a transparent gutter`() {
         render(GATEWAY_DIFF)
 
-        // `diff-lines.tsx:43,49` — transparent border, no tint: the gutter
+        // `diff-lines.tsx:44,50` — transparent border, no tint: the gutter
         // column and the tint column of a context row are the same pixel value,
         // and neither is either changed row's.
         assertSameInk("the context row's gutter", backdrop(), gutterOf(inlineDiffLineTag(2)))

@@ -143,11 +143,11 @@ fi
 # `statusUnread` (the unread-session dot) and `destructive` (the
 # destructive-action red) — a different semantic that merely happened to be
 # green and red, and that moves with the palette. Desktop derives every diff
-# surface from `--ui-green` / `--ui-red` instead (`styles.css:222-227` @
-# `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+# surface from `--ui-green` / `--ui-red` instead (`styles.css:236-241` light,
+# `:564-565` dark, @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
 #
 # The panel keys on `DiffKind` rather than on the raw `+`/`-` marker since #71
-# S34: the marker is stripped before a line is painted (`diff-lines.tsx:83-93`
+# S34: the marker is stripped before a line is painted (`diff-lines.tsx:83-89`
 # @ the same SHA), so the kind is the only thing left to key on.
 transcript="app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt"
 panel="$(sed -n '/fun InlineDiffPanel(/,/^}$/p' "$transcript" 2>/dev/null || true)"
