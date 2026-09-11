@@ -4,7 +4,7 @@ package com.hermesagent.mobile.plugins
  * Scoped context handed to a plugin's [HermesPlugin.register].
  *
  * Direct Kotlin port of Desktop's `PluginContext`
- * (`apps/desktop/src/contrib/plugin.ts:70-104` @
+ * (`apps/desktop/src/contrib/plugin.ts:75-105` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface PluginContext {
@@ -46,7 +46,7 @@ interface PluginContext {
  * The plugin contract.
  *
  * Direct Kotlin port of Desktop's `HermesPlugin`
- * (`apps/desktop/src/contrib/plugin.ts:106-118` @
+ * (`apps/desktop/src/contrib/plugin.ts:107-120` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface HermesPlugin {

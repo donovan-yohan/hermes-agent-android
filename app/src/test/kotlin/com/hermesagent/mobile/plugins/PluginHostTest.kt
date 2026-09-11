@@ -1,11 +1,14 @@
 package com.hermesagent.mobile.plugins
 
+import com.hermesagent.mobile.data.gateway.CorrelatedGatewayRpc
 import com.hermesagent.mobile.data.gateway.GatewayEvent
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayRpcError
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
+import com.hermesagent.mobile.data.gateway.GatewayRpcWire
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -14,6 +17,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonElement
@@ -26,6 +32,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,6 +44,7 @@ import org.junit.Test
  * Everything here runs on virtual time with injected timing — no test sleeps,
  * and no fake reaches a real socket.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PluginHostTest {
 
     /**
@@ -210,6 +218,92 @@ class PluginHostTest {
             unrelated()
             scope.cancel()
         }
+
+    /**
+     * The regression the PR #207 review found: a plugin's tap used to be a
+     * second *competing consumer* of the client's single-consumer event queue,
+     * so an `onEvent` subscription stole events from the app's only pump.
+     * Both now see the whole stream — driven here through the real
+     * [CorrelatedGatewayRpc], because the `MutableSharedFlow` fake above
+     * structurally cannot catch it.
+     */
+    @Test
+    fun `a plugin tap and the app pump each receive every gateway event`() = runTest {
+        val rpc = CorrelatedGatewayRpc(
+            RecordingWire(),
+            eventPumpDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        val scope = scopeFor(this)
+        val host = GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(rpc))
+
+        val appPump = mutableListOf<String>()
+        val app = launch { rpc.events.collect { appPump += it.payload.jsonObject.getValue("delta").jsonPrimitive.content } }
+        val pluginTap = mutableListOf<String>()
+        val dispose = host.onEvent(PluginHost.ALL_EVENTS) {
+            pluginTap += it.payload.jsonObject.getValue("delta").jsonPrimitive.content
+        }
+        runCurrent()
+
+        repeat(4) { index -> rpc.receive(deltaFrame(index)) }
+        advanceUntilIdle()
+
+        assertEquals("the app's pump keeps every event", listOf("0", "1", "2", "3"), appPump)
+        assertEquals("a plugin tap is a subscriber, not a thief", listOf("0", "1", "2", "3"), pluginTap)
+
+        dispose()
+        app.cancel()
+        scope.cancel()
+        rpc.close()
+        advanceUntilIdle()
+    }
+
+    /**
+     * The regression the PR #207 review found: `withTimeout` in the client
+     * raises `TimeoutCancellationException`, which used to escape
+     * `host.request` as a cancellation of the plugin's own coroutine. The door
+     * contracts a value, so a call the Gateway never answers is
+     * [PluginHostResult.Refused].
+     */
+    @Test
+    fun `a gateway timeout is a result value, not a cancellation`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), timeoutMillis = 100)
+        val scope = scopeFor(this)
+        val host = GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(rpc))
+
+        var outcome: Result<PluginHostResult>? = null
+        val call = launch { outcome = runCatching { host.request("session.list") } }
+        runCurrent()
+        advanceTimeBy(101)
+        runCurrent()
+
+        val answered = outcome
+        assertNotNull("the call answers instead of staying in flight", answered)
+        assertNull(
+            "a timeout must not throw out of the host door",
+            answered!!.exceptionOrNull(),
+        )
+        assertEquals(
+            PluginHostResult.Refused(0, "The Gateway did not answer in time."),
+            answered.getOrNull(),
+        )
+
+        call.join()
+        assertFalse("the plugin's own scope survives the timeout", scope.coroutineContext[Job]?.isCancelled == true)
+        scope.cancel()
+    }
+
+    /** A `message.delta` frame carrying [index], the shape the gateway sends. */
+    private fun deltaFrame(index: Int): String =
+        """{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"r1","payload":{"delta":"$index"}}}"""
+
+    /** The smallest wire a real [CorrelatedGatewayRpc] can be driven over. */
+    private class RecordingWire : GatewayRpcWire {
+        val frames = mutableListOf<String>()
+
+        override fun send(text: String): Boolean = frames.add(text)
+
+        override fun close() {}
+    }
 
     @Test
     fun `a malformed method is refused even with no live connection`() = runTest {

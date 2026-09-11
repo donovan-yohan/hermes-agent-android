@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
  * equivalent is edited to add a plugin's strings.
  *
  * Direct Kotlin port of Desktop's `PluginI18n`
- * (`apps/desktop/src/i18n/plugin-i18n.ts:39-47,96-101` @
+ * (`apps/desktop/src/i18n/plugin-i18n.ts:39-46,96-101` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface PluginI18n {

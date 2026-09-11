@@ -6,6 +6,7 @@ import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.RECONNECT_MESSAGE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -19,7 +20,7 @@ import kotlinx.serialization.json.JsonObject
  * on the gateway's event stream.
  *
  * Desktop surfaces the same two capabilities as a module-global `host`
- * (`apps/desktop/src/sdk/index.ts:582,1267,1406-1414` @
+ * (`apps/desktop/src/sdk/index.ts:582,1267,1407-1414` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). Android has no module-global
  * host: this app's plugin contract is a scoped [PluginContext], so the door
  * hangs off `ctx.host` instead and resolves the *live* connection per call,
@@ -32,7 +33,9 @@ interface PluginHost {
      * [method] is validated before anything is sent; see
      * [normalizePluginHostMethod]. The result is a [PluginHostResult] rather
      * than a thrown exception so a plugin branches on the value, the same
-     * shape as [PluginRest].
+     * shape as [PluginRest] — including a call the Gateway never answered:
+     * an exchange that times out is [PluginHostResult.Refused], never a
+     * cancellation of the plugin's own coroutine.
      */
     suspend fun request(
         method: String,
@@ -44,8 +47,14 @@ interface PluginHost {
      * a disposer. Listeners are isolated: one that throws never breaks the
      * event pump, and never reaches another subscriber.
      *
+     * This is a subscription, not a second reader of the app's event queue: a
+     * plugin tap and the app's own pump each receive every event, and
+     * disposing a tap leaves the others untouched. Desktop does the same by
+     * fanning every inbound event through `emitGatewayEvent`
+     * (`apps/desktop/src/contrib/events.ts:31`) before its own dispatch.
+     *
      * Direct port of Desktop's `onGatewayEvent`
-     * (`apps/desktop/src/contrib/events.ts:20-31` @ the pin).
+     * (`apps/desktop/src/contrib/events.ts:16-28` @ the pin).
      */
     fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit
 
@@ -88,9 +97,10 @@ sealed interface PluginHostResult {
     data object UnavailableOnGateway : PluginHostResult
 
     /**
-     * The call reached the Gateway and it answered with an error, or no live
-     * connection could carry it. [safeMessage] is this app's own sentence —
-     * never text the backend wrote.
+     * The call reached the Gateway and it answered with an error, or it could
+     * not be completed at all — no live connection, a transport failure, or an
+     * exchange the Gateway never answered before its deadline. [safeMessage]
+     * is this app's own sentence — never text the backend wrote.
      */
     data class Refused(val code: Int, val safeMessage: String) : PluginHostResult
 }
@@ -151,8 +161,15 @@ internal class GatewayPluginHost(
         val call = scope.async { exchange(rpc, normalized, params) }
         return try {
             call.await()
+        } catch (timedOut: TimeoutCancellationException) {
+            // The Gateway never answered inside its own deadline
+            // (`GatewayRpc.kt` `withTimeout`). That is an answer a plugin
+            // branches on, not a cancellation of the plugin's coroutine: only
+            // the exchange ends here, and the plugin's scope stays alive.
+            call.cancel()
+            PluginHostResult.Refused(0, TIMED_OUT_MESSAGE)
         } catch (cancelled: CancellationException) {
-            // Either the plugin was disposed (the scope is gone, so this is a
+            // The plugin was disposed (the scope is gone, so this is a
             // no-op) or the caller gave up; in both cases the request must not
             // keep running on its own or answer after the plugin is gone.
             call.cancel()
@@ -181,7 +198,9 @@ internal class GatewayPluginHost(
     override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit {
         val job = scope.launch {
             // Re-resolve on every client, so a reconnect re-subscribes instead
-            // of leaving the plugin with a dead tap.
+            // of leaving the plugin with a dead tap. The client's event stream
+            // is a broadcast (one pump, many subscribers), so this tap and the
+            // app's own pump each receive every event.
             clients.filterNotNull().collectLatest { rpc ->
                 rpc.events.collect { event ->
                     if (type != PluginHost.ALL_EVENTS && event.type != type) return@collect
@@ -207,5 +226,8 @@ internal class GatewayPluginHost(
 
         /** This app's sentence for a refused RPC; the backend's own is never shown. */
         const val REFUSED_MESSAGE = "Hermes refused that Gateway request."
+
+        /** This app's sentence for an exchange the Gateway never answered. */
+        const val TIMED_OUT_MESSAGE = "The Gateway did not answer in time."
     }
 }
