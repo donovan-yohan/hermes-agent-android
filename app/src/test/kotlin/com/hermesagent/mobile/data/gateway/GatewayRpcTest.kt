@@ -5,7 +5,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -72,7 +75,7 @@ class GatewayRpcTest {
     @Test
     fun `typed errors and supported events are parsed while noise is ignored`() = runTest {
         val wire = RecordingWire()
-        val rpc = CorrelatedGatewayRpc(wire)
+        val rpc = CorrelatedGatewayRpc(wire, eventPumpDispatcher = StandardTestDispatcher(testScheduler))
         val answer = async { runCatching { rpc.request("prompt.submit") }.exceptionOrNull() }
         runCurrent()
         rpc.receive("not json")
@@ -94,7 +97,7 @@ class GatewayRpcTest {
 
     @Test
     fun `status update remains on the correlated event stream with its runtime identity`() = runTest {
-        val rpc = CorrelatedGatewayRpc(RecordingWire())
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
         val event = async { rpc.events.first() }
         runCurrent()
 
@@ -146,7 +149,7 @@ class GatewayRpcTest {
 
     @Test
     fun `event bursts are retained before the repository subscribes`() = runTest {
-        val rpc = CorrelatedGatewayRpc(RecordingWire())
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
         repeat(128) { index ->
             rpc.receive(
                 """{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"r1","payload":{"delta":"$index"}}}""",
@@ -159,6 +162,47 @@ class GatewayRpcTest {
         assertEquals("0", received.first().payload.jsonObject["delta"]?.jsonPrimitive?.content)
         assertEquals("127", received.last().payload.jsonObject["delta"]?.jsonPrimitive?.content)
     }
+
+    /**
+     * The client's event stream is a broadcast, not a queue with one reader.
+     * The app's transcript pump and a plugin's tap are both subscribers: each
+     * receives every event, a subscriber that attaches later sees every event
+     * after it, and disposing one leaves the other's stream intact.
+     */
+    @Test
+    fun `every subscriber receives every event`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val appPump = mutableListOf<String>()
+        val pluginTap = mutableListOf<String>()
+        val app = launch { rpc.events.collect { appPump += it.payload.jsonObject.getValue("delta").jsonPrimitive.content } }
+        val tap = launch { rpc.events.collect { pluginTap += it.payload.jsonObject.getValue("delta").jsonPrimitive.content } }
+        runCurrent()
+
+        repeat(4) { index -> rpc.receive(deltaFrame(index)) }
+        advanceUntilIdle()
+
+        // Four events, two readers: a competing consumer could not deliver
+        // all four to both.
+        assertEquals("the app's pump sees the whole stream", listOf("0", "1", "2", "3"), appPump)
+        assertEquals("a plugin tap sees the whole stream", listOf("0", "1", "2", "3"), pluginTap)
+
+        // Dropping one subscriber never ends another's subscription.
+        tap.cancel()
+        runCurrent()
+        rpc.receive(deltaFrame(4))
+        advanceUntilIdle()
+
+        assertEquals(listOf("0", "1", "2", "3", "4"), appPump)
+        assertEquals(listOf("0", "1", "2", "3"), pluginTap)
+
+        app.cancel()
+        rpc.close()
+        advanceUntilIdle()
+    }
+
+    /** A `message.delta` frame carrying [index], the shape the gateway sends. */
+    private fun deltaFrame(index: Int): String =
+        """{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"r1","payload":{"delta":"$index"}}}"""
 
     @Test
     fun `remote websocket preserves reverse proxy prefix and carries only an encoded one-time ticket`() {
@@ -203,7 +247,7 @@ class GatewayRpcTest {
 
     @Test
     fun `session reclaimed keeps its runtime identity in the payload`() = runTest {
-        val rpc = CorrelatedGatewayRpc(RecordingWire())
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
         val event = async { rpc.events.first() }
         runCurrent()
 

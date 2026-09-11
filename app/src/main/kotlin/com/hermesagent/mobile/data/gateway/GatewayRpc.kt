@@ -2,13 +2,21 @@ package com.hermesagent.mobile.data.gateway
 
 import android.util.Log
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -93,6 +101,18 @@ internal enum class GatewayCloseCause {
 }
 
 internal interface GatewayRpcClient : Closeable {
+    /**
+     * Gateway events, in arrival order, to **every** collector.
+     *
+     * This is a broadcast, not a queue with one reader: the app's transcript
+     * pump and a plugin's tap each receive every event, and one of them
+     * stopping ends only its own subscription. A burst that arrives before the
+     * first collector is buffered, not dropped, and a close still drains. The
+     * stream is a live subscription, so it does not complete when the client
+     * closes — [closed] is what reports that — and a collector that stops
+     * draining fills its buffer, which fails the connection rather than
+     * dropping transcript bytes.
+     */
     val events: Flow<GatewayEvent>
     val closed: Flow<GatewayCloseCause> get() = emptyFlow()
     suspend fun request(method: String, params: JsonObject = JsonObject(emptyMap())): JsonElement
@@ -106,6 +126,7 @@ internal interface GatewayRpcClient : Closeable {
 internal class CorrelatedGatewayRpc(
     private val wire: GatewayRpcWire,
     private val timeoutMillisForMethod: (String) -> Long = ::gatewayRpcTimeoutMillis,
+    eventPumpDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : GatewayRpcClient {
     constructor(wire: GatewayRpcWire, timeoutMillis: Long) : this(wire, { timeoutMillis })
 
@@ -116,10 +137,27 @@ internal class CorrelatedGatewayRpc(
     // deltas through normal bursts; overflow fails the connection rather than
     // silently dropping transcript bytes or allowing unbounded remote input.
     private val eventChannel = Channel<GatewayEvent>(EVENT_BUFFER_CAPACITY)
+    // That channel is the ingest buffer; this is the fan-out. Every consumer of
+    // `events` — the app's transcript pump, a plugin's tap — is a subscriber
+    // here rather than a competing receiver of one queue, so a subscriber
+    // ends only its own subscription and no longer takes events from the
+    // others. A subscriber that stops draining fills its buffer, and that —
+    // like the ingest channel overflowing — fails the connection rather than
+    // dropping transcript bytes.
+    private val eventListeners = MutableSharedFlow<GatewayEvent>(
+        extraBufferCapacity = EVENT_BUFFER_CAPACITY,
+    )
+    // One drain for every subscriber, owned by the connection rather than by
+    // whichever subscriber arrived first.
+    private val eventPump = CoroutineScope(SupervisorJob() + eventPumpDispatcher)
+    private val eventPumpStarted = AtomicBoolean(false)
     private val closedFlow = MutableSharedFlow<GatewayCloseCause>(replay = 1)
     private var isClosed = false
 
-    override val events: Flow<GatewayEvent> = eventChannel.receiveAsFlow()
+    override val events: Flow<GatewayEvent> = flow {
+        startEventPump()
+        emitAll(eventListeners)
+    }
     override val closed: Flow<GatewayCloseCause> = closedFlow
 
     override suspend fun request(method: String, params: JsonObject): JsonElement {
@@ -186,7 +224,30 @@ internal class CorrelatedGatewayRpc(
                 params["payload"] ?: JsonNull,
             ),
         )
-        if (accepted.isFailure) connectionClosed("The gateway event stream exceeded its safe buffer.")
+        if (accepted.isFailure) connectionClosed(EVENT_OVERFLOW_MESSAGE)
+    }
+
+    /**
+     * Drain the ingest channel into the listener fan-out, once per client.
+     *
+     * Nothing leaves the buffer until something is listening, and nothing is
+     * taken while every listener has gone — so a burst that arrives before the
+     * app's pump subscribes, the reason the ingest channel is buffered at all,
+     * is still delivered, and neither a plugin attaching or detaching nor the
+     * app's pump restarting can consume another subscriber's events.
+     */
+    private fun startEventPump() {
+        if (!eventPumpStarted.compareAndSet(false, true)) return
+        eventPump.launch {
+            while (true) {
+                eventListeners.subscriptionCount.first { it > 0 }
+                val event = eventChannel.receiveCatching().getOrNull() ?: return@launch
+                if (!eventListeners.tryEmit(event)) {
+                    connectionClosed(EVENT_OVERFLOW_MESSAGE)
+                    return@launch
+                }
+            }
+        }
     }
 
     /**
@@ -215,6 +276,7 @@ internal class CorrelatedGatewayRpc(
 
     private companion object {
         const val EVENT_BUFFER_CAPACITY = 1_024
+        const val EVENT_OVERFLOW_MESSAGE = "The gateway event stream exceeded its safe buffer."
         val JSON = Json { ignoreUnknownKeys = true }
         val SUPPORTED_EVENTS = setOf(
             "gateway.ready",
@@ -304,9 +366,12 @@ internal class OkHttpGatewayRpcClient private constructor(
             requestTimeoutMillis: Long,
         ): OkHttpGatewayRpcClient {
             val wire = SocketWire()
-            val rpc = CorrelatedGatewayRpc(wire) { method ->
-                gatewayRpcTimeoutMillis(method, defaultTimeoutMillis = requestTimeoutMillis)
-            }
+            val rpc = CorrelatedGatewayRpc(
+                wire,
+                timeoutMillisForMethod = { method ->
+                    gatewayRpcTimeoutMillis(method, defaultTimeoutMillis = requestTimeoutMillis)
+                },
+            )
 
             return suspendCancellableCoroutine { continuation ->
                 var connected: OkHttpGatewayRpcClient? = null
