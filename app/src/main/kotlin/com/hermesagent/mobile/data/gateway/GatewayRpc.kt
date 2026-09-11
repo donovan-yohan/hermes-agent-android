@@ -26,6 +26,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
@@ -40,6 +41,12 @@ internal data class GatewayEvent(
     val type: String,
     val runtimeSessionId: String?,
     val payload: JsonElement,
+    /**
+     * The gateway's per-session replay sequence
+     * (`tui_gateway/event_replay.py:39-60` @ `72a3277cd7`). Absent on
+     * session-less frames, which upstream never stamps.
+     */
+    val seq: Long? = null,
 )
 
 /** One logcat tag for the whole gateway package: connections and the sign-in that opens them. */
@@ -222,6 +229,7 @@ internal class CorrelatedGatewayRpc(
                 type,
                 params.string("session_id")?.takeIf(String::isNotBlank),
                 params["payload"] ?: JsonNull,
+                (params["seq"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.longOrNull,
             ),
         )
         if (accepted.isFailure) connectionClosed(EVENT_OVERFLOW_MESSAGE)
@@ -278,9 +286,20 @@ internal class CorrelatedGatewayRpc(
         const val EVENT_BUFFER_CAPACITY = 1_024
         const val EVENT_OVERFLOW_MESSAGE = "The gateway event stream exceeded its safe buffer."
         val JSON = Json { ignoreUnknownKeys = true }
+
+        /**
+         * The types this client admits at all: the session-scoped ones, plus
+         * every session-less broadcast [gatewayEventLane] classifies as global.
+         * Deriving the second half keeps the two lists from drifting — a
+         * broadcast the lane handles can never be silently refused here.
+         *
+         * Session-less frames carry an empty `session_id` and are never
+         * seq-stamped or buffered upstream, so nothing in that half is data:
+         * each one is a refetch trigger
+         * (`tui_gateway/change_watcher.py:177-184` @
+         * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+         */
         val SUPPORTED_EVENTS = setOf(
-            "gateway.ready",
-            "session.reclaimed",
             "session.info",
             "message.start",
             "message.delta",
@@ -297,7 +316,7 @@ internal class CorrelatedGatewayRpc(
             "approval.request",
             "sudo.request",
             "secret.request",
-        )
+        ) + GATEWAY_GLOBAL_EVENT_TYPES
     }
 }
 

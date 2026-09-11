@@ -261,6 +261,74 @@ class GatewayRpcTest {
         assertEquals("runtime-gone", reclaimed.payload.jsonObject["session_id"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `session-less broadcasts are admitted with no runtime while an unknown type is dropped`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val received = async { rpc.events.first() }
+        runCurrent()
+
+        // A type from a newer backend is refused by the allow-list, so it can
+        // never become the first delivered event.
+        rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"future.broadcast","session_id":""}}""")
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"bot_relay.outbox.pending","session_id":"","payload":{"queued":1}}}""",
+        )
+
+        val hint = received.await()
+        assertEquals("bot_relay.outbox.pending", hint.type)
+        assertEquals(null, hint.runtimeSessionId)
+        assertEquals(null, hint.seq)
+        assertEquals("1", hint.payload.jsonObject["queued"]?.jsonPrimitive?.content)
+    }
+
+    /**
+     * The number a replay resumes from: session events are stamped with a
+     * per-session `seq`, session-less broadcasts deliberately are not
+     * (`tui_gateway/event_replay.py:39-60,46-49` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+     */
+    @Test
+    fun `a session event keeps its replay sequence`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val received = async { rpc.events.first() }
+        runCurrent()
+
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-a","seq":12,"payload":{"delta":"hi"}}}""",
+        )
+
+        val event = received.await()
+        assertEquals("runtime-a", event.runtimeSessionId)
+        assertEquals(12L, event.seq)
+    }
+
+    /**
+     * The allow-list is the union of the session types and everything
+     * [gatewayEventLane] calls global, so a broadcast the lane handles cannot
+     * be silently refused by the parser. Every one of them must come through.
+     */
+    @Test
+    fun `every session-less broadcast the lane handles is admitted by the allow-list`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val seen = mutableListOf<String>()
+        val pump = launch { rpc.events.collect { seen += it.type } }
+        runCurrent()
+
+        GATEWAY_GLOBAL_EVENT_TYPES.forEach { type ->
+            rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"$type","session_id":""}}""")
+        }
+        advanceUntilIdle()
+        runCurrent()
+
+        assertEquals(GATEWAY_GLOBAL_EVENT_TYPES, seen.toSet())
+        assertEquals("each broadcast arrives once", GATEWAY_GLOBAL_EVENT_TYPES.size, seen.size)
+        assertTrue(
+            "the union must still admit only what the lane can classify",
+            GATEWAY_GLOBAL_EVENT_TYPES.all { gatewayEventLane(it) == GatewayEventLane.Global },
+        )
+        pump.cancel()
+    }
+
     private fun requestId(frame: String): String =
         Json.parseToJsonElement(frame).jsonObject.getValue("id").jsonPrimitive.content
 

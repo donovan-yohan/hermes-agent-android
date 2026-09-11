@@ -120,6 +120,19 @@ interface GatewaySessionRepository {
      */
     val turnOutcomes: Flow<GatewayTurnOutcome> get() = emptyFlow()
 
+    /**
+     * Session-less gateway broadcasts, as refetch triggers for the surface that
+     * owns them.
+     *
+     * A hint is not data: upstream never seq-stamps or replays these frames
+     * (`tui_gateway/event_replay.py:46-49` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), so the only correct
+     * response is to read that surface again through its own RPC — and only
+     * while that surface is resumed, so the read is bounded by a screen rather
+     * than by a timer nobody owns.
+     */
+    val globalChangeHints: Flow<GatewayChangeHint> get() = emptyFlow()
+
     /** Active turns submitted or live on this client, keyed by durable session ID. */
     val activeTurns: StateFlow<Set<String>> get() = NO_ACTIVE_TURNS
 
@@ -764,6 +777,17 @@ internal class LiveGatewaySessionRepository(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val turnOutcomes: Flow<GatewayTurnOutcome> = turnOutcomeEvents
+
+    /**
+     * The session-less lane beside [applyEvent]: frames the gateway broadcasts
+     * to every client and never routes by a runtime session id.
+     *
+     * `internal` rather than `private` so the one wiring that has no public
+     * surface — a session event's `seq` becoming a watermark, and an epoch
+     * change clearing it — is verifiable from this module's tests.
+     */
+    internal val globalEvents = GatewayGlobalEventLane()
+    override val globalChangeHints: Flow<GatewayChangeHint> = globalEvents.changeHints
     private val mutablePendingInputs =
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
     override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
@@ -983,6 +1007,9 @@ internal class LiveGatewaySessionRepository(
                     approvalModeRevision++
                     confirmedApprovalMode = null
                     approvalModeFlow.value = ApprovalModeState()
+                    // A replay epoch names one gateway process, so it — and the
+                    // seq watermarks it guards — die with the connection.
+                    globalEvents.clearConnectionState()
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
@@ -1043,7 +1070,15 @@ internal class LiveGatewaySessionRepository(
                             val refreshMetadata = synchronized(stateLock) {
                                 if (reset.generation != connectionGeneration || clientFlow.value !== next) {
                                     false
+                                } else if (gatewayEventLane(event.type) == GatewayEventLane.Global) {
+                                    // No runtime to route by: the session lane's
+                                    // `applyEvent` can never see these.
+                                    applyGlobalEvent(event)
                                 } else {
+                                    // A `seq` is the resume point a replay would
+                                    // use; the epoch on `gateway.ready` is what
+                                    // invalidates it.
+                                    globalEvents.noteSessionSeq(event.runtimeSessionId, event.seq)
                                     applyEvent(event)
                                 }
                             }
@@ -3885,30 +3920,54 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    /**
+     * The session-less lane's dispatch, parallel to [applyEvent].
+     *
+     * These frames carry no runtime session id to route by, which is exactly
+     * why they need their own path: [applyEvent]'s first act is to resolve one.
+     * Two of them are session *lifecycle* rather than change hints — a reclaim
+     * still has to settle and unbind the runtime it names — and the rest are
+     * hints the lane fans out.
+     */
+    private fun applyGlobalEvent(event: GatewayEvent): Boolean =
+        if (event.type == "session.reclaimed") {
+            applyReclaimedEvent(event)
+        } else {
+            globalEvents.accept(event)
+        }
+
+    /**
+     * The backend reclaimed a live session this client may still be holding —
+     * idle TTL, LRU cap, or the WebSocket-orphan reap
+     * (`tui_gateway/session_lifecycle.py:275-286` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). It is *broadcast*, not
+     * session-targeted, so the runtime it names arrives in the payload rather
+     * than in the envelope.
+     */
+    private fun applyReclaimedEvent(event: GatewayEvent): Boolean {
+        val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
+        val reclaimedRuntime = payload.string("session_id")?.takeIf(String::isNotBlank) ?: return true
+        val termination = reclaimedTurnTermination(payload.string("reason"))
+        val mappedDurableId = identities.durableFor(reclaimedRuntime)
+        if (mappedDurableId != null) {
+            advanceLiveEventRevision(reclaimedRuntime)
+            val durableId = payload.string("stored_session_id")
+                ?.takeIf(String::isNotBlank)
+                ?.let { rehomeDurableSession(mappedDurableId, it, reclaimedRuntime) }
+                ?: mappedDurableId
+            settleStoppedRuntime(durableId, reclaimedRuntime, termination = termination)
+            identities.unbindRuntime(reclaimedRuntime)
+        }
+        return true
+    }
+
     /** Returns true when authoritative list metadata should be refreshed. */
     private fun applyEvent(event: GatewayEvent): Boolean {
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
-        if (event.type == "session.reclaimed") {
-            val reclaimedRuntime = payload.string("session_id")?.takeIf(String::isNotBlank) ?: return true
-            val termination = reclaimedTurnTermination(payload.string("reason"))
-            val mappedDurableId = identities.durableFor(reclaimedRuntime)
-            if (mappedDurableId != null) {
-                advanceLiveEventRevision(reclaimedRuntime)
-                val durableId = payload.string("stored_session_id")
-                    ?.takeIf(String::isNotBlank)
-                    ?.let { rehomeDurableSession(mappedDurableId, it, reclaimedRuntime) }
-                    ?: mappedDurableId
-                settleStoppedRuntime(durableId, reclaimedRuntime, termination = termination)
-                identities.unbindRuntime(reclaimedRuntime)
-            }
-            return true
-        }
-
         val runtimeId = event.runtimeSessionId ?: unscopedRuntimeId ?: return false
         var durableId = identities.durableFor(runtimeId) ?: return false
         if (event.type in LIVE_RUNTIME_EVENT_TYPES) advanceLiveEventRevision(runtimeId)
         return when (event.type) {
-            "gateway.ready" -> false
             "session.info" -> {
                 val eventDurable = payload.string("stored_session_id")
                     ?: payload.string("session_key")
