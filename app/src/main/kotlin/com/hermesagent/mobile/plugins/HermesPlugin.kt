@@ -4,7 +4,7 @@ package com.hermesagent.mobile.plugins
  * Scoped context handed to a plugin's [HermesPlugin.register].
  *
  * Direct Kotlin port of Desktop's `PluginContext`
- * (`apps/desktop/src/contrib/plugin.ts:60-75` @
+ * (`apps/desktop/src/contrib/plugin.ts:70-104` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface PluginContext {
@@ -34,13 +34,19 @@ interface PluginContext {
 
     /** Plugin-scoped persistence (`hermes.plugin.<id>.<key>`). */
     val storage: PluginStorage
+
+    /** Gateway JSON-RPC and the gateway event tap. */
+    val host: PluginHost
+
+    /** Plugin-scoped locale bundles, resolved against the app's locale. */
+    val i18n: PluginI18n
 }
 
 /**
  * The plugin contract.
  *
  * Direct Kotlin port of Desktop's `HermesPlugin`
- * (`apps/desktop/src/contrib/plugin.ts:77-83` @
+ * (`apps/desktop/src/contrib/plugin.ts:106-118` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
  */
 interface HermesPlugin {
@@ -62,6 +68,11 @@ interface HermesPlugin {
 
 /**
  * Build the scoped context handed to a plugin's `register`.
+ *
+ * [host] defaults to [UnavailablePluginHost]: a context built without a live
+ * connection still hands back a real door that refuses, rather than a null a
+ * plugin would have to guard. Production always passes the connection-backed
+ * one.
  */
 fun createPluginContext(
     pluginId: String,
@@ -70,6 +81,8 @@ fun createPluginContext(
     socket: PluginSocket,
     storage: PluginStorage,
     os: PluginOs,
+    host: PluginHost = UnavailablePluginHost,
+    locales: PluginLocaleRegistry = PluginLocaleRegistry.shared,
     onDispose: ((() -> Unit) -> Unit)? = null,
 ): PluginContext {
     val source = "plugin:$pluginId"
@@ -113,5 +126,9 @@ fun createPluginContext(
         override val os: PluginOs = os
 
         override val storage: PluginStorage = storage
+
+        override val host: PluginHost = host
+
+        override val i18n: PluginI18n = locales.scoped(pluginId, ::track)
     }
 }

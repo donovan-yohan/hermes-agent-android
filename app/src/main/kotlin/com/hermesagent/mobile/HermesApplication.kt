@@ -53,6 +53,7 @@ import com.hermesagent.mobile.data.voice.SpeechPlayer
 import com.hermesagent.mobile.data.voice.WakeWordRepository
 import com.hermesagent.mobile.plugins.AndroidPluginOs
 import com.hermesagent.mobile.plugins.ContributionRegistry
+import com.hermesagent.mobile.plugins.GatewayPluginHost
 import com.hermesagent.mobile.plugins.GatewayPluginRest
 import com.hermesagent.mobile.plugins.GatewayPluginSocket
 import com.hermesagent.mobile.plugins.PluginLoader
@@ -244,6 +245,9 @@ class HermesApplication : Application() {
             socket = pluginSocket,
             storageFactory = { pluginId -> ScopedPluginStorage(pluginId, preferences) },
             osFactory = { pluginId -> AndroidPluginOs(this, notificationSurface, pluginId) },
+            // Re-resolved per call by the door, so a plugin's host calls follow
+            // the same live connection the app itself uses.
+            hostFactory = { scope -> GatewayPluginHost(scope, gatewayConnection.client) },
         )
     }
 

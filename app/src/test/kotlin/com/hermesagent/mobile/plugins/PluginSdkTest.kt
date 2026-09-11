@@ -3,14 +3,19 @@ package com.hermesagent.mobile.plugins
 import com.hermesagent.mobile.data.gateway.GatewayHttp
 import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
 import com.hermesagent.mobile.data.gateway.GatewayHttpResult
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -177,6 +182,48 @@ class PluginSdkTest {
     }
 
     @Test
+    fun `disabling a plugin cancels the scope its host door runs on`() = runTest {
+        val store = PluginStore(backgroundScope, TestDecisionStore())
+        var scope: CoroutineScope? = null
+
+        val loader = PluginLoader(
+            registry = ContributionRegistry(),
+            store = store,
+            rest = GatewayPluginRest { null },
+            socket = GatewayPluginSocket { true },
+            storageFactory = { id -> ScopedPluginStorage(id, TestKeyValueStore()) },
+            osFactory = { TestPluginOs() },
+            hostFactory = { created ->
+                scope = created
+                // The door itself is not under test here — only the lifecycle
+                // the loader gives it.
+                object : PluginHost {
+                    override suspend fun request(method: String, params: JsonObject): PluginHostResult =
+                        PluginHostResult.Refused(0, "unused")
+
+                    override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
+                }
+            },
+        )
+
+        loader.discover(
+            listOf(
+                object : HermesPlugin {
+                    override val id = "hosted"
+                    override fun register(ctx: PluginContext) {}
+                }
+            )
+        )
+
+        val activated = scope
+        assertNotNull("an enabled plugin is given a host scope", activated)
+        assertTrue("that scope is live while the plugin is loaded", activated!!.isActive)
+
+        store.setPluginEnabled("hosted", false)
+        assertFalse("disabling the plugin cancels the scope its requests run on", activated.isActive)
+    }
+
+    @Test
     fun `pluginActive respects default-enabled and persisted decisions`() = runTest {
         val decisionStore = TestDecisionStore(mapOf("explicit-off" to false, "explicit-on" to true))
         val store = PluginStore(backgroundScope, decisionStore, initialDecisions = mapOf("explicit-off" to false, "explicit-on" to true))
@@ -289,6 +336,46 @@ class PluginSdkTest {
         assertNotNull(disposer)
         // Disposer executes without throwing or failing
         disposer()
+    }
+
+    @Test
+    fun `context wires the host door and disposal drops its locale bundles`() = runTest {
+        val locales = PluginLocaleRegistry(activeLocale = { "en" })
+        val called = mutableListOf<String>()
+        val host = object : PluginHost {
+            override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+                called.add(method)
+                return PluginHostResult.Success(JsonPrimitive(method))
+            }
+
+            override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
+        }
+        val disposed = mutableListOf<() -> Unit>()
+
+        val ctx = createPluginContext(
+            pluginId = "my-plugin",
+            registry = ContributionRegistry(),
+            rest = GatewayPluginRest { null },
+            socket = GatewayPluginSocket { true },
+            storage = ScopedPluginStorage("my-plugin", TestKeyValueStore()),
+            os = TestPluginOs(),
+            host = host,
+            locales = locales,
+            onDispose = { disposed.add(it) },
+        )
+
+        assertEquals("plugin:my-plugin", ctx.source)
+        assertSame("the host door is the one the loader built", host, ctx.host)
+
+        ctx.host.request("bot_relay.deliver")
+        assertEquals(listOf("bot_relay.deliver"), called)
+
+        ctx.i18n.register(mapOf("en" to mapOf("title" to "Board")))
+        assertEquals("Board", ctx.i18n.t("title"))
+
+        // Disabling the plugin runs every tracked disposer, i18n bundles included.
+        disposed.forEach { it() }
+        assertEquals("title", ctx.i18n.t("title"))
     }
 
     @Test
