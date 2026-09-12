@@ -283,7 +283,7 @@ class ProfileRailJourneyTest {
     }
 
     @Test
-    fun `a named scope hides the catalog and says where it went`() {
+    fun `a named scope hides the catalog and falls back to its own chats`() {
         launch()
         openSessions()
         compose.onNodeWithContentDescription("Filters").performClick()
@@ -296,6 +296,26 @@ class ProfileRailJourneyTest {
 
         compose.onNodeWithTag(PROJECT_PROFILE_SCOPE_NOTE).assertIsDisplayed()
         assertEquals(0, compose.countWithText("Hermes mobile"))
+        // The pane is not blank behind the note: the scope's own chats list by
+        // date, so the grouping control is not the only way out of the state.
+        assertEquals(1, compose.rows("work-row"))
+        assertEquals(0, compose.rows("home-row"))
+    }
+
+    @Test
+    fun `the named scope fallback heads the pane as sessions, not projects`() {
+        launch()
+        openSessions()
+        compose.onNodeWithContentDescription("Switch to work").performClick()
+        compose.onNodeWithContentDescription("Filters").performClick()
+        compose.onNodeWithText("Project").performClick()
+        compose.waitForIdle()
+
+        // `+` creating a project into a catalog this scope cannot list, and a
+        // field searching it, are both actions with nothing behind them.
+        compose.onNodeWithContentDescription("New session").assertIsDisplayed()
+        assertEquals(0, compose.nodesWithDescription("New project"))
+        assertEquals(1, compose.countWithText("SESSIONS"))
     }
 
     /**

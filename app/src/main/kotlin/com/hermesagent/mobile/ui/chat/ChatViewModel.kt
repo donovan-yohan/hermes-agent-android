@@ -240,6 +240,19 @@ enum class ProjectProfileScope {
 }
 
 /**
+ * Which [ProjectProfileScope] a sidebar profile scope puts the catalog in.
+ *
+ * One function rather than two readings: the rail's rendering and the search
+ * key both have to agree on whether a scope draws projects or sessions, and a
+ * second copy of the mapping is how they stop agreeing.
+ */
+fun projectProfileScopeOf(scope: ProfileScope): ProjectProfileScope = when {
+    scope.isDefault -> ProjectProfileScope.Own
+    scope.isAll -> ProjectProfileScope.Unified
+    else -> ProjectProfileScope.Other
+}
+
+/**
  * What the `archived=only` pool has said, for the endpoint and profile scope
  * the sidebar is standing in.
  *
@@ -616,11 +629,7 @@ internal class ChatViewModel(
         // belongs to the launch profile. A named scope must not browse it as if
         // it were that profile's.
         val profileScopeState = navigation.sidebarView.profileScope
-        val projectScope = when {
-            profileScopeState.isDefault -> ProjectProfileScope.Own
-            profileScopeState.isAll -> ProjectProfileScope.Unified
-            else -> ProjectProfileScope.Other
-        }
+        val projectScope = projectProfileScopeOf(profileScopeState)
         val selectedProject = navigation.projectId
             ?.takeIf { projectScope.showsCatalog }
             ?.let(cacheState.projects.projects::get)
@@ -841,8 +850,11 @@ internal class ChatViewModel(
                     // over projects and renders no session rows at all
                     // (`ui/sessions/SessionList.kt`), so a backend session
                     // search there costs a request per settled keystroke for an
-                    // answer nothing draws.
-                    sessionsView = grouping != SidebarGrouping.Project || projectId != null,
+                    // answer nothing draws. A scope that cannot list the catalog
+                    // draws session rows instead, so its field is a session
+                    // search however the grouping control is set.
+                    sessionsView = grouping != SidebarGrouping.Project || projectId != null ||
+                        !projectProfileScopeOf(scope).showsCatalog,
                 )
             }
                 .distinctUntilChanged()

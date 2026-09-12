@@ -73,7 +73,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
@@ -1113,7 +1112,7 @@ private fun SearchHits(query: String?, hits: List<SearchResultRow>) {
                     if (hit.url.isNotEmpty() && hit.title.isNotEmpty()) {
                         Text(
                             text = hit.url,
-                            style = HermesTheme.type.scaffoldMeta.copy(textAlign = TextAlign.Start),
+                            style = HermesTheme.type.scaffoldMeta,
                             color = tokens.textTertiary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
