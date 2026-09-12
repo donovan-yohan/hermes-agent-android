@@ -38,7 +38,12 @@ data class HermesTypeScale(
     val caption: TextStyle,
     /** Transcript scaffolding: tool rows, thinking headers, activity ticker. */
     val scaffold: TextStyle,
-    /** Durations and counts trailing a scaffold label. Tabular. */
+    /**
+     * Durations, counts and quiet notes beside a scaffold label. Carries no
+     * `textAlign`: a type token describes glyphs, and the moment it decides
+     * alignment too, every multi-line note that borrows it is silently
+     * right-ragged against a left-aligned column.
+     */
     val scaffoldMeta: TextStyle,
     val code: TextStyle,
     val sessionTitle: TextStyle,
@@ -98,7 +103,7 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
         bodyStrong = body.copy(fontWeight = FontWeight.SemiBold),
         caption = caption,
         scaffold = scaffold,
-        scaffoldMeta = scaffold.copy(fontSize = 11.sp, textAlign = TextAlign.End),
+        scaffoldMeta = scaffold.copy(fontSize = 11.sp),
         code = TextStyle(fontFamily = mono, fontSize = 13.sp, lineHeight = 19.sp),
         sessionTitle = TextStyle(fontFamily = sans, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
         sessionPreview = caption.copy(fontSize = 12.5f.sp),

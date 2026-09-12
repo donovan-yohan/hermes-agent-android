@@ -36,7 +36,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
@@ -149,7 +148,7 @@ private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit
             )
             Text(
                 "Files upload through the Gateway when you send. Folders aren't available yet.",
-                style = HermesTheme.type.scaffoldMeta.copy(textAlign = TextAlign.Start),
+                style = HermesTheme.type.scaffoldMeta,
                 color = tokens.scaffoldMeta.copy(alpha = 1f),
                 modifier = Modifier
                     .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
@@ -177,7 +176,7 @@ private fun AddRow(label: String, description: String, icon: HermesIcon, onClick
             Text(label, style = HermesTheme.type.body, color = tokens.textPrimary)
             Text(
                 description,
-                style = HermesTheme.type.scaffoldMeta.copy(textAlign = TextAlign.Start),
+                style = HermesTheme.type.scaffoldMeta,
                 color = tokens.scaffoldMeta,
             )
         }
