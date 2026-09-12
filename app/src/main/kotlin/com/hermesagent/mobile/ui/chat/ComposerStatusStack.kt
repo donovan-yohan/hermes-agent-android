@@ -84,7 +84,25 @@ fun ComposerStatusStack(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         status?.goal?.takeIf { it.state != ComposerGoalState.None }?.let { goal ->
-            StatusGroup("${activeSessionId}:goal", "Goal", defaultExpanded = true, fusedToComposer = fuseSingleGroup) {
+            StatusGroup(
+                stateKey = "${activeSessionId}:goal",
+                title = goal.state.groupLabel(),
+                // Only the task list opens itself:
+                // `defaultCollapsed={group.type !== 'todo'}`
+                // (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:236`
+                // @ `564aef2946`). That condition used to spare the goal group as
+                // well, and `5b181e511a` deliberately stopped sparing it.
+                //
+                // The exception is Unknown, which Desktop has no equivalent of:
+                // its goal state is a typed field, ours is parsed out of a text
+                // status line and is left neutral rather than fabricating an
+                // active goal (`GatewaySessionRepository.kt:5287-5291`). A header
+                // that cannot name the state cannot stand in for the body, so an
+                // unrecognised goal line keeps the group open — the raw text is
+                // then the only thing on screen that says anything at all.
+                defaultExpanded = goal.state == ComposerGoalState.Unknown,
+                fusedToComposer = fuseSingleGroup,
+            ) {
                 StatusText(goal.title ?: goal.rawText)
                 goal.detail?.takeIf(String::isNotBlank)?.let { StatusText(it) }
             }
@@ -348,6 +366,28 @@ private fun ComposerTodoState.spokenLabel(): String = when (this) {
     ComposerTodoState.Completed -> "Completed"
     ComposerTodoState.Cancelled -> "Cancelled"
     ComposerTodoState.Unknown -> "Unknown"
+}
+
+/**
+ * Desktop labels the goal group with the goal's state, not with the bare word
+ * "Goal": `Goal active` / `Goal paused` / `Goal waiting` / `Goal done`
+ * (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:60-69`, strings at
+ * `apps/desktop/src/i18n/en.ts:2894,2896-2898`, both @ `564aef2946`). That is
+ * what lets Desktop keep the group collapsed: the header alone still says what
+ * the goal is doing.
+ *
+ * Desktop's chain ends at `goalActive` for a status it cannot name; this app
+ * does not, because `Unknown` here means the parser refused the line rather
+ * than a typed field being absent, and calling that "active" would invent a
+ * state the Gateway never sent.
+ */
+private fun ComposerGoalState.groupLabel(): String = when (this) {
+    ComposerGoalState.Active -> "Goal active"
+    ComposerGoalState.Waiting -> "Goal waiting"
+    ComposerGoalState.Paused -> "Goal paused"
+    ComposerGoalState.Done -> "Goal done"
+    // None never reaches a header — the group does not render at all.
+    ComposerGoalState.Unknown, ComposerGoalState.None -> "Goal"
 }
 
 private fun ComposerBackgroundProcessState.label(): String = when (this) {

@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -51,8 +50,19 @@ fun ComposerQueueSection(
 ) {
     if (entries.isEmpty()) return
     val tokens = HermesTheme.tokens
-    var expanded by rememberSaveable(durableSessionId) { mutableStateOf(parked) }
-    LaunchedEffect(parked) { if (parked) expanded = true }
+    // Desktop's queue is a plain `StatusSection`, and that component's default
+    // is `defaultCollapsed = true` (`apps/desktop/src/components/chat/status-section.tsx:30`
+    // @ `564aef2946`): the panel starts shut whether or not the queue is parked.
+    // `5b181e511a` deleted the `defaultCollapsed={!parked}`, the
+    // `key={parked ? 'parked' : 'flowing'}` remount, and the comment arguing
+    // that a Stop has to open the panel — this app had ported all three
+    // faithfully, so they became drift the moment upstream reversed itself.
+    //
+    // The saveable key stays the durable session id and never `parked`, which
+    // is the other half of that deletion: without a park-keyed remount, a
+    // manual expansion survives the park it was opened before. The parked state
+    // and its Resume control live in the header, which is visible collapsed.
+    var expanded by rememberSaveable(durableSessionId) { mutableStateOf(false) }
 
     Column(
         modifier
