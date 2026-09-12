@@ -814,6 +814,13 @@ private fun ProjectRow(
 ) {
     val tokens = HermesTheme.tokens
     val countLabel = if (project.sessionCount == 1) "1 session" else "${project.sessionCount} sessions"
+    // Desktop's own words for the distinction, and its own reasoning for where
+    // the cue has to live: the glyph is `aria-hidden` and the tooltip only
+    // speaks on hover, "so the link's own name carries the auto cue — screen
+    // readers get it too" (`app/chat/sidebar/project-row.tsx` @ `564aef2946`).
+    // A phone has no hover at all, so that argument is stronger here, not
+    // weaker.
+    val autoSuffix = if (project.isAuto) " ($AUTO_DISCOVERED)" else ""
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -822,10 +829,30 @@ private fun ProjectRow(
                 .clickable(onClick = onOpen)
                 .testTag("Project row ${project.id}")
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp)
-                .semantics { contentDescription = "Open project ${project.label}. $countLabel" },
+                .semantics {
+                    contentDescription = "Open project ${project.label}$autoSuffix. $countLabel"
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Desktop swaps two glyphs — `repo` for an auto lane,
+            // `folder-library` for an explicit project. This app never carried
+            // the second one, and giving every project row a lead glyph is a
+            // separate parity change, so only the auto lane is marked. The
+            // distinction Desktop draws survives; the glyph it draws it *with*
+            // is half ported, and the ledger says so.
+            if (project.isAuto) {
+                // `HermesIconGlyph` clears its own semantics, which is what
+                // this needs: the row above already says the whole phrase, and
+                // a speaking glyph inside that merge would be a second name on
+                // one node.
+                // Tagged on a wrapper rather than on the glyph: `HermesIconGlyph`
+                // ends its modifier chain with `clearAndSetSemantics {}`, which
+                // would take the tag with everything else it clears.
+                Box(Modifier.testTag(AUTO_PROJECT_GLYPH)) {
+                    HermesIconGlyph(icon = HermesIcon.Repo, color = tokens.textTertiary)
+                }
+            }
             Text(
                 text = project.label,
                 style = HermesTheme.type.sessionTitle,
@@ -852,6 +879,14 @@ private fun ProjectRow(
 
 /** The one line that says the project catalog belongs to a single profile. */
 internal const val PROJECT_PROFILE_SCOPE_NOTE = "Project profile scope note"
+
+/**
+ * Desktop's `chat.sidebar.projects.autoDiscovered` verbatim
+ * (`i18n/en.ts` @ `564aef2946`), added upstream alongside the glyph swap.
+ */
+internal const val AUTO_DISCOVERED = "Auto-discovered"
+
+internal const val AUTO_PROJECT_GLYPH = "Auto-discovered project glyph"
 
 private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.Divider -> "divider-${bucket.name}"
