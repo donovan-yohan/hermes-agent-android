@@ -4,7 +4,7 @@ import java.util.Locale
 
 /**
  * Desktop's deterministic project-overview order at pinned upstream
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`:
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`:
  * Home first; then active explicit project, explicit before auto, projects with
  * sessions before empty discoveries, recent activity, and finally label.
  * Mobile deliberately does not port Desktop's drag-order persistence.

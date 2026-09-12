@@ -5,7 +5,7 @@ their own slices and are named per row.
 
 | | |
 |---|---|
-| Repo pin | `NousResearch/hermes-agent` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` (2026-09-08) |
+| Repo pin | `NousResearch/hermes-agent` @ `564aef2946c436500a5e80ee117b66b789b3f99a` (2026-09-08) |
 | Upstream head audited | `564aef2946c436500a5e80ee117b66b789b3f99a` (2026-09-10) |
 | Range | 501 commits; `apps/desktop/src/` 196 files, +10543 / −2260 |
 | Audited | 2026-09-12 |
@@ -54,22 +54,34 @@ next pass starts from a list rather than from the diff again.
 
 ## The pin itself
 
-Not moved here, and the reason is the precedent this repo already set. #195
-moved 6016 commits and found that a stamp may follow the pin only where the
-citation was re-derived at it; the ~765 `path:line` citations it could not
-confirm went *back* to the old SHA with their line numbers untouched, leaving
-the tree mixed-pin on purpose.
+**Moved**, in the commit that follows this audit. The owner asked for the pull
+rather than the proposal, and the range turned out to be cheap enough to do
+honestly rather than by assertion.
 
-This range is far kinder — 501 commits over two days, no file decomposition —
-but it is still more citations than one unattended pass can honestly re-derive,
-and `scripts/check-repo-invariants.sh:147` already names a `styles.css` span
-that moved. So the bump is proposed rather than taken, with the theme gate's
-evidence attached: **#228**.
+The rule is #195's: a stamp follows the pin only where the citation under it was
+*verified* at the new SHA. Here that verification is mechanical and line-exact —
+for every citation, the cited span is read out of both SHAs and compared byte for
+byte, so "unchanged file" is not assumed from a filename.
 
-What a bump would have to touch: `AGENTS.md`'s pin sentence (CLAUDE.md follows
-the symlink), `DesktopThemeLedger.PINNED_SHA`,
-`scripts/check-repo-invariants.sh`, `THIRD_PARTY_NOTICES.md`, and the
-`styles.css` line span in the invariant script.
+| | |
+|---|---|
+| Stamps moved | 81, across 51 files |
+| Left at `72a3277cd7` — a cited span moved | 32 files |
+| Left at `72a3277cd7` — a bare `:NNN` this pass could not attribute | 31 files |
+| Untouched `3ca096de` residue from #195 | still #196's |
+
+The second category is the interesting one. This repo cites continuations as a
+bare `` `:NNN` `` under a path named earlier in the prose, and attaching one to
+the wrong file mechanically is how a citation becomes confidently false. Where a
+bare span fell outside its candidate file's length at the pin, the stamp stayed
+rather than being guessed at.
+
+Pin declarations that moved with it: `AGENTS.md` (CLAUDE.md follows the
+symlink), `DesktopThemeLedger.PINNED_SHA`, `scripts/check-repo-invariants.sh`,
+`THIRD_PARTY_NOTICES.md` and `docs/workflows/review-desktop-parity.md` — each
+verified rather than assumed. The invariant script's `styles.css:236-241` /
+`:564-565` spans were hand-checked in both directions before its stamp was
+allowed to move.
 
 ## What was shipped from this audit
 

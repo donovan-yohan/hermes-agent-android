@@ -8,7 +8,7 @@ import org.junit.Test
  * The wordmark's fit, against real type metrics.
  *
  * Desktop's `.fit-text` carries a `2.75rem` floor (`wordmark.tsx:22` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) it can afford because its chat
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`) it can afford because its chat
  * column is never narrower than the one line it sets. This port stacks the
  * wordmark — `HERMES` over `AGENT` — so the run that has to fit is the wider
  * *line*, not the whole string, and the floor becomes reachable on every phone

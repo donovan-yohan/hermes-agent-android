@@ -4,7 +4,7 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, file
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`, file
  * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-31 from the
  * read-only checkout at `~/.hermes/hermes-agent`.
  *
@@ -21,7 +21,7 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd"
+    const val PINNED_SHA = "564aef2946c436500a5e80ee117b66b789b3f99a"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** `presets.ts:864-865` — `DEFAULT_SKIN_NAME`. */

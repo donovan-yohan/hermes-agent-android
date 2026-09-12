@@ -3,7 +3,7 @@ package com.hermesagent.mobile.plugins
 /**
  * Canonical contribution area identifiers, matching Desktop's area constants
  * (`apps/desktop/src/sdk/index.ts` and `contrib.ts` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 object PluginAreas {
     const val ROUTES_AREA = "routes"
