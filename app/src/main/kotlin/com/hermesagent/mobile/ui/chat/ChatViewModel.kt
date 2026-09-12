@@ -54,6 +54,7 @@ import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.data.gateway.APPROVAL_MODE_REJECTED
+import com.hermesagent.mobile.data.gateway.isSessionNotOwned
 import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
 import com.hermesagent.mobile.data.gateway.ApprovalMode
 import com.hermesagent.mobile.data.gateway.ApprovalModeOutcome
@@ -2332,10 +2333,17 @@ internal class ChatViewModel(
                 // Stage refusals arrive as GatewayRpcException whose message is
                 // already sanitized for people; anything else stays generic.
                 val safe = rpcFailure?.message?.takeIf(String::isNotBlank)
-                notice.value = if (ambiguous) {
-                    safe ?: "This message may have been sent. Check this session before trying again."
-                } else {
-                    safe ?: "The message was not sent. Reconnect to the Gateway and try again."
+                // A live-owner refusal is the one failure where the generic
+                // sentence is actively wrong: the Gateway is fine, reconnecting
+                // changes nothing, and trying again fails the same way for as
+                // long as the other surface holds the lease. Upstream's answer
+                // is an explicit escape rather than a retry (`6efe3a45c1`); the
+                // button that offers it is #220's remainder, and until it lands
+                // the sentence has to carry the whole instruction itself.
+                notice.value = when {
+                    failure.isSessionNotOwned() -> NOT_OWNED_NOTICE
+                    ambiguous -> safe ?: "This message may have been sent. Check this session before trying again."
+                    else -> safe ?: "The message was not sent. Reconnect to the Gateway and try again."
                 }
                 if (!ambiguous) restoreSubmittedDraft(sessionId, submittedPrompt)
             }
@@ -2350,6 +2358,16 @@ internal class ChatViewModel(
         if (activeSessionId.value == sessionId && draft.value.isEmpty()) draft.value = submittedPrompt
         viewModelScope.launch { persistDraft(sessionId, submittedPrompt) }
     }
+
+    /**
+     * What a live-owner refusal says.
+     *
+     * Deliberately not "reconnect and try again", which is what this used to
+     * say and is wrong twice over: the Gateway is answering, and retrying fails
+     * identically for as long as the other surface holds the lease.
+     */
+    private val NOT_OWNED_NOTICE: String =
+        "Another Hermes has this session open. Start a new session to send here."
 
     /** A failed or timed-out submit returns its drafts to Ready for retry. */
     private fun markAttachmentsUnsent(sessionId: String) =

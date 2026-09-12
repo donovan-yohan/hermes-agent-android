@@ -5769,6 +5769,30 @@ private fun Throwable.isUnsupportedGatewayCapability(): Boolean =
             message.contains("unsupported", ignoreCase = true)
         )
 
+/**
+ * Another surface holds this session's live-owner lease.
+ *
+ * The Gateway ships it as machine data: `prompt.submit` answers JSON-RPC 4090
+ * with `error.data.reason = SESSION_NOT_OWNED`. Desktop classifies off that
+ * code "reason code first, prose only for pre-contract backends"
+ * (`c80003ff57` @ `564aef2946`), having deleted its own sentence matcher
+ * because it "would silently miss a reworded or localized message". This keeps
+ * the same order and the same narrow fallback.
+ *
+ * Distinct from *busy*, which is the same code and the opposite advice: busy
+ * means wait or interrupt, and this means the session is being driven
+ * somewhere else and waiting will not help.
+ */
+internal fun Throwable.isSessionNotOwned(): Boolean {
+    val error = this as? GatewayRpcError ?: return false
+    if (error.reason != null) return error.reason.equals(SESSION_NOT_OWNED_REASON, ignoreCase = true)
+    return error.code == SESSION_REFUSED_CODE &&
+        error.message.contains("not owned", ignoreCase = true)
+}
+
+internal const val SESSION_NOT_OWNED_REASON: String = "SESSION_NOT_OWNED"
+private const val SESSION_REFUSED_CODE = 4090
+
 private fun Throwable.isAmbiguousGatewayMutation(): Boolean =
     this is GatewayRpcException && requestMayHaveBeenAccepted
 
