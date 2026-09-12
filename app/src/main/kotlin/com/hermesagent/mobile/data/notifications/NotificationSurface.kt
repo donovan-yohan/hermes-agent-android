@@ -60,6 +60,15 @@ data class NotificationPost(
     val approval: ApprovalTarget? = null,
     /** Non-null only for a question the shade can answer honestly; see `shadeQuestion`. */
     val question: QuestionTarget? = null,
+    /**
+     * The one extra line, when the person asked for one and the kind has a line
+     * it is allowed to carry.
+     *
+     * Null is not "the preference is off" — it is also every kind whose only
+     * available text is text a notification may never show. The decision is
+     * made once, in the notifier, so this layer cannot leak by forgetting.
+     */
+    val preview: String? = null,
 )
 
 /**

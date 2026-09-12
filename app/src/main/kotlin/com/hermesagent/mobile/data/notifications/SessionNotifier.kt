@@ -415,7 +415,8 @@ class SessionNotifier(
         if (!shouldFire(kind, durableSessionId)) return false
         if (!allowedByThrottle("${kind.key}:$durableSessionId", clock(), bypassThrottle)) return false
 
-        val title = sessions.value.sessions[durableSessionId]?.title.orEmpty().notificationSafeTitle()
+        val row = sessions.value.sessions[durableSessionId]
+        val title = row?.title.orEmpty().notificationSafeTitle()
         surface.post(
             NotificationPost(
                 kind = kind,
@@ -424,9 +425,49 @@ class SessionNotifier(
                 body = title.ifBlank { NotificationCopy.fallbackBody(kind) },
                 approval = approval,
                 question = question,
+                preview = previewFor(kind, question, row?.preview),
             ),
         )
         return true
+    }
+
+    /**
+     * The extra line, when there is one this kind may carry.
+     *
+     * The preference is the *first* gate, not the only one. What a notification
+     * may never show does not become showable because somebody turned a switch
+     * on, so the kinds whose only available text is forbidden text have no
+     * preview at any setting:
+     *
+     *  * **Approval** — its text is the command, and a command is the first
+     *    thing `docs/parity/notifications.md` forbids. Its `description`
+     *    describes that command, which is the same text one remove away.
+     *  * **A sudo or secret prompt** — the prompt and the variable name are
+     *    named in the same rule. These reach here as `Input` with no shade
+     *    question, which is exactly the case that falls through to null.
+     *  * **connectionLost, stillWaiting** — neither is about a message, so
+     *    there is no line to show that is not invented.
+     *
+     * That leaves a clarify's own question, and the line a turn ended on, which
+     * is the sidebar's own preview text and already display-safe. Both are
+     * redacted and bounded again here, because this is a different surface with
+     * a different width and no scroll.
+     */
+    private fun previewFor(
+        kind: NotificationKind,
+        question: QuestionTarget?,
+        sessionPreview: String?,
+    ): String? {
+        if (!settings.preview) return null
+        val text = when (kind) {
+            NotificationKind.Input -> latestPending[question?.key]
+                ?.let { it as? ClarifyPending }
+                ?.let(::shadeQuestion)
+                ?.question
+            NotificationKind.TurnDone, NotificationKind.TurnError -> sessionPreview
+            else -> null
+        }
+        return text?.notificationSafeTitle(MAX_NOTIFICATION_PREVIEW)?.takeIf(String::isNotBlank)
     }
 
     /**

@@ -168,3 +168,14 @@ internal fun String.notificationSafeTitle(limit: Int = MAX_NOTIFICATION_TITLE): 
     redact(this).replace(NOTIFICATION_WHITESPACE, " ").trim().take(limit)
 
 internal const val MAX_NOTIFICATION_TITLE = 120
+
+/**
+ * The preview line's own bound.
+ *
+ * Longer than a title because `BigTextStyle` expands and a question cut at 120
+ * characters is a question you have to open the app to finish reading — which
+ * is the thing the preview exists to avoid. Still bounded: the shade has no
+ * scroll, and an unbounded string from a Gateway is an unbounded string from a
+ * Gateway.
+ */
+internal const val MAX_NOTIFICATION_PREVIEW = 400

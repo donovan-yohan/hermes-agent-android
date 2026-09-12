@@ -76,6 +76,47 @@ class AndroidNotificationSurfaceTest {
         )
     }
 
+    /**
+     * The lock screen is the whole reason the preview is a preference, and the
+     * reason it changes nothing here: `publicVersion` carries the kind and has
+     * never carried anything else.
+     */
+    @Test
+    fun `a preview never reaches the lock screen`() {
+        AndroidNotificationSurface(context).post(
+            questionPost(emptyList()).copy(preview = "Redis or Postgres?"),
+        )
+
+        val public = posted(NotificationKind.Input, SESSION).publicVersion
+        assertNotNull(public)
+        assertEquals(NotificationCopy.INPUT_TITLE, public!!.title())
+        assertNull(public.text())
+    }
+
+    @Test
+    fun `a preview takes the body and moves the conversation to the header`() {
+        AndroidNotificationSurface(context).post(
+            questionPost(emptyList()).copy(preview = "Redis or Postgres?"),
+        )
+
+        val notification = posted(NotificationKind.Input, SESSION)
+        assertEquals(NotificationCopy.INPUT_TITLE, notification.title())
+        assertEquals("Redis or Postgres?", notification.text())
+        // The chat's name is still there, on the line beside the app name: a
+        // body that repeats it would spend the one line the preview wants.
+        assertEquals("Refactor the parser", notification.extras.getString(Notification.EXTRA_SUB_TEXT))
+    }
+
+    @Test
+    fun `without a preview nothing about the layout moves`() {
+        AndroidNotificationSurface(context).post(questionPost(emptyList()))
+
+        val notification = posted(NotificationKind.Input, SESSION)
+        assertEquals(NotificationCopy.INPUT_TITLE, notification.title())
+        assertEquals("Refactor the parser", notification.text())
+        assertNull(notification.extras.getString(Notification.EXTRA_SUB_TEXT))
+    }
+
     @Test
     fun `a locked screen is told the kind and nothing about the conversation`() {
         AndroidNotificationSurface(context).post(approvalPost())

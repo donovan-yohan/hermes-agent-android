@@ -40,7 +40,7 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
     }
 
     override fun post(post: NotificationPost) {
-        val builder = builder(post.kind, post.durableSessionId, post.title, post.body)
+        val builder = builder(post.kind, post.durableSessionId, post.title, post.body, post.preview)
 
         post.approval?.let { target ->
             for (choice in shadeApprovalChoices(target.choices)) {
@@ -176,10 +176,18 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         durableSessionId: String,
         title: String,
         body: String,
+        preview: String? = null,
     ) = NotificationCompat.Builder(context, kind.channelId)
         .setSmallIcon(SMALL_ICON)
         .setContentTitle(title)
-        .setContentText(body)
+        // With a preview the conversation moves up to the header line beside
+        // the app name and the preview takes the body, because a body that
+        // repeats the name of the chat you are already being told about is the
+        // line worth spending. Without one, nothing moves: this is exactly the
+        // kind-then-conversation shape the surface has always had.
+        .setSubText(preview?.let { body })
+        .setContentText(preview ?: body)
+        .setStyle(preview?.let { NotificationCompat.BigTextStyle().bigText(it) })
         .setCategory(categoryFor(kind))
         .setPriority(priorityFor(kind))
         .setGroup(groupKey(durableSessionId))

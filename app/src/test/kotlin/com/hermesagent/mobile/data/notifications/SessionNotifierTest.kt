@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -123,6 +124,71 @@ class SessionNotifierTest {
             ),
             world.surface.posted(),
         )
+    }
+
+    @Test
+    fun `a question carries its own question as the preview`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = clarify("s1", question = "Redis or Postgres?")
+        runCurrent()
+
+        assertEquals("Redis or Postgres?", world.surface.posts.single().preview)
+    }
+
+    /**
+     * The preference is the first gate, not the only one. An approval's text is
+     * the command, which `docs/parity/notifications.md` forbids outright — and
+     * a forbidden line does not become showable because a switch is on.
+     */
+    @Test
+    fun `an approval has no preview at any setting`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = approval("s1", command = "rm -rf /tmp/build")
+        runCurrent()
+
+        assertNull(world.surface.posts.single().preview)
+    }
+
+    @Test
+    fun `the preview preference silences the preview and nothing else`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.settings.value = NotificationSettings(preview = false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = clarify("s1", question = "Redis or Postgres?")
+        runCurrent()
+
+        val post = world.surface.posts.single()
+        assertNull(post.preview)
+        // The notification itself is unaffected: this is a preference about one
+        // line, not about whether the person is told.
+        assertEquals(NotificationKind.Input, post.kind)
+    }
+
+    @Test
+    fun `a finished turn previews the line it ended on`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.sessions.value = SessionCacheState(
+            sessions = mapOf("s1" to summary("s1", "Refactor auth").copy(preview = "Done — 3 files changed.")),
+        )
+        world.start()
+        world.leaveQuietWindow()
+
+        world.turns.emit(GatewayTurnOutcome("s1", failed = false))
+        runCurrent()
+
+        assertEquals("Done — 3 files changed.", world.surface.posts.single().preview)
     }
 
     @Test
@@ -1007,6 +1073,7 @@ private fun approval(
 private fun clarify(
     durableSessionId: String,
     connectionGeneration: Long = 1L,
+    question: String = "Which branch?",
 ): Map<PendingInputKey, PendingInputRequest> {
     val key = PendingInputKey(
         connectionGeneration,
@@ -1019,7 +1086,7 @@ private fun clarify(
             key = key,
             durableSessionId = durableSessionId,
             runtimeSessionId = key.runtimeSessionId,
-            question = "Which branch?",
+            question = question,
         ),
     )
 }
