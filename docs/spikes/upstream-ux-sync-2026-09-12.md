@@ -44,13 +44,20 @@ app has nothing).
 | An auto-discovered repo renders the repo glyph and an `Auto-discovered` accessible name, so it cannot be mistaken for an explicit project | `03b5460ad9`, `fc36288832` | `isAuto` is parsed and used for *sorting* only (`ProjectGrouping.kt:18-19`) — which is exactly the state Desktop just fixed | drift | #222 |
 | Vault: `vault.code.request`, `vault.save_login.request` and `vault.unlock.request` park a turn and raise the `input` notification kind, each with its own `.expire` and `.respond` | `input-requests.ts:367-448` @ head | `PendingInputKind` is `{Clarify, Approval, Sudo, Secret}`; the three events are received and dropped, so a session parked on a vault prompt shows nothing at all | gap | #223 |
 | A count of messages below the thread viewport | `342f76a7c2` | No affordance | gap | #224 |
-| Composer status groups stay collapsed except todos | `5b181e511a` | Needs a read against `CodingStatusRow` before it can be classified | unclassified | #225 |
-| Background sessions stop polling when they are not the foreground session | `b4ccbccf9c` | Needs a read against the app's own foreground isolation before it can be classified | unclassified | #225 |
+| Composer status groups stay collapsed except todos; a parked queue no longer force-expands | `5b181e511a` | The goal group opens by default (`ComposerStatusStack.kt:89`) and the queue force-expands on every park (`ComposerQueueSection.kt:54-55`) — both faithful ports of Desktop *before* the commit. Todos, subagents and background already match | drift | #232 |
+| Background sessions stop polling when they are not the foreground session | `b4ccbccf9c` | No periodic poll exists to gate: `process.list` runs only as a session-change seed (`ChatViewModel.kt:3056-3058`), an event-driven refresh (`GatewaySessionRepository.kt:5184-5200`) and a manual Refresh (`ComposerStatusStack.kt:140-144`), and one stack is composed, for the active session (`ChatScreen.kt:812-814`). The signals Desktop gates on already exist (`NotificationPresence.kt:24`, `:27`). Desktop's safety net for a silently exited process is absent and unledgered — #233 | aligned | — |
 | Sticky user messages mask the thread behind them with a solid surface | `e7c819a7e1`, `styles.css` | `docs/parity/sticky-user-prompt-port.md` predates the change | drift | #226 |
 | One Plugins surface: Capabilities → Plugins owns agent plugins, desktop plugins, install and the catalog; `settings.sectionEntries.plugins` is gone from `en.ts` | `61afcde8f9` | Settings → Plugins, bundled-only, quoting a key that no longer exists | drift | #227 |
 
-The two `unclassified` rows are deliberately not guessed. They are named so the
-next pass starts from a list rather than from the diff again.
+Both rows that were left `unclassified` in the first pass have since been
+settled by reading, not guessed (#225). One turned out to be drift with a twist:
+this app faithfully ports the behaviour Desktop *reversed* in `5b181e511a`, so
+the divergence was created by upstream changing its mind rather than by anything
+this port did. The other is aligned for a structural reason — there is no
+periodic poll here to gate — with one honest caveat carried to #233: the app is
+calm partly because it never had the safety net Desktop polls for, and a
+silently exited process reads `Running` until the session is left or Refresh is
+pressed.
 
 ## The pin itself
 
@@ -90,5 +97,9 @@ allowed to move.
 - **#220** — `SESSION_NOT_OWNED` classified off the reason code and given an
   escape, ported in this same pass. The app's existing notice for this refusal
   was already recorded as misleading before upstream shipped an answer for it.
+
+- **#225** — both unclassified rows settled, and the two issues that came out of
+  them filed: #232 (the collapse-default drift) and #233 (the missing safety net
+  behind the aligned verdict).
 
 Everything else is filed and unstarted.
