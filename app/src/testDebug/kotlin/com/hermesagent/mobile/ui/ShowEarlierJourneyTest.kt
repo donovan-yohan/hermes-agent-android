@@ -11,6 +11,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -37,6 +40,12 @@ import org.robolectric.annotation.Config
  * simply stops existing once a session is exhausted
  * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:1033-1041` @
  * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ *
+ * The lower half of this file is the second way in (#221): reaching the head of
+ * the transcript pages through the same path, as Desktop's clamped-top wheel
+ * does (`list.tsx:959-994` @ `564aef2946c436500a5e80ee117b66b789b3f99a`). The
+ * pill's own tests are above and unchanged, because the automatic route adds a
+ * way in rather than replacing one.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -126,6 +135,45 @@ class ShowEarlierJourneyTest {
                 rowId = TranscriptRowId(turn * 2L + 1),
             ),
         )
+    }
+
+    /**
+     * A reply long enough that one pull cannot carry the viewport from the tail
+     * to the head, however hard it flings.
+     */
+    private fun longTail(): List<TranscriptEntry> = listOf(
+        UserTurn("row-120", "tell me something long", NOW, rowId = TranscriptRowId(120)),
+        AssistantTurn(
+            id = "row-121",
+            markdown = (1..400).joinToString("\n\n") { "Paragraph $it of the reply." },
+            atMillis = NOW,
+            rowId = TranscriptRowId(121),
+        ),
+    )
+
+    /** A session that fits its own screen, with a page still behind it. */
+    private fun shortSession(): List<TranscriptEntry> = listOf(
+        UserTurn("row-120", "hello", NOW, rowId = TranscriptRowId(120)),
+    )
+
+    private fun transcriptList() = compose.onAllNodes(hasScrollToIndexAction())[0]
+
+    /**
+     * Pull the transcript downwards — towards earlier turns — with a finger.
+     *
+     * This is the gesture, not a call into the list: only a real drag reaches
+     * the nested-scroll seam the auto-page listens on, which is the whole point
+     * of reading what the list REFUSED rather than where it sits.
+     */
+    private fun pull() {
+        transcriptList().performTouchInput { swipeDown() }
+        compose.waitForIdle()
+    }
+
+    /** Push the transcript upwards, away from the head. */
+    private fun push() {
+        transcriptList().performTouchInput { swipeUp() }
+        compose.waitForIdle()
     }
 
     @Test
@@ -277,6 +325,124 @@ class ShowEarlierJourneyTest {
         compose.onNodeWithText(MID_REPLY).assertIsDisplayed()
     }
 
+    /**
+     * The second way in (#221). Desktop pages through the same `showEarlier()`
+     * path when the reader is at the clamped top
+     * (`apps/desktop/src/components/assistant-ui/thread/list.tsx:959-994` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`); here it is a drag the list
+     * could not consume, and the pill above is untouched.
+     *
+     * One pull is one ask. A swipe is dozens of move events against the clamp,
+     * and asking on each of them is how an auto-pager walks a whole conversation
+     * in, so the count is the claim as much as the paging is.
+     */
+    @Test
+    fun aPullAgainstTheHeadAsksOnceForTheWholeGesture() {
+        launch(tail(), canShowEarlier = true)
+        scrollToTop()
+
+        pull()
+
+        assertEquals(1, presses)
+    }
+
+    /**
+     * The failure this gate exists for: a conversation shorter than the screen
+     * is at its head and at its tail at once, so without Desktop's `isAtBottom`
+     * gate every short session would page its own history the moment anything
+     * brushed the list. That reader has the control in front of them already.
+     */
+    @Test
+    fun aSessionThatFitsItsOwnScreenNeverPagesItself() {
+        launch(shortSession(), canShowEarlier = true)
+
+        pull()
+
+        assertEquals(0, presses)
+        compose.onNodeWithText(LABEL).assertIsDisplayed()
+    }
+
+    /**
+     * Reading upwards through a long reply is not an ask. What keeps it out is
+     * the instrument itself: a list with room to scroll consumes the whole
+     * gesture, so there is no refused delta to read as intent.
+     */
+    @Test
+    fun aPullMidTranscriptAsksForNothing() {
+        launch(longTail(), canShowEarlier = true)
+
+        pull()
+
+        assertEquals(0, presses)
+    }
+
+    /**
+     * A pull that fetched nothing — the in-flight guard swallowing it, a
+     * refused page, a page whose rows all dedupe away — leaves the reader on
+     * the head, and pulling again from there asks again. That is the pill's own
+     * behaviour under a second press, and the reader is deliberately repeating
+     * themselves, which is what a second wheel notch means upstream too.
+     */
+    @Test
+    fun aSecondPullAfterARefusedPageAsksAgain() {
+        launch(tail(), canShowEarlier = true)
+        scrollToTop()
+
+        pull()
+        pull()
+
+        assertEquals(2, presses)
+        compose.onNodeWithText(LABEL).assertIsDisplayed()
+    }
+
+    /**
+     * The automatic route is the same route: a page it asked for is anchored
+     * and restored exactly as a pressed one is.
+     *
+     * This is what pins the ask to the *end* of the gesture rather than to the
+     * frame the head was reached on. A `LazyListState` scroll asked for at
+     * `MutatePriority.Default` while the reader's finger owns the list at
+     * `UserInput` is cancelled rather than queued, so a page delivered mid-drag
+     * lands with the pane's anchor thrown away — and the reader is dropped at
+     * the very beginning of the history they pulled in, several screens from
+     * where they were reading. Spending the reach once the drag and its fling
+     * are over leaves the restore the list to itself.
+     */
+    @Test
+    fun aPageThePullAskedForLandsWhereTheReaderWasReading() {
+        launch(tail(), canShowEarlier = true) {
+            state = chatState(tallOlderPage() + tail(), canShowEarlier = true)
+        }
+        scrollToTop()
+        compose.onNodeWithContentDescription(ANCHOR_TURN).assertIsDisplayed()
+
+        pull()
+
+        assertEquals(1, presses)
+        compose.onNodeWithContentDescription(ANCHOR_TURN).assertIsDisplayed()
+        compose.onNodeWithText(LABEL).assertDoesNotExist()
+        compose.onNodeWithContentDescription(OLDEST_EARLIER_TURN).assertDoesNotExist()
+    }
+
+    /**
+     * Reading on is not a one-shot: a gesture that leaves the head asks for
+     * nothing, and the next one that reaches it asks again.
+     */
+    @Test
+    fun aReaderWhoLeavesTheHeadAndComesBackGetsAnotherPage() {
+        launch(tail(), canShowEarlier = true)
+        scrollToTop()
+        pull()
+        assertEquals(1, presses)
+
+        push()
+        assertEquals(1, presses)
+
+        pull()
+
+        assertEquals(2, presses)
+    }
+
     private companion object {
         const val SESSION = "durable-a"
         const val NOW = 1_800_000_000_000L
@@ -286,6 +452,9 @@ class ShowEarlierJourneyTest {
 
         /** The user turn the reader is parked on when the page is asked for. */
         const val ANCHOR_TURN = "You said: tell me something long"
+
+        /** The first turn of a prepended page — the top of what just arrived. */
+        const val OLDEST_EARLIER_TURN = "You said: earlier ask 1"
 
         /** A paragraph deep inside the reply, well past the anchor turn. */
         const val MID_REPLY = "Paragraph 30 of the reply."
