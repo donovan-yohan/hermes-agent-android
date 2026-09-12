@@ -22,7 +22,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * when the target "did not become active" and the switcher toasts
  * `switchConnectionFailed` (`apps/desktop/src/store/connections.ts:415`,
  * `app/chat/sidebar/connection-switcher.tsx:131-132` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). The cases are separated rather
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`). The cases are separated rather
  * than collapsed into a boolean because two of them are not failures to report:
  * a switch nobody asked for, and a row whose own line already explains that
  * nothing was going to dial it.

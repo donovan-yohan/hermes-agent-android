@@ -10,7 +10,7 @@ import kotlin.system.measureTimeMillis
  * The ANSI parser's contract, in two halves.
  *
  * The first half is Desktop's own fixture set — `apps/desktop/src/lib/
- * ansi.test.ts` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` — ported case for
+ * ansi.test.ts` @ `564aef2946c436500a5e80ee117b66b789b3f99a` — ported case for
  * case, so a drift in the rule set is a red test here rather than a colour that
  * quietly stops appearing on a phone.
  *
@@ -339,7 +339,7 @@ class AnsiTest {
 
     // -- stripAnsi (ansi.ts:177-186) ------------------------------------------
 
-    // Desktop's `ansi.test.ts` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`
+    // Desktop's `ansi.test.ts` @ `564aef2946c436500a5e80ee117b66b789b3f99a`
     // exercises `parseAnsi`, `hasAnsiCodes` and `ansiColorClass` only — it has
     // no `stripAnsi` case at all. So these mirror the *rule set* the two
     // functions share rather than fixtures that exist upstream, and add the two
