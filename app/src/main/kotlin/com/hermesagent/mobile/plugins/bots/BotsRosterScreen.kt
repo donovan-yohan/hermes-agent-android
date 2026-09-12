@@ -25,9 +25,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -53,6 +55,12 @@ class BotsActions(
     val onActivityFilterChange: (RosterActivityFilter) -> Unit = {},
     val onSetHiddenExpanded: (Boolean) -> Unit = {},
     val onClearFilters: () -> Unit = {},
+    /**
+     * The surface became visible. Desktop refetches the roster the moment its
+     * socket opens and then on its poll; this destination is entered and left
+     * rather than left mounted, so entering it is what re-reads the roster.
+     */
+    val onResume: () -> Unit = {},
 )
 
 @Composable
@@ -62,6 +70,15 @@ fun BotsRosterScreen(
     modifier: Modifier = Modifier,
     actions: BotsActions = BotsActions(),
 ) {
+    // Desktop's roster has no interval of its own: it refetches on the socket
+    // opening and on its query poll. A phone is not holding this pane open
+    // while someone works elsewhere, so the surface's own resume is the second
+    // trigger, and there is nothing to stop on the way out.
+    LifecycleResumeEffect(Unit) {
+        actions.onResume()
+        onPauseOrDispose {}
+    }
+
     val nowMillis = remember(state.sections, state.hiddenSections) { System.currentTimeMillis() }
 
     OverlayScaffold(title = BOTS_TITLE, onBack = onBack, modifier = modifier) {
@@ -89,6 +106,11 @@ fun BotsRosterScreen(
             Hairline()
             Spacer(Modifier.height(12.dp))
 
+            if (state.stale) {
+                StaleNotice(BotsRosterCopy.refreshFailed(state.connectionUp))
+                Spacer(Modifier.height(8.dp))
+            }
+
             when {
                 state.phase == BotsRosterPhase.Loading -> RosterMessage(
                     title = BOTS_TITLE,
@@ -112,10 +134,30 @@ fun BotsRosterScreen(
                     description = BotsRosterCopy.EMPTY_DESC,
                 )
 
-                state.presentation.allBotsHidden -> RosterMessage(
-                    title = BotsRosterCopy.ALL_HIDDEN,
-                    description = BotsRosterCopy.ALL_HIDDEN_DESC,
-                )
+                state.presentation.allBotsHidden && !state.hiddenExpanded -> Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(top = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // Desktop carries the way out of this state with it —
+                    // `allBotsHidden && !hiddenExpanded` renders the explainer
+                    // *and* a button that sets `$showHiddenBots`
+                    // (`roster-pane-content.tsx:93-105` @ the pin). The reveal
+                    // otherwise lives in [RosterList], which this branch never
+                    // draws, and the state is a dead end.
+                    EmptyState(
+                        title = BotsRosterCopy.ALL_HIDDEN,
+                        description = BotsRosterCopy.ALL_HIDDEN_DESC,
+                        icon = HermesIcon.Question,
+                        centered = true,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(
+                        label = BotsRosterCopy.SHOW_HIDDEN,
+                        onClick = { actions.onSetHiddenExpanded(true) },
+                    )
+                }
 
                 state.filteredToNothing -> RosterFailure(
                     description = if (state.searchQuery.isBlank()) {
@@ -140,13 +182,22 @@ private fun RosterList(
     actions: BotsActions,
 ) {
     val tokens = HermesTheme.tokens
+    // A header belongs to a user section, so with none made Desktop draws the
+    // plain flat list and the loose bucket stays unlabelled
+    // (`roster-pane-sections.tsx`: "No sections made: the plain list, exactly
+    // as before this feature"). Unassigned's label is a drop-zone heading, and
+    // there is no drop zone without sections.
+    val labelled = state.presentation.hasUserSections
     LazyColumn(Modifier.fillMaxSize()) {
         for (section in state.sections) {
-            item(key = section.key) { SectionHeader(section.name) }
+            if (labelled) {
+                item(key = section.key) { SectionHeader(section.name) }
+            }
             items(section.rows, key = { "${section.key}:${it.rosterKey}" }) { row ->
                 BotRowItem(
                     row = row,
                     nowMillis = nowMillis,
+                    ageMillis = botRowAgeMillis(row, nowMillis),
                     pinned = row.rosterKey in state.pinnedKeys,
                     hidden = false,
                     attention = state.attentionByKey[row.rosterKey],
@@ -176,8 +227,10 @@ private fun RosterList(
                     }
                 } else {
                     for (section in state.hiddenSections) {
-                        item(key = "hidden:${section.key}") {
-                            SectionHeader(section.name)
+                        if (labelled) {
+                            item(key = "hidden:${section.key}") {
+                                SectionHeader(section.name)
+                            }
                         }
                         items(
                             section.rows,
@@ -186,6 +239,7 @@ private fun RosterList(
                             BotRowItem(
                                 row = row,
                                 nowMillis = nowMillis,
+                                ageMillis = botRowAgeMillis(row, nowMillis),
                                 pinned = row.rosterKey in state.pinnedKeys,
                                 hidden = true,
                                 attention = state.attentionByKey[row.rosterKey],
@@ -197,6 +251,27 @@ private fun RosterList(
         }
     }
 }
+
+/**
+ * The stale banner: Desktop keeps the last good list and says why it is old
+ * rather than blanking it (`roster-pane-content.tsx:75-79` @ the pin).
+ */
+@Composable
+private fun StaleNotice(text: String) {
+    Text(
+        text = text,
+        style = HermesTheme.type.caption,
+        color = HermesTheme.tokens.textTertiary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(STALE_TAG)
+            .background(HermesTheme.tokens.cardSurface, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    )
+}
+
+/** The stale banner's test handle. */
+internal const val STALE_TAG = "Bots stale"
 
 @Composable
 private fun SectionHeader(name: String) {
@@ -221,6 +296,8 @@ private fun SectionHeader(name: String) {
 private fun BotRowItem(
     row: BotRosterRow,
     nowMillis: Long,
+    /** The stamp the age label reads — chat activity, or a live worker. */
+    ageMillis: Long?,
     pinned: Boolean,
     hidden: Boolean,
     attention: BotAttention?,
@@ -259,9 +336,9 @@ private fun BotRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            row.lastActiveMillis?.let { lastActiveMillis ->
+            ageMillis?.let { stamp ->
                 Text(
-                    text = rowAgeLabel(lastActiveMillis, nowMillis),
+                    text = rowAgeLabel(stamp, nowMillis),
                     style = HermesTheme.type.scaffoldMeta,
                     color = tokens.scaffoldMeta,
                 )
