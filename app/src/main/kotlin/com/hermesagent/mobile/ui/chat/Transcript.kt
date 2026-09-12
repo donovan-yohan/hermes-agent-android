@@ -51,6 +51,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
@@ -76,6 +79,7 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -204,9 +208,91 @@ fun Transcript(
     }
 
     val newestAssistantEntryId = remember(entries) { entries.findLast { it is AssistantTurn }?.id }
+
+    // Reaching the head of the transcript pages earlier turns through the same
+    // `onShowEarlier` path the pill uses, so a reader who keeps scrolling up
+    // gets history without having to find a control
+    // (`apps/desktop/src/components/assistant-ui/thread/list.tsx:959-994` and
+    // `transcript-window.tsx:36-74` @ `564aef2946c436500a5e80ee117b66b789b3f99a`).
+    //
+    // WHY this listens to what the list REFUSED rather than to where it sits.
+    // Desktop has to add a `wheel` listener because a browser emits no further
+    // `scroll` event once `scrollTop` is clamped at 0 — which is exactly where
+    // the reader who wants more already is. A phone has no wheel; it has a drag
+    // and a fling. Compose hands us the thing Desktop reconstructs from that
+    // wheel: `onPostScroll` and `onPostFling` report the part of the gesture the
+    // list could not consume, and that is non-zero only at a hard clamp. A
+    // positive `y` there means the finger is still pulling towards earlier turns
+    // with nothing left to give — the honest equivalent of an upward wheel notch
+    // at `scrollTop` 0, and it covers both halves of a touch gesture.
+    //
+    // It also has a property the wheel does not. A programmatic scroll —
+    // `ChatScreen`'s opening jump to the tail, and its prepend anchor restore —
+    // moves a `LazyListState` without dispatching nested scroll at all, so
+    // neither can be mistaken for reading intent. That is what lets this gate
+    // stay honest without the pane having to tell the transcript when its load
+    // has settled, which is what Desktop's `loadSettled` is for.
+    //
+    // WHY the reach is noticed during the gesture and spent at the end of it.
+    // A wheel notch is discrete: Desktop can ask on each one and be asking once.
+    // A drag is continuous, and asking on every frame of one would walk a whole
+    // conversation in. Worse, the pane anchors the prepend by scrolling the list
+    // back to the row the reader was on, and a `LazyListState` scroll made while
+    // the reader's finger holds the list is cancelled rather than queued — the
+    // drag owns the scroll at `MutatePriority.UserInput` and the restore asks at
+    // `Default`. A page delivered mid-drag would therefore land with its anchor
+    // thrown away, dropping the reader at the top of the history they pulled in.
+    // So the gesture records that it reached the head, and `onPostFling` —
+    // which runs once, after the drag has ended and its fling has run out —
+    // spends it. One gesture is one ask, and the restore has the list to itself.
+    val latestShowEarlier = rememberUpdatedState(onShowEarlier)
+    // Nothing composes off this, so a reach never recomposes the list.
+    val reachedHead = remember(listState) { mutableStateOf(false) }
+    val topEdgeReach = remember(listState) {
+        object : NestedScrollConnection {
+            /** @param deltaPx what the list refused; positive is towards earlier turns. */
+            fun notice(deltaPx: Float) {
+                if (
+                    shouldAutoShowEarlier(
+                        canShowEarlier = latestShowEarlier.value != null,
+                        tailOnScreen = !listState.canScrollForward,
+                        firstRowIndex = listState.firstVisibleItemIndex,
+                        firstRowOffsetPx = listState.firstVisibleItemScrollOffset,
+                        reachDeltaPx = deltaPx,
+                    )
+                ) {
+                    reachedHead.value = true
+                }
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                // Every source counts: a fling is the reader's own drag still
+                // travelling, and the scrolls this app performs for itself never
+                // arrive here at all.
+                notice(available.y)
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                // A fling that died against the head is a reach too: the reader
+                // threw the list at its first turn and it had nowhere to go.
+                notice(available.y)
+                if (reachedHead.value) {
+                    reachedHead.value = false
+                    latestShowEarlier.value?.invoke()
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().nestedScroll(topEdgeReach),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(spacing.blockGap),
     ) {
@@ -300,6 +386,55 @@ private fun ShowEarlierRow(onClick: () -> Unit) {
                 .wrapContentHeight(Alignment.CenterVertically),
         )
     }
+}
+
+/**
+ * Whether a reach at the head of the transcript should page earlier turns
+ * through the same path [ShowEarlierRow] presses.
+ *
+ * Desktop's predicate, gate for gate
+ * (`shouldAutoShowEarlier`, `apps/desktop/src/components/assistant-ui/thread/transcript-window.tsx:53-74`
+ * @ `564aef2946c436500a5e80ee117b66b789b3f99a`). Every gate names a state where
+ * the list sits at its head without the reader meaning *show me earlier*:
+ *
+ * - [canShowEarlier] is Desktop's `action != null`: there is a page to ask for
+ *   at all. The caller hands this screen `onShowEarlier = null` when there is
+ *   not, which is also when the pill does not render.
+ * - [tailOnScreen] is Desktop's `isAtBottom`. A transcript short enough to fit
+ *   the viewport is at its head and at its tail at once, so every short session
+ *   that opened would page itself on the first stray pull. That reader has the
+ *   pill in front of them already.
+ * - [firstRowIndex] and [firstRowOffsetPx] are Desktop's `scrollTop`. Desktop
+ *   allows itself 48 px of slack there because a wheel notch can stop short of
+ *   0 and a scroll event is all it has to read; this reads a delta the list
+ *   *refused*, which exists only at the hard clamp, so the head is exactly
+ *   `(0, 0)` and there is nothing for slack to absorb. One fewer knob than
+ *   upstream, for the same reason upstream deleted its injectable one. A
+ *   refused delta already implies the clamp, which is what keeps a
+ *   mid-transcript pull out with or without this gate; the gate is here because
+ *   a fling reports its remainder from a suspending callback that resumes after
+ *   the gesture, by which time a programmatic scroll may have moved the list.
+ * - [reachDeltaPx] is Desktop's `wheelDeltaY`: the unconsumed part of the drag
+ *   or fling. Positive is towards earlier turns.
+ *
+ * Desktop's `restorePending` has no input here. It stops a wheel that keeps
+ * turning from asking over a parked prepend; the caller of this predicate
+ * cannot ask more than once per gesture, because it notices a reach during the
+ * gesture and spends it when the gesture ends.
+ */
+internal fun shouldAutoShowEarlier(
+    canShowEarlier: Boolean,
+    tailOnScreen: Boolean,
+    firstRowIndex: Int,
+    firstRowOffsetPx: Int,
+    reachDeltaPx: Float,
+): Boolean {
+    if (!canShowEarlier || tailOnScreen || firstRowIndex != 0 || firstRowOffsetPx != 0) {
+        return false
+    }
+
+    // A reach is intent only when what the list refused points at earlier turns.
+    return reachDeltaPx > 0f
 }
 
 /** The share of `--dt-background` in `--composer-fill` (`styles.css:1789`). */

@@ -42,6 +42,82 @@ Desktop authority is `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
   new pin; `hermes_state.py` was broken into many modules and this multi-method
   range was not re-resolved in time).
 
+### The automatic route, pinned separately
+
+`Show earlier messages` grew a second way in upstream after this page was
+written, so that half is pinned at
+`564aef2946c436500a5e80ee117b66b789b3f99a` — the repo pin — rather than at the
+`3ca096de` authority above. It landed as `3ec8042483` and was trimmed by
+`474143da81`.
+
+- Gate: `apps/desktop/src/components/assistant-ui/thread/transcript-window.tsx:36-74`
+  — the `TOP_EDGE_PX` constant, the `ShouldAutoShowEarlierInput` shape and the
+  `shouldAutoShowEarlier` predicate. `474143da81` deleted the injectable
+  `topEdgePx` knob (one caller, one constant) and folded the tail into a single
+  predicate.
+- Wiring: `list.tsx:959-994` — a `scroll` and a `wheel` listener on the scroll
+  container, both routed into the same `showEarlier()` the pill calls at
+  `:1077`.
+- Tests: `should-auto-show-earlier.test.ts` is one invariant test over the pure
+  predicate; `list-auto-show-earlier.test.tsx` is one rendered-list journey.
+  Android keeps that split — `AutoShowEarlierGateTest` and the lower half of
+  `ShowEarlierJourneyTest`.
+- There is no new copy. Desktop adds no string for this, and neither does this
+  app.
+
+## Reaching the head on a phone
+
+Desktop's signal is a mouse wheel pointing up while `scrollTop` is clamped at 0.
+The wheel is not decoration: a browser emits no further `scroll` event once
+`scrollTop` is already 0, which is exactly where the reader who wants more
+history is standing, so without the wheel the arrival is unobservable.
+
+A phone has no wheel. It has a drag and a fling, and the honest question is
+which Compose signal carries the same fact. Three were considered:
+
+1. **The scroll position alone** (`firstVisibleItemIndex`/`ScrollOffset`). Wrong:
+   a `LazyColumn` sits at index 0, offset 0 before its opening jump to the tail,
+   when a page lands and before the anchor restore, and for the whole life of a
+   conversation shorter than the screen. Position alone cannot tell those apart
+   from reading intent, which is the same problem Desktop's `loadSettled`,
+   `restorePending` and `isAtBottom` gates exist to patch.
+2. **`isScrollInProgress` plus `lastScrolledBackward`.** Closer, but neither is
+   updated by a delta the list refuses — `LazyListState` returns early at its
+   edge — so the direction flag goes stale exactly at the clamp, and a
+   programmatic `scrollToItem` opens a scroll session that looks like a gesture.
+3. **What the list refused.** A `nestedScroll` connection above the
+   `LazyColumn` receives, in `onPostScroll` and `onPostFling`, the part of the
+   gesture the list could not consume. That remainder is non-zero *only* at a
+   hard clamp, and a positive `y` there means the finger is still pulling
+   towards earlier turns with nothing left to give. It is the same fact Desktop
+   reconstructs from the wheel, reported rather than inferred, and it covers
+   both halves of a touch gesture with one predicate.
+
+This app takes the third. It has a property the wheel does not: every scroll the
+app performs for itself — the pane's opening jump to the tail, the prepend
+anchor restore — moves a `LazyListState` without dispatching nested scroll at
+all, so none of them can forge reading intent. That is why Desktop's
+`loadSettled` needs no Android counterpart.
+
+**When the ask is spent, and why that is a correctness rule.** The gesture
+*notices* that it reached the head; `onPostFling` — which runs once, after the
+drag has ended and its fling has run out — *spends* it. Rate is the smaller half
+of the reason: a wheel notch is discrete and a drag is continuous, so asking per
+frame would walk a whole conversation in. The larger half is the prepend anchor.
+The pane restores it by scrolling the list back to the row the reader was on,
+and a `LazyListState` scroll asked for at `MutatePriority.Default` while the
+reader's finger owns the list at `UserInput` is **cancelled rather than
+queued** — so a page delivered mid-drag lands with its anchor discarded and
+drops the reader at the very top of the history they just pulled in. Spending
+the reach at the end of the gesture leaves the restore the list to itself;
+`ShowEarlierJourneyTest.aPageThePullAskedForLandsWhereTheReaderWasReading` is
+that claim, and it fails when the ask is spent mid-drag.
+
+The pill is unchanged and keeps its place as the transcript's leading row. It is
+also the only route a reader who cannot drag has — a switch-access or screen
+reader user reaches the page through the control, exactly as on Desktop, where
+the wheel is likewise the optional half.
+
 ## The contract split
 
 At the pin, Desktop hydrates and refreshes a chat's transcript over REST
@@ -126,10 +202,14 @@ projection both splits and drops.
 | `build_tool_preview` masks recognizable credentials in a `browser_type` call's `text` first (`redact_tool_args_for_display`, `agent/display.py:400-414` @ `3ca096de`, applied at `:456` @ `3ca096de`; not re-resolved) | mobile-adaptation | `browser_type` gets no collapsed preview at all | The masking is `redact_sensitive_text(force=True)` over thirteen credential patterns (`agent/redact.py:831-900` @ `3ca096de`; not re-resolved), not ported. A partial copy would mask the shapes it knew and print the rest while looking checked, so the preview is withheld instead. The call still rides the row as `args`, as it does upstream |
 | The pill's bottom gap is `--conversation-turn-gap`, `0.375rem` = 6 px (`styles.css:474`, applied at `list.tsx:836`) | mobile-adaptation | `spacing.turnGap`, 8 dp (`HermesTypography.kt:56`) | The whole type and spacing scale is stepped up for touch; the turn gap follows it rather than being pinned to Desktop's pixel, so the pill sits on the same rhythm as every other turn on this platform |
 | One read's tool-call map covers that read (`tui_gateway/session_history.py:196-204`) | mobile-adaptation | The map covers one page | A tool row whose assistant call row fell on the other side of a page boundary renders with its stored `tool_name` and no argument preview. Carrying the map across pages would be per-session repository state with a lifetime nothing else in the projection has, for one row per page |
+| `shouldAutoShowEarlier` reads a `wheel` event's `deltaY` at a clamped `scrollTop`, because a browser emits no `scroll` event at 0 (`transcript-window.tsx:53-74`, `list.tsx:959-994` @ `564aef2946`) | mobile-adaptation | Reads the part of a drag or fling the `LazyColumn` refused, through a `nestedScroll` connection above the list | Touch has no wheel. Compose reports unconsumed scroll in `onPostScroll` and `onPostFling`, and that remainder exists only at a hard clamp — the same fact Desktop reconstructs from the wheel, reported rather than inferred, and one predicate covers a drag and a fling alike |
+| `TOP_EDGE_PX = 48` gives the wheel 48 px of slack around `scrollTop` 0 (`transcript-window.tsx:36-41` @ `564aef2946`) | mobile-adaptation | The head is exactly `firstVisibleItemIndex` 0 at `firstVisibleItemScrollOffset` 0, and no slack constant exists | The slack absorbs a wheel notch that stops a few pixels short, which only matters while scroll *position* is the signal. A refused delta is reported at the clamp itself, so there is nothing for slack to absorb and no threshold to tune — one fewer knob, for the reason `474143da81` deleted upstream's injectable one |
+| `loadSettled` withholds the automatic page until a session's opening scroll restore has landed (`list.tsx:974`, `transcript-window.tsx:63` @ `564aef2946`) | mobile-adaptation | No counterpart | Every scroll this app performs for itself — the pane's opening jump to the tail, the prepend anchor restore — moves a `LazyListState` without dispatching nested scroll, so the seam this gate listens on never hears them. Desktop needs the flag because its signal is a scroll position that reads 0 before its restore |
+| A wheel notch asks the moment it lands, and `restorePending` is what stops a wheel that keeps turning from asking over a parked prepend (`transcript-window.tsx:64`, `list.tsx:962-994` @ `564aef2946`) | mobile-adaptation | The reach is noticed during the gesture and spent in `onPostFling`, once the drag and its fling are over, so one gesture is one ask and `restorePending` has no input | A wheel notch is discrete; a drag is continuous, and asking on each of its frames walks a whole conversation in. It is also a correctness rule, not only a rate limit: the pane restores the prepend by scrolling the list back to the reader's row, and a `LazyListState` scroll asked for at `MutatePriority.Default` while the finger holds the list at `UserInput` is cancelled rather than queued — a page delivered mid-drag would land with its anchor discarded and drop the reader at the top of the history they pulled in |
 
 ## Visual report
 
-- pending: #68
+- pending: #68, #221
 
 **Half a pair, and `pending:` is the honest half.** The Desktop reference exists
 and is stored in this repo at `docs/parity/visual/transcript-show-earlier/desktop/`
@@ -155,3 +235,13 @@ source: the control is a plain centred rounded pill with no glyph, no spinner an
 no disabled state, reading `Show earlier messages` verbatim (`en.ts:3520`), 164 x
 26 px at the top of the scrolled transcript content. The clip carries exactly one
 node, and that node is the whole control.
+
+**#221 owes the same capture, and nothing extra.** The automatic route paints no
+pixels of its own: Desktop draws no indicator for it and neither does this app,
+so its whole visible surface is the pill that was already there and the older
+turns that arrive under it. The capture it owes is therefore the one #68 owes —
+a conversation longer than a hydration page, on a reachable Gateway — with the
+head reached by a drag rather than a tap. Until that exists the behaviour is
+proved by `AutoShowEarlierGateTest` and by the six reaching journeys in
+`ShowEarlierJourneyTest`, which is structure rather than pixels, and this page
+continues to review at **Concern** for it.
