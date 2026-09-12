@@ -44,7 +44,7 @@ working tree.
 | State | Desktop | Android |
 |---|---|---|
 | Loading, no roster | a spinner (`:66-70`) | `BotsRosterCopy.WAITING_FOR_GATEWAY` in the roster message slot, which also explains a cold start waiting for the connection |
-| Error, no roster | `rosterUnavailable(error.message)` and a Retry button (`:71-83`) | the same wrapper and `RETRY_NOW`; Android passes only the repository-redacted safe reason into the wrapper |
+| Error, no roster | `rosterUnavailable(error.message)` and a Retry button (`:71-83`) | the same wrapper with only a repository-redacted safe reason; recoverable reads also show `RETRY_NOW`, while a Gateway without `profiles.list` omits the futile Retry action and disables the roster entry (ledgered below) |
 | True empty | `PanelEmpty` with `emptyTitle` / `emptyDesc` (`:84-85`) | the same two strings |
 | All bots hidden | explainer plus a `showHidden` button that expands the section (`:86-105`) | the same explainer and the same button, which expands the hidden section in place |
 | Filtered to nothing | `PanelEmpty` with one of four copies (`:106-120`) | the filters copy, or the query copy when a query is set |
@@ -149,6 +149,7 @@ contract. The rendered comparison stays owed against #216.
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | Loading spinner (`roster-pane-content.tsx:66-70`) | mobile-adaptation | `Waiting for the gateway connection…` in the same recovery slot | A spinner alone cannot explain the normal cold-start wait or its automatic retry on a phone; the Desktop-owned waiting sentence names both without inventing a failure. |
+| A failed roster request shows Retry (`roster-pane-content.tsx:71-83`) | mobile-adaptation | `UnavailableOnGateway` keeps the same wrapped explanation but omits Retry and disables the Bots entry | Retrying a method that this Gateway build does not implement cannot recover; upgrading/restarting or switching endpoints reconstructs the contribution. Other read failures retain `RETRY_NOW`. |
 | Activity-toasts bell before New (`roster-pane-toolbar.tsx:64-78`) | omission | Disabled `bell-slash` in a 48dp target, marked WIP | coming soon — Desktop defaults this persisted preference off; Android has neither the roster-activity notification path nor a matching persistence seam, so it is visible and inert rather than pretending to save a setting. |
 | Ordered kind/activity filter dropdown (`roster-pane-toolbar.tsx:118-172`) | mobile-adaptation | One `list-filter` menu, Kind then Activity, preserving all three then all four Desktop labels and their order | Two always-visible horizontal pill rows consume the list viewport and cannot retain 48dp targets at phone width; one touch menu preserves the ordered choices and leaves the roster readable. |
 | `New bot or group chat` dropdown: New Bot, New Group, New section (`i18n.ts:274,308-311`) | drift | Absent; no marker chip stands in its place | #189 owes it as a visible, disabled control behind the WIP chip, not as a silently missing one |
