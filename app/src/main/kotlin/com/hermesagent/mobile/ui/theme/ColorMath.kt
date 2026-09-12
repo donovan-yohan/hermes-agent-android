@@ -11,7 +11,7 @@ import kotlin.math.roundToInt
  * same palette from the same seed instead of two lookalike approximations.
  *
  * Provenance (upstream `NousResearch/hermes-agent` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`):
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`):
  *   - [mix], [relativeLuminance], [contrastRatio], [readableOn] —
  *     `apps/desktop/src/themes/color.ts:29-74`
  *   - [mixPremultiplied] — CSS `color-mix(in srgb, …)` semantics, which is what

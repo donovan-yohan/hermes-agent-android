@@ -28,7 +28,7 @@ import kotlin.coroutines.EmptyCoroutineContext
  * rollback, and which streamed `session.info` may reconcile the value.
  *
  * Every contract claim here is against `hermes-agent` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`.
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ApprovalModeRepositoryTest {

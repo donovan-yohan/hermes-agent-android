@@ -368,7 +368,7 @@
     "name": "empty-chat-intro-light",
     "rootSelector": "[data-slot=\"aui_intro\"]",
     "upstream": "/tmp/hermes-desktop-3ca096de",
-    "upstreamSha": "564aef2946c436500a5e80ee117b66b789b3f99a",
+    "upstreamSha": "3ca096de5f8183cb2e0ec23673f294d5978656a3",
     "target": {
       "title": "Hermes",
       "url": "http://127.0.0.1:5174/#/"
