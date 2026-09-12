@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.math.RoundingMode
 
 /**
  * `profiles.list` over the plugin host door — the roster's only data source.
@@ -96,10 +97,31 @@ private fun parseSessionPreview(element: JsonElement?): BotSessionPreview? {
     return BotSessionPreview(
         id = row.text("id")?.trim()?.takeIf(String::isNotEmpty),
         resolvedId = row.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty),
-        lastActiveSeconds = row.text("last_active")?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+        lastActiveSeconds = row.epochSeconds("last_active"),
         preview = row.text("preview"),
     )
 }
+
+/**
+ * An epoch-seconds stamp, read off the wire as the Gateway actually sends it.
+ *
+ * The Gateway hands these out straight from SQLite, where the columns are
+ * `REAL` (`hermes_state_common.py:319` @ the pin: `last_activity_at REAL`,
+ * `started_at REAL`), so the JSON content is `1700000900.5` or
+ * `1700000900.0` — not a whole number `toLongOrNull()` can read. That parse
+ * answered `0` for every row, which is the bug that would have left the worker
+ * signal dead on a real Gateway while every integer fixture passed.
+ * [BigDecimal] reads both shapes and truncates the fraction; anything else
+ * (NaN, a non-number) is `0`, which reads as "no activity" rather than as an
+ * age.
+ */
+private fun JsonObject.epochSeconds(name: String): Long =
+    text(name)
+        ?.toBigDecimalOrNull()
+        ?.setScale(0, RoundingMode.DOWN)
+        ?.let { runCatching { it.longValueExact() }.getOrNull() }
+        ?.coerceAtLeast(0L)
+        ?: 0L
 
 private fun JsonObject.text(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content

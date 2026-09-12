@@ -136,6 +136,41 @@ class BotsPluginRepositoryTest {
     }
 
     @Test
+    fun `a fractional last_active off SQLite still becomes millis`() {
+        // The Gateway reads these straight out of SQLite, where the column is
+        // `REAL` (`hermes_state_common.py:319` @ the pin), so the JSON is
+        // `1700000900.5` — `toLongOrNull()` answers null for it, which read as
+        // "no activity" for every row and silently killed the worker signal.
+        val row = parseBotsRoster(
+            json(
+                """
+                {"profiles": [{
+                  "name": "a",
+                  "last_session": {"id": "s", "last_active": 1800000500.5, "preview": "hi"},
+                  "worker_session": {"id": "w", "source": "kanban", "last_active": 1800000600.25}
+                }]}
+                """,
+            ),
+        )!!.single()
+
+        assertEquals(1_800_000_500L, row.lastSession?.lastActiveSeconds)
+        assertEquals(1_800_000_500_000L, row.lastActiveMillis)
+        assertEquals(1_800_000_600L, row.workerSession?.lastActiveSeconds)
+        assertTrue(workerActiveAt(row, nowMillis = 1_800_000_650_000L))
+    }
+
+    @Test
+    fun `an integral float last_active reads the same as an integer one`() {
+        // Python serialises a whole float as `1800000500.0`, so even a session
+        // whose stamp has no fraction has to survive the read.
+        val row = parseBotsRoster(
+            json("""{"profiles": [{"name": "a", "last_session": {"last_active": 1800000500.0}}]}"""),
+        )!!.single()
+
+        assertEquals(1_800_000_500L, row.lastSession?.lastActiveSeconds)
+    }
+
+    @Test
     fun `a malformed envelope answers null so the caller keeps its last roster`() {
         assertNull(parseBotsRoster(json("""{"profiles": "nope"}""")))
         assertNull(parseBotsRoster(json("{}")))

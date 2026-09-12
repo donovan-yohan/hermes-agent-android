@@ -134,11 +134,9 @@ fun BotsRosterScreen(
                     description = BotsRosterCopy.EMPTY_DESC,
                 )
 
-                state.presentation.allBotsHidden && !state.hiddenExpanded -> Column(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(top = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                state.presentation.allBotsHidden && !state.hiddenExpanded -> RosterMessage(
+                    title = BotsRosterCopy.ALL_HIDDEN,
+                    description = BotsRosterCopy.ALL_HIDDEN_DESC,
                 ) {
                     // Desktop carries the way out of this state with it —
                     // `allBotsHidden && !hiddenExpanded` renders the explainer
@@ -146,13 +144,6 @@ fun BotsRosterScreen(
                     // (`roster-pane-content.tsx:93-105` @ the pin). The reveal
                     // otherwise lives in [RosterList], which this branch never
                     // draws, and the state is a dead end.
-                    EmptyState(
-                        title = BotsRosterCopy.ALL_HIDDEN,
-                        description = BotsRosterCopy.ALL_HIDDEN_DESC,
-                        icon = HermesIcon.Question,
-                        centered = true,
-                    )
-                    Spacer(Modifier.height(12.dp))
                     TextButton(
                         label = BotsRosterCopy.SHOW_HIDDEN,
                         onClick = { actions.onSetHiddenExpanded(true) },
@@ -473,8 +464,18 @@ private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * A state message: the explainer, and the one action that leaves the state when
+ * it has one. Desktop draws both in the same block (`roster-pane-content.tsx`),
+ * so a state whose only way out lives in the list it never draws — all-hidden —
+ * carries its own button rather than becoming a dead end.
+ */
 @Composable
-private fun RosterMessage(title: String, description: String) {
+private fun RosterMessage(
+    title: String,
+    description: String,
+    action: (@Composable () -> Unit)? = null,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -487,6 +488,10 @@ private fun RosterMessage(title: String, description: String) {
             icon = HermesIcon.Question,
             centered = true,
         )
+        if (action != null) {
+            Spacer(Modifier.height(12.dp))
+            action()
+        }
     }
 }
 

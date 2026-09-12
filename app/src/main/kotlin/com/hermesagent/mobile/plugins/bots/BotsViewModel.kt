@@ -2,12 +2,9 @@ package com.hermesagent.mobile.plugins.bots
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -108,8 +105,13 @@ class BotsViewModel(
      * (boot, SSH reconnect, sleep/wake) is the signal to retry immediately
      * instead of waiting out the poll interval" (`roster-pane.tsx:274-279` @
      * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+     *
+     * It is a `StateFlow` rather than any other `Flow` because a read can
+     * arrive before the collector has had its first turn, and the refusal that
+     * read produces has to be classified against the connection *now* — see
+     * [refreshNow].
      */
-    private val connected: Flow<Boolean> = flowOf(false),
+    private val connected: StateFlow<Boolean> = MutableStateFlow(false),
 ) {
     private val _uiState = MutableStateFlow(BotsRosterUiState())
     val uiState: StateFlow<BotsRosterUiState> = _uiState.asStateFlow()
@@ -122,26 +124,16 @@ class BotsViewModel(
     /** Set when a read arrives while one is already on the wire. */
     private var pending = false
 
-    /**
-     * The connection's last reported state, seeded from the flow's own value
-     * when it has one. A refusal is read against it: the same refusal is
-     * "nothing to ask yet" with no connection and a real failure with one — and
-     * it has to be answerable *before* the collector has had a turn, because a
-     * read can arrive first.
-     */
-    private var connectionUp: Boolean = (connected as? StateFlow<Boolean>)?.value ?: false
-
     init {
         _uiState.update {
             it.copy(
                 pinnedKeys = metaByKey.filterValues { meta -> meta.pinned }.keys,
                 attentionByKey = attention.entries.value,
-                connectionUp = connectionUp,
+                connectionUp = connected.value,
             )
         }
         scope.launch {
-            connected.distinctUntilChanged().collect { up ->
-                connectionUp = up
+            connected.collect { up ->
                 _uiState.update { it.copy(connectionUp = up) }
                 if (up) refresh()
             }
@@ -219,6 +211,10 @@ class BotsViewModel(
             is BotsRosterLoad.Loaded -> {
                 roster = load.rows
                 recompute()
+                // Only an answer clears the notice: a filter change or a
+                // keystroke in the search box re-derives the same list, and
+                // must not dismiss a banner that is still true.
+                _uiState.update { it.copy(safeMessage = null) }
             }
 
             BotsRosterLoad.UnavailableOnGateway -> _uiState.update {
@@ -236,7 +232,7 @@ class BotsViewModel(
                 // picks its sentence the same way — the error card reads
                 // `gatewayUp ? rosterUnavailable(…) : waitingForGateway`
                 // (`roster-pane-content.tsx:84-90` @ the pin).
-                !connectionUp ->
+                !_uiState.value.connectionUp ->
                     _uiState.update {
                         it.copy(phase = BotsRosterPhase.Loading, safeMessage = null)
                     }
@@ -290,6 +286,10 @@ class BotsViewModel(
             activityFilter = current.activityFilter,
             nowMillis = now,
         )
+        // Normalized once: the same list feeds the block count and both
+        // groupings, and `normalizeBotSections` is the one place that decides
+        // what a section is.
+        val normalizedSections = normalizeBotSections(sections)
         val presentation = deriveRosterPresentation(
             rosterSize = roster.size,
             visibleRosterSize = derived.visibleRows.size,
@@ -299,15 +299,14 @@ class BotsViewModel(
             kindFilter = current.kindFilter,
             activityFilter = current.activityFilter,
             hiddenExpanded = current.hiddenExpanded,
-            userSectionCount = normalizeBotSections(sections).size,
+            userSectionCount = normalizedSections.size,
         )
         _uiState.update {
             it.copy(
                 phase = if (roster.isEmpty()) BotsRosterPhase.Empty else BotsRosterPhase.Ready,
-                sections = groupRowsBySection(derived.filteredVisible, sections, metaByKey),
-                hiddenSections = groupRowsBySection(derived.filteredHidden, sections, metaByKey),
+                sections = groupRowsBySection(derived.filteredVisible, normalizedSections, metaByKey),
+                hiddenSections = groupRowsBySection(derived.filteredHidden, normalizedSections, metaByKey),
                 presentation = presentation,
-                safeMessage = null,
             )
         }
     }

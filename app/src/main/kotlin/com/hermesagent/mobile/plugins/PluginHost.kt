@@ -193,9 +193,15 @@ internal class GatewayPluginHost(
      * client only after an authenticated round trip on the leg the app will
      * use, and clears it in the same place it closes that leg, so this tracks
      * one connection's whole life including every reconnect.
+     *
+     * Lazily, so a plugin that never asks about the connection does not pay for
+     * a collector: the door is built per activation for every plugin, and most
+     * never read this. The first reader still gets the slot's *current* value
+     * as the initial value, so a late read is a correct read.
      */
-    override val connected: StateFlow<Boolean> =
+    override val connected: StateFlow<Boolean> by lazy {
         clients.map { it != null }.stateIn(scope, SharingStarted.Eagerly, clients.value != null)
+    }
 
     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
         val normalized = normalizePluginHostMethod(CALLER, method)

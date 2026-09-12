@@ -296,6 +296,28 @@ class BotsViewModelTest {
     }
 
     @Test
+    fun `a keystroke does not dismiss a stale notice that is still true`() = runTest {
+        val host = loadedHost()
+        val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })
+
+        viewModel.refreshNow()
+        host.result = PluginHostResult.Refused(0, "The Gateway did not answer in time.")
+        viewModel.refreshNow()
+        assertTrue(viewModel.uiState.value.stale)
+
+        // Re-deriving the same held list with a query is not an answer from the
+        // Gateway, so the banner stays until one arrives.
+        viewModel.setSearchQuery("res")
+
+        assertTrue(viewModel.uiState.value.stale)
+
+        host.result = PluginHostResult.Success(Json.parseToJsonElement(rosterJson()))
+        viewModel.refreshNow()
+
+        assertFalse(viewModel.uiState.value.stale)
+    }
+
+    @Test
     fun `a gateway without profiles dot list is its own state`() = runTest {
         val host = ScriptedHost(PluginHostResult.UnavailableOnGateway)
         val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })
