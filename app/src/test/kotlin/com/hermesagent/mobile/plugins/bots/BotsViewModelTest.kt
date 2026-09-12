@@ -39,7 +39,11 @@ class BotsViewModelTest {
         private val gate: CompletableDeferred<Unit>,
         var result: PluginHostResult,
     ) : PluginHost {
+        /** How many reads actually reached this endpoint. */
+        var reads = 0
+
         override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+            reads += 1
             gate.await()
             return result
         }
@@ -71,6 +75,10 @@ class BotsViewModelTest {
     """.trimIndent()
 
     private fun loadedHost() = ScriptedHost(PluginHostResult.Success(Json.parseToJsonElement(rosterJson())))
+
+    /** A `profiles.list` answer with one row per name, for the switch's own fixture. */
+    private fun namesRoster(vararg names: String): String =
+        names.joinToString(prefix = """{"profiles": [""", postfix = "]}") { name -> """{"name": "$name"}""" }
 
     /** A ViewModel over the three-bot roster, already refreshed. */
     private suspend fun loadedViewModel(
@@ -315,6 +323,124 @@ class BotsViewModelTest {
         viewModel.refreshNow()
 
         assertFalse(viewModel.uiState.value.stale)
+    }
+
+    @Test
+    fun `an endpoint switch drops the held roster and the notice that described it`() = runTest {
+        val host = loadedHost()
+        val connected = MutableStateFlow(true)
+        val endpoint = MutableStateFlow(0L)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+            endpointGeneration = endpoint,
+        )
+        viewModel.refreshNow()
+        host.result = PluginHostResult.Refused(0, "The Gateway did not answer in time.")
+        viewModel.refreshNow()
+        assertEquals(3, viewModel.uiState.value.sections.flatMap { it.rows }.size)
+        assertTrue(viewModel.uiState.value.stale)
+
+        // A badge the previous machine's row is wearing is the same class of
+        // endpoint-scoped copy as the rows themselves — keyed by roster key
+        // alone, so it must not paint on a same-named bot on the new endpoint.
+        viewModel.noteAttention("researcher", "agent_blocked")
+        assertEquals(setOf("researcher"), viewModel.uiState.value.attentionByKey.keys)
+
+        // The switch, in the order the app performs it: the leg goes down first,
+        // then the one wholesale clear runs. `resetForEndpointSwitch` is that
+        // clear's only caller, and this is the generation the door publishes.
+        connected.value = false
+        advanceUntilIdle()
+        endpoint.value = 1L
+        advanceUntilIdle()
+
+        // No row from the machine we left survives the boundary, and neither
+        // does the banner that said those rows were old. The surface waits
+        // rather than claiming the new Gateway has no bots.
+        val dropped = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Loading, dropped.phase)
+        assertEquals(emptyList<BotSectionBlock>(), dropped.sections)
+        assertNull(dropped.safeMessage)
+        assertFalse(dropped.stale)
+        assertTrue(dropped.attentionByKey.isEmpty())
+
+        // The new endpoint answers for itself.
+        host.result = PluginHostResult.Success(Json.parseToJsonElement(namesRoster("beta-only")))
+        connected.value = true
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Ready, state.phase)
+        assertEquals(listOf("beta-only"), state.sections.flatMap { it.rows }.map { it.name })
+    }
+
+    @Test
+    fun `a reconnect without an endpoint switch keeps the last good list and its banner`() = runTest {
+        val host = loadedHost()
+        val connected = MutableStateFlow(true)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+            endpointGeneration = MutableStateFlow(0L),
+        )
+        viewModel.refreshNow()
+
+        // The leg drops and comes back on the same endpoint, which now refuses:
+        // the rows, and the banner over them, are the whole point of this path —
+        // nothing crossed to a different machine.
+        connected.value = false
+        advanceUntilIdle()
+        host.result = PluginHostResult.Refused(0, "The Gateway did not answer in time.")
+        connected.value = true
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Ready, state.phase)
+        assertEquals(3, state.sections.flatMap { it.rows }.size)
+        assertTrue(state.stale)
+        assertEquals("The Gateway did not answer in time.", state.safeMessage)
+    }
+
+    @Test
+    fun `an answer from the endpoint the device left is not adopted`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val host = GatedHost(gate, PluginHostResult.Success(Json.parseToJsonElement(rosterJson())))
+        // Not connected yet, so the only read in this test is the one the test
+        // starts: a queued read would belong to whichever endpoint is current
+        // when it finally runs, which would hide what is being pinned here.
+        val connected = MutableStateFlow(false)
+        val endpoint = MutableStateFlow(0L)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+            endpointGeneration = endpoint,
+        )
+
+        viewModel.refresh()
+        runCurrent()
+        assertEquals(1, host.reads)
+
+        // The switch lands while that read is on the wire, and the endpoint we
+        // left answers afterwards.
+        endpoint.value = 1L
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        // Nothing has been asked of the new endpoint, so the surface is waiting
+        // — holding none of the previous machine's rows.
+        assertEquals(1, host.reads)
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Loading, state.phase)
+        assertEquals(emptyList<BotSectionBlock>(), state.sections)
+        assertFalse(state.connectionUp)
     }
 
     @Test

@@ -5,6 +5,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -112,12 +113,35 @@ class BotsViewModel(
      * [refreshNow].
      */
     private val connected: StateFlow<Boolean> = MutableStateFlow(false),
+    /**
+     * Which endpoint the rows belong to — `ctx.host.endpointGeneration`, the
+     * same generation `SessionCache` bumps on the app's one wholesale clear.
+     *
+     * The roster is an endpoint-scoped copy of backend truth: it deliberately
+     * holds the last good list across a failed refresh
+     * ([BotsRosterUiState.stale]). That rule is right for a reconnect and wrong
+     * for a switch — the next backend is a different machine that can recycle
+     * the same durable ids, so a row read from the machine this device has left
+     * is not the new one's to draw, banner or no banner. `connected` cannot
+     * tell the two apart: both drop the leg and bring one back.
+     */
+    private val endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
 ) {
     private val _uiState = MutableStateFlow(BotsRosterUiState())
     val uiState: StateFlow<BotsRosterUiState> = _uiState.asStateFlow()
 
     /** The last roster the Gateway served. A failed refresh never clears it. */
     private var roster: List<BotRosterRow> = emptyList()
+
+    /**
+     * The endpoint [roster] belongs to — the generation a read was made under.
+     *
+     * It is what makes the drop idempotent and race-free: a switch landing
+     * after a read of the *new* endpoint must not clear that read's rows, so
+     * the clear happens only for a generation the held roster does not belong
+     * to, however late the collector wakes up.
+     */
+    private var rosterEndpoint: Long = endpointGeneration.value
 
     private var inFlight: Job? = null
 
@@ -133,10 +157,23 @@ class BotsViewModel(
             )
         }
         scope.launch {
-            connected.collect { up ->
-                _uiState.update { it.copy(connectionUp = up) }
-                if (up) refresh()
-            }
+            // The connection's edge and the endpoint's identity are one
+            // collector because they are one question: *may I read, and is what
+            // I am holding still from here?* A switch moves the endpoint while
+            // the leg is down, so the drop cannot wait for the read that never
+            // came — and the reconnect that follows must not bring the previous
+            // machine's rows back with it.
+            //
+            // The drop answers to the generation's *current* value rather than
+            // to the one this emission carries: a read that has already adopted
+            // the new endpoint's rows bumps [rosterEndpoint] first, and a
+            // collector waking late behind it must not clear them again.
+            combine(connected, endpointGeneration) { up, _ -> up }
+                .collect { up ->
+                    if (endpointGeneration.value != rosterEndpoint) dropRosterForEndpointSwitch()
+                    _uiState.update { it.copy(connectionUp = up) }
+                    if (up) refresh()
+                }
         }
     }
 
@@ -204,12 +241,22 @@ class BotsViewModel(
 
     /** [refresh] without the scope, so a test can await it deterministically. */
     suspend fun refreshNow() {
+        // The endpoint this read is being made against. A switch that lands
+        // while the read is on the wire answers about a machine this device has
+        // left, and that answer says nothing about the one it is on now —
+        // whether it is a roster, a refusal or an absent method. Dropping the
+        // answer is what keeps a stale roster from being re-adopted *after* the
+        // switch already cleared it.
+        val endpoint = endpointGeneration.value
         if (roster.isEmpty()) {
             _uiState.update { it.copy(phase = BotsRosterPhase.Loading) }
         }
-        when (val load = repository.loadRoster()) {
+        val load = repository.loadRoster()
+        if (endpoint != endpointGeneration.value) return
+        when (load) {
             is BotsRosterLoad.Loaded -> {
                 roster = load.rows
+                rosterEndpoint = endpoint
                 recompute()
                 // Only an answer clears the notice: a filter change or a
                 // keystroke in the search box re-derives the same list, and
@@ -276,14 +323,69 @@ class BotsViewModel(
     }
 
     private fun recompute() {
-        val current = _uiState.value
+        // One clock read per derivation: `update`'s block may be evaluated more
+        // than once under a concurrent writer, and the rows' activity bands
+        // must not move between two attempts at the same list.
         val now = clock()
+        _uiState.update { derivedState(it, whenEmpty = BotsRosterPhase.Empty, now = now) }
+    }
+
+    /**
+     * Forget the roster, because this device has changed endpoint.
+     *
+     * Every row on screen was the previous machine's, and the endpoint this
+     * app just left is the one thing a merge cannot reconcile: a different
+     * Gateway recycles the same durable ids
+     * (`SessionCache.resetForEndpointSwitch` is the app's one wholesale clear,
+     * and the connection switch is its only caller), so the rows are dropped
+     * rather than re-pointed. The stale notice goes with them — it said these
+     * rows were old, and there are no longer any rows of *this* endpoint's to
+     * be old.
+     *
+     * The attention badges go too: [attention] is keyed by roster key alone,
+     * so the previous machine's failure badges would otherwise paint on the new
+     * one's same-named bot. Every row on screen was the previous machine's, and
+     * everything drawn *on* those rows is dropped with them.
+     *
+     * What is left is [BotsRosterPhase.Loading], deliberately not
+     * [BotsRosterPhase.Empty]: nothing has been asked of the new endpoint yet,
+     * and those are not the same claim to the person. The connection's own edge
+     * is what asks — see the collector in `init`.
+     */
+    private fun dropRosterForEndpointSwitch() {
+        roster = emptyList()
+        rosterEndpoint = endpointGeneration.value
+        attention.clearAll()
+        val now = clock()
+        _uiState.update { state ->
+            derivedState(
+                from = state.copy(safeMessage = null, attentionByKey = emptyMap()),
+                whenEmpty = BotsRosterPhase.Loading,
+                now = now,
+            )
+        }
+    }
+
+    /**
+     * The surface's own fields, re-derived from [roster].
+     *
+     * [whenEmpty] is the phase a roster-less surface is in, and the two callers
+     * do not mean the same thing by it: an answered-but-empty Gateway is
+     * [BotsRosterPhase.Empty], while a roster dropped because the endpoint
+     * moved is [BotsRosterPhase.Loading]. [now] is passed in rather than read
+     * here for the same reason: one derivation, one instant.
+     */
+    private fun derivedState(
+        from: BotsRosterUiState,
+        whenEmpty: BotsRosterPhase,
+        now: Long,
+    ): BotsRosterUiState {
         val derived = deriveRosterRows(
             roster = roster,
             metaByKey = metaByKey,
-            query = current.searchQuery,
-            kindFilter = current.kindFilter,
-            activityFilter = current.activityFilter,
+            query = from.searchQuery,
+            kindFilter = from.kindFilter,
+            activityFilter = from.activityFilter,
             nowMillis = now,
         )
         // Normalized once: the same list feeds the block count and both
@@ -295,19 +397,17 @@ class BotsViewModel(
             visibleRosterSize = derived.visibleRows.size,
             hiddenRowsSize = derived.hiddenRows.size,
             filteredHiddenRows = derived.filteredHidden,
-            query = current.searchQuery,
-            kindFilter = current.kindFilter,
-            activityFilter = current.activityFilter,
-            hiddenExpanded = current.hiddenExpanded,
+            query = from.searchQuery,
+            kindFilter = from.kindFilter,
+            activityFilter = from.activityFilter,
+            hiddenExpanded = from.hiddenExpanded,
             userSectionCount = normalizedSections.size,
         )
-        _uiState.update {
-            it.copy(
-                phase = if (roster.isEmpty()) BotsRosterPhase.Empty else BotsRosterPhase.Ready,
-                sections = groupRowsBySection(derived.filteredVisible, normalizedSections, metaByKey),
-                hiddenSections = groupRowsBySection(derived.filteredHidden, normalizedSections, metaByKey),
-                presentation = presentation,
-            )
-        }
+        return from.copy(
+            phase = if (roster.isEmpty()) whenEmpty else BotsRosterPhase.Ready,
+            sections = groupRowsBySection(derived.filteredVisible, normalizedSections, metaByKey),
+            hiddenSections = groupRowsBySection(derived.filteredHidden, normalizedSections, metaByKey),
+            presentation = presentation,
+        )
     }
 }
