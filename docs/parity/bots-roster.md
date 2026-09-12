@@ -43,8 +43,8 @@ working tree.
 
 | State | Desktop | Android |
 |---|---|---|
-| Loading, no roster | a spinner (`:66-70`) | `BotsRosterCopy.WAITING_FOR_GATEWAY` in the roster message slot, which is also where a cold start waits for the connection |
-| Error, no roster | `ready` sentence and a Retry button (`:71-83`) | the same sentence and `RETRY_NOW` |
+| Loading, no roster | a spinner (`:66-70`) | `BotsRosterCopy.WAITING_FOR_GATEWAY` in the roster message slot, which also explains a cold start waiting for the connection |
+| Error, no roster | `rosterUnavailable(error.message)` and a Retry button (`:71-83`) | the same wrapper with only a repository-redacted safe reason; recoverable reads also show `RETRY_NOW`, while a Gateway without `profiles.list` omits the futile Retry action and disables the roster entry (ledgered below) |
 | True empty | `PanelEmpty` with `emptyTitle` / `emptyDesc` (`:84-85`) | the same two strings |
 | All bots hidden | explainer plus a `showHidden` button that expands the section (`:86-105`) | the same explainer and the same button, which expands the hidden section in place |
 | Filtered to nothing | `PanelEmpty` with one of four copies (`:106-120`) | the filters copy, or the query copy when a query is set |
@@ -170,6 +170,10 @@ contract. The rendered comparison stays owed against #216.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
+| Loading spinner (`roster-pane-content.tsx:66-70`) | mobile-adaptation | `Waiting for the gateway connection…` in the same recovery slot | A spinner alone cannot explain the normal cold-start wait or its automatic retry on a phone; the Desktop-owned waiting sentence names both without inventing a failure. |
+| A failed roster request shows Retry (`roster-pane-content.tsx:71-83`) | mobile-adaptation | `UnavailableOnGateway` keeps the same wrapped explanation but omits Retry and disables the Bots entry | Retrying a method that this Gateway build does not implement cannot recover; upgrading/restarting or switching endpoints reconstructs the contribution. Other read failures retain `RETRY_NOW`. |
+| Activity-toasts bell before New (`roster-pane-toolbar.tsx:64-78`) | omission | Disabled `bell-slash` in a 48dp target, marked WIP | coming soon — Desktop defaults this persisted preference off; Android has neither the roster-activity notification path nor a matching persistence seam, so it is visible and inert rather than pretending to save a setting. |
+| Ordered kind/activity filter dropdown (`roster-pane-toolbar.tsx:118-172`) | mobile-adaptation | One `list-filter` menu, Kind then Activity, preserving all three then all four Desktop labels and their order | Two always-visible horizontal pill rows consume the list viewport and cannot retain 48dp targets at phone width; one touch menu preserves the ordered choices and leaves the roster readable. |
 | `New bot or group chat` dropdown: New Bot, New Group, New section (`i18n.ts:274,308-311`) | drift | Absent; no marker chip stands in its place | #189 owes it as a visible, disabled control behind the WIP chip, not as a silently missing one |
 | Gateway filter group, and the gateway sections the roster buckets rows into (`roster-sections.tsx`) | drift | Absent; the roster is one flat Gateway, and the active-filter count covers the two axes that exist | #189 — this app is single-connection by design (`docs/adr/0002-shared-remote-gateway.md`), but the axis still owes its disabled chip |
 | Group-chat rows inside the roster (`roster-pane-derivation.ts`, `bot-row.tsx:483-528`) | drift | Absent; selecting `Group chats only` honestly matches nothing | #189; group chats ride the gateway's hosted-room protocol (`docs/adr/0004-hosted-rooms-for-group-chats.md`) and are their own slice |
@@ -178,7 +182,6 @@ contract. The rendered comparison stays owed against #216.
 | `Active now` means a live turn or a live worker (`row-helpers.ts:125-186`) | drift | Activity inside 90 s, or a live worker inside 150 s, from `worker_session` | #189 — the worker half landed with this port; the live-turn half is the live-state slice |
 | Row ordering uses `max(created, lastMsg)` (`roster-pane-derivation.ts` `sortRosterBots`) | drift | Ordering drops the `created` term, so a bot created and never spoken to sorts last | #189 — `created` is on the wire and nothing in this app reads it |
 | The stale banner needs `error && !live && roster.length` (`roster-pane.tsx:395-400`) | drift | Banner shows for any failed refresh over a held roster; there is no live-turn signal to exclude | #189 — the `!live` term arrives with the live-state slice |
-| An error card carries the sentence and Retry, with no heading (`roster-pane-content.tsx:71-83`) | drift | The same sentence and button, drawn under `emptyTitle`, so a failure reads under "No bots yet" | #189 — the failure slot borrows the empty state's heading; a failure has no heading in Desktop |
 | The no-match card is `aria-live="polite" role="status"` (`:108-119`) | drift | A plain failure slot with no live region | #189 — the announcement is owed with the semantics sweep |
 | Empty *named* sections stay rendered as dashed drop slots (`roster-pane-sections.tsx:126-133`) | mobile-adaptation | Empty named sections are dropped; a section with rows renders | Without drag-and-drop there is no drop target, so an empty slot would be a heading with nothing to do and no way to fill it |
 | Desktop's own type, spacing and radii | mobile-adaptation | Drawn from `HermesTheme.tokens` and `HermesTheme.type`, one-to-one with Desktop's categories | The port preserves the design language; the token layer is this app's contract for it, and a raw colour or a preset name would import a different language |

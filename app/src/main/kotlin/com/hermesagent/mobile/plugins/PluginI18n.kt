@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Direct Kotlin port of Desktop's `PluginI18n`
  * (`apps/desktop/src/i18n/plugin-i18n.ts:39-46,96-101` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 interface PluginI18n {
     /**

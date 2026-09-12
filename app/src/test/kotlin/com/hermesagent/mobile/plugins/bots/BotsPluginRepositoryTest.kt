@@ -20,7 +20,7 @@ import org.junit.Test
  * The roster's Gateway read.
  *
  * `profiles.list` is `tui_gateway/methods_profiles.py:237-254` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`; every name, path and preview in
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`; every name, path and preview in
  * these fixtures is invented.
  */
 class BotsPluginRepositoryTest {

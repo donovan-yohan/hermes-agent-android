@@ -12,7 +12,7 @@ import org.junit.Test
  * or any temporary failure classifies to null and therefore never badges,
  * while the four attention-worthy classes do. Desktop pins this directly
  * (`apps/desktop/src/plugins/hermes-bots/data.ts:72-116` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 class BotAttentionTest {
 

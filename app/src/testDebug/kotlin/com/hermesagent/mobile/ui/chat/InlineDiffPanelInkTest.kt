@@ -33,7 +33,7 @@ import org.robolectric.annotation.GraphicsMode
  * gateway's ANSI chrome and hunk noise never reach the screen. It cannot see
  * colour, and colour is the panel's only remaining mechanism once the `+`/`-`
  * gutter markers are stripped (`chat/diff-lines.tsx:83-93` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`: "changes read by colour alone").
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`: "changes read by colour alone").
  *
  * So this is a separate class rather than more cases in that one: reading a
  * pixel needs an Activity's decor view and Robolectric's native canvas, and

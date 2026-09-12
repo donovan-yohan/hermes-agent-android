@@ -7,7 +7,7 @@ import org.junit.Test
 /**
  * Desktop's own speech-sanitizer fixtures, ported test-for-test from
  * `apps/desktop/src/lib/speech-text.test.ts:5-152`
- * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`. Each test keeps its Desktop
+ * @ `564aef2946c436500a5e80ee117b66b789b3f99a`. Each test keeps its Desktop
  * name so a future Desktop change is a visible diff here, not silent drift.
  *
  * The last four have no Desktop counterpart — Desktop's suite never exercises

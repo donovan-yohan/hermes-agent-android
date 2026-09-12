@@ -15,7 +15,7 @@ import java.math.RoundingMode
  * `profiles.list` over the plugin host door — the roster's only data source.
  *
  * The handler is `tui_gateway/methods_profiles.py:237-254` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`. `include_sessions` defaults to
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`. `include_sessions` defaults to
  * true there and is what attaches `last_session` / `canonical_session`; the
  * roster renders both, so it is requested explicitly rather than relied on.
  */

@@ -7,7 +7,7 @@ import org.junit.Test
 /**
  * The row's presentation leaves.
  *
- * Desktop sources at `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`:
+ * Desktop sources at `564aef2946c436500a5e80ee117b66b789b3f99a`:
  * `bot-row.tsx:79-88` (age), `lib/time.ts:194-215` (`coarseElapsed`),
  * `labels.ts:14-90` (name, preview), `data.ts:952-963` (@handle) and
  * `row-helpers.ts` (the bot-to-bot delivery prefix).

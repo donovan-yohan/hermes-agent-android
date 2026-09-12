@@ -7,7 +7,7 @@ package com.hermesagent.mobile.plugins
  *
  * Direct Kotlin port of Desktop's `PluginStorage`
  * (`apps/desktop/src/contrib/plugin.ts:9-13` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 interface PluginStorage {
     suspend fun get(key: String, fallback: String? = null): String?

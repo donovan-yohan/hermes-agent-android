@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Direct Kotlin port of Desktop's `ContributionRegistry`
  * (`apps/desktop/src/contrib/registry.ts:31-155` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), exposing reactive [StateFlow]s
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`), exposing reactive [StateFlow]s
  * for Compose surfaces.
  */
 class ContributionRegistry {

@@ -129,9 +129,19 @@ enum class HermesIcon(val glyph: String) {
     MailRead("\uEB1B"),
     /** Desktop's fork glyph — this font has no `git-fork`, only `repo-forked`. */
     RepoForked("\uEA63"),
+
+    /**
+     * The lead glyph an auto-discovered repo lane wears in Desktop's project
+     * overview (`app/chat/sidebar/project-row.tsx` `projectIcon`, @
+     * `564aef2946`): a repo Desktop found by scanning disk, rather than a row
+     * somebody created in `projects.db`.
+     */
+    Repo("\uEA62"),
     CloudDownload("\uEAC2"),
     Folder("\uEA83"),
     Archive("\uEA98"),
+    /** Desktop's inactive activity-toast control (`roster-pane-toolbar.tsx` @ `72a3277cd7`). */
+    BellSlash("\uEC08"),
 
     /**
      * Desktop's `symbol-color`, the Appearance submenu's trigger glyph
