@@ -179,12 +179,18 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
 
     private companion object {
         /**
-         * A monochrome status-bar glyph, borrowed from the framework for the
-         * same reason [com.hermesagent.mobile.data.voice.WakeWordForegroundService]
-         * does: the launcher mark is a full-colour bitmap and would render as a
-         * white block. A drawn Hermes notification mark is design work.
+         * The Hermes mark, reduced to the silhouette a 24 dp alpha-only glyph
+         * can actually carry, by `scripts/build-notification-icon.py`. The
+         * launcher artwork itself is a full-colour bitmap whose opaque area is
+         * the whole plate, so handing it to `setSmallIcon` paints a white
+         * block — which is why this was a framework glyph until now.
+         *
+         * Not every notification this app posts wears it. A foreground service
+         * whose glyph *says something* — the microphone while the wake word is
+         * listening, the padlock while a sign-in finishes — keeps that glyph,
+         * because the mark would replace a fact with a logo.
          */
-        const val SMALL_ICON = android.R.drawable.stat_notify_chat
+        val SMALL_ICON = com.hermesagent.mobile.R.drawable.ic_stat_hermes
 
         /** Tags carry the identity; one id is enough because (tag, id) is the key. */
         const val NOTIFICATION_ID = 0x48
