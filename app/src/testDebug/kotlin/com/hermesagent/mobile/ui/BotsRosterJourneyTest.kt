@@ -2,6 +2,7 @@ package com.hermesagent.mobile.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -268,6 +269,7 @@ class BotsRosterJourneyTest {
             BotsRosterCopy.OLDER,
         ).forEach { label -> compose.onNodeWithText(label).assertIsDisplayed() }
         compose.onNodeWithText(BotsRosterCopy.GROUPS_ONLY).performClick()
+        compose.onAllNodesWithText(BotsRosterCopy.BOTS_ONLY).assertCountEquals(0)
 
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithText(BotsRosterCopy.NO_MATCH_FILTERS).fetchSemanticsNodes().isNotEmpty()

@@ -436,10 +436,16 @@ private fun RosterFilters(state: BotsRosterUiState, actions: BotsActions) {
             shadowElevation = 0.dp,
         ) {
             MenuSectionLabel(FILTER_KIND)
-            RosterFilterOptions(KIND_FILTERS, state.kindFilter) { actions.onKindFilterChange(it) }
+            RosterFilterOptions(KIND_FILTERS, state.kindFilter) {
+                expanded = false
+                actions.onKindFilterChange(it)
+            }
             Hairline()
             MenuSectionLabel(FILTER_ACTIVITY)
-            RosterFilterOptions(ACTIVITY_FILTERS, state.activityFilter) { actions.onActivityFilterChange(it) }
+            RosterFilterOptions(ACTIVITY_FILTERS, state.activityFilter) {
+                expanded = false
+                actions.onActivityFilterChange(it)
+            }
         }
     }
 }
