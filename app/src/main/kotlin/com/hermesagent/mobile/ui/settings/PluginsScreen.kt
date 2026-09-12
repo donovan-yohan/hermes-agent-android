@@ -31,6 +31,7 @@ import com.hermesagent.mobile.plugins.PluginKind
 import com.hermesagent.mobile.plugins.PluginRecord
 import com.hermesagent.mobile.plugins.PluginStatus
 import com.hermesagent.mobile.plugins.PluginStore
+import com.hermesagent.mobile.ui.common.ComingSoonToggleRow
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.Pill
@@ -43,10 +44,21 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.launch
 
 /**
- * Settings ▸ Plugins.
+ * Settings ▸ Plugins — this app's whole plugins surface.
  *
- * Desktop source: `apps/desktop/src/app/settings/plugins-settings.tsx` (bundled
- * section only) @ `564aef2946c436500a5e80ee117b66b789b3f99a`.
+ * Desktop source: `apps/desktop/src/app/skills/plugins-tab.tsx` @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`. The old citation here named
+ * `apps/desktop/src/app/settings/plugins-settings.tsx`, a file `61afcde8f9`
+ * deleted when it folded both plugin half-pages into Capabilities ▸ Plugins.
+ *
+ * Desktop draws one row per *package* with a switch per half — Desktop (this
+ * app, the same for every profile) and Agent (the selected profile's backend)
+ * — plus install, folder, rescan and the catalog picker. This app backs exactly
+ * the Desktop half: bundled Kotlin modules, no disk door and no install path
+ * (`docs/adr/0003-bundled-plugin-sdk.md`). So the rows carry one switch, the
+ * agent half is a marked, unbuilt row rather than a second column, and the
+ * discovery controls are omitted as non-goals. Classified in
+ * `docs/parity/settings-plugins.md`.
  */
 @Composable
 fun PluginsScreen(
@@ -114,6 +126,26 @@ fun PluginsScreen(
                     )
                     Hairline()
                 }
+            }
+
+            // Desktop's second half. `plugins-tab.tsx:305-352` @ the pin gives
+            // every package an Agent switch scoped to the selected profile,
+            // backed by `plugins.manage` over the gateway. That is a backend
+            // operation, not a disk door, so unlike Install from Git, the
+            // folder, Rescan and the catalog it is not a non-goal here — this
+            // app simply has not built it. A control a port is expected to have
+            // is drawn disabled and marked rather than omitted, because
+            // omitting it would claim the surface was never meant to have it
+            // (`docs/workflows/review-desktop-parity.md`). One row stands for
+            // the half: per-package agent switches would need rows this app
+            // cannot populate.
+            item {
+                Hairline(Modifier.padding(vertical = 10.dp))
+                ComingSoonToggleRow(
+                    label = PluginsCopy.AGENT_TITLE,
+                    description = PluginsCopy.AGENT_BLURB,
+                    modifier = Modifier.testTag(PLUGINS_AGENT_HALF_TAG),
+                )
             }
         }
     }
@@ -222,6 +254,9 @@ private fun kindOrder(kind: PluginKind): Int = when (kind) {
 }
 
 internal const val PLUGINS_TITLE_TAG: String = "plugins-title"
+
+/** The marked, unbuilt Agent half — Desktop's second switch column. */
+internal const val PLUGINS_AGENT_HALF_TAG: String = "plugins-agent-half"
 
 internal fun pluginRowTag(id: String): String = "plugins-row-$id"
 internal fun pluginToggleTag(id: String): String = "plugins-toggle-$id"
