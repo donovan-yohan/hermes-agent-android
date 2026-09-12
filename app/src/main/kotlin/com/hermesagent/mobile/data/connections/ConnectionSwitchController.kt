@@ -69,7 +69,7 @@ internal fun interface EndpointScopedState {
  *
  * The order is the whole point, and it is Desktop’s
  * (`apps/desktop/src/store/connections.ts:153-225` and
- * `store/gateway-switch.ts:47-96` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`):
+ * `store/gateway-switch.ts:47-96` @ `564aef2946c436500a5e80ee117b66b789b3f99a`):
  *
  * 1. **Leave the old endpoint through the door it came in.** The existing
  *    [GatewayConnectionController.disconnect] is what tears the socket down, so

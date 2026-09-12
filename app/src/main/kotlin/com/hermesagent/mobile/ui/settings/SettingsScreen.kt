@@ -58,7 +58,7 @@ fun SettingsScreen(
         )
         SettingsRow(
             // Verbatim `commandCenter.sectionEntries.system` (`en.ts:1548` @
-            // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). Desktop reaches this
+            // `564aef2946c436500a5e80ee117b66b789b3f99a`). Desktop reaches this
             // panel from a command palette, which a phone has no form of, so it
             // becomes a Settings destination and sits with the Gateway rows it
             // is about.

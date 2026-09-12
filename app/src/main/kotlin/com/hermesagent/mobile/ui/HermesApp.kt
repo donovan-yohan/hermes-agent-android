@@ -300,7 +300,7 @@ fun HermesApp(
 
                 HermesDestination.Plugins -> OverlayScaffold(
                     // Mobile adaptation of `settings.plugins.title`
-                    // (`i18n/en.ts:446` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`):
+                    // (`i18n/en.ts:446` @ `564aef2946c436500a5e80ee117b66b789b3f99a`):
                     // Desktop says “Desktop plugins” because disk installs
                     // exist; Android ships bundled-only.
                     title = PluginsCopy.TITLE,

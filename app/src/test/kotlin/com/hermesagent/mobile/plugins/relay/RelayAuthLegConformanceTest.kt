@@ -216,7 +216,7 @@ class RelayAuthLegConformanceTest {
             ),
         )
 
-        /** hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3, middleware.py:145-163,356-373. */
+        /** hermes-agent @ 564aef2946c436500a5e80ee117b66b789b3f99a, middleware.py:145-163,356-373. */
         const val GATE_LAPSED_ENVELOPE =
             """{"error":"session_expired","detail":"Unauthorized",""" +
                 """"reason":"invalid_or_expired_session","login_url":"/login"}"""

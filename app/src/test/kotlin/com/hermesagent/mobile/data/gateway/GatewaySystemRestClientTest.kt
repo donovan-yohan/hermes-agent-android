@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * The System panel's six routes, against the shapes the pinned Gateway actually
- * produces: hermes-agent @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`, with the
+ * produces: hermes-agent @ `564aef2946c436500a5e80ee117b66b789b3f99a`, with the
  * `path:line` that builds each fixture named where it is used.
  *
  * Kept beside `GatewayRestClientTest` rather than inside it because these are a

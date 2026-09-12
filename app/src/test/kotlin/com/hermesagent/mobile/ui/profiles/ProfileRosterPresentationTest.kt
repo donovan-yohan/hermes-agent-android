@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * The roster's presentation rules, against Desktop's at
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`:
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`:
  * `apps/desktop/src/app/profiles/index.tsx:89-91`, `src/i18n/en.ts:1756`, and
  * the conservative half of `src/lib/display-path.ts`.
  *

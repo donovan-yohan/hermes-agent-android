@@ -327,7 +327,7 @@
     "name": "sidebar-blank-state-light",
     "rootSelector": "[data-slot=\"sidebar-content\"] > div.grid.place-items-center",
     "upstream": "/tmp/hermes-desktop-3ca096de",
-    "upstreamSha": "3ca096de5f8183cb2e0ec23673f294d5978656a3",
+    "upstreamSha": "564aef2946c436500a5e80ee117b66b789b3f99a",
     "target": {
       "title": "Hermes",
       "url": "http://127.0.0.1:5174/#/"

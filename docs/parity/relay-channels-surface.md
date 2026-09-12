@@ -8,7 +8,7 @@ The read-only Relay workspace (`plugins/relay/`), ported per
 | Source | Pin | Read via |
 |---|---|---|
 | Relay plugin (renderer + backend) | `hermes-plugin-relay` @ `563a8c8` | `git show 563a8c8:<path>` only — the working tree carries unreleased work |
-| Gateway / auth gate | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout |
+| Gateway / auth gate | `hermes-agent` @ `564aef2946c436500a5e80ee117b66b789b3f99a` | read-only checkout |
 
 Every `path:line` below is against those pins.
 
