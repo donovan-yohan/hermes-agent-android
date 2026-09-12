@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
@@ -42,6 +43,14 @@ class SessionNotifier(
     private val sessions: StateFlow<SessionCacheState>,
     /** One emission per socket open, including the first. Opens the quiet window. */
     private val socketOpens: Flow<Unit>,
+    /**
+     * Whether the Gateway is answering. Android-only input: a desktop renderer
+     * is either running or quit, but this app's socket can go away on its own
+     * while a turn is mid-flight and nothing else will ever say so.
+     */
+    private val connected: StateFlow<Boolean>,
+    /** Durable ids with a turn on the wire, for deciding what a drop interrupted. */
+    private val activeTurns: StateFlow<Set<String>>,
     private val presence: NotificationPresence,
     private val settingsFlow: Flow<NotificationSettings>,
     private val surface: NotificationSurface,
@@ -57,6 +66,8 @@ class SessionNotifier(
         data class Present(val foregrounded: Boolean, val visibleSessionId: String?) : Signal
         data class Settings(val settings: NotificationSettings) : Signal
         data class QuietWindowExpired(val generation: Long) : Signal
+        data class Connected(val connected: Boolean) : Signal
+        data object ReminderTick : Signal
     }
 
     private var quietUntil = 0L
@@ -105,6 +116,19 @@ class SessionNotifier(
     /** Latest pending inputs map received from the repository. */
     private var latestPending = mapOf<PendingInputKey, PendingInputRequest>()
 
+    /** Whether the last [Signal.Connected] said the Gateway was answering. */
+    private var wasConnected = false
+
+    /**
+     * When each live prompt notification was posted, and whether its reminder
+     * has already gone out.
+     *
+     * Keyed the same way [shown] is, and pruned alongside it: a reminder for a
+     * notification that is no longer in the shade is a reminder about nothing.
+     */
+    private val promptPostedAt = mutableMapOf<Pair<String, NotificationKind>, Long>()
+    private val reminded = mutableSetOf<Pair<String, NotificationKind>>()
+
     private val quietExpiries = MutableSharedFlow<Signal.QuietWindowExpired>(extraBufferCapacity = 16)
     private var quietJob: Job? = null
     private var runningScope: CoroutineScope? = null
@@ -130,6 +154,8 @@ class SessionNotifier(
                 combine(presence.appForegrounded, presence.visibleSessionId, Signal::Present)
                     .distinctUntilChanged(),
                 settingsFlow.map(Signal::Settings),
+                connected.map(Signal::Connected).distinctUntilChanged(),
+                reminderTicks(),
                 quietExpiries,
             ).collect { signal ->
                 when (signal) {
@@ -148,6 +174,8 @@ class SessionNotifier(
                         settings = signal.settings
                         applyPending(latestPending, latestPending)
                     }
+                    is Signal.Connected -> applyConnected(signal.connected)
+                    Signal.ReminderTick -> applyReminderTick()
                     is Signal.QuietWindowExpired -> {
                         // Ignore stale expiry from a cancelled quiet window that was already buffered.
                         if (signal.generation == quietGeneration) {
@@ -229,6 +257,10 @@ class SessionNotifier(
             }
         }
         shown = next
+        promptPostedAt.keys.retainAll(next.keys)
+        reminded.retainAll(next.keys)
+        val now = clock()
+        for (identity in next.keys) promptPostedAt.putIfAbsent(identity, now)
 
         // Prune resolved prompts on observed resolution (present in previous pending, absent from current)
         // rather than set difference against current requests, so incremental replays on reconnect
@@ -253,11 +285,76 @@ class SessionNotifier(
     }
 
     private fun applyTurn(outcome: GatewayTurnOutcome) {
-        // A failed turn is `turnError`, a separate kind with separate copy and
-        // its own preference. Until that row ships, a failure notifies nothing
-        // rather than claiming Hermes finished.
-        if (outcome.failed) return
-        dispatch(NotificationKind.TurnDone, outcome.durableSessionId, approval = null)
+        // Desktop dispatches these from two different handlers and so carries
+        // two kinds; this is the same split against one outcome. A failure that
+        // said `Hermes finished` would be the one notification you cannot act
+        // on, because it claims there is something to read.
+        val kind = if (outcome.failed) NotificationKind.TurnError else NotificationKind.TurnDone
+        dispatch(kind, outcome.durableSessionId, approval = null)
+    }
+
+    /**
+     * The socket went away, or came back.
+     *
+     * Only a drop *from* connected notifies, and only for conversations that
+     * had something in flight: an app that has simply not dialled yet is not
+     * news, and neither is a connection dropping under an idle session the
+     * person was not waiting on. What makes this worth a notification at all is
+     * that the drop silently ends the turn — the shade's approval buttons stop
+     * being answerable, and nothing else in the app is in a position to say so
+     * while it is in the background.
+     */
+    private fun applyConnected(nowConnected: Boolean) {
+        val dropped = wasConnected && !nowConnected
+        wasConnected = nowConnected
+        if (!dropped) return
+        val interrupted = buildSet {
+            addAll(activeTurns.value)
+            latestPending.values.mapTo(this) { it.durableSessionId }
+        }
+        for (durableSessionId in interrupted) {
+            dispatch(NotificationKind.ConnectionLost, durableSessionId, approval = null)
+        }
+    }
+
+    /**
+     * A prompt this app already announced is still unanswered.
+     *
+     * Desktop has no equivalent because a renderer is on a screen someone is
+     * sitting at; a phone notification can be swiped into a shade and forgotten
+     * while an agent stays blocked behind it. One reminder per prompt, never a
+     * stream of them, and only while the prompt is genuinely still parked — the
+     * reminder is keyed on the same (session, kind) identity the notification
+     * itself is, so a prompt that resolved or was superseded loses its reminder
+     * with its notification.
+     */
+    private fun applyReminderTick() {
+        val now = clock()
+        for ((identity, postedAt) in promptPostedAt) {
+            if (identity in reminded) continue
+            if (now - postedAt < REMINDER_MS) continue
+            if (identity !in shown) continue
+            reminded += identity
+            // Bypasses the throttle for the same reason a supersession does:
+            // the throttle exists to collapse a burst of news, and this is one
+            // deliberate second telling of news that is minutes old.
+            dispatch(NotificationKind.StillWaiting, identity.first, approval = shown[identity]?.approval, bypassThrottle = true)
+        }
+    }
+
+    /**
+     * The reminder clock, as one signal rather than a timer per prompt.
+     *
+     * A job per notification would mean cancelling and re-arming on every
+     * pending update, which is exactly the kind of bookkeeping that leaks a
+     * coroutine when a prompt is superseded mid-flight. One tick, and the
+     * decision made against [promptPostedAt] where the rest of the state lives.
+     */
+    private fun reminderTicks(): Flow<Signal> = flow {
+        while (true) {
+            delay(REMINDER_TICK_MS)
+            emit(Signal.ReminderTick)
+        }
     }
 
     private fun applyPresence(foregrounded: Boolean, visibleSessionId: String?) {
@@ -391,3 +488,16 @@ private const val THROTTLE_MS = 1_000L
 
 /** `store/notify-baseline.ts:14` @ the pin. */
 private const val SEED_QUIET_MS = 4_000L
+
+/**
+ * How long a prompt may sit unanswered before one reminder goes out.
+ *
+ * Android-only, and long on purpose: the reminder competes with the original
+ * notification for the same attention, so a short one would read as the app
+ * nagging rather than as news. Five minutes is long enough that anybody who
+ * saw the first one has either acted or decided not to.
+ */
+private const val REMINDER_MS = 5 * 60_000L
+
+/** How often the reminder rule is evaluated. Coarse: it decides nothing on its own. */
+private const val REMINDER_TICK_MS = 30_000L

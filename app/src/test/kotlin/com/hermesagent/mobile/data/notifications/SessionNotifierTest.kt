@@ -126,7 +126,7 @@ class SessionNotifierTest {
     }
 
     @Test
-    fun `a failed turn does not claim Hermes finished`() = runTest {
+    fun `a failed turn is turnError, never Hermes finished`() = runTest {
         val world = World(this)
         world.presence.applicationForegroundChanged(false)
         world.presence.visibleSessionChanged("visible")
@@ -136,7 +136,108 @@ class SessionNotifierTest {
         world.turns.emit(GatewayTurnOutcome("visible", failed = true))
         runCurrent()
 
+        // `Hermes finished` is the one notification you cannot act on when the
+        // turn failed: it claims there is something to read.
+        assertEquals(listOf(NotificationKind.TurnError to "visible"), world.surface.posted())
+    }
+
+    @Test
+    fun `turnError obeys its own preference`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.settings.value = NotificationSettings(
+            kinds = NotificationKind.entries.associateWith { it != NotificationKind.TurnError },
+        )
+        world.start()
+        world.leaveQuietWindow()
+
+        world.turns.emit(GatewayTurnOutcome("s1", failed = true))
+        world.turns.emit(GatewayTurnOutcome("s2", failed = false))
+        runCurrent()
+
+        assertEquals(listOf(NotificationKind.TurnDone to "s2"), world.surface.posted())
+    }
+
+    @Test
+    fun `a dropped socket notifies the conversations it interrupted`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.activeTurns.value = setOf("running")
+        world.pendingInputs.value = approval("parked")
+        runCurrent()
+        world.surface.posts.clear()
+
+        world.connected.value = false
+        runCurrent()
+
+        // Both, and only both: a session with nothing in flight was not
+        // waiting on this socket for anything.
+        assertEquals(
+            setOf(
+                NotificationKind.ConnectionLost to "running",
+                NotificationKind.ConnectionLost to "parked",
+            ),
+            world.surface.posted().toSet(),
+        )
+    }
+
+    @Test
+    fun `never having connected is not a connection lost`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.connected.value = false
+        world.activeTurns.value = setOf("s1")
+        world.start()
+        world.leaveQuietWindow()
+        runCurrent()
+
         assertEquals(emptyList<Pair<NotificationKind, String>>(), world.surface.posted())
+    }
+
+    @Test
+    fun `a parked prompt is reminded once, and only while it is still parked`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = approval("s1")
+        runCurrent()
+        assertEquals(listOf(NotificationKind.Approval to "s1"), world.surface.posted())
+
+        // Well past the reminder, and past several ticks after it.
+        advanceTimeBy(11 * 60_000)
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                NotificationKind.Approval to "s1",
+                NotificationKind.StillWaiting to "s1",
+            ),
+            world.surface.posted(),
+        )
+    }
+
+    @Test
+    fun `an answered prompt is never reminded about`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = approval("s1")
+        runCurrent()
+        advanceTimeBy(60_000)
+        world.pendingInputs.value = emptyMap()
+        runCurrent()
+
+        advanceTimeBy(11 * 60_000)
+        runCurrent()
+
+        assertEquals(listOf(NotificationKind.Approval to "s1"), world.surface.posted())
     }
 
     @Test
@@ -843,6 +944,10 @@ private class World(private val test: kotlinx.coroutines.test.TestScope) {
     val settings = MutableStateFlow(NotificationSettings())
     val presence = NotificationPresence()
     val surface = RecordingNotificationSurface()
+    // Starts connected, because every test that is not about the socket going
+    // away is about a connection that is already up.
+    val connected = MutableStateFlow(true)
+    val activeTurns = MutableStateFlow<Set<String>>(emptySet())
 
     fun start() {
         SessionNotifier(
@@ -850,6 +955,8 @@ private class World(private val test: kotlinx.coroutines.test.TestScope) {
             turnOutcomes = turns,
             sessions = sessions,
             socketOpens = socketOpens,
+            connected = connected,
+            activeTurns = activeTurns,
             presence = presence,
             settingsFlow = settings,
             surface = surface,

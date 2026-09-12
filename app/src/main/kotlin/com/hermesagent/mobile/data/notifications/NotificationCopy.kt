@@ -35,6 +35,23 @@ object NotificationCopy {
     /** `en.ts:182` */
     const val TURN_ERROR_TITLE = "Turn failed"
 
+    /**
+     * Android-only. Desktop's renderer is either running or quit, so it never
+     * had a "the socket went away under you" state to name.
+     */
+    const val CONNECTION_LOST_TITLE = "Connection lost"
+
+    const val CONNECTION_LOST_BODY = "Hermes stopped before this turn finished."
+
+    /**
+     * Android-only. A notification can be swiped into a shade and forgotten
+     * while an agent stays blocked behind it; a renderer on a screen someone is
+     * sitting at cannot be.
+     */
+    const val STILL_WAITING_TITLE = "Still waiting"
+
+    const val STILL_WAITING_BODY = "Something is still waiting for your answer."
+
     /** `en.ts:176` */
     const val APPROVE_ACTION = "Approve"
 
@@ -111,12 +128,18 @@ object NotificationCopy {
         NotificationKind.Approval -> APPROVAL_TITLE
         NotificationKind.TurnDone -> TURN_DONE_TITLE
         NotificationKind.TurnError -> TURN_ERROR_TITLE
+        NotificationKind.ConnectionLost -> CONNECTION_LOST_TITLE
+        NotificationKind.StillWaiting -> STILL_WAITING_TITLE
+        // Desktop files clarify, sudo and secret under one `input` kind, and
+        // the three it never raises here have no title to reach for anyway.
         else -> INPUT_TITLE
     }
 
     /** Shown when the session has no title yet, so the alert still says something true. */
     fun fallbackBody(kind: NotificationKind): String = when (kind) {
         NotificationKind.TurnDone -> TURN_DONE_BODY
+        NotificationKind.ConnectionLost -> CONNECTION_LOST_BODY
+        NotificationKind.StillWaiting -> STILL_WAITING_BODY
         else -> INPUT_BODY
     }
 }

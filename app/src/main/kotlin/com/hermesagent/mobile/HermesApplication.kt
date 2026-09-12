@@ -76,6 +76,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -374,6 +377,13 @@ class HermesApplication : Application() {
             sessions = cache.state,
             // A new client instance is a new socket, which is a new replay.
             socketOpens = gatewayConnection.client.filterNotNull().map { },
+            // Status rather than the client handle: a client that exists is not
+            // a client that is answering, and `connectionLost` is a claim about
+            // the second one.
+            connected = gatewayConnection.state
+                .map { it.status == GatewayConnectionStatus.Connected }
+                .stateIn(appScope, SharingStarted.Eagerly, false),
+            activeTurns = sessionRepository.activeTurns,
             presence = notificationPresence,
             settingsFlow = notificationPreferences.notificationSettings,
             surface = notificationSurface,
