@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -43,6 +44,8 @@ import com.hermesagent.mobile.plugins.bots.STALE_TAG
 import com.hermesagent.mobile.plugins.createPluginContext
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import com.hermesagent.mobile.ui.theme.HermesSpacing
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -180,8 +183,21 @@ class BotsRosterJourneyTest {
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithText(BotsRosterCopy.RETRY_NOW).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("Hermes refused that Gateway request.").assertIsDisplayed()
+        compose.onNodeWithText(
+            BotsRosterCopy.rosterUnavailable("Hermes refused that Gateway request."),
+        ).assertIsDisplayed()
         compose.onNodeWithText(BotsRosterCopy.RETRY_NOW).assertIsDisplayed()
+    }
+
+    @Test
+    fun `activity toasts stays visible as a disabled marked Desktop affordance`() {
+        clients.value = rosterRpc()
+        launch()
+
+        compose.onNodeWithContentDescription("Activity toasts off — click to enable. $WIP_SPOKEN")
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assertHeightIsAtLeast(HermesSpacing().touchTarget)
     }
 
     /** A Gateway without `profiles.list` says so, and closes the entry point. */
@@ -238,12 +254,20 @@ class BotsRosterJourneyTest {
         launch()
 
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithContentDescription(BotsRosterCopy.GROUPS_ONLY).fetchSemanticsNodes()
+            compose.onAllNodesWithContentDescription("Filter roster").fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        // Groups arrive in a later slice, so this selection is honestly empty.
-        // The pills publish their label as a `contentDescription`, not as text.
-        compose.onNodeWithContentDescription(BotsRosterCopy.GROUPS_ONLY).performTouchInput { click() }
+        compose.onNodeWithContentDescription("Filter roster").performTouchInput { click() }
+        listOf(
+            BotsRosterCopy.BOTS_AND_GROUPS,
+            BotsRosterCopy.BOTS_ONLY,
+            BotsRosterCopy.GROUPS_ONLY,
+            BotsRosterCopy.ANY_ACTIVITY,
+            BotsRosterCopy.ACTIVE_NOW,
+            BotsRosterCopy.RECENTLY_ACTIVE,
+            BotsRosterCopy.OLDER,
+        ).forEach { label -> compose.onNodeWithText(label).assertIsDisplayed() }
+        compose.onNodeWithText(BotsRosterCopy.GROUPS_ONLY).performClick()
 
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithText(BotsRosterCopy.NO_MATCH_FILTERS).fetchSemanticsNodes().isNotEmpty()
