@@ -168,6 +168,51 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
+    fun `a question with choices puts each one on its own button`() {
+        AndroidNotificationSurface(context).post(questionPost(listOf("Redis", "Postgres")))
+
+        val actions = posted(NotificationKind.Input, SESSION).actions
+        assertEquals(listOf("Redis", "Postgres"), actions.map { it.title.toString() })
+        val intent = shadowOf(actions.first().actionIntent).savedIntent
+        assertEquals(ACTION_ANSWER_QUESTION, intent.action)
+        // The choice is the answer text; nothing here has to translate it.
+        assertEquals("Redis", intent.getStringExtra(EXTRA_ANSWER))
+        assertEquals("q1", intent.getStringExtra(EXTRA_QUESTION_ID))
+        assertNull(actions.first().remoteInputs)
+    }
+
+    /**
+     * The only case the "a single free-text box cannot answer a constrained
+     * batch" objection does not cover: a question that had no choices to
+     * constrain, whose answer was always going to be typed.
+     */
+    @Test
+    fun `a question with no choices gets a reply box`() {
+        AndroidNotificationSurface(context).post(questionPost(emptyList()))
+
+        val action = posted(NotificationKind.Input, SESSION).actions.single()
+        assertEquals(NotificationCopy.REPLY_ACTION, action.title.toString())
+        val remoteInput = action.remoteInputs?.single()
+        assertNotNull(remoteInput)
+        assertEquals(EXTRA_ANSWER, remoteInput!!.resultKey)
+    }
+
+    @Test
+    fun `a prompt that degrades keeps its own kind`() {
+        val surface = AndroidNotificationSurface(context)
+        surface.post(questionPost(emptyList()))
+
+        surface.degrade(NotificationKind.Input, SESSION)
+
+        val notification = posted(NotificationKind.Input, SESSION)
+        // `Approval needed` here would say a command is waiting when a
+        // question is.
+        assertEquals(NotificationCopy.INPUT_TITLE, notification.title())
+        assertEquals(NotificationCopy.OPEN_TO_RESPOND, notification.text())
+        assertNull(notification.actions)
+    }
+
+    @Test
     fun `tapping a notification opens that conversation`() {
         AndroidNotificationSurface(context).post(approvalPost())
 
@@ -263,7 +308,7 @@ class AndroidNotificationSurfaceTest {
         val surface = AndroidNotificationSurface(context)
         surface.post(approvalPost())
 
-        surface.degradeApproval(SESSION)
+        surface.degrade(NotificationKind.Approval, SESSION)
 
         val notification = posted(NotificationKind.Approval, SESSION)
         assertEquals(NotificationCopy.APPROVAL_TITLE, notification.title())
@@ -311,6 +356,24 @@ class AndroidNotificationSurfaceTest {
                 // What a Gateway with a permanent allowlist offers
                 // (`api_server.py:108` @ `72a3277cd7`).
                 choices = listOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWAYS, APPROVAL_DENY),
+            ),
+        )
+
+        fun questionPost(choices: List<String>) = NotificationPost(
+            kind = NotificationKind.Input,
+            durableSessionId = SESSION,
+            title = NotificationCopy.INPUT_TITLE,
+            body = "Refactor the parser",
+            question = QuestionTarget(
+                key = PendingInputKey(
+                    connectionGeneration = 7L,
+                    runtimeSessionId = RUNTIME,
+                    requestId = REQUEST_ID,
+                    kind = PendingInputKind.Clarify,
+                ),
+                durableSessionId = SESSION,
+                questionId = "q1",
+                choices = choices,
             ),
         )
     }

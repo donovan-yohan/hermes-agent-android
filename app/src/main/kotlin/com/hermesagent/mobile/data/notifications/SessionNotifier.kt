@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.data.notifications
 
 import com.hermesagent.mobile.data.gateway.ApprovalPending
+import com.hermesagent.mobile.data.gateway.ClarifyPending
+import com.hermesagent.mobile.data.gateway.shadeQuestion
 import com.hermesagent.mobile.data.gateway.GatewayTurnOutcome
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputKind
@@ -57,7 +59,11 @@ class SessionNotifier(
     private val clock: () -> Long,
 ) {
     /** One parked request as the shade needs it: what it is, and how to answer it. */
-    private data class Prompt(val key: PendingInputKey, val approval: ApprovalTarget?)
+    private data class Prompt(
+        val key: PendingInputKey,
+        val approval: ApprovalTarget?,
+        val question: QuestionTarget? = null,
+    )
 
     private sealed interface Signal {
         data object SocketOpen : Signal
@@ -223,6 +229,14 @@ class SessionNotifier(
                 approval = (request as? ApprovalPending)?.let {
                     ApprovalTarget(key, it.durableSessionId, it.choices)
                 },
+                // Null for a batch, a multi-select, or more choices than the
+                // shade can draw — see `shadeQuestion` for why each of those
+                // cannot be answered honestly from a notification.
+                question = (request as? ClarifyPending)?.let { clarify ->
+                    shadeQuestion(clarify)?.let {
+                        QuestionTarget(key, clarify.durableSessionId, it.questionId, it.choices)
+                    }
+                },
             ) to request.promptIdentity()
         }
 
@@ -250,7 +264,13 @@ class SessionNotifier(
             // The throttle is bypassed for a supersession: the shade's buttons
             // would otherwise keep pointing at a request id the Gateway has
             // already replaced, and pressing one would answer nothing.
-            val posted = dispatch(identity.second, identity.first, prompt.approval, bypassThrottle = supersedes)
+            val posted = dispatch(
+                identity.second,
+                identity.first,
+                prompt.approval,
+                question = prompt.question,
+                bypassThrottle = supersedes,
+            )
             if (posted) {
                 next[identity] = prompt
                 notified += promptIdentity
@@ -340,7 +360,13 @@ class SessionNotifier(
             // Bypasses the throttle for the same reason a supersession does:
             // the throttle exists to collapse a burst of news, and this is one
             // deliberate second telling of news that is minutes old.
-            dispatch(NotificationKind.StillWaiting, identity.first, approval = shown[identity]?.approval, bypassThrottle = true)
+            dispatch(
+                NotificationKind.StillWaiting,
+                identity.first,
+                approval = shown[identity]?.approval,
+                question = shown[identity]?.question,
+                bypassThrottle = true,
+            )
         }
     }
 
@@ -381,6 +407,7 @@ class SessionNotifier(
         kind: NotificationKind,
         durableSessionId: String,
         approval: ApprovalTarget?,
+        question: QuestionTarget? = null,
         bypassThrottle: Boolean = false,
     ): Boolean {
         if (!settings.allows(kind)) return false
@@ -396,6 +423,7 @@ class SessionNotifier(
                 title = NotificationCopy.title(kind),
                 body = title.ifBlank { NotificationCopy.fallbackBody(kind) },
                 approval = approval,
+                question = question,
             ),
         )
         return true

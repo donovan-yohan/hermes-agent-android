@@ -34,6 +34,22 @@ data class ApprovalTarget(
     val choices: List<String> = emptyList(),
 )
 
+/**
+ * Everything needed to answer one question from the shade.
+ *
+ * Same shape and same reasoning as [ApprovalTarget]: the repository's own key,
+ * never a copy of its fields, so the shade is not a second writer with its own
+ * idea of what is pending.
+ */
+data class QuestionTarget(
+    val key: PendingInputKey,
+    val durableSessionId: String,
+    /** Empty for single-question mode; `clarify.respond` then sends no `question_id`. */
+    val questionId: String,
+    /** Empty means a reply box rather than buttons. */
+    val choices: List<String>,
+)
+
 /** One notification the notifier decided should exist. */
 data class NotificationPost(
     val kind: NotificationKind,
@@ -42,6 +58,8 @@ data class NotificationPost(
     val body: String,
     /** Non-null only for an approval that can still be answered from the shade. */
     val approval: ApprovalTarget? = null,
+    /** Non-null only for a question the shade can answer honestly; see `shadeQuestion`. */
+    val question: QuestionTarget? = null,
 )
 
 /**
@@ -58,11 +76,14 @@ interface NotificationSurface {
     fun clearSession(durableSessionId: String)
 
     /**
-     * The connection can no longer answer this approval. The notification stays
+     * The connection can no longer answer this prompt. The notification stays
      * so the request is not silently lost, but its buttons go and its body says
      * where the answer still lives.
+     *
+     * Takes the kind, because a question that degraded into `Approval needed`
+     * would be telling somebody a command is waiting when a question is.
      */
-    fun degradeApproval(durableSessionId: String)
+    fun degrade(kind: NotificationKind, durableSessionId: String)
 
     /**
      * Desktop's `Send test notification`, and it earns more here.

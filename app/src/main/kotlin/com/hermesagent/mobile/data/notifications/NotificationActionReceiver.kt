@@ -3,6 +3,7 @@ package com.hermesagent.mobile.data.notifications
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.app.RemoteInput
 import com.hermesagent.mobile.HermesApplication
 import com.hermesagent.mobile.data.gateway.APPROVAL_ALWAYS
 import com.hermesagent.mobile.data.gateway.APPROVAL_DENY
@@ -30,7 +31,13 @@ import kotlinx.coroutines.launch
  */
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_RESPOND_TO_APPROVAL) return
+        when (intent.action) {
+            ACTION_RESPOND_TO_APPROVAL -> onApproval(context, intent)
+            ACTION_ANSWER_QUESTION -> onAnswer(context, intent)
+        }
+    }
+
+    private fun onApproval(context: Context, intent: Intent) {
         val app = context.applicationContext as? HermesApplication ?: return
         val durableSessionId = intent.getStringExtra(EXTRA_DURABLE_SESSION_ID)?.takeIf(String::isNotBlank) ?: return
         val runtimeSessionId = intent.getStringExtra(EXTRA_RUNTIME_SESSION_ID)?.takeIf(String::isNotBlank) ?: return
@@ -48,6 +55,50 @@ class NotificationActionReceiver : BroadcastReceiver() {
         app.appScope.launch {
             try {
                 respondFromShade(app.sessionRepository, app.notificationSurface, key, durableSessionId, choice)
+            } finally {
+                finish.finish()
+            }
+        }
+    }
+
+    /**
+     * A clarify answered from the shade: one of its own choices, or typed.
+     *
+     * The typed form is the only field on any of these intents that is not
+     * fixed when the notification is built, and it does not come from the
+     * sender: `RemoteInput` writes it into the intent's own clip data, which is
+     * why that PendingIntent is mutable and the button-per-choice one is not.
+     *
+     * A blank answer is dropped rather than sent. An empty `clarify.respond`
+     * with no question id is the Gateway's *batch-wide cancel*
+     * (`GatewaySessionRepository`), so a reply box someone opened, cleared and
+     * sent would cancel the question instead of answering it.
+     */
+    private fun onAnswer(context: Context, intent: Intent) {
+        val app = context.applicationContext as? HermesApplication ?: return
+        val durableSessionId = intent.getStringExtra(EXTRA_DURABLE_SESSION_ID)?.takeIf(String::isNotBlank) ?: return
+        val runtimeSessionId = intent.getStringExtra(EXTRA_RUNTIME_SESSION_ID)?.takeIf(String::isNotBlank) ?: return
+        val requestId = intent.getStringExtra(EXTRA_REQUEST_ID)?.takeIf(String::isNotBlank) ?: return
+        if (!intent.hasExtra(EXTRA_CONNECTION_GENERATION)) return
+        val generation = intent.getLongExtra(EXTRA_CONNECTION_GENERATION, -1L)
+        val questionId = intent.getStringExtra(EXTRA_QUESTION_ID).orEmpty()
+
+        val typed = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(EXTRA_ANSWER)?.toString()
+        val answer = (typed ?: intent.getStringExtra(EXTRA_ANSWER)).orEmpty().trim()
+        if (answer.isEmpty()) return
+
+        val key = PendingInputKey(generation, runtimeSessionId, requestId, PendingInputKind.Clarify)
+        val finish = goAsync()
+        app.appScope.launch {
+            try {
+                answerFromShade(
+                    app.sessionRepository,
+                    app.notificationSurface,
+                    key,
+                    durableSessionId,
+                    questionId,
+                    answer,
+                )
             } finally {
                 finish.finish()
             }
@@ -88,6 +139,43 @@ private val SHADE_CHOICES = setOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWA
  * heard of the request — and withdrawing the notification there would tell
  * someone their approval went through while an agent stays blocked behind it.
  */
+/**
+ * Answer one clarify, through the same repository seam the in-app card uses.
+ *
+ * The outcome reading is [respondFromShade]'s, for the same reasons: a request
+ * this connection cannot answer keeps its notification and says where the
+ * answer still lives, because the alternative is telling somebody their answer
+ * landed while an agent stays blocked behind it.
+ */
+internal suspend fun answerFromShade(
+    repository: GatewaySessionRepository,
+    surface: NotificationSurface,
+    key: PendingInputKey,
+    durableSessionId: String,
+    questionId: String,
+    answer: String,
+) {
+    val response = try {
+        repository.respondToPendingInput(
+            key,
+            // An empty question id is single-question mode, and the repository
+            // then sends no `question_id` at all — which is what the Gateway
+            // wants for a single, and what it must never see for a batch.
+            PendingInputAction.ClarifyAnswer(mapOf(questionId to answer)),
+        )
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        PendingInputResponse.Retryable
+    }
+    when (response) {
+        PendingInputResponse.Resolved, PendingInputResponse.Expired ->
+            surface.clear(NotificationKind.Input, durableSessionId)
+        PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
+            surface.degrade(NotificationKind.Input, durableSessionId)
+    }
+}
+
 internal suspend fun respondFromShade(
     repository: GatewaySessionRepository,
     surface: NotificationSurface,
@@ -111,6 +199,6 @@ internal suspend fun respondFromShade(
         // The request may still be parked, so the notification stays and says
         // where it can still be answered.
         PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
-            surface.degradeApproval(durableSessionId)
+            surface.degrade(NotificationKind.Approval, durableSessionId)
     }
 }

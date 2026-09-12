@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import com.hermesagent.mobile.MainActivity
 import com.hermesagent.mobile.data.gateway.approvalChoiceLabel
 import com.hermesagent.mobile.data.gateway.isPersistentGrant
@@ -47,20 +48,30 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             }
         }
 
+        post.question?.let { target ->
+            if (target.choices.isEmpty()) {
+                builder.addAction(replyAction(target))
+            } else {
+                for (choice in target.choices) builder.addAction(choiceAction(target, choice))
+            }
+        }
+
         show(post.kind, post.durableSessionId, builder)
     }
 
-    override fun degradeApproval(durableSessionId: String) {
+    override fun degrade(kind: NotificationKind, durableSessionId: String) {
         // Same shape, no buttons, and quiet: this replaces a notification the
-        // user has already been alerted to.
+        // user has already been alerted to. The title stays the kind's own, so
+        // a question that can no longer be answered here still reads as a
+        // question rather than as an approval.
         val builder = builder(
-            kind = NotificationKind.Approval,
+            kind = kind,
             durableSessionId = durableSessionId,
-            title = NotificationCopy.APPROVAL_TITLE,
+            title = NotificationCopy.title(kind),
             body = NotificationCopy.OPEN_TO_RESPOND,
         ).setOnlyAlertOnce(true)
 
-        show(NotificationKind.Approval, durableSessionId, builder)
+        show(kind, durableSessionId, builder)
     }
 
     override fun postTest(title: String, body: String) {
@@ -99,6 +110,64 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             action.setAuthenticationRequired(true)
         }
         return action.build()
+    }
+
+    /**
+     * A free-text answer, typed in the shade.
+     *
+     * `RemoteInput` is the only way a notification takes words, and it is worth
+     * having for exactly the case the constrained-choice argument does not
+     * cover: one question with no choices, which is a question whose answer was
+     * always going to be typed. The reply never carries a persistent grant and
+     * never approves anything — it answers a clarify and nothing else.
+     */
+    private fun replyAction(target: QuestionTarget): NotificationCompat.Action {
+        val remoteInput = RemoteInput.Builder(EXTRA_ANSWER)
+            .setLabel(NotificationCopy.REPLY_HINT)
+            .build()
+        return NotificationCompat.Action.Builder(
+            0,
+            NotificationCopy.REPLY_ACTION,
+            answerIntent(target, choice = null),
+        )
+            .addRemoteInput(remoteInput)
+            // Android may keep the notification and swap the reply box for a
+            // spinner; this app withdraws the notification when the request
+            // actually resolves, which is the only moment it knows it did.
+            .setAllowGeneratedReplies(false)
+            .build()
+    }
+
+    /** One of the question's own choices, verbatim: it is already the answer text. */
+    private fun choiceAction(target: QuestionTarget, choice: String) =
+        NotificationCompat.Action.Builder(0, choice, answerIntent(target, choice)).build()
+
+    /**
+     * Immutable for the same reason [respondIntent] is. A null [choice] leaves
+     * the answer to the `RemoteInput` this intent is attached to — which is the
+     * one field that is *not* fixed at build time, and the only one, because
+     * Android fills it into the intent's own `clipData` rather than letting a
+     * sender supply it.
+     */
+    private fun answerIntent(target: QuestionTarget, choice: String?): PendingIntent {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(ACTION_ANSWER_QUESTION)
+            .putExtra(EXTRA_DURABLE_SESSION_ID, target.durableSessionId)
+            .putExtra(EXTRA_RUNTIME_SESSION_ID, target.key.runtimeSessionId)
+            .putExtra(EXTRA_REQUEST_ID, target.key.requestId)
+            .putExtra(EXTRA_CONNECTION_GENERATION, target.key.connectionGeneration)
+            .putExtra(EXTRA_QUESTION_ID, target.questionId)
+        if (choice != null) intent.putExtra(EXTRA_ANSWER, choice)
+        return PendingIntent.getBroadcast(
+            context,
+            requestCode("answer", choice.orEmpty(), target.durableSessionId, target.key.requestId),
+            intent,
+            // Mutable only where it has to be: a `RemoteInput` reply is written
+            // into the intent by the system, and an immutable PendingIntent has
+            // nowhere to put it. The button-per-choice form stays immutable.
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                if (choice == null) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     /** The shape every notification this app posts shares. */
@@ -288,9 +357,14 @@ fun registerChannels(context: Context) {
 
 const val ACTION_OPEN_SESSION: String = "com.hermesagent.mobile.notifications.OPEN_SESSION"
 const val ACTION_RESPOND_TO_APPROVAL: String = "com.hermesagent.mobile.notifications.RESPOND"
+const val ACTION_ANSWER_QUESTION: String = "com.hermesagent.mobile.notifications.ANSWER"
 const val EXTRA_DURABLE_SESSION_ID: String = "com.hermesagent.mobile.notifications.extra.SESSION_ID"
 const val EXTRA_RUNTIME_SESSION_ID: String = "com.hermesagent.mobile.notifications.extra.RUNTIME_ID"
 const val EXTRA_REQUEST_ID: String = "com.hermesagent.mobile.notifications.extra.REQUEST_ID"
 const val EXTRA_CONNECTION_GENERATION: String = "com.hermesagent.mobile.notifications.extra.GENERATION"
 const val EXTRA_CHOICE: String = "com.hermesagent.mobile.notifications.extra.CHOICE"
+const val EXTRA_QUESTION_ID: String = "com.hermesagent.mobile.notifications.extra.QUESTION_ID"
+
+/** Both the button's fixed answer and the key `RemoteInput` writes under. */
+const val EXTRA_ANSWER: String = "com.hermesagent.mobile.notifications.extra.ANSWER"
 

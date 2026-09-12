@@ -59,6 +59,16 @@ object NotificationCopy {
     const val REJECT_ACTION = "Reject"
 
     /**
+     * Android-only. Desktop answers a question in the renderer, which has a
+     * text field; a notification has a `RemoteInput` and nothing else, and it
+     * needs a word on the button.
+     */
+    const val REPLY_ACTION = "Answer"
+
+    /** `en.ts:3766` `clarify.placeholder` — the app's own field says this too. */
+    const val REPLY_HINT = "Type your answer…"
+
+    /**
      * Android-only. Desktop's buttons resolve against a renderer that is always
      * there; this app's socket can be gone by the time a button is pressed, and
      * a notification that silently does nothing is worse than one that says
