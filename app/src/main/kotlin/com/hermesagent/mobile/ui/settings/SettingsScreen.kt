@@ -30,6 +30,7 @@ fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenGateways: () -> Unit,
     onOpenSystem: () -> Unit,
+    onOpenNotifications: () -> Unit,
     onOpenPlugins: () -> Unit,
     /**
      * Whether a Gateway is connected. The System panel reads the backend's own
@@ -69,13 +70,23 @@ fun SettingsScreen(
             onClick = onOpenSystem,
         )
         SettingsRow(
+            // Verbatim `settings.nav.notifications` (`i18n/en.ts:442` @
+            // `72a3277cd7`), with Desktop's own panel intro as the blurb
+            // (`:590`). Desktop files it under a settings nav rail; a phone has
+            // no rail, so it becomes a destination row like the rest.
+            label = NotificationsCopy.TITLE,
+            description = NotificationsCopy.INTRO,
+            traversalIndex = 3f,
+            onClick = onOpenNotifications,
+        )
+        SettingsRow(
             // Verbatim `settings.sectionEntries.plugins` (`i18n/en.ts:408` @ the pin).
             label = PluginsCopy.SETTINGS_ROW_TITLE,
             // Desktop's blurb for plugins mentions the disk door; this app has
             // bundled plugins only, so the Settings row states the action it
             // actually offers.
             description = PluginsCopy.SETTINGS_ROW_DETAIL,
-            traversalIndex = 3f,
+            traversalIndex = 4f,
             onClick = onOpenPlugins,
         )
         contributions.forEach { contribution ->

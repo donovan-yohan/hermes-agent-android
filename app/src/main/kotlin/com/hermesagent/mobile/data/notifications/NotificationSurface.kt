@@ -54,4 +54,17 @@ interface NotificationSurface {
      * where the answer still lives.
      */
     fun degradeApproval(durableSessionId: String)
+
+    /**
+     * Desktop's `Send test notification`, and it earns more here.
+     *
+     * On Android a notification can be silently dropped by a revoked grant, by
+     * Do Not Disturb, or by a channel the person muted in the OS rather than in
+     * this app — none of which the settings screen can see. One notification
+     * that either appears or does not tells those apart.
+     *
+     * Filed outside the per-conversation grouping and answering to no session,
+     * because it is about the delivery path rather than about any chat.
+     */
+    fun postTest(title: String, body: String)
 }

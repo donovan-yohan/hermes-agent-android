@@ -59,6 +59,22 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         show(NotificationKind.Approval, durableSessionId, builder)
     }
 
+    override fun postTest(title: String, body: String) {
+        if (!manager.areNotificationsEnabled()) return
+        // The quiet channel on purpose: a test that arrives with an approval's
+        // urgency teaches the wrong thing about what an approval sounds like.
+        val builder = NotificationCompat.Builder(context, RESPONSES_CHANNEL_ID)
+            .setSmallIcon(SMALL_ICON)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            // No session to open, and nothing about a conversation to hide.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        manager.notify(TEST_TAG, NOTIFICATION_ID, builder.build())
+    }
+
     /** The shape every notification this app posts shares. */
     private fun builder(
         kind: NotificationKind,
@@ -194,6 +210,9 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
 
         /** Tags carry the identity; one id is enough because (tag, id) is the key. */
         const val NOTIFICATION_ID = 0x48
+
+        /** Outside `hermes:<kind>:<session>`, so no session clear withdraws it. */
+        const val TEST_TAG = "hermes:test"
 
         fun categoryFor(kind: NotificationKind): String =
             if (kind in ATTENTION_KINDS) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE
