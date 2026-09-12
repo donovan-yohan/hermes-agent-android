@@ -61,7 +61,7 @@ class BotsPlugin(
             // ...and the door's endpoint generation is what tells the roster
             // that a list it is holding — deliberately, so a failed refresh is
             // a banner rather than a blank screen — belongs to a machine this
-            // device has left, which no reconnect ever means.
+            // device has left, which a transport redial never means.
             endpointGeneration = ctx.host.endpointGeneration,
         )
         val actions = BotsActions(

@@ -84,8 +84,9 @@ interface PluginHost {
         get() = NO_CONNECTION
 
     /**
-     * Which endpoint the connection behind this door belongs to — bumped when
-     * this device changes endpoint, and by nothing else.
+     * Which endpoint the connection behind this door belongs to — bumped
+     * whenever the app leaves an endpoint and forgets what it told us, and by
+     * nothing else.
      *
      * [connected] answers "would a request be sent"; it cannot answer *to which
      * machine*. The two come apart at exactly the moment a plugin that holds
@@ -98,9 +99,12 @@ interface PluginHost {
      *
      * The app publishes it straight from `SessionCache.endpointGeneration`,
      * whose only writer is `resetForEndpointSwitch` — the clear
-     * `ConnectionSwitchController` performs on a switch, a re-address and an
-     * endpoint's removal. A redial after sleep, a dropped socket or a failed
-     * turn never moves it.
+     * `ConnectionSwitchController` runs through `leaveLocked` on every path
+     * that leaves an endpoint: a switch to another row, a re-address of this
+     * one (the Gateways route form persists per keystroke and tears down
+     * through `leaveCurrentEndpoint` after each, so editing an address is one),
+     * a disconnect, and an endpoint's removal. What never moves it is a
+     * *transport* redial: a dropped socket, a wake from sleep, a failed turn.
      *
      * A door member rather than a plugin-side registration, deliberately: a
      * bundled plugin has no other per-app injection point

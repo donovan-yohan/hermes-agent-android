@@ -119,11 +119,17 @@ class BotsViewModel(
      *
      * The roster is an endpoint-scoped copy of backend truth: it deliberately
      * holds the last good list across a failed refresh
-     * ([BotsRosterUiState.stale]). That rule is right for a reconnect and wrong
-     * for a switch — the next backend is a different machine that can recycle
-     * the same durable ids, so a row read from the machine this device has left
-     * is not the new one's to draw, banner or no banner. `connected` cannot
-     * tell the two apart: both drop the leg and bring one back.
+     * ([BotsRosterUiState.stale]). That rule is right for a transport redial and
+     * wrong for a leave — the next endpoint is a different machine that can
+     * recycle the same durable ids, so a row read from the machine this device
+     * has left is not the new one's to draw, banner or no banner. `connected`
+     * cannot tell the two apart: both drop the leg and bring one back.
+     *
+     * Which of the app's paths count as leaving is `SessionCache`'s own rule
+     * and not this plugin's to invent: the generation this reads is the app's
+     * own wholesale clear, so the roster drops exactly where the session cache
+     * does — a switch, a re-address, a disconnect, a removal — and survives
+     * exactly what the cache survives.
      */
     private val endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
 ) {
@@ -142,6 +148,24 @@ class BotsViewModel(
      * to, however late the collector wakes up.
      */
     private var rosterEndpoint: Long = endpointGeneration.value
+
+    /**
+     * The generation the Gateway last *answered* a read in — `null` until it
+     * answers one, and again after a drop.
+     *
+     * An empty roster has two meanings that must not be confused: "this
+     * Gateway answered, and it has no bots" ([BotsRosterPhase.Empty]) and
+     * "nothing has been asked of this endpoint yet"
+     * ([BotsRosterPhase.Loading]). The roster alone cannot tell them apart, and
+     * a search box or filter row survives a switch — so a keystroke over a
+     * dropped roster would otherwise claim the first about the second.
+     *
+     * It is compared against the *current* generation rather than null-checked,
+     * so it also answers correctly in the window before the collector below has
+     * dropped anything: a generation that has moved is an endpoint this
+     * Gateway's answer no longer belongs to, and the surface waits.
+     */
+    private var answeredEndpoint: Long? = null
 
     private var inFlight: Job? = null
 
@@ -257,6 +281,7 @@ class BotsViewModel(
             is BotsRosterLoad.Loaded -> {
                 roster = load.rows
                 rosterEndpoint = endpoint
+                answeredEndpoint = endpoint
                 recompute()
                 // Only an answer clears the notice: a filter change or a
                 // keystroke in the search box re-derives the same list, and
@@ -327,8 +352,20 @@ class BotsViewModel(
         // than once under a concurrent writer, and the rows' activity bands
         // must not move between two attempts at the same list.
         val now = clock()
-        _uiState.update { derivedState(it, whenEmpty = BotsRosterPhase.Empty, now = now) }
+        _uiState.update { derivedState(it, whenEmpty = emptyRosterPhase(), now = now) }
     }
+
+    /**
+     * What a roster-less surface is claiming: an answered-but-empty Gateway
+     * ([BotsRosterPhase.Empty]), or one nothing has been asked of yet
+     * ([BotsRosterPhase.Loading]).
+     *
+     * Only [answeredEndpoint] can tell them apart — see its KDoc. The endpoint
+     * it was answered in has to be *this* one, not merely answered at some
+     * point in the past.
+     */
+    private fun emptyRosterPhase(): BotsRosterPhase =
+        if (answeredEndpoint != endpointGeneration.value) BotsRosterPhase.Loading else BotsRosterPhase.Empty
 
     /**
      * Forget the roster, because this device has changed endpoint.
@@ -336,11 +373,10 @@ class BotsViewModel(
      * Every row on screen was the previous machine's, and the endpoint this
      * app just left is the one thing a merge cannot reconcile: a different
      * Gateway recycles the same durable ids
-     * (`SessionCache.resetForEndpointSwitch` is the app's one wholesale clear,
-     * and the connection switch is its only caller), so the rows are dropped
-     * rather than re-pointed. The stale notice goes with them — it said these
-     * rows were old, and there are no longer any rows of *this* endpoint's to
-     * be old.
+     * (`SessionCache.resetForEndpointSwitch` is the app's one wholesale clear),
+     * so the rows are dropped rather than re-pointed. The stale notice goes
+     * with them — it said these rows were old, and there are no longer any rows
+     * of *this* endpoint's to be old.
      *
      * The attention badges go too: [attention] is keyed by roster key alone,
      * so the previous machine's failure badges would otherwise paint on the new
@@ -349,18 +385,22 @@ class BotsViewModel(
      *
      * What is left is [BotsRosterPhase.Loading], deliberately not
      * [BotsRosterPhase.Empty]: nothing has been asked of the new endpoint yet,
-     * and those are not the same claim to the person. The connection's own edge
-     * is what asks — see the collector in `init`.
+     * and those are not the same claim to the person — which is also why
+     * [answeredEndpoint] is cleared, so re-deriving an empty roster from a
+     * keystroke cannot make that claim either. The connection's own edge is
+     * what asks — see the collector in `init`.
      */
     private fun dropRosterForEndpointSwitch() {
         roster = emptyList()
         rosterEndpoint = endpointGeneration.value
+        answeredEndpoint = null
         attention.clearAll()
         val now = clock()
         _uiState.update { state ->
             derivedState(
                 from = state.copy(safeMessage = null, attentionByKey = emptyMap()),
-                whenEmpty = BotsRosterPhase.Loading,
+                // `answeredEndpoint` was cleared above, so this is Loading.
+                whenEmpty = emptyRosterPhase(),
                 now = now,
             )
         }
@@ -369,11 +409,10 @@ class BotsViewModel(
     /**
      * The surface's own fields, re-derived from [roster].
      *
-     * [whenEmpty] is the phase a roster-less surface is in, and the two callers
-     * do not mean the same thing by it: an answered-but-empty Gateway is
-     * [BotsRosterPhase.Empty], while a roster dropped because the endpoint
-     * moved is [BotsRosterPhase.Loading]. [now] is passed in rather than read
-     * here for the same reason: one derivation, one instant.
+     * [whenEmpty] is the phase a roster-less surface is in; both callers pass
+     * [emptyRosterPhase] rather than deciding for themselves. [now] is passed
+     * in rather than read here for the same reason: one derivation, one
+     * instant.
      */
     private fun derivedState(
         from: BotsRosterUiState,

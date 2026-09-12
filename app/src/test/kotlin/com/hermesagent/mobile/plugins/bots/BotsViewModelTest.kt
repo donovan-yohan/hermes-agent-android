@@ -30,7 +30,14 @@ class BotsViewModelTest {
     private val now = 1_800_000_000_000L
 
     private class ScriptedHost(var result: PluginHostResult) : PluginHost {
-        override suspend fun request(method: String, params: JsonObject): PluginHostResult = result
+        /** How many reads actually reached this endpoint. */
+        var reads = 0
+
+        override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+            reads += 1
+            return result
+        }
+
         override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
     }
 
@@ -367,6 +374,15 @@ class BotsViewModelTest {
         assertFalse(dropped.stale)
         assertTrue(dropped.attentionByKey.isEmpty())
 
+        // The search box survives the switch, so a keystroke over the dropped
+        // roster is reachable in one tap — and it must not turn "nothing has
+        // been asked of this endpoint yet" into "it answered, and it has no
+        // bots".
+        viewModel.setSearchQuery("beta")
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+        assertEquals(emptyList<BotSectionBlock>(), viewModel.uiState.value.sections)
+        viewModel.setSearchQuery("")
+
         // The new endpoint answers for itself.
         host.result = PluginHostResult.Success(Json.parseToJsonElement(namesRoster("beta-only")))
         connected.value = true
@@ -404,6 +420,46 @@ class BotsViewModelTest {
         assertEquals(3, state.sections.flatMap { it.rows }.size)
         assertTrue(state.stale)
         assertEquals("The Gateway did not answer in time.", state.safeMessage)
+    }
+
+    @Test
+    fun `an endpoint switch with the leg still up drops the roster and reads the new endpoint`() = runTest {
+        val host = loadedHost()
+        // The leg does *not* drop here: `leaveLocked` calls `gateway.disconnect()`
+        // and then `resetForEndpointSwitch()`, but the door's `connected` is its
+        // own collector over the client slot, so the generation can legally move
+        // while this door still reads as up. The drop is the generation's job,
+        // not the edge's — a switch that only answered to `false` would keep the
+        // previous machine's rows whenever that collector ran a turn late.
+        val connected = MutableStateFlow(true)
+        val endpoint = MutableStateFlow(0L)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+            endpointGeneration = endpoint,
+        )
+        viewModel.refreshNow()
+        assertEquals(3, viewModel.uiState.value.sections.flatMap { it.rows }.size)
+        assertEquals(1, host.reads)
+
+        // The new endpoint refuses `profiles.list`, which is the card's own
+        // scenario: were the old rows still held, this is the exact state that
+        // painted them under "showing the last good list" indefinitely.
+        host.result = PluginHostResult.Refused(0, "The Gateway did not answer in time.")
+        endpoint.value = 1L
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        // The refusal is this endpoint's own to report: no rows inherited from
+        // the machine we left, and no banner claiming to be showing them.
+        assertEquals(emptyList<BotSectionBlock>(), state.sections)
+        assertFalse(state.stale)
+        assertEquals(BotsRosterPhase.Refused, state.phase)
+        assertEquals("The Gateway did not answer in time.", state.safeMessage)
+        // Exactly one read for the new endpoint: the drop is not a read storm.
+        assertEquals(2, host.reads)
     }
 
     @Test

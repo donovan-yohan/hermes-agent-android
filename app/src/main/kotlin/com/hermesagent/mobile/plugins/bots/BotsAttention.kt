@@ -156,8 +156,8 @@ class BotAttentionStore(private val clock: () -> Long = System::currentTimeMilli
      * the roster is: it is keyed by roster key alone, and the next Gateway is a
      * different machine that recycles the same ids. Badges recorded against the
      * machine this device just left would otherwise paint on the new one's
-     * same-named bot — the roster's own endpoint switch calls this beside its
-     * drop, and it is that drop's only caller.
+     * same-named bot — the roster's drop calls this beside its own clear, and
+     * that drop is the only caller.
      *
      * A whole-map clear rather than a per-key [clear], because the keys to
      * forget are the ones the roster just dropped and it no longer holds them.
