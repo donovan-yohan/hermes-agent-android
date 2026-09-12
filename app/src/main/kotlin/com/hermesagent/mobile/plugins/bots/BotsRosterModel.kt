@@ -48,6 +48,15 @@ data class BotRosterRow(
     val displayName: String = "",
     val canonicalSession: BotSessionPreview? = null,
     val lastSession: BotSessionPreview? = null,
+    /**
+     * The profile's freshest kanban/tool worker session, when one exists.
+     *
+     * Workers never reach a conversation list, so this is the only signal that
+     * a profile is grinding through a long task; see [workerActiveAt]. Null on
+     * a Gateway that does not send it (`worker_session` arrives with
+     * `include_sessions`, `tui_gateway/methods_profiles.py:216` @ the pin).
+     */
+    val workerSession: BotSessionPreview? = null,
     val hasAvatar: Boolean = false,
 ) {
     /** Source-qualified identity — the list key and the meta key. */
@@ -108,6 +117,13 @@ object BotsRosterLimits {
     const val RECENT_ACTIVITY_WINDOW_SECONDS: Long = 7L * 24L * 60L * 60L
     const val BOT_ROSTER_SEARCH_THRESHOLD: Int = 8
 
+    /**
+     * Desktop's worker liveness window (`row-helpers.ts:76` @ the pin): wider
+     * than [ACTIVE_WINDOW_SECONDS] because a live worker heartbeats at least
+     * every 60 s, so this bridges one missed beat.
+     */
+    const val WORKER_ACTIVE_WINDOW_SECONDS: Long = 150L
+
     /** Desktop's Unassigned bucket key (`user-sections.ts:26` @ the pin). */
     const val UNASSIGNED_SECTION_KEY: String = "section:unassigned"
 
@@ -157,4 +173,18 @@ object BotsRosterCopy {
     /** `roster.rosterUnavailable` (`i18n.ts:303-304` @ the pin). */
     fun rosterUnavailable(reason: String): String =
         "Roster unavailable: $reason. If your gateway predates profiles.list, update Hermes and restart the gateway."
+
+    /**
+     * Desktop's stale banner (`roster-pane.tsx:396-399` @ the pin) — a literal
+     * in the pane, not in `i18n.ts`, and kept character for character
+     * including the space the concatenation leaves before "Waiting".
+     *
+     * Desktop adds the second half while its socket is closed, so the sentence
+     * says which of the two situations the person is in.
+     */
+    fun refreshFailed(connectionUp: Boolean): String =
+        REFRESH_FAILED + if (connectionUp) "" else WAITING_FOR_RECONNECT
+
+    private const val REFRESH_FAILED = "Roster refresh failed — showing the last good list."
+    private const val WAITING_FOR_RECONNECT = " Waiting for the gateway to reconnect…"
 }

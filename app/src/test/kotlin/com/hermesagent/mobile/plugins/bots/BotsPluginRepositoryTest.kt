@@ -49,6 +49,12 @@ class BotsPluginRepositoryTest {
               "description": "the primary profile",
               "has_avatar": true,
               "last_session": {"id": "s-1", "last_active": 1800000000, "preview": "older"},
+              "worker_session": {
+                "id": "w-1",
+                "source": "kanban",
+                "title": "a kanban worker",
+                "last_active": 1800000600
+              },
               "canonical_session": {
                 "id": "c-1",
                 "resolved_id": "c-2",
@@ -111,6 +117,57 @@ class BotsPluginRepositoryTest {
 
         assertEquals("hi", botActivitySession(row)?.preview)
         assertEquals(1_799_999_999_000L, row.lastActiveMillis)
+    }
+
+    @Test
+    fun `the worker session comes off the wire with the row`() {
+        // `worker_session` is on every row whenever `include_sessions` is on
+        // (`methods_profiles.py:216` @ the pin) and carries the same
+        // `last_active`; dropping it is what makes a working profile read idle.
+        val row = parseBotsRoster(json(twoBots))!!.first()
+
+        assertEquals("w-1", row.workerSession?.id)
+        assertEquals(1_800_000_600L, row.workerSession?.lastActiveSeconds)
+    }
+
+    @Test
+    fun `a gateway that sends no worker session leaves it absent`() {
+        assertNull(parseBotsRoster(json(twoBots))!![1].workerSession)
+    }
+
+    @Test
+    fun `a fractional last_active off SQLite still becomes millis`() {
+        // The Gateway reads these straight out of SQLite, where the column is
+        // `REAL` (`hermes_state_common.py:319` @ the pin), so the JSON is
+        // `1700000900.5` — `toLongOrNull()` answers null for it, which read as
+        // "no activity" for every row and silently killed the worker signal.
+        val row = parseBotsRoster(
+            json(
+                """
+                {"profiles": [{
+                  "name": "a",
+                  "last_session": {"id": "s", "last_active": 1800000500.5, "preview": "hi"},
+                  "worker_session": {"id": "w", "source": "kanban", "last_active": 1800000600.25}
+                }]}
+                """,
+            ),
+        )!!.single()
+
+        assertEquals(1_800_000_500L, row.lastSession?.lastActiveSeconds)
+        assertEquals(1_800_000_500_000L, row.lastActiveMillis)
+        assertEquals(1_800_000_600L, row.workerSession?.lastActiveSeconds)
+        assertTrue(workerActiveAt(row, nowMillis = 1_800_000_650_000L))
+    }
+
+    @Test
+    fun `an integral float last_active reads the same as an integer one`() {
+        // Python serialises a whole float as `1800000500.0`, so even a session
+        // whose stamp has no fraction has to survive the read.
+        val row = parseBotsRoster(
+            json("""{"profiles": [{"name": "a", "last_session": {"last_active": 1800000500.0}}]}"""),
+        )!!.single()
+
+        assertEquals(1_800_000_500L, row.lastSession?.lastActiveSeconds)
     }
 
     @Test

@@ -140,6 +140,8 @@ enum class HermesIcon(val glyph: String) {
     CloudDownload("\uEAC2"),
     Folder("\uEA83"),
     Archive("\uEA98"),
+    /** Desktop's inactive activity-toast control (`roster-pane-toolbar.tsx` @ `72a3277cd7`). */
+    BellSlash("\uEC08"),
 
     /**
      * Desktop's `symbol-color`, the Appearance submenu's trigger glyph

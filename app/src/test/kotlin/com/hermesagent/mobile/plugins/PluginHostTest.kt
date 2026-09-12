@@ -111,6 +111,38 @@ class PluginHostTest {
     }
 
     @Test
+    fun `the door reports the live connection, and follows the slot in both directions`() = runTest {
+        val clients = MutableStateFlow<GatewayRpcClient?>(null)
+        val scope = scopeFor(this)
+        val host = GatewayPluginHost(scope, clients)
+
+        assertFalse(host.connected.value)
+
+        clients.value = FakeRpc()
+        advanceUntilIdle()
+        assertTrue(host.connected.value)
+
+        // The leg closing is the other edge a plugin recovers from.
+        clients.value = null
+        advanceUntilIdle()
+        assertFalse(host.connected.value)
+
+        scope.cancel()
+    }
+
+    @Test
+    fun `a door with no live route reports a connection that never arrives`() = runTest {
+        // Not "unknown": the honest answer for a context that has no route, so
+        // a plugin that waits on an edge simply never receives one.
+        assertFalse(UnavailablePluginHost.connected.value)
+
+        val scope = scopeFor(this)
+        val host: PluginHost = UnavailablePluginHost
+        assertEquals(false, host.connected.value)
+        scope.cancel()
+    }
+
+    @Test
     fun `namespace guarding refuses a malformed method locally, before any request`() = runTest {
         val rpc = FakeRpc()
         val scope = scopeFor(this)

@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.plugins.bots
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,27 +13,37 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
+import com.hermesagent.mobile.ui.common.ComingSoonIconAction
 import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.MenuSectionLabel
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -53,6 +64,12 @@ class BotsActions(
     val onActivityFilterChange: (RosterActivityFilter) -> Unit = {},
     val onSetHiddenExpanded: (Boolean) -> Unit = {},
     val onClearFilters: () -> Unit = {},
+    /**
+     * The surface became visible. Desktop refetches the roster the moment its
+     * socket opens and then on its poll; this destination is entered and left
+     * rather than left mounted, so entering it is what re-reads the roster.
+     */
+    val onResume: () -> Unit = {},
 )
 
 @Composable
@@ -62,6 +79,15 @@ fun BotsRosterScreen(
     modifier: Modifier = Modifier,
     actions: BotsActions = BotsActions(),
 ) {
+    // Desktop's roster has no interval of its own: it refetches on the socket
+    // opening and on its query poll. A phone is not holding this pane open
+    // while someone works elsewhere, so the surface's own resume is the second
+    // trigger, and there is nothing to stop on the way out.
+    LifecycleResumeEffect(Unit) {
+        actions.onResume()
+        onPauseOrDispose {}
+    }
+
     val nowMillis = remember(state.sections, state.hiddenSections) { System.currentTimeMillis() }
 
     OverlayScaffold(title = BOTS_TITLE, onBack = onBack, modifier = modifier) {
@@ -70,6 +96,16 @@ fun BotsRosterScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
         ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                // Desktop renders this before its New menu. Android has no
+                // activity-toast preference or notification path for roster
+                // activity yet, so it remains visible but cannot pretend it
+                // persists a setting.
+                ComingSoonIconAction(
+                    icon = HermesIcon.BellSlash,
+                    label = ACTIVITY_TOASTS_OFF,
+                )
+            }
             if (state.presentation.showRosterSearch) {
                 Spacer(Modifier.height(12.dp))
                 RosterSearchField(
@@ -79,15 +115,17 @@ fun BotsRosterScreen(
             }
 
             if (state.presentation.showRosterFilters) {
-                Spacer(Modifier.height(12.dp))
-                KindFilterRow(state.kindFilter, actions.onKindFilterChange)
-                Spacer(Modifier.height(8.dp))
-                ActivityFilterRow(state.activityFilter, actions.onActivityFilterChange)
+                RosterFilters(state, actions)
             }
 
             Spacer(Modifier.height(12.dp))
             Hairline()
             Spacer(Modifier.height(12.dp))
+
+            if (state.stale) {
+                StaleNotice(BotsRosterCopy.refreshFailed(state.connectionUp))
+                Spacer(Modifier.height(8.dp))
+            }
 
             when {
                 state.phase == BotsRosterPhase.Loading -> RosterMessage(
@@ -100,11 +138,9 @@ fun BotsRosterScreen(
                     description = BotsRosterCopy.rosterUnavailable(UNAVAILABLE_REASON),
                 )
 
-                state.phase == BotsRosterPhase.Refused -> RosterFailure(
-                    description = state.safeMessage
-                        ?: BotsRosterCopy.rosterUnavailable(REFUSED_REASON),
-                    retry = true,
-                    onAction = actions.onRefresh,
+                state.phase == BotsRosterPhase.Refused -> RosterError(
+                    description = BotsRosterCopy.rosterUnavailable(state.safeMessage ?: REFUSED_REASON),
+                    onRetry = actions.onRefresh,
                 )
 
                 state.phase == BotsRosterPhase.Empty -> RosterMessage(
@@ -112,10 +148,21 @@ fun BotsRosterScreen(
                     description = BotsRosterCopy.EMPTY_DESC,
                 )
 
-                state.presentation.allBotsHidden -> RosterMessage(
+                state.presentation.allBotsHidden && !state.hiddenExpanded -> RosterMessage(
                     title = BotsRosterCopy.ALL_HIDDEN,
                     description = BotsRosterCopy.ALL_HIDDEN_DESC,
-                )
+                ) {
+                    // Desktop carries the way out of this state with it —
+                    // `allBotsHidden && !hiddenExpanded` renders the explainer
+                    // *and* a button that sets `$showHiddenBots`
+                    // (`roster-pane-content.tsx:93-105` @ the pin). The reveal
+                    // otherwise lives in [RosterList], which this branch never
+                    // draws, and the state is a dead end.
+                    TextButton(
+                        label = BotsRosterCopy.SHOW_HIDDEN,
+                        onClick = { actions.onSetHiddenExpanded(true) },
+                    )
+                }
 
                 state.filteredToNothing -> RosterFailure(
                     description = if (state.searchQuery.isBlank()) {
@@ -140,13 +187,22 @@ private fun RosterList(
     actions: BotsActions,
 ) {
     val tokens = HermesTheme.tokens
+    // A header belongs to a user section, so with none made Desktop draws the
+    // plain flat list and the loose bucket stays unlabelled
+    // (`roster-pane-sections.tsx`: "No sections made: the plain list, exactly
+    // as before this feature"). Unassigned's label is a drop-zone heading, and
+    // there is no drop zone without sections.
+    val labelled = state.presentation.hasUserSections
     LazyColumn(Modifier.fillMaxSize()) {
         for (section in state.sections) {
-            item(key = section.key) { SectionHeader(section.name) }
+            if (labelled) {
+                item(key = section.key) { SectionHeader(section.name) }
+            }
             items(section.rows, key = { "${section.key}:${it.rosterKey}" }) { row ->
                 BotRowItem(
                     row = row,
                     nowMillis = nowMillis,
+                    ageMillis = botRowAgeMillis(row, nowMillis),
                     pinned = row.rosterKey in state.pinnedKeys,
                     hidden = false,
                     attention = state.attentionByKey[row.rosterKey],
@@ -176,8 +232,10 @@ private fun RosterList(
                     }
                 } else {
                     for (section in state.hiddenSections) {
-                        item(key = "hidden:${section.key}") {
-                            SectionHeader(section.name)
+                        if (labelled) {
+                            item(key = "hidden:${section.key}") {
+                                SectionHeader(section.name)
+                            }
                         }
                         items(
                             section.rows,
@@ -186,6 +244,7 @@ private fun RosterList(
                             BotRowItem(
                                 row = row,
                                 nowMillis = nowMillis,
+                                ageMillis = botRowAgeMillis(row, nowMillis),
                                 pinned = row.rosterKey in state.pinnedKeys,
                                 hidden = true,
                                 attention = state.attentionByKey[row.rosterKey],
@@ -197,6 +256,27 @@ private fun RosterList(
         }
     }
 }
+
+/**
+ * The stale banner: Desktop keeps the last good list and says why it is old
+ * rather than blanking it (`roster-pane-content.tsx:75-79` @ the pin).
+ */
+@Composable
+private fun StaleNotice(text: String) {
+    Text(
+        text = text,
+        style = HermesTheme.type.caption,
+        color = HermesTheme.tokens.textTertiary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(STALE_TAG)
+            .background(HermesTheme.tokens.cardSurface, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    )
+}
+
+/** The stale banner's test handle. */
+internal const val STALE_TAG = "Bots stale"
 
 @Composable
 private fun SectionHeader(name: String) {
@@ -221,6 +301,8 @@ private fun SectionHeader(name: String) {
 private fun BotRowItem(
     row: BotRosterRow,
     nowMillis: Long,
+    /** The stamp the age label reads — chat activity, or a live worker. */
+    ageMillis: Long?,
     pinned: Boolean,
     hidden: Boolean,
     attention: BotAttention?,
@@ -259,9 +341,9 @@ private fun BotRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            row.lastActiveMillis?.let { lastActiveMillis ->
+            ageMillis?.let { stamp ->
                 Text(
-                    text = rowAgeLabel(lastActiveMillis, nowMillis),
+                    text = rowAgeLabel(stamp, nowMillis),
                     style = HermesTheme.type.scaffoldMeta,
                     color = tokens.scaffoldMeta,
                 )
@@ -331,73 +413,76 @@ private fun RosterSearchField(value: String, onValueChange: (String) -> Unit) {
 }
 
 @Composable
-private fun KindFilterRow(
-    selected: RosterKindFilter,
-    onSelect: (RosterKindFilter) -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterPill(BotsRosterCopy.BOTS_AND_GROUPS, selected == RosterKindFilter.All) {
-            onSelect(RosterKindFilter.All)
-        }
-        FilterPill(BotsRosterCopy.BOTS_ONLY, selected == RosterKindFilter.Bots) {
-            onSelect(RosterKindFilter.Bots)
-        }
-        FilterPill(BotsRosterCopy.GROUPS_ONLY, selected == RosterKindFilter.Groups) {
-            onSelect(RosterKindFilter.Groups)
-        }
-    }
-}
-
-@Composable
-private fun ActivityFilterRow(
-    selected: RosterActivityFilter,
-    onSelect: (RosterActivityFilter) -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterPill(BotsRosterCopy.ANY_ACTIVITY, selected == RosterActivityFilter.All) {
-            onSelect(RosterActivityFilter.All)
-        }
-        FilterPill(BotsRosterCopy.ACTIVE_NOW, selected == RosterActivityFilter.Active) {
-            onSelect(RosterActivityFilter.Active)
-        }
-        FilterPill(BotsRosterCopy.RECENTLY_ACTIVE, selected == RosterActivityFilter.Recent) {
-            onSelect(RosterActivityFilter.Recent)
-        }
-        FilterPill(BotsRosterCopy.OLDER, selected == RosterActivityFilter.Older) {
-            onSelect(RosterActivityFilter.Older)
-        }
-    }
-}
-
-@Composable
-private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RosterFilters(state: BotsRosterUiState, actions: BotsActions) {
     val tokens = HermesTheme.tokens
-    Box(
-        Modifier
-            .heightIn(min = 32.dp)
-            .background(
-                if (selected) tokens.accent.copy(alpha = 0.18f) else tokens.cardSurface,
-                RoundedCornerShape(16.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clearAndSetSemantics {
-                role = Role.Button
-                contentDescription = label
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = HermesTheme.type.caption,
-            color = if (selected) tokens.accent else tokens.textSecondary,
-            maxLines = 1,
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        HermesIconButton(
+            icon = HermesIcon.ListFilter,
+            contentDescription = FILTER_ROSTER,
+            onClick = { expanded = true },
+            modifier = Modifier.align(Alignment.CenterEnd),
         )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            offset = DpOffset(0.dp, 6.dp),
+            modifier = Modifier
+                .widthIn(min = FILTER_MENU_WIDTH)
+                .border(1.dp, tokens.strokePrimary, RoundedCornerShape(6.dp)),
+            shape = RoundedCornerShape(6.dp),
+            containerColor = tokens.cardSurface,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            MenuSectionLabel(FILTER_KIND)
+            RosterFilterOptions(KIND_FILTERS, state.kindFilter) {
+                expanded = false
+                actions.onKindFilterChange(it)
+            }
+            Hairline()
+            MenuSectionLabel(FILTER_ACTIVITY)
+            RosterFilterOptions(ACTIVITY_FILTERS, state.activityFilter) {
+                expanded = false
+                actions.onActivityFilterChange(it)
+            }
+        }
     }
 }
 
 @Composable
-private fun RosterMessage(title: String, description: String) {
+private fun <T> RosterFilterOptions(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+) {
+    options.forEach { (value, label) ->
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .clickable { onSelect(value) }
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = HermesTheme.type.scaffold, color = HermesTheme.tokens.textSecondary, modifier = Modifier.weight(1f))
+            if (value == selected) HermesIconGlyph(HermesIcon.Check, color = HermesTheme.tokens.accent, size = HermesTheme.type.scaffold.fontSize)
+        }
+    }
+}
+
+/**
+ * A state message: the explainer, and the one action that leaves the state when
+ * it has one. Desktop draws both in the same block (`roster-pane-content.tsx`),
+ * so a state whose only way out lives in the list it never draws — all-hidden —
+ * carries its own button rather than becoming a dead end.
+ */
+@Composable
+private fun RosterMessage(
+    title: String,
+    description: String,
+    action: (@Composable () -> Unit)? = null,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -410,6 +495,10 @@ private fun RosterMessage(title: String, description: String) {
             icon = HermesIcon.Question,
             centered = true,
         )
+        if (action != null) {
+            Spacer(Modifier.height(12.dp))
+            action()
+        }
     }
 }
 
@@ -436,8 +525,44 @@ private fun RosterFailure(description: String, retry: Boolean, onAction: () -> U
     }
 }
 
+/** Desktop's error slot has its sentence and Retry, but deliberately no heading. */
+@Composable
+private fun RosterError(description: String, onRetry: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(top = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = description,
+            style = HermesTheme.type.body,
+            color = HermesTheme.tokens.textTertiary,
+        )
+        Spacer(Modifier.height(12.dp))
+        PrimaryButton(label = BotsRosterCopy.RETRY_NOW, onClick = onRetry)
+    }
+}
+
 private const val BOTS_TITLE = "Bots"
 
 private const val UNAVAILABLE_REASON = "this Gateway does not serve profiles.list"
 
 private const val REFUSED_REASON = "the Gateway did not answer"
+
+private const val ACTIVITY_TOASTS_OFF = "Activity toasts off — click to enable"
+private const val FILTER_ROSTER = "Filter roster"
+private const val FILTER_KIND = "Kind"
+private const val FILTER_ACTIVITY = "Activity"
+private val FILTER_MENU_WIDTH = 220.dp
+private val KIND_FILTERS = listOf(
+    RosterKindFilter.All to BotsRosterCopy.BOTS_AND_GROUPS,
+    RosterKindFilter.Bots to BotsRosterCopy.BOTS_ONLY,
+    RosterKindFilter.Groups to BotsRosterCopy.GROUPS_ONLY,
+)
+private val ACTIVITY_FILTERS = listOf(
+    RosterActivityFilter.All to BotsRosterCopy.ANY_ACTIVITY,
+    RosterActivityFilter.Active to BotsRosterCopy.ACTIVE_NOW,
+    RosterActivityFilter.Recent to BotsRosterCopy.RECENTLY_ACTIVE,
+    RosterActivityFilter.Older to BotsRosterCopy.OLDER,
+)
