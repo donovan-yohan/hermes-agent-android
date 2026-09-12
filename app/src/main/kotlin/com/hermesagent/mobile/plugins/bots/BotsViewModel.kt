@@ -85,11 +85,6 @@ class BotsViewModel(
                 attentionByKey = attention.entries.value,
             )
         }
-        scope.launch {
-            attention.entries.collect { entries ->
-                _uiState.update { it.copy(attentionByKey = entries) }
-            }
-        }
     }
 
     /**
@@ -100,14 +95,25 @@ class BotsViewModel(
      * untouched. The turn/delivery pipeline that calls this lands with the chat
      * slice; the store and its rendering are wired here so the rule is live
      * rather than asserted only in a test.
+     *
+     * The state is re-read synchronously rather than mirrored through a
+     * collector: a note and the badge it draws must land in the same frame, and
+     * an async hop between them is a bug waiting for a slow dispatcher.
      */
     fun noteAttention(rosterKey: String, errorTextOrReason: String?) {
         attention.note(rosterKey, errorTextOrReason)
+        syncAttention()
     }
 
     /** A good turn clears the badge. */
     fun clearAttention(rosterKey: String) {
         attention.clear(rosterKey)
+        syncAttention()
+    }
+
+    private fun syncAttention() {
+        val entries = attention.entries.value
+        _uiState.update { it.copy(attentionByKey = entries) }
     }
 
     /** Read the roster, one request at a time. */
