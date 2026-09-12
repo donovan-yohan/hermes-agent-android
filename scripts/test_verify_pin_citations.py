@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -73,6 +76,42 @@ class VerifyPinCitationsTest(unittest.TestCase):
             verifier, "resolve_path", return_value="apps/a.ts"
         ):
             self.assertTrue(verifier.holds("old", "new", "apps/a.ts", [(1, 2)]))
+
+    def test_scan_failure_aborts_instead_of_reporting_zero_files(self) -> None:
+        failed = subprocess.CompletedProcess(["grep"], 2, stdout="", stderr="permission denied")
+        with patch.object(verifier.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(RuntimeError, "grep exit 2"):
+                verifier.stamped_files("old")
+
+    def test_scan_no_match_is_an_empty_success(self) -> None:
+        no_match = subprocess.CompletedProcess(["grep"], 1, stdout="", stderr="")
+        with patch.object(verifier.subprocess, "run", return_value=no_match):
+            self.assertEqual(verifier.stamped_files("old"), [])
+
+    def test_nul_delimited_scan_preserves_spaces_in_paths(self) -> None:
+        found = subprocess.CompletedProcess(["grep"], 0, stdout="./one file.md\0./two.kt\0", stderr="")
+        with patch.object(verifier.subprocess, "run", return_value=found):
+            self.assertEqual(verifier.stamped_files("old"), ["./one file.md", "./two.kt"])
+
+    def test_main_scan_failure_removes_a_stale_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            plan = pathlib.Path(directory) / "plan.json"
+            plan.write_text("stale\n")
+            argv = [str(MODULE), "old", "new", "--json", str(plan)]
+            with patch.object(sys, "argv", argv), patch.object(
+                verifier, "stamped_files", side_effect=RuntimeError("scan failed")
+            ):
+                with self.assertRaisesRegex(RuntimeError, "scan failed"):
+                    verifier.main()
+            self.assertFalse(plan.exists())
+
+    def test_existing_blob_git_failure_aborts(self) -> None:
+        failure = subprocess.CalledProcessError(128, ["git", "show"])
+        with patch.object(verifier, "tree_paths", return_value=["apps/a.ts"]), patch.object(
+            verifier.subprocess, "run", side_effect=failure
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                verifier.blob("old", "apps/a.ts")
 
 
 if __name__ == "__main__":

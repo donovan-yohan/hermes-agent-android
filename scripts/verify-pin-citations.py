@@ -39,13 +39,17 @@ _tree_paths: dict[str, list[str]] = {}
 def blob(sha: str, path: str) -> list[str] | None:
     key = (sha, path)
     if key not in _blobs:
+        if path not in tree_paths(sha):
+            _blobs[key] = None
+            return None
         done = subprocess.run(
             ["git", "-C", str(UPSTREAM), "show", f"{sha}:{path}"],
             capture_output=True,
             text=True,
             errors="replace",
+            check=True,
         )
-        _blobs[key] = done.stdout.split("\n") if done.returncode == 0 else None
+        _blobs[key] = done.stdout.split("\n")
     return _blobs[key]
 
 
@@ -150,6 +154,22 @@ def is_provenance(name: str) -> bool:
     return any(marker in name for marker in PROVENANCE)
 
 
+def stamped_files(old_sha: str) -> list[str]:
+    """Return every carrier, aborting rather than mistaking a failed scan for zero."""
+    done = subprocess.run(
+        ["grep", "-rlZ", old_sha, "--exclude-dir=.git", "--exclude-dir=.worktrees",
+         "--exclude-dir=build", "--exclude-dir=.claude", "."],
+        capture_output=True,
+        text=True,
+    )
+    if done.returncode == 1:
+        return []
+    if done.returncode != 0:
+        detail = done.stderr.strip() or "no diagnostic"
+        raise RuntimeError(f"citation carrier scan failed (grep exit {done.returncode}): {detail}")
+    return [name for name in done.stdout.split("\0") if name]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("old")
@@ -157,11 +177,10 @@ def main() -> None:
     ap.add_argument("--json", default="")
     args = ap.parse_args()
 
-    stamped = subprocess.run(
-        ["grep", "-rl", args.old, "--exclude-dir=.git", "--exclude-dir=.worktrees",
-         "--exclude-dir=build", "--exclude-dir=.claude", "."],
-        capture_output=True, text=True, check=False,
-    ).stdout.split()
+    output = pathlib.Path(args.json) if args.json else None
+    if output is not None:
+        output.unlink(missing_ok=True)
+    stamped = stamped_files(args.old)
     plan: dict[str, list[dict[str, object]]] = {
         "movable": [], "drifted": [], "unattributable": [], "provenance": [],
     }
@@ -177,8 +196,8 @@ def main() -> None:
     print(f"  a cited span moved or vanished                    -> stay: {len(plan['drifted'])}")
     print(f"  missing/ambiguous path or missing/empty span      -> stay: {len(plan['unattributable'])}")
     print(f"  provenance, not citation                          -> stay: {len(plan['provenance'])}")
-    if args.json:
-        pathlib.Path(args.json).write_text(json.dumps(plan, indent=2) + "\n")
+    if output is not None:
+        output.write_text(json.dumps(plan, indent=2) + "\n")
 
 
 if __name__ == "__main__":
