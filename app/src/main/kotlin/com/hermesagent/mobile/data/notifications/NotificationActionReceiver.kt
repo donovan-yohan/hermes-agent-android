@@ -4,6 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.hermesagent.mobile.HermesApplication
+import com.hermesagent.mobile.data.gateway.APPROVAL_ALWAYS
+import com.hermesagent.mobile.data.gateway.APPROVAL_DENY
+import com.hermesagent.mobile.data.gateway.APPROVAL_ONCE
+import com.hermesagent.mobile.data.gateway.APPROVAL_SESSION
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.PendingInputAction
 import com.hermesagent.mobile.data.gateway.PendingInputKey
@@ -51,9 +55,22 @@ class NotificationActionReceiver : BroadcastReceiver() {
     }
 }
 
-/** Only ever the two the shade offers: `session` and `always` are persistent
- *  grants and stay in the app, one deliberate tap away from a real screen. */
-private val SHADE_CHOICES = setOf(CHOICE_APPROVE, CHOICE_DENY)
+/**
+ * A first fence, not the authority.
+ *
+ * The authority is the repository, which refuses any choice the *request* did
+ * not offer (`GatewaySessionRepository`), so this only has to keep an intent
+ * from carrying something that was never an approval answer at all. It is a
+ * prefix of the Gateway's vocabulary rather than a copy of it, and an unknown
+ * choice is refused here rather than forwarded: a PendingIntent is built by
+ * this app and nothing else can send one, but the shade is the surface with
+ * the least context around a decision and the least room to take it back.
+ *
+ * Persistent grants are on this list now. They are gated where the gate can
+ * actually hold — `setAuthenticationRequired` on the action, so Android
+ * demands an unlock before the intent fires — rather than by being absent.
+ */
+private val SHADE_CHOICES = setOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWAYS, APPROVAL_DENY)
 
 /**
  * Android-free so every outcome can be tested without a device.

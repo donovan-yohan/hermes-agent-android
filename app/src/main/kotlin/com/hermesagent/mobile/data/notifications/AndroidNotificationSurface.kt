@@ -5,9 +5,13 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.hermesagent.mobile.MainActivity
+import com.hermesagent.mobile.data.gateway.approvalChoiceLabel
+import com.hermesagent.mobile.data.gateway.isPersistentGrant
+import com.hermesagent.mobile.data.gateway.shadeApprovalChoices
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -38,9 +42,9 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         val builder = builder(post.kind, post.durableSessionId, post.title, post.body)
 
         post.approval?.let { target ->
-            builder
-                .addAction(0, NotificationCopy.APPROVE_ACTION, respondIntent(target, CHOICE_APPROVE))
-                .addAction(0, NotificationCopy.REJECT_ACTION, respondIntent(target, CHOICE_DENY))
+            for (choice in shadeApprovalChoices(target.choices)) {
+                builder.addAction(approvalAction(target, choice))
+            }
         }
 
         show(post.kind, post.durableSessionId, builder)
@@ -73,6 +77,28 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             // No session to open, and nothing about a conversation to hide.
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         manager.notify(TEST_TAG, NOTIFICATION_ID, builder.build())
+    }
+
+    /**
+     * One approval choice as a shade action.
+     *
+     * A persistent grant is answerable from here, which it was not before, and
+     * it is gated: `setAuthenticationRequired` makes Android demand the device
+     * be unlocked before the intent fires, so `Always allow` cannot be granted
+     * by a stranger tapping a lock screen. That API arrives in 31, and below it
+     * there is no equivalent — a grant that outlives its request is simply not
+     * offered there, and the notification body still opens the app.
+     */
+    private fun approvalAction(target: ApprovalTarget, choice: String): NotificationCompat.Action {
+        val action = NotificationCompat.Action.Builder(
+            0,
+            approvalChoiceLabel(choice),
+            respondIntent(target, choice),
+        )
+        if (isPersistentGrant(choice) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            action.setAuthenticationRequired(true)
+        }
+        return action.build()
     }
 
     /** The shape every notification this app posts shares. */
@@ -268,6 +294,3 @@ const val EXTRA_REQUEST_ID: String = "com.hermesagent.mobile.notifications.extra
 const val EXTRA_CONNECTION_GENERATION: String = "com.hermesagent.mobile.notifications.extra.GENERATION"
 const val EXTRA_CHOICE: String = "com.hermesagent.mobile.notifications.extra.CHOICE"
 
-/** The Gateway's own approval vocabulary (`gateway/platforms/api_server.py:77` @ the pin). */
-const val CHOICE_APPROVE: String = "once"
-const val CHOICE_DENY: String = "deny"

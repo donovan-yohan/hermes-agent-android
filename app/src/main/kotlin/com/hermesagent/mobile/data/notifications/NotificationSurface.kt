@@ -23,6 +23,15 @@ import com.hermesagent.mobile.data.gateway.PendingInputKey
 data class ApprovalTarget(
     val key: PendingInputKey,
     val durableSessionId: String,
+    /**
+     * What the Gateway offered for *this* request, verbatim.
+     *
+     * Carried rather than assumed: `approval.request` decides the list per
+     * request (`gateway/platforms/api_server.py:107-108` @ `72a3277cd7`), a
+     * response is validated against it, and a shade that offered a choice this
+     * request never had would post a button that always fails.
+     */
+    val choices: List<String> = emptyList(),
 )
 
 /** One notification the notifier decided should exist. */

@@ -220,7 +220,9 @@ class SessionNotifier(
             if (identity in desired) continue
             desired[identity] = Prompt(
                 key = key,
-                approval = (request as? ApprovalPending)?.let { ApprovalTarget(key, it.durableSessionId) },
+                approval = (request as? ApprovalPending)?.let {
+                    ApprovalTarget(key, it.durableSessionId, it.choices)
+                },
             ) to request.promptIdentity()
         }
 

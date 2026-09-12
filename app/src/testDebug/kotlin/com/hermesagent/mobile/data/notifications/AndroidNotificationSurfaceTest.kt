@@ -6,6 +6,10 @@ import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.MainActivity
+import com.hermesagent.mobile.data.gateway.APPROVAL_ALWAYS
+import com.hermesagent.mobile.data.gateway.APPROVAL_DENY
+import com.hermesagent.mobile.data.gateway.APPROVAL_ONCE
+import com.hermesagent.mobile.data.gateway.APPROVAL_SESSION
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputKind
 import org.junit.Assert.assertEquals
@@ -54,7 +58,7 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
-    fun `an approval renders Desktop's title, the conversation, and Desktop's two buttons`() {
+    fun `an approval renders Desktop's title, the conversation, and its own choices`() {
         AndroidNotificationSurface(context).post(approvalPost())
 
         val notification = posted(NotificationKind.Approval, SESSION)
@@ -62,8 +66,12 @@ class AndroidNotificationSurfaceTest {
         assertEquals("Refactor the parser", notification.text())
         assertEquals(APPROVALS_CHANNEL_ID, notification.channelId)
         assertEquals(groupKey(SESSION), notification.group)
+        // Desktop's own approval vocabulary (`i18n/en.ts:3749,3759,3754` @
+        // `72a3277cd7`), not the two-button `Approve`/`Reject` the shade used
+        // to carry: beside `Always allow`, `Approve` no longer says which of
+        // the two it is.
         assertEquals(
-            listOf(NotificationCopy.APPROVE_ACTION, NotificationCopy.REJECT_ACTION),
+            listOf("Run", "Always allow", "Reject"),
             notification.actions.map { it.title.toString() },
         )
     }
@@ -105,7 +113,7 @@ class AndroidNotificationSurfaceTest {
             NotificationActionReceiver::class.java.name,
             intent.component?.className,
         )
-        assertEquals(CHOICE_APPROVE, intent.getStringExtra(EXTRA_CHOICE))
+        assertEquals(APPROVAL_ONCE, intent.getStringExtra(EXTRA_CHOICE))
         assertEquals(REQUEST_ID, intent.getStringExtra(EXTRA_REQUEST_ID))
         assertEquals(RUNTIME, intent.getStringExtra(EXTRA_RUNTIME_SESSION_ID))
         assertEquals(SESSION, intent.getStringExtra(EXTRA_DURABLE_SESSION_ID))
@@ -113,11 +121,50 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
-    fun `Reject sends the Gateway's deny, never a permanent grant`() {
+    fun `the shade offers run, the strongest grant on offer, and the refusal`() {
         AndroidNotificationSurface(context).post(approvalPost())
 
-        val reject = posted(NotificationKind.Approval, SESSION).actions[1]
-        assertEquals(CHOICE_DENY, shadowOf(reject.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE))
+        val actions = posted(NotificationKind.Approval, SESSION).actions
+        // Android draws three and silently drops the rest, so `session` loses
+        // to `always` rather than the refusal being the one that falls off.
+        assertEquals(3, actions.size)
+        assertEquals(
+            listOf(APPROVAL_ONCE, APPROVAL_ALWAYS, APPROVAL_DENY),
+            actions.map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) },
+        )
+        assertEquals(listOf("Run", "Always allow", "Reject"), actions.map { it.title.toString() })
+    }
+
+    @Test
+    fun `a Gateway that offers no permanent grant gets no permanent button`() {
+        AndroidNotificationSurface(context).post(
+            approvalPost().let { post ->
+                post.copy(
+                    approval = post.approval!!.copy(choices = listOf(APPROVAL_ONCE, APPROVAL_DENY)),
+                )
+            },
+        )
+
+        val actions = posted(NotificationKind.Approval, SESSION).actions
+        assertEquals(
+            listOf(APPROVAL_ONCE, APPROVAL_DENY),
+            actions.map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) },
+        )
+    }
+
+    /**
+     * The gate that makes a persistent grant safe to offer from a shade at all:
+     * Android refuses to fire the intent until the device is unlocked.
+     */
+    @Test
+    fun `a persistent grant demands the device be unlocked`() {
+        AndroidNotificationSurface(context).post(approvalPost())
+
+        val actions = posted(NotificationKind.Approval, SESSION).actions
+        val byChoice = actions.associateBy { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+        assertTrue(byChoice.getValue(APPROVAL_ALWAYS).isAuthenticationRequired)
+        assertFalse(byChoice.getValue(APPROVAL_ONCE).isAuthenticationRequired)
+        assertFalse(byChoice.getValue(APPROVAL_DENY).isAuthenticationRequired)
     }
 
     @Test
@@ -261,6 +308,9 @@ class AndroidNotificationSurfaceTest {
                     kind = PendingInputKind.Approval,
                 ),
                 durableSessionId = SESSION,
+                // What a Gateway with a permanent allowlist offers
+                // (`api_server.py:108` @ `72a3277cd7`).
+                choices = listOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWAYS, APPROVAL_DENY),
             ),
         )
     }
