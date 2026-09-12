@@ -122,6 +122,22 @@ described in prose here on purpose.
    dev server, Electron under a virtual display, and a Gateway pairing, none of
    which fits this card.
 
+**What was actually run, and what each one said.**
+
+```
+python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py --name bots-roster
+  → CalledProcessError: adb get-state exit 1  (adb devices: no device attached)
+
+node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
+  --name bots-roster --match bots --upstream <disposable pin export> \
+  --expect-sha 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd
+  → TypeError: fetch failed — connect ECONNREFUSED 127.0.0.1:9222
+```
+
+The second run is past the pin gate — the export is accepted — and dies on the
+missing renderer, not on the pin. Pointing the same script at the read-only
+checkout instead refuses earlier with "upstream checkout is dirty".
+
 Neither blocker is a claim that the pixels match. The surface's states are
 exercised through the real rendered tree in
 `app/src/testDebug/kotlin/com/hermesagent/mobile/ui/BotsRosterJourneyTest.kt`,
