@@ -25,6 +25,8 @@ class BotsRosterDerivationTest {
         description: String = "",
         lastActiveSeconds: Long? = null,
         preview: String? = null,
+        /** The worker session's own stamp, as `profiles.list` sends it. */
+        workerActiveSeconds: Long? = null,
     ) = BotRosterRow(
         name = name,
         displayName = displayName,
@@ -34,9 +36,23 @@ class BotsRosterDerivationTest {
         } else {
             null
         },
+        workerSession = workerActiveSeconds?.let { BotSessionPreview(lastActiveSeconds = it) },
     )
 
     private fun secondsAgo(seconds: Long): Long = (now / 1000L) - seconds
+
+    /** The presentation state with the two filter axes at their defaults. */
+    private fun presentation(userSectionCount: Int = 0) = deriveRosterPresentation(
+        rosterSize = 3,
+        visibleRosterSize = 3,
+        hiddenRowsSize = 0,
+        filteredHiddenRows = emptyList(),
+        query = "",
+        kindFilter = RosterKindFilter.All,
+        activityFilter = RosterActivityFilter.All,
+        hiddenExpanded = false,
+        userSectionCount = userSectionCount,
+    )
 
     // ── roster key ────────────────────────────────────────────────────────────
 
@@ -350,7 +366,14 @@ class BotsRosterDerivationTest {
         val blocks = groupRowsBySection(listOf(bot("a"), bot("b")), emptyList(), emptyMap())
 
         assertEquals(listOf(BotsRosterCopy.UNASSIGNED), blocks.map { it.name })
+        // The bucket exists and every row is in it, but it is the *loose* one:
+        // a null id is what tells the surface to draw no heading, so with no
+        // sections made the roster is the plain flat list Desktop renders
+        // (`roster-pane-sections.tsx`: "No sections made: the plain list,
+        // exactly as before this feature").
+        assertNull(blocks.single().id)
         assertEquals(listOf("a", "b"), blocks.single().rows.map { it.name })
+        assertFalse(presentation(userSectionCount = 0).hasUserSections)
     }
 
     // ── presentation ──────────────────────────────────────────────────────────
@@ -366,6 +389,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
         assertEquals(0, none.activeFilterCount)
         assertFalse(none.hasRosterConstraint)
@@ -379,6 +403,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.Bots,
             activityFilter = RosterActivityFilter.Active,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
         assertEquals(2, both.activeFilterCount)
         assertTrue(both.hasRosterConstraint)
@@ -395,6 +420,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
 
         assertTrue(state.hasRosterConstraint)
@@ -411,6 +437,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
         assertTrue(unconstrained.allBotsHidden)
         assertTrue(unconstrained.showHiddenSection)
@@ -425,6 +452,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
         assertFalse(constrained.allBotsHidden)
         assertTrue(constrained.showHiddenRows)
@@ -441,6 +469,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
         assertFalse(below.showRosterSearch)
         assertFalse(below.showRosterFilters)
@@ -455,6 +484,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
         assertTrue(at.showRosterSearch)
         assertTrue(at.showRosterFilters)
@@ -472,6 +502,7 @@ class BotsRosterDerivationTest {
             kindFilter = RosterKindFilter.All,
             activityFilter = RosterActivityFilter.All,
             hiddenExpanded = false,
+            userSectionCount = 0,
         )
 
         assertTrue(state.showRosterSearch)
@@ -510,5 +541,59 @@ class BotsRosterDerivationTest {
 
         assertNull(botActivitySession(row))
         assertNull(row.lastActiveMillis)
+    }
+
+    // ── worker liveness ───────────────────────────────────────────────────────
+
+    @Test
+    fun `a live worker makes a silent bot active now`() {
+        // The regression Desktop fixed in hermes-agent#90268: a profile
+        // grinding through a long task reads idle without this.
+        val row = bot("a", lastActiveSeconds = secondsAgo(3 * 60 * 60), workerActiveSeconds = secondsAgo(30))
+
+        assertTrue(workerActiveAt(row, now))
+        assertTrue(rosterActivityMatches(row, RosterActivityFilter.Active, now))
+        assertFalse(isActiveNow(row, now))
+    }
+
+    @Test
+    fun `the age label follows the worker while it is alive and the chat once it stops`() {
+        val chatting = bot("a", lastActiveSeconds = secondsAgo(20), workerActiveSeconds = secondsAgo(40))
+        val silent = bot("a", lastActiveSeconds = secondsAgo(3 * 60 * 60), workerActiveSeconds = secondsAgo(30))
+        val finished = bot("a", lastActiveSeconds = secondsAgo(3 * 60 * 60), workerActiveSeconds = secondsAgo(600))
+
+        // Desktop's `rowAgeTs`: the fresher of the two while the worker lives.
+        assertEquals(secondsAgo(20) * 1000L, botRowAgeMillis(chatting, now))
+        assertEquals(secondsAgo(30) * 1000L, botRowAgeMillis(silent, now))
+        // And chat activity alone once the worker is gone.
+        assertEquals(secondsAgo(3 * 60 * 60) * 1000L, botRowAgeMillis(finished, now))
+    }
+
+    @Test
+    fun `the worker window is Desktop's hundred and fifty seconds`() {
+        val insideWindow = bot("a", workerActiveSeconds = secondsAgo(149))
+        val atWindow = bot("a", workerActiveSeconds = secondsAgo(150))
+        val outsideWindow = bot("a", workerActiveSeconds = secondsAgo(151))
+
+        assertTrue(workerActiveAt(insideWindow, now))
+        assertFalse(workerActiveAt(atWindow, now))
+        assertFalse(workerActiveAt(outsideWindow, now))
+    }
+
+    @Test
+    fun `a gateway that omits worker_session reads as not working`() {
+        val row = bot("a", lastActiveSeconds = secondsAgo(30))
+
+        assertNull(row.workerSession)
+        assertFalse(workerActiveAt(row, now))
+        assertEquals(secondsAgo(30) * 1000L, botRowAgeMillis(row, now))
+    }
+
+    // ── section labelling ─────────────────────────────────────────────────────
+
+    @Test
+    fun `a block is labelled only once the user has made sections`() {
+        assertFalse(presentation(userSectionCount = 0).hasUserSections)
+        assertTrue(presentation(userSectionCount = 2).hasUserSections)
     }
 }

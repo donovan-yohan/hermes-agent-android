@@ -49,6 +49,12 @@ class BotsPluginRepositoryTest {
               "description": "the primary profile",
               "has_avatar": true,
               "last_session": {"id": "s-1", "last_active": 1800000000, "preview": "older"},
+              "worker_session": {
+                "id": "w-1",
+                "source": "kanban",
+                "title": "a kanban worker",
+                "last_active": 1800000600
+              },
               "canonical_session": {
                 "id": "c-1",
                 "resolved_id": "c-2",
@@ -111,6 +117,22 @@ class BotsPluginRepositoryTest {
 
         assertEquals("hi", botActivitySession(row)?.preview)
         assertEquals(1_799_999_999_000L, row.lastActiveMillis)
+    }
+
+    @Test
+    fun `the worker session comes off the wire with the row`() {
+        // `worker_session` is on every row whenever `include_sessions` is on
+        // (`methods_profiles.py:216` @ the pin) and carries the same
+        // `last_active`; dropping it is what makes a working profile read idle.
+        val row = parseBotsRoster(json(twoBots))!!.first()
+
+        assertEquals("w-1", row.workerSession?.id)
+        assertEquals(1_800_000_600L, row.workerSession?.lastActiveSeconds)
+    }
+
+    @Test
+    fun `a gateway that sends no worker session leaves it absent`() {
+        assertNull(parseBotsRoster(json(twoBots))!![1].workerSession)
     }
 
     @Test

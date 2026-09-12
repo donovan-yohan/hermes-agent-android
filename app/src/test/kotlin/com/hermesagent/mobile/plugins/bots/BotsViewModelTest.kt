@@ -3,7 +3,14 @@ package com.hermesagent.mobile.plugins.bots
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostEvent
 import com.hermesagent.mobile.plugins.PluginHostResult
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -26,6 +33,27 @@ class BotsViewModelTest {
         override suspend fun request(method: String, params: JsonObject): PluginHostResult = result
         override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
     }
+
+    /** A host whose read stays in flight until the test releases it. */
+    private class GatedHost(
+        private val gate: CompletableDeferred<Unit>,
+        var result: PluginHostResult,
+    ) : PluginHost {
+        override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+            gate.await()
+            return result
+        }
+
+        override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
+    }
+
+    /**
+     * A scope on this test's own scheduler, and deliberately not
+     * `backgroundScope`: `advanceUntilIdle` never runs background-scope work,
+     * so a ViewModel whose collectors these tests drive needs its own scope.
+     */
+    private fun TestScope.drivenScope(): CoroutineScope =
+        CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
 
     private fun secondsAgo(seconds: Long): Long = (now / 1000L) - seconds
 
@@ -167,13 +195,89 @@ class BotsViewModelTest {
     @Test
     fun `a refusal with no roster is the error state and keeps this app's sentence`() = runTest {
         val host = ScriptedHost(PluginHostResult.Refused(500, "The Gateway refused that request."))
-        val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = MutableStateFlow(true),
+        )
 
         viewModel.refreshNow()
 
         val state = viewModel.uiState.value
         assertEquals(BotsRosterPhase.Refused, state.phase)
         assertEquals("The Gateway refused that request.", state.safeMessage)
+    }
+
+    @Test
+    fun `a refusal with no connection waits for the gateway instead of failing`() = runTest {
+        val host = ScriptedHost(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."))
+        val connected = MutableStateFlow(false)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+        )
+
+        viewModel.refreshNow()
+
+        // Nothing was asked of a Gateway, so this is not the person's failure
+        // to act on: it is the state the copy "Waiting for the gateway
+        // connection…" was written for.
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+        assertNull(viewModel.uiState.value.safeMessage)
+        assertFalse(viewModel.uiState.value.connectionUp)
+    }
+
+    @Test
+    fun `the connection arriving is what reads the roster`() = runTest {
+        val connected = MutableStateFlow(false)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(loadedHost()),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+        )
+
+        runCurrent()
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+
+        connected.value = true
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Ready, state.phase)
+        assertTrue(state.connectionUp)
+        assertEquals(3, state.sections.flatMap { it.rows }.size)
+    }
+
+    @Test
+    fun `a read that arrives mid-read is owed rather than dropped`() = runTest {
+        // The cold start's own read can still be on the wire when the
+        // connection lands; that edge's read is the one that matters, so it
+        // must not be dropped as a duplicate.
+        val gate = CompletableDeferred<Unit>()
+        val host = GatedHost(gate, PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."))
+        val connected = MutableStateFlow(false)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+        )
+
+        viewModel.refresh()
+        runCurrent()
+
+        // The connection lands while that first read is still in flight.
+        host.result = PluginHostResult.Success(Json.parseToJsonElement(rosterJson()))
+        connected.value = true
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(BotsRosterPhase.Ready, viewModel.uiState.value.phase)
     }
 
     @Test

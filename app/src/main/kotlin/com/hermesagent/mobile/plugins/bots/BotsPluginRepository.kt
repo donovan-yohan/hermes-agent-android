@@ -64,8 +64,8 @@ class BotsPluginRepository(private val host: PluginHost) {
  *
  * Row fields (`methods_profiles.py:245-250` @ the pin): `name`, `path`,
  * `is_default`, `model`, `provider`, `description`, `display_name`,
- * `skill_count`, plus `last_session` / `canonical_session` / `ui_meta` /
- * `has_avatar` when `include_sessions` is on.
+ * `skill_count`, plus `last_session` / `worker_session` / `canonical_session` /
+ * `ui_meta` / `has_avatar` when `include_sessions` is on.
  */
 fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
     val root = result as? JsonObject ?: return null
@@ -81,6 +81,7 @@ fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
             displayName = row.text("display_name").orEmpty().trim(),
             canonicalSession = parseSessionPreview(row["canonical_session"]),
             lastSession = parseSessionPreview(row["last_session"]),
+            workerSession = parseSessionPreview(row["worker_session"]),
             hasAvatar = row.flag("has_avatar"),
         )
     }

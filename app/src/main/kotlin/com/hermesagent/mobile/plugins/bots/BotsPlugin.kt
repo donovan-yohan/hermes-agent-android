@@ -53,6 +53,11 @@ class BotsPlugin(
             scope = pluginScope,
             sections = sections,
             metaByKey = metaByKey,
+            // The roster is read on the connection's edge, never at
+            // registration: the app discovers plugins before it has dialled
+            // anything, so a read here would be refused and could never be
+            // repeated. `connected` is the door's own view of the live client.
+            connected = ctx.host.connected,
         )
         val actions = BotsActions(
             onRefresh = viewModel::refresh,
@@ -61,10 +66,8 @@ class BotsPlugin(
             onActivityFilterChange = viewModel::setActivityFilter,
             onSetHiddenExpanded = viewModel::setHiddenExpanded,
             onClearFilters = viewModel::clearFilters,
+            onResume = viewModel::surfaceResumed,
         )
-
-        // The roster is read once at registration; the surface refreshes it.
-        viewModel.refresh()
 
         ctx.registerMany(
             listOf(
