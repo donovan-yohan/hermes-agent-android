@@ -47,6 +47,9 @@ Desktop's collapsed group says.
 `ComposerStatusCollapseDefaultsTest` is the Android side of Desktop's own
 contract test
 (`apps/desktop/src/app/chat/composer/status-stack/default-collapse.test.tsx:45,73`).
+When a parsed goal crosses the known/unknown boundary, the Android group reacts
+without remounting: an automatically opened unknown closes once the state is
+known again, while an expansion the reader chose survives the round trip.
 
 ## Silent exits
 
@@ -87,7 +90,7 @@ on the Compose test clock.
 | No session-compaction copy in the composer stack, and none in `apps/desktop/src/i18n/en.ts` at the pin | drift | The bare line `Hermes is compacting this session.` | Android-only string with no Desktop wording behind it; #246 |
 | A 5 second `process.list` interval while any running row is on screen (`.../status-stack/index.tsx:41-43,151-163`) | mobile-adaptation | No interval: three widening checks (10s, 30s, 90s), armed only by a Running claim and only while the app is resumed, restarted by new evidence or by a return to the foreground, then silent | Every tick of a 5 second gateway round trip is a radio wake, and on a phone that is battery and data spent on a row nobody may be looking at; Desktop's own gate is pane visibility, and the lifecycle is its mobile equivalent. What it costs: a process that dies silently while the reader keeps the session in front of them for longer than the ladder still reads Running until the next foreground return, the next process event, or Refresh — Desktop would catch it within five seconds |
 | No manual refresh control in the background group; the poll is the only recovery (`.../status-stack/index.tsx:151-163`) | mobile-adaptation | A `Refresh` text button inside the Background group (`ComposerStatusStack.kt`) | It is the explicit escape that a bounded ladder needs and an unbounded interval does not: the one press that resolves a row the ladder has already given up on, rather than asking the radio to keep checking on the reader's behalf |
-| The safety-net refresh is silent: the interval discards its result (`:156-160`) and a transient failure is swallowed (`apps/desktop/src/store/composer-status.ts:405-424`) | drift | The automatic check calls the same lambda the manual Refresh does, which posts `Background work could not be refreshed. Try again.` on failure | An unrequested check can raise an error about a request the reader never made; the silent form already exists in `ChatViewModel` and needs one parameter wired through surfaces #233 did not own. #249 |
+| The safety-net refresh is silent: the interval discards its result (`:156-160`) and a transient failure is swallowed (`apps/desktop/src/store/composer-status.ts:405-424`) | mobile-adaptation | The automatic ladder uses `reconcileProcesses`, while the visible Refresh uses `refreshProcesses` | Both paths read the same authoritative process list, but only the reader's Refresh can post `Background work could not be refreshed. Try again.`; `ChatViewModelTest` proves the failed automatic and manual paths separately. #249 |
 
 ## Visual report
 

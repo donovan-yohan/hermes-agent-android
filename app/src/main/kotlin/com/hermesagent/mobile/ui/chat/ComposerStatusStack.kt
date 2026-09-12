@@ -66,6 +66,7 @@ fun ComposerStatusStack(
     activeSessionId: String?,
     status: ComposerStatusState?,
     onRefreshProcesses: () -> Unit = {},
+    onReconcileProcesses: () -> Unit = onRefreshProcesses,
     onKillProcess: (String) -> Unit = {},
     hasQueue: Boolean = false,
     queueContent: (@Composable () -> Unit)? = null,
@@ -75,12 +76,17 @@ fun ComposerStatusStack(
     val visiblePreviews = remember(activeSessionId, status?.previewArtifacts) {
         status?.previewArtifacts.orEmpty().take(MAX_PREVIEW_ROWS).distinctBy(ComposerPreviewArtifact::id)
     }
+    val visibleBackgroundProcesses = status?.backgroundProcesses.orEmpty().take(MAX_BACKGROUND_ROWS)
     var dismissedPreviewIds by rememberSaveable(activeSessionId) { mutableStateOf(emptySet<String>()) }
     val previews = visiblePreviews.filterNot { it.id in dismissedPreviewIds }
     val visibleGroupCount = composerStatusGroupCount(status, hasQueue, previews.size)
     if (visibleGroupCount == 0) return
     val fuseSingleGroup = fusedToComposer && visibleGroupCount == 1
-    ReconcileSilentExits(activeSessionId, status?.backgroundProcesses.orEmpty(), onRefreshProcesses)
+    ReconcileSilentExits(
+        activeSessionId,
+        visibleBackgroundProcesses,
+        onReconcileProcesses,
+    )
 
     Column(
         modifier = modifier
@@ -108,6 +114,7 @@ fun ComposerStatusStack(
                 // unrecognised goal line keeps the group open — the raw text is
                 // then the only thing on screen that says anything at all.
                 defaultExpanded = goal.state == ComposerGoalState.Unknown,
+                followDefaultExpandedChanges = true,
                 fusedToComposer = fuseSingleGroup,
             ) {
                 StatusText(goal.title ?: goal.rawText)
@@ -141,7 +148,7 @@ fun ComposerStatusStack(
                 }
             }
         }
-        status?.backgroundProcesses?.take(MAX_BACKGROUND_ROWS)?.takeIf { it.isNotEmpty() }?.let { processes ->
+        visibleBackgroundProcesses.takeIf { it.isNotEmpty() }?.let { processes ->
             StatusGroup(
                 "${activeSessionId}:background",
                 "Background",
@@ -299,12 +306,27 @@ private fun StatusGroup(
     stateKey: String,
     title: String,
     defaultExpanded: Boolean,
+    followDefaultExpandedChanges: Boolean = false,
     count: Int? = null,
     icon: HermesIcon? = null,
     fusedToComposer: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable(stateKey) { mutableStateOf(defaultExpanded) }
+    var automaticallyExpanded by rememberSaveable(stateKey) { mutableStateOf(defaultExpanded) }
+    if (followDefaultExpandedChanges) {
+        LaunchedEffect(defaultExpanded) {
+            if (defaultExpanded) {
+                if (!expanded) {
+                    expanded = true
+                    automaticallyExpanded = true
+                }
+            } else if (automaticallyExpanded) {
+                expanded = false
+                automaticallyExpanded = false
+            }
+        }
+    }
     val tokens = HermesTheme.tokens
     val headerText = tokens.textTertiary.alphaMultiply(0.92f)
     val groupIcon = tokens.textTertiary.alphaMultiply(0.70f)
@@ -323,7 +345,10 @@ private fun StatusGroup(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = HermesTheme.spacing.touchTarget)
-                .clickable { expanded = !expanded }
+                .clickable {
+                    expanded = !expanded
+                    automaticallyExpanded = false
+                }
                 .semantics {
                     contentDescription = buildString {
                         append(title)

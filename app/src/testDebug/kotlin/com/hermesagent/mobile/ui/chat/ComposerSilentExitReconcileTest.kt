@@ -107,6 +107,20 @@ class ComposerSilentExitReconcileTest {
     }
 
     @Test
+    fun `a hidden seventh running process does not arm the visible background group`() {
+        status.value = ComposerStatusState(
+            backgroundProcesses = List(6) { index ->
+                ComposerBackgroundProcess("done-$index", "Done $index", ComposerBackgroundProcessState.Done)
+            } + running("hidden-running"),
+        )
+        setContent()
+
+        compose.mainClock.advanceTimeBy(600_000)
+
+        assertEquals("only the six rendered rows may arm the radio", 0, refreshes)
+    }
+
+    @Test
     fun `a backgrounded app asks nothing, and returning to it re-arms the ladder`() {
         setContent()
 

@@ -3174,6 +3174,11 @@ internal class ChatViewModel(
         activeSessionId.value?.let { refreshProcesses(it, showFailure = true) }
     }
 
+    /** The bounded background-process ladder must not report a failure as a user action. */
+    fun reconcileProcesses() {
+        activeSessionId.value?.let { refreshProcesses(it, showFailure = false) }
+    }
+
     /**
      * `Show earlier messages`: fetch the page before the one on screen and
      * prepend it to the session that asked.

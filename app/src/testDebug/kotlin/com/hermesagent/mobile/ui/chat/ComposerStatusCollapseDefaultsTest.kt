@@ -132,6 +132,66 @@ class ComposerStatusCollapseDefaultsTest {
     }
 
     @Test
+    fun `an active goal that becomes unknown exposes its raw status`() {
+        val goal = mutableStateOf(ComposerGoalStatus("goal: ship it", ComposerGoalState.Active, "Ship it"))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box(Modifier.width(360.dp)) {
+                    ComposerStatusStack(activeSessionId = "session-a", status = ComposerStatusState(goal = goal.value))
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("Goal active, expand").assertIsDisplayed()
+        compose.runOnIdle {
+            goal.value = ComposerGoalStatus("Unrecognized server line", ComposerGoalState.Unknown)
+        }
+
+        compose.onNodeWithContentDescription("Goal, collapse").assertIsDisplayed()
+        compose.onNodeWithText("Unrecognized server line").assertIsDisplayed()
+    }
+
+    @Test
+    fun `an automatically opened unknown goal closes when it becomes known`() {
+        val goal = mutableStateOf(ComposerGoalStatus("Unrecognized server line", ComposerGoalState.Unknown))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box(Modifier.width(360.dp)) {
+                    ComposerStatusStack(activeSessionId = "session-a", status = ComposerStatusState(goal = goal.value))
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("Goal, collapse").assertIsDisplayed()
+        compose.runOnIdle {
+            goal.value = ComposerGoalStatus("goal: ship it", ComposerGoalState.Active, "Ship it")
+        }
+
+        compose.onNodeWithContentDescription("Goal active, expand").assertIsDisplayed()
+        compose.onAllNodesWithText("Ship it").assertCountEquals(0)
+    }
+
+    @Test
+    fun `a manually expanded goal stays expanded across known unknown known transitions`() {
+        val goal = mutableStateOf(ComposerGoalStatus("goal: ship it", ComposerGoalState.Active, "Ship it"))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box(Modifier.width(360.dp)) {
+                    ComposerStatusStack(activeSessionId = "session-a", status = ComposerStatusState(goal = goal.value))
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("Goal active, expand").performClick()
+        compose.runOnIdle { goal.value = ComposerGoalStatus("Unrecognized server line", ComposerGoalState.Unknown) }
+        compose.onNodeWithText("Unrecognized server line").assertIsDisplayed()
+        compose.runOnIdle { goal.value = ComposerGoalStatus("goal: ship it", ComposerGoalState.Active, "Ship it") }
+
+        compose.onNodeWithContentDescription("Goal active, collapse").assertIsDisplayed()
+        compose.onNodeWithText("Ship it").assertIsDisplayed()
+    }
+
+    @Test
     fun `a parked queue starts collapsed and a park does not open it`() {
         val parked = mutableStateOf(false)
         setQueueContent(parked)
