@@ -22,9 +22,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,6 +39,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
 import com.hermesagent.mobile.data.session.ComposerGoalState
@@ -49,6 +54,7 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import kotlinx.coroutines.delay
 
 /**
  * Session-scoped Gateway status, deliberately separate from transcript rows.
@@ -74,6 +80,7 @@ fun ComposerStatusStack(
     val visibleGroupCount = composerStatusGroupCount(status, hasQueue, previews.size)
     if (visibleGroupCount == 0) return
     val fuseSingleGroup = fusedToComposer && visibleGroupCount == 1
+    ReconcileSilentExits(activeSessionId, status?.backgroundProcesses.orEmpty(), onRefreshProcesses)
 
     Column(
         modifier = modifier
@@ -198,6 +205,77 @@ fun ComposerStatusStack(
         // rows share this bounded scroll region rather than pushing the IME
         // composer off screen.
         queueContent?.invoke()
+    }
+}
+
+/**
+ * Retire a background row whose process died without saying so.
+ *
+ * A process started without `notify_on_complete` emits no event when it exits,
+ * so nothing retires its row: it keeps reading `Running · <title>` and keeps
+ * offering a Stop for something already gone. Desktop's answer is a 5 second
+ * `process.list` interval, armed while a running row is on screen and disarmed
+ * with the pane
+ * (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:41-43,151-163`
+ * @ `564aef2946`).
+ *
+ * That interval is the one thing this path must not copy. Every tick is a
+ * radio wake on a phone, and this app deliberately owns no timer here: the
+ * session-open seed (`ChatScreen.kt:803`), the repository's coalesced
+ * event-driven refresh (`GatewaySessionRepository.kt:5184-5200`) and the
+ * Background group's own Refresh are the whole refresh story, and #233 rates
+ * that calm as the property worth keeping.
+ *
+ * So the net is bounded instead of periodic, and every edge it uses is one the
+ * app already owns:
+ *
+ *  * it exists only while a row *claims* Running, in the session on screen —
+ *    the composable is only in the tree for the open session, and it leaves
+ *    the tree the moment nothing claims to be running;
+ *  * it runs only while the host is RESUMED, so a backgrounded app never wakes
+ *    the radio, and returning to the foreground re-arms it — the mobile shape
+ *    of Desktop's `paneVisible` gate, and the moment a silent exit is most
+ *    likely to have happened unseen;
+ *  * it walks a short widening ladder and then *stops*. Three checks, not an
+ *    interval: a check that repeats forever is the polling this app does not
+ *    do. New evidence — a change in which ids claim Running — starts a fresh
+ *    ladder, so the work is bounded by real events rather than by a clock, and
+ *    when the picture stops changing the app goes quiet again and the manual
+ *    Refresh stays the explicit escape.
+ *
+ * What it does not catch, and `docs/parity/composer-status-stack.md` records:
+ * a process that dies silently while the reader keeps the session in front of
+ * them for longer than the ladder. Desktop catches that within five seconds;
+ * here it waits for the next foreground return, the next process event, or
+ * Refresh.
+ */
+@Composable
+private fun ReconcileSilentExits(
+    activeSessionId: String?,
+    processes: List<ComposerBackgroundProcess>,
+    onRefreshProcesses: () -> Unit,
+) {
+    val runningKey = processes
+        .filter { it.state == ComposerBackgroundProcessState.Running }
+        .map(ComposerBackgroundProcess::id)
+        .sorted()
+        .joinToString("|")
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // The ladder must not restart because the caller handed down a new lambda;
+    // only the session and the running set may re-arm it.
+    val refresh by rememberUpdatedState(onRefreshProcesses)
+    // A conditional call, not an early return: this is what disposes the
+    // ladder the moment the answer retires the last Running claim, and what
+    // starts a fresh one when the set of claims changes.
+    if (activeSessionId != null && runningKey.isNotEmpty()) {
+        LaunchedEffect(activeSessionId, runningKey, lifecycle) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                RECONCILE_LADDER_MILLIS.forEach { wait ->
+                    delay(wait)
+                    refresh()
+                }
+            }
+        }
     }
 }
 
@@ -399,6 +477,15 @@ private fun ComposerBackgroundProcessState.label(): String = when (this) {
 private fun Color.alphaMultiply(multiplier: Float): Color = copy(alpha = alpha * multiplier)
 
 private val MAX_STACK_HEIGHT = 240.dp
+
+/**
+ * The waits between the silent-exit checks, and the fact that there are only
+ * three of them: a claim that stays unchanged through ~2 minutes of foreground
+ * attention is treated as true rather than re-asked forever. Widening rather
+ * than fixed, so the cheap common case (a process that was already gone when
+ * the row arrived) is caught quickly without the expensive one paying for it.
+ */
+private val RECONCILE_LADDER_MILLIS = listOf(10_000L, 30_000L, 90_000L)
 private const val MAX_SUBAGENT_ROWS = 6
 private const val MAX_BACKGROUND_ROWS = 6
 private const val MAX_PREVIEW_ROWS = 4
