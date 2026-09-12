@@ -11,7 +11,7 @@ import kotlin.system.measureTimeMillis
  *
  * Two fixture families. The first is Desktop's own, ported case for case:
  * `assistant-ui/tool/fallback-model.test.ts:182,184-187,451-454` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, plus header-strip cases derived
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`, plus header-strip cases derived
  * from `chat/diff-lines.tsx:96-134` at the same SHA (its own
  * `diff-lines.test.tsx` covers only the lazy-chunk path).
  *

@@ -10,7 +10,7 @@ import okhttp3.RequestBody
 /**
  * Options for a plugin REST call, mirroring Desktop's `PluginRestOptions`
  * (`apps/desktop/src/api/plugins.ts:25-30` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 data class PluginRestOptions(
     val method: String = "GET",
@@ -50,7 +50,7 @@ sealed interface PluginRestResult {
  *
  * Direct port of Desktop's `pluginPathSuffix`
  * (`apps/desktop/src/api/plugins.ts:33-41` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 fun normalizePluginPathSuffix(caller: String, path: String): String {
     val suffix = if (path.startsWith("/")) path else "/$path"
@@ -67,7 +67,7 @@ fun normalizePluginPathSuffix(caller: String, path: String): String {
  *
  * Direct Kotlin port of Desktop's `pluginRest`
  * (`apps/desktop/src/api/plugins.ts:44-55` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  */
 interface PluginRest {
     suspend fun execute(

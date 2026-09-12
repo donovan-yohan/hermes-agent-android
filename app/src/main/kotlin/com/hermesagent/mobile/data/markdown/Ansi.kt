@@ -4,7 +4,7 @@ package com.hermesagent.mobile.data.markdown
  * The ANSI SGR parser behind terminal-shaped tool output.
  *
  * Port of Desktop's `apps/desktop/src/lib/ansi.ts` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` — the same rule set, the same
+ * `564aef2946c436500a5e80ee117b66b789b3f99a` — the same rule set, the same
  * fixture set (`lib/ansi.test.ts` @ the same SHA), the same deliberate
  * omissions: colour, bold and reset are honoured; cursor motion, erase and
  * every other CSI final byte is consumed so it cannot leak into the rendered
@@ -252,7 +252,7 @@ fun parseAnsi(input: String): List<AnsiSegment> = parseAnsiCounted(input).segmen
 /**
  * Remove every escape sequence, returning plain text.
  *
- * `ansi.ts:177-186` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` — for a
+ * `ansi.ts:177-186` @ `564aef2946c436500a5e80ee117b66b789b3f99a` — for a
  * surface that renders its payload as *text* rather than as styled runs. The
  * ESC byte is invisible in Compose, so without this the parameter bytes leak
  * as literal `[38;2;125;187;255m`; that is exactly the bug the gateway's

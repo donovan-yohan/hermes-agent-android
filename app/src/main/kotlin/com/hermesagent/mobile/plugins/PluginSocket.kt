@@ -5,7 +5,7 @@ package com.hermesagent.mobile.plugins
  *
  * Direct Kotlin port of Desktop's `pluginSocket`
  * (`apps/desktop/src/api/plugins.ts:57-95` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  *
  * `path` is relative to `/api/plugins/<id>` ('/events'). Resolves to a no-op on
  * OAuth remotes (callers keep their polling fallback).

@@ -64,7 +64,7 @@ import org.robolectric.annotation.GraphicsMode
  *
  * Desktop gets this from the browser: the message subtree is `user-select:
  * text` and everything else is `user-select: none` (`styles.css:1229-1245` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), and its own test asserts the
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`), and its own test asserts the
  * behaviour on the user bubble (`user-message-selection.test.ts`). Compose
  * inverts that default — nothing selects unless a `SelectionContainer` says so
  * — which moves the risk: the tests below pin *both* halves, that prose selects

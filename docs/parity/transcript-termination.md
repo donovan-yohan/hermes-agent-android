@@ -1,7 +1,7 @@
 # Transcript termination attribution: Desktop-to-Android parity
 
 Desktop authority for this page is the exact UI pin
-`72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`. The evidence below was read from
+`564aef2946c436500a5e80ee117b66b789b3f99a`. The evidence below was read from
 that Git object in the read-only upstream reference checkout; this page does
 not claim that the local worktree HEAD is at the pin, and the upstream checkout
 was not modified or fetched.
@@ -12,24 +12,24 @@ Desktop has no transcript row or copy for a turn ended externally. The pinned
 assistant message renders message parts, loading state, attachments, errors,
 the timestamp, footer and changed-files card, with no termination scaffold
 (`apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx:187-241`
-@ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). Its gateway event handler drops
+@ `564aef2946c436500a5e80ee117b66b789b3f99a`). Its gateway event handler drops
 reclaimed runtime state and refreshes the session list, then handles
 `session.info`; neither branch adds transcript termination copy
 (`apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/lifecycle.ts:74-101`
-@ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). The same handler settles a
+@ `564aef2946c436500a5e80ee117b66b789b3f99a`). The same handler settles a
 running=false turn without a completion event as lifecycle state, not as a
 user-attributed transcript row
 (`apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/session-info.ts:349-377`
-@ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+@ `564aef2946c436500a5e80ee117b66b789b3f99a`).
 
 The only nearby Desktop wording is `backendStopped: 'Backend stopped'` in the
 boot error translations (`apps/desktop/src/i18n/en.ts:109-116`
-@ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`); it is boot/status copy, not a
+@ `564aef2946c436500a5e80ee117b66b789b3f99a`); it is boot/status copy, not a
 per-transcript external-ended label. Desktop's interrupted-turn test instead
 keeps the partial reply and correction visible and asserts that the generated
 interrupt scaffolding is not painted into the transcript
 (`apps/desktop/src/lib/chat-messages.test.ts:287-323`
-@ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). Therefore there is no Desktop
+@ `564aef2946c436500a5e80ee117b66b789b3f99a`). Therefore there is no Desktop
 external-ended string for Android to copy.
 
 Android preserves the existing user-attributed wording exactly: the only

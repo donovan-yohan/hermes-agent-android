@@ -10,7 +10,7 @@ import org.junit.Test
  * The roster's pure derivation: hidden/pinned treatment, filter composition
  * and user-section filing.
  *
- * Desktop sources at `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`:
+ * Desktop sources at `564aef2946c436500a5e80ee117b66b789b3f99a`:
  * `roster-pane-derivation.ts` (rows + presentation), `user-sections.ts`
  * (`groupRowsBySection`, `normalizeBotSections`) and `hidden-bots.ts:23-31`
  * (the pin/hide predicates).

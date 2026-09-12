@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
  * Settings ▸ Plugins.
  *
  * Desktop source: `apps/desktop/src/app/settings/plugins-settings.tsx` (bundled
- * section only) @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
+ * section only) @ `564aef2946c436500a5e80ee117b66b789b3f99a`.
  */
 @Composable
 fun PluginsScreen(
