@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +32,6 @@ import com.hermesagent.mobile.data.notifications.NotificationKind
 import com.hermesagent.mobile.data.notifications.SETTABLE_KINDS
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.OutlineButton
-import com.hermesagent.mobile.ui.common.SettingsListRow
 import com.hermesagent.mobile.ui.common.TokenSwitch
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -89,7 +90,7 @@ fun NotificationsScreen(
             text = NotificationsCopy.INTRO,
             style = HermesTheme.type.caption,
             color = tokens.textTertiary,
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
         )
 
         if (!state.systemAllowed) {
@@ -217,6 +218,12 @@ private fun SystemGrantNotice(onOpenSystemSettings: () -> Unit) {
  * The whole row is the target rather than the switch alone: a 48 dp switch
  * beside a two-line label is the smallest thing on the screen and the hardest
  * to hit, and Desktop's own rows are clickable end to end.
+ *
+ * Laid out as a row rather than through `SettingsListRow`, which stacks its
+ * action *under* the text. That reads correctly for the Plugins screen, where
+ * the action is a button belonging to the card above it, and badly for a list
+ * of six switches: each one ends up a screen-third tall with its control
+ * floating below the sentence it controls rather than opposite it.
  */
 @Composable
 private fun ToggleRow(
@@ -227,8 +234,11 @@ private fun ToggleRow(
     tag: String,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    SettingsListRow(
+    val tokens = HermesTheme.tokens
+    Row(
         modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = HermesTheme.spacing.touchTarget)
             .toggleable(
                 value = checked,
                 enabled = enabled,
@@ -236,28 +246,30 @@ private fun ToggleRow(
                 onValueChange = onCheckedChange,
             )
             .semantics { contentDescription = "$label. $description" }
-            .testTag(tag),
-        description = description,
-        action = {
-            Box(
-                Modifier.size(HermesTheme.spacing.touchTarget),
-                contentAlignment = Alignment.Center,
-            ) {
-                TokenSwitch(on = checked, enabled = enabled)
-            }
-        },
-        title = {
+            .testTag(tag)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = label,
                 style = HermesTheme.type.bodyStrong,
-                color = if (enabled) {
-                    HermesTheme.tokens.textPrimary
-                } else {
-                    HermesTheme.tokens.textTertiary
-                },
+                color = if (enabled) tokens.textPrimary else tokens.textTertiary,
             )
-        },
-    )
+            Text(
+                text = description,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+            )
+        }
+        Box(
+            Modifier.size(HermesTheme.spacing.touchTarget),
+            contentAlignment = Alignment.Center,
+        ) {
+            TokenSwitch(on = checked, enabled = enabled)
+        }
+    }
 }
 
 internal const val NOTIFICATIONS_MASTER_TAG: String = "notifications-master"
