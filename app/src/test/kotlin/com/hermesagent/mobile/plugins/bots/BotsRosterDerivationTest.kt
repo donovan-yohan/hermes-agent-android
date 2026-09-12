@@ -115,6 +115,14 @@ class BotsRosterDerivationTest {
     }
 
     @Test
+    fun `a multi-source row is searchable by its device label`() {
+        val homelab = bot("researcher").copy(connectionId = "homelab", connectionLabel = "Homelab")
+        val rows = listOf(homelab, bot("writer"))
+
+        assertEquals(listOf("researcher"), filterBots(rows, "homelab").map { it.name })
+    }
+
+    @Test
     fun `the primary profile is searchable by its hermes handle`() {
         val rows = listOf(bot("default"), bot("writer"))
 

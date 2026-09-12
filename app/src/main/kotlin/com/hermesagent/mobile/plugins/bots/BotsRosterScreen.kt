@@ -91,7 +91,7 @@ fun BotsRosterScreen(
 
             when {
                 state.phase == BotsRosterPhase.Loading -> RosterMessage(
-                    title = BotsRosterCopy.SEARCH,
+                    title = BOTS_TITLE,
                     description = BotsRosterCopy.WAITING_FOR_GATEWAY,
                 )
 

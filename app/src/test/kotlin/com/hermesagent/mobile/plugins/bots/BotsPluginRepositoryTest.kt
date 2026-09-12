@@ -100,6 +100,7 @@ class BotsPluginRepositoryTest {
         val row = parseBotsRoster(json(twoBots))!!.first()
 
         assertEquals("newer", botActivitySession(row)?.preview)
+        assertEquals("c-1", botActivitySession(row)?.id)
         assertEquals("c-2", botActivitySession(row)?.resolvedId)
         assertEquals(1_800_000_500_000L, row.lastActiveMillis)
     }

@@ -65,8 +65,10 @@ fun botSectionId(row: BotRosterRow, metaByKey: Map<String, BotMeta>): String? =
  * Filter by the two stable identities rendered in every row: the customizable
  * display name and the profile's @handle. Desktop also matches the source
  * label, the role/description text and the session preview
- * (`data.ts:1368-1398` @ the pin); all but the source label survive here,
- * because this app renders all of them.
+ * (`data.ts:1368-1398` @ the pin); all of them survive here, because this app
+ * renders or will render each one. On a single connection the source label is
+ * null, which matches nothing — the arm is kept so a second source needs no
+ * change to the search.
  *
  * Search narrows the roster; it never re-ranks it.
  */
@@ -79,6 +81,7 @@ fun filterBots(rows: List<BotRosterRow>, query: String): List<BotRosterRow> {
         displayName(row.name, row.displayName).lowercase().contains(needle) ||
             row.name.lowercase().contains(needle) ||
             row.handle.lowercase().contains(needle) ||
+            row.connectionLabel.orEmpty().lowercase().contains(needle) ||
             row.description.lowercase().contains(needle) ||
             displayPreview(row.activity?.preview).lowercase().contains(needle)
     }
