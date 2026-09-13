@@ -30,6 +30,13 @@ sealed interface BotsRosterLoad {
     data class Refused(val safeMessage: String) : BotsRosterLoad
 }
 
+/** The only conclusions a read-only canonical lookup is allowed to make. */
+sealed interface BotChatLookup {
+    data class Found(val durableId: String) : BotChatLookup
+    data object Missing : BotChatLookup
+    data object Unsafe : BotChatLookup
+}
+
 class BotsPluginRepository(private val host: PluginHost) {
 
     suspend fun loadRoster(): BotsRosterLoad = when (
@@ -48,8 +55,36 @@ class BotsPluginRepository(private val host: PluginHost) {
         is PluginHostResult.Refused -> BotsRosterLoad.Refused(result.safeMessage)
     }
 
+    /** Hidden canonical chats bypass SessionCache and are resolved by exact title. */
+    suspend fun findCanonicalChat(profile: String, rosterCanonicalId: String?): BotChatLookup {
+        val result = host.request(
+            method = SESSION_LIST,
+            params = buildJsonObject {
+                put("profile", JsonPrimitive(profile))
+                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+                put("limit", JsonPrimitive(CANONICAL_LOOKUP_LIMIT))
+                put("include_hidden", JsonPrimitive(true))
+            },
+        )
+        if (result !is PluginHostResult.Success) return BotChatLookup.Unsafe
+        val sessions = (result.result as? JsonObject)?.get("sessions") as? JsonArray ?: return BotChatLookup.Unsafe
+        if (sessions.isEmpty()) return if (rosterCanonicalId.isNullOrBlank()) BotChatLookup.Missing else BotChatLookup.Unsafe
+        // `title` makes this a constrained lookup, not a ranking request. A
+        // surprising extra or malformed row therefore means the response no
+        // longer proves which hidden chat is canonical; never pick arbitrarily.
+        val exact = sessions.singleOrNull() as? JsonObject ?: return BotChatLookup.Unsafe
+        if (exact.text("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
+        val id = exact.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: exact.text("id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: return BotChatLookup.Unsafe
+        return BotChatLookup.Found(id)
+    }
+
     private companion object {
         const val PROFILES_LIST = "profiles.list"
+        const val SESSION_LIST = "session.list"
+        const val CANONICAL_CHAT_TITLE = "Bot Chat"
+        const val CANONICAL_LOOKUP_LIMIT = 200
 
         /** This app's sentence; the backend's own text is never shown. */
         const val UNREADABLE_ROSTER = "The Gateway sent a roster this app could not read."

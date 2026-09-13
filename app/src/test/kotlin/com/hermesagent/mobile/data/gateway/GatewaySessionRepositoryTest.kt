@@ -62,6 +62,24 @@ import org.junit.Test
 class GatewaySessionRepositoryTest {
 
     @Test
+    fun `explicit profile resume rejects blank profile before any RPC`() = runTest {
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            SessionCache(),
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        val callsBefore = rpc.calls.size
+
+        val failure = runCatching { repository.openSession("durable-a", "   ") }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(callsBefore, rpc.calls.size)
+    }
+
+    @Test
     fun `model catalog keeps Gateway provider capabilities and effective selection`() {
         val catalog = parseModelCatalog(
             json(

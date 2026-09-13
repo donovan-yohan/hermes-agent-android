@@ -51,6 +51,10 @@ data class BotsRosterUiState(
     val safeMessage: String? = null,
     /** Whether a live Gateway connection exists behind the plugin host door. */
     val connectionUp: Boolean = false,
+    /** Product-safe result of the most recent read-only Bot Chat open attempt. */
+    val botChatMessage: String? = null,
+    /** The roster row currently resolving; independent of roster refresh state. */
+    val openingBotKey: String? = null,
 ) {
     /**
      * A roster exists but the current query/filters match none of it.
@@ -279,6 +283,42 @@ class BotsViewModel(
         refresh()
     }
 
+    fun openBotChat(
+        row: BotRosterRow,
+        onOpen: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit,
+    ) {
+        if (_uiState.value.openingBotKey != null) return
+        val endpoint = endpointGeneration.value
+        _uiState.update { it.copy(openingBotKey = row.rosterKey, botChatMessage = null) }
+        scope.launch {
+            when (val outcome = repository.findCanonicalChat(row.name, row.canonicalSession?.id)) {
+                is BotChatLookup.Found -> if (endpoint == endpointGeneration.value) {
+                    // Discovery and resume are one roster operation.  In
+                    // particular, do not clear the row spinner just because
+                    // the resume coroutine was launched.
+                    onOpen(row.name, outcome.durableId) { opened ->
+                        if (endpoint != endpointGeneration.value) return@onOpen
+                        _uiState.update {
+                            it.copy(
+                                openingBotKey = null,
+                                botChatMessage = if (opened) null else
+                                    "Bot Chat could not be opened. Check the Gateway and try again.",
+                            )
+                        }
+                    }
+                    return@launch
+                }
+                BotChatLookup.Missing -> if (endpoint == endpointGeneration.value) {
+                    _uiState.update { it.copy(botChatMessage = "No Bot Chat is available for this bot yet.") }
+                }
+                BotChatLookup.Unsafe -> if (endpoint == endpointGeneration.value) {
+                    _uiState.update { it.copy(botChatMessage = "Bot Chat could not be opened. Check the Gateway and try again.") }
+                }
+            }
+            if (endpoint == endpointGeneration.value) _uiState.update { it.copy(openingBotKey = null) }
+        }
+    }
+
     /** [refresh] without the scope, so a test can await it deterministically. */
     suspend fun refreshNow() {
         // The endpoint flow can move before its collector gets a dispatcher
@@ -470,7 +510,16 @@ class BotsViewModel(
         val now = clock()
         _uiState.update { state ->
             derivedState(
-                from = state.copy(safeMessage = null, attentionByKey = emptyMap()),
+                // An endpoint switch invalidates the operation as well as its
+                // rows. Do not carry a prior Gateway's spinner or result into
+                // the new endpoint through derivedState's otherwise useful
+                // presentation copy.
+                from = state.copy(
+                    safeMessage = null,
+                    attentionByKey = emptyMap(),
+                    openingBotKey = null,
+                    botChatMessage = null,
+                ),
                 // A switch invalidates even a terminal answer from the old
                 // endpoint, so start the new one from Loading explicitly.
                 whenEmpty = BotsRosterPhase.Loading,

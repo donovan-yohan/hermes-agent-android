@@ -168,6 +168,7 @@ class ChatEndpointSwitchTest {
         override val pendingInputs = MutableStateFlow(emptyMap<PendingInputKey, PendingInputRequest>())
         override suspend fun refreshSessions() = Unit
         override suspend fun openSession(durableId: String): String = durableId
+        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
         override suspend fun createSession(workspacePath: String?): String = "created"
         override suspend fun submit(durableId: String, text: String) = GatewaySubmitOutcome.Accepted
         override suspend fun interrupt(durableId: String) = Unit

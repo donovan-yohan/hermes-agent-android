@@ -86,6 +86,7 @@ class BotsPlugin(
                         BotsRosterScreen(
                             state = state,
                             onBack = nav.onBack,
+                            onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenReadOnlyBotChat) },
                             actions = actions,
                         )
                     },

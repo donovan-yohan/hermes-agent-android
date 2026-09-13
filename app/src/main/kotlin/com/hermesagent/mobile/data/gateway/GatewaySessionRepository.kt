@@ -179,6 +179,12 @@ interface GatewaySessionRepository {
     suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
         error("Project creation is not implemented by this repository.")
     suspend fun openSession(durableId: String): String
+    /**
+     * Resume a session in an explicitly named profile.  This is deliberately
+     * not a convenience default: silently dropping the profile can open a
+     * same-id session from the Gateway launch profile.
+     */
+    suspend fun openSession(durableId: String, profile: String): String
     suspend fun createSession(workspacePath: String? = null): String
     suspend fun createSession(
         workspacePath: String?,
@@ -1984,7 +1990,14 @@ internal class LiveGatewaySessionRepository(
         return ProjectCreateOutcome(projectId, catalogRefreshed)
     }
 
-    override suspend fun openSession(durableId: String): String = navigationMutex.withLock {
+    override suspend fun openSession(durableId: String): String = openSessionInternal(durableId, null)
+
+    override suspend fun openSession(durableId: String, profile: String): String {
+        require(profile.isNotBlank()) { "A profile is required to resume this session." }
+        return openSessionInternal(durableId, profile.trim())
+    }
+
+    private suspend fun openSessionInternal(durableId: String, explicitProfile: String?): String = navigationMutex.withLock {
         val connection = connectionSnapshot()
         val knownRuntime = synchronized(stateLock) { identities.runtimeFor(durableId) }
         val liveSnapshot: JsonObject
@@ -2006,7 +2019,7 @@ internal class LiveGatewaySessionRepository(
             // sidebar happens to be in — the unified view lists other
             // profiles' sessions and opening one must reach its state.db
             // (`methods_session.py:327-330`).
-            val owningProfile = synchronized(stateLock) { owningProfileParam(durableId) }
+            val owningProfile = explicitProfile ?: synchronized(stateLock) { owningProfileParam(durableId) }
             liveSnapshot = connection.client.request(
                 "session.resume",
                 buildJsonObject {

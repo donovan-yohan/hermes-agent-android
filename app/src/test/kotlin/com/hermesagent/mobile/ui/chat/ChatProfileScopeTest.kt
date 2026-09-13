@@ -351,6 +351,7 @@ class ChatProfileScopeTest {
         }
 
         override suspend fun openSession(durableId: String): String = durableId
+        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
         override suspend fun createSession(workspacePath: String?): String = "created"
 
