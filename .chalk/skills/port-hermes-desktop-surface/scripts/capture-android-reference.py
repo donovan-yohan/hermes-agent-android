@@ -100,7 +100,10 @@ def accessibility_snapshot(serial: str | None, expected_description: str | None 
                 "enabled": node.attrib.get("enabled") == "true",
                 "selected": node.attrib.get("selected") == "true",
             })
-    if expected_description and expected_description not in descriptions:
+    # Compose may publish a clickable parent's description together with a
+    # descendant action in one platform node. Require the complete expected
+    # phrase, but do not require it to be the node's entire merged value.
+    if expected_description and not any(expected_description in description for description in descriptions):
         raise SystemExit(f"post-interaction state did not expose {expected_description!r} in accessibility")
     return {"expected_description": expected_description, "nodes": nodes}
 

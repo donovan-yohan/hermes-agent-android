@@ -82,6 +82,12 @@ class AndroidCaptureIdentityTest(unittest.TestCase):
         self.assertEqual("Queue, 2 messages, parked, expand", evidence["expected_description"])
         self.assertEqual(1, len(evidence["nodes"]))
 
+    def test_accepts_complete_expected_phrase_inside_merged_platform_description(self) -> None:
+        xml = '<hierarchy><node class="Row" content-desc="Queue, 2 messages, parked, expand, Resume queued messages" /></hierarchy>'
+        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", xml]):
+            evidence = capture.accessibility_snapshot("emulator-5554", "Queue, 2 messages, parked, expand")
+        self.assertEqual(1, len(evidence["nodes"]))
+
     def test_rejects_missing_post_interaction_accessibility_state(self) -> None:
         xml = '<hierarchy><node text="Queue" content-desc="Queue, 2 messages, parked, collapse" /></hierarchy>'
         with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", xml]):
