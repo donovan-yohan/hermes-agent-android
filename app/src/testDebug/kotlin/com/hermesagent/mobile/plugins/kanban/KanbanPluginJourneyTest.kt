@@ -67,9 +67,9 @@ class KanbanPluginJourneyTest {
         val sidebar = registry.getArea(PluginAreas.SIDEBAR_NAV_AREA).single()
         val route = registry.getArea(PluginAreas.ROUTES_AREA).single()
         val navigations = mutableListOf<String>()
+        var routeOpen by mutableStateOf(false)
 
         compose.setContent {
-            var routeOpen by mutableStateOf(false)
             HermesTheme {
                 CompositionLocalProvider(
                     LocalPluginNavigation provides PluginNavigation(
