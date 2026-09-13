@@ -3236,9 +3236,14 @@ internal class ChatViewModel(
         activeSessionId.value?.let { refreshProcesses(it, showFailure = true) }
     }
 
-    /** The bounded background-process ladder must not report a failure as a user action. */
-    fun reconcileProcesses() {
-        activeSessionId.value?.let { refreshProcesses(it, showFailure = false) }
+    /**
+     * The bounded background-process ladder owns this request. Keeping the call
+     * suspendable lets Compose cancel an in-flight read when its session or
+     * foreground lifecycle leaves instead of orphaning work in viewModelScope.
+     */
+    suspend fun reconcileProcesses() {
+        val sessionId = activeSessionId.value ?: return
+        repository.listProcesses(sessionId)
     }
 
     /**

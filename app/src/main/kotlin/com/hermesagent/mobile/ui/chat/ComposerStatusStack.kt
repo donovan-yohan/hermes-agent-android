@@ -66,7 +66,7 @@ fun ComposerStatusStack(
     activeSessionId: String?,
     status: ComposerStatusState?,
     onRefreshProcesses: () -> Unit = {},
-    onReconcileProcesses: () -> Unit = {},
+    onReconcileProcesses: suspend () -> Unit = {},
     onKillProcess: (String) -> Unit = {},
     hasQueue: Boolean = false,
     queueContent: (@Composable () -> Unit)? = null,
@@ -260,7 +260,7 @@ fun ComposerStatusStack(
 private fun ReconcileSilentExits(
     activeSessionId: String?,
     processes: List<ComposerBackgroundProcess>,
-    onReconcileProcesses: () -> Unit,
+    onReconcileProcesses: suspend () -> Unit,
 ) {
     val runningKey = processes
         .filter { it.state == ComposerBackgroundProcessState.Running }

@@ -16,6 +16,7 @@ import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -39,6 +40,7 @@ class ComposerSilentExitReconcileTest {
 
     private var reconciliations = 0
     private var manualRefreshes = 0
+    private val activeSessionId = mutableStateOf<String?>("session-a")
     private val status = mutableStateOf(ComposerStatusState(backgroundProcesses = listOf(running("build"))))
 
     @Test
@@ -91,6 +93,60 @@ class ComposerSilentExitReconcileTest {
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(600_000)
         assertEquals(1, reconciliations)
+    }
+
+    @Test
+    fun `backgrounding cancels an in flight read and prevents overlapping rungs`() {
+        var starts = 0
+        var inFlight = 0
+        var maxInFlight = 0
+        var cancellations = 0
+        setContent {
+            starts += 1
+            inFlight += 1
+            maxInFlight = maxOf(maxInFlight, inFlight)
+            try {
+                awaitCancellation()
+            } finally {
+                inFlight -= 1
+                cancellations += 1
+            }
+        }
+
+        compose.mainClock.advanceTimeBy(10_000)
+        assertEquals(1, starts)
+        assertEquals(1, inFlight)
+        compose.mainClock.advanceTimeBy(600_000)
+        assertEquals("an unfinished rung blocks every later rung", 1, starts)
+        assertEquals(1, maxInFlight)
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.waitForIdle()
+        assertEquals(0, inFlight)
+        assertEquals(1, cancellations)
+    }
+
+    @Test
+    fun `removing the active session cancels an in flight read`() {
+        var inFlight = false
+        var cancellations = 0
+        setContent {
+            inFlight = true
+            try {
+                awaitCancellation()
+            } finally {
+                inFlight = false
+                cancellations += 1
+            }
+        }
+
+        compose.mainClock.advanceTimeBy(10_000)
+        assertEquals(true, inFlight)
+        compose.runOnIdle { activeSessionId.value = null }
+        compose.waitForIdle()
+
+        assertEquals(false, inFlight)
+        assertEquals(1, cancellations)
     }
 
     @Test
@@ -149,15 +205,15 @@ class ComposerSilentExitReconcileTest {
         assertEquals(0, reconciliations)
     }
 
-    private fun setContent() {
+    private fun setContent(onReconcile: suspend () -> Unit = { reconciliations += 1 }) {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 Box(Modifier.width(360.dp)) {
                     ComposerStatusStack(
-                        activeSessionId = "session-a",
+                        activeSessionId = activeSessionId.value,
                         status = status.value,
                         onRefreshProcesses = { manualRefreshes += 1 },
-                        onReconcileProcesses = { reconciliations += 1 },
+                        onReconcileProcesses = onReconcile,
                     )
                 }
             }
