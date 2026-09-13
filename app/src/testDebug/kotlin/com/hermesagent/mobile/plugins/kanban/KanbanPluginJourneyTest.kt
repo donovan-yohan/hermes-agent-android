@@ -161,6 +161,27 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithText("Task details could not be loaded").assertIsDisplayed()
     }
 
+    @Test
+    fun `board empty unavailable and refused states render fixed copy and keep refresh`() {
+        var state by mutableStateOf(KanbanUiState(KanbanPhase.Empty))
+        compose.setContent {
+            HermesTheme {
+                KanbanScreen(state, {}, {}, {}, {})
+            }
+        }
+
+        compose.onNodeWithText("No tasks on this board").assertIsDisplayed()
+        compose.onNodeWithTag("Kanban refresh").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+
+        compose.runOnIdle { state = KanbanUiState(KanbanPhase.Unavailable) }
+        compose.onNodeWithText("Kanban unavailable").assertIsDisplayed()
+        compose.onNodeWithText(KANBAN_UNAVAILABLE).assertIsDisplayed()
+
+        compose.runOnIdle { state = KanbanUiState(KanbanPhase.Refused) }
+        compose.onNodeWithText("Board could not be loaded").assertIsDisplayed()
+        compose.onNodeWithTag("Kanban refresh").assertIsDisplayed()
+    }
+
     private fun assertWipOrder(vararg labels: String) {
         val orderedLabels = labels.toList()
         val tops = orderedLabels.associateWith { label ->

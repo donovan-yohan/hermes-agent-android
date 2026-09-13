@@ -7,6 +7,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * The board snapshot and task-detail reads.
+ *
+ * `GET /api/plugins/kanban/board` is `plugins/kanban/dashboard/plugin_api.py:265-336` and
+ * `GET /api/plugins/kanban/tasks/{task_id}` is `plugins/kanban/dashboard/plugin_api.py:339-368` @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`; every id, title and body in these fixtures is
+ * invented, not captured from a board.
+ */
 class KanbanPluginRepositoryTest {
     @Test
     fun `exact GET paths have no body and URL encode task ids`() = runTest {
