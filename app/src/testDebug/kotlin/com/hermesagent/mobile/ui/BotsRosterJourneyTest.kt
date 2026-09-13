@@ -22,9 +22,23 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.hermesagent.mobile.data.connections.ConnectionKind
+import com.hermesagent.mobile.data.connections.ConnectionRegistry
+import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
+import com.hermesagent.mobile.data.connections.ConnectionSwitchController
+import com.hermesagent.mobile.data.connections.SavedConnection
+import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
+import com.hermesagent.mobile.data.gateway.GatewayConnectResult
+import com.hermesagent.mobile.data.gateway.GatewayConnectionController
+import com.hermesagent.mobile.data.gateway.GatewayConnectionState
+import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayEvent
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayRpcError
+import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
+import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.ssh.HostProfile
+import com.hermesagent.mobile.data.ssh.SshCredential
 import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.GatewayPluginHost
 import com.hermesagent.mobile.plugins.PluginAreas
@@ -53,7 +67,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -329,6 +347,65 @@ class BotsRosterJourneyTest {
         compose.onNodeWithText("Default").assertIsDisplayed()
     }
 
+    /**
+     * The one thing a reconnect must never be confused with: a different
+     * endpoint.
+     *
+     * The next backend is a different machine that can recycle the same durable
+     * ids, so when the app performs its own switch the rows the previous
+     * Gateway served are dropped — and the stale banner goes with them, because
+     * it described *those* rows. What is left is the waiting state, and the new
+     * endpoint's own answer is the only thing that can fill it.
+     *
+     * The switch is performed through the app's real controller, on the app's
+     * real cache: the same call `HermesApplication` wires the Gateways screen
+     * to, not a hand-moved copy of it.
+     */
+    @Test
+    fun `an endpoint switch drops the previous gateway's rows and its stale banner`() {
+        val owner = TestOwner()
+        val cache = SessionCache()
+        val controller = ConnectionSwitchController(
+            store = MemoryRegistryStore(TWO_ROWS, activeId = "one"),
+            gateway = FakeGatewayConnection(clients),
+            cache = cache,
+        )
+        clients.value = rosterRpc()
+        launch(owner = owner, endpointGeneration = cache.endpointGeneration)
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.RESUMED }
+        awaitText("Researcher")
+
+        // Endpoint one stops answering the roster: the surface holds the list it
+        // already had and says the list is old. Those rows are the previous
+        // machine's, and this is the state a switch must not carry across.
+        clients.value = FakeRpc { _, _ -> throw GatewayRpcError(500, "boom") }
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.STARTED }
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.RESUMED }
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag(STALE_TAG).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Researcher").assertIsDisplayed()
+
+        runBlocking { controller.select("two") }
+
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(BotsRosterCopy.WAITING_FOR_GATEWAY)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Researcher").assertDoesNotExist()
+        assertEquals(0, compose.onAllNodesWithTag(STALE_TAG).fetchSemanticsNodes().size)
+
+        // The new endpoint comes up and refuses the roster itself. That failure
+        // is this endpoint's to report — with nothing inherited from the last
+        // one, no rows and no banner about them.
+        clients.value = FakeRpc { _, _ -> throw GatewayRpcError(500, "boom") }
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(BotsRosterCopy.RETRY_NOW).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Researcher").assertDoesNotExist()
+        assertEquals(0, compose.onAllNodesWithTag(STALE_TAG).fetchSemanticsNodes().size)
+    }
+
     // ── harness ───────────────────────────────────────────────────────────────
 
     /**
@@ -340,6 +417,12 @@ class BotsRosterJourneyTest {
         renderSidebarEntry: Boolean = false,
         sections: List<BotSection> = emptyList(),
         metaByKey: Map<String, BotMeta> = emptyMap(),
+        /**
+         * The endpoint the door belongs to, as `HermesApplication` hands it
+         * over (`cache.endpointGeneration`). Left still for every test that is
+         * not about a switch, which is what a reconnect is.
+         */
+        endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
     ) {
         val registry = ContributionRegistry()
         val plugin = BotsPlugin(sections = sections, metaByKey = metaByKey, scope = pluginScope)
@@ -351,7 +434,7 @@ class BotsRosterJourneyTest {
                 socket = NoSocket,
                 storage = NoStorage,
                 os = NoOs,
-                host = GatewayPluginHost(pluginScope, clients) as PluginHost,
+                host = GatewayPluginHost(pluginScope, clients, endpointGeneration) as PluginHost,
             ),
         )
         val area = if (renderSidebarEntry) PluginAreas.SIDEBAR_NAV_AREA else PluginAreas.ROUTES_AREA
@@ -373,6 +456,57 @@ class BotsRosterJourneyTest {
     private class TestOwner : LifecycleOwner {
         val registry = LifecycleRegistry.createUnsafe(this)
         override val lifecycle: Lifecycle get() = registry
+    }
+
+    /**
+     * The live connection, reduced to what an endpoint switch does to it: the
+     * leg comes down — which clears the client slot the door reads, exactly as
+     * `GatewayConnection` does — and the new endpoint is already up when the
+     * controller starts waiting on it.
+     *
+     * Which client the new endpoint's leg publishes is the test's to set: that
+     * is the app-scoped route follower's job, not this controller's.
+     */
+    private class FakeGatewayConnection(
+        private val clients: MutableStateFlow<GatewayRpcClient?>,
+    ) : GatewayConnectionController {
+        private val _state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
+
+        override suspend fun connect(profile: HostProfile, credential: SshCredential): GatewayConnectResult =
+            GatewayConnectResult.Connected
+
+        override suspend fun connectRemote(
+            profile: RemoteGatewayProfile,
+            browser: GatewayBrowserLauncher,
+        ): GatewayConnectResult = GatewayConnectResult.Connected
+
+        override fun startRemoteSignIn(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher) = Unit
+
+        override fun cancelRemoteSignIn() = Unit
+
+        override suspend fun forgetRemoteAuthentication(profile: RemoteGatewayProfile) = Unit
+
+        override suspend fun disconnect() {
+            clients.value = null
+        }
+    }
+
+    /** The saved rows a switch moves between. */
+    private class MemoryRegistryStore(
+        rows: List<SavedConnection>,
+        activeId: String,
+    ) : ConnectionRegistryStore {
+        private val registry = MutableStateFlow(ConnectionRegistry(rows, activeId))
+        override val connectionRegistry: StateFlow<ConnectionRegistry> = registry.asStateFlow()
+
+        override suspend fun saveConnection(connection: SavedConnection) = Unit
+
+        override suspend fun removeConnection(id: String) = Unit
+
+        override suspend fun setActiveConnection(id: String) {
+            registry.update { it.copy(activeId = id) }
+        }
     }
 
     /** A `profiles.list` answer with one row per name. */
@@ -418,5 +552,21 @@ class BotsRosterJourneyTest {
     private companion object {
         /** The reason the entry point's closed sentence carries. */
         const val PREDATES_REASON = "this Gateway does not serve profiles.list"
+
+        /** Two saved endpoints, so a switch has somewhere to go. */
+        val TWO_ROWS = listOf(
+            SavedConnection(
+                id = "one",
+                label = "Alpha",
+                kind = ConnectionKind.Remote,
+                remote = RemoteGatewayProfile("https://alpha.test"),
+            ),
+            SavedConnection(
+                id = "two",
+                label = "Beta",
+                kind = ConnectionKind.Remote,
+                remote = RemoteGatewayProfile("https://beta.test"),
+            ),
+        )
     }
 }
