@@ -216,6 +216,8 @@ class SessionNotifier(
         requests: Map<PendingInputKey, PendingInputRequest>,
         previousPending: Map<PendingInputKey, PendingInputRequest> = latestPending,
     ) {
+        val previousShown = shown
+        val sessionsWithReminder = reminded.mapTo(mutableSetOf()) { it.first }
         val desired = mutableMapOf<Pair<String, NotificationKind>, Pair<Prompt, PromptIdentity>>()
         for ((key, request) in requests) {
             val kind = key.kind.notificationKind()
@@ -251,6 +253,10 @@ class SessionNotifier(
             // replacing the question, not repeating it. None of the "already
             // dealt with" rules below apply to a request nobody has seen.
             val supersedes = shown[identity]?.key?.let { it != prompt.key } == true
+            if (supersedes) {
+                promptPostedAt.remove(identity)
+                reminded.remove(identity)
+            }
             if (!supersedes) {
                 if (identity in shown) continue
                 // Deduplicate across reconnects: if already notified pre-disconnect,
@@ -283,6 +289,18 @@ class SessionNotifier(
         reminded.retainAll(next.keys)
         val now = clock()
         for (identity in next.keys) promptPostedAt.putIfAbsent(identity, now)
+
+        val reminderSessionsChanged = (previousShown.keys + next.keys)
+            .mapTo(mutableSetOf()) { it.first }
+            .filter { durableSessionId ->
+                previousShown.filterKeys { it.first == durableSessionId }.mapValues { it.value.key } !=
+                    next.filterKeys { it.first == durableSessionId }.mapValues { it.value.key }
+            }
+        for (durableSessionId in reminderSessionsChanged.filter { it in sessionsWithReminder }) {
+            surface.clear(NotificationKind.StillWaiting, durableSessionId)
+            reminded.removeAll { it.first == durableSessionId }
+            postReminderIfDue(durableSessionId, now)
+        }
 
         // Prune resolved prompts on observed resolution (present in previous pending, absent from current)
         // rather than set difference against current requests, so incremental replays on reconnect
@@ -352,21 +370,38 @@ class SessionNotifier(
      */
     private fun applyReminderTick() {
         val now = clock()
-        for ((identity, postedAt) in promptPostedAt) {
-            if (identity in reminded) continue
-            if (now - postedAt < REMINDER_MS) continue
-            if (identity !in shown) continue
-            reminded += identity
-            // Bypasses the throttle for the same reason a supersession does:
-            // the throttle exists to collapse a burst of news, and this is one
-            // deliberate second telling of news that is minutes old.
+        for (durableSessionId in shown.keys.mapTo(mutableSetOf()) { it.first }) {
+            postReminderIfDue(durableSessionId, now)
+        }
+    }
+
+    /** One OS reminder per session, always bound to one request that is still live. */
+    private fun postReminderIfDue(durableSessionId: String, now: Long) {
+        if (reminded.any { it.first == durableSessionId }) return
+        val identity = promptPostedAt.entries
+            .asSequence()
+            .filter { (identity, postedAt) ->
+                identity.first == durableSessionId &&
+                    identity in shown &&
+                    now - postedAt >= REMINDER_MS
+            }
+            .minWithOrNull(compareBy({ it.value }, { it.key.second.ordinal }))
+            ?.key
+            ?: return
+        val prompt = shown.getValue(identity)
+        // Bypasses the throttle for the same reason a supersession does: the
+        // throttle exists to collapse a burst of news, and this is one deliberate
+        // second telling of news that is minutes old.
+        if (
             dispatch(
                 NotificationKind.StillWaiting,
-                identity.first,
-                approval = shown[identity]?.approval,
-                question = shown[identity]?.question,
+                durableSessionId,
+                approval = prompt.approval,
+                question = prompt.question,
                 bypassThrottle = true,
             )
+        ) {
+            reminded += identity
         }
     }
 
@@ -395,6 +430,8 @@ class SessionNotifier(
         // time, because it would look like it was already showing.
         shown = shown.filterKeys { it.first != visibleSessionId }
         notified.removeAll { it.durableSessionId == visibleSessionId }
+        promptPostedAt.keys.removeAll { it.first == visibleSessionId }
+        reminded.removeAll { it.first == visibleSessionId }
     }
 
     /**

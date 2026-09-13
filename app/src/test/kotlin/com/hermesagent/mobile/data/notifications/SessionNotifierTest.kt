@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -304,6 +305,76 @@ class SessionNotifierTest {
         runCurrent()
 
         assertEquals(listOf(NotificationKind.Approval to "s1"), world.surface.posted())
+    }
+
+    @Test
+    fun `resolving a prompt after its reminder withdraws both notifications`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+
+        world.pendingInputs.value = approval("s1")
+        runCurrent()
+        advanceTimeBy(6 * 60_000)
+        runCurrent()
+        world.pendingInputs.value = emptyMap()
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                NotificationKind.Approval to "s1",
+                NotificationKind.StillWaiting to "s1",
+            ),
+            world.surface.cleared,
+        )
+    }
+
+    @Test
+    fun `a shared reminder moves from a resolved approval to the live clarify`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+        val approval = approval("s1", requestId = "approval")
+        val clarify = clarify("s1")
+
+        world.pendingInputs.value = approval + clarify
+        runCurrent()
+        advanceTimeBy(6 * 60_000)
+        runCurrent()
+        assertNotNull(world.surface.posts.last().approval)
+
+        world.pendingInputs.value = clarify
+        runCurrent()
+
+        val repointed = world.surface.posts.last()
+        assertEquals(NotificationKind.StillWaiting, repointed.kind)
+        assertNull(repointed.approval)
+        assertNotNull(repointed.question)
+        assertTrue(NotificationKind.StillWaiting to "s1" in world.surface.cleared)
+    }
+
+    @Test
+    fun `a shared approval reminder stays actionable when clarify resolves`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+        val approval = approval("s1", requestId = "approval")
+        val clarify = clarify("s1")
+
+        world.pendingInputs.value = approval + clarify
+        runCurrent()
+        advanceTimeBy(6 * 60_000)
+        runCurrent()
+        world.pendingInputs.value = approval
+        runCurrent()
+
+        val repointed = world.surface.posts.last()
+        assertEquals(NotificationKind.StillWaiting, repointed.kind)
+        assertNotNull(repointed.approval)
+        assertNull(repointed.question)
     }
 
     @Test

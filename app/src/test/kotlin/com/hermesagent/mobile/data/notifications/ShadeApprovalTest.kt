@@ -39,7 +39,7 @@ class ShadeApprovalTest {
         respondFromShade(repository, surface, KEY, "chat", APPROVAL_ONCE)
 
         assertEquals(listOf(KEY to APPROVAL_ONCE), repository.answered)
-        assertEquals(listOf(NotificationKind.Approval to "chat"), surface.cleared)
+        assertEquals(resolvedNotificationClears(), surface.cleared)
         assertEquals(emptyList<String>(), surface.degraded)
     }
 
@@ -53,7 +53,7 @@ class ShadeApprovalTest {
 
         respondFromShade(repository, surface, KEY, "chat", APPROVAL_DENY)
 
-        assertEquals(listOf(NotificationKind.Approval to "chat"), surface.cleared)
+        assertEquals(resolvedNotificationClears(), surface.cleared)
     }
 
     @Test
@@ -62,7 +62,7 @@ class ShadeApprovalTest {
 
         respondFromShade(FakeRepository(PendingInputResponse.Expired), surface, KEY, "chat", APPROVAL_DENY)
 
-        assertEquals(listOf(NotificationKind.Approval to "chat"), surface.cleared)
+        assertEquals(resolvedNotificationClears(), surface.cleared)
     }
 
     @Test
@@ -120,6 +120,11 @@ class ShadeApprovalTest {
 }
 
 private val KEY = PendingInputKey(7L, "runtime-1", "req-1", PendingInputKind.Approval)
+
+private fun resolvedNotificationClears() = listOf(
+    NotificationKind.Approval to "chat",
+    NotificationKind.StillWaiting to "chat",
+)
 
 /**
  * A real repository in the state a just-launched process is in: connected in

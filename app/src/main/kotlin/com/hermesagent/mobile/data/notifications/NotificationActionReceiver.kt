@@ -170,7 +170,7 @@ internal suspend fun answerFromShade(
     }
     when (response) {
         PendingInputResponse.Resolved, PendingInputResponse.Expired ->
-            surface.clear(NotificationKind.Input, durableSessionId)
+            clearResolvedPrompt(surface, NotificationKind.Input, durableSessionId)
         PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
             surface.degrade(NotificationKind.Input, durableSessionId)
     }
@@ -193,7 +193,7 @@ internal suspend fun respondFromShade(
     when (response) {
         // Finished business on the connection that owned it.
         PendingInputResponse.Resolved, PendingInputResponse.Expired ->
-            surface.clear(NotificationKind.Approval, durableSessionId)
+            clearResolvedPrompt(surface, NotificationKind.Approval, durableSessionId)
         // Nothing was sent. Either the socket moved on, another answer is
         // already in flight, or this process never knew the request at all.
         // The request may still be parked, so the notification stays and says
@@ -201,4 +201,15 @@ internal suspend fun respondFromShade(
         PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
             surface.degrade(NotificationKind.Approval, durableSessionId)
     }
+}
+
+private fun clearResolvedPrompt(
+    surface: NotificationSurface,
+    kind: NotificationKind,
+    durableSessionId: String,
+) {
+    surface.clear(kind, durableSessionId)
+    // A five-minute reminder has its own OS identity. Pending-state collection
+    // will repoint it if another request in this session is still live.
+    surface.clear(NotificationKind.StillWaiting, durableSessionId)
 }
