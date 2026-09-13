@@ -65,7 +65,7 @@ transient failure ("the next trigger (event or poll) retries",
 This app has no timer on this path and #233 rates that as the property worth
 keeping: its refreshes are a seed when the open session changes
 (`ChatScreen.kt:803`), the repository's coalesced event-driven refresh
-(`GatewaySessionRepository.kt:5184-5200`), and the Background group's manual
+(`GatewaySessionRepository.kt:5355-5371`), and the Background group's manual
 Refresh. The cost was that a silently exited process kept reading
 `Running · <title>`, and kept offering a Stop for something already gone, for
 as long as the reader stayed in that session.
@@ -73,7 +73,8 @@ as long as the reader stayed in that session.
 The stand-in is bounded rather than periodic (`ReconcileSilentExits`): it
 exists only while a row claims Running in the session on screen, it runs only
 while the host is RESUMED — the mobile shape of Desktop's `paneVisible` gate —
-and it walks three widening rungs (10s, 30s, 90s) and then stops. A change in
+and it waits 10s, 30s, then 90s between checks (which land at +10s, +40s,
++130s) and then stops. A change in
 which ids claim Running starts a fresh ladder, so the work is bounded by real
 events; returning to the foreground re-arms it, which is the edge a silent exit
 most often hides behind. `ComposerSilentExitReconcileTest` drives all of that
@@ -83,7 +84,7 @@ on the Compose test clock.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| The goal group's label comes from a typed `goalStatus`, and a status it cannot name falls through to `Goal active` (`.../status-stack/index.tsx:59-70`) | mobile-adaptation | A goal state parsed out of the Gateway's text status line; `Unknown` keeps the bare word `Goal` and is the one group left open by default | The parser is deliberately neutral rather than fabricating an active goal (`GatewaySessionRepository.kt:5287-5291`). On a phone the collapsed header is all that is left of the group, so a header that cannot name the state cannot replace the body: the unrecognised line stays on screen instead of being hidden behind a word that says nothing. Every state the parser *can* name collapses exactly as Desktop does |
+| The goal group's label comes from a typed `goalStatus`, and a status it cannot name falls through to `Goal active` (`.../status-stack/index.tsx:59-70`) | mobile-adaptation | A goal state parsed out of the Gateway's text status line; `Unknown` keeps the bare word `Goal` and is the one group left open by default | The parser is deliberately neutral rather than fabricating an active goal (`GatewaySessionRepository.kt:5458-5463`). On a phone the collapsed header is all that is left of the group, so a header that cannot name the state cannot replace the body: the unrecognised line stays on screen instead of being hidden behind a word that says nothing. Every state the parser *can* name collapses exactly as Desktop does |
 | Group labels read `${count} Subagent${count === 1 ? '' : 's'}`, `${count} Background`, `${count} Queued`, `${count} Queued — paused` (`apps/desktop/src/i18n/en.ts:2793-2795,2891-2900`) | drift | `Subagents · 1`, `Background · 1`, `Queue · 1`, `Queue · 1 · parked` | Count-last and not Desktop's wording; `Tasks 0/1` and the four goal labels are verbatim. #245 |
 | Preview rows are a bare always-visible block in the stack, with no `StatusSection` and no collapse (`.../status-stack/index.tsx:260-262`) | mobile-adaptation | A `Previews` group with a count, collapsed by default | The Android stack is a bounded 240dp scroll region that must not push the editor below the IME (`ComposerStatusStack.kt`), so a status kind that is not a disclosure spends that budget on itself whether or not it is being read. #232 deliberately did not change this group's default, because `5b181e511a` says nothing about a group Desktop has no section for |
 | No `StatusSection` for prompts the Gateway itself is holding; Desktop's stack renders only the client-side queue (`apps/desktop/src/app/chat/composer/queue-panel.tsx:49-67`) | drift | A `Queued next` group, expanded by default | Android-only group with no upstream default to copy and no verdict yet; #246 |

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
@@ -35,7 +37,8 @@ import org.robolectric.annotation.Config
 class ComposerSilentExitReconcileTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private var refreshes = 0
+    private var reconciliations = 0
+    private var manualRefreshes = 0
     private val status = mutableStateOf(ComposerStatusState(backgroundProcesses = listOf(running("build"))))
 
     @Test
@@ -43,19 +46,19 @@ class ComposerSilentExitReconcileTest {
         setContent()
 
         compose.mainClock.advanceTimeBy(9_000)
-        assertEquals("the first rung has not come due", 0, refreshes)
+        assertEquals("the first rung has not come due", 0, reconciliations)
         compose.mainClock.advanceTimeBy(2_000)
-        assertEquals(1, refreshes)
+        assertEquals(1, reconciliations)
         compose.mainClock.advanceTimeBy(30_000)
-        assertEquals(2, refreshes)
+        assertEquals(2, reconciliations)
         compose.mainClock.advanceTimeBy(90_000)
-        assertEquals(3, refreshes)
+        assertEquals(3, reconciliations)
 
         // The point of the whole design: it is a ladder, not an interval. Ten
         // more minutes of the same unchanged claim buy no further round trips,
         // and the Background group's Refresh stays the explicit escape.
         compose.mainClock.advanceTimeBy(600_000)
-        assertEquals(3, refreshes)
+        assertEquals(3, reconciliations)
     }
 
     @Test
@@ -68,7 +71,7 @@ class ComposerSilentExitReconcileTest {
         setContent()
 
         compose.mainClock.advanceTimeBy(600_000)
-        assertEquals("nothing claims to be running, so nothing is asked", 0, refreshes)
+        assertEquals("nothing claims to be running, so nothing is asked", 0, reconciliations)
     }
 
     @Test
@@ -76,7 +79,7 @@ class ComposerSilentExitReconcileTest {
         setContent()
 
         compose.mainClock.advanceTimeBy(10_000)
-        assertEquals(1, refreshes)
+        assertEquals(1, reconciliations)
         // What a refresh that finds a dead process does to the state it feeds.
         compose.runOnIdle {
             status.value = ComposerStatusState(
@@ -87,7 +90,7 @@ class ComposerSilentExitReconcileTest {
         }
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(600_000)
-        assertEquals(1, refreshes)
+        assertEquals(1, reconciliations)
     }
 
     @Test
@@ -95,7 +98,7 @@ class ComposerSilentExitReconcileTest {
         setContent()
 
         compose.mainClock.advanceTimeBy(130_000)
-        assertEquals("the ladder is exhausted", 3, refreshes)
+        assertEquals("the ladder is exhausted", 3, reconciliations)
         compose.runOnIdle {
             status.value = ComposerStatusState(
                 backgroundProcesses = listOf(running("build"), running("tests")),
@@ -103,7 +106,7 @@ class ComposerSilentExitReconcileTest {
         }
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(10_000)
-        assertEquals(4, refreshes)
+        assertEquals(4, reconciliations)
     }
 
     @Test
@@ -117,7 +120,7 @@ class ComposerSilentExitReconcileTest {
 
         compose.mainClock.advanceTimeBy(600_000)
 
-        assertEquals("only the six rendered rows may arm the radio", 0, refreshes)
+        assertEquals("only the six rendered rows may arm the radio", 0, reconciliations)
     }
 
     @Test
@@ -126,13 +129,24 @@ class ComposerSilentExitReconcileTest {
 
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         compose.mainClock.advanceTimeBy(600_000)
-        assertEquals("a backgrounded app never wakes the radio for this", 0, refreshes)
+        assertEquals("a backgrounded app never wakes the radio for this", 0, reconciliations)
 
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         compose.mainClock.advanceTimeBy(10_000)
         // Coming back is the edge a silent exit is most likely to hide behind,
         // and it costs one round trip rather than an interval's worth.
-        assertEquals(1, refreshes)
+        assertEquals(1, reconciliations)
+    }
+
+    @Test
+    fun `the visible Refresh uses the manual callback, not silent reconciliation`() {
+        setContent()
+
+        compose.onNodeWithContentDescription("Background, 1, expand").performClick()
+        compose.onNodeWithContentDescription("Refresh background processes").performClick()
+
+        assertEquals(1, manualRefreshes)
+        assertEquals(0, reconciliations)
     }
 
     private fun setContent() {
@@ -142,7 +156,8 @@ class ComposerSilentExitReconcileTest {
                     ComposerStatusStack(
                         activeSessionId = "session-a",
                         status = status.value,
-                        onRefreshProcesses = { refreshes += 1 },
+                        onRefreshProcesses = { manualRefreshes += 1 },
+                        onReconcileProcesses = { reconciliations += 1 },
                     )
                 }
             }

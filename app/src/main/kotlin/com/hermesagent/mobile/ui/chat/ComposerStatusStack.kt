@@ -66,7 +66,7 @@ fun ComposerStatusStack(
     activeSessionId: String?,
     status: ComposerStatusState?,
     onRefreshProcesses: () -> Unit = {},
-    onReconcileProcesses: () -> Unit = onRefreshProcesses,
+    onReconcileProcesses: () -> Unit = {},
     onKillProcess: (String) -> Unit = {},
     hasQueue: Boolean = false,
     queueContent: (@Composable () -> Unit)? = null,
@@ -109,7 +109,7 @@ fun ComposerStatusStack(
                 // The exception is Unknown, which Desktop has no equivalent of:
                 // its goal state is a typed field, ours is parsed out of a text
                 // status line and is left neutral rather than fabricating an
-                // active goal (`GatewaySessionRepository.kt:5287-5291`). A header
+                // active goal (`GatewaySessionRepository.kt:5458-5463`). A header
                 // that cannot name the state cannot stand in for the body, so an
                 // unrecognised goal line keeps the group open — the raw text is
                 // then the only thing on screen that says anything at all.
@@ -229,7 +229,7 @@ fun ComposerStatusStack(
  * That interval is the one thing this path must not copy. Every tick is a
  * radio wake on a phone, and this app deliberately owns no timer here: the
  * session-open seed (`ChatScreen.kt:803`), the repository's coalesced
- * event-driven refresh (`GatewaySessionRepository.kt:5184-5200`) and the
+ * event-driven refresh (`GatewaySessionRepository.kt:5355-5371`) and the
  * Background group's own Refresh are the whole refresh story, and #233 rates
  * that calm as the property worth keeping.
  *
@@ -260,7 +260,7 @@ fun ComposerStatusStack(
 private fun ReconcileSilentExits(
     activeSessionId: String?,
     processes: List<ComposerBackgroundProcess>,
-    onRefreshProcesses: () -> Unit,
+    onReconcileProcesses: () -> Unit,
 ) {
     val runningKey = processes
         .filter { it.state == ComposerBackgroundProcessState.Running }
@@ -270,7 +270,7 @@ private fun ReconcileSilentExits(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // The ladder must not restart because the caller handed down a new lambda;
     // only the session and the running set may re-arm it.
-    val refresh by rememberUpdatedState(onRefreshProcesses)
+    val reconcile by rememberUpdatedState(onReconcileProcesses)
     // A conditional call, not an early return: this is what disposes the
     // ladder the moment the answer retires the last Running claim, and what
     // starts a fresh one when the set of claims changes.
@@ -279,7 +279,7 @@ private fun ReconcileSilentExits(
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 RECONCILE_LADDER_MILLIS.forEach { wait ->
                     delay(wait)
-                    refresh()
+                    reconcile()
                 }
             }
         }
