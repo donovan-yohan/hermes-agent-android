@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui
 
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +59,16 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import com.hermesagent.mobile.data.session.SessionStatus.Working
+import com.hermesagent.mobile.data.session.SessionStatus.NeedsInput
+import com.hermesagent.mobile.data.session.SessionStatus.Idle
+import androidx.compose.ui.test.hasContentDescription
+import com.hermesagent.mobile.data.gateway.PendingInputKey
+import com.hermesagent.mobile.data.gateway.PendingInputRequest
+import com.hermesagent.mobile.data.gateway.PendingInputAction
+import com.hermesagent.mobile.data.gateway.PendingInputResponse
+import com.hermesagent.mobile.data.gateway.PendingInputResponse.Resolved
+import org.junit.Assert.assertFalse
 
 /** Real Compose semantics over live-repository-shaped state; no demo engine. */
 @RunWith(RobolectricTestRunner::class)
@@ -322,7 +333,7 @@ class ChatJourneyTest {
     @Test
     fun `busy screenshot primary queues the whole payload instead of redirecting text`() {
         launch()
-        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        cache.upsertSession(cache.session("live-a")!!.copy(status = Working))
         viewModel.attachmentReadDispatcher = Dispatchers.Unconfined
         viewModel.openAttachmentStream = { RED_PNG_4X4.inputStream() }
         viewModel.addAttachmentFromGrant("content://fixture/shot.png", "shot.png", "image/png")
@@ -343,7 +354,7 @@ class ChatJourneyTest {
     @Test
     fun `disconnected chat shows truthful status and disables send`() {
         launch(connected = false)
-        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        cache.upsertSession(cache.session("live-a")!!.copy(status = Working))
         compose.waitForIdle()
         compose.onNodeWithText("Disconnected").assertIsDisplayed()
         assertEquals(0, compose.countWithText("Streaming · Connected"))
@@ -536,7 +547,7 @@ class ChatJourneyTest {
     @Test
     fun `another running turn keeps stream ownership while an idle thread sends`() {
         launch()
-        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        cache.upsertSession(cache.session("live-a")!!.copy(status = Working))
         viewModel.selectSession("live-b")
         compose.waitUntil(5_000) {
             viewModel.uiState.value.composer.runtime.busyKind == ComposerBusyKind.Idle
@@ -563,12 +574,12 @@ class ChatJourneyTest {
     @Test
     fun `queued entry drains on settle even while another session keeps running`() {
         launch(withRealQueueDrain = true)
-        cache.upsertSession(cache.session("live-b")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Working))
+        cache.upsertSession(cache.session("live-b")!!.copy(status = Working))
         viewModel.selectSession("live-a")
         compose.waitForIdle()
 
         // NeedsInput parks typed text in the local queue without a submit.
-        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.NeedsInput))
+        cache.upsertSession(cache.session("live-a")!!.copy(status = NeedsInput))
         compose.waitForIdle()
         viewModel.setDraft("drain me")
         compose.waitForIdle()
@@ -579,7 +590,7 @@ class ChatJourneyTest {
 
         // live-a settles; live-b is still working. The drain must not wait
         // for the unrelated session.
-        cache.upsertSession(cache.session("live-a")!!.copy(status = com.hermesagent.mobile.data.session.SessionStatus.Idle))
+        cache.upsertSession(cache.session("live-a")!!.copy(status = Idle))
         compose.waitForIdle()
 
         // The drained entry must be the settled session's, not just any queue.
@@ -593,7 +604,7 @@ class ChatJourneyTest {
         launch()
         compose.onNodeWithText("SESSIONS").assertIsDisplayed()
         compose.onNodeWithText("Second remote session").assertIsDisplayed()
-        assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Open sessions")).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Open sessions")).fetchSemanticsNodes().size)
     }
 
     @Test
@@ -606,6 +617,22 @@ class ChatJourneyTest {
         }
     }
 
+    @Test
+    fun `reference chip submits wire string to backend but presents accessible text to screen reader`() {
+        launch()
+        compose.onNodeWithContentDescription("Message Hermes").performTextInput("see https://example.dev/a ")
+        compose.waitForIdle()
+
+        val config = compose.onNodeWithContentDescription("Message Hermes").fetchSemanticsNode().config
+        val editableText = config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text
+        assertTrue(editableText != viewModel.uiState.value.draft)
+        assertFalse(editableText.contains("https://"))
+
+        compose.onNodeWithContentDescription("Send message").performClick()
+        compose.waitForIdle()
+        assertEquals("live-a" to "see @url:`https://example.dev/a`", repository.submitted.last())
+    }
+
     private class JourneyRepository(
         private val cache: SessionCache,
         connected: Boolean,
@@ -614,15 +641,15 @@ class ChatJourneyTest {
         override val imageLoader = MutableStateFlow(loader)
 
         override val pendingInputs =
-            MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
+            MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(
                 emptyMap(),
             )
 
         override suspend fun respondToPendingInput(
-            key: com.hermesagent.mobile.data.gateway.PendingInputKey,
-            action: com.hermesagent.mobile.data.gateway.PendingInputAction,
-        ): com.hermesagent.mobile.data.gateway.PendingInputResponse =
-            com.hermesagent.mobile.data.gateway.PendingInputResponse.Resolved
+            key: PendingInputKey,
+            action: PendingInputAction,
+        ): PendingInputResponse =
+            Resolved
 
         override val connectionState = MutableStateFlow(
             GatewayConnectionState(

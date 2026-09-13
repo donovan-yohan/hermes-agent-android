@@ -186,7 +186,7 @@ lifecycle.
   works throughout and copies the reply as far as it has arrived.
 - Multiline drafts, history and undo/redo, provider/model selection, the full
   backend reasoning scale through Ultra, fast mode, slash/path/session
-  completions, emoji search, and plain-text URL/prompt insertion.
+  completions, emoji search, and inline reference chips (URL, file, folder) painted over canonical wire text; the sent bubble still shows the wire text (#204).
 - Send, stop, redirect, steer, durable text queues, queue edit/delete, park,
   resume, and send-next behavior scoped to the target session.
 - Clarification, dangerous-command approval, and secure sudo/secret response

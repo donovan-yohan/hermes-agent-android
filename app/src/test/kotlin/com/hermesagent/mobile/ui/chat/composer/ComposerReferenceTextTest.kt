@@ -14,8 +14,8 @@ class ComposerReferenceTextTest {
         )
         assertEquals("@url:`https://example.dev/a`", composerUrlReferenceText("https://example.dev/a"))
         assertEquals(
-            "Keep @url:`https://example.dev/a` intact ",
-            canonicalizeComposerTextOnSpace("Keep @url:`https://example.dev/a` intact "),
+            "Keep @url:\"https://example.dev/a\" intact ",
+            canonicalizeComposerTextOnSpace("Keep @url:\"https://example.dev/a\" intact "),
         )
     }
 

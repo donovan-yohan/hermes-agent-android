@@ -4,6 +4,16 @@
   "desktop_sha": "3ca096de5f8183cb2e0ec23673f294d5978656a3",
   "states": [
     {
+      "id": "editor-url-chip",
+      "fixture": "composer-url-chip-fixture",
+      "test_only": true,
+      "contains_private_data": false,
+      "capture_targets": [
+        "desktop",
+        "android"
+      ]
+    },
+    {
       "id": "editor-empty",
       "fixture": "composer-empty-editor-fixture",
       "test_only": true,

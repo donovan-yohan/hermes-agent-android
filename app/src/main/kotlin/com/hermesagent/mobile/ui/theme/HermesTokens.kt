@@ -83,6 +83,12 @@ data class HermesTokens(
     val composerRing: Color,
     val inlineCodeBackground: Color,
     val inlineCodeForeground: Color,
+    /**
+     * Desktop's reference ink for URLs and sessions: `--ui-accent-secondary` mixed 82% toward the
+     * 94% foreground wash (`--foreground`). See `styles.css:836-841` -> `:208` ->
+     * `themes/context.tsx:235`; `:542` -> `:389` -> `:331` -> `:206` @ `72a3277cd7`.
+     */
+    val referenceInk: Color,
 
     /**
      * The highlight painted behind selected transcript text
@@ -238,6 +244,8 @@ data class HermesTokens(
             val textTertiary = base.withAlpha(0.54f)
             val textQuaternary = base.withAlpha(0.36f)
 
+            val referenceInk = mixPremultiplied(palette.primary, 82f, textPrimary)
+
             return HermesTokens(
                 textPrimary = textPrimary,
                 textSecondary = textSecondary,
@@ -277,6 +285,7 @@ data class HermesTokens(
                 // reads the same in every skin.
                 inlineCodeBackground = mixPremultiplied(knobs.codeInk, knobs.codeBackgroundMix, Color.Transparent),
                 inlineCodeForeground = mixPremultiplied(knobs.codeInk, 88f, Color.Transparent),
+                referenceInk = referenceInk,
                 // styles.css:382 / :root.dark:564 @ the theme ledger's pin —
                 // one amber highlight for every skin, weaker in dark so it
                 // does not blow out.
