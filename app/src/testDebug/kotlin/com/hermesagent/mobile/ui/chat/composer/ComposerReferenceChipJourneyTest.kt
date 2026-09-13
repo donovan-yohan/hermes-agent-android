@@ -104,7 +104,7 @@ class ComposerReferenceChipJourneyTest {
 
     @Test
     fun pastedUrlOverAUrlWithSharedTextStillPaintsAndSendsTheChip() {
-        var draft by mutableStateOf("see https://old.example/a now")
+        var draft by mutableStateOf("see https://example.dev/path/old/item now")
         var sent = ""
 
         composeTestRule.setContent {
@@ -120,15 +120,16 @@ class ComposerReferenceChipJourneyTest {
         }
 
         val node = composeTestRule.onNodeWithContentDescription("Message Hermes")
-        node.performTextInputSelection(TextRange(4, 25))
-        node.performTextInput("https://new.example/a")
+        node.performTextInputSelection(TextRange(4, 37))
+        node.performTextInput("https://example.dev/path/new/item")
         composeTestRule.waitForIdle()
 
-        assertEquals("see @url:`https://new.example/a` now", draft)
+        assertEquals("see @url:`https://example.dev/path/new/item` now", draft)
         val config = node.fetchSemanticsNode().config
         assertEquals(draft, config[SemanticsProperties.InputText].text)
+        assertEquals(TextRange(44), config[SemanticsProperties.TextSelectionRange])
         val editableText = config[SemanticsProperties.EditableText].text
-        assertTrue(editableText.contains("new.example/a"))
+        assertTrue(editableText.contains("example.dev/path/new/item"))
         assertFalse(editableText.contains("https://"))
 
         composeTestRule.onNodeWithContentDescription("Send message").performClick()
