@@ -47,6 +47,10 @@ import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.profiles.ProfilesScreen
 import com.hermesagent.mobile.ui.profiles.profileCount
 import com.hermesagent.mobile.ui.sessions.ConnectionSwitcherBar
+import com.hermesagent.mobile.ui.settings.NotificationsActions
+import com.hermesagent.mobile.ui.settings.NotificationsCopy
+import com.hermesagent.mobile.ui.settings.NotificationsScreen
+import com.hermesagent.mobile.ui.settings.NotificationsUiState
 import com.hermesagent.mobile.ui.settings.PluginsCopy
 import com.hermesagent.mobile.ui.settings.PluginsScreen
 import com.hermesagent.mobile.ui.settings.SettingsScreen
@@ -80,6 +84,7 @@ sealed interface HermesDestination {
     data object Appearance : HermesDestination
     data object Gateways : HermesDestination
     data object System : HermesDestination
+    data object Notifications : HermesDestination
     data object Plugins : HermesDestination
     data object Profiles : HermesDestination
     data class Route(val id: String) : HermesDestination
@@ -93,6 +98,7 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             HermesDestination.Appearance -> "Appearance"
             HermesDestination.Gateways -> "Gateways"
             HermesDestination.System -> "System"
+            HermesDestination.Notifications -> "Notifications"
             HermesDestination.Plugins -> "Plugins"
             HermesDestination.Profiles -> "Profiles"
             is HermesDestination.Route -> "Route:${destination.id}"
@@ -105,6 +111,7 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             value == "Appearance" -> HermesDestination.Appearance
             value == "Gateways" -> HermesDestination.Gateways
             value == "System" -> HermesDestination.System
+            value == "Notifications" -> HermesDestination.Notifications
             value == "Plugins" -> HermesDestination.Plugins
             value == "Profiles" -> HermesDestination.Profiles
             value == "Relay" -> HermesDestination.Route("hermes-plugin-relay:route")
@@ -157,6 +164,8 @@ fun HermesApp(
     connectionsActions: ConnectionsActions = ConnectionsActions(),
     pluginRegistry: ContributionRegistry = ContributionRegistry(),
     pluginStore: PluginStore,
+    notificationsState: NotificationsUiState = NotificationsUiState(),
+    notificationsActions: NotificationsActions = NotificationsActions(),
     /**
      * Appearance's saved `Intro Splash`. Separate from [appearance] because it
      * paints nothing: it is a preference the chat reads, not a theme value the
@@ -266,11 +275,19 @@ fun HermesApp(
                         onOpenAppearance = { destination = HermesDestination.Appearance },
                         onOpenGateways = onOpenGateways,
                         onOpenSystem = { destination = HermesDestination.System },
+                        onOpenNotifications = { destination = HermesDestination.Notifications },
                         onOpenPlugins = { destination = HermesDestination.Plugins },
                         systemAvailable =
                             gatewayState.connection.status == GatewayConnectionStatus.Connected,
                         contributions = sidebarNavContributions,
                     )
+                }
+
+                HermesDestination.Notifications -> OverlayScaffold(
+                    title = NotificationsCopy.TITLE,
+                    onBack = onBack,
+                ) {
+                    NotificationsScreen(state = notificationsState, actions = notificationsActions)
                 }
 
                 HermesDestination.Appearance -> OverlayScaffold(
@@ -435,6 +452,7 @@ internal fun HermesDestination.backDestination(): HermesDestination = when (this
     HermesDestination.Appearance,
     HermesDestination.Gateways,
     HermesDestination.System,
+    HermesDestination.Notifications,
     HermesDestination.Plugins,
     is HermesDestination.Route,
     -> HermesDestination.Settings

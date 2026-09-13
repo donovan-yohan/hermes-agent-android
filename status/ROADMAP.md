@@ -268,18 +268,37 @@ lifecycle.
   after every socket opens suppresses immediate firing, deferring unannounced
   prompts until the window closes while deduplicating prompts already announced
   pre-disconnect (including across multiple outstanding prompts replayed incrementally).
-- An approval can be answered from the shade with Approve or Reject, through
-  the same request path as the in-app bar. A persistent grant is not offered
-  there. An approval somebody already answered elsewhere disappears without a
-  word; one this app can no longer answer keeps its place and says to open the
-  app instead.
-- Notifications carry a redacted session title and nothing else the Gateway
-  sent — never a command, tool output, a sudo prompt, or a secret name — and a
-  locked screen is told only what kind of thing is waiting.
+- An approval can be answered from the shade with every choice the Gateway
+  offered for that request — run once, the strongest grant it offered, and the
+  refusal — through the same request path as the in-app bar. A persistent grant
+  is gated behind a device unlock on Android 12 and later, and is not offered
+  below that. A question with up to three choices gets one action each; a
+  question with none gets a reply box. A batch, a multi-select, or a question
+  with more choices than the shade can draw is not answerable there and says so.
+  An approval somebody already answered elsewhere disappears without a word; one
+  this app can no longer answer keeps its place and says to open the app
+  instead.
+- Notifications carry a redacted session title, and — when the preview
+  preference is on, which is its default — one more line: a question's own text,
+  or the line a turn ended on. Never a command, tool output, a sudo prompt or a
+  secret name, at any setting: an approval, a sudo or secret prompt and the two
+  state kinds carry no preview at all. A locked screen is told only what kind of
+  thing is waiting, whatever the preference says.
+- A Settings → Notifications screen carries the master switch, one row per kind
+  this app can raise, the preview toggle, and a test notification. A revoked
+  Android grant is stated there with a way to Android's own settings page,
+  because no preference in this app can overrule it.
+- The status-bar glyph is the Hermes mark, reduced to a 24 dp silhouette by
+  `scripts/build-notification-icon.py`.
 - Grouped per conversation, cleared when the prompt resolves or the
   conversation is opened, and tapping one opens it.
-- The per-kind settings screen, notifications for a failed turn, a lost
-  connection, and replying to a question from the shade are not built yet.
+- A failed turn notifies as `Turn failed`; a Gateway that goes away with a turn
+  running or a prompt parked notifies as `Connection lost`; a prompt still
+  unanswered five minutes after it was announced gets one reminder. The last
+  three are mobile-only and have no Desktop peer.
+- Rendered side-by-sides for the settings screen and for the shade at each kind
+  are owed under #99; the shade itself has no Desktop counterpart to compare
+  against, which the parity page records rather than pretending otherwise.
 
 ### System panel and backend updates
 

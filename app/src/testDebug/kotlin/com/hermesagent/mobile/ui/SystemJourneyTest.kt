@@ -78,6 +78,12 @@ class SystemJourneyTest {
         compose.onNodeWithTag(RELAY_ROW).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 4f),
         )
+        // Notifications keeps Desktop's own late placement in its settings nav
+        // (`i18n/en.ts:442` @ `72a3277cd7`): a preference about this device,
+        // after the rows about what the app connects to.
+        compose.onNodeWithTag(NOTIFICATIONS_ROW).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 5f),
+        )
 
         compose.onNodeWithTag(SYSTEM_ROW)
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
@@ -270,6 +276,7 @@ class SystemJourneyTest {
         const val SYSTEM_ROW = "settings-row-system panel"
         const val PLUGINS_ROW = "settings-row-plugins"
         const val RELAY_ROW = "settings-row-relay channels"
+        const val NOTIFICATIONS_ROW = "settings-row-notifications"
     }
 }
 

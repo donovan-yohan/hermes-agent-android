@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.data.notifications
 
 import com.hermesagent.mobile.data.gateway.ApprovalPending
+import com.hermesagent.mobile.data.gateway.ClarifyPending
+import com.hermesagent.mobile.data.gateway.shadeQuestion
 import com.hermesagent.mobile.data.gateway.GatewayTurnOutcome
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputKind
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
@@ -42,13 +45,25 @@ class SessionNotifier(
     private val sessions: StateFlow<SessionCacheState>,
     /** One emission per socket open, including the first. Opens the quiet window. */
     private val socketOpens: Flow<Unit>,
+    /**
+     * Whether the Gateway is answering. Android-only input: a desktop renderer
+     * is either running or quit, but this app's socket can go away on its own
+     * while a turn is mid-flight and nothing else will ever say so.
+     */
+    private val connected: StateFlow<Boolean>,
+    /** Durable ids with a turn on the wire, for deciding what a drop interrupted. */
+    private val activeTurns: StateFlow<Set<String>>,
     private val presence: NotificationPresence,
     private val settingsFlow: Flow<NotificationSettings>,
     private val surface: NotificationSurface,
     private val clock: () -> Long,
 ) {
     /** One parked request as the shade needs it: what it is, and how to answer it. */
-    private data class Prompt(val key: PendingInputKey, val approval: ApprovalTarget?)
+    private data class Prompt(
+        val key: PendingInputKey,
+        val approval: ApprovalTarget?,
+        val question: QuestionTarget? = null,
+    )
 
     private sealed interface Signal {
         data object SocketOpen : Signal
@@ -57,6 +72,8 @@ class SessionNotifier(
         data class Present(val foregrounded: Boolean, val visibleSessionId: String?) : Signal
         data class Settings(val settings: NotificationSettings) : Signal
         data class QuietWindowExpired(val generation: Long) : Signal
+        data class Connected(val connected: Boolean) : Signal
+        data object ReminderTick : Signal
     }
 
     private var quietUntil = 0L
@@ -105,6 +122,19 @@ class SessionNotifier(
     /** Latest pending inputs map received from the repository. */
     private var latestPending = mapOf<PendingInputKey, PendingInputRequest>()
 
+    /** Whether the last [Signal.Connected] said the Gateway was answering. */
+    private var wasConnected = false
+
+    /**
+     * When each live prompt notification was posted, and whether its reminder
+     * has already gone out.
+     *
+     * Keyed the same way [shown] is, and pruned alongside it: a reminder for a
+     * notification that is no longer in the shade is a reminder about nothing.
+     */
+    private val promptPostedAt = mutableMapOf<Pair<String, NotificationKind>, Long>()
+    private val reminded = mutableSetOf<Pair<String, NotificationKind>>()
+
     private val quietExpiries = MutableSharedFlow<Signal.QuietWindowExpired>(extraBufferCapacity = 16)
     private var quietJob: Job? = null
     private var runningScope: CoroutineScope? = null
@@ -130,6 +160,8 @@ class SessionNotifier(
                 combine(presence.appForegrounded, presence.visibleSessionId, Signal::Present)
                     .distinctUntilChanged(),
                 settingsFlow.map(Signal::Settings),
+                connected.map(Signal::Connected).distinctUntilChanged(),
+                reminderTicks(),
                 quietExpiries,
             ).collect { signal ->
                 when (signal) {
@@ -148,6 +180,8 @@ class SessionNotifier(
                         settings = signal.settings
                         applyPending(latestPending, latestPending)
                     }
+                    is Signal.Connected -> applyConnected(signal.connected)
+                    Signal.ReminderTick -> applyReminderTick()
                     is Signal.QuietWindowExpired -> {
                         // Ignore stale expiry from a cancelled quiet window that was already buffered.
                         if (signal.generation == quietGeneration) {
@@ -182,6 +216,8 @@ class SessionNotifier(
         requests: Map<PendingInputKey, PendingInputRequest>,
         previousPending: Map<PendingInputKey, PendingInputRequest> = latestPending,
     ) {
+        val previousShown = shown
+        val sessionsWithReminder = reminded.mapTo(mutableSetOf()) { it.first }
         val desired = mutableMapOf<Pair<String, NotificationKind>, Pair<Prompt, PromptIdentity>>()
         for ((key, request) in requests) {
             val kind = key.kind.notificationKind()
@@ -192,7 +228,17 @@ class SessionNotifier(
             if (identity in desired) continue
             desired[identity] = Prompt(
                 key = key,
-                approval = (request as? ApprovalPending)?.let { ApprovalTarget(key, it.durableSessionId) },
+                approval = (request as? ApprovalPending)?.let {
+                    ApprovalTarget(key, it.durableSessionId, it.choices)
+                },
+                // Null for a batch, a multi-select, or more choices than the
+                // shade can draw — see `shadeQuestion` for why each of those
+                // cannot be answered honestly from a notification.
+                question = (request as? ClarifyPending)?.let { clarify ->
+                    shadeQuestion(clarify)?.let {
+                        QuestionTarget(key, clarify.durableSessionId, it.questionId, it.choices)
+                    }
+                },
             ) to request.promptIdentity()
         }
 
@@ -207,6 +253,10 @@ class SessionNotifier(
             // replacing the question, not repeating it. None of the "already
             // dealt with" rules below apply to a request nobody has seen.
             val supersedes = shown[identity]?.key?.let { it != prompt.key } == true
+            if (supersedes) {
+                promptPostedAt.remove(identity)
+                reminded.remove(identity)
+            }
             if (!supersedes) {
                 if (identity in shown) continue
                 // Deduplicate across reconnects: if already notified pre-disconnect,
@@ -220,7 +270,13 @@ class SessionNotifier(
             // The throttle is bypassed for a supersession: the shade's buttons
             // would otherwise keep pointing at a request id the Gateway has
             // already replaced, and pressing one would answer nothing.
-            val posted = dispatch(identity.second, identity.first, prompt.approval, bypassThrottle = supersedes)
+            val posted = dispatch(
+                identity.second,
+                identity.first,
+                prompt.approval,
+                question = prompt.question,
+                bypassThrottle = supersedes,
+            )
             if (posted) {
                 next[identity] = prompt
                 notified += promptIdentity
@@ -229,6 +285,22 @@ class SessionNotifier(
             }
         }
         shown = next
+        promptPostedAt.keys.retainAll(next.keys)
+        reminded.retainAll(next.keys)
+        val now = clock()
+        for (identity in next.keys) promptPostedAt.putIfAbsent(identity, now)
+
+        val reminderSessionsChanged = (previousShown.keys + next.keys)
+            .mapTo(mutableSetOf()) { it.first }
+            .filter { durableSessionId ->
+                previousShown.filterKeys { it.first == durableSessionId }.mapValues { it.value.key } !=
+                    next.filterKeys { it.first == durableSessionId }.mapValues { it.value.key }
+            }
+        for (durableSessionId in reminderSessionsChanged.filter { it in sessionsWithReminder }) {
+            surface.clear(NotificationKind.StillWaiting, durableSessionId)
+            reminded.removeAll { it.first == durableSessionId }
+            postReminderIfDue(durableSessionId, now)
+        }
 
         // Prune resolved prompts on observed resolution (present in previous pending, absent from current)
         // rather than set difference against current requests, so incremental replays on reconnect
@@ -249,15 +321,111 @@ class SessionNotifier(
                     notified.remove(prevReq.promptIdentity())
                 }
             }
+        } else if (connected.value) {
+            // An empty pending map while this same Gateway is still answering
+            // is an observed final resolution, not a reconnect baseline wipe.
+            // Read the StateFlow directly: its signal may still be queued behind
+            // this pending-map emission in the merged collector.
+            for (previous in previousPending.values) {
+                notified.remove(previous.promptIdentity())
+            }
         }
     }
 
     private fun applyTurn(outcome: GatewayTurnOutcome) {
-        // A failed turn is `turnError`, a separate kind with separate copy and
-        // its own preference. Until that row ships, a failure notifies nothing
-        // rather than claiming Hermes finished.
-        if (outcome.failed) return
-        dispatch(NotificationKind.TurnDone, outcome.durableSessionId, approval = null)
+        // Desktop dispatches these from two different handlers and so carries
+        // two kinds; this is the same split against one outcome. A failure that
+        // said `Hermes finished` would be the one notification you cannot act
+        // on, because it claims there is something to read.
+        val kind = if (outcome.failed) NotificationKind.TurnError else NotificationKind.TurnDone
+        dispatch(kind, outcome.durableSessionId, approval = null)
+    }
+
+    /**
+     * The socket went away, or came back.
+     *
+     * Only a drop *from* connected notifies, and only for conversations that
+     * had something in flight: an app that has simply not dialled yet is not
+     * news, and neither is a connection dropping under an idle session the
+     * person was not waiting on. What makes this worth a notification at all is
+     * that the drop silently ends the turn — the shade's approval buttons stop
+     * being answerable, and nothing else in the app is in a position to say so
+     * while it is in the background.
+     */
+    private fun applyConnected(nowConnected: Boolean) {
+        val dropped = wasConnected && !nowConnected
+        wasConnected = nowConnected
+        if (!dropped) return
+        val interrupted = buildSet {
+            addAll(activeTurns.value)
+            latestPending.values.mapTo(this) { it.durableSessionId }
+        }
+        for (durableSessionId in interrupted) {
+            dispatch(NotificationKind.ConnectionLost, durableSessionId, approval = null)
+        }
+    }
+
+    /**
+     * A prompt this app already announced is still unanswered.
+     *
+     * Desktop has no equivalent because a renderer is on a screen someone is
+     * sitting at; a phone notification can be swiped into a shade and forgotten
+     * while an agent stays blocked behind it. One reminder per prompt, never a
+     * stream of them, and only while the prompt is genuinely still parked — the
+     * reminder is keyed on the same (session, kind) identity the notification
+     * itself is, so a prompt that resolved or was superseded loses its reminder
+     * with its notification.
+     */
+    private fun applyReminderTick() {
+        val now = clock()
+        for (durableSessionId in shown.keys.mapTo(mutableSetOf()) { it.first }) {
+            postReminderIfDue(durableSessionId, now)
+        }
+    }
+
+    /** One OS reminder per session, always bound to one request that is still live. */
+    private fun postReminderIfDue(durableSessionId: String, now: Long) {
+        if (reminded.any { it.first == durableSessionId }) return
+        val identity = promptPostedAt.entries
+            .asSequence()
+            .filter { (identity, postedAt) ->
+                identity.first == durableSessionId &&
+                    identity in shown &&
+                    now - postedAt >= REMINDER_MS
+            }
+            .minWithOrNull(compareBy({ it.value }, { it.key.second.ordinal }))
+            ?.key
+            ?: return
+        val prompt = shown.getValue(identity)
+        // Bypasses the throttle for the same reason a supersession does: the
+        // throttle exists to collapse a burst of news, and this is one deliberate
+        // second telling of news that is minutes old.
+        if (
+            dispatch(
+                NotificationKind.StillWaiting,
+                durableSessionId,
+                approval = prompt.approval,
+                question = prompt.question,
+                bypassThrottle = true,
+            )
+        ) {
+            reminded += identity
+        }
+    }
+
+    /**
+     * The reminder clock, as one signal rather than a timer per prompt.
+     *
+     * A job per notification would mean cancelling and re-arming on every
+     * pending update, which is exactly the kind of bookkeeping that leaks a
+     * coroutine when a prompt is superseded mid-flight. One tick, and the
+     * decision made against [promptPostedAt] where the rest of the state lives.
+     */
+    private fun reminderTicks(): Flow<Signal> = flow {
+        while (true) {
+            delay(REMINDER_TICK_MS)
+            emit(Signal.ReminderTick)
+        }
     }
 
     private fun applyPresence(foregrounded: Boolean, visibleSessionId: String?) {
@@ -270,6 +438,8 @@ class SessionNotifier(
         // time, because it would look like it was already showing.
         shown = shown.filterKeys { it.first != visibleSessionId }
         notified.removeAll { it.durableSessionId == visibleSessionId }
+        promptPostedAt.keys.removeAll { it.first == visibleSessionId }
+        reminded.removeAll { it.first == visibleSessionId }
     }
 
     /**
@@ -282,6 +452,7 @@ class SessionNotifier(
         kind: NotificationKind,
         durableSessionId: String,
         approval: ApprovalTarget?,
+        question: QuestionTarget? = null,
         bypassThrottle: Boolean = false,
     ): Boolean {
         if (!settings.allows(kind)) return false
@@ -289,7 +460,8 @@ class SessionNotifier(
         if (!shouldFire(kind, durableSessionId)) return false
         if (!allowedByThrottle("${kind.key}:$durableSessionId", clock(), bypassThrottle)) return false
 
-        val title = sessions.value.sessions[durableSessionId]?.title.orEmpty().notificationSafeTitle()
+        val row = sessions.value.sessions[durableSessionId]
+        val title = row?.title.orEmpty().notificationSafeTitle()
         surface.post(
             NotificationPost(
                 kind = kind,
@@ -297,9 +469,50 @@ class SessionNotifier(
                 title = NotificationCopy.title(kind),
                 body = title.ifBlank { NotificationCopy.fallbackBody(kind) },
                 approval = approval,
+                question = question,
+                preview = previewFor(kind, question, row?.preview),
             ),
         )
         return true
+    }
+
+    /**
+     * The extra line, when there is one this kind may carry.
+     *
+     * The preference is the *first* gate, not the only one. What a notification
+     * may never show does not become showable because somebody turned a switch
+     * on, so the kinds whose only available text is forbidden text have no
+     * preview at any setting:
+     *
+     *  * **Approval** — its text is the command, and a command is the first
+     *    thing `docs/parity/notifications.md` forbids. Its `description`
+     *    describes that command, which is the same text one remove away.
+     *  * **A sudo or secret prompt** — the prompt and the variable name are
+     *    named in the same rule. These reach here as `Input` with no shade
+     *    question, which is exactly the case that falls through to null.
+     *  * **connectionLost, stillWaiting** — neither is about a message, so
+     *    there is no line to show that is not invented.
+     *
+     * That leaves a clarify's own question, and the line a turn ended on, which
+     * is the sidebar's own preview text and already display-safe. Both are
+     * redacted and bounded again here, because this is a different surface with
+     * a different width and no scroll.
+     */
+    private fun previewFor(
+        kind: NotificationKind,
+        question: QuestionTarget?,
+        sessionPreview: String?,
+    ): String? {
+        if (!settings.preview) return null
+        val text = when (kind) {
+            NotificationKind.Input -> latestPending[question?.key]
+                ?.let { it as? ClarifyPending }
+                ?.let(::shadeQuestion)
+                ?.question
+            NotificationKind.TurnDone, NotificationKind.TurnError -> sessionPreview
+            else -> null
+        }
+        return text?.notificationSafeTitle(MAX_NOTIFICATION_PREVIEW)?.takeIf(String::isNotBlank)
     }
 
     /**
@@ -412,3 +625,16 @@ private const val THROTTLE_MS = 1_000L
 
 /** `store/notify-baseline.ts:14` @ the pin. */
 private const val SEED_QUIET_MS = 4_000L
+
+/**
+ * How long a prompt may sit unanswered before one reminder goes out.
+ *
+ * Android-only, and long on purpose: the reminder competes with the original
+ * notification for the same attention, so a short one would read as the app
+ * nagging rather than as news. Five minutes is long enough that anybody who
+ * saw the first one has either acted or decided not to.
+ */
+private const val REMINDER_MS = 5 * 60_000L
+
+/** How often the reminder rule is evaluated. Coarse: it decides nothing on its own. */
+private const val REMINDER_TICK_MS = 30_000L

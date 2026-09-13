@@ -6,6 +6,8 @@ internal class RecordingNotificationSurface : NotificationSurface {
     val cleared = mutableListOf<Pair<NotificationKind, String>>()
     val clearedSessions = mutableListOf<String>()
     val degraded = mutableListOf<String>()
+    val tests = mutableListOf<Pair<String, String>>()
+    val degradedKinds = mutableListOf<Pair<NotificationKind, String>>()
 
     override fun post(post: NotificationPost) {
         posts += post
@@ -19,8 +21,13 @@ internal class RecordingNotificationSurface : NotificationSurface {
         clearedSessions += durableSessionId
     }
 
-    override fun degradeApproval(durableSessionId: String) {
+    override fun degrade(kind: NotificationKind, durableSessionId: String) {
         degraded += durableSessionId
+        degradedKinds += kind to durableSessionId
+    }
+
+    override fun postTest(title: String, body: String) {
+        tests += title to body
     }
 
     fun posted(): List<Pair<NotificationKind, String>> = posts.map { it.kind to it.durableSessionId }
