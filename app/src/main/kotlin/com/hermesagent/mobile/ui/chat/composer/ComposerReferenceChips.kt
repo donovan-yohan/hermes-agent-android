@@ -283,10 +283,8 @@ internal fun canonicalizePastedComposerText(
     var s = 0
     while (s < minLen - p && previous[previous.length - 1 - s] == proposed[proposed.length - 1 - s]) s++
 
-    val removed = p until (previous.length - s)
     val inserted = proposed.substring(p, proposed.length - s)
 
-    if (!removed.isEmpty()) return null
     if (inserted.length < 2 || !inserted.contains("://")) return null
 
     val canonical = canonicalizeComposerUrls(inserted)

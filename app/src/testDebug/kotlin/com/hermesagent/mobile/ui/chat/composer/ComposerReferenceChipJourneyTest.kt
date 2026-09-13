@@ -70,6 +70,39 @@ class ComposerReferenceChipJourneyTest {
     }
 
     @Test
+    fun pastedUrlOverSelectionPaintsChipAndSendsWireText() {
+        var draft by mutableStateOf("see replace now")
+        var sent = ""
+
+        composeTestRule.setContent {
+            HermesTheme {
+                Composer(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onSend = { sent = draft },
+                    onStop = {}, isStreaming = false, canSend = true, connected = true, statusLine = "",
+                    modifier = Modifier
+                )
+            }
+        }
+
+        val node = composeTestRule.onNodeWithContentDescription("Message Hermes")
+        node.performTextInputSelection(TextRange(4, 11))
+        node.performTextInput("https://example.dev/a")
+        composeTestRule.waitForIdle()
+
+        assertEquals("see @url:`https://example.dev/a` now", draft)
+        val config = node.fetchSemanticsNode().config
+        val editableText = config[SemanticsProperties.EditableText].text
+        assertTrue(editableText.contains("example.dev/a"))
+        assertFalse(editableText.contains("https://"))
+
+        composeTestRule.onNodeWithContentDescription("Send message").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(draft, sent)
+    }
+
+    @Test
     fun addSheetInsertsPaddedUrlChip() {
         var draft by mutableStateOf("")
 
