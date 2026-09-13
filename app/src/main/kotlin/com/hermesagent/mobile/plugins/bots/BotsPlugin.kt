@@ -58,6 +58,11 @@ class BotsPlugin(
             // anything, so a read here would be refused and could never be
             // repeated. `connected` is the door's own view of the live client.
             connected = ctx.host.connected,
+            // ...and the door's endpoint generation is what tells the roster
+            // that a list it is holding — deliberately, so a failed refresh is
+            // a banner rather than a blank screen — belongs to a machine this
+            // device has left, which a transport redial never means.
+            endpointGeneration = ctx.host.endpointGeneration,
         )
         val actions = BotsActions(
             onRefresh = viewModel::refresh,

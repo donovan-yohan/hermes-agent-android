@@ -51,6 +51,33 @@ working tree.
 | Stale over a held roster | the banner above the list (`:63-65`) | the same banner above the same list |
 | Normal list | flat list, or sectioned once sections exist | the same, with user sections |
 
+**A connection switch is not one of the seven.** It is the one transition that
+*drops* a state rather than entering one: leaving an endpoint empties the roster
+and takes the stale notice with it, which lands the surface back in the waiting
+state, and the new connection's own edge is what reads the new endpoint
+(`BotsViewModel.dropRosterForEndpointSwitch`). The attention badges recorded
+against those rows go with them (`BotAttentionStore.clearAll`): they are keyed by
+roster key alone, which the next machine can recycle.
+Desktop draws the same boundary a
+different way — its roster query is keyed by the active connection id
+(`data.ts:638` @ the pin), so one machine's answer is never the next machine's
+cache — and the rule is the one `AGENTS.md` states for the session cache: the
+next backend is a different machine that can recycle the same durable ids. The
+generation collector and every direct refresh/presentation entry point enforce
+the same idempotent drop, so none can expose the old roster while the collector
+is waiting for its dispatcher turn. A
+*transport* redial on the same endpoint drops nothing; the last good list under
+its banner is exactly what that path is for. Which paths count as leaving is the
+session cache's own rule, not a second one drawn here: the roster reads the app's
+`SessionCache.endpointGeneration`, so it drops on a switch, a re-address (the
+Gateways route form persists per keystroke and tears down after each), a
+disconnect and an endpoint's removal — and survives exactly what the cache
+survives. An empty roster distinguishes the two claims it can make on that
+boundary: `Empty` only after this endpoint answered, `Loading` while nothing has
+been asked of it (`BotsViewModel.answeredEndpoint`). Search and filter changes
+cannot manufacture a new answer: they preserve the current waiting or terminal
+phase, and a roster-less failure returns to waiting when its connection drops.
+
 ## Copy
 
 Every string below is byte-identical to the plugin bundle at the pin. Curly

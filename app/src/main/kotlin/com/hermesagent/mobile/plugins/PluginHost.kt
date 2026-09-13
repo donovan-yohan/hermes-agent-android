@@ -20,6 +20,22 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
+ * What a door that tracks no endpoint reports: the generation never moves.
+ *
+ * The interface's default, and `GatewayPluginHost`'s, so a door built without a
+ * switch behind it — [UnavailablePluginHost], a test's fake, a test that is not
+ * about a switch — never claims a move that did not happen. Production states
+ * the app's own generation instead: a door wired without an endpoint holds a
+ * plugin's stale rows through every switch, which is the defect this member
+ * exists to prevent.
+ *
+ * File scope, beside the interface rather than inside its companion: both the
+ * interface default and `GatewayPluginHost`'s constructor default read it, and
+ * a companion `private` is not visible to a sibling top-level class.
+ */
+private val ENDPOINT_NEVER_MOVES: StateFlow<Long> = MutableStateFlow(0L)
+
+/**
  * The plugin-facing gateway door: JSON-RPC to the live connection, plus a tap
  * on the gateway's event stream.
  *
@@ -66,6 +82,43 @@ interface PluginHost {
      */
     val connected: StateFlow<Boolean>
         get() = NO_CONNECTION
+
+    /**
+     * Which endpoint the connection behind this door belongs to — bumped
+     * whenever the app leaves an endpoint and forgets what it told us, and by
+     * nothing else.
+     *
+     * [connected] answers "would a request be sent"; it cannot answer *to which
+     * machine*. The two come apart at exactly the moment a plugin that holds
+     * its own copy of backend truth has to know: a reconnect to the same
+     * Gateway and a switch to a different one both drop the leg and bring one
+     * back. The next backend is a different machine that can recycle the same
+     * durable ids, so a plugin merging across the second is merging two
+     * machines' data — and the app's one wholesale clear is the signal it is
+     * not, which this is.
+     *
+     * The app publishes it straight from `SessionCache.endpointGeneration`,
+     * whose only writer is `resetForEndpointSwitch` — the clear
+     * `ConnectionSwitchController` runs through `leaveLocked` on every path
+     * that leaves an endpoint: a switch to another row, a re-address of this
+     * one (the Gateways route form persists per keystroke and tears down
+     * through `leaveCurrentEndpoint` after each, so editing an address is one),
+     * a disconnect, and an endpoint's removal. What never moves it is a
+     * *transport* redial: a dropped socket, a wake from sleep, a failed turn.
+     *
+     * A door member rather than a plugin-side registration, deliberately: a
+     * bundled plugin has no other per-app injection point
+     * (`BundledPlugins.ALL` builds `BotsPlugin()` with nothing but the
+     * context), a generation is the same idea the app's own endpoint-scoped
+     * reader uses (`ChatViewModel`'s Archived pool), and it costs one member
+     * here rather than a second lifecycle on `PluginContext` plus a fan-out in
+     * `PluginLoader`.
+     *
+     * A `StateFlow` for the same reason [connected] is one: a plugin activated
+     * late reads the current endpoint rather than a stale one.
+     */
+    val endpointGeneration: StateFlow<Long>
+        get() = ENDPOINT_NEVER_MOVES
 
     /**
      * Subscribe to gateway events by `type`, or `'*'` for everything. Returns
@@ -187,6 +240,16 @@ object UnavailablePluginHost : PluginHost {
 internal class GatewayPluginHost(
     private val scope: CoroutineScope,
     private val clients: StateFlow<GatewayRpcClient?>,
+    /**
+     * The endpoint the live client belongs to — the app's endpoint generation,
+     * published on the door's own interface.
+     *
+     * Defaulted to [ENDPOINT_NEVER_MOVES] for the same reason the app's own
+     * `EndpointScopedState` seam defaults to a no-op: a test that is not about a
+     * switch should not have to say so. `HermesApplication` states the app's own
+     * generation at its one wiring site.
+     */
+    override val endpointGeneration: StateFlow<Long> = ENDPOINT_NEVER_MOVES,
 ) : PluginHost {
     /**
      * The client slot as a readiness edge. `GatewayConnection` publishes the

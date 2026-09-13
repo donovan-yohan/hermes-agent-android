@@ -246,8 +246,14 @@ class HermesApplication : Application() {
             storageFactory = { pluginId -> ScopedPluginStorage(pluginId, preferences) },
             osFactory = { pluginId -> AndroidPluginOs(this, notificationSurface, pluginId) },
             // Re-resolved per call by the door, so a plugin's host calls follow
-            // the same live connection the app itself uses.
-            hostFactory = { scope -> GatewayPluginHost(scope, gatewayConnection.client) },
+            // the same live connection the app itself uses. The endpoint
+            // generation rides along with it: the door's `connected` edge says
+            // a request would go somewhere, this says *which machine*, which is
+            // what a plugin holding its own backend copy has to know before it
+            // paints one Gateway's rows under another's.
+            hostFactory = { scope ->
+                GatewayPluginHost(scope, gatewayConnection.client, cache.endpointGeneration)
+            },
         )
     }
 
