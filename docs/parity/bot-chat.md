@@ -13,10 +13,10 @@ Every source location below is against that exact revision.
 | Question | Desktop/Gateway source | Android evidence |
 |---|---|---|
 | Canonical identity and lookup | `apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:151-205`; `apps/desktop/src/AGENTS.md:49-81` | `BotsPluginRepository.findCanonicalChat`: exact `session.list {profile, title:"Bot Chat", limit:200, include_hidden:true}`, one exact title row only, `resolved_id` before `id` |
-| Row activation | `apps/desktop/src/plugins/hermes-bots/bot-row.tsx:210` | `BotsRosterScreen` row tap → `BotsViewModel.openBotChat`; duplicate taps are held by the row loading key |
+| Row activation | `apps/desktop/src/plugins/hermes-bots/bot-row.tsx:210` | `BotsRosterScreen` row tap → `BotsViewModel.openBotChat`; `BotChatPhaseAViewModelTest` gates lookup/resume to prove the row key stays loading, exact lookup precedes navigation, duplicate taps coalesce, failures retry, and endpoint changes fence late callbacks |
 | Resume profile | `tui_gateway/methods_session.py:324-330` | `GatewaySessionRepository.openSession(durableId, profile)` is explicit; `GatewayProfileRoutingTest` asserts the exact `session.resume` object for an uncached hidden row |
 | Missing/refused result | `canonical-chat.ts:151-205` | no `session.create`; roster stays present with `No Bot Chat is available for this bot yet.` or `Bot Chat could not be opened. Check the Gateway and try again.` The row remains actionable for retry |
-| Phase-A composition boundary | Issue #190 | `ChatViewModel` centrally refuses submit, queue, redirect, send-next, regenerate and branch while the opened canonical session is read-only; the explicit New Chat escape clears that marker before `session.create` |
+| Phase-A composition boundary | Issue #190 | `ChatViewModelTest` establishes a real successful Bot Chat then proves submit, queue, redirect, send-next, regenerate and branch leave repository mutation counters unchanged; it also proves New Chat/ordinary selection clear read-only and an endpoint switch fences a deferred resume. `BotsBotChatJourneyTest` renders the actual roster row and ChatScreen paths for pending/success/failure/read-only composition. |
 
 ## Copy and navigation
 

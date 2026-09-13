@@ -466,6 +466,8 @@ internal class ChatViewModel(
     private val query = MutableStateFlow("")
     /** UI routing state, never backend/session-cache authority. */
     private var readOnlyBotSessionId: String? = null
+    /** Endpoint that minted the transient Bot Chat capability. */
+    private var readOnlyBotEndpoint: Long? = null
 
     /**
      * Whether the debounced backend search is still in flight. It is UI state,
@@ -633,7 +635,7 @@ internal class ChatViewModel(
     private val chromeState = combine(repository.approvalMode, visibleModels, ::ChromeBundle)
 
     val uiState: StateFlow<ChatUiState> = combine(
-        cache.state,
+        combine(cache.state, cache.endpointGeneration) { state, endpoint -> state to endpoint },
         combine(query, searchPendingState, searchResults, ::SearchStateBundle),
         draft,
         activeSessionId,
@@ -673,7 +675,8 @@ internal class ChatViewModel(
             },
             readAloudState,
         ) { windowBundle, composerBundle, readAloud -> Triple(composerBundle, windowBundle, readAloud) },
-    ) { cacheState, searchState, draftText, activeId, bundle ->
+    ) { cacheAndEndpoint, searchState, draftText, activeId, bundle ->
+        val cacheState = cacheAndEndpoint.first
         val composerBundle = bundle.first
         val imageLoader = bundle.second.imageLoader
         val readAloud = bundle.third
@@ -872,7 +875,9 @@ internal class ChatViewModel(
             // is also *known*, because it shows no optimistic default.
             approvalMode = composerBundle.chrome.approval.mode
                 ?.takeIf { navigation.connection.status == GatewayConnectionStatus.Connected },
-            readOnly = displayedActiveId != null && displayedActiveId == readOnlyBotSessionId,
+            readOnly = displayedActiveId != null &&
+                displayedActiveId == readOnlyBotSessionId &&
+                readOnlyBotEndpoint == cacheAndEndpoint.second,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -1152,7 +1157,9 @@ internal class ChatViewModel(
                         // A durable id is only meaningful on the endpoint that
                         // produced it. Drop the Phase A capability before any
                         // later cache/rehome event can reuse that id here.
+                        val staleBotId = readOnlyBotSessionId
                         readOnlyBotSessionId = null
+                        if (activeSessionId.value == staleBotId) rehome(null)
                         invalidateArchivedPool()
                     } else {
                         reloadArchivedPoolWhenReady()
@@ -1824,6 +1831,7 @@ internal class ChatViewModel(
         val previousActiveId = activeSessionId.value
         flushDraft()
         readOnlyBotSessionId = durableId
+        readOnlyBotEndpoint = cache.endpointGeneration.value
         rehome(durableId)
         viewModelScope.launch {
             var finished = false
@@ -1843,7 +1851,10 @@ internal class ChatViewModel(
                 val canonicalId = repository.openSession(durableId, profile)
                 if (!stillOwnsRequest()) {
                     // The current request still completes, but an intervening
-                    // navigation or endpoint owns the screen now.
+                    // navigation or endpoint owns the screen now. If its
+                    // provisional Bot Chat is still foreground, remove it
+                    // rather than carrying an endpoint-local id forward.
+                    if (endpoint != connectionGeneration() && activeSessionId.value == durableId) rehome(null)
                     finish(false)
                     return@launch
                 }

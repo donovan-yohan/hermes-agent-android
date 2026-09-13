@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -217,6 +219,7 @@ private fun RosterList(
                     pinned = row.rosterKey in state.pinnedKeys,
                     hidden = false,
                     attention = state.attentionByKey[row.rosterKey],
+                    opening = state.openingBotKey == row.rosterKey,
                     onOpen = { onOpenBotChat(row) },
                 )
             }
@@ -260,6 +263,7 @@ private fun RosterList(
                                 pinned = row.rosterKey in state.pinnedKeys,
                                 hidden = true,
                                 attention = state.attentionByKey[row.rosterKey],
+                                opening = state.openingBotKey == row.rosterKey,
                                 onOpen = { onOpenBotChat(row) },
                             )
                         }
@@ -319,6 +323,7 @@ private fun BotRowItem(
     pinned: Boolean,
     hidden: Boolean,
     attention: BotAttention?,
+    opening: Boolean,
     onOpen: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -356,12 +361,22 @@ private fun BotRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            ageMillis?.let { stamp ->
-                Text(
-                    text = rowAgeLabel(stamp, nowMillis),
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.scaffoldMeta,
+            if (opening) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .widthIn(min = 18.dp, max = 18.dp)
+                        .semantics { contentDescription = "Opening Bot Chat" },
+                    strokeWidth = 2.dp,
+                    color = tokens.accent,
                 )
+            } else {
+                ageMillis?.let { stamp ->
+                    Text(
+                        text = rowAgeLabel(stamp, nowMillis),
+                        style = HermesTheme.type.scaffoldMeta,
+                        color = tokens.scaffoldMeta,
+                    )
+                }
             }
         }
 

@@ -1207,6 +1207,77 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `a successful Bot Chat centrally refuses every prompt mutation while New Chat and selection escape`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        assertTrue(viewModel.uiState.value.readOnly)
+
+        viewModel.setDraft("blocked")
+        viewModel.submit()
+        viewModel.queueDraft()
+        viewModel.redirectDraftFromUi()
+        viewModel.sendNext("queued-entry")
+        viewModel.regenerateReply("reply-entry")
+        viewModel.branchFromReply("reply-entry")
+        runCurrent()
+
+        assertTrue(repository.submitted.isEmpty())
+        assertTrue(repository.queuedSubmissions.isEmpty())
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.regenerateCalls.isEmpty())
+        assertTrue(repository.branchCalls.isEmpty())
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+        assertEquals("Bot Chat is read-only. Open a regular chat to send a message.", viewModel.uiState.value.notice?.text)
+
+        viewModel.createSession()
+        runCurrent()
+        assertEquals(1, repository.created)
+        assertFalse(viewModel.uiState.value.readOnly)
+
+        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        assertTrue(viewModel.uiState.value.readOnly)
+        viewModel.selectSession("session-a")
+        runCurrent()
+        assertFalse(viewModel.uiState.value.readOnly)
+    }
+
+    @Test
+    fun `endpoint switch fences a deferred Bot Chat resume and reports one failed completion`() = runTest(dispatcher) {
+        val generation = MutableStateFlow(0L)
+        repository.botOpenGate = CompletableDeferred()
+        repository.botOpenResult = "canonical-on-old-endpoint"
+        cache.upsertSession(summary("bot-chat", 3_000))
+        val subject = ChatViewModel(
+            cache,
+            repository,
+            sidebarStore,
+            clock = { CLOCK },
+            connectionGeneration = { generation.value },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        val completions = mutableListOf<Boolean>()
+
+        subject.openReadOnlyBotChat("researcher", "bot-chat") { completions += it }
+        runCurrent()
+        assertTrue(subject.uiState.value.readOnly)
+        generation.value = 1L
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        assertFalse(subject.uiState.value.readOnly)
+
+        repository.botOpenGate!!.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(false), completions)
+        assertFalse(subject.uiState.value.readOnly)
+        assertEquals(null, subject.uiState.value.activeSessionId)
+    }
+
+    @Test
     fun `project drill in filters authoritative membership without rerouting the active session`() = runTest(dispatcher) {
         cache.replaceProjectOverview(
             rows = listOf(
@@ -2463,6 +2534,8 @@ class ChatViewModelTest {
         override val composerControls: Flow<SessionComposerControls> = composerControlEvents
         val opened = mutableListOf<String>()
         var botOpenFailure = false
+        var botOpenGate: CompletableDeferred<Unit>? = null
+        var botOpenResult: String? = null
 
         /** Every backend search this repository was actually asked for. */
         val searches = mutableListOf<Pair<String, String?>>()
@@ -2628,8 +2701,9 @@ class ChatViewModelTest {
         }
 
         override suspend fun openSession(durableId: String, profile: String): String {
+            botOpenGate?.await()
             if (botOpenFailure) error("fixture bot resume failure")
-            return openSession(durableId)
+            return botOpenResult ?: openSession(durableId)
         }
 
 
