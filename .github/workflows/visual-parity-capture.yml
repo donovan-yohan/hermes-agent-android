@@ -1,0 +1,180 @@
+name: Visual parity capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact immutable 40-character Android commit SHA to build and capture
+        required: true
+        type: string
+      surface:
+        description: Catalogued parity surface
+        required: true
+        type: choice
+        options: [composer-status-stack, composer-url-chip]
+      state:
+        description: Catalogued synthetic state (one artifact per dispatch)
+        required: true
+        type: choice
+        options:
+          - full-stack-task-list
+          - goal-active
+          - goal-waiting
+          - goal-paused
+          - goal-done
+          - queue-parked-collapsed
+          - background-open
+          - url-chip
+          - file-chip
+          - folder-chip
+      theme:
+        description: Rendered theme
+        required: true
+        default: dark
+        type: choice
+        options: [dark, light]
+
+# This workflow is evidence-only: it cannot commit, comment, or mutate issues.
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-parity-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Android pixels (${{ inputs.surface }} / ${{ inputs.state }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Checkout necessarily precedes the repository validator. This shell gate is
+      # intentionally inline and does not execute checked-out repository code.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Verify immutable requested checkout
+        shell: bash
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ref must be a lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          CHECKED_OUT_REF="$(git rev-parse HEAD)"
+          if [[ "$CHECKED_OUT_REF" != "$REQUESTED_REF" ]]; then
+            echo "checkout mismatch: requested $REQUESTED_REF, got $CHECKED_OUT_REF" >&2
+            exit 1
+          fi
+          printf '%s\n' "$CHECKED_OUT_REF" > "$RUNNER_TEMP/android-git-sha"
+      - name: Resolve explicit capture request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/visual_parity_contract.py describe \
+            --surface '${{ inputs.surface }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' > "$RUNNER_TEMP/request.json"
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Capture real emulator pixels
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            ./gradlew :app:assembleDebug --no-daemon --no-build-cache
+            if ! install_output="$(adb install -r app/build/outputs/apk/debug/app-debug.apk 2>&1)"; then
+              printf '%s\n' "$install_output" >&2
+              exit 1
+            fi
+            printf '%s\n' "$install_output"
+            if ! grep -qx 'Success' <<<"$install_output"; then
+              echo "adb install did not report Success" >&2
+              exit 1
+            fi
+            activity="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["android_activity"])')"
+            fixture="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["fixture_id"])')"
+            tap_text="$(python3 -c 'import json; values=json.load(open("'"$RUNNER_TEMP"'/request.json"))["state_spec"]["interaction"]; print(values[0][4:] if values else "")')"
+            expected_accessibility="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["state_spec"].get("post_interaction_accessibility", ""))')"
+            adb shell am start -W -n "$activity" --es visual_parity_state '${{ inputs.state }}' --es visual_parity_theme '${{ inputs.theme }}'
+            tap_args=()
+            accessibility_args=()
+            if [[ -n "$tap_text" ]]; then tap_args=(--tap-text "$tap_text"); fi
+            if [[ -n "$expected_accessibility" ]]; then accessibility_args=(--expected-accessibility "$expected_accessibility"); fi
+            python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
+              --name '${{ inputs.surface }}--${{ inputs.state }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' \
+              --fixture-id "$fixture" --git-sha "$(cat "$RUNNER_TEMP/android-git-sha")" \
+              --apk app/build/outputs/apk/debug/app-debug.apk --apk-kind debug \
+              --activity "${activity#*/}" --out build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android \
+              "${tap_args[@]}" "${accessibility_args[@]}"
+            python3 scripts/visual_parity_contract.py check-receipt --platform android \
+              --receipt build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android/contract.json
+      - name: Upload Android packet only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: visual-parity-android-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
+          path: build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  desktop-blocker:
+    name: Desktop fixture boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # This same inline gate runs before any checked-out repository command.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Verify immutable requested checkout
+        shell: bash
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ref must be a lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          CHECKED_OUT_REF="$(git rev-parse HEAD)"
+          if [[ "$CHECKED_OUT_REF" != "$REQUESTED_REF" ]]; then
+            echo "checkout mismatch: requested $REQUESTED_REF, got $CHECKED_OUT_REF" >&2
+            exit 1
+          fi
+      - name: Record the pinned-renderer blocker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/visual_parity_contract.py describe --surface '${{ inputs.surface }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' > request.json
+          mkdir -p build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop
+          cp docs/workflows/visual-parity-capture.md build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/BLOCKED.md
+          cp request.json build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/request.json
+      - name: Upload Desktop boundary packet only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: visual-parity-desktop-boundary-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
+          path: build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/**
+          if-no-files-found: error
+          retention-days: 30
