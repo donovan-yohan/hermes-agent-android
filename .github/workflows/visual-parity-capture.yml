@@ -1,0 +1,136 @@
+name: Visual parity capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact Android ref/head to build and capture
+        required: true
+        type: string
+      surface:
+        description: Catalogued parity surface
+        required: true
+        type: choice
+        options: [composer-status-stack, composer-url-chip]
+      state:
+        description: Catalogued synthetic state (one artifact per dispatch)
+        required: true
+        type: choice
+        options:
+          - full-stack-task-list
+          - goal-active
+          - goal-waiting
+          - goal-paused
+          - goal-done
+          - queue-parked-collapsed
+          - background-open
+          - url-chip
+          - file-chip
+          - folder-chip
+      theme:
+        description: Rendered theme
+        required: true
+        default: dark
+        type: choice
+        options: [dark, light]
+
+# This workflow is evidence-only: it cannot commit, comment, or mutate issues.
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-parity-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Android pixels (${{ inputs.surface }} / ${{ inputs.state }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Resolve explicit capture request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/visual_parity_contract.py describe \
+            --surface '${{ inputs.surface }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' > "$RUNNER_TEMP/request.json"
+          git rev-parse HEAD > "$RUNNER_TEMP/android-git-sha"
+          cat "$RUNNER_TEMP/request.json"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Capture real emulator pixels
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            ./gradlew :app:assembleDebug --no-daemon --no-build-cache
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            activity="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["android_activity"])')"
+            fixture="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["fixture_id"])')"
+            tap_text="$(python3 -c 'import json; values=json.load(open("'"$RUNNER_TEMP"'/request.json"))["state_spec"]["interaction"]; print(values[0][4:] if values else "")')"
+            adb shell am start -W -n "$activity" --es visual_parity_state '${{ inputs.state }}' --es visual_parity_theme '${{ inputs.theme }}'
+            tap_args=()
+            if [[ -n "$tap_text" ]]; then tap_args=(--tap-text "$tap_text"); fi
+            python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
+              --name '${{ inputs.surface }}--${{ inputs.state }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' \
+              --fixture-id "$fixture" --git-sha "$(cat "$RUNNER_TEMP/android-git-sha")" \
+              --apk app/build/outputs/apk/debug/app-debug.apk --apk-kind debug \
+              --activity "${activity#*/}" --out build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android "${tap_args[@]}"
+            python3 scripts/visual_parity_contract.py check-receipt --platform android \
+              --receipt build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android/contract.json
+      - name: Upload Android packet only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-parity-android-${{ github.sha }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
+          path: build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  desktop-blocker:
+    name: Desktop fixture boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Record the pinned-renderer blocker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/visual_parity_contract.py describe --surface '${{ inputs.surface }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' > request.json
+          mkdir -p build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop
+          cp docs/workflows/visual-parity-capture.md build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/BLOCKED.md
+          cp request.json build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/request.json
+      - name: Upload Desktop boundary packet only
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-parity-desktop-boundary-${{ github.sha }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
+          path: build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/**
+          if-no-files-found: error
+          retention-days: 30

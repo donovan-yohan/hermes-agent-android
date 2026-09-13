@@ -27,9 +27,17 @@ pass, and the joined text must still carry the expected package and activity.
 
 import argparse
 import json
+import re
 import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from visual_parity_contract import sha256, validate_receipt
 
 DEFAULT_PACKAGE = "com.hermesagent.mobile.debug"
 DEFAULT_ACTIVITY = "com.hermesagent.mobile.MainActivity"
@@ -97,6 +105,23 @@ def verify_app_identity(serial: str | None, package: str, activity: str) -> dict
     return {"component": component, "resolvedActivity": resolved, "focusedWindow": focused}
 
 
+def tap_visible_text(serial: str | None, text: str) -> None:
+    """Tap one exact synthetic control label through the real accessibility tree."""
+    xml = shell(serial, "uiautomator", "dump", "/sdcard/window.xml")
+    if "UI hierchary dumped" not in xml and "UI hierarchy dumped" not in xml:
+        raise SystemExit(f"could not dump Android UI before tapping {text!r}: {xml!r}")
+    root = ET.fromstring(shell(serial, "cat", "/sdcard/window.xml"))
+    matches = [node for node in root.iter("node") if text in node.attrib.get("text", "")]
+    if len(matches) != 1:
+        raise SystemExit(f"expected exactly one visible control containing {text!r}, found {len(matches)}")
+    numbers = [int(value) for value in re.findall(r"\d+", matches[0].attrib.get("bounds", ""))]
+    if len(numbers) != 4:
+        raise SystemExit(f"control {text!r} has invalid bounds")
+    left, top, right, bottom = numbers
+    shell(serial, "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+    time.sleep(0.2)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Capture an Android visual-parity reference from a connected device.")
     parser.add_argument("--name", required=True, help="surface and state, for example projects-overview")
@@ -104,12 +129,23 @@ def main() -> None:
     parser.add_argument("--serial", help="adb device serial when more than one device is connected")
     parser.add_argument("--package", default=DEFAULT_PACKAGE, help="expected Android application package")
     parser.add_argument("--activity", default=DEFAULT_ACTIVITY, help="expected focused Android activity")
+    parser.add_argument("--git-sha", required=True, help="exact Android source commit that produced the APK")
+    parser.add_argument("--apk", type=Path, required=True, help="debug or test APK actually installed for this capture")
+    parser.add_argument("--apk-kind", choices=("debug", "androidTest"), required=True)
+    parser.add_argument("--fixture-id", required=True, help="catalogued synthetic fixture identifier")
+    parser.add_argument("--state", required=True, help="catalogued synthetic state identifier")
+    parser.add_argument("--theme", choices=("light", "dark"), required=True)
+    parser.add_argument("--tap-text", help="synthetic visible control to open before capture")
     args = parser.parse_args()
 
     state = adb(args.serial, "get-state").strip()
     if state != "device":
         raise SystemExit(f"adb device is not ready: {state!r}")
+    if args.tap_text:
+        tap_visible_text(args.serial, args.tap_text)
     identity = verify_app_identity(args.serial, args.package, args.activity)
+    if not args.apk.is_file():
+        raise SystemExit(f"APK does not exist: {args.apk}")
 
     output = Path(args.out or f"build/visual-parity/{args.name}/android").resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -117,20 +153,32 @@ def main() -> None:
     (output / "reference.png").write_bytes(screenshot)
 
     contract = {
-        "capturedAt": datetime.now(timezone.utc).isoformat(),
-        "name": args.name,
-        "serial": args.serial,
+        "schema_version": 1,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "surface": args.name.split("--", 1)[0],
+        "state": args.state,
+        "fixture_id": args.fixture_id,
+        "theme": args.theme,
+        "android_git_sha": args.git_sha,
+        "apk_sha256": sha256(args.apk),
+        "apk_kind": args.apk_kind,
+        "interactions": [f"tap:{args.tap_text}"] if args.tap_text else [],
+        "viewport": {
+            "size": shell(args.serial, "wm", "size"),
+            "density": shell(args.serial, "wm", "density"),
+        },
         "application": identity,
         "device": {
             "model": shell(args.serial, "getprop", "ro.product.model"),
             "manufacturer": shell(args.serial, "getprop", "ro.product.manufacturer"),
             "android": shell(args.serial, "getprop", "ro.build.version.release"),
             "sdk": shell(args.serial, "getprop", "ro.build.version.sdk"),
-            "size": shell(args.serial, "wm", "size"),
-            "density": shell(args.serial, "wm", "density"),
             "fontScale": shell(args.serial, "settings", "get", "system", "font_scale"),
         },
     }
+    # Do not let a packet become a convenient route for serials, home paths or
+    # credentials. The receipt is checked before it reaches an artifact upload.
+    validate_receipt(contract, "android")
     (output / "contract.json").write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
     print(f"android reference: {output / 'reference.png'}")
     print(f"device contract: {output / 'contract.json'}")

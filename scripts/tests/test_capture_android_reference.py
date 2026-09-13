@@ -123,6 +123,18 @@ class AndroidCaptureIdentityTest(unittest.TestCase):
                 )
         self.assertIn("no mCurrentFocus", str(raised.exception))
 
+    def test_taps_one_synthetic_control_from_the_real_ui_tree(self) -> None:
+        ui = '<hierarchy><node text="Background · 1" bounds="[10,20][110,60]" /></hierarchy>'
+        with mock.patch.object(capture, "shell", side_effect=["UI hierchary dumped", ui, ""]) as shell:
+            capture.tap_visible_text("emulator-5554", "Background")
+        self.assertEqual(("input", "tap", "60", "40"), shell.call_args.args[1:])
+
+    def test_refuses_ambiguous_synthetic_control(self) -> None:
+        ui = '<hierarchy><node text="Queue" bounds="[0,0][1,1]" /><node text="Queue again" bounds="[2,2][3,3]" /></hierarchy>'
+        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", ui]):
+            with self.assertRaises(SystemExit):
+                capture.tap_visible_text("emulator-5554", "Queue")
+
 
 if __name__ == "__main__":
     unittest.main()

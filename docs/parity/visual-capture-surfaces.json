@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "purpose": "Dispatch catalog for real, synthetic visual-parity captures. A state is one explicit artifact, never a production session.",
+  "surfaces": {
+    "composer-status-stack": {
+      "desktop_sha": "564aef2946c436500a5e80ee117b66b789b3f99a",
+      "fixture_id": "composer-status-stack-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerStatusParityActivity",
+      "desktop_selector": "[data-slot=\"composer-status-stack\"]",
+      "states": {
+        "full-stack-task-list": { "interaction": [] },
+        "goal-active": { "interaction": [] },
+        "goal-waiting": { "interaction": [] },
+        "goal-paused": { "interaction": [] },
+        "goal-done": { "interaction": [] },
+        "queue-parked-collapsed": { "interaction": ["tap:Queue"] },
+        "background-open": { "interaction": ["tap:Background"] }
+      }
+    },
+    "composer-url-chip": {
+      "desktop_sha": "72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd",
+      "fixture_id": "composer-url-chip-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerReferenceParityActivity",
+      "desktop_selector": "[data-slot=\"composer\"]",
+      "states": {
+        "url-chip": { "interaction": [] },
+        "file-chip": { "interaction": [] },
+        "folder-chip": { "interaction": [] }
+      }
+    }
+  }
+}

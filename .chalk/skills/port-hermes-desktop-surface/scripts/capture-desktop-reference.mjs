@@ -14,8 +14,11 @@ options:
   --out <dir>          default: build/visual-parity/<name>/desktop
   --port <port>        default: 9222
   --match <text>       required; select the one page whose URL contains this text
-  --upstream <dir>     default: $HERMES_AGENT_UPSTREAM or ~/.hermes/hermes-agent
+  --upstream <dir>     required; disposable pinned export (never ~/.hermes/hermes-agent)
   --expect-sha <sha>   required; fail unless the upstream checkout is at this exact SHA
+  --fixture-id <id>    required; synthetic E2E fixture identifier
+  --state <id>         required; synthetic state identifier
+  --theme <light|dark> required; rendered theme
   --help
 `)
   process.exit(message ? 2 : 0)
@@ -34,7 +37,14 @@ function parseArgs(argv) {
   if (!args.name) usage('--name is required')
   if (!args.selector) usage('--selector is required')
   if (!args.match) usage('--match is required')
+  if (!args.upstream) usage('--upstream must name a disposable pinned export')
   if (!args['expect-sha']) usage('--expect-sha is required')
+  if (!args['fixture-id']) usage('--fixture-id is required')
+  if (!args.state) usage('--state is required')
+  if (!['light', 'dark'].includes(args.theme)) usage('--theme must be light or dark')
+  for (const [name, value] of Object.entries({ name: args.name, state: args.state, fixtureId: args['fixture-id'] })) {
+    if (!/^[a-z][a-z0-9-]*$/.test(value)) usage(`${name} must be a lowercase identifier`)
+  }
   return args
 }
 
@@ -109,7 +119,10 @@ class CDP {
 }
 
 const args = parseArgs(process.argv.slice(2))
-const upstream = resolve(args.upstream ?? process.env.HERMES_AGENT_UPSTREAM ?? `${homedir()}/.hermes/hermes-agent`)
+const upstream = resolve(args.upstream)
+if (upstream === resolve(`${homedir()}/.hermes/hermes-agent`)) {
+  throw new Error('the read-only reference checkout is not a disposable export; capture refused')
+}
 const sha = git(upstream, 'rev-parse', 'HEAD')
 const dirty = git(upstream, 'status', '--porcelain')
 if (dirty) throw new Error(`upstream checkout is dirty; reference capture refused:\n${dirty}`)
@@ -198,16 +211,31 @@ try {
   const out = resolve(args.out ?? `build/visual-parity/${args.name}/desktop`)
   mkdirSync(out, { recursive: true })
   writeFileSync(`${out}/reference.png`, Buffer.from(image.data, 'base64'))
-  writeFileSync(`${out}/contract.json`, `${JSON.stringify({
-    capture: packet,
-    reference: {
-      name: args.name,
-      rootSelector: selector,
-      upstream,
-      upstreamSha: sha,
-      target: { title: target.title, url: target.url },
+  // A receipt is deliberately portable: never preserve a disposable-export
+  // path or a local dev URL in a packet that may later be committed.
+  const receipt = {
+    schema_version: 1,
+    captured_at: packet.capturedAt,
+    surface: args.name.split('--', 1)[0],
+    state: args.state,
+    fixture_id: args['fixture-id'],
+    fixture_origin: 'pinned-desktop-e2e-mock',
+    theme: args.theme,
+    desktop_upstream_sha: sha,
+    viewport: packet.viewport,
+    capture: {
+      root_selector: selector,
+      node_count: packet.nodeCount,
+      clip: packet.clip,
+      nodes: packet.nodes,
     },
-  }, null, 2)}\n`)
+  }
+  writeFileSync(`${out}/contract.json`, `${JSON.stringify(receipt, null, 2)}\n`)
+  const repoRoot = resolve(import.meta.dirname, '..', '..', '..', '..')
+  execFileSync('python3', [
+    `${repoRoot}/scripts/visual_parity_contract.py`, 'check-receipt',
+    '--platform', 'desktop', '--receipt', `${out}/contract.json`,
+  ], { stdio: 'inherit' })
   console.log(`desktop reference: ${out}/reference.png`)
   console.log(`computed contract: ${out}/contract.json`)
   console.log(`upstream SHA: ${sha}`)
