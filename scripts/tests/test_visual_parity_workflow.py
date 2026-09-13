@@ -8,11 +8,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/visual-parity-capture.yml"
+CAPTURE_SCRIPT = ROOT / "scripts/capture-android-visual-parity.sh"
 
 
 class VisualParityWorkflowTest(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
+        self.capture_script = CAPTURE_SCRIPT.read_text(encoding="utf-8")
 
     def test_is_manual_immutable_ref_and_artifact_only(self) -> None:
         for required in ("workflow_dispatch:", "Exact immutable 40-character", "contents: read", "Upload Android packet only", "^[0-9a-f]{40}$", "CHECKED_OUT_REF"):
@@ -30,9 +32,15 @@ class VisualParityWorkflowTest(unittest.TestCase):
     def test_installed_apk_and_post_interaction_evidence_are_required(self) -> None:
         for required in (
             "adb install -r", "grep -qx 'Success'", "--expected-accessibility",
-            "check-receipt --platform android", "--git-sha", "--apk-kind debug",
+            "check-receipt", "--platform android", "--git-sha", "--apk-kind debug",
         ):
-            self.assertIn(required, self.text)
+            self.assertIn(required, self.capture_script)
+
+    def test_emulator_runner_enters_bash_explicitly(self) -> None:
+        self.assertIn("bash scripts/capture-android-visual-parity.sh", self.text)
+        self.assertIn("#!/usr/bin/env bash", self.capture_script)
+        self.assertIn("set -euo pipefail", self.capture_script)
+        self.assertNotIn("script: |\n            set -euo pipefail", self.text)
 
 
 if __name__ == "__main__":

@@ -102,34 +102,10 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            set -euo pipefail
-            ./gradlew :app:assembleDebug --no-daemon --no-build-cache
-            if ! install_output="$(adb install -r app/build/outputs/apk/debug/app-debug.apk 2>&1)"; then
-              printf '%s\n' "$install_output" >&2
-              exit 1
-            fi
-            printf '%s\n' "$install_output"
-            if ! grep -qx 'Success' <<<"$install_output"; then
-              echo "adb install did not report Success" >&2
-              exit 1
-            fi
-            activity="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["android_activity"])')"
-            fixture="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["fixture_id"])')"
-            tap_text="$(python3 -c 'import json; values=json.load(open("'"$RUNNER_TEMP"'/request.json"))["state_spec"]["interaction"]; print(values[0][4:] if values else "")')"
-            expected_accessibility="$(python3 -c 'import json; print(json.load(open("'"$RUNNER_TEMP"'/request.json"))["state_spec"].get("post_interaction_accessibility", ""))')"
-            adb shell am start -W -n "$activity" --es visual_parity_state '${{ inputs.state }}' --es visual_parity_theme '${{ inputs.theme }}'
-            tap_args=()
-            accessibility_args=()
-            if [[ -n "$tap_text" ]]; then tap_args=(--tap-text "$tap_text"); fi
-            if [[ -n "$expected_accessibility" ]]; then accessibility_args=(--expected-accessibility "$expected_accessibility"); fi
-            python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
-              --name '${{ inputs.surface }}--${{ inputs.state }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' \
-              --fixture-id "$fixture" --git-sha "$(cat "$RUNNER_TEMP/android-git-sha")" \
-              --apk app/build/outputs/apk/debug/app-debug.apk --apk-kind debug \
-              --activity "${activity#*/}" --out build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android \
-              "${tap_args[@]}" "${accessibility_args[@]}"
-            python3 scripts/visual_parity_contract.py check-receipt --platform android \
-              --receipt build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android/contract.json
+            CAPTURE_SURFACE='${{ inputs.surface }}' \
+              CAPTURE_STATE='${{ inputs.state }}' \
+              CAPTURE_THEME='${{ inputs.theme }}' \
+              bash scripts/capture-android-visual-parity.sh
       - name: Upload Android packet only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
