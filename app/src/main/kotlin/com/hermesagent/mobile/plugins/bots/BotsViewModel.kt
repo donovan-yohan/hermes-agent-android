@@ -368,17 +368,11 @@ class BotsViewModel(
      * point in the past.
      */
     private fun emptyRosterPhase(previous: BotsRosterPhase): BotsRosterPhase =
-        when (previous) {
-            BotsRosterPhase.Refused,
-            BotsRosterPhase.UnavailableOnGateway,
-            -> previous
-
-            else ->
-                if (answeredEndpoint != endpointGeneration.value) {
-                    BotsRosterPhase.Loading
-                } else {
-                    BotsRosterPhase.Empty
-                }
+        when {
+            previous == BotsRosterPhase.Refused ||
+                previous == BotsRosterPhase.UnavailableOnGateway -> previous
+            answeredEndpoint != endpointGeneration.value -> BotsRosterPhase.Loading
+            else -> BotsRosterPhase.Empty
         }
 
     /**
@@ -415,7 +409,7 @@ class BotsViewModel(
                 from = state.copy(safeMessage = null, attentionByKey = emptyMap()),
                 // A switch invalidates even a terminal answer from the old
                 // endpoint, so start the new one from Loading explicitly.
-                whenEmpty = emptyRosterPhase(BotsRosterPhase.Loading),
+                whenEmpty = BotsRosterPhase.Loading,
                 now = now,
             )
         }
