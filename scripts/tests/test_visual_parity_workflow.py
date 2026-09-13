@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -37,10 +38,21 @@ class VisualParityWorkflowTest(unittest.TestCase):
             self.assertIn(required, self.capture_script)
 
     def test_emulator_runner_enters_bash_explicitly(self) -> None:
-        self.assertIn("bash scripts/capture-android-visual-parity.sh", self.text)
+        match = re.search(r"^\s+script: (.+)$", self.text, flags=re.MULTILINE)
+        if match is None:
+            self.fail("emulator runner needs a single-line script command")
+        command = match.group(1)
+        for expression, value in (
+            ("${{ inputs.surface }}", "composer-status-stack"),
+            ("${{ inputs.state }}", "queue-parked-collapsed"),
+            ("${{ inputs.theme }}", "dark"),
+        ):
+            command = command.replace(expression, value)
+        self.assertNotIn("\\", command)
+        self.assertEqual(0, subprocess.run(["/bin/sh", "-n", "-c", command], check=False).returncode)
+        self.assertIn("bash scripts/capture-android-visual-parity.sh", command)
         self.assertIn("#!/usr/bin/env bash", self.capture_script)
         self.assertIn("set -euo pipefail", self.capture_script)
-        self.assertNotIn("script: |\n            set -euo pipefail", self.text)
 
 
 if __name__ == "__main__":
