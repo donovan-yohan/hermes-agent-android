@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,12 +91,20 @@ private fun KanbanControlsMenu(showingDetail: Boolean) {
     Column {
         TextButton(
             label = label,
-            onClick = { expanded = true },
+            onClick = { expanded = !expanded },
             modifier = Modifier.testTag("Kanban $label"),
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            val actions = if (showingDetail) TASK_ACTIONS else BOARD_CONTROLS
-            actions.forEach { action -> KanbanWipMenuRow(action) }
+            val groups = if (showingDetail) TASK_ACTION_GROUPS else BOARD_CONTROL_GROUPS
+            groups.forEachIndexed { index, actions ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        modifier = Modifier.testTag("Kanban menu separator"),
+                        color = HermesTheme.tokens.strokeTertiary,
+                    )
+                }
+                actions.forEach { action -> KanbanWipMenuRow(action) }
+            }
         }
     }
 }
@@ -203,5 +212,12 @@ private fun Field(label: String, value: String) = Column(
     Text(value, style = HermesTheme.type.body, color = HermesTheme.tokens.textSecondary)
 }
 
-private val BOARD_CONTROLS = listOf("Board switcher", "Filters", "Search", "New task")
-private val TASK_ACTIONS = listOf("Move task", "Archive task", "Delete task")
+private val BOARD_CONTROL_GROUPS = listOf(
+    listOf("Board switcher"),
+    listOf("Filters", "Filter cards…", "Orchestration settings", "New task"),
+)
+private val TASK_ACTION_GROUPS = listOf(
+    listOf("Move task"),
+    listOf("Copy task id", "Copy title"),
+    listOf("Archive", "Delete"),
+)

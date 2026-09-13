@@ -21,11 +21,11 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 |---|---|---|---|
 | Horizontally interactive lanes | mobile-adaptation | Vertically grouped, tap-only cards | Desktop `board.tsx:104-130`; Android `KanbanScreen.kt:52-58`; phone one-pane adaptation |
 | Board switcher | mobile-adaptation | `Board controls` menu shows disabled `Board switcher` with `WIP` | Desktop titlebar `board.tsx:80, 1326-1328`; Android `KanbanScreen.kt`; current-board-only snapshot, no board selection read or write |
-| Filters and search | mobile-adaptation | `Board controls` menu shows disabled `Filters`, then `Search`, with `WIP` | Desktop header `board.tsx:1335-1346`; Android `KanbanScreen.kt`; local filtering is not implemented |
-| New task | mobile-adaptation | `Board controls` menu shows disabled `New task` with `WIP` | Desktop header `board.tsx:1359-1362`; Android `KanbanScreen.kt`; task creation is excluded |
-| Lane collapse, bulk selection, drag/drop | omission | Not rendered | true non-goal for this snapshot: no mutable local board model or write API; Desktop `board.tsx:104-130, 240-301, 945-1078` |
-| Task actions | mobile-adaptation | Detail `Task actions` menu shows disabled `Move task`, `Archive task`, and `Delete task` with `WIP` | Desktop `drawer.tsx:690-731`; Android `KanbanScreen.kt`; mutations are excluded |
-| Drawer edit description, assignee menu, comments, attachments, diagnostics, runs | omission | Detail shows only safe inert typed fields | true non-goal for this snapshot: these require writes or expose unsafe diagnostics; Desktop `drawer.tsx:233-405`; Android `KanbanScreen.kt` |
+| Filters and search | mobile-adaptation | `Board controls` menu shows disabled `Filters`, then `Filter cards…`, with `WIP` | Phone slice prioritizes a readable current-board snapshot; Desktop `i18n.ts:240,261`, header `board.tsx:1335-1346`; Android `KanbanScreen.kt` |
+| Orchestration settings and New task | mobile-adaptation | `Board controls` menu keeps both after filtering controls, disabled with `WIP` | Desktop `i18n.ts:238-239`, header `board.tsx:1347-1362`; Android `KanbanScreen.kt`; orchestration and task creation are excluded |
+| Lane collapse, bulk selection, drag/drop | omission | Not rendered | out-of-scope: #261; the read-only vertical snapshot has no mutable board model or write API; Desktop `board.tsx:104-130, 240-301, 945-1078` |
+| Status and task actions | mobile-adaptation | Detail `Task actions` combines disabled `Move task`, `Copy task id`, `Copy title`, `Archive`, and `Delete` groups with `WIP` | Phone combines Desktop's adjacent status and actions controls while preserving their order and separators; Desktop `drawer.tsx:680-731`, `i18n.ts:270,372-374`; Android `KanbanScreen.kt`; all actions remain inert in this snapshot |
+| Drawer edit description, assignee menu, comments, attachments, diagnostics, runs | omission | Detail shows only safe inert typed fields | out-of-scope: #261; this slice excludes mutations and unsafe diagnostic/event payloads; Desktop `drawer.tsx:233-405`; Android `KanbanScreen.kt` |
 | Live socket/poll updates | mobile-adaptation | Explicit manual Refresh, stale notice | Desktop `plugin.tsx:2-5`; Android `KanbanViewModel.kt:27-94`; bounded snapshot avoids background navigation and stale overwrites |
 
 ## Visual report

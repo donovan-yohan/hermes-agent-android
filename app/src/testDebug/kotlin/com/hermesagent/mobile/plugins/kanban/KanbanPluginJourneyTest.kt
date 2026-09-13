@@ -5,11 +5,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -125,12 +127,17 @@ class KanbanPluginJourneyTest {
 
         compose.onNodeWithTag("Kanban Board controls").performClick()
         compose.waitForIdle()
-        assertWipOrder("Board switcher", "Filters", "Search", "New task")
+        assertWipOrder("Board switcher", "Filters", "Filter cards…", "Orchestration settings", "New task")
+        compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(1)
+        compose.onNodeWithTag("Kanban Board controls").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("Kanban WIP Board switcher").assertDoesNotExist()
         compose.onNodeWithContentDescription("A task. open").assertHeightIsAtLeast(48.dp).performClick()
         compose.onNodeWithText("line one\nline two").assertIsDisplayed()
         compose.onNodeWithTag("Kanban Task actions").performClick()
         compose.waitForIdle()
-        assertWipOrder("Move task", "Archive task", "Delete task")
+        assertWipOrder("Move task", "Copy task id", "Copy title", "Archive", "Delete")
+        compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(2)
         compose.onNodeWithContentDescription("Back to board").performClick()
         compose.onNodeWithTag("Kanban board").assertIsDisplayed()
         compose.onNodeWithTag("Kanban refresh").assertHeightIsAtLeast(48.dp)

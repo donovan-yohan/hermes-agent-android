@@ -94,6 +94,54 @@ class KanbanViewModelTest {
     }
 
     @Test
+    fun `endpoint change clears the board and rejects its in flight answer`() = runTest {
+        val first = CompletableDeferred<ByteArray>()
+        var read = 0
+        val endpoint = MutableStateFlow(0L)
+        val repository = KanbanPluginRepository { _, _ ->
+            if (read++ == 0) PluginRestResult.Success(200, first.await())
+            else PluginRestResult.Success(200, newer)
+        }
+        val vm = KanbanViewModel(repository, MutableStateFlow(false), endpoint)
+
+        runCurrent()
+        vm.refreshBoard()
+        runCurrent()
+        endpoint.value = 1L
+        runCurrent()
+
+        assertEquals(KanbanPhase.Loading, vm.uiState.value.phase)
+        assertTrue(vm.uiState.value.columns.isEmpty())
+
+        first.complete(board)
+        advanceUntilIdle()
+        assertEquals(KanbanPhase.Loading, vm.uiState.value.phase)
+        assertTrue(vm.uiState.value.columns.isEmpty())
+
+        vm.refreshBoard()
+        advanceUntilIdle()
+        assertEquals("New", vm.uiState.value.columns.single().tasks.single().title)
+    }
+
+    @Test
+    fun `closing detail rejects its in flight answer`() = runTest {
+        val answer = CompletableDeferred<ByteArray>()
+        val vm = KanbanViewModel(
+            KanbanPluginRepository { _, _ -> PluginRestResult.Success(200, answer.await()) },
+            MutableStateFlow(false),
+            MutableStateFlow(0L),
+        )
+
+        vm.openTask(KanbanTask("x", "Task", "open"))
+        runCurrent()
+        vm.closeDetail()
+        answer.complete(detail)
+        advanceUntilIdle()
+
+        assertEquals(KanbanDetail.None, vm.uiState.value.detail)
+    }
+
+    @Test
     fun `detail unavailable gone and refusal stay distinct and never expose safe message`() = runTest {
         var response: PluginRestResult = PluginRestResult.UnavailableOnGateway
         val vm = KanbanViewModel(
@@ -139,6 +187,26 @@ class KanbanViewModelTest {
         vm.refreshBoard()
         advanceUntilIdle()
         assertEquals(KanbanPhase.Empty, vm.uiState.value.phase)
+        assertFalse(vm.uiState.value.stale)
+    }
+
+    @Test
+    fun `unavailable board clears the prior endpoint snapshot`() = runTest {
+        var response: PluginRestResult = PluginRestResult.Success(200, board)
+        val vm = KanbanViewModel(
+            KanbanPluginRepository { _, _ -> response },
+            MutableStateFlow(false),
+            MutableStateFlow(0L),
+        )
+
+        vm.refreshBoard()
+        advanceUntilIdle()
+        response = PluginRestResult.UnavailableOnGateway
+        vm.refreshBoard()
+        advanceUntilIdle()
+
+        assertEquals(KanbanPhase.Unavailable, vm.uiState.value.phase)
+        assertTrue(vm.uiState.value.columns.isEmpty())
         assertFalse(vm.uiState.value.stale)
     }
 
