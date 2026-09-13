@@ -5,9 +5,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import com.hermesagent.mobile.MainActivity
+import com.hermesagent.mobile.data.gateway.approvalChoiceLabel
+import com.hermesagent.mobile.data.gateway.isPersistentGrant
+import com.hermesagent.mobile.data.gateway.shadeApprovalChoices
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -35,28 +40,138 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
     }
 
     override fun post(post: NotificationPost) {
-        val builder = builder(post.kind, post.durableSessionId, post.title, post.body)
+        val builder = builder(post.kind, post.durableSessionId, post.title, post.body, post.preview)
 
         post.approval?.let { target ->
-            builder
-                .addAction(0, NotificationCopy.APPROVE_ACTION, respondIntent(target, CHOICE_APPROVE))
-                .addAction(0, NotificationCopy.REJECT_ACTION, respondIntent(target, CHOICE_DENY))
+            for (choice in shadeApprovalChoices(target.choices).filter(::isShadeActionSupportedOnDevice)) {
+                builder.addAction(approvalAction(target, choice))
+            }
+        }
+
+        post.question?.let { target ->
+            if (target.choices.isEmpty()) {
+                builder.addAction(replyAction(target))
+            } else {
+                for (choice in target.choices) builder.addAction(choiceAction(target, choice))
+            }
         }
 
         show(post.kind, post.durableSessionId, builder)
     }
 
-    override fun degradeApproval(durableSessionId: String) {
+    override fun degrade(kind: NotificationKind, durableSessionId: String) {
         // Same shape, no buttons, and quiet: this replaces a notification the
-        // user has already been alerted to.
+        // user has already been alerted to. The title stays the kind's own, so
+        // a question that can no longer be answered here still reads as a
+        // question rather than as an approval.
         val builder = builder(
-            kind = NotificationKind.Approval,
+            kind = kind,
             durableSessionId = durableSessionId,
-            title = NotificationCopy.APPROVAL_TITLE,
+            title = NotificationCopy.title(kind),
             body = NotificationCopy.OPEN_TO_RESPOND,
         ).setOnlyAlertOnce(true)
 
-        show(NotificationKind.Approval, durableSessionId, builder)
+        show(kind, durableSessionId, builder)
+    }
+
+    override fun postTest(title: String, body: String) {
+        if (!manager.areNotificationsEnabled()) return
+        // The quiet channel on purpose: a test that arrives with an approval's
+        // urgency teaches the wrong thing about what an approval sounds like.
+        val builder = NotificationCompat.Builder(context, RESPONSES_CHANNEL_ID)
+            .setSmallIcon(SMALL_ICON)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            // No session to open, and nothing about a conversation to hide.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        manager.notify(TEST_TAG, NOTIFICATION_ID, builder.build())
+    }
+
+    /**
+     * One approval choice as a shade action.
+     *
+     * A persistent grant is answerable from here, which it was not before, and
+     * it is gated: `setAuthenticationRequired` makes Android demand the device
+     * be unlocked before the intent fires, so `Always allow` cannot be granted
+     * by a stranger tapping a lock screen. That API arrives in 31, and below it
+     * there is no equivalent — a grant that outlives its request is simply not
+     * offered there, and the notification body still opens the app.
+     */
+    private fun approvalAction(target: ApprovalTarget, choice: String): NotificationCompat.Action {
+        val action = NotificationCompat.Action.Builder(
+            0,
+            approvalChoiceLabel(choice),
+            respondIntent(target, choice),
+        )
+        if (isPersistentGrant(choice) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            action.setAuthenticationRequired(true)
+        }
+        return action.build()
+    }
+
+    /** API 26-30 cannot require an unlock before a persistent grant fires. */
+    private fun isShadeActionSupportedOnDevice(choice: String): Boolean =
+        !isPersistentGrant(choice) || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    /**
+     * A free-text answer, typed in the shade.
+     *
+     * `RemoteInput` is the only way a notification takes words, and it is worth
+     * having for exactly the case the constrained-choice argument does not
+     * cover: one question with no choices, which is a question whose answer was
+     * always going to be typed. The reply never carries a persistent grant and
+     * never approves anything — it answers a clarify and nothing else.
+     */
+    private fun replyAction(target: QuestionTarget): NotificationCompat.Action {
+        val remoteInput = RemoteInput.Builder(EXTRA_ANSWER)
+            .setLabel(NotificationCopy.REPLY_HINT)
+            .build()
+        return NotificationCompat.Action.Builder(
+            0,
+            NotificationCopy.REPLY_ACTION,
+            answerIntent(target, choice = null),
+        )
+            .addRemoteInput(remoteInput)
+            // Android may keep the notification and swap the reply box for a
+            // spinner; this app withdraws the notification when the request
+            // actually resolves, which is the only moment it knows it did.
+            .setAllowGeneratedReplies(false)
+            .build()
+    }
+
+    /** One of the question's own choices, verbatim: it is already the answer text. */
+    private fun choiceAction(target: QuestionTarget, choice: String) =
+        NotificationCompat.Action.Builder(0, choice, answerIntent(target, choice)).build()
+
+    /**
+     * Immutable for the same reason [respondIntent] is. A null [choice] leaves
+     * the answer to the `RemoteInput` this intent is attached to — which is the
+     * one field that is *not* fixed at build time, and the only one, because
+     * Android fills it into the intent's own `clipData` rather than letting a
+     * sender supply it.
+     */
+    private fun answerIntent(target: QuestionTarget, choice: String?): PendingIntent {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(ACTION_ANSWER_QUESTION)
+            .putExtra(EXTRA_DURABLE_SESSION_ID, target.durableSessionId)
+            .putExtra(EXTRA_RUNTIME_SESSION_ID, target.key.runtimeSessionId)
+            .putExtra(EXTRA_REQUEST_ID, target.key.requestId)
+            .putExtra(EXTRA_CONNECTION_GENERATION, target.key.connectionGeneration)
+            .putExtra(EXTRA_QUESTION_ID, target.questionId)
+        if (choice != null) intent.putExtra(EXTRA_ANSWER, choice)
+        return PendingIntent.getBroadcast(
+            context,
+            requestCode("answer", choice.orEmpty(), target.durableSessionId, target.key.requestId),
+            intent,
+            // Mutable only where it has to be: a `RemoteInput` reply is written
+            // into the intent by the system, and an immutable PendingIntent has
+            // nowhere to put it. The button-per-choice form stays immutable.
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                if (choice == null) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     /** The shape every notification this app posts shares. */
@@ -65,10 +180,18 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         durableSessionId: String,
         title: String,
         body: String,
+        preview: String? = null,
     ) = NotificationCompat.Builder(context, kind.channelId)
         .setSmallIcon(SMALL_ICON)
         .setContentTitle(title)
-        .setContentText(body)
+        // With a preview the conversation moves up to the header line beside
+        // the app name and the preview takes the body, because a body that
+        // repeats the name of the chat you are already being told about is the
+        // line worth spending. Without one, nothing moves: this is exactly the
+        // kind-then-conversation shape the surface has always had.
+        .setSubText(preview?.let { body })
+        .setContentText(preview ?: body)
+        .setStyle(preview?.let { NotificationCompat.BigTextStyle().bigText(it) })
         .setCategory(categoryFor(kind))
         .setPriority(priorityFor(kind))
         .setGroup(groupKey(durableSessionId))
@@ -179,15 +302,24 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
 
     private companion object {
         /**
-         * A monochrome status-bar glyph, borrowed from the framework for the
-         * same reason [com.hermesagent.mobile.data.voice.WakeWordForegroundService]
-         * does: the launcher mark is a full-colour bitmap and would render as a
-         * white block. A drawn Hermes notification mark is design work.
+         * The Hermes mark, reduced to the silhouette a 24 dp alpha-only glyph
+         * can actually carry, by `scripts/build-notification-icon.py`. The
+         * launcher artwork itself is a full-colour bitmap whose opaque area is
+         * the whole plate, so handing it to `setSmallIcon` paints a white
+         * block — which is why this was a framework glyph until now.
+         *
+         * Not every notification this app posts wears it. A foreground service
+         * whose glyph *says something* — the microphone while the wake word is
+         * listening, the padlock while a sign-in finishes — keeps that glyph,
+         * because the mark would replace a fact with a logo.
          */
-        const val SMALL_ICON = android.R.drawable.stat_notify_chat
+        val SMALL_ICON = com.hermesagent.mobile.R.drawable.ic_stat_hermes
 
         /** Tags carry the identity; one id is enough because (tag, id) is the key. */
         const val NOTIFICATION_ID = 0x48
+
+        /** Outside `hermes:<kind>:<session>`, so no session clear withdraws it. */
+        const val TEST_TAG = "hermes:test"
 
         fun categoryFor(kind: NotificationKind): String =
             if (kind in ATTENTION_KINDS) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE
@@ -237,12 +369,13 @@ fun registerChannels(context: Context) {
 
 const val ACTION_OPEN_SESSION: String = "com.hermesagent.mobile.notifications.OPEN_SESSION"
 const val ACTION_RESPOND_TO_APPROVAL: String = "com.hermesagent.mobile.notifications.RESPOND"
+const val ACTION_ANSWER_QUESTION: String = "com.hermesagent.mobile.notifications.ANSWER"
 const val EXTRA_DURABLE_SESSION_ID: String = "com.hermesagent.mobile.notifications.extra.SESSION_ID"
 const val EXTRA_RUNTIME_SESSION_ID: String = "com.hermesagent.mobile.notifications.extra.RUNTIME_ID"
 const val EXTRA_REQUEST_ID: String = "com.hermesagent.mobile.notifications.extra.REQUEST_ID"
 const val EXTRA_CONNECTION_GENERATION: String = "com.hermesagent.mobile.notifications.extra.GENERATION"
 const val EXTRA_CHOICE: String = "com.hermesagent.mobile.notifications.extra.CHOICE"
+const val EXTRA_QUESTION_ID: String = "com.hermesagent.mobile.notifications.extra.QUESTION_ID"
 
-/** The Gateway's own approval vocabulary (`gateway/platforms/api_server.py:77` @ the pin). */
-const val CHOICE_APPROVE: String = "once"
-const val CHOICE_DENY: String = "deny"
+/** Both the button's fixed answer and the key `RemoteInput` writes under. */
+const val EXTRA_ANSWER: String = "com.hermesagent.mobile.notifications.extra.ANSWER"

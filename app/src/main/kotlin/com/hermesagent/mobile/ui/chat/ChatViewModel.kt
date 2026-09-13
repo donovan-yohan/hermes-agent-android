@@ -3238,6 +3238,16 @@ internal class ChatViewModel(
     }
 
     /**
+     * The bounded background-process ladder owns this request. Keeping the call
+     * suspendable lets Compose cancel an in-flight read when its session or
+     * foreground lifecycle leaves instead of orphaning work in viewModelScope.
+     */
+    suspend fun reconcileProcesses() {
+        val sessionId = activeSessionId.value ?: return
+        repository.listProcesses(sessionId)
+    }
+
+    /**
      * `Show earlier messages`: fetch the page before the one on screen and
      * prepend it to the session that asked.
      *

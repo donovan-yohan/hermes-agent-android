@@ -22,9 +22,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,6 +39,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
 import com.hermesagent.mobile.data.session.ComposerGoalState
@@ -49,6 +54,7 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import kotlinx.coroutines.delay
 
 /**
  * Session-scoped Gateway status, deliberately separate from transcript rows.
@@ -60,6 +66,7 @@ fun ComposerStatusStack(
     activeSessionId: String?,
     status: ComposerStatusState?,
     onRefreshProcesses: () -> Unit = {},
+    onReconcileProcesses: suspend () -> Unit = {},
     onKillProcess: (String) -> Unit = {},
     hasQueue: Boolean = false,
     queueContent: (@Composable () -> Unit)? = null,
@@ -69,11 +76,17 @@ fun ComposerStatusStack(
     val visiblePreviews = remember(activeSessionId, status?.previewArtifacts) {
         status?.previewArtifacts.orEmpty().take(MAX_PREVIEW_ROWS).distinctBy(ComposerPreviewArtifact::id)
     }
+    val visibleBackgroundProcesses = status?.backgroundProcesses.orEmpty().take(MAX_BACKGROUND_ROWS)
     var dismissedPreviewIds by rememberSaveable(activeSessionId) { mutableStateOf(emptySet<String>()) }
     val previews = visiblePreviews.filterNot { it.id in dismissedPreviewIds }
     val visibleGroupCount = composerStatusGroupCount(status, hasQueue, previews.size)
     if (visibleGroupCount == 0) return
     val fuseSingleGroup = fusedToComposer && visibleGroupCount == 1
+    ReconcileSilentExits(
+        activeSessionId,
+        visibleBackgroundProcesses,
+        onReconcileProcesses,
+    )
 
     Column(
         modifier = modifier
@@ -84,7 +97,26 @@ fun ComposerStatusStack(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         status?.goal?.takeIf { it.state != ComposerGoalState.None }?.let { goal ->
-            StatusGroup("${activeSessionId}:goal", "Goal", defaultExpanded = true, fusedToComposer = fuseSingleGroup) {
+            StatusGroup(
+                stateKey = "${activeSessionId}:goal",
+                title = goal.state.groupLabel(),
+                // Only the task list opens itself:
+                // `defaultCollapsed={group.type !== 'todo'}`
+                // (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:236`
+                // @ `564aef2946`). That condition used to spare the goal group as
+                // well, and `5b181e511a` deliberately stopped sparing it.
+                //
+                // The exception is Unknown, which Desktop has no equivalent of:
+                // its goal state is a typed field, ours is parsed out of a text
+                // status line and is left neutral rather than fabricating an
+                // active goal (`GatewaySessionRepository.kt:5458-5463`). A header
+                // that cannot name the state cannot stand in for the body, so an
+                // unrecognised goal line keeps the group open — the raw text is
+                // then the only thing on screen that says anything at all.
+                defaultExpanded = goal.state == ComposerGoalState.Unknown,
+                followDefaultExpandedChanges = true,
+                fusedToComposer = fuseSingleGroup,
+            ) {
                 StatusText(goal.title ?: goal.rawText)
                 goal.detail?.takeIf(String::isNotBlank)?.let { StatusText(it) }
             }
@@ -116,7 +148,7 @@ fun ComposerStatusStack(
                 }
             }
         }
-        status?.backgroundProcesses?.take(MAX_BACKGROUND_ROWS)?.takeIf { it.isNotEmpty() }?.let { processes ->
+        visibleBackgroundProcesses.takeIf { it.isNotEmpty() }?.let { processes ->
             StatusGroup(
                 "${activeSessionId}:background",
                 "Background",
@@ -169,7 +201,7 @@ fun ComposerStatusStack(
             StatusGroup(
                 "${activeSessionId}:gateway-queue",
                 "Queued next",
-                defaultExpanded = true,
+                defaultExpanded = false,
                 count = prompts.size,
                 fusedToComposer = fuseSingleGroup,
             ) {
@@ -180,6 +212,77 @@ fun ComposerStatusStack(
         // rows share this bounded scroll region rather than pushing the IME
         // composer off screen.
         queueContent?.invoke()
+    }
+}
+
+/**
+ * Retire a background row whose process died without saying so.
+ *
+ * A process started without `notify_on_complete` emits no event when it exits,
+ * so nothing retires its row: it keeps reading `Running · <title>` and keeps
+ * offering a Stop for something already gone. Desktop's answer is a 5 second
+ * `process.list` interval, armed while a running row is on screen and disarmed
+ * with the pane
+ * (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:41-43,151-163`
+ * @ `564aef2946`).
+ *
+ * That interval is the one thing this path must not copy. Every tick is a
+ * radio wake on a phone, and this app deliberately owns no timer here: the
+ * session-open seed (`ChatScreen.kt:803`), the repository's coalesced
+ * event-driven refresh (`GatewaySessionRepository.kt:5355-5371`) and the
+ * Background group's own Refresh are the whole refresh story, and #233 rates
+ * that calm as the property worth keeping.
+ *
+ * So the net is bounded instead of periodic, and every edge it uses is one the
+ * app already owns:
+ *
+ *  * it exists only while a row *claims* Running, in the session on screen —
+ *    the composable is only in the tree for the open session, and it leaves
+ *    the tree the moment nothing claims to be running;
+ *  * it runs only while the host is RESUMED, so a backgrounded app never wakes
+ *    the radio, and returning to the foreground re-arms it — the mobile shape
+ *    of Desktop's `paneVisible` gate, and the moment a silent exit is most
+ *    likely to have happened unseen;
+ *  * it walks a short widening ladder and then *stops*. Three checks, not an
+ *    interval: a check that repeats forever is the polling this app does not
+ *    do. New evidence — a change in which ids claim Running — starts a fresh
+ *    ladder, so the work is bounded by real events rather than by a clock, and
+ *    when the picture stops changing the app goes quiet again and the manual
+ *    Refresh stays the explicit escape.
+ *
+ * What it does not catch, and `docs/parity/composer-status-stack.md` records:
+ * a process that dies silently while the reader keeps the session in front of
+ * them for longer than the ladder. Desktop catches that within five seconds;
+ * here it waits for the next foreground return, the next process event, or
+ * Refresh.
+ */
+@Composable
+private fun ReconcileSilentExits(
+    activeSessionId: String?,
+    processes: List<ComposerBackgroundProcess>,
+    onReconcileProcesses: suspend () -> Unit,
+) {
+    val runningKey = processes
+        .filter { it.state == ComposerBackgroundProcessState.Running }
+        .map(ComposerBackgroundProcess::id)
+        .sorted()
+        .joinToString("|")
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // The ladder must not restart because the caller handed down a new lambda;
+    // only the session and the running set may re-arm it.
+    val reconcile by rememberUpdatedState(onReconcileProcesses)
+    // A conditional call, not an early return: this is what disposes the
+    // ladder the moment the answer retires the last Running claim, and what
+    // starts a fresh one when the set of claims changes.
+    if (activeSessionId != null && runningKey.isNotEmpty()) {
+        LaunchedEffect(activeSessionId, runningKey, lifecycle) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                RECONCILE_LADDER_MILLIS.forEach { wait ->
+                    delay(wait)
+                    reconcile()
+                }
+            }
+        }
     }
 }
 
@@ -203,12 +306,27 @@ private fun StatusGroup(
     stateKey: String,
     title: String,
     defaultExpanded: Boolean,
+    followDefaultExpandedChanges: Boolean = false,
     count: Int? = null,
     icon: HermesIcon? = null,
     fusedToComposer: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable(stateKey) { mutableStateOf(defaultExpanded) }
+    var automaticallyExpanded by rememberSaveable(stateKey) { mutableStateOf(defaultExpanded) }
+    if (followDefaultExpandedChanges) {
+        LaunchedEffect(defaultExpanded) {
+            if (defaultExpanded) {
+                if (!expanded) {
+                    expanded = true
+                    automaticallyExpanded = true
+                }
+            } else if (automaticallyExpanded) {
+                expanded = false
+                automaticallyExpanded = false
+            }
+        }
+    }
     val tokens = HermesTheme.tokens
     val headerText = tokens.textTertiary.alphaMultiply(0.92f)
     val groupIcon = tokens.textTertiary.alphaMultiply(0.70f)
@@ -227,7 +345,10 @@ private fun StatusGroup(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = HermesTheme.spacing.touchTarget)
-                .clickable { expanded = !expanded }
+                .clickable {
+                    expanded = !expanded
+                    automaticallyExpanded = false
+                }
                 .semantics {
                     contentDescription = buildString {
                         append(title)
@@ -350,6 +471,28 @@ private fun ComposerTodoState.spokenLabel(): String = when (this) {
     ComposerTodoState.Unknown -> "Unknown"
 }
 
+/**
+ * Desktop labels the goal group with the goal's state, not with the bare word
+ * "Goal": `Goal active` / `Goal paused` / `Goal waiting` / `Goal done`
+ * (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:60-69`, strings at
+ * `apps/desktop/src/i18n/en.ts:2894,2896-2898`, both @ `564aef2946`). That is
+ * what lets Desktop keep the group collapsed: the header alone still says what
+ * the goal is doing.
+ *
+ * Desktop's chain ends at `goalActive` for a status it cannot name; this app
+ * does not, because `Unknown` here means the parser refused the line rather
+ * than a typed field being absent, and calling that "active" would invent a
+ * state the Gateway never sent.
+ */
+private fun ComposerGoalState.groupLabel(): String = when (this) {
+    ComposerGoalState.Active -> "Goal active"
+    ComposerGoalState.Waiting -> "Goal waiting"
+    ComposerGoalState.Paused -> "Goal paused"
+    ComposerGoalState.Done -> "Goal done"
+    // None never reaches a header — the group does not render at all.
+    ComposerGoalState.Unknown, ComposerGoalState.None -> "Goal"
+}
+
 private fun ComposerBackgroundProcessState.label(): String = when (this) {
     ComposerBackgroundProcessState.Running -> "Running"
     ComposerBackgroundProcessState.Done -> "Done"
@@ -359,6 +502,15 @@ private fun ComposerBackgroundProcessState.label(): String = when (this) {
 private fun Color.alphaMultiply(multiplier: Float): Color = copy(alpha = alpha * multiplier)
 
 private val MAX_STACK_HEIGHT = 240.dp
+
+/**
+ * The waits between the silent-exit checks, and the fact that there are only
+ * three of them: a claim that stays unchanged through ~2 minutes of foreground
+ * attention is treated as true rather than re-asked forever. Widening rather
+ * than fixed, so the cheap common case (a process that was already gone when
+ * the row arrived) is caught quickly without the expensive one paying for it.
+ */
+private val RECONCILE_LADDER_MILLIS = listOf(10_000L, 30_000L, 90_000L)
 private const val MAX_SUBAGENT_ROWS = 6
 private const val MAX_BACKGROUND_ROWS = 6
 private const val MAX_PREVIEW_ROWS = 4

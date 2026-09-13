@@ -3,6 +3,8 @@ package com.hermesagent.mobile.data.notifications
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
+import com.hermesagent.mobile.data.gateway.APPROVAL_DENY
+import com.hermesagent.mobile.data.gateway.APPROVAL_ONCE
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.LiveGatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.PendingInputAction
@@ -34,10 +36,10 @@ class ShadeApprovalTest {
         val repository = FakeRepository(PendingInputResponse.Resolved)
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(repository, surface, KEY, "chat", CHOICE_APPROVE)
+        respondFromShade(repository, surface, KEY, "chat", APPROVAL_ONCE)
 
-        assertEquals(listOf(KEY to CHOICE_APPROVE), repository.answered)
-        assertEquals(listOf(NotificationKind.Approval to "chat"), surface.cleared)
+        assertEquals(listOf(KEY to APPROVAL_ONCE), repository.answered)
+        assertEquals(resolvedNotificationClears(), surface.cleared)
         assertEquals(emptyList<String>(), surface.degraded)
     }
 
@@ -49,25 +51,25 @@ class ShadeApprovalTest {
         val repository = FakeRepository(PendingInputResponse.Resolved)
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(repository, surface, KEY, "chat", CHOICE_DENY)
+        respondFromShade(repository, surface, KEY, "chat", APPROVAL_DENY)
 
-        assertEquals(listOf(NotificationKind.Approval to "chat"), surface.cleared)
+        assertEquals(resolvedNotificationClears(), surface.cleared)
     }
 
     @Test
     fun `an expired request is withdrawn too`() = runTest {
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(FakeRepository(PendingInputResponse.Expired), surface, KEY, "chat", CHOICE_DENY)
+        respondFromShade(FakeRepository(PendingInputResponse.Expired), surface, KEY, "chat", APPROVAL_DENY)
 
-        assertEquals(listOf(NotificationKind.Approval to "chat"), surface.cleared)
+        assertEquals(resolvedNotificationClears(), surface.cleared)
     }
 
     @Test
     fun `a connection that moved on leaves the request visible and says where to answer it`() = runTest {
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(FakeRepository(PendingInputResponse.Retryable), surface, KEY, "chat", CHOICE_APPROVE)
+        respondFromShade(FakeRepository(PendingInputResponse.Retryable), surface, KEY, "chat", APPROVAL_ONCE)
 
         assertEquals(listOf("chat"), surface.degraded)
         assertEquals(emptyList<Pair<NotificationKind, String>>(), surface.cleared)
@@ -84,7 +86,7 @@ class ShadeApprovalTest {
         val repository = freshProcessRepository()
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(repository, surface, KEY, "chat", CHOICE_APPROVE)
+        respondFromShade(repository, surface, KEY, "chat", APPROVAL_ONCE)
 
         assertEquals(emptyList<Pair<NotificationKind, String>>(), surface.cleared)
         assertEquals(listOf("chat"), surface.degraded)
@@ -101,7 +103,7 @@ class ShadeApprovalTest {
         val collidingKey = PendingInputKey(1L, "runtime-1", "req-1", PendingInputKind.Approval)
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(repository, surface, collidingKey, "chat", CHOICE_DENY)
+        respondFromShade(repository, surface, collidingKey, "chat", APPROVAL_DENY)
 
         assertEquals(emptyList<Pair<NotificationKind, String>>(), surface.cleared)
         assertEquals(listOf("chat"), surface.degraded)
@@ -111,13 +113,18 @@ class ShadeApprovalTest {
     fun `a transport that throws is a retry, not a silent success`() = runTest {
         val surface = RecordingNotificationSurface()
 
-        respondFromShade(ThrowingRepository, surface, KEY, "chat", CHOICE_APPROVE)
+        respondFromShade(ThrowingRepository, surface, KEY, "chat", APPROVAL_ONCE)
 
         assertEquals(listOf("chat"), surface.degraded)
     }
 }
 
 private val KEY = PendingInputKey(7L, "runtime-1", "req-1", PendingInputKind.Approval)
+
+private fun resolvedNotificationClears() = listOf(
+    NotificationKind.Approval to "chat",
+    NotificationKind.StillWaiting to "chat",
+)
 
 /**
  * A real repository in the state a just-launched process is in: connected in

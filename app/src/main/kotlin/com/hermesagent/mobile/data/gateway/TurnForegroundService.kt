@@ -95,7 +95,8 @@ class TurnForegroundService : Service() {
 
         /** Distinct from the wake-word service's 42 and sign-in service's 43. */
         internal const val NOTIFICATION_ID = 44
-        internal const val SMALL_ICON = android.R.drawable.stat_notify_sync
+        /** The app's own mark: this notification is Hermes working, not a sync. */
+        internal val SMALL_ICON = com.hermesagent.mobile.R.drawable.ic_stat_hermes
 
         /** Single-registrant main-thread-only callback for foreground service failure/refusal notifications. */
         @Volatile

@@ -22,6 +22,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
+import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
 import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
 import com.hermesagent.mobile.data.gateway.SessionRehome
@@ -106,6 +107,26 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a", "session-b"), cache.state.value.sessions.keys.toList())
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
         assertTrue(cache.state.value.sessions.keys.none { it.contains("demo", ignoreCase = true) })
+    }
+
+    @Test
+    fun `automatic process reconciliation is silent while manual refresh reports failure`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSessionId)
+        assertTrue(repository.processListCalls.isEmpty())
+
+        repository.processListOutcome = GatewayProcessListOutcome.Failed
+
+        viewModel.reconcileProcesses()
+        runCurrent()
+        assertNull(viewModel.uiState.value.notice)
+        assertEquals(listOf("session-a"), repository.processListCalls)
+
+        viewModel.refreshProcesses()
+        runCurrent()
+        assertEquals("Background work could not be refreshed. Try again.", viewModel.uiState.value.notice?.text)
+        assertEquals(listOf("session-a", "session-a"), repository.processListCalls)
     }
 
     @Test
@@ -2398,6 +2419,14 @@ class ChatViewModelTest {
         }
 
         val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        var processListOutcome: GatewayProcessListOutcome = GatewayProcessListOutcome.Unsupported
+        val processListCalls = mutableListOf<String>()
+
+        override suspend fun listProcesses(durableId: String): GatewayProcessListOutcome {
+            processListCalls += durableId
+            return processListOutcome
+        }
+
         override val pendingInputs =
             MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
                 emptyMap(),

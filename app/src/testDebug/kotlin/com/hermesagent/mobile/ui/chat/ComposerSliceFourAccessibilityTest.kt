@@ -65,7 +65,7 @@ class ComposerSliceFourAccessibilityTest {
         // order is asserted over semantics-tree order (depth-first), not
         // geometry.
         val orderedDescriptions = listOf(
-            "Goal, collapse",
+            "Goal active, expand",
             "Tasks 0/1, collapse",
             "Subagents, 1, expand",
             "Background, 1, expand",
@@ -137,9 +137,13 @@ class ComposerSliceFourAccessibilityTest {
         }
 
         val floor = HermesSpacing().touchTarget
+        // Both sections start collapsed now, parked or not
+        // (`components/chat/status-section.tsx:30` @ `564aef2946`), so the
+        // park's Resume is the only control a reader has without opening one,
+        // and no row's actions exist until their group is opened.
         compose.onNodeWithContentDescription("Resume queued messages").assertHeightIsAtLeast(floor)
-        // Only the parked section is expanded; the idle section stays collapsed,
-        // so exactly one Edit affordance exists until its group is opened.
+        assertEquals(0, compose.onAllNodes(hasText("Edit")).fetchSemanticsNodes().size)
+        compose.onNodeWithContentDescription("Queue, 1 messages, parked, expand").performClick()
         assertEquals(1, compose.onAllNodes(hasText("Edit")).fetchSemanticsNodes().size)
         compose.onNodeWithContentDescription("Send next queued message").assertHeightIsAtLeast(floor)
         compose.onNodeWithContentDescription("Redirect with queued message").assertHeightIsAtLeast(floor)

@@ -73,6 +73,8 @@ class ChatActions(
     val onOpenCodingReview: () -> Unit = {},
     val onDismissCodingReview: () -> Unit = {},
     val onRefreshProcesses: () -> Unit = {},
+    /** Background-process safety-net reads are silent; the visible Refresh is not. */
+    val onReconcileProcesses: suspend () -> Unit = {},
     val onKillProcess: (String) -> Unit = {},
     /** Write the host's approval mode; the repository owns the rollback. */
     val onSelectApprovalMode: (ApprovalMode) -> Unit = {},

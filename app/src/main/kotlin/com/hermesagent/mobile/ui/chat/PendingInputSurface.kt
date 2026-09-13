@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
 import com.hermesagent.mobile.data.gateway.ApprovalPending
+import com.hermesagent.mobile.data.gateway.approvalChoiceLabel
+import com.hermesagent.mobile.data.gateway.isDenial
 import com.hermesagent.mobile.data.gateway.ClarifyPending
 import com.hermesagent.mobile.data.gateway.ClarifyQuestion
 import com.hermesagent.mobile.data.gateway.PendingInputAction
@@ -233,16 +235,21 @@ private fun ApprovalCard(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             pending.choices.forEach { choice ->
-                val destructive = choice.equals("Reject", ignoreCase = true) ||
-                    choice.equals("Deny", ignoreCase = true)
+                // The Gateway sends wire values — `once`, `session`, `always`,
+                // `deny` — and this card used to paint them straight onto the
+                // buttons, which asks somebody to press `once` or `always` and
+                // work out which is which. One shared mapping with the shade,
+                // so the same decision never wears two different words.
+                val label = approvalChoiceLabel(choice)
+                val destructive = isDenial(choice)
                 TextButton(
-                    label = choice,
+                    label = label,
                     onClick = { onRespond(PendingInputAction.ApprovalChoice(choice)) },
                     color = if (destructive) HermesTheme.tokens.destructive else HermesTheme.tokens.accentForeground,
                     modifier = Modifier
                         .heightIn(min = HermesTheme.spacing.touchTarget)
                         .semantics {
-                            contentDescription = "$choice for ${pending.command.take(80)}"
+                            contentDescription = "$label for ${pending.command.take(80)}"
                             role = Role.Button
                         },
                 )
