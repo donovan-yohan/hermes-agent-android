@@ -70,7 +70,15 @@ fun SettingsScreen(
             onClick = onOpenSystem,
         )
         SettingsRow(
-            // Verbatim `settings.sectionEntries.plugins` (`i18n/en.ts:408` @ the pin).
+            // Verbatim `skills.tabPlugins` (`i18n/en.ts:1587` @
+            // `564aef2946c436500a5e80ee117b66b789b3f99a`) — Desktop's name for
+            // the Plugins page itself. The old stamp here quoted
+            // `settings.sectionEntries.plugins` at `:408`, which was neither that
+            // key's name nor a line that survives: `61afcde8f9` deleted
+            // `settings.nav.plugins` along with Settings ▸ Plugins, moving the
+            // page under Capabilities. This app has no Capabilities destination
+            // — it ships none of that pane's other tabs — so the row keeps
+            // Desktop's word and stays in the app's one destination list.
             label = PluginsCopy.SETTINGS_ROW_TITLE,
             // Desktop's blurb for plugins mentions the disk door; this app has
             // bundled plugins only, so the Settings row states the action it

@@ -135,7 +135,7 @@ class ApprovalModeViewModelTest {
         viewModel.selectApprovalMode(ApprovalMode.Off)
         runCurrent()
 
-        assertEquals(APPROVAL_MODE_REJECTED, viewModel.uiState.value.notice)
+        assertEquals(APPROVAL_MODE_REJECTED, viewModel.uiState.value.notice?.text)
         // The repository owns the value, so the control still reads what the
         // host last confirmed.
         assertEquals(ApprovalMode.Manual, viewModel.uiState.value.approvalMode)

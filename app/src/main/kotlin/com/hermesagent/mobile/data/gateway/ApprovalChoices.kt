@@ -56,10 +56,9 @@ fun isDenial(choice: String): Boolean = choice.lowercase() == APPROVAL_DENY
  *
  * Android renders three action buttons and silently drops the rest, so the
  * three are chosen here rather than by truncation: run once, the strongest
- * persistent grant on offer, and the refusal. A Gateway that offered only two
- * yields two; one that offered a choice this app does not know yields it only
- * if there is room, because an unknown choice is the one a person is least able
- * to judge from a shade.
+ * persistent grant on offer, and the refusal. Unknown choices are intentionally
+ * omitted: the notification receiver only accepts this established vocabulary,
+ * so rendering another value would produce a button that silently does nothing.
  *
  * The refusal is last on purpose. It is the destructive one, and Android lays
  * actions out left to right in the order they are added.
@@ -74,14 +73,6 @@ fun shadeApprovalChoices(offered: List<String>): List<String> {
             has(APPROVAL_SESSION) -> add(pick(APPROVAL_SESSION))
         }
         if (has(APPROVAL_DENY)) add(pick(APPROVAL_DENY))
-        if (size < MAX_SHADE_ACTIONS) {
-            // Whatever else this Gateway offered, in its own order, up to the
-            // limit — including choices this app has no label for.
-            for (choice in offered) {
-                if (size >= MAX_SHADE_ACTIONS) break
-                if (none { it.equals(choice, ignoreCase = true) }) add(choice)
-            }
-        }
     }.take(MAX_SHADE_ACTIONS)
 }
 

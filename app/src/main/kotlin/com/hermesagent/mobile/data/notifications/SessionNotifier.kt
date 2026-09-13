@@ -548,10 +548,31 @@ private fun PendingInputRequest.promptIdentity(): PromptIdentity =
  * `:313-318` @ the pin), and so
  * does this. They are the same question to the user: something is blocked
  * until you answer it in the app.
+ *
+ * The three vault prompts join them rather than earning a kind of their own:
+ * Desktop raises `input` for all three too (`:384-389`, `:410-415`, `:436-441`
+ * @ `564aef2946c436500a5e80ee117b66b789b3f99a`). Adding an eighth
+ * [NotificationKind] would also mean an eighth preference row nobody asked for
+ * and a persisted key Desktop's settings panel does not have.
+ *
+ * What this app does *not* port is Desktop's body for them. Desktop puts the
+ * prompt title — "Verification code for <site>", "Save your <site> login?",
+ * "Unlock <manager>" — into the notification (`:385`, `:411`, `:437`). That is
+ * an OS surface a locked phone renders to anyone holding it, and #99's rule for
+ * this shade already forbids a command, tool output, a sudo prompt or a secret
+ * name. Naming the site someone is signing into is the same class of leak, so
+ * a vault prompt's body is the session title like every other kind's, through
+ * `redact()` and bounded. Recorded in `docs/parity/notifications.md`.
  */
 private fun PendingInputKind.notificationKind(): NotificationKind = when (this) {
     PendingInputKind.Approval -> NotificationKind.Approval
-    PendingInputKind.Clarify, PendingInputKind.Sudo, PendingInputKind.Secret -> NotificationKind.Input
+    PendingInputKind.Clarify,
+    PendingInputKind.Sudo,
+    PendingInputKind.Secret,
+    PendingInputKind.VaultCode,
+    PendingInputKind.VaultSaveLogin,
+    PendingInputKind.VaultUnlock,
+    -> NotificationKind.Input
 }
 
 /** `native-notifications.ts:97` @ the pin. */

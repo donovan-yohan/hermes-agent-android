@@ -8,12 +8,32 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+
+/**
+ * What a door that tracks no endpoint reports: the generation never moves.
+ *
+ * The interface's default, and `GatewayPluginHost`'s, so a door built without a
+ * switch behind it — [UnavailablePluginHost], a test's fake, a test that is not
+ * about a switch — never claims a move that did not happen. Production states
+ * the app's own generation instead: a door wired without an endpoint holds a
+ * plugin's stale rows through every switch, which is the defect this member
+ * exists to prevent.
+ *
+ * File scope, beside the interface rather than inside its companion: both the
+ * interface default and `GatewayPluginHost`'s constructor default read it, and
+ * a companion `private` is not visible to a sibling top-level class.
+ */
+private val ENDPOINT_NEVER_MOVES: StateFlow<Long> = MutableStateFlow(0L)
 
 /**
  * The plugin-facing gateway door: JSON-RPC to the live connection, plus a tap
@@ -43,6 +63,64 @@ interface PluginHost {
     ): PluginHostResult
 
     /**
+     * Whether a live connection exists behind this door, right now.
+     *
+     * The door resolves the *live* connection per call; this is the same slot
+     * as a value, so a plugin that has to recover from a cold start observes
+     * the connection instead of polling it. A plugin loads before the app has
+     * dialled anything (`HermesApplication` discovers plugins before it starts
+     * following the active connection), and [request] refuses while no client
+     * exists — so without this edge a plugin's one read at registration lands
+     * in a refusal it can never leave.
+     *
+     * It is a [StateFlow], not a one-shot event: a collector that starts late
+     * still receives the current value, so a plugin activated on an
+     * already-connected app reads immediately rather than never. The app
+     * publishes a client only once the leg it will actually use has answered
+     * and clears it on every close, so `true` here means "a request will be
+     * sent", not "a socket object exists".
+     */
+    val connected: StateFlow<Boolean>
+        get() = NO_CONNECTION
+
+    /**
+     * Which endpoint the connection behind this door belongs to — bumped
+     * whenever the app leaves an endpoint and forgets what it told us, and by
+     * nothing else.
+     *
+     * [connected] answers "would a request be sent"; it cannot answer *to which
+     * machine*. The two come apart at exactly the moment a plugin that holds
+     * its own copy of backend truth has to know: a reconnect to the same
+     * Gateway and a switch to a different one both drop the leg and bring one
+     * back. The next backend is a different machine that can recycle the same
+     * durable ids, so a plugin merging across the second is merging two
+     * machines' data — and the app's one wholesale clear is the signal it is
+     * not, which this is.
+     *
+     * The app publishes it straight from `SessionCache.endpointGeneration`,
+     * whose only writer is `resetForEndpointSwitch` — the clear
+     * `ConnectionSwitchController` runs through `leaveLocked` on every path
+     * that leaves an endpoint: a switch to another row, a re-address of this
+     * one (the Gateways route form persists per keystroke and tears down
+     * through `leaveCurrentEndpoint` after each, so editing an address is one),
+     * a disconnect, and an endpoint's removal. What never moves it is a
+     * *transport* redial: a dropped socket, a wake from sleep, a failed turn.
+     *
+     * A door member rather than a plugin-side registration, deliberately: a
+     * bundled plugin has no other per-app injection point
+     * (`BundledPlugins.ALL` builds `BotsPlugin()` with nothing but the
+     * context), a generation is the same idea the app's own endpoint-scoped
+     * reader uses (`ChatViewModel`'s Archived pool), and it costs one member
+     * here rather than a second lifecycle on `PluginContext` plus a fan-out in
+     * `PluginLoader`.
+     *
+     * A `StateFlow` for the same reason [connected] is one: a plugin activated
+     * late reads the current endpoint rather than a stale one.
+     */
+    val endpointGeneration: StateFlow<Long>
+        get() = ENDPOINT_NEVER_MOVES
+
+    /**
      * Subscribe to gateway events by `type`, or `'*'` for everything. Returns
      * a disposer. Listeners are isolated: one that throws never breaks the
      * event pump, and never reaches another subscriber.
@@ -61,6 +139,15 @@ interface PluginHost {
     companion object {
         /** Every event type. */
         const val ALL_EVENTS = "*"
+
+        /**
+         * What a door with no live route reports: never connected.
+         *
+         * The default for an implementation that does not track a connection —
+         * so a plugin waiting on an edge is simply never told one, rather than
+         * being handed a stream that lies about a live Gateway.
+         */
+        private val NO_CONNECTION: StateFlow<Boolean> = MutableStateFlow(false)
     }
 }
 
@@ -128,9 +215,9 @@ fun normalizePluginHostMethod(caller: String, method: String): String {
 
 /**
  * The host door of a context with no live Gateway route: every call refuses
- * with the transport's own reconnect sentence and no event is ever delivered.
- * This is what a plugin gets before the app has connected, and what tests get
- * when they are not exercising the door.
+ * with the transport's own reconnect sentence, [connected] never turns true,
+ * and no event is ever delivered. This is what a plugin gets before the app
+ * has connected, and what tests get when they are not exercising the door.
  */
 object UnavailablePluginHost : PluginHost {
     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
@@ -153,7 +240,32 @@ object UnavailablePluginHost : PluginHost {
 internal class GatewayPluginHost(
     private val scope: CoroutineScope,
     private val clients: StateFlow<GatewayRpcClient?>,
+    /**
+     * The endpoint the live client belongs to — the app's endpoint generation,
+     * published on the door's own interface.
+     *
+     * Defaulted to [ENDPOINT_NEVER_MOVES] for the same reason the app's own
+     * `EndpointScopedState` seam defaults to a no-op: a test that is not about a
+     * switch should not have to say so. `HermesApplication` states the app's own
+     * generation at its one wiring site.
+     */
+    override val endpointGeneration: StateFlow<Long> = ENDPOINT_NEVER_MOVES,
 ) : PluginHost {
+    /**
+     * The client slot as a readiness edge. `GatewayConnection` publishes the
+     * client only after an authenticated round trip on the leg the app will
+     * use, and clears it in the same place it closes that leg, so this tracks
+     * one connection's whole life including every reconnect.
+     *
+     * Lazily, so a plugin that never asks about the connection does not pay for
+     * a collector: the door is built per activation for every plugin, and most
+     * never read this. The first reader still gets the slot's *current* value
+     * as the initial value, so a late read is a correct read.
+     */
+    override val connected: StateFlow<Boolean> by lazy {
+        clients.map { it != null }.stateIn(scope, SharingStarted.Eagerly, clients.value != null)
+    }
+
     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
         val normalized = normalizePluginHostMethod(CALLER, method)
         val rpc = clients.value ?: return PluginHostResult.Refused(0, RECONNECT_MESSAGE)

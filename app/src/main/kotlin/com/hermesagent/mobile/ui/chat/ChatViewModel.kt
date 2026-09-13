@@ -54,6 +54,7 @@ import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.data.gateway.APPROVAL_MODE_REJECTED
+import com.hermesagent.mobile.data.gateway.isSessionNotOwned
 import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
 import com.hermesagent.mobile.data.gateway.ApprovalMode
 import com.hermesagent.mobile.data.gateway.ApprovalModeOutcome
@@ -297,6 +298,46 @@ sealed interface ReadAloudUiState {
 
 enum class ReadAloudControl { Idle, Preparing, Speaking, Blocked }
 
+/**
+ * The one thing that gets a notice's state unstuck, when there is one.
+ *
+ * An enum rather than a lambda because the state a screen reads is compared
+ * for equality and re-emitted on every combine; and because the ViewModel
+ * knows *which* escape a refusal has, while the screen knows what it is called
+ * and where it goes — the same split [com.hermesagent.mobile.ui.ChatActions]
+ * already makes.
+ */
+enum class ChatNoticeAction {
+    /**
+     * A live-owner refusal. Another surface holds this session's lease
+     * (JSON-RPC 4090, `error.data.reason = SESSION_NOT_OWNED`), so sending
+     * again fails identically for as long as it does; the way out is a fresh
+     * session on this surface. Desktop reaches the same conclusion from the
+     * same reason code and offers the same escape
+     * (`apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx:548-551,559-563`
+     * @ `564aef2946c436500a5e80ee117b66b789b3f99a`).
+     */
+    StartNewSession,
+}
+
+/**
+ * A one-line status this surface is reporting, and — where the state that
+ * produced it has a way out — the escape that ends it.
+ *
+ * A type rather than a `String?` because the alternative is the UI deciding
+ * "is this the refusal one?" by comparing user-visible prose, which is exactly
+ * the sniffer upstream deleted when it keyed the same escape off the reason
+ * code instead (`c80003ff57`; the app's own
+ * `com.hermesagent.mobile.data.gateway.isSessionNotOwned` and its test hold
+ * that line on the classification side). The action travels with the sentence
+ * because the two are one fact: a notice that is replaced or cleared takes its
+ * escape with it, and no code path can leave one behind.
+ */
+data class ChatNotice(
+    val text: String,
+    val action: ChatNoticeAction? = null,
+)
+
 data class ChatUiState(
     val voice: VoiceUiState = VoiceUiState.Idle,
     val readAloud: ReadAloudUiState = ReadAloudUiState.Idle,
@@ -363,7 +404,7 @@ data class ChatUiState(
     /** A required action parked in a non-visible session. */
     val backgroundPendingInput: BackgroundPendingInput? = null,
     val connection: GatewayConnectionState = GatewayConnectionState(),
-    val notice: String? = null,
+    val notice: ChatNotice? = null,
     val composer: ComposerUiState = ComposerUiState(),
     /** Connection-owned attached-image loader; null while disconnected. */
     val imageLoader: GatewayImageLoader? = null,
@@ -470,7 +511,24 @@ internal class ChatViewModel(
     private val contextBreakdownAttempted = mutableSetOf<String>()
     private val readAloudState = MutableStateFlow<ReadAloudUiState>(ReadAloudUiState.Idle)
     private var readAloudJob: Job? = null
-    private val notice = MutableStateFlow<String?>(null)
+    private val notice = MutableStateFlow<ChatNotice?>(null)
+
+    /**
+     * The status line, for the notices that are only a sentence — which is all
+     * of them but one.
+     *
+     * Writing through here is what keeps an escape from outliving the state
+     * that earned it: every other notice in this ViewModel clears the action
+     * simply by being written, so a refusal's `Start new session` cannot
+     * survive the next project failure, the next rehome or the next send. The
+     * one notice that carries an action writes [notice] directly, in the place
+     * that has just classified the refusal.
+     */
+    private var noticeLine: String?
+        get() = notice.value?.text
+        set(value) {
+            notice.value = value?.let(::ChatNotice)
+        }
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
@@ -1028,7 +1086,7 @@ internal class ChatViewModel(
                     // The unified view is kept: only the profile new work
                     // targets is stale, not the choice to browse everything.
                     applyProfileScope(scope.copy(activeProfile = DEFAULT_PROFILE))
-                    notice.value = "That profile is no longer available."
+                    noticeLine = "That profile is no longer available."
                 }
         }
         // The repository only ever learns the scope as the `profile` parameter
@@ -1136,7 +1194,7 @@ internal class ChatViewModel(
                     invalidateCompletionState()
                     selectedProjectId.value = null
                     query.value = ""
-                    notice.value = "That project is no longer available."
+                    noticeLine = "That project is no longer available."
                 }
                 if (!choseInitialSession && activeSessionId.value == null && state.sessions.isNotEmpty()) {
                     choseInitialSession = true
@@ -1266,7 +1324,7 @@ internal class ChatViewModel(
         selectedProjectId.value = null
         projectLoadingId.value = null
         query.value = ""
-        notice.value = null
+        noticeLine = null
         previousStatuses = emptyMap()
     }
 
@@ -1431,7 +1489,7 @@ internal class ChatViewModel(
                 if (failure is CancellationException) throw failure
                 ApprovalModeOutcome.Rejected(APPROVAL_MODE_REJECTED)
             }
-            if (outcome is ApprovalModeOutcome.Rejected) notice.value = outcome.safeMessage
+            if (outcome is ApprovalModeOutcome.Rejected) noticeLine = outcome.safeMessage
         }
     }
 
@@ -1468,14 +1526,14 @@ internal class ChatViewModel(
     private fun persistVisibleModels(keys: Set<String>) {
         val scope = composerScope
         if (scope == null) {
-            notice.value = MODEL_VISIBILITY_NOT_SAVED
+            noticeLine = MODEL_VISIBILITY_NOT_SAVED
             return
         }
         visibleModels.value = keys
         viewModelScope.launch {
             runCatching { composerControlsStore.saveVisibleModels(scope, keys) }.onFailure { failure ->
                 if (failure is CancellationException) throw failure
-                notice.value = MODEL_VISIBILITY_NOT_SAVED
+                noticeLine = MODEL_VISIBILITY_NOT_SAVED
             }
         }
     }
@@ -1535,7 +1593,7 @@ internal class ChatViewModel(
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
                     if (composerScope == scope && activeSessionId.value == null) {
-                        notice.value = "This new-chat choice will not be remembered after you leave this Gateway."
+                        noticeLine = "This new-chat choice will not be remembered after you leave this Gateway."
                     }
                 }
         }
@@ -1602,7 +1660,7 @@ internal class ChatViewModel(
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
                     if (sidebarGrouping.value == grouping) {
-                        notice.value = "This sidebar view could not be saved. Try changing it again."
+                        noticeLine = "This sidebar view could not be saved. Try changing it again."
                     }
                 }
         }
@@ -1646,7 +1704,7 @@ internal class ChatViewModel(
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
                     if (profileScope.value == scope) {
-                        notice.value = "This profile could not be saved. Try switching again."
+                        noticeLine = "This profile could not be saved. Try switching again."
                     }
                 }
         }
@@ -1685,7 +1743,7 @@ internal class ChatViewModel(
 
     fun createProject(name: String, folderPath: String) {
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
-            notice.value = "Connect to a Gateway before creating a project."
+            noticeLine = "Connect to a Gateway before creating a project."
             return
         }
         val createGeneration = ++navigationGeneration
@@ -1694,7 +1752,7 @@ internal class ChatViewModel(
                 .onSuccess { outcome ->
                     if (navigationGeneration != createGeneration) return@onSuccess
                     if (!outcome.catalogRefreshed) {
-                        notice.value = "The project was created, but Projects could not be refreshed. Reopen Sessions to refresh."
+                        noticeLine = "The project was created, but Projects could not be refreshed. Reopen Sessions to refresh."
                         return@onSuccess
                     }
                     invalidateCompletionState()
@@ -1705,7 +1763,7 @@ internal class ChatViewModel(
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
                     if (navigationGeneration == createGeneration) {
-                        notice.value = "The project could not be created. Check the name and remote folder, then try again."
+                        noticeLine = "The project could not be created. Check the name and remote folder, then try again."
                     }
                 }
         }
@@ -1718,20 +1776,20 @@ internal class ChatViewModel(
             runCatching { repository.refreshProjects() }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
-                    notice.value = "Projects could not be refreshed. Try opening Sessions again."
+                    noticeLine = "Projects could not be refreshed. Try opening Sessions again."
                 }
         }
     }
 
     private fun loadProject(id: String) {
         projectLoadingId.value = id
-        notice.value = null
+        noticeLine = null
         viewModelScope.launch {
             runCatching { repository.openProject(id) }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
                     if (selectedProjectId.value == id) {
-                        notice.value = "This project could not be opened. Check the Gateway and try again."
+                        noticeLine = "This project could not be opened. Check the Gateway and try again."
                     }
                 }
             if (projectLoadingId.value == id) projectLoadingId.value = null
@@ -1750,7 +1808,7 @@ internal class ChatViewModel(
 
     fun createSession() {
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
-            notice.value = "Connect to a Gateway before starting a session."
+            noticeLine = "Connect to a Gateway before starting a session."
             return
         }
         // Session creation can suspend while the Gateway establishes the
@@ -1783,7 +1841,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                notice.value = "A new session could not be started. Check the Gateway and try again."
+                noticeLine = "A new session could not be started. Check the Gateway and try again."
             }
         }
     }
@@ -1791,11 +1849,11 @@ internal class ChatViewModel(
     fun branchFromReply(entryId: String) {
         val sessionId = activeSessionId.value
         if (sessionId == null || repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
-            notice.value = "Nothing to branch. Start or resume a chat before branching."
+            noticeLine = "Nothing to branch. Start or resume a chat before branching."
             return
         }
         if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
-            notice.value = "Session busy. Stop the current turn before branching this chat."
+            noticeLine = "Session busy. Stop the current turn before branching this chat."
             return
         }
 
@@ -1803,7 +1861,7 @@ internal class ChatViewModel(
             try {
                 val authoritativeHistory = repository.fetchSessionHistory(sessionId)
                 if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
-                    notice.value = "Session busy. Stop the current turn before branching this chat."
+                    noticeLine = "Session busy. Stop the current turn before branching this chat."
                     return@launch
                 }
                 if (activeSessionId.value != sessionId) {
@@ -1816,7 +1874,7 @@ internal class ChatViewModel(
                     BranchPlan.Whole -> null
                     is BranchPlan.Keep -> plan.count
                     BranchPlan.Unlocatable -> {
-                        notice.value = "Nothing to branch. This message has no text to branch from."
+                        noticeLine = "Nothing to branch. This message has no text to branch from."
                         return@launch
                     }
                 }
@@ -1842,7 +1900,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                notice.value = "Branch failed. Check the Gateway and try again."
+                noticeLine = "Branch failed. Check the Gateway and try again."
             }
         }
     }
@@ -1854,8 +1912,8 @@ internal class ChatViewModel(
             fun setInterruptNotice(interrupt: GatewayInterruptOutcome) {
                 when (interrupt) {
                     GatewayInterruptOutcome.Interrupted -> Unit
-                    GatewayInterruptOutcome.NeedsInput -> notice.value = "Hermes needs a response. Answer the request above."
-                    else -> notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                    GatewayInterruptOutcome.NeedsInput -> noticeLine = "Hermes needs a response. Answer the request above."
+                    else -> noticeLine = "Hermes could not be stopped. Check the Gateway connection."
                 }
             }
 
@@ -1866,7 +1924,7 @@ internal class ChatViewModel(
                     throw cancelled
                 } catch (_: Throwable) {
                     if (activeSessionId.value == sessionId) {
-                        notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                        noticeLine = "Hermes could not be stopped. Check the Gateway connection."
                     }
                     return false
                 }
@@ -1882,7 +1940,7 @@ internal class ChatViewModel(
 
                 if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
                     if (activeSessionId.value == sessionId) {
-                        notice.value = "Connect to a Gateway before refreshing this reply."
+                        noticeLine = "Connect to a Gateway before refreshing this reply."
                     }
                     return@launch
                 }
@@ -1903,7 +1961,7 @@ internal class ChatViewModel(
                 }
 
                 if (targetRowId == null) {
-                    if (activeSessionId.value == sessionId) notice.value =
+                    if (activeSessionId.value == sessionId) noticeLine =
                         "Refresh could not find this turn in the session history. Reopen the session and try again."
                     return@launch
                 }
@@ -1911,7 +1969,7 @@ internal class ChatViewModel(
                 val sessionStatus = cache.session(sessionId)?.status
                 if (sessionStatus == SessionStatus.NeedsInput) {
                     if (activeSessionId.value == sessionId) {
-                        notice.value = "Hermes needs a response. Answer the request above."
+                        noticeLine = "Hermes needs a response. Answer the request above."
                     }
                     return@launch
                 }
@@ -1932,7 +1990,7 @@ internal class ChatViewModel(
                             retries--
                             if (!interruptForRefresh()) return@launch
                         } else {
-                            if (activeSessionId.value == sessionId) notice.value = "Regenerate failed. Check the Gateway and try again."
+                            if (activeSessionId.value == sessionId) noticeLine = "Regenerate failed. Check the Gateway and try again."
                             break
                         }
                     }
@@ -1940,7 +1998,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                if (activeSessionId.value == sessionId) notice.value = "Regenerate failed. Check the Gateway and try again."
+                if (activeSessionId.value == sessionId) noticeLine = "Regenerate failed. Check the Gateway and try again."
             }
         }
     }
@@ -1952,7 +2010,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
-                notice.value = e.message ?: "Rename failed. Check the Gateway and try again."
+                noticeLine = e.message ?: "Rename failed. Check the Gateway and try again."
             }
         }
     }
@@ -1968,7 +2026,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
-                notice.value = e.message ?: "Delete failed. Check the Gateway and try again."
+                noticeLine = e.message ?: "Delete failed. Check the Gateway and try again."
             }
         }
     }
@@ -1978,7 +2036,7 @@ internal class ChatViewModel(
         if (activeSessionId.value == id) {
             startFreshSessionInScope()
         }
-        notice.value = "Session deleted"
+        noticeLine = "Session deleted"
     }
 
     /**
@@ -2073,7 +2131,7 @@ internal class ChatViewModel(
                 // byte the Gateway wrote (`GatewayRestClient.kt:103-110`). A
                 // parse or state failure would put an implementation sentence in
                 // a slot that is product-facing, so it gets the fallback.
-                notice.value = (e as? GatewayRpcException)?.message?.takeIf(String::isNotBlank)
+                noticeLine = (e as? GatewayRpcException)?.message?.takeIf(String::isNotBlank)
                     ?: ARCHIVED_LOAD_FAILED
             }
         }
@@ -2129,7 +2187,7 @@ internal class ChatViewModel(
                     failed++
                 }
             }
-            if (failed > 0) notice.value = "$UNREAD_FAILED for $failed of ${ids.size} chats."
+            if (failed > 0) noticeLine = "$UNREAD_FAILED for $failed of ${ids.size} chats."
         }
     }
 
@@ -2152,7 +2210,7 @@ internal class ChatViewModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            notice.value = e.message ?: fallback
+            noticeLine = e.message ?: fallback
         }
     }
 
@@ -2164,7 +2222,7 @@ internal class ChatViewModel(
         invalidateComposerRuntimeState()
         invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
-        notice.value = null
+        noticeLine = null
         id?.let(::markRead)
         id?.let(::drainQueueIfIdle)
         if (id == null) refreshComposer(null)
@@ -2230,16 +2288,16 @@ internal class ChatViewModel(
         // authoritative status gates its send — other sessions' turns never do.
         val activeIsIdle = cache.session(sessionId)?.status == SessionStatus.Idle
         if (pending.any { it.stage is AttachmentStage.Reading || it.stage is AttachmentStage.Staging }) {
-            notice.value = "Still reading an attachment — try again in a moment."
+            noticeLine = "Still reading an attachment — try again in a moment."
             return
         }
         pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.ReviewRequired)?.safeMessage }?.let { warning ->
-            notice.value = warning
+            noticeLine = warning
             return
         }
         val refusalWarning = pending.firstNotNullOfOrNull { (it.stage as? AttachmentStage.Refused)?.safeMessage }
         refusalWarning?.let { refusal ->
-            notice.value = refusal
+            noticeLine = refusal
         }
         // A locally refused chip is skipped, not fatal: the rest of the
         // payload (typed text, healthy chips) still sends. A review-required
@@ -2251,7 +2309,7 @@ internal class ChatViewModel(
         // fails the whole send before the draft is cleared.
         val readyPayloads = ready.map { draft ->
             val payload = attachmentPayloads[draft.occurrenceId] ?: run {
-                notice.value = "That attachment is no longer available. Remove it and attach it again."
+                noticeLine = "That attachment is no longer available. Remove it and attach it again."
                 return
             }
             draft to payload
@@ -2288,7 +2346,7 @@ internal class ChatViewModel(
             }
         }
         clearDraftAfterDelivery(sessionId)
-        notice.value = refusalWarning
+        noticeLine = refusalWarning
         viewModelScope.launch {
             try {
                 val result = repository.submit(
@@ -2315,7 +2373,7 @@ internal class ChatViewModel(
                     }
                     GatewaySubmitOutcome.Ambiguous -> {
                         markAttachmentsReviewRequired(sessionId, submittedPrompt)
-                        notice.value = "This message may have been sent. Check this session and wait for Hermes before trying again."
+                        noticeLine = "This message may have been sent. Check this session and wait for Hermes before trying again."
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -2332,10 +2390,32 @@ internal class ChatViewModel(
                 // Stage refusals arrive as GatewayRpcException whose message is
                 // already sanitized for people; anything else stays generic.
                 val safe = rpcFailure?.message?.takeIf(String::isNotBlank)
-                notice.value = if (ambiguous) {
-                    safe ?: "This message may have been sent. Check this session before trying again."
-                } else {
-                    safe ?: "The message was not sent. Reconnect to the Gateway and try again."
+                // A live-owner refusal is the one failure where the generic
+                // sentence is actively wrong: the Gateway is fine, reconnecting
+                // changes nothing, and trying again fails the same way for as
+                // long as the other surface holds the lease. So it is also the
+                // one notice that carries an action — upstream's answer is an
+                // explicit escape rather than a retry (`6efe3a45c1`), and this
+                // is the last place that knows *why* the send bounced, so the
+                // classification and the escape are attached in the same write.
+                // Every other write here goes through `noticeLine`, which means
+                // the next notice of any kind takes this escape away with it.
+                //
+                // The escape is also fenced on the composer still being homed
+                // where the refusal happened. A switch already clears the
+                // notice through `rehome`, but this reply can land *after* that
+                // — and an escape that appears in a session nobody asked about
+                // would start a chat out of nowhere. Where the sentence itself
+                // belongs in that race is the same foreground-isolation
+                // question the two branches below have always had, and is not
+                // this change's to answer.
+                val stillHomed = activeSessionId.value == sessionId
+                notice.value = when {
+                    failure.isSessionNotOwned() ->
+                        ChatNotice(NOT_OWNED_NOTICE, ChatNoticeAction.StartNewSession.takeIf { stillHomed })
+                    ambiguous ->
+                        ChatNotice(safe ?: "This message may have been sent. Check this session before trying again.")
+                    else -> ChatNotice(safe ?: "The message was not sent. Reconnect to the Gateway and try again.")
                 }
                 if (!ambiguous) restoreSubmittedDraft(sessionId, submittedPrompt)
             }
@@ -2392,7 +2472,7 @@ internal class ChatViewModel(
     fun addAttachmentFromGrant(uriString: String, displayName: String, claimedMime: String?) {
         val sessionId = activeSessionId.value ?: return
         if (attachments.value.count { it.durableSessionId == sessionId } >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) {
-            notice.value = "That is more attachments than one message can carry."
+            noticeLine = "That is more attachments than one message can carry."
             return
         }
         // Reserve the per-item cap for every in-flight read so N simultaneous
@@ -2428,7 +2508,7 @@ internal class ChatViewModel(
                     // The optimistic reservation bounds concurrent picks; the
                     // exact check keeps a single honest pick from refusing.
                     if (reservedBytes + result.bytes.size > AttachmentPolicy.MAX_TOTAL_BYTES) {
-                        notice.value = "Attachments for one message can total at most 16 MB."
+                        noticeLine = "Attachments for one message can total at most 16 MB."
                         updateAttachment(occurrenceId) {
                             it.copy(stage = AttachmentStage.Refused(
                                 "Adding this file would pass 16 MB. Remove one first.",
@@ -2509,7 +2589,7 @@ internal class ChatViewModel(
                         if (result is TranscriptionResult.Transcript && activeSessionId.value == sessionId) {
                             insertTextAtCursor(result.text)
                         } else if (result is TranscriptionResult.Silence && activeSessionId.value == sessionId) {
-                            notice.value = "No speech detected. Try again."
+                            noticeLine = "No speech detected. Try again."
                         }
                     }
                 }
@@ -2553,14 +2633,14 @@ internal class ChatViewModel(
             } catch (e: VoiceTransportException) {
                 if (readAloudOwns(entryId)) {
                     readAloudState.value = ReadAloudUiState.Idle
-                    notice.value = "Read aloud failed. ${e.safeMessage}"
+                    noticeLine = "Read aloud failed. ${e.safeMessage}"
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
                 if (readAloudOwns(entryId)) {
                     readAloudState.value = ReadAloudUiState.Idle
-                    notice.value = "Read aloud failed. Check the Gateway and try again."
+                    noticeLine = "Read aloud failed. Check the Gateway and try again."
                 }
             }
         }
@@ -2577,7 +2657,7 @@ internal class ChatViewModel(
         if (voice.value is VoiceUiState.DictationTranscribing || voice.value is VoiceUiState.DictationRecording) {
             voice.value = VoiceUiState.Idle
         }
-        notice.value = message
+        noticeLine = message
     }
 
     /** Engine hook: publish the live capture meter for the recording state. */
@@ -2602,7 +2682,7 @@ internal class ChatViewModel(
             return
         }
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
-            notice.value = "Connect to a Gateway before starting a voice conversation."
+            noticeLine = "Connect to a Gateway before starting a voice conversation."
             return
         }
         voice.value = VoiceUiState.Conversation(VoiceUiState.ConversationPhase.Listening, muted = false)
@@ -2682,9 +2762,9 @@ internal class ChatViewModel(
                     invalidateHistory()
                     drainQueueIfIdle(sessionId)
                 }
-                ComposerQueueMutation.CapacityReached -> notice.value = "The queue is full. Send, edit, or remove a queued message."
-                ComposerQueueMutation.StorageUnavailable -> notice.value = "This message could not be queued. Keep it in the editor and try again."
-                else -> notice.value = "This message could not be queued. Keep it in the editor and try again."
+                ComposerQueueMutation.CapacityReached -> noticeLine = "The queue is full. Send, edit, or remove a queued message."
+                ComposerQueueMutation.StorageUnavailable -> noticeLine = "This message could not be queued. Keep it in the editor and try again."
+                else -> noticeLine = "This message could not be queued. Keep it in the editor and try again."
             }
         }
     }
@@ -2733,13 +2813,13 @@ internal class ChatViewModel(
                 clearDraftAfterDelivery(sessionId)
                 composerHistoryController.reset(sessionId)
                 invalidateHistory()
-                notice.value = if (ambiguous) {
+                noticeLine = if (ambiguous) {
                     "This correction may have reached Hermes. Review the queued copy before sending it."
                 } else {
                     "Hermes did not accept that correction, so it was added to this session's queue."
                 }
             }
-            else -> notice.value = "Hermes did not accept that correction. It remains in the editor."
+            else -> noticeLine = "Hermes did not accept that correction. It remains in the editor."
         }
     }
 
@@ -2748,7 +2828,7 @@ internal class ChatViewModel(
         // Authoritative cache truth, not the possibly stale projected kind:
         // an explicit Stop must never cancel a required-input turn.
         if (cache.session(sessionId)?.status == SessionStatus.NeedsInput) {
-            notice.value = "Hermes needs a response. Answer the request above."
+            noticeLine = "Hermes needs a response. Answer the request above."
             return
         }
         val hadGatewayQueue = cache.session(sessionId)
@@ -2762,17 +2842,17 @@ internal class ChatViewModel(
                 when (repository.requestInterrupt(sessionId)) {
                     com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> {
                         if (hadGatewayQueue) {
-                            notice.value = "Stopped. Any queued next-turn messages were discarded with the turn."
+                            noticeLine = "Stopped. Any queued next-turn messages were discarded with the turn."
                         }
                     }
                     com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.NeedsInput ->
-                        notice.value = "Hermes needs a response. Your queue remains parked."
-                    else -> notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                        noticeLine = "Hermes needs a response. Your queue remains parked."
+                    else -> noticeLine = "Hermes could not be stopped. Check the Gateway connection."
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                notice.value = "Hermes could not be stopped. Check the Gateway connection."
+                noticeLine = "Hermes could not be stopped. Check the Gateway connection."
             }
         }
     }
@@ -2791,7 +2871,7 @@ internal class ChatViewModel(
             val state = uiState.value
             when (state.composer.runtime.busyKind) {
                 ComposerBusyKind.NeedsInput -> {
-                    notice.value = "Hermes needs a response before queued messages can continue."
+                    noticeLine = "Hermes needs a response before queued messages can continue."
                 }
                 else -> {
                     composerQueueController.resume(sessionId)
@@ -2817,15 +2897,15 @@ internal class ChatViewModel(
                         .onFailure { if (it is CancellationException) throw it }
                         .isSuccess
                     if (!refreshed) {
-                        notice.value = "Hermes could not switch to that queued message. Try again."
+                        noticeLine = "Hermes could not switch to that queued message. Try again."
                         return
                     }
                     if (isSessionIdle(sessionId)) {
                         when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isIdle = true)) {
                             ComposerQueueDrainResult.Ambiguous,
                             ComposerQueueDrainResult.ReviewRequired,
-                            -> notice.value = "Review that queued message before sending it again."
-                            ComposerQueueDrainResult.StoreUnavailable -> notice.value = "The queue could not be updated. Try again."
+                            -> noticeLine = "Review that queued message before sending it again."
+                            ComposerQueueDrainResult.StoreUnavailable -> noticeLine = "The queue could not be updated. Try again."
                             else -> Unit
                         }
                         return
@@ -2839,23 +2919,23 @@ internal class ChatViewModel(
                                 when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isSessionIdle(sessionId))) {
                                     ComposerQueueDrainResult.Ambiguous,
                                     ComposerQueueDrainResult.ReviewRequired,
-                                    -> notice.value = "Review that queued message before sending it again."
-                                    ComposerQueueDrainResult.StoreUnavailable -> notice.value = "The queue could not be updated. Try again."
+                                    -> noticeLine = "Review that queued message before sending it again."
+                                    ComposerQueueDrainResult.StoreUnavailable -> noticeLine = "The queue could not be updated. Try again."
                                     else -> Unit
                                 }
                             }
-                            else -> notice.value = "Hermes could not switch to that queued message. Try again."
+                            else -> noticeLine = "Hermes could not switch to that queued message. Try again."
                         }
-                        else -> notice.value = "That queued message is no longer available."
+                        else -> noticeLine = "That queued message is no longer available."
                     }
                 }
             ComposerBusyKind.Background ->
-                notice.value = "Hermes is still working. This queued message will be ready when it is idle."
+                noticeLine = "Hermes is still working. This queued message will be ready when it is idle."
             else -> when (composerQueueController.sendNextWhenIdle(sessionId, entryId, isSessionIdle(sessionId))) {
                 ComposerQueueDrainResult.Ambiguous,
                 ComposerQueueDrainResult.ReviewRequired,
-                -> notice.value = "Review that queued message before sending it again."
-                ComposerQueueDrainResult.StoreUnavailable -> notice.value = "The queue could not be updated. Try again."
+                -> noticeLine = "Review that queued message before sending it again."
+                ComposerQueueDrainResult.StoreUnavailable -> noticeLine = "The queue could not be updated. Try again."
                 else -> Unit
             }
         }
@@ -2873,17 +2953,17 @@ internal class ChatViewModel(
                     -> composerQueueController.remove(sessionId, entryId)
                     GatewayRedirectOutcome.Ambiguous -> {
                         composerQueueController.markAmbiguous(sessionId, entryId)
-                        notice.value = "This correction may have reached Hermes. Review it before sending again."
+                        noticeLine = "This correction may have reached Hermes. Review it before sending again."
                     }
                     GatewayRedirectOutcome.Rejected,
                     GatewayRedirectOutcome.Unsupported,
                     GatewayRedirectOutcome.Failed,
-                    -> notice.value = "Hermes did not accept that correction. It remains in this queue."
+                    -> noticeLine = "Hermes did not accept that correction. It remains in this queue."
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                notice.value = "Hermes did not accept that correction. It remains in this queue."
+                noticeLine = "Hermes did not accept that correction. It remains in this queue."
             }
         }
     }
@@ -2919,7 +2999,7 @@ internal class ChatViewModel(
         viewModelScope.launch {
             when (composerQueueController.saveEdit(snapshot, text)) {
                 ComposerQueueMutation.Applied -> finishQueueEdit(resetDraft = null)
-                else -> notice.value = "That queued message could not be saved. Try again."
+                else -> noticeLine = "That queued message could not be saved. Try again."
             }
         }
     }
@@ -2935,7 +3015,7 @@ internal class ChatViewModel(
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
             if (composerQueueController.markReadyAfterReview(sessionId, entryId) == ComposerQueueMutation.Applied) {
-                notice.value = "That queued message is ready when you choose Send next."
+                noticeLine = "That queued message is ready when you choose Send next."
             }
         }
     }
@@ -3018,7 +3098,7 @@ internal class ChatViewModel(
                 if (!queueScopeReady.value || !isSessionIdle(sessionId)) return@launch
                 when (composerQueueController.drainIfIdle(sessionId, isIdle = true)) {
                     ComposerQueueDrainResult.StoreUnavailable -> if (activeSessionId.value == sessionId) {
-                        notice.value = "The queue could not be updated. Try again."
+                        noticeLine = "The queue could not be updated. Try again."
                     }
                     else -> Unit
                 }
@@ -3041,7 +3121,7 @@ internal class ChatViewModel(
         viewModelScope.launch {
             when (repository.goalStatus(sessionId)) {
                 GatewayGoalStatusOutcome.Failed -> if (activeSessionId.value == sessionId) {
-                    notice.value = "Goal status could not be refreshed. Try again."
+                    noticeLine = "Goal status could not be refreshed. Try again."
                 }
                 else -> Unit
             }
@@ -3176,7 +3256,7 @@ internal class ChatViewModel(
         viewModelScope.launch {
             when (repository.listProcesses(sessionId)) {
                 GatewayProcessListOutcome.Failed -> if (showFailure && activeSessionId.value == sessionId) {
-                    notice.value = "Background work could not be refreshed. Try again."
+                    noticeLine = "Background work could not be refreshed. Try again."
                 }
                 else -> Unit
             }
@@ -3192,10 +3272,10 @@ internal class ChatViewModel(
                 GatewayProcessKillOutcome.Failed,
                 GatewayProcessKillOutcome.Ambiguous,
                 -> if (activeSessionId.value == sessionId) {
-                    notice.value = "Background work could not be stopped. Try again."
+                    noticeLine = "Background work could not be stopped. Try again."
                 }
                 GatewayProcessKillOutcome.Unsupported -> if (activeSessionId.value == sessionId) {
-                    notice.value = "This Gateway cannot stop background work."
+                    noticeLine = "This Gateway cannot stop background work."
                 }
             }
         }
@@ -3246,7 +3326,7 @@ internal class ChatViewModel(
             throw cancelled
         } catch (_: Throwable) {
             if (activeSessionId.value == id) {
-                notice.value = "This session could not be opened. Check the Gateway and try again."
+                noticeLine = "This session could not be opened. Check the Gateway and try again."
             }
         }
     }
@@ -3519,7 +3599,7 @@ internal class ChatViewModel(
 
     private data class NavigationState(
         val connection: GatewayConnectionState,
-        val notice: String?,
+        val notice: ChatNotice?,
         val projectId: String?,
         val loadingProjectId: String?,
         val sidebarView: SidebarViewState,
@@ -3710,3 +3790,18 @@ private const val ARCHIVED_LOAD_FAILED = "Could not load archived chats. Check t
  * app says which action did not stick and what to do next.
  */
 private const val MODEL_VISIBILITY_NOT_SAVED = "That model list could not be saved. Try again."
+
+/**
+ * What a live-owner refusal says.
+ *
+ * Deliberately not "reconnect and try again", which is what this used to say
+ * and is wrong twice over: the Gateway is answering, and retrying fails
+ * identically for as long as the other surface holds the lease. The line names
+ * the escape because on this surface the line *is* the escape — the status
+ * action beside it has no label of its own to read.
+ *
+ * Internal rather than private so the screen's own test and the ViewModel's
+ * can name the same sentence instead of copying it; nothing decides anything
+ * by comparing against it (see [ChatNotice]).
+ */
+internal const val NOT_OWNED_NOTICE = "Another Hermes has this session open. Start a new session to send here."

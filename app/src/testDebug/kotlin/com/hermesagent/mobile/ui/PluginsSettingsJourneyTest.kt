@@ -1,7 +1,9 @@
 package com.hermesagent.mobile.ui
 
 import androidx.compose.material3.Text
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -10,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.HermesPlugin
 import com.hermesagent.mobile.plugins.PluginAreas
@@ -25,8 +28,11 @@ import com.hermesagent.mobile.plugins.PluginRestResult
 import com.hermesagent.mobile.plugins.PluginSocket
 import com.hermesagent.mobile.plugins.PluginStore
 import com.hermesagent.mobile.ui.chat.ChatUiState
+import com.hermesagent.mobile.ui.common.WIP_PILL
+import com.hermesagent.mobile.ui.common.WIP_SPOKEN
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
 import com.hermesagent.mobile.ui.settings.PluginsCopy
+import com.hermesagent.mobile.ui.settings.PLUGINS_AGENT_HALF_TAG
 import com.hermesagent.mobile.ui.settings.PLUGINS_TITLE_TAG
 import com.hermesagent.mobile.ui.settings.pluginRowTag
 import com.hermesagent.mobile.ui.settings.pluginToggleTag
@@ -154,6 +160,61 @@ class PluginsSettingsJourneyTest {
         compose.onNodeWithTag(PLUGINS_TITLE_TAG).assertIsDisplayed()
         compose.onNodeWithTag(pluginToggleTag(TEST_PLUGIN_ID)).assertIsOff()
         assertEquals(0, registry.getArea(PluginAreas.ROUTES_AREA).size)
+    }
+
+    /**
+     * Desktop's *second* half, marked rather than omitted.
+     *
+     * `apps/desktop/src/app/skills/plugins-tab.tsx:305-352` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a` gives every package an Agent
+     * switch scoped to the profile selector, backed by `plugins.manage` over
+     * the gateway. That is a backend call, not the disk door
+     * `docs/adr/0003-bundled-plugin-sdk.md` rules out, so it is a half this app
+     * has not built (#234) rather than one it will never have — and an unbuilt
+     * control ships disabled behind the marker, because omitting it would claim
+     * the surface was never meant to have an agent half.
+     */
+    @Test
+    fun `the agent half ships marked and disabled rather than omitted`() = runTest {
+        val pluginStore = pluginStore(testScheduler)
+        val registry = ContributionRegistry()
+        val loader = pluginLoader(registry, pluginStore)
+        loader.discover(listOf(TestPlugin()))
+
+        compose.setContent {
+            HermesApp(
+                chatState = ChatUiState(),
+                gatewayState = GatewaySettingsUiState(),
+                sshState = SshUiState(),
+                appearance = AppearanceSelection(),
+                chatActions = ChatActions(),
+                appearanceActions = AppearanceActions(),
+                gatewayActions = GatewayActions(),
+                sshActions = SshActions(),
+                pluginRegistry = registry,
+                pluginStore = pluginStore,
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Open settings").performClick()
+        compose.onNodeWithTag(PLUGINS_ROW).performClick()
+
+        // One spoken node saying the whole phrase once: Desktop's title, this
+        // app's adaptation of its blurb, then the marker.
+        // `assertContentDescriptionEquals` rather than the finder's own `any { }`
+        // match, so the switch naming itself into the merge would fail here.
+        val spoken = "${PluginsCopy.AGENT_TITLE}. ${PluginsCopy.AGENT_BLURB} $WIP_SPOKEN"
+        compose.onNodeWithTag(PLUGINS_AGENT_HALF_TAG).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(PLUGINS_AGENT_HALF_TAG).assertIsNotEnabled()
+        compose.onNodeWithTag(PLUGINS_AGENT_HALF_TAG).assertContentDescriptionEquals(spoken)
+
+        // The chip is what separates "not built" from "unavailable right now".
+        compose.onNodeWithTag(WIP_PILL, useUnmergedTree = true).assertIsDisplayed()
+
+        // The app half above it is still live, so the marker qualifies one
+        // section rather than the page.
+        compose.onNodeWithTag(pluginToggleTag(TEST_PLUGIN_ID)).assertIsOn()
     }
 
     private companion object {

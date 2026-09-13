@@ -43,7 +43,7 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         val builder = builder(post.kind, post.durableSessionId, post.title, post.body, post.preview)
 
         post.approval?.let { target ->
-            for (choice in shadeApprovalChoices(target.choices)) {
+            for (choice in shadeApprovalChoices(target.choices).filter(::isShadeActionSupportedOnDevice)) {
                 builder.addAction(approvalAction(target, choice))
             }
         }
@@ -111,6 +111,10 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         }
         return action.build()
     }
+
+    /** API 26-30 cannot require an unlock before a persistent grant fires. */
+    private fun isShadeActionSupportedOnDevice(choice: String): Boolean =
+        !isPersistentGrant(choice) || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     /**
      * A free-text answer, typed in the shade.
@@ -375,4 +379,3 @@ const val EXTRA_QUESTION_ID: String = "com.hermesagent.mobile.notifications.extr
 
 /** Both the button's fixed answer and the key `RemoteInput` writes under. */
 const val EXTRA_ANSWER: String = "com.hermesagent.mobile.notifications.extra.ANSWER"
-

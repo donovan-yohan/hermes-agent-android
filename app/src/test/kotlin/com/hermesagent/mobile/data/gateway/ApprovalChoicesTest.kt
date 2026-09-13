@@ -55,21 +55,17 @@ class ApprovalChoicesTest {
         )
     }
 
-    /** Android draws three; anything else added is present and never seen. */
+    /** Android draws three; supported values are selected before the limit is applied. */
     @Test
     fun `never more than the shade can render`() {
         val offered = listOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWAYS, APPROVAL_DENY, "escalate")
         assertEquals(MAX_SHADE_ACTIONS, shadeApprovalChoices(offered).size)
     }
 
-    /**
-     * An unknown choice is the one a person is least able to judge from a
-     * shade, so it is offered only when the known ones left room.
-     */
     @Test
-    fun `an unknown choice rides along only when there is room`() {
+    fun `an unknown choice is omitted because the shade receiver cannot send it`() {
         assertEquals(
-            listOf(APPROVAL_ONCE, "escalate"),
+            listOf(APPROVAL_ONCE),
             shadeApprovalChoices(listOf(APPROVAL_ONCE, "escalate")),
         )
     }

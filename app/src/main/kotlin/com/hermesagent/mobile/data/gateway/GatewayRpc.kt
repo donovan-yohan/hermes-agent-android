@@ -77,6 +77,17 @@ internal class GatewayRpcException(
 internal class GatewayRpcError(
     val code: Int?,
     override val message: String,
+    /**
+     * `error.data.reason`, when the Gateway sent one.
+     *
+     * The refusal this exists for ships as machine data — `prompt.submit`
+     * answers JSON-RPC 4090 with `data.reason = SESSION_NOT_OWNED`
+     * (`apps/desktop/.../use-message-stream/submit.ts` @ `564aef2946`).
+     * Desktop matched the English sentence first and then removed that, for
+     * the reason this app should never add it: prose "would silently miss a
+     * reworded or localized message".
+     */
+    val reason: String? = null,
 ) : Exception(message)
 
 /** The small wire seam needed to prove correlation and close behavior offline. */
@@ -211,6 +222,7 @@ internal class CorrelatedGatewayRpc(
                         GatewayRpcError(
                             code = (error["code"] as? JsonPrimitive)?.content?.toIntOrNull(),
                             message = error.string("message") ?: "The gateway rejected the request.",
+                            reason = (error["data"] as? JsonObject)?.string("reason"),
                         ),
                     )
                 }

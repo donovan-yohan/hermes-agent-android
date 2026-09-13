@@ -346,6 +346,28 @@ lifecycle.
 - Custom Desktop themes and the final physical TalkBack, large-font, reduced
   motion, orientation, and keyboard matrix remain open.
 
+> **Upstream pin moved to `564aef2946` (2026-09-10).** 501 commits past
+> `72a3277cd7`. Nothing on the wire changed shape: all 32 JSON-RPC methods this
+> app calls and all 22 event types it reads still exist at the new SHA, and
+> `apps/shared/src/json-rpc-gateway.ts` changed only by extracting its
+> `ws:`/`wss:` check into `isGatewayWebSocketUrl` — the same behaviour under a
+> name. Themes are untouched: `apps/desktop/src/themes/presets.ts` is
+> byte-identical across the range, and every `styles.css` span the token ledger
+> cites is identical line for line.
+>
+> What did move is Desktop's UX, and that is the reason for the bump rather than
+> an aside. `docs/spikes/upstream-ux-sync-2026-09-12.md` classifies nine changes
+> and files seven (#220-#227): the largest is a vault whose three new prompt
+> kinds park a turn this app cannot render, and two shipped with the audit.
+>
+> The tree stays mixed-pin, by the rule #195 set. A stamp moved only where every
+> citation under it was proved byte-true at the new SHA, line for line: 51 files,
+> 81 stamps. Sixty-three stayed at `72a3277cd7` with their line numbers
+> untouched — 32 because a cited span genuinely moved, and 31 because this pass
+> could not attribute a bare `:NNN` continuation to its file mechanically and
+> would not guess. The older `3ca096de` stamps #195 left behind are untouched and
+> remain #196's.
+
 > **Upstream pin moved to `72a3277cd7` (2026-09-08).** Nothing the app speaks to
 > the Gateway changed shape: every JSON-RPC method, every subscribed event
 > payload, every REST route, the native PKCE flow, the Managed-SSH ownership

@@ -193,19 +193,57 @@ class AndroidNotificationSurfaceTest {
         )
     }
 
+    @Test
+    @Config(sdk = [30], application = Application::class)
+    fun `API 30 omits persistent approval grants because it cannot authenticate them`() {
+        AndroidNotificationSurface(context).post(approvalPost())
+
+        val choices = posted(NotificationKind.Approval, SESSION).actions
+            .map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+        assertEquals(listOf(APPROVAL_ONCE, APPROVAL_DENY), choices)
+        assertFalse(APPROVAL_SESSION in choices)
+        assertFalse(APPROVAL_ALWAYS in choices)
+    }
+
+    @Test
+    fun `an unsupported approval choice is omitted rather than rendered as a rejected action`() {
+        AndroidNotificationSurface(context).post(
+            approvalPost().let { post ->
+                post.copy(approval = post.approval!!.copy(choices = listOf(APPROVAL_ONCE, "escalate", APPROVAL_DENY)))
+            },
+        )
+
+        val choices = posted(NotificationKind.Approval, SESSION).actions
+            .map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+        assertEquals(listOf(APPROVAL_ONCE, APPROVAL_DENY), choices)
+        assertFalse("escalate" in choices)
+    }
+
     /**
      * The gate that makes a persistent grant safe to offer from a shade at all:
      * Android refuses to fire the intent until the device is unlocked.
      */
     @Test
-    fun `a persistent grant demands the device be unlocked`() {
-        AndroidNotificationSurface(context).post(approvalPost())
+    @Config(sdk = [31], application = Application::class)
+    fun `persistent grants demand the device be unlocked`() {
+        val surface = AndroidNotificationSurface(context)
+        surface.post(approvalPost())
 
         val actions = posted(NotificationKind.Approval, SESSION).actions
         val byChoice = actions.associateBy { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
         assertTrue(byChoice.getValue(APPROVAL_ALWAYS).isAuthenticationRequired)
         assertFalse(byChoice.getValue(APPROVAL_ONCE).isAuthenticationRequired)
         assertFalse(byChoice.getValue(APPROVAL_DENY).isAuthenticationRequired)
+
+        surface.post(
+            approvalPost().let { post ->
+                post.copy(approval = post.approval!!.copy(choices = listOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_DENY)))
+            },
+        )
+        val sessionAction = posted(NotificationKind.Approval, SESSION).actions
+            .associateBy { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+            .getValue(APPROVAL_SESSION)
+        assertTrue(sessionAction.isAuthenticationRequired)
     }
 
     @Test
