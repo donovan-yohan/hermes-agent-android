@@ -626,6 +626,43 @@ class BotsViewModelTest {
     }
 
     @Test
+    fun `endpoint switch clears a lookup spinner and message before late bot callbacks`() = runTest {
+        val lookupGate = CompletableDeferred<Unit>()
+        val host = object : PluginHost {
+            override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+                if (method == "session.list") lookupGate.await()
+                return PluginHostResult.Success(
+                    Json.parseToJsonElement("""{"sessions":[{"title":"Bot Chat","id":"bot-chat"}]}"""),
+                )
+            }
+
+            override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
+        }
+        val endpoint = MutableStateFlow(0L)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            endpointGeneration = endpoint,
+        )
+        val row = BotRosterRow(name = "researcher")
+        viewModel.openBotChat(row) { _, _, finished -> finished(false) }
+        runCurrent()
+        assertEquals(row.rosterKey, viewModel.uiState.value.openingBotKey)
+
+        endpoint.value = 1L
+        runCurrent()
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+        assertNull(viewModel.uiState.value.openingBotKey)
+        assertNull(viewModel.uiState.value.botChatMessage)
+
+        lookupGate.complete(Unit)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.openingBotKey)
+        assertNull(viewModel.uiState.value.botChatMessage)
+    }
+
+    @Test
     fun `a gateway without profiles dot list is its own state`() = runTest {
         val host = ScriptedHost(PluginHostResult.UnavailableOnGateway)
         val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })

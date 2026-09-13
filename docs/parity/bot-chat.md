@@ -16,7 +16,7 @@ Every source location below is against that exact revision.
 | Row activation | `apps/desktop/src/plugins/hermes-bots/bot-row.tsx:210` | `BotsRosterScreen` row tap → `BotsViewModel.openBotChat`; duplicate taps are held by the row loading key |
 | Resume profile | `tui_gateway/methods_session.py:324-330` | `GatewaySessionRepository.openSession(durableId, profile)` is explicit; `GatewayProfileRoutingTest` asserts the exact `session.resume` object for an uncached hidden row |
 | Missing/refused result | `canonical-chat.ts:151-205` | no `session.create`; roster stays present with `No Bot Chat is available for this bot yet.` or `Bot Chat could not be opened. Check the Gateway and try again.` The row remains actionable for retry |
-| Phase-A composition boundary | Issue #190 | `ChatViewModel` centrally refuses submit, queue, redirect, send-next, regenerate, branch and create while the opened canonical session is read-only |
+| Phase-A composition boundary | Issue #190 | `ChatViewModel` centrally refuses submit, queue, redirect, send-next, regenerate and branch while the opened canonical session is read-only; the explicit New Chat escape clears that marker before `session.create` |
 
 ## Copy and navigation
 
@@ -42,6 +42,6 @@ an endpoint change clears it before any old durable id can be reused.
 - pending: #190
 
 No rendered Desktop/Android side-by-side was captured in this change. This is
-explicitly pending evidence, not a pixel-parity claim. A separately owned visual
-capture issue should replace `#190` before reviewer sign-off; no such issue was
-created here because this task does not permit GitHub changes.
+explicitly pending evidence, not a pixel-parity claim. A parent may create a
+separate visual-capture issue after this code change and replace `#190` before
+reviewer sign-off.

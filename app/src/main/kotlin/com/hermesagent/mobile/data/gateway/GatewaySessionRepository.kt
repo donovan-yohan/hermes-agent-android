@@ -1992,7 +1992,10 @@ internal class LiveGatewaySessionRepository(
 
     override suspend fun openSession(durableId: String): String = openSessionInternal(durableId, null)
 
-    override suspend fun openSession(durableId: String, profile: String): String = openSessionInternal(durableId, profile)
+    override suspend fun openSession(durableId: String, profile: String): String {
+        require(profile.isNotBlank()) { "A profile is required to resume this session." }
+        return openSessionInternal(durableId, profile.trim())
+    }
 
     private suspend fun openSessionInternal(durableId: String, explicitProfile: String?): String = navigationMutex.withLock {
         val connection = connectionSnapshot()

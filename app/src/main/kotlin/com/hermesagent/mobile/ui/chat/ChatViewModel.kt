@@ -1821,32 +1821,57 @@ internal class ChatViewModel(
     fun openReadOnlyBotChat(profile: String, durableId: String, onFinished: (Boolean) -> Unit) {
         val generation = ++navigationGeneration
         val endpoint = connectionGeneration()
+        val previousActiveId = activeSessionId.value
         flushDraft()
         readOnlyBotSessionId = durableId
         rehome(durableId)
         viewModelScope.launch {
+            var finished = false
+            fun finish(opened: Boolean) {
+                if (!finished) {
+                    finished = true
+                    onFinished(opened)
+                }
+            }
+
+            fun stillOwnsRequest(): Boolean =
+                generation == navigationGeneration &&
+                    endpoint == connectionGeneration() &&
+                    activeSessionId.value == durableId
+
             try {
                 val canonicalId = repository.openSession(durableId, profile)
-                if (generation != navigationGeneration || endpoint != connectionGeneration() || activeSessionId.value != durableId) {
+                if (!stillOwnsRequest()) {
+                    // The current request still completes, but an intervening
+                    // navigation or endpoint owns the screen now.
+                    finish(false)
                     return@launch
                 }
                 adoptCanonicalSession(durableId, canonicalId)
                 readOnlyBotSessionId = canonicalId
-                onFinished(true)
+                finish(true)
             } catch (cancelled: CancellationException) {
+                if (stillOwnsRequest()) {
+                    readOnlyBotSessionId = null
+                    rehome(previousActiveId)
+                }
+                finish(false)
                 throw cancelled
             } catch (_: Throwable) {
-                if (generation == navigationGeneration && endpoint == connectionGeneration() && activeSessionId.value == durableId) {
+                if (stillOwnsRequest()) {
                     readOnlyBotSessionId = null
-                    rehome(null)
-                    onFinished(false)
+                    // The Bot Chat has not become the active chat unless its
+                    // resume succeeded. Restore the regular chat it replaced.
+                    rehome(previousActiveId)
                 }
+                finish(false)
             }
         }
     }
 
     fun createSession() {
-        if (refuseReadOnlyMutation()) return
+        // This is the person's explicit escape from a transcript-only Bot
+        // Chat, not a Bot-open side effect. Clear first so New Chat is usable.
         readOnlyBotSessionId = null
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
             noticeLine = "Connect to a Gateway before starting a session."

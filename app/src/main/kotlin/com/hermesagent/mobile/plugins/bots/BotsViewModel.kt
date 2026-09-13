@@ -510,7 +510,16 @@ class BotsViewModel(
         val now = clock()
         _uiState.update { state ->
             derivedState(
-                from = state.copy(safeMessage = null, attentionByKey = emptyMap()),
+                // An endpoint switch invalidates the operation as well as its
+                // rows. Do not carry a prior Gateway's spinner or result into
+                // the new endpoint through derivedState's otherwise useful
+                // presentation copy.
+                from = state.copy(
+                    safeMessage = null,
+                    attentionByKey = emptyMap(),
+                    openingBotKey = null,
+                    botChatMessage = null,
+                ),
                 // A switch invalidates even a terminal answer from the old
                 // endpoint, so start the new one from Loading explicitly.
                 whenEmpty = BotsRosterPhase.Loading,

@@ -1189,6 +1189,24 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `failed Bot Chat resume restores the previous regular chat and New Chat is allowed`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.botOpenFailure = true
+        val completions = mutableListOf<Boolean>()
+
+        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { completions += it }
+        runCurrent()
+
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+        assertEquals(listOf(false), completions)
+        repository.botOpenFailure = false
+        viewModel.createSession()
+        runCurrent()
+        assertEquals(1, repository.created)
+    }
+
+    @Test
     fun `project drill in filters authoritative membership without rerouting the active session`() = runTest(dispatcher) {
         cache.replaceProjectOverview(
             rows = listOf(
@@ -2444,6 +2462,7 @@ class ChatViewModelTest {
         private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 4)
         override val composerControls: Flow<SessionComposerControls> = composerControlEvents
         val opened = mutableListOf<String>()
+        var botOpenFailure = false
 
         /** Every backend search this repository was actually asked for. */
         val searches = mutableListOf<Pair<String, String?>>()
@@ -2608,7 +2627,10 @@ class ChatViewModelTest {
             return durableId
         }
 
-        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
+        override suspend fun openSession(durableId: String, profile: String): String {
+            if (botOpenFailure) error("fixture bot resume failure")
+            return openSession(durableId)
+        }
 
 
         var branchResult = "new-durable"
