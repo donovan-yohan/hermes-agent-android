@@ -7,7 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
-
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -32,9 +32,10 @@ import com.hermesagent.mobile.ui.PluginNavigation
 import com.hermesagent.mobile.ui.settings.SettingsScreen
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -123,10 +124,12 @@ class KanbanPluginJourneyTest {
         }
 
         compose.onNodeWithTag("Kanban Board controls").performClick()
+        compose.waitForIdle()
         assertWipOrder("Board switcher", "Filters", "Search", "New task")
         compose.onNodeWithContentDescription("A task. open").assertHeightIsAtLeast(48.dp).performClick()
         compose.onNodeWithText("line one\nline two").assertIsDisplayed()
         compose.onNodeWithTag("Kanban Task actions").performClick()
+        compose.waitForIdle()
         assertWipOrder("Move task", "Archive task", "Delete task")
         compose.onNodeWithContentDescription("Back to board").performClick()
         compose.onNodeWithTag("Kanban board").assertIsDisplayed()
@@ -152,7 +155,20 @@ class KanbanPluginJourneyTest {
     }
 
     private fun assertWipOrder(vararg labels: String) {
-        assertEquals(labels.toList(), labels.toList())
+        val orderedLabels = labels.toList()
+        val tops = orderedLabels.associateWith { label ->
+            compose.onNodeWithTag("Kanban WIP $label")
+                .assertExists()
+                .assertIsNotEnabled()
+                .getUnclippedBoundsInRoot()
+                .top
+        }
+        orderedLabels.zipWithNext().forEach { (above, below) ->
+            assertTrue(
+                "$below should render below $above",
+                tops.getValue(below) > tops.getValue(above),
+            )
+        }
     }
 
     private object Rest : PluginRest {

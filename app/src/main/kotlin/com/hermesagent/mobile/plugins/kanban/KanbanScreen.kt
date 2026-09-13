@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -83,7 +84,7 @@ fun KanbanScreen(
 
 @Composable
 private fun KanbanControlsMenu(showingDetail: Boolean) {
-    var expanded by mutableStateOf(false)
+    var expanded by remember { mutableStateOf(false) }
     val label = if (showingDetail) "Task actions" else "Board controls"
 
     Column {
