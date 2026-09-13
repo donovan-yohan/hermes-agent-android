@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate visual-parity capture requests and provenance packets.
 
-The capture lane only accepts catalogued synthetic fixtures.  Receipts intentionally
+The capture lane only accepts catalogued synthetic fixtures. Receipts intentionally
 record immutable identities, never workstation paths, device serials, or secrets.
 """
 from __future__ import annotations
@@ -14,8 +14,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CATALOG = Path("docs/parity/visual-capture-surfaces.json")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CATALOG = REPO_ROOT / "docs/parity/visual-capture-surfaces.json"
 SHA = re.compile(r"^[0-9a-f]{40}$")
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
 FORBIDDEN = re.compile(
     r"(?i)(-----BEGIN|\b(?:api[_-]?key|access[_-]?token|auth(?:orization)?|password|secret|credential)\b|"
@@ -64,6 +66,11 @@ def reject_private(value: Any, label: str = "packet") -> None:
         raise ValueError(f"{label} contains a secret or private path")
 
 
+def catalogued_receipt_spec(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Return the authoritative catalog record for a receipt or reject it."""
+    return request(load_catalog(), receipt["surface"], receipt["state"], receipt["theme"])
+
+
 def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
     required = {"schema_version", "surface", "state", "fixture_id", "theme", "viewport"}
     if receipt.get("schema_version") != 1 or not required <= receipt.keys():
@@ -72,14 +79,42 @@ def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
         raise ValueError("receipt has invalid synthetic identifiers")
     if receipt["theme"] not in {"light", "dark"} or not isinstance(receipt["viewport"], dict):
         raise ValueError("receipt has invalid theme or viewport")
+
+    spec = catalogued_receipt_spec(receipt)
+    if receipt["fixture_id"] != spec["fixture_id"]:
+        raise ValueError("receipt fixture does not match its catalogued surface")
+
     if platform == "android":
-        if not SHA.fullmatch(str(receipt.get("android_git_sha", ""))) or not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("apk_sha256", ""))):
-            raise ValueError("Android receipt needs exact git SHA and APK SHA-256")
+        if not SHA.fullmatch(str(receipt.get("android_git_sha", ""))):
+            raise ValueError("Android receipt needs exact git SHA")
+        if not SHA256.fullmatch(str(receipt.get("apk_sha256", ""))) or receipt.get("apk_sha256") != receipt.get("installed_apk_sha256"):
+            raise ValueError("Android receipt needs a matching local and installed APK SHA-256")
         if receipt.get("apk_kind") not in {"debug", "androidTest"}:
             raise ValueError("Android receipt needs apk_kind debug or androidTest")
+        application = receipt.get("application")
+        if not isinstance(application, dict):
+            raise ValueError("Android receipt needs package identity")
+        if application.get("component") != spec["android_activity"]:
+            raise ValueError("Android receipt activity does not match its catalogued fixture")
+        if application.get("package_name") != spec["android_activity"].split("/", 1)[0]:
+            raise ValueError("Android receipt package does not match its catalogued activity")
+        if not isinstance(application.get("version_code"), str) or not application["version_code"].isdigit():
+            raise ValueError("Android receipt needs package-manager version_code")
+        if not isinstance(application.get("version_name"), str) or not application["version_name"]:
+            raise ValueError("Android receipt needs package-manager version_name")
+        if not SHA256.fullmatch(str(application.get("signing_certificate_sha256", ""))):
+            raise ValueError("Android receipt needs the installed APK signing certificate SHA-256")
+        if receipt.get("interactions") != spec["state_spec"].get("interaction", []):
+            raise ValueError("Android receipt interactions do not match its catalogued state")
+        expected = spec["state_spec"].get("post_interaction_accessibility")
+        evidence = receipt.get("accessibility")
+        if not isinstance(evidence, dict) or not isinstance(evidence.get("nodes"), list):
+            raise ValueError("Android receipt needs retained post-interaction accessibility evidence")
+        if expected and evidence.get("expected_description") != expected:
+            raise ValueError("Android receipt lacks catalogued post-interaction accessibility state")
     elif platform == "desktop":
-        if not SHA.fullmatch(str(receipt.get("desktop_upstream_sha", ""))):
-            raise ValueError("Desktop receipt needs exact upstream SHA")
+        if receipt.get("desktop_upstream_sha") != spec["desktop_sha"]:
+            raise ValueError("Desktop receipt SHA does not match its catalogued surface pin")
         if receipt.get("fixture_origin") != "pinned-desktop-e2e-mock":
             raise ValueError("Desktop receipt must identify the pinned E2E mock fixture")
     else:
@@ -105,11 +140,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             value = json.loads(args.receipt.read_text(encoding="utf-8"))
             validate_receipt(value, args.platform)
-            print(f"ok    {args.platform} capture receipt is safe and complete")
+            print(f"ok    {args.platform} capture receipt is safe, complete, and catalogued")
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"FAIL  {error}", file=sys.stderr)
         return 1
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

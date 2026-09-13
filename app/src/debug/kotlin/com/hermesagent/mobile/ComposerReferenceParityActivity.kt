@@ -20,14 +20,14 @@ class ComposerReferenceParityActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val state = intent.getStringExtra(EXTRA_STATE) ?: "url-chip"
+        val state = ComposerReferenceFixtureState.parse(intent.getStringExtra(EXTRA_STATE))
         val theme = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
         setContent {
             HermesTheme(AppearanceSelection("mono", theme)) {
                 Column(Modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).systemBarsPadding()) {
                     Spacer(Modifier.weight(1f))
                     Composer(
-                        draft = wireText(state), onDraftChange = {}, onSend = {}, onStop = {}, isStreaming = false,
+                        draft = state.wireText, onDraftChange = {}, onSend = {}, onStop = {}, isStreaming = false,
                         canSend = true, connected = true, statusLine = "Synthetic capture connection",
                     )
                 }
@@ -35,14 +35,21 @@ class ComposerReferenceParityActivity : ComponentActivity() {
         }
     }
 
-    private fun wireText(state: String): String = when (state) {
-        "file-chip" -> "@file:`fixtures/example.txt` "
-        "folder-chip" -> "@folder:`fixtures` "
-        else -> "@url:`https://example.invalid/reference` "
-    }
-
     companion object {
         const val EXTRA_STATE = "visual_parity_state"
         const val EXTRA_THEME = "visual_parity_theme"
+    }
+}
+
+/** Every composer-reference state in the catalog; status-stack values are rejected. */
+private enum class ComposerReferenceFixtureState(val wireValue: String, val wireText: String) {
+    UrlChip("url-chip", "@url:`https://example.invalid/reference` "),
+    FileChip("file-chip", "@file:`fixtures/example.txt` "),
+    FolderChip("folder-chip", "@folder:`fixtures` "),
+    ;
+
+    companion object {
+        fun parse(value: String?): ComposerReferenceFixtureState = entries.firstOrNull { it.wireValue == value }
+            ?: throw IllegalArgumentException("unsupported ComposerReference parity state: $value")
     }
 }

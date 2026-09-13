@@ -35,7 +35,7 @@ class ComposerStatusParityActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val state = intent.getStringExtra(EXTRA_STATE) ?: "full-stack-task-list"
+        val state = ComposerStatusFixtureState.parse(intent.getStringExtra(EXTRA_STATE))
         val theme = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
         setContent { HermesTheme(AppearanceSelection("mono", theme)) { ComposerStatusParityFixture(state) } }
     }
@@ -46,16 +46,27 @@ class ComposerStatusParityActivity : ComponentActivity() {
     }
 }
 
+/** Every status-stack state in the capture catalog. Unknown or wrong-surface values fail before rendering. */
+private enum class ComposerStatusFixtureState(val wireValue: String, val goalState: ComposerGoalState) {
+    FullStackTaskList("full-stack-task-list", ComposerGoalState.Active),
+    GoalActive("goal-active", ComposerGoalState.Active),
+    GoalWaiting("goal-waiting", ComposerGoalState.Waiting),
+    GoalPaused("goal-paused", ComposerGoalState.Paused),
+    GoalDone("goal-done", ComposerGoalState.Done),
+    QueueParkedCollapsed("queue-parked-collapsed", ComposerGoalState.Active),
+    BackgroundOpen("background-open", ComposerGoalState.Active),
+    ;
+
+    companion object {
+        fun parse(value: String?): ComposerStatusFixtureState = entries.firstOrNull { it.wireValue == value }
+            ?: throw IllegalArgumentException("unsupported ComposerStatus parity state: $value")
+    }
+}
+
 @Composable
-private fun ComposerStatusParityFixture(state: String) {
-    val goalState = mapOf(
-        "goal-active" to ComposerGoalState.Active,
-        "goal-waiting" to ComposerGoalState.Waiting,
-        "goal-paused" to ComposerGoalState.Paused,
-        "goal-done" to ComposerGoalState.Done,
-    )[state] ?: ComposerGoalState.Active
+private fun ComposerStatusParityFixture(state: ComposerStatusFixtureState) {
     val status = ComposerStatusState(
-        goal = ComposerGoalStatus("Synthetic capture goal", goalState, "Synthetic capture goal"),
+        goal = ComposerGoalStatus("Synthetic capture goal", state.goalState, "Synthetic capture goal"),
         todos = listOf(
             ComposerTodoStatus("outline", "Outline the synthetic fixture", ComposerTodoState.Completed),
             ComposerTodoStatus("render", "Render the status stack", ComposerTodoState.InProgress),
@@ -70,15 +81,15 @@ private fun ComposerStatusParityFixture(state: String) {
         QueuedPrompt("first", "Synthetic queued message", queuedAtMillis = 0L, delivery = QueuedPromptDelivery.Ready),
         QueuedPrompt("second", "Second synthetic queued message", queuedAtMillis = 1L, delivery = QueuedPromptDelivery.Ready),
     )
-    Column(
-        Modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).systemBarsPadding(),
-    ) {
+    Column(Modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).systemBarsPadding()) {
         Spacer(Modifier.weight(1f))
         ComposerStatusStack(
             activeSessionId = "visual-parity-session",
             status = status,
-            hasQueue = state == "queue-parked-collapsed",
-            queueContent = if (state == "queue-parked-collapsed") {
+            // Queue starts expanded because it is parked; the catalogued Queue tap
+            // genuinely collapses it and the capture helper checks the resulting a11y state.
+            hasQueue = state == ComposerStatusFixtureState.QueueParkedCollapsed,
+            queueContent = if (state == ComposerStatusFixtureState.QueueParkedCollapsed) {
                 {
                     ComposerQueueSection(
                         durableSessionId = "visual-parity-session",
@@ -91,6 +102,8 @@ private fun ComposerStatusParityFixture(state: String) {
                     )
                 }
             } else null,
+            // Background starts collapsed in the real status stack. Its catalogued
+            // Background tap opens it, then the helper retains/checks that state.
             fusedToComposer = true,
             modifier = Modifier.padding(start = HermesTheme.spacing.pageInset + 8.dp, top = 4.dp, end = HermesTheme.spacing.pageInset + 8.dp),
         )

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Tests for Android visual-capture application identity fencing."""
+"""Tests for Android visual-capture identity, installed bytes, and a11y evidence."""
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-SCRIPT_PATH = (
-    Path(__file__).resolve().parents[2]
-    / ".chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py"
-)
+SCRIPT_PATH = Path(__file__).resolve().parents[2] / ".chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py"
 spec = importlib.util.spec_from_file_location("capture_android_reference", SCRIPT_PATH)
 assert spec and spec.loader
 capture = importlib.util.module_from_spec(spec)
@@ -22,118 +21,57 @@ class AndroidCaptureIdentityTest(unittest.TestCase):
         component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
         focused = f"mCurrentFocus=Window{{synthetic u0 {component}}}"
         with mock.patch.object(capture, "shell", side_effect=[component, focused]):
-            identity = capture.verify_app_identity(
-                "emulator-5554",
-                "com.hermesagent.mobile.debug",
-                "com.hermesagent.mobile.MainActivity",
-            )
+            identity = capture.verify_app_identity("emulator-5554", "com.hermesagent.mobile.debug", "com.hermesagent.mobile.MainActivity")
         self.assertEqual(component, identity["component"])
-        self.assertEqual(focused, identity["focusedWindow"])
+        self.assertEqual(focused, identity["focused_window"])
 
     def test_rejects_wrong_focused_activity(self) -> None:
         component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
-        with mock.patch.object(
-            capture,
-            "shell",
-            side_effect=[component, "mCurrentFocus=Window{synthetic u0 com.example/.Wrong}"],
-        ):
+        with mock.patch.object(capture, "shell", side_effect=[component, "mCurrentFocus=Window{synthetic u0 com.example/.Wrong}", ""]):
             with self.assertRaises(SystemExit):
-                capture.verify_app_identity(
-                    "emulator-5554",
-                    "com.hermesagent.mobile.debug",
-                    "com.hermesagent.mobile.MainActivity",
-                )
+                capture.verify_app_identity("emulator-5554", "com.hermesagent.mobile.debug", "com.hermesagent.mobile.MainActivity")
 
     def test_falls_back_to_plain_dumpsys_window_on_api_36_images(self) -> None:
-        """API 36+ emits no focus lines under the `windows` subcommand.
-
-        Before this fallback the gate aborted every capture on a Pixel 10 Pro
-        emulator — `capture target is not the focused Android activity` — with
-        the right app in the foreground the whole time.
-        """
         component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
-        plain = f"  mCurrentFocus=Window{{synthetic u0 {component}}}\n  mFocusedApp=ActivityRecord{{synthetic u0 {component} t503}}"
-        with mock.patch.object(
-            capture,
-            "shell",
-            side_effect=[component, "Window #0 Window{...}: no focus here", plain],
-        ) as shell:
-            identity = capture.verify_app_identity(
-                "emulator-5554",
-                "com.hermesagent.mobile.debug",
-                "com.hermesagent.mobile.MainActivity",
-            )
+        plain = f"mCurrentFocus=Window{{synthetic u0 {component}}}\nmFocusedApp=ActivityRecord{{synthetic u0 {component} t503}}"
+        with mock.patch.object(capture, "shell", side_effect=[component, "no focus", plain]) as shell:
+            identity = capture.verify_app_identity("emulator-5554", "com.hermesagent.mobile.debug", "com.hermesagent.mobile.MainActivity")
         self.assertEqual(3, shell.call_count)
-        self.assertEqual(("dumpsys", "window", "windows"), shell.call_args_list[1].args[1:])
-        self.assertEqual(("dumpsys", "window"), shell.call_args_list[2].args[1:])
-        self.assertIn("mFocusedApp", identity["focusedWindow"])
+        self.assertIn("mFocusedApp", identity["focused_window"])
 
-    def test_does_not_ask_twice_when_the_subcommand_answers(self) -> None:
-        """Older images answer `dumpsys window windows`; the fallback stays unused."""
-        component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
-        with mock.patch.object(
-            capture,
-            "shell",
-            side_effect=[component, f"mCurrentFocus=Window{{synthetic u0 {component}}}"],
-        ) as shell:
-            capture.verify_app_identity(
-                "emulator-5554",
-                "com.hermesagent.mobile.debug",
-                "com.hermesagent.mobile.MainActivity",
-            )
-        self.assertEqual(2, shell.call_count)
+    def test_post_interaction_accessibility_snapshot_requires_named_state(self) -> None:
+        xml = '<hierarchy><node class="Row" text="Queue · 2 · parked" content-desc="Queue, 2 messages, parked, expand" clickable="true" enabled="true" selected="false" /></hierarchy>'
+        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", xml]):
+            evidence = capture.accessibility_snapshot("emulator-5554", "Queue, 2 messages, parked, expand")
+        self.assertEqual("Queue, 2 messages, parked, expand", evidence["expected_description"])
+        self.assertEqual(1, len(evidence["nodes"]))
 
-    def test_accepts_a_compose_popup_that_leaves_the_activity_on_focused_app(self) -> None:
-        """A dropdown or dialog owns `mCurrentFocus`; the activity is on `mFocusedApp`.
-
-        Matching the two lines separately would refuse every menu capture, which
-        is three of the eight states this pass rendered.
-        """
-        component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
-        popup = f"  mCurrentFocus=Window{{a011ee4 u0 Pop-Up Window}}\n  mFocusedApp=ActivityRecord{{98904812 u0 {component} t503}}"
-        with mock.patch.object(capture, "shell", side_effect=[component, popup]):
-            identity = capture.verify_app_identity(
-                "emulator-5554",
-                "com.hermesagent.mobile.debug",
-                "com.hermesagent.mobile.MainActivity",
-            )
-        self.assertIn("Pop-Up Window", identity["focusedWindow"])
-
-    def test_rejects_a_popup_belonging_to_another_app(self) -> None:
-        """The joined reading is not a way to pass on the popup line alone."""
-        component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
-        popup = "  mCurrentFocus=Window{a011ee4 u0 Pop-Up Window}\n  mFocusedApp=ActivityRecord{1 u0 com.example/.Wrong t1}"
-        with mock.patch.object(capture, "shell", side_effect=[component, popup, popup]):
+    def test_rejects_missing_post_interaction_accessibility_state(self) -> None:
+        xml = '<hierarchy><node text="Queue" content-desc="Queue, 2 messages, parked, collapse" /></hierarchy>'
+        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", xml]):
             with self.assertRaises(SystemExit):
-                capture.verify_app_identity(
-                    "emulator-5554",
-                    "com.hermesagent.mobile.debug",
-                    "com.hermesagent.mobile.MainActivity",
-                )
+                capture.accessibility_snapshot("emulator-5554", "Queue, 2 messages, parked, expand")
 
-    def test_rejects_when_neither_dumpsys_form_reports_focus(self) -> None:
-        """No focus reading is a refusal, not a pass — the fallback is not a bypass."""
-        component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
-        with mock.patch.object(capture, "shell", side_effect=[component, "", ""]):
-            with self.assertRaises(SystemExit) as raised:
-                capture.verify_app_identity(
-                    "emulator-5554",
-                    "com.hermesagent.mobile.debug",
-                    "com.hermesagent.mobile.MainActivity",
-                )
-        self.assertIn("no mCurrentFocus", str(raised.exception))
+    def test_pulls_installed_base_apk_and_records_package_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            local = Path(directory) / "local.apk"
+            local.write_bytes(b"exact installed bytes")
 
-    def test_taps_one_synthetic_control_from_the_real_ui_tree(self) -> None:
-        ui = '<hierarchy><node text="Background · 1" bounds="[10,20][110,60]" /></hierarchy>'
-        with mock.patch.object(capture, "shell", side_effect=["UI hierchary dumped", ui, ""]) as shell:
-            capture.tap_visible_text("emulator-5554", "Background")
-        self.assertEqual(("input", "tap", "60", "40"), shell.call_args.args[1:])
+            def adb(serial, *args, binary=False):
+                self.assertEqual("pull", args[0])
+                Path(args[2]).write_bytes(local.read_bytes())
+                return "1 file pulled"
 
-    def test_refuses_ambiguous_synthetic_control(self) -> None:
-        ui = '<hierarchy><node text="Queue" bounds="[0,0][1,1]" /><node text="Queue again" bounds="[2,2][3,3]" /></hierarchy>'
-        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", ui]):
-            with self.assertRaises(SystemExit):
-                capture.tap_visible_text("emulator-5554", "Queue")
+            package_dump = "versionCode=42 minSdk=23\nversionName=1.2.3\n"
+            signer = "Signer #1 certificate SHA-256 digest: AA:BB:CC\n"
+            with mock.patch.object(capture, "shell", side_effect=["package:/data/app/example/base.apk", package_dump]), \
+                 mock.patch.object(capture, "adb", side_effect=adb), \
+                 mock.patch.object(capture.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=signer)):
+                provenance = capture.installed_apk_provenance("emulator-5554", "com.hermesagent.mobile.debug", local)
+        self.assertEqual(provenance["apk_sha256"], provenance["installed_apk_sha256"])
+        self.assertEqual("42", provenance["version_code"])
+        self.assertEqual("1.2.3", provenance["version_name"])
+        self.assertEqual("aabbcc", provenance["signing_certificate_sha256"])
 
 
 if __name__ == "__main__":

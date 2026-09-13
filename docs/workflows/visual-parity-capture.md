@@ -1,15 +1,18 @@
 # Visual-parity capture lane
 
 `visual-parity-capture.yml` is a manual, artifact-only lane. Dispatch one
-catalogued surface/state/theme at a specific Android ref; it builds that exact
-head and captures the debug-only synthetic Compose activity on the same pinned
-Pixel 6/KVM emulator shape as the instrumented lane. The Android receipt records
-its source SHA, installed APK SHA-256, fixture/state, theme, viewport and focused
-application proof. It rejects packets that contain secrets, home/private paths,
-serials, or uncatalogued fixture identifiers.
+catalogued surface/state/theme at a 40-character immutable Android commit SHA;
+the inline checkout gate verifies that `HEAD` equals that requested SHA before
+running repository code. It captures the debug-only synthetic Compose activity on
+the same pinned Pixel 6/KVM emulator shape as the instrumented lane. The Android
+receipt records its source SHA, local and package-manager base-APK SHA-256 values
+(which must match), package version/signing identity, fixture/state, theme,
+viewport, focused application, and retained post-interaction accessibility
+evidence. It rejects packets that contain secrets, home/private paths, serials,
+or uncatalogued or wrong-surface fixture identifiers.
 
 ```text
-ref: <branch name or immutable SHA>
+ref: <lowercase 40-character commit SHA>
 surface: composer-status-stack | composer-url-chip
 state: one key in docs/parity/visual-capture-surfaces.json
 theme: dark | light

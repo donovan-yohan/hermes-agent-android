@@ -2,6 +2,7 @@
 """Structural guard for the manual visual-parity evidence workflow."""
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -13,22 +14,23 @@ class VisualParityWorkflowTest(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_is_manual_explicit_ref_and_artifact_only(self) -> None:
-        for required in ("workflow_dispatch:", "ref:", "surface:", "state:", "contents: read", "Upload Android packet only"):
+    def test_is_manual_immutable_ref_and_artifact_only(self) -> None:
+        for required in ("workflow_dispatch:", "Exact immutable 40-character", "contents: read", "Upload Android packet only", "^[0-9a-f]{40}$", "CHECKED_OUT_REF"):
             self.assertIn(required, self.text)
-        self.assertNotIn("contents: write", self.text)
-        self.assertNotIn("pull-requests: write", self.text)
-        self.assertNotIn("git commit", self.text)
-        self.assertNotIn("gh issue", self.text)
+        for forbidden in ("contents: write", "pull-requests: write", "git commit", "gh issue"):
+            self.assertNotIn(forbidden, self.text)
 
-    def test_reuses_pinned_kvm_emulator_not_exact_head_job(self) -> None:
+    def test_all_actions_are_immutable_sha_pinned(self) -> None:
+        actions = re.findall(r"^[ \t]*(?:-[ \t]+)?uses:[ \t]+([^\s#]+)", self.text, flags=re.MULTILINE)
+        self.assertEqual(7, len(actions))
+        for action in actions:
+            with self.subTest(action=action):
+                self.assertRegex(action, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
+
+    def test_installed_apk_and_post_interaction_evidence_are_required(self) -> None:
         for required in (
-            "Enable KVM",
-            "reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d",
-            "profile: pixel_6",
-            "--git-sha",
-            "--apk-kind debug",
-            "check-receipt --platform android",
+            "adb install -r", "grep -qx 'Success'", "--expected-accessibility",
+            "check-receipt --platform android", "--git-sha", "--apk-kind debug",
         ):
             self.assertIn(required, self.text)
 

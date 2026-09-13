@@ -13,8 +13,14 @@
         "goal-waiting": { "interaction": [] },
         "goal-paused": { "interaction": [] },
         "goal-done": { "interaction": [] },
-        "queue-parked-collapsed": { "interaction": ["tap:Queue"] },
-        "background-open": { "interaction": ["tap:Background"] }
+        "queue-parked-collapsed": {
+          "interaction": ["tap:Queue"],
+          "post_interaction_accessibility": "Queue, 2 messages, parked, expand"
+        },
+        "background-open": {
+          "interaction": ["tap:Background"],
+          "post_interaction_accessibility": "Background, 1, collapse"
+        }
       }
     },
     "composer-url-chip": {
