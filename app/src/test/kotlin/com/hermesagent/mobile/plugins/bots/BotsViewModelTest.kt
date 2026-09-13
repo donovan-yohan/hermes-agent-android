@@ -264,6 +264,28 @@ class BotsViewModelTest {
     }
 
     @Test
+    fun `a refusal uses the live connection instead of the queued ui mirror`() = runTest {
+        val host = ScriptedHost(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."))
+        val connected = MutableStateFlow(true)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+        )
+        runCurrent()
+        assertTrue(viewModel.uiState.value.connectionUp)
+
+        // The transport closes synchronously, while the UI collector may still
+        // be queued. Classification must read the transport truth directly.
+        connected.value = false
+        viewModel.refreshNow()
+
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+        assertNull(viewModel.uiState.value.safeMessage)
+    }
+
+    @Test
     fun `the connection arriving is what reads the roster`() = runTest {
         val connected = MutableStateFlow(false)
         val viewModel = BotsViewModel(
@@ -625,6 +647,23 @@ class BotsViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(BotsRosterPhase.UnavailableOnGateway, state.phase)
+        assertNull(state.safeMessage)
+    }
+
+    @Test
+    fun `an unavailable roster method clears a held roster permanently`() = runTest {
+        val host = loadedHost()
+        val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })
+        viewModel.refreshNow()
+        assertEquals(3, viewModel.uiState.value.sections.flatMap { it.rows }.size)
+
+        host.result = PluginHostResult.UnavailableOnGateway
+        viewModel.refreshNow()
+        viewModel.setSearchQuery("researcher")
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.UnavailableOnGateway, state.phase)
+        assertEquals(emptyList<BotSectionBlock>(), state.sections)
         assertNull(state.safeMessage)
     }
 

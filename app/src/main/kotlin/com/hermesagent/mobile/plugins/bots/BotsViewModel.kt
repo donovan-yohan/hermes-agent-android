@@ -310,8 +310,21 @@ class BotsViewModel(
                 recompute(rosterAnswered = true)
             }
 
-            BotsRosterLoad.UnavailableOnGateway -> _uiState.update {
-                it.copy(phase = BotsRosterPhase.UnavailableOnGateway, safeMessage = null)
+            BotsRosterLoad.UnavailableOnGateway -> {
+                // This endpoint has answered that it cannot supply a roster.
+                // Rows from an earlier successful read on the same endpoint are
+                // no longer actionable and must not reappear on the next
+                // presentation-only recomputation.
+                roster = emptyList()
+                answeredEndpoint = null
+                val now = clock()
+                _uiState.update { state ->
+                    derivedState(
+                        from = state.copy(safeMessage = null),
+                        whenEmpty = BotsRosterPhase.UnavailableOnGateway,
+                        now = now,
+                    )
+                }
             }
 
             is BotsRosterLoad.Refused -> when {
@@ -325,7 +338,7 @@ class BotsViewModel(
                 // picks its sentence the same way — the error card reads
                 // `gatewayUp ? rosterUnavailable(…) : waitingForGateway`
                 // (`roster-pane-content.tsx:84-90` @ the pin).
-                !_uiState.value.connectionUp ->
+                !connected.value ->
                     _uiState.update {
                         it.copy(phase = BotsRosterPhase.Loading, safeMessage = null)
                     }
