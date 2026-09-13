@@ -20,10 +20,12 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | Horizontally interactive lanes | mobile-adaptation | Vertically grouped, tap-only cards | Desktop `board.tsx:104-130`; Android `KanbanScreen.kt:52-58`; phone one-pane adaptation |
-| Board switcher | omission | Not rendered | out-of-scope: #261 — Desktop `board.tsx:80` manages on-disk multi-board selection; this is the current-board snapshot only |
-| Search, filters, lane collapse and bulk selection | omission | Not rendered | out-of-scope: #261 — Desktop `board.tsx:3-8, 240-301`; each is a local interactive board model beyond the snapshot |
-| New task, drag/drop, status changes, card context menu, delete | omission | Not rendered | out-of-scope: #261 — Desktop `board.tsx:4-8, 104-134, 240-287`; mutation APIs and confirmation UX are excluded |
-| Drawer edit description, assignee menu, comments, attachments, diagnostics, runs | omission | Detail shows only safe inert typed fields | out-of-scope: #261 — Desktop `drawer.tsx:233-405`; Android `KanbanScreen.kt:65-78` excludes writes and unsafe diagnostics/errors |
+| Board switcher | mobile-adaptation | `Board controls` menu shows disabled `Board switcher` with `WIP` | Desktop titlebar `board.tsx:80, 1326-1328`; Android `KanbanScreen.kt`; current-board-only snapshot, no board selection read or write |
+| Filters and search | mobile-adaptation | `Board controls` menu shows disabled `Filters`, then `Search`, with `WIP` | Desktop header `board.tsx:1335-1346`; Android `KanbanScreen.kt`; local filtering is not implemented |
+| New task | mobile-adaptation | `Board controls` menu shows disabled `New task` with `WIP` | Desktop header `board.tsx:1359-1362`; Android `KanbanScreen.kt`; task creation is excluded |
+| Lane collapse, bulk selection, drag/drop | omission | Not rendered | true non-goal for this snapshot: no mutable local board model or write API; Desktop `board.tsx:104-130, 240-301, 945-1078` |
+| Task actions | mobile-adaptation | Detail `Task actions` menu shows disabled `Move task`, `Archive task`, and `Delete task` with `WIP` | Desktop `drawer.tsx:690-731`; Android `KanbanScreen.kt`; mutations are excluded |
+| Drawer edit description, assignee menu, comments, attachments, diagnostics, runs | omission | Detail shows only safe inert typed fields | true non-goal for this snapshot: these require writes or expose unsafe diagnostics; Desktop `drawer.tsx:233-405`; Android `KanbanScreen.kt` |
 | Live socket/poll updates | mobile-adaptation | Explicit manual Refresh, stale notice | Desktop `plugin.tsx:2-5`; Android `KanbanViewModel.kt:27-94`; bounded snapshot avoids background navigation and stale overwrites |
 
 ## Visual report
@@ -32,7 +34,7 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 
 ## Executable evidence
 
-- `KanbanPluginRepositoryTest`: GET-only paths/no body, URL encoding, pin-faithful links object and child_results, unknown/missing optionals, malformed required fields, blank-id refusal, bare unavailable, envelope gone and non-404 refusal.
-- `KanbanViewModelTest`: lifecycle connection refresh, endpoint clear/refetch, no automatic detail navigation, stale same-endpoint board/detail answer rejection, empty and stale fixed states.
-- `KanbanPluginTest`: bundled registration, route/sidebar contributions and disposer lifecycle.
-- `KanbanPluginJourneyTest`: Robolectric board/detail/Back journey, unavailable and empty states, Refresh touch target and task accessibility label.
+- `KanbanPluginRepositoryTest`: GET-only paths/no body, URL encoding, required `task` wrapper, links object and child_results, unknown/missing optionals, malformed required fields, blank-id refusal, bare unavailable, envelope Gone, and non-404 refusal.
+- `KanbanViewModelTest`: lifecycle connection refresh, endpoint clear/refetch, no automatic detail navigation, stale same-endpoint board/detail answer rejection, fixed unavailable/Gone/refusal detail states, and stale board behavior.
+- `KanbanPluginTest`: bundled registration, route/sidebar contributions, and disposal cancelling the connection collector before later reads.
+- `KanbanPluginJourneyTest`: Robolectric Settings contribution launcher to the registered route, board/detail/Back journey, fixed unavailable copy, 48dp controls, and disabled WIP labels in Desktop order.

@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.plugins.kanban
 
+import com.hermesagent.mobile.plugins.PluginRestResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,46 +21,131 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class KanbanViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    @Before fun setup() = Dispatchers.setMain(dispatcher)
-    @After fun teardown() = Dispatchers.resetMain()
 
-    @Test fun `lifecycle and endpoint changes refresh board without auto opening detail`() = runTest {
-        val connected = MutableStateFlow(false); val endpoint = MutableStateFlow(0L)
+    @Before
+    fun setup() = Dispatchers.setMain(dispatcher)
+
+    @After
+    fun teardown() = Dispatchers.resetMain()
+
+    @Test
+    fun `lifecycle and endpoint changes refresh board without auto opening detail`() = runTest {
+        val connected = MutableStateFlow(false)
+        val endpoint = MutableStateFlow(0L)
         val vm = KanbanViewModel(repository(board), connected, endpoint)
-        runCurrent(); assertEquals(KanbanPhase.Loading, vm.uiState.value.phase)
-        connected.value = true; advanceUntilIdle()
-        assertEquals(KanbanPhase.Ready, vm.uiState.value.phase); assertEquals(KanbanDetail.None, vm.uiState.value.detail)
-        endpoint.value = 1L; advanceUntilIdle()
+
+        runCurrent()
+        assertEquals(KanbanPhase.Loading, vm.uiState.value.phase)
+
+        connected.value = true
+        advanceUntilIdle()
+        assertEquals(KanbanPhase.Ready, vm.uiState.value.phase)
+        assertEquals(KanbanDetail.None, vm.uiState.value.detail)
+
+        endpoint.value = 1L
+        advanceUntilIdle()
         assertEquals(KanbanPhase.Ready, vm.uiState.value.phase)
     }
 
-    @Test fun `manual refresh rejects an older same endpoint answer`() = runTest {
-        val first = CompletableDeferred<ByteArray>(); var read = 0
-        val repo = KanbanPluginRepository { _, _ -> if (read++ == 0) com.hermesagent.mobile.plugins.PluginRestResult.Success(200, first.await()) else com.hermesagent.mobile.plugins.PluginRestResult.Success(200, newer) }
-        val vm = KanbanViewModel(repo, MutableStateFlow(false), MutableStateFlow(0)); runCurrent()
-        vm.refreshBoard(); runCurrent(); vm.refreshBoard(); advanceUntilIdle()
-        first.complete(board); advanceUntilIdle()
+    @Test
+    fun `manual refresh rejects an older same endpoint answer`() = runTest {
+        val first = CompletableDeferred<ByteArray>()
+        var read = 0
+        val repository = KanbanPluginRepository { _, _ ->
+            if (read++ == 0) PluginRestResult.Success(200, first.await())
+            else PluginRestResult.Success(200, newer)
+        }
+        val vm = KanbanViewModel(repository, MutableStateFlow(false), MutableStateFlow(0))
+
+        runCurrent()
+        vm.refreshBoard()
+        runCurrent()
+        vm.refreshBoard()
+        advanceUntilIdle()
+        first.complete(board)
+        advanceUntilIdle()
+
         assertEquals("New", vm.uiState.value.columns.single().tasks.single().title)
     }
 
-    @Test fun `selection rejects a stale detail answer and keeps the later task`() = runTest {
-        val first = CompletableDeferred<ByteArray>(); var call = 0
-        val repo = KanbanPluginRepository { path, _ -> com.hermesagent.mobile.plugins.PluginRestResult.Success(200, if (path == "board") board else if (call++ == 0) first.await() else newerDetail) }
-        val vm = KanbanViewModel(repo, MutableStateFlow(false), MutableStateFlow(0)); vm.refreshBoard(); advanceUntilIdle()
-        val task = vm.uiState.value.columns.single().tasks.single(); vm.openTask(task); runCurrent(); vm.openTask(task); advanceUntilIdle()
-        first.complete(detail); advanceUntilIdle()
+    @Test
+    fun `selection rejects a stale detail answer and keeps the later task`() = runTest {
+        val first = CompletableDeferred<ByteArray>()
+        var call = 0
+        val repository = KanbanPluginRepository { path, _ ->
+            PluginRestResult.Success(
+                200,
+                if (path == "board") board else if (call++ == 0) first.await() else newerDetail,
+            )
+        }
+        val vm = KanbanViewModel(repository, MutableStateFlow(false), MutableStateFlow(0))
+
+        vm.refreshBoard()
+        advanceUntilIdle()
+        val task = vm.uiState.value.columns.single().tasks.single()
+        vm.openTask(task)
+        runCurrent()
+        vm.openTask(task)
+        advanceUntilIdle()
+        first.complete(detail)
+        advanceUntilIdle()
+
         assertEquals("New", (vm.uiState.value.detail as KanbanDetail.Value).detail.task.title)
     }
 
-    @Test fun `unavailable empty and refused states are fixed and a failed refresh marks stale`() = runTest {
-        var response: com.hermesagent.mobile.plugins.PluginRestResult = com.hermesagent.mobile.plugins.PluginRestResult.Success(200, board)
-        val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> response }, MutableStateFlow(false), MutableStateFlow(0)); vm.refreshBoard(); advanceUntilIdle()
-        response = com.hermesagent.mobile.plugins.PluginRestResult.Refused(500, "raw backend error"); vm.refreshBoard(); advanceUntilIdle()
-        assertTrue(vm.uiState.value.stale); assertEquals(KanbanPhase.Ready, vm.uiState.value.phase)
-        response = com.hermesagent.mobile.plugins.PluginRestResult.Success(200, empty); vm.refreshBoard(); advanceUntilIdle(); assertEquals(KanbanPhase.Empty, vm.uiState.value.phase); assertFalse(vm.uiState.value.stale)
+    @Test
+    fun `detail unavailable gone and refusal stay distinct and never expose safe message`() = runTest {
+        var response: PluginRestResult = PluginRestResult.UnavailableOnGateway
+        val vm = KanbanViewModel(
+            KanbanPluginRepository { _, _ -> response },
+            MutableStateFlow(false),
+            MutableStateFlow(0),
+        )
+        val task = KanbanTask("x", "Task", "open")
+
+        vm.openTask(task)
+        advanceUntilIdle()
+        assertEquals(KanbanDetail.Unavailable(task), vm.uiState.value.detail)
+
+        response = PluginRestResult.Refused(404, "backend safeMessage")
+        vm.openTask(task)
+        advanceUntilIdle()
+        assertEquals(KanbanDetail.Gone(task), vm.uiState.value.detail)
+
+        response = PluginRestResult.Refused(500, "backend safeMessage")
+        vm.openTask(task)
+        advanceUntilIdle()
+        assertEquals(KanbanDetail.Refused(task), vm.uiState.value.detail)
     }
 
-    private fun repository(answer: ByteArray) = KanbanPluginRepository { _, _ -> com.hermesagent.mobile.plugins.PluginRestResult.Success(200, answer) }
+    @Test
+    fun `failed board refresh marks stale and successful empty refresh clears it`() = runTest {
+        var response: PluginRestResult = PluginRestResult.Success(200, board)
+        val vm = KanbanViewModel(
+            KanbanPluginRepository { _, _ -> response },
+            MutableStateFlow(false),
+            MutableStateFlow(0),
+        )
+
+        vm.refreshBoard()
+        advanceUntilIdle()
+        response = PluginRestResult.Refused(500, "raw backend error")
+        vm.refreshBoard()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.stale)
+        assertEquals(KanbanPhase.Ready, vm.uiState.value.phase)
+
+        response = PluginRestResult.Success(200, empty)
+        vm.refreshBoard()
+        advanceUntilIdle()
+        assertEquals(KanbanPhase.Empty, vm.uiState.value.phase)
+        assertFalse(vm.uiState.value.stale)
+    }
+
+    private fun repository(answer: ByteArray) = KanbanPluginRepository { _, _ ->
+        PluginRestResult.Success(200, answer)
+    }
+
     private companion object {
         val board = """{"columns":[{"name":"Open","tasks":[{"id":"x","title":"Old","status":"open"}]}]}""".toByteArray()
         val newer = """{"columns":[{"name":"Open","tasks":[{"id":"x","title":"New","status":"open"}]}]}""".toByteArray()
