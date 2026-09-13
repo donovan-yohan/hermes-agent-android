@@ -139,6 +139,8 @@ def signing_certificate_sha256(apksigner_output: str) -> str:
         der = base64.b64decode("".join(certificate.group(1).split()), validate=True)
     except ValueError as error:
         raise SystemExit("apksigner emitted an invalid PEM signing certificate") from error
+    if not der:
+        raise SystemExit("apksigner emitted an empty PEM signing certificate")
     return hashlib.sha256(der).hexdigest()
 
 
