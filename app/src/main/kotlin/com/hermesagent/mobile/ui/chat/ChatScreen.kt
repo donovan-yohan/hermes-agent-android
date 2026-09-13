@@ -813,6 +813,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
             activeSessionId = state.activeSession?.id,
             status = state.activeSession?.composerStatus,
             onRefreshProcesses = actions.onRefreshProcesses,
+            onReconcileProcesses = actions.onReconcileProcesses,
             onKillProcess = actions.onKillProcess,
             hasQueue = hasQueue,
             queueContent = {

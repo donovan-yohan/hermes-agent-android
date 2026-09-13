@@ -7,6 +7,7 @@ import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.composer.CompletionItem
 import com.hermesagent.mobile.data.composer.CompletionResult
+import com.hermesagent.mobile.data.composer.CompletionTrigger
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.ControlMutationResult
 import com.hermesagent.mobile.data.composer.FastMode
@@ -21,6 +22,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
+import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.GatewayRedirectOutcome
 import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
 import com.hermesagent.mobile.data.gateway.SessionRehome
@@ -105,6 +107,26 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a", "session-b"), cache.state.value.sessions.keys.toList())
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
         assertTrue(cache.state.value.sessions.keys.none { it.contains("demo", ignoreCase = true) })
+    }
+
+    @Test
+    fun `automatic process reconciliation is silent while manual refresh reports failure`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSessionId)
+        assertTrue(repository.processListCalls.isEmpty())
+
+        repository.processListOutcome = GatewayProcessListOutcome.Failed
+
+        viewModel.reconcileProcesses()
+        runCurrent()
+        assertNull(viewModel.uiState.value.notice)
+        assertEquals(listOf("session-a"), repository.processListCalls)
+
+        viewModel.refreshProcesses()
+        runCurrent()
+        assertEquals("Background work could not be refreshed. Try again.", viewModel.uiState.value.notice?.text)
+        assertEquals(listOf("session-a", "session-a"), repository.processListCalls)
     }
 
     @Test
@@ -606,6 +628,37 @@ class ChatViewModelTest {
         repository.pathGate?.complete(Unit)
         runCurrent()
         assertEquals(null, viewModel.uiState.value.composer.completion.trigger)
+    }
+
+    @Test
+    fun `completion ignores a caret right after a reference chip`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+
+        viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`", 32, 32)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.composer.completion.trigger)
+        assertEquals(0, repository.pathCalls)
+    }
+
+    @Test
+    fun `completion triggers for at right after a reference chip`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`@", 33, 33)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        assertEquals(CompletionTrigger.At, viewModel.uiState.value.composer.completion.trigger)
+        assertEquals("", viewModel.uiState.value.composer.completion.query)
+        assertEquals(32, viewModel.uiState.value.composer.completion.replaceStart)
+
+        viewModel.onEditorSelectionChange("see @url:`https://example.dev/a`/", 33, 33)
+        testScheduler.advanceTimeBy(120)
+        runCurrent()
+        assertEquals(CompletionTrigger.Slash, viewModel.uiState.value.composer.completion.trigger)
+        assertEquals(32, viewModel.uiState.value.composer.completion.replaceStart)
     }
 
     @Test
@@ -2366,6 +2419,14 @@ class ChatViewModelTest {
         }
 
         val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        var processListOutcome: GatewayProcessListOutcome = GatewayProcessListOutcome.Unsupported
+        val processListCalls = mutableListOf<String>()
+
+        override suspend fun listProcesses(durableId: String): GatewayProcessListOutcome {
+            processListCalls += durableId
+            return processListOutcome
+        }
+
         override val pendingInputs =
             MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
                 emptyMap(),
@@ -2427,6 +2488,7 @@ class ChatViewModelTest {
         var firstSlashGate: CompletableDeferred<Unit>? = null
         var slashReplaceFrom: Int? = null
         var pathGate: CompletableDeferred<Unit>? = null
+        var pathCalls = 0
         var lastPathDurableId: String? = null
         val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
         val queuedSubmissions = mutableListOf<Pair<String, Boolean>>()
@@ -2616,6 +2678,7 @@ class ChatViewModelTest {
         }
 
         override suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult {
+            pathCalls++
             lastPathDurableId = durableId
             lastPathCwd = cwd
             pathGate?.await()

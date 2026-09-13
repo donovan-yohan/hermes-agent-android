@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -43,7 +44,7 @@ class ComposerStatusStackVisibilityTest {
                 goal = ComposerGoalStatus("No active goal.", ComposerGoalState.None),
             ),
         )
-        compose.onAllNodesWithContentDescription("Goal, collapse").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Goal active, expand").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("Composer status").assertCountEquals(0)
     }
 
@@ -58,14 +59,17 @@ class ComposerStatusStackVisibilityTest {
     }
 
     @Test
-    fun `active goal renders as before`() {
+    fun `an active goal states itself in a collapsed header and opens on demand`() {
         setContent(
             ComposerStatusState(
                 goal = ComposerGoalStatus("finish slice", ComposerGoalState.Active, "Finish slice"),
             ),
         )
-        compose.onNodeWithContentDescription("Goal, collapse").assertIsDisplayed()
-        compose.onNodeWithText("Finish slice").performClick()
+        // The group starts shut, as every group but the task list now does
+        // (`status-stack/index.tsx:236` @ `564aef2946`), so the state Desktop
+        // keeps in its label has to be in the header the reader is left with.
+        compose.onNodeWithContentDescription("Goal active, expand").performClick()
+        compose.onNodeWithText("Finish slice").assertIsDisplayed()
     }
 
     @Test
@@ -74,7 +78,7 @@ class ComposerStatusStackVisibilityTest {
         // empty stack container stayed mounted above the composer.
         setContent(ComposerStatusState(goal = ComposerGoalStatus("No active goal.", ComposerGoalState.None)))
         compose.onAllNodesWithContentDescription("Composer status").assertCountEquals(0)
-        compose.onAllNodesWithContentDescription("Goal, collapse").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Goal active, expand").assertCountEquals(0)
     }
 
     @Test
@@ -87,7 +91,9 @@ class ComposerStatusStackVisibilityTest {
             ),
         )
 
-        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Queued next, 1, expand").assertIsDisplayed()
+        compose.onAllNodesWithText("inspect this screenshot").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Queued next, 1, expand").performClick()
         compose.onNodeWithText("inspect this screenshot").assertIsDisplayed()
     }
 
@@ -101,7 +107,7 @@ class ComposerStatusStackVisibilityTest {
             ),
         )
 
-        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Queued next, 1, expand").assertIsDisplayed().performClick()
         compose.onNodeWithText("@file:`notes.txt` check this").assertIsDisplayed()
     }
 }

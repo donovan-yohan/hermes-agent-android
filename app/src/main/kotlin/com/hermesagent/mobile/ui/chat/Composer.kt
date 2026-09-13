@@ -38,9 +38,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -70,6 +72,16 @@ import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import com.hermesagent.mobile.data.composer.composerReferenceSpans
+import com.hermesagent.mobile.data.composer.fenceCompletionReference
+import com.hermesagent.mobile.ui.chat.composer.padComposerReferenceInsert
+import com.hermesagent.mobile.ui.chat.composer.ReferenceChipTransformation
+import com.hermesagent.mobile.ui.chat.composer.snapSelectionToReferenceEdges
+import com.hermesagent.mobile.ui.chat.composer.atomizeReferenceDeletion
+import com.hermesagent.mobile.ui.chat.composer.canonicalizePastedComposerText
+import com.hermesagent.mobile.ui.chat.composer.canonicalizeOnSpaceKeepingCaret
+import com.hermesagent.mobile.ui.chat.composer.accessibleComposerText
+import com.hermesagent.mobile.ui.common.CodiconFont
 
 private const val IME_PROCESS_KEY_CODE = 229
 
@@ -439,6 +451,12 @@ private fun ComposerEditor(
     }
     fun insertAtSelection(value: String): Boolean {
         if (editorValue.composition != null) return false
+        val spans = composerReferenceSpans(value)
+        if (spans.size == 1 && spans[0].start == 0 && spans[0].end == value.length) {
+            val (updated, cursor) = padComposerReferenceInsert(editorValue.text, editorValue.selection.start, editorValue.selection.end, value)
+            publish(TextFieldValue(updated, TextRange(cursor)), notifyInsert = value)
+            return true
+        }
         val updated = replaceComposerRange(editorValue.text, editorValue.selection.start, editorValue.selection.end, value)
         val cursor = editorValue.selection.start.coerceIn(0, editorValue.text.length) + value.length
         publish(TextFieldValue(updated, TextRange(cursor)), notifyInsert = value)
@@ -450,7 +468,13 @@ private fun ComposerEditor(
     }
     fun acceptCompletion(item: CompletionItem) {
         if (editorValue.composition != null) return
-        val replacement = item.text
+        val fenced = fenceCompletionReference(item.text)
+        val spans = composerReferenceSpans(fenced)
+        val replacement = if (spans.size == 1 && spans[0].start == 0 && spans[0].end == fenced.length) {
+            "$fenced "
+        } else {
+            fenced
+        }
         val updated = replaceComposerRange(
             editorValue.text,
             controls.completion.replaceStart,
@@ -459,6 +483,13 @@ private fun ComposerEditor(
         )
         val cursor = controls.completion.replaceStart.coerceIn(0, editorValue.text.length) + replacement.length
         publish(TextFieldValue(updated, TextRange(cursor)), completion = item)
+    }
+    val chipTransformation = remember(tokens.referenceInk, tokens.textSecondary) {
+        ReferenceChipTransformation(
+            tokens.referenceInk,
+            tokens.textSecondary,
+            CodiconFont
+        )
     }
     Column(modifier) {
         if (attachments.isNotEmpty()) {
@@ -470,13 +501,30 @@ private fun ComposerEditor(
         }
         BasicTextField(
             value = editorValue,
+            visualTransformation = chipTransformation,
             onValueChange = { value ->
-                val textChanged = value.text != editorValue.text
-                val canonical = if (textChanged && value.composition == null) canonicalizeComposerTextOnSpace(value.text) else value.text
-                val next = if (canonical == value.text) value else TextFieldValue(canonical, TextRange(canonical.length))
+                val before = editorValue
+                val spans = composerReferenceSpans(before.text)
+                val textChanged = value.text != before.text
+                val next = if (!textChanged) {
+                    snapSelectionToReferenceEdges(before, value, spans)
+                } else {
+                    atomizeReferenceDeletion(before, value, spans)
+                        ?: if (value.composition != null) {
+                            value
+                        } else {
+                            canonicalizePastedComposerText(
+                                before.text,
+                                value.text,
+                                value.selection.start,
+                                before.selection,
+                            )
+                                ?: canonicalizeOnSpaceKeepingCaret(value)
+                        }
+                }
                 editorValue = next
                 onEditorSelectionChange(next.text, next.selection.start, next.selection.end)
-                if (textChanged || canonical != value.text) {
+                if (next.text != before.text) {
                     pendingLocalTexts.addLast(next.text)
                     onDraftChange(next.text)
                 }
@@ -561,7 +609,14 @@ private fun ComposerEditor(
                     ComposerKeyAction.None -> false
                 }
             }
-            .semantics { contentDescription = "Message Hermes" },
+            .semantics {
+                contentDescription = "Message Hermes"
+                editableText = AnnotatedString(
+                    accessibleComposerText(
+                        chipTransformation.filter(editorValue.annotatedString).text.text
+                    )
+                )
+            },
             decorationBox = { inner ->
                 CenteredTextFieldContent(
                     isEmpty = editorValue.text.isEmpty(),

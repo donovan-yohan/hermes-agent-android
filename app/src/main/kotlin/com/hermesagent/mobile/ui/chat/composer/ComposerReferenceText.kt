@@ -8,6 +8,7 @@ import java.net.URI
  * policy in one place so an Add-sheet URL, a picked completion and typed text
  * serialize identically.  This mirrors Desktop's `quoteRefValue`: references
  * are always fenced, while ordinary emoji and slash commands are plain text.
+ * This serialization works alongside `maskComposerReferences` for screen presentation.
  */
 internal fun composerReferenceText(kind: String, value: String): String = when (kind) {
     "file" -> ComposerReference.File(value).wireText

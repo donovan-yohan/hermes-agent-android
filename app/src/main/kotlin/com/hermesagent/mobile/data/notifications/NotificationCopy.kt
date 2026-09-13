@@ -35,11 +35,38 @@ object NotificationCopy {
     /** `en.ts:182` */
     const val TURN_ERROR_TITLE = "Turn failed"
 
+    /**
+     * Android-only. Desktop's renderer is either running or quit, so it never
+     * had a "the socket went away under you" state to name.
+     */
+    const val CONNECTION_LOST_TITLE = "Connection lost"
+
+    const val CONNECTION_LOST_BODY = "Hermes stopped before this turn finished."
+
+    /**
+     * Android-only. A notification can be swiped into a shade and forgotten
+     * while an agent stays blocked behind it; a renderer on a screen someone is
+     * sitting at cannot be.
+     */
+    const val STILL_WAITING_TITLE = "Still waiting"
+
+    const val STILL_WAITING_BODY = "Something is still waiting for your answer."
+
     /** `en.ts:176` */
     const val APPROVE_ACTION = "Approve"
 
     /** `en.ts:177`. The label is Desktop's; the choice it sends is `deny`. */
     const val REJECT_ACTION = "Reject"
+
+    /**
+     * Android-only. Desktop answers a question in the renderer, which has a
+     * text field; a notification has a `RemoteInput` and nothing else, and it
+     * needs a word on the button.
+     */
+    const val REPLY_ACTION = "Answer"
+
+    /** `en.ts:3766` `clarify.placeholder` — the app's own field says this too. */
+    const val REPLY_HINT = "Type your answer…"
 
     /**
      * Android-only. Desktop's buttons resolve against a renderer that is always
@@ -111,12 +138,18 @@ object NotificationCopy {
         NotificationKind.Approval -> APPROVAL_TITLE
         NotificationKind.TurnDone -> TURN_DONE_TITLE
         NotificationKind.TurnError -> TURN_ERROR_TITLE
+        NotificationKind.ConnectionLost -> CONNECTION_LOST_TITLE
+        NotificationKind.StillWaiting -> STILL_WAITING_TITLE
+        // Desktop files clarify, sudo and secret under one `input` kind, and
+        // the three it never raises here have no title to reach for anyway.
         else -> INPUT_TITLE
     }
 
     /** Shown when the session has no title yet, so the alert still says something true. */
     fun fallbackBody(kind: NotificationKind): String = when (kind) {
         NotificationKind.TurnDone -> TURN_DONE_BODY
+        NotificationKind.ConnectionLost -> CONNECTION_LOST_BODY
+        NotificationKind.StillWaiting -> STILL_WAITING_BODY
         else -> INPUT_BODY
     }
 }
@@ -135,3 +168,14 @@ internal fun String.notificationSafeTitle(limit: Int = MAX_NOTIFICATION_TITLE): 
     redact(this).replace(NOTIFICATION_WHITESPACE, " ").trim().take(limit)
 
 internal const val MAX_NOTIFICATION_TITLE = 120
+
+/**
+ * The preview line's own bound.
+ *
+ * Longer than a title because `BigTextStyle` expands and a question cut at 120
+ * characters is a question you have to open the app to finish reading — which
+ * is the thing the preview exists to avoid. Still bounded: the shade has no
+ * scroll, and an unbounded string from a Gateway is an unbounded string from a
+ * Gateway.
+ */
+internal const val MAX_NOTIFICATION_PREVIEW = 400

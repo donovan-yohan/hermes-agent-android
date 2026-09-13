@@ -637,6 +637,38 @@ class ThemeSemanticParityTest {
     }
 
     @Test
+    fun `reference ink derives from desktop's primary over text-primary in each mode`() {
+        val knownBelowFloor = setOf("cyberpunk/light") // 1.91:1
+        for (preset in BuiltinThemes.ALL) {
+            for (dark in listOf(false, true)) {
+                val palette = preset.paletteFor(dark)
+                val tokens = HermesTokens.from(palette, dark)
+                val where = "${preset.name}/${if (dark) "dark" else "light"}"
+
+                val textPrimary = tokens.textPrimary
+                val expected = mixPremultiplied(palette.primary, 82f, textPrimary)
+                assertEquals("$where: referenceInk", expected.argb(), tokens.referenceInk.argb())
+
+                assertNotEquals("$where: not raw palette.primary", palette.primary.argb(), tokens.referenceInk.argb())
+                assertNotEquals("$where: not textPrimary", textPrimary.argb(), tokens.referenceInk.argb())
+
+                val ratio = contrastRatio(tokens.referenceInk.over(tokens.cardSurface), tokens.cardSurface)
+                if (where !in knownBelowFloor) {
+                    assertTrue(
+                        "$where: referenceInk contrast ${"%.2f".format(ratio)}:1 >= 3.0f",
+                        ratio >= 3.0f
+                    )
+                } else {
+                    assertTrue(
+                        "$where: referenceInk contrast ${"%.2f".format(ratio)}:1 < 3.0f",
+                        ratio < 3.0f
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun `the context usage inks derive from desktop's css variables in each mode`() {
         // styles.css:217-224 @ 564aef2946c436500a5e80ee117b66b789b3f99a — the
         // eight `--context-usage-*` variables, each an expression over the named

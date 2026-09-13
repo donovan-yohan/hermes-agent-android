@@ -23,6 +23,31 @@ import com.hermesagent.mobile.data.gateway.PendingInputKey
 data class ApprovalTarget(
     val key: PendingInputKey,
     val durableSessionId: String,
+    /**
+     * What the Gateway offered for *this* request, verbatim.
+     *
+     * Carried rather than assumed: `approval.request` decides the list per
+     * request (`gateway/platforms/api_server.py:107-108` @ `72a3277cd7`), a
+     * response is validated against it, and a shade that offered a choice this
+     * request never had would post a button that always fails.
+     */
+    val choices: List<String> = emptyList(),
+)
+
+/**
+ * Everything needed to answer one question from the shade.
+ *
+ * Same shape and same reasoning as [ApprovalTarget]: the repository's own key,
+ * never a copy of its fields, so the shade is not a second writer with its own
+ * idea of what is pending.
+ */
+data class QuestionTarget(
+    val key: PendingInputKey,
+    val durableSessionId: String,
+    /** Empty for single-question mode; `clarify.respond` then sends no `question_id`. */
+    val questionId: String,
+    /** Empty means a reply box rather than buttons. */
+    val choices: List<String>,
 )
 
 /** One notification the notifier decided should exist. */
@@ -33,6 +58,17 @@ data class NotificationPost(
     val body: String,
     /** Non-null only for an approval that can still be answered from the shade. */
     val approval: ApprovalTarget? = null,
+    /** Non-null only for a question the shade can answer honestly; see `shadeQuestion`. */
+    val question: QuestionTarget? = null,
+    /**
+     * The one extra line, when the person asked for one and the kind has a line
+     * it is allowed to carry.
+     *
+     * Null is not "the preference is off" — it is also every kind whose only
+     * available text is text a notification may never show. The decision is
+     * made once, in the notifier, so this layer cannot leak by forgetting.
+     */
+    val preview: String? = null,
 )
 
 /**
@@ -49,9 +85,25 @@ interface NotificationSurface {
     fun clearSession(durableSessionId: String)
 
     /**
-     * The connection can no longer answer this approval. The notification stays
+     * The connection can no longer answer this prompt. The notification stays
      * so the request is not silently lost, but its buttons go and its body says
      * where the answer still lives.
+     *
+     * Takes the kind, because a question that degraded into `Approval needed`
+     * would be telling somebody a command is waiting when a question is.
      */
-    fun degradeApproval(durableSessionId: String)
+    fun degrade(kind: NotificationKind, durableSessionId: String)
+
+    /**
+     * Desktop's `Send test notification`, and it earns more here.
+     *
+     * On Android a notification can be silently dropped by a revoked grant, by
+     * Do Not Disturb, or by a channel the person muted in the OS rather than in
+     * this app — none of which the settings screen can see. One notification
+     * that either appears or does not tells those apart.
+     *
+     * Filed outside the per-conversation grouping and answering to no session,
+     * because it is about the delivery path rather than about any chat.
+     */
+    fun postTest(title: String, body: String)
 }
