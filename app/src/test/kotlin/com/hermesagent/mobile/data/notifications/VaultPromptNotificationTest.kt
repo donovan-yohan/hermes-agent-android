@@ -142,6 +142,8 @@ class VaultPromptNotificationTest {
         val sessions = MutableStateFlow(SessionCacheState())
         val presence = NotificationPresence()
         val surface = RecordingNotificationSurface()
+        val connected = MutableStateFlow(true)
+        val activeTurns = MutableStateFlow<Set<String>>(emptySet())
 
         fun start() {
             SessionNotifier(
@@ -149,6 +151,8 @@ class VaultPromptNotificationTest {
                 turnOutcomes = MutableSharedFlow(),
                 sessions = sessions,
                 socketOpens = MutableSharedFlow(),
+                connected = connected,
+                activeTurns = activeTurns,
                 presence = presence,
                 settingsFlow = MutableStateFlow(NotificationSettings()),
                 surface = surface,

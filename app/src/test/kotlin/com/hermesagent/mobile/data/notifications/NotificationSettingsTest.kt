@@ -18,8 +18,47 @@ class NotificationSettingsTest {
     fun `the ported registry keeps Desktop's kinds and Desktop's order`() {
         assertEquals(
             listOf("approval", "input", "turnDone", "turnError", "backgroundDone", "credits", "plugin"),
-            NotificationKind.entries.map(NotificationKind::key),
+            NotificationKind.entries.map(NotificationKind::key).take(7),
         )
+    }
+
+    /**
+     * Appended, never interleaved: the persisted name is the key, so the enum
+     * may be reordered — but keeping Desktop's seven contiguous and in their
+     * own order is what makes the first assertion readable as a port.
+     */
+    @Test
+    fun `the mobile-only kinds come after Desktop's, and are the ones this app can raise`() {
+        assertEquals(
+            listOf("connectionLost", "stillWaiting"),
+            NotificationKind.entries.map(NotificationKind::key).drop(7),
+        )
+        assertEquals(
+            listOf("approval", "input", "turnDone", "turnError", "connectionLost", "stillWaiting"),
+            SETTABLE_KINDS.map(NotificationKind::key),
+        )
+    }
+
+    /**
+     * The three left out have no mobile source at all — no backgrounded
+     * terminal, no credit ledger, no desktop plugin host — and the ledger
+     * classifies them `non-goal`. They stay in the enum because it is also the
+     * persisted shape.
+     */
+    @Test
+    fun `the Desktop-only kinds are carried but never offered`() {
+        for (kind in listOf(NotificationKind.BackgroundDone, NotificationKind.Credits, NotificationKind.Plugin)) {
+            assertFalse(kind.hasMobileSource)
+            assertFalse(kind in SETTABLE_KINDS)
+        }
+    }
+
+    @Test
+    fun `a preview is on by default and is its own preference`() {
+        assertTrue(NotificationSettings().preview)
+        assertFalse(NotificationSettings(preview = false).preview)
+        // Independent of the kinds: turning the preview off silences no kind.
+        assertTrue(NotificationSettings(preview = false).allows(NotificationKind.Approval))
     }
 
     @Test

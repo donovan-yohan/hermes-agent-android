@@ -3,6 +3,8 @@ package com.hermesagent.mobile
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -54,6 +56,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import com.hermesagent.mobile.data.notifications.NotificationSettings
+import com.hermesagent.mobile.ui.settings.NotificationsActions
+import com.hermesagent.mobile.ui.settings.NotificationsCopy
+import com.hermesagent.mobile.ui.settings.NotificationsUiState
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -327,6 +333,41 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            // Read on every recomposition of this block rather than cached:
+            // the grant can be revoked from Android settings while this
+            // Activity is alive, and the screen's whole job is to be honest
+            // about it. `LocalLifecycleOwner` recomposition on resume is what
+            // brings a person back from the system screen to a truthful row.
+            val notificationSettings by app.notificationPreferences.notificationSettings
+                .collectAsStateWithLifecycle(NotificationSettings())
+            val notificationsAllowed = notificationsAllowed()
+            val notificationsState = NotificationsUiState(
+                enabled = notificationSettings.enabled,
+                kinds = notificationSettings.kinds,
+                preview = notificationSettings.preview,
+                systemAllowed = notificationsAllowed,
+            )
+            val notificationsActions = remember {
+                NotificationsActions(
+                    onEnabledChange = { on ->
+                        app.appScope.launch { app.notificationPreferences.setNotificationsEnabled(on) }
+                    },
+                    onKindChange = { kind, on ->
+                        app.appScope.launch { app.notificationPreferences.setNotificationKind(kind, on) }
+                    },
+                    onPreviewChange = { on ->
+                        app.appScope.launch { app.notificationPreferences.setNotificationPreview(on) }
+                    },
+                    onOpenSystemSettings = ::openNotificationSystemSettings,
+                    onSendTest = {
+                        app.notificationSurface.postTest(
+                            NotificationsCopy.TEST_TITLE,
+                            NotificationsCopy.TEST_BODY,
+                        )
+                    },
+                )
+            }
+
             HermesApp(
                 chatState = chatState,
                 gatewayState = gatewayState,
@@ -421,6 +462,8 @@ class MainActivity : ComponentActivity() {
                 connectionsActions = connectionsActions,
                 pluginRegistry = app.pluginRegistry,
                 pluginStore = app.pluginStore,
+                notificationsState = notificationsState,
+                notificationsActions = notificationsActions,
                 navigationAsk = navigationAsk,
                 onSignInOriginChange = { signInOrigin = it },
                 sshActions = SshActions(
@@ -555,6 +598,40 @@ class MainActivity : ComponentActivity() {
                         notificationRationaleVisible =
                             step == NotificationPermissionStep.Rationale && !notificationRationaleDismissed
                     }
+            }
+        }
+    }
+
+    /**
+     * Whether the OS will deliver anything this app posts.
+     *
+     * Broader than [postNotificationsGranted]: that one answers whether the
+     * runtime permission was granted, and this one also catches the app's
+     * notifications being switched off in Android settings, which is a
+     * different act with the same effect and no permission result behind it.
+     */
+    private fun notificationsAllowed(): Boolean =
+        NotificationManagerCompat.from(this).areNotificationsEnabled()
+
+    /**
+     * The app's own notification page in Android settings.
+     *
+     * Not a second permission request: once `POST_NOTIFICATIONS` has been
+     * denied twice Android stops showing the dialog at all, so a re-request is
+     * a button that does nothing. `APP_NOTIFICATION_SETTINGS` exists from API
+     * 26, which is this app's floor, but a manufacturer can still ship an image
+     * with nothing behind it — hence the app-details fallback rather than an
+     * `ActivityNotFoundException` on someone's phone.
+     */
+    private fun openNotificationSystemSettings() {
+        val notificationSettings = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.fromParts("package", packageName, null))
+        for (intent in listOf(notificationSettings, appDetails)) {
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                return
             }
         }
     }

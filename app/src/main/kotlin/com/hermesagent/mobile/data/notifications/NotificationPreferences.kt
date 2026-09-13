@@ -21,6 +21,19 @@ import kotlinx.coroutines.flow.map
 data class NotificationSettings(
     val enabled: Boolean = true,
     val kinds: Map<NotificationKind, Boolean> = NotificationKind.entries.associateWith { true },
+    /**
+     * Whether a notification may carry the question, or the line a turn ended
+     * on, under the session title.
+     *
+     * Android-only: Desktop has no lock screen and no shoulder-surfer, so it
+     * never had to make this a choice. It is on by default because a phone
+     * notification that says only "Input needed" makes the person open the app
+     * to learn whether it was worth opening the app for. What it may never
+     * carry is unchanged — no command, no tool output, no sudo prompt, no
+     * secret name — and the lock screen's [publicVersion] is unaffected either
+     * way, so a locked phone still shows the kind and nothing else.
+     */
+    val preview: Boolean = true,
 ) {
     /** Desktop's gate, `native-notifications.ts:193`: master first, then the kind. */
     fun allows(kind: NotificationKind): Boolean = enabled && kinds[kind] != false
@@ -40,10 +53,13 @@ interface NotificationPreferenceStore {
 
     suspend fun setNotificationKind(kind: NotificationKind, on: Boolean)
 
+    suspend fun setNotificationPreview(on: Boolean)
+
     suspend fun markNotificationPermissionAsked()
 }
 
 private val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications.v1.enabled")
+private val NOTIFICATIONS_PREVIEW = booleanPreferencesKey("notifications.v1.preview")
 private val PERMISSION_ASKED = booleanPreferencesKey("notifications.v1.permissionAsked")
 
 /**
@@ -72,6 +88,7 @@ class AndroidNotificationPreferences(context: Context) : NotificationPreferenceS
             kinds = NotificationKind.entries.associateWith { kind ->
                 preferences[kindKey(kind)] ?: true
             },
+            preview = preferences[NOTIFICATIONS_PREVIEW] ?: true,
         )
     }.distinctUntilChanged()
 
@@ -84,6 +101,10 @@ class AndroidNotificationPreferences(context: Context) : NotificationPreferenceS
 
     override suspend fun setNotificationKind(kind: NotificationKind, on: Boolean) {
         store.edit { it[kindKey(kind)] = on }
+    }
+
+    override suspend fun setNotificationPreview(on: Boolean) {
+        store.edit { it[NOTIFICATIONS_PREVIEW] = on }
     }
 
     override suspend fun markNotificationPermissionAsked() {
@@ -108,6 +129,10 @@ class TransientNotificationPreferences(
 
     override suspend fun setNotificationKind(kind: NotificationKind, on: Boolean) {
         settings.value = settings.value.copy(kinds = settings.value.kinds + (kind to on))
+    }
+
+    override suspend fun setNotificationPreview(on: Boolean) {
+        settings.value = settings.value.copy(preview = on)
     }
 
     override suspend fun markNotificationPermissionAsked() {

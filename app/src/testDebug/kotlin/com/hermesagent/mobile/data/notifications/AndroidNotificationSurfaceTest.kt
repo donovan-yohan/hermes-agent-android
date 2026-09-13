@@ -6,6 +6,10 @@ import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.hermesagent.mobile.MainActivity
+import com.hermesagent.mobile.data.gateway.APPROVAL_ALWAYS
+import com.hermesagent.mobile.data.gateway.APPROVAL_DENY
+import com.hermesagent.mobile.data.gateway.APPROVAL_ONCE
+import com.hermesagent.mobile.data.gateway.APPROVAL_SESSION
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputKind
 import org.junit.Assert.assertEquals
@@ -54,7 +58,7 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
-    fun `an approval renders Desktop's title, the conversation, and Desktop's two buttons`() {
+    fun `an approval renders Desktop's title, the conversation, and its own choices`() {
         AndroidNotificationSurface(context).post(approvalPost())
 
         val notification = posted(NotificationKind.Approval, SESSION)
@@ -62,10 +66,55 @@ class AndroidNotificationSurfaceTest {
         assertEquals("Refactor the parser", notification.text())
         assertEquals(APPROVALS_CHANNEL_ID, notification.channelId)
         assertEquals(groupKey(SESSION), notification.group)
+        // Desktop's own approval vocabulary (`i18n/en.ts:3749,3759,3754` @
+        // `72a3277cd7`), not the two-button `Approve`/`Reject` the shade used
+        // to carry: beside `Always allow`, `Approve` no longer says which of
+        // the two it is.
         assertEquals(
-            listOf(NotificationCopy.APPROVE_ACTION, NotificationCopy.REJECT_ACTION),
+            listOf("Run", "Always allow", "Reject"),
             notification.actions.map { it.title.toString() },
         )
+    }
+
+    /**
+     * The lock screen is the whole reason the preview is a preference, and the
+     * reason it changes nothing here: `publicVersion` carries the kind and has
+     * never carried anything else.
+     */
+    @Test
+    fun `a preview never reaches the lock screen`() {
+        AndroidNotificationSurface(context).post(
+            questionPost(emptyList()).copy(preview = "Redis or Postgres?"),
+        )
+
+        val public = posted(NotificationKind.Input, SESSION).publicVersion
+        assertNotNull(public)
+        assertEquals(NotificationCopy.INPUT_TITLE, public!!.title())
+        assertNull(public.text())
+    }
+
+    @Test
+    fun `a preview takes the body and moves the conversation to the header`() {
+        AndroidNotificationSurface(context).post(
+            questionPost(emptyList()).copy(preview = "Redis or Postgres?"),
+        )
+
+        val notification = posted(NotificationKind.Input, SESSION)
+        assertEquals(NotificationCopy.INPUT_TITLE, notification.title())
+        assertEquals("Redis or Postgres?", notification.text())
+        // The chat's name is still there, on the line beside the app name: a
+        // body that repeats it would spend the one line the preview wants.
+        assertEquals("Refactor the parser", notification.extras.getString(Notification.EXTRA_SUB_TEXT))
+    }
+
+    @Test
+    fun `without a preview nothing about the layout moves`() {
+        AndroidNotificationSurface(context).post(questionPost(emptyList()))
+
+        val notification = posted(NotificationKind.Input, SESSION)
+        assertEquals(NotificationCopy.INPUT_TITLE, notification.title())
+        assertEquals("Refactor the parser", notification.text())
+        assertNull(notification.extras.getString(Notification.EXTRA_SUB_TEXT))
     }
 
     @Test
@@ -105,7 +154,7 @@ class AndroidNotificationSurfaceTest {
             NotificationActionReceiver::class.java.name,
             intent.component?.className,
         )
-        assertEquals(CHOICE_APPROVE, intent.getStringExtra(EXTRA_CHOICE))
+        assertEquals(APPROVAL_ONCE, intent.getStringExtra(EXTRA_CHOICE))
         assertEquals(REQUEST_ID, intent.getStringExtra(EXTRA_REQUEST_ID))
         assertEquals(RUNTIME, intent.getStringExtra(EXTRA_RUNTIME_SESSION_ID))
         assertEquals(SESSION, intent.getStringExtra(EXTRA_DURABLE_SESSION_ID))
@@ -113,11 +162,133 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
-    fun `Reject sends the Gateway's deny, never a permanent grant`() {
+    fun `the shade offers run, the strongest grant on offer, and the refusal`() {
         AndroidNotificationSurface(context).post(approvalPost())
 
-        val reject = posted(NotificationKind.Approval, SESSION).actions[1]
-        assertEquals(CHOICE_DENY, shadowOf(reject.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE))
+        val actions = posted(NotificationKind.Approval, SESSION).actions
+        // Android draws three and silently drops the rest, so `session` loses
+        // to `always` rather than the refusal being the one that falls off.
+        assertEquals(3, actions.size)
+        assertEquals(
+            listOf(APPROVAL_ONCE, APPROVAL_ALWAYS, APPROVAL_DENY),
+            actions.map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) },
+        )
+        assertEquals(listOf("Run", "Always allow", "Reject"), actions.map { it.title.toString() })
+    }
+
+    @Test
+    fun `a Gateway that offers no permanent grant gets no permanent button`() {
+        AndroidNotificationSurface(context).post(
+            approvalPost().let { post ->
+                post.copy(
+                    approval = post.approval!!.copy(choices = listOf(APPROVAL_ONCE, APPROVAL_DENY)),
+                )
+            },
+        )
+
+        val actions = posted(NotificationKind.Approval, SESSION).actions
+        assertEquals(
+            listOf(APPROVAL_ONCE, APPROVAL_DENY),
+            actions.map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) },
+        )
+    }
+
+    @Test
+    @Config(sdk = [30], application = Application::class)
+    fun `API 30 omits persistent approval grants because it cannot authenticate them`() {
+        AndroidNotificationSurface(context).post(approvalPost())
+
+        val choices = posted(NotificationKind.Approval, SESSION).actions
+            .map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+        assertEquals(listOf(APPROVAL_ONCE, APPROVAL_DENY), choices)
+        assertFalse(APPROVAL_SESSION in choices)
+        assertFalse(APPROVAL_ALWAYS in choices)
+    }
+
+    @Test
+    fun `an unsupported approval choice is omitted rather than rendered as a rejected action`() {
+        AndroidNotificationSurface(context).post(
+            approvalPost().let { post ->
+                post.copy(approval = post.approval!!.copy(choices = listOf(APPROVAL_ONCE, "escalate", APPROVAL_DENY)))
+            },
+        )
+
+        val choices = posted(NotificationKind.Approval, SESSION).actions
+            .map { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+        assertEquals(listOf(APPROVAL_ONCE, APPROVAL_DENY), choices)
+        assertFalse("escalate" in choices)
+    }
+
+    /**
+     * The gate that makes a persistent grant safe to offer from a shade at all:
+     * Android refuses to fire the intent until the device is unlocked.
+     */
+    @Test
+    @Config(sdk = [31], application = Application::class)
+    fun `persistent grants demand the device be unlocked`() {
+        val surface = AndroidNotificationSurface(context)
+        surface.post(approvalPost())
+
+        val actions = posted(NotificationKind.Approval, SESSION).actions
+        val byChoice = actions.associateBy { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+        assertTrue(byChoice.getValue(APPROVAL_ALWAYS).isAuthenticationRequired)
+        assertFalse(byChoice.getValue(APPROVAL_ONCE).isAuthenticationRequired)
+        assertFalse(byChoice.getValue(APPROVAL_DENY).isAuthenticationRequired)
+
+        surface.post(
+            approvalPost().let { post ->
+                post.copy(approval = post.approval!!.copy(choices = listOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_DENY)))
+            },
+        )
+        val sessionAction = posted(NotificationKind.Approval, SESSION).actions
+            .associateBy { shadowOf(it.actionIntent).savedIntent.getStringExtra(EXTRA_CHOICE) }
+            .getValue(APPROVAL_SESSION)
+        assertTrue(sessionAction.isAuthenticationRequired)
+    }
+
+    @Test
+    fun `a question with choices puts each one on its own button`() {
+        AndroidNotificationSurface(context).post(questionPost(listOf("Redis", "Postgres")))
+
+        val actions = posted(NotificationKind.Input, SESSION).actions
+        assertEquals(listOf("Redis", "Postgres"), actions.map { it.title.toString() })
+        val intent = shadowOf(actions.first().actionIntent).savedIntent
+        assertEquals(ACTION_ANSWER_QUESTION, intent.action)
+        // The choice is the answer text; nothing here has to translate it.
+        assertEquals("Redis", intent.getStringExtra(EXTRA_ANSWER))
+        assertEquals("q1", intent.getStringExtra(EXTRA_QUESTION_ID))
+        assertNull(actions.first().remoteInputs)
+    }
+
+    /**
+     * The only case the "a single free-text box cannot answer a constrained
+     * batch" objection does not cover: a question that had no choices to
+     * constrain, whose answer was always going to be typed.
+     */
+    @Test
+    fun `a question with no choices gets a reply box`() {
+        AndroidNotificationSurface(context).post(questionPost(emptyList()))
+
+        val action = posted(NotificationKind.Input, SESSION).actions.single()
+        assertEquals(NotificationCopy.REPLY_ACTION, action.title.toString())
+        val remoteInput = action.remoteInputs?.single()
+        assertNotNull(remoteInput)
+        assertEquals(EXTRA_ANSWER, remoteInput!!.resultKey)
+    }
+
+    @Test
+    fun `a prompt that degrades keeps its own kind`() {
+        val surface = AndroidNotificationSurface(context)
+        surface.post(questionPost(emptyList()))
+
+        surface.degrade(NotificationKind.Input, SESSION)
+
+        val notification = posted(NotificationKind.Input, SESSION)
+        // `Approval needed` here would say a command is waiting when a
+        // question is.
+        assertEquals(NotificationCopy.INPUT_TITLE, notification.title())
+        assertEquals(NotificationCopy.OPEN_TO_RESPOND, notification.text())
+        assertNull(notification.actions)
     }
 
     @Test
@@ -216,7 +387,7 @@ class AndroidNotificationSurfaceTest {
         val surface = AndroidNotificationSurface(context)
         surface.post(approvalPost())
 
-        surface.degradeApproval(SESSION)
+        surface.degrade(NotificationKind.Approval, SESSION)
 
         val notification = posted(NotificationKind.Approval, SESSION)
         assertEquals(NotificationCopy.APPROVAL_TITLE, notification.title())
@@ -261,6 +432,27 @@ class AndroidNotificationSurfaceTest {
                     kind = PendingInputKind.Approval,
                 ),
                 durableSessionId = SESSION,
+                // What a Gateway with a permanent allowlist offers
+                // (`api_server.py:108` @ `72a3277cd7`).
+                choices = listOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWAYS, APPROVAL_DENY),
+            ),
+        )
+
+        fun questionPost(choices: List<String>) = NotificationPost(
+            kind = NotificationKind.Input,
+            durableSessionId = SESSION,
+            title = NotificationCopy.INPUT_TITLE,
+            body = "Refactor the parser",
+            question = QuestionTarget(
+                key = PendingInputKey(
+                    connectionGeneration = 7L,
+                    runtimeSessionId = RUNTIME,
+                    requestId = REQUEST_ID,
+                    kind = PendingInputKind.Clarify,
+                ),
+                durableSessionId = SESSION,
+                questionId = "q1",
+                choices = choices,
             ),
         )
     }

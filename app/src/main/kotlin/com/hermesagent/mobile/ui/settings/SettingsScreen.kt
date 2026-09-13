@@ -30,6 +30,7 @@ fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenGateways: () -> Unit,
     onOpenSystem: () -> Unit,
+    onOpenNotifications: () -> Unit,
     onOpenPlugins: () -> Unit,
     /**
      * Whether a Gateway is connected. The System panel reads the backend's own
@@ -89,6 +90,19 @@ fun SettingsScreen(
         contributions.forEach { contribution ->
             contribution.render?.invoke()
         }
+        SettingsRow(
+            // Verbatim `settings.nav.notifications` (`i18n/en.ts:442` @
+            // `72a3277cd7`), with Desktop's own panel intro as the blurb
+            // (`:590`). Desktop files it under a settings nav rail; a phone has
+            // no rail, so it becomes a destination row like the rest — and it
+            // keeps Desktop's late placement, after the workspace rows rather
+            // than among the Gateway ones, because it is a preference about
+            // this device rather than about anything the app connects to.
+            label = NotificationsCopy.TITLE,
+            description = NotificationsCopy.INTRO,
+            traversalIndex = 5f,
+            onClick = onOpenNotifications,
+        )
     }
 }
 
