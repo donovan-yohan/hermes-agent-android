@@ -1264,6 +1264,95 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `Bot Chat preserves a real actionable queue entry and blocks session engine and approval writes`() = runTest(dispatcher) {
+        val queueSubmits = mutableListOf<Pair<String, String>>()
+        val controller = ComposerQueueController(
+            store = TransientComposerQueueStore(),
+            submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome {
+                    queueSubmits += durableSessionId to text
+                    return QueueSubmissionOutcome.Accepted
+                }
+            },
+        )
+        cache.upsertSession(summary("bot-chat", 3_000).copy(status = SessionStatus.Working, unread = true))
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, composerQueueController = controller)
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        // The real entry is made while writable; busy Bot activation prevents auto-drain on rehome.
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueMutation.Applied, controller.enqueue("bot-chat", "queued before Bot Chat"))
+        val before = controller.queue("bot-chat")
+        assertEquals(1, before.size)
+
+        subject.openReadOnlyBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        val entryId = before.single().id
+        val flagsBeforeGuardedCalls = repository.flagWrites.toList()
+        subject.deleteQueuedEntry(entryId)
+        subject.beginQueueEdit(entryId)
+        subject.setQueueEditText("changed")
+        subject.saveQueueEdit()
+        subject.cancelQueueEdit()
+        subject.markQueuedEntryReadyAfterReview(entryId)
+        subject.resumeQueue()
+        subject.sendNext(entryId)
+        subject.stop()
+        subject.renameSession("bot-chat", "nope")
+        subject.deleteSession("bot-chat")
+        subject.setSessionPinnedAsync("bot-chat", true)
+        subject.setSessionArchivedAsync("bot-chat", true)
+        subject.setSessionUnreadAsync("bot-chat", false)
+        subject.killProcess("process-1")
+        subject.selectApprovalMode(com.hermesagent.mobile.data.gateway.ApprovalMode.Off)
+        var dictationStarts = 0
+        var voiceStarts = 0
+        subject.onDictationCapture = { _, _ -> dictationStarts++; {} }
+        subject.voiceConversationStart = { voiceStarts++ }
+        subject.toggleDictation()
+        subject.toggleVoiceConversation()
+        runCurrent()
+
+        assertEquals(before, controller.queue("bot-chat"))
+        assertTrue(queueSubmits.isEmpty())
+        assertTrue(repository.renamed.isEmpty())
+        assertTrue(repository.deleted.isEmpty())
+        assertEquals(flagsBeforeGuardedCalls, repository.flagWrites)
+        assertTrue(repository.killedProcesses.isEmpty())
+        assertEquals(0, repository.approvalWrites)
+        assertEquals(0, dictationStarts)
+        assertEquals(0, voiceStarts)
+
+        subject.renameSession("session-a", "allowed")
+        subject.setSessionPinnedAsync("session-a", true)
+        runCurrent()
+        assertEquals(listOf("session-a" to "allowed"), repository.renamed)
+        assertEquals(flagsBeforeGuardedCalls + Triple("pinned", "session-a", true), repository.flagWrites)
+    }
+
+    @Test
+    fun `canonical Bot id stays read-only and an ordinary selection clears its capability`() = runTest(dispatcher) {
+        cache.upsertSessions(listOf(summary("bot-requested", 3_000), summary("bot-canonical", 3_001)))
+        repository.botOpenResult = "bot-canonical"
+        collectState()
+        runCurrent()
+
+        viewModel.openReadOnlyBotChat("researcher", "bot-requested") { }
+        runCurrent()
+        assertEquals("bot-canonical", viewModel.uiState.value.activeSessionId)
+        assertTrue(viewModel.uiState.value.readOnly)
+        viewModel.renameSession("bot-canonical", "must not write")
+        runCurrent()
+        assertTrue(repository.renamed.isEmpty())
+
+        viewModel.selectSession("session-a")
+        runCurrent()
+        assertFalse(viewModel.uiState.value.readOnly)
+        viewModel.selectSession("bot-canonical")
+        runCurrent()
+        assertFalse(viewModel.uiState.value.readOnly)
+    }
+
+    @Test
     fun `endpoint switch fences a deferred Bot Chat resume and reports one failed completion`() = runTest(dispatcher) {
         val generation = MutableStateFlow(0L)
         repository.botOpenGate = CompletableDeferred()
@@ -2571,6 +2660,18 @@ class ChatViewModelTest {
         val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         var processListOutcome: GatewayProcessListOutcome = GatewayProcessListOutcome.Unsupported
         val processListCalls = mutableListOf<String>()
+        val killedProcesses = mutableListOf<Pair<String, String>>()
+        var approvalWrites = 0
+
+        override suspend fun killProcess(durableId: String, processId: String): com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome {
+            killedProcesses += durableId to processId
+            return com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome.Killed
+        }
+
+        override suspend fun setApprovalMode(mode: com.hermesagent.mobile.data.gateway.ApprovalMode): com.hermesagent.mobile.data.gateway.ApprovalModeOutcome {
+            approvalWrites++
+            return com.hermesagent.mobile.data.gateway.ApprovalModeOutcome.Applied
+        }
 
         override suspend fun listProcesses(durableId: String): GatewayProcessListOutcome {
             processListCalls += durableId
