@@ -352,20 +352,34 @@ class BotsViewModel(
         // than once under a concurrent writer, and the rows' activity bands
         // must not move between two attempts at the same list.
         val now = clock()
-        _uiState.update { derivedState(it, whenEmpty = emptyRosterPhase(), now = now) }
+        _uiState.update { state ->
+            derivedState(state, whenEmpty = emptyRosterPhase(state.phase), now = now)
+        }
     }
 
     /**
-     * What a roster-less surface is claiming: an answered-but-empty Gateway
-     * ([BotsRosterPhase.Empty]), or one nothing has been asked of yet
-     * ([BotsRosterPhase.Loading]).
+     * What a roster-less surface is claiming. A terminal response remains
+     * terminal across presentation-only changes; otherwise the choice is an
+     * answered-but-empty Gateway ([BotsRosterPhase.Empty]) or one nothing has
+     * been asked of yet ([BotsRosterPhase.Loading]).
      *
      * Only [answeredEndpoint] can tell them apart — see its KDoc. The endpoint
      * it was answered in has to be *this* one, not merely answered at some
      * point in the past.
      */
-    private fun emptyRosterPhase(): BotsRosterPhase =
-        if (answeredEndpoint != endpointGeneration.value) BotsRosterPhase.Loading else BotsRosterPhase.Empty
+    private fun emptyRosterPhase(previous: BotsRosterPhase): BotsRosterPhase =
+        when (previous) {
+            BotsRosterPhase.Refused,
+            BotsRosterPhase.UnavailableOnGateway,
+            -> previous
+
+            else ->
+                if (answeredEndpoint != endpointGeneration.value) {
+                    BotsRosterPhase.Loading
+                } else {
+                    BotsRosterPhase.Empty
+                }
+        }
 
     /**
      * Forget the roster, because this device has changed endpoint.
@@ -399,8 +413,9 @@ class BotsViewModel(
         _uiState.update { state ->
             derivedState(
                 from = state.copy(safeMessage = null, attentionByKey = emptyMap()),
-                // `answeredEndpoint` was cleared above, so this is Loading.
-                whenEmpty = emptyRosterPhase(),
+                // A switch invalidates even a terminal answer from the old
+                // endpoint, so start the new one from Loading explicitly.
+                whenEmpty = emptyRosterPhase(BotsRosterPhase.Loading),
                 now = now,
             )
         }

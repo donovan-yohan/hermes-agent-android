@@ -225,6 +225,24 @@ class BotsViewModelTest {
     }
 
     @Test
+    fun `presentation changes preserve a rosterless refusal`() = runTest {
+        val host = ScriptedHost(PluginHostResult.Refused(500, "The Gateway refused that request."))
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = backgroundScope,
+            clock = { now },
+            connected = MutableStateFlow(true),
+        )
+
+        viewModel.refreshNow()
+        viewModel.setSearchQuery("researcher")
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Refused, state.phase)
+        assertEquals("The Gateway refused that request.", state.safeMessage)
+    }
+
+    @Test
     fun `a refusal with no connection waits for the gateway instead of failing`() = runTest {
         val host = ScriptedHost(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."))
         val connected = MutableStateFlow(false)
@@ -505,6 +523,19 @@ class BotsViewModelTest {
         val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })
 
         viewModel.refreshNow()
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.UnavailableOnGateway, state.phase)
+        assertNull(state.safeMessage)
+    }
+
+    @Test
+    fun `presentation changes preserve an unavailable roster method`() = runTest {
+        val host = ScriptedHost(PluginHostResult.UnavailableOnGateway)
+        val viewModel = BotsViewModel(BotsPluginRepository(host), backgroundScope, clock = { now })
+
+        viewModel.refreshNow()
+        viewModel.setKindFilter(RosterKindFilter.Groups)
 
         val state = viewModel.uiState.value
         assertEquals(BotsRosterPhase.UnavailableOnGateway, state.phase)
