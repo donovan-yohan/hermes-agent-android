@@ -595,13 +595,16 @@ class SessionNotifierTest {
         assertEquals(listOf(NotificationKind.Approval to "parked"), world.surface.posted())
 
         // Reconnect: replayed prompt was already notified pre-disconnect, so it is not re-announced.
+        world.connected.value = false
+        runCurrent()
         world.pendingInputs.value = emptyMap()
         runCurrent()
+        world.connected.value = true
         world.socketOpens.emit(Unit)
         runCurrent()
         world.pendingInputs.value = approval("parked")
         runCurrent()
-        assertEquals(1, world.surface.posts.size)
+        assertEquals(1, world.surface.posts.count { it.kind == NotificationKind.Approval })
 
         // The window passes and an unrelated prompt arrives. The replayed one
         // does not re-notify, but the fresh one does.
@@ -614,7 +617,7 @@ class SessionNotifierTest {
                 NotificationKind.Approval to "parked",
                 NotificationKind.Approval to "fresh",
             ),
-            world.surface.posted(),
+            world.surface.posted().filterNot { it.first == NotificationKind.ConnectionLost },
         )
     }
 
@@ -656,27 +659,32 @@ class SessionNotifierTest {
 
         // Reconnect: the repository empties its map, the socket reopens, and
         // the replay that follows is deduplicated.
+        world.connected.value = false
+        runCurrent()
         world.pendingInputs.value = emptyMap()
         runCurrent()
+        world.connected.value = true
         world.socketOpens.emit(Unit)
         runCurrent()
         world.pendingInputs.value = approval("chat")
         runCurrent()
-        assertEquals(1, world.surface.posts.size)
+        assertEquals(1, world.surface.posts.count { it.kind == NotificationKind.Approval })
 
         // Past the window, the replayed prompt does not re-fire, but a genuinely new prompt on that session fires.
         advanceTimeBy(5_000)
         world.pendingInputs.value = approval("chat") + clarify("chat")
         runCurrent()
 
+        val promptPosts = world.surface.posted()
+            .filterNot { it.first == NotificationKind.ConnectionLost }
         assertEquals(
             listOf(
                 NotificationKind.Approval to "chat",
                 NotificationKind.Input to "chat",
             ),
-            world.surface.posted(),
+            promptPosts,
         )
-        assertEquals(2, world.surface.posts.size)
+        assertEquals(2, promptPosts.size)
     }
 
     @Test
@@ -758,11 +766,6 @@ class SessionNotifierTest {
 
         world.settings.value = NotificationSettings()
         runCurrent()
-        world.pendingInputs.value = emptyMap()
-        runCurrent()
-        advanceTimeBy(1_001)
-        world.pendingInputs.value = approval("chat")
-        runCurrent()
         assertEquals(listOf(NotificationKind.Approval to "chat"), world.surface.posted())
     }
 
@@ -827,8 +830,11 @@ class SessionNotifierTest {
         assertEquals(listOf(NotificationKind.Approval to "durable-1"), world.surface.posted())
 
         // Disconnect and reconnect.
+        world.connected.value = false
+        runCurrent()
         world.pendingInputs.value = emptyMap()
         runCurrent()
+        world.connected.value = true
         world.socketOpens.emit(Unit)
         runCurrent()
 
@@ -839,7 +845,7 @@ class SessionNotifierTest {
         // Quiet window expires.
         advanceTimeBy(5_000)
         runCurrent()
-        assertEquals(1, world.surface.posts.size)
+        assertEquals(1, world.surface.posts.count { it.kind == NotificationKind.Approval })
     }
 
     @Test
@@ -892,8 +898,11 @@ class SessionNotifierTest {
         runCurrent()
 
         // Disconnect and reconnect: req-A is replayed on the new socket.
+        world.connected.value = false
+        runCurrent()
         world.pendingInputs.value = emptyMap()
         runCurrent()
+        world.connected.value = true
         world.socketOpens.emit(Unit)
         runCurrent()
         world.pendingInputs.value = approval("s1", requestId = "req-A")
@@ -902,13 +911,15 @@ class SessionNotifierTest {
         // Quiet window expires: prompt must NOT re-announce.
         advanceTimeBy(5_000)
         runCurrent()
-        assertEquals(2, world.surface.posts.size) // 1 Approval + 1 TurnDone
+        val nonConnectionPosts = world.surface.posted()
+            .filterNot { it.first == NotificationKind.ConnectionLost }
+        assertEquals(2, nonConnectionPosts.size) // 1 Approval + 1 TurnDone
         assertEquals(
             listOf(
                 NotificationKind.Approval to "s1",
                 NotificationKind.TurnDone to "s1",
             ),
-            world.surface.posted(),
+            nonConnectionPosts,
         )
     }
 
@@ -958,10 +969,13 @@ class SessionNotifierTest {
         )
 
         // Disconnect: repository wipes pending map to emptyMap().
+        world.connected.value = false
+        runCurrent()
         world.pendingInputs.value = emptyMap()
         runCurrent()
 
         // Reconnect: socket opens, opening quiet window.
+        world.connected.value = true
         world.socketOpens.emit(Unit)
         runCurrent()
 
@@ -971,16 +985,18 @@ class SessionNotifierTest {
         world.pendingInputs.value = approval("s1", requestId = "req-1") + clarify("s2")
         runCurrent()
 
-        // Quiet window expires: neither re-announces. Exact post count remains 2.
+        // Quiet window expires: neither prompt re-announces.
         advanceTimeBy(5_000)
         runCurrent()
-        assertEquals(2, world.surface.posts.size)
+        val promptPosts = world.surface.posted()
+            .filterNot { it.first == NotificationKind.ConnectionLost }
+        assertEquals(2, promptPosts.size)
         assertEquals(
             listOf(
                 NotificationKind.Approval to "s1",
                 NotificationKind.Input to "s2",
             ),
-            world.surface.posted(),
+            promptPosts,
         )
     }
 
@@ -1065,6 +1081,31 @@ class SessionNotifierTest {
             listOf(
                 NotificationKind.Approval to "s1",
                 NotificationKind.Input to "s2",
+                NotificationKind.Approval to "s1",
+            ),
+            world.surface.posted(),
+        )
+    }
+
+    @Test
+    fun `the final resolved prompt is news when its exact identity parks again`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+        val prompt = approval("s1", requestId = "same-request")
+
+        world.pendingInputs.value = prompt
+        runCurrent()
+        world.pendingInputs.value = emptyMap()
+        runCurrent()
+        advanceTimeBy(1_001)
+        world.pendingInputs.value = prompt
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                NotificationKind.Approval to "s1",
                 NotificationKind.Approval to "s1",
             ),
             world.surface.posted(),

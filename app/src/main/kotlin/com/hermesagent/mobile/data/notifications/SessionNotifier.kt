@@ -321,6 +321,14 @@ class SessionNotifier(
                     notified.remove(prevReq.promptIdentity())
                 }
             }
+        } else if (connected.value) {
+            // An empty pending map while this same Gateway is still answering
+            // is an observed final resolution, not a reconnect baseline wipe.
+            // Read the StateFlow directly: its signal may still be queued behind
+            // this pending-map emission in the merged collector.
+            for (previous in previousPending.values) {
+                notified.remove(previous.promptIdentity())
+            }
         }
     }
 
