@@ -28,6 +28,7 @@ class ChatActions(
     val onExitProject: () -> Unit = {},
     val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
     val onSelectSession: (String) -> Unit = {},
+    val onOpenReadOnlyBotChat: (profile: String, durableId: String, onOpened: () -> Unit) -> Unit = { _, _, _ -> },
     val onCreateSession: () -> Unit = {},
     val onBranchFromReply: ((String) -> Unit)? = null,
     val onRegenerateReply: ((String) -> Unit)? = null,

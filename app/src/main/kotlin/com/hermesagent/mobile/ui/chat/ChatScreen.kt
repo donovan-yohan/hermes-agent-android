@@ -792,6 +792,15 @@ private fun JumpToLatestButton(
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: StatusAction?) {
+    if (state.readOnly) {
+        Text(
+            text = "Bot Chat is read-only on mobile.",
+            style = HermesTheme.type.caption,
+            color = HermesTheme.tokens.textTertiary,
+            modifier = Modifier.padding(HermesTheme.spacing.pageInset),
+        )
+        return
+    }
     val composerStatus = state.activeSession?.composerStatus
     val hasQueue = state.composer.runtime.queueEntries.isNotEmpty()
     val fuseStatusStack = composerStatusGroupCount(composerStatus, hasQueue) == 1 &&

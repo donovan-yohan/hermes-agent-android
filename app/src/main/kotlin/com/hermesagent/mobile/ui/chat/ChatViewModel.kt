@@ -426,11 +426,13 @@ data class ChatUiState(
      * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      */
     val approvalMode: ApprovalMode? = null,
+    /** Canonical Bot Chats are transcript-only in Phase A. */
+    val readOnly: Boolean = false,
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
     val canSend: Boolean
-        get() = canCreateSession &&
+        get() = !readOnly && canCreateSession &&
             activeSession?.status == SessionStatus.Idle &&
             (draft.isNotBlank() || composer.runtime.hasReadyAttachment)
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
@@ -462,6 +464,8 @@ internal class ChatViewModel(
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
+    /** UI routing state, never backend/session-cache authority. */
+    private var readOnlyBotSessionId: String? = null
 
     /**
      * Whether the debounced backend search is still in flight. It is UI state,
@@ -868,6 +872,7 @@ internal class ChatViewModel(
             // is also *known*, because it shows no optimistic default.
             approvalMode = composerBundle.chrome.approval.mode
                 ?.takeIf { navigation.connection.status == GatewayConnectionStatus.Connected },
+            readOnly = displayedActiveId != null && displayedActiveId == readOnlyBotSessionId,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -1801,9 +1806,34 @@ internal class ChatViewModel(
         if (activeSessionId.value == id) return
         navigationGeneration += 1
         flushDraft()
+        readOnlyBotSessionId = null
         rehome(id)
         viewModelScope.launch {
             openAndAdopt(id)
+        }
+    }
+
+    /** Phase A handoff: explicit roster profile, read-only transcript, no create or submit. */
+    fun openReadOnlyBotChat(profile: String, durableId: String, onOpened: () -> Unit) {
+        val generation = ++navigationGeneration
+        flushDraft()
+        readOnlyBotSessionId = durableId
+        rehome(durableId)
+        viewModelScope.launch {
+            try {
+                val canonicalId = repository.openSession(durableId, profile)
+                if (generation != navigationGeneration || activeSessionId.value != durableId) return@launch
+                adoptCanonicalSession(durableId, canonicalId)
+                readOnlyBotSessionId = canonicalId
+                onOpened()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                if (generation == navigationGeneration && activeSessionId.value == durableId) {
+                    readOnlyBotSessionId = null
+                    rehome(null)
+                }
+            }
         }
     }
 
