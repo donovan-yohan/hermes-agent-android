@@ -274,14 +274,24 @@ internal fun atomizeReferenceDeletion(
 internal fun canonicalizePastedComposerText(
     previous: String,
     proposed: String,
-    proposedCursor: Int
+    proposedCursor: Int,
+    previousSelection: TextRange? = null,
 ): TextFieldValue? {
-    var p = 0
-    val minLen = min(previous.length, proposed.length)
-    while (p < minLen && previous[p] == proposed[p]) p++
+    val selected = previousSelection?.takeUnless { it.collapsed }
+    var p = selected?.min ?: 0
+    var s = selected?.let { previous.length - it.max } ?: 0
+    val selectionMatches = selected != null &&
+        proposed.startsWith(previous.substring(0, p)) &&
+        proposed.endsWith(previous.substring(previous.length - s)) &&
+        proposed.length >= p + s
+    if (!selectionMatches) {
+        p = 0
+        val minLen = min(previous.length, proposed.length)
+        while (p < minLen && previous[p] == proposed[p]) p++
 
-    var s = 0
-    while (s < minLen - p && previous[previous.length - 1 - s] == proposed[proposed.length - 1 - s]) s++
+        s = 0
+        while (s < minLen - p && previous[previous.length - 1 - s] == proposed[proposed.length - 1 - s]) s++
+    }
 
     val inserted = proposed.substring(p, proposed.length - s)
 

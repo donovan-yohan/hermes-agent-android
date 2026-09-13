@@ -243,6 +243,16 @@ class ComposerReferenceChipsTest {
         prop = "see https://example.dev/a now"
         canonicalized = canonicalizePastedComposerText(prev, prop, 25)
         assertEquals("see @url:`https://example.dev/a` now", canonicalized!!.text)
+
+        prev = "see https://old.example/a now"
+        prop = "see https://new.example/a now"
+        canonicalized = canonicalizePastedComposerText(
+            prev,
+            prop,
+            29,
+            TextRange(4, 25),
+        )
+        assertEquals("see @url:`https://new.example/a` now", canonicalized!!.text)
         assertEquals(TextRange(32), canonicalized.selection)
 
         assertNull(canonicalizePastedComposerText("a", "ab", 1))

@@ -103,6 +103,40 @@ class ComposerReferenceChipJourneyTest {
     }
 
     @Test
+    fun pastedUrlOverAUrlWithSharedTextStillPaintsAndSendsTheChip() {
+        var draft by mutableStateOf("see https://old.example/a now")
+        var sent = ""
+
+        composeTestRule.setContent {
+            HermesTheme {
+                Composer(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onSend = { sent = draft },
+                    onStop = {}, isStreaming = false, canSend = true, connected = true, statusLine = "",
+                    modifier = Modifier
+                )
+            }
+        }
+
+        val node = composeTestRule.onNodeWithContentDescription("Message Hermes")
+        node.performTextInputSelection(TextRange(4, 25))
+        node.performTextInput("https://new.example/a")
+        composeTestRule.waitForIdle()
+
+        assertEquals("see @url:`https://new.example/a` now", draft)
+        val config = node.fetchSemanticsNode().config
+        assertEquals(draft, config[SemanticsProperties.InputText].text)
+        val editableText = config[SemanticsProperties.EditableText].text
+        assertTrue(editableText.contains("new.example/a"))
+        assertFalse(editableText.contains("https://"))
+
+        composeTestRule.onNodeWithContentDescription("Send message").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(draft, sent)
+    }
+
+    @Test
     fun addSheetInsertsPaddedUrlChip() {
         var draft by mutableStateOf("")
 

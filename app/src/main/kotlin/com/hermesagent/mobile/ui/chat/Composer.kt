@@ -513,7 +513,12 @@ private fun ComposerEditor(
                         ?: if (value.composition != null) {
                             value
                         } else {
-                            canonicalizePastedComposerText(before.text, value.text, value.selection.start)
+                            canonicalizePastedComposerText(
+                                before.text,
+                                value.text,
+                                value.selection.start,
+                                before.selection,
+                            )
                                 ?: canonicalizeOnSpaceKeepingCaret(value)
                         }
                 }
