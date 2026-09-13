@@ -69,8 +69,11 @@ class BotsPluginRepository(private val host: PluginHost) {
         if (result !is PluginHostResult.Success) return BotChatLookup.Unsafe
         val sessions = (result.result as? JsonObject)?.get("sessions") as? JsonArray ?: return BotChatLookup.Unsafe
         if (sessions.isEmpty()) return if (rosterCanonicalId.isNullOrBlank()) BotChatLookup.Missing else BotChatLookup.Unsafe
-        val exact = sessions.mapNotNull { it as? JsonObject }
-            .firstOrNull { it.text("title") == CANONICAL_CHAT_TITLE } ?: return BotChatLookup.Unsafe
+        // `title` makes this a constrained lookup, not a ranking request. A
+        // surprising extra or malformed row therefore means the response no
+        // longer proves which hidden chat is canonical; never pick arbitrarily.
+        val exact = sessions.singleOrNull() as? JsonObject ?: return BotChatLookup.Unsafe
+        if (exact.text("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
         val id = exact.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
             ?: exact.text("id")?.trim()?.takeIf(String::isNotEmpty)
             ?: return BotChatLookup.Unsafe

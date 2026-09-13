@@ -283,13 +283,31 @@ class BotsViewModel(
         refresh()
     }
 
-    fun openBotChat(row: BotRosterRow, onOpen: (profile: String, durableId: String) -> Unit) {
+    fun openBotChat(
+        row: BotRosterRow,
+        onOpen: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit,
+    ) {
         if (_uiState.value.openingBotKey != null) return
         val endpoint = endpointGeneration.value
         _uiState.update { it.copy(openingBotKey = row.rosterKey, botChatMessage = null) }
         scope.launch {
             when (val outcome = repository.findCanonicalChat(row.name, row.canonicalSession?.id)) {
-                is BotChatLookup.Found -> if (endpoint == endpointGeneration.value) onOpen(row.name, outcome.durableId)
+                is BotChatLookup.Found -> if (endpoint == endpointGeneration.value) {
+                    // Discovery and resume are one roster operation.  In
+                    // particular, do not clear the row spinner just because
+                    // the resume coroutine was launched.
+                    onOpen(row.name, outcome.durableId) { opened ->
+                        if (endpoint != endpointGeneration.value) return@onOpen
+                        _uiState.update {
+                            it.copy(
+                                openingBotKey = null,
+                                botChatMessage = if (opened) null else
+                                    "Bot Chat could not be opened. Check the Gateway and try again.",
+                            )
+                        }
+                    }
+                    return@launch
+                }
                 BotChatLookup.Missing -> if (endpoint == endpointGeneration.value) {
                     _uiState.update { it.copy(botChatMessage = "No Bot Chat is available for this bot yet.") }
                 }

@@ -2,31 +2,46 @@
 
 ## Pin
 
-| Authority | Revision |
-|---|---|
-| Hermes Desktop and Gateway | `564aef2946c436500a5e80ee117b66b789b3f99a` |
+| Authority | Revision | Read method |
+|---|---|---|
+| Hermes Desktop and Gateway | `564aef2946c436500a5e80ee117b66b789b3f99a` | read-only `git show <sha>:<path>` |
 
-## Sources
+Every source location below is against that exact revision.
 
-- `apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:151-205` — exact hidden `session.list` registry lookup, title verification, and `resolved_id` preference.
-- `apps/desktop/src/plugins/hermes-bots/bot-row.tsx:210` — activating a roster row resolves its canonical chat.
-- `apps/desktop/src/AGENTS.md:49-81` — one canonical chat per profile, identified by exact `Bot Chat` title.
-- Issue #190 — Phase A is read-only: no creation, kickoff, prompt submission, or delivery-target client behavior.
+## Sources and action evidence
 
-## Phase A contract
+| Question | Desktop/Gateway source | Android evidence |
+|---|---|---|
+| Canonical identity and lookup | `apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:151-205`; `apps/desktop/src/AGENTS.md:49-81` | `BotsPluginRepository.findCanonicalChat`: exact `session.list {profile, title:"Bot Chat", limit:200, include_hidden:true}`, one exact title row only, `resolved_id` before `id` |
+| Row activation | `apps/desktop/src/plugins/hermes-bots/bot-row.tsx:210` | `BotsRosterScreen` row tap → `BotsViewModel.openBotChat`; duplicate taps are held by the row loading key |
+| Resume profile | `tui_gateway/methods_session.py:324-330` | `GatewaySessionRepository.openSession(durableId, profile)` is explicit; `GatewayProfileRoutingTest` asserts the exact `session.resume` object for an uncached hidden row |
+| Missing/refused result | `canonical-chat.ts:151-205` | no `session.create`; roster stays present with `No Bot Chat is available for this bot yet.` or `Bot Chat could not be opened. Check the Gateway and try again.` The row remains actionable for retry |
+| Phase-A composition boundary | Issue #190 | `ChatViewModel` centrally refuses submit, queue, redirect, send-next, regenerate, branch and create while the opened canonical session is read-only |
 
-Android sends only `session.list {profile, title:"Bot Chat", limit:200, include_hidden:true}` for this action. It accepts only an exact-title row, opens `resolved_id` before `id`, and resumes it with the roster profile explicitly supplied. A missing or unsafe result never creates a session. The transcript opens read-only, with no composer or prompt-submit path.
+## Copy and navigation
+
+The roster does not navigate during discovery or resume. The tapped row keeps its
+loading indicator until the profile-aware resume answers. On success Android goes
+to the normal Chat destination and shows the transcript with the fixed sentence
+`Bot Chat is read-only. Open a regular chat to send a message.` On failure it
+stays on the roster and shows fixed product copy, never backend exceptions or
+identifiers. A normal session selection or creation clears the read-only marker;
+an endpoint change clears it before any old durable id can be reused.
 
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| Desktop can create/reconcile a missing canonical chat and may submit a first-turn kickoff | omission | Phase A says the chat is unavailable and creates nothing | out-of-scope: #190 Phase B |
-| Desktop owns a multi-pane bots workspace | mobile-adaptation | A successful row action returns to the single Android Chat destination | Phone navigation has one foreground chat destination; profile-scoped resume preserves the bot owner |
-| Desktop permits Bot Chat composition | omission | Composer is absent and the screen states it is read-only | out-of-scope: #190 Phase B |
+| Desktop can create/reconcile a missing canonical chat and may submit a first-turn kickoff | omission | Phase A reports the chat unavailable and creates nothing | out-of-scope: #190 Phase B |
+| Desktop owns a multi-pane bots workspace | mobile-adaptation | A successful row action returns to the single Android Chat destination | Phone navigation has one foreground chat destination; the explicit profile on resume preserves the bot owner |
+| Desktop permits Bot Chat composition | omission | Transcript-only Chat; every mutation door is centrally refused | out-of-scope: #190 Phase B |
+| Desktop row/menu cluster has additional bot-management actions | omission | No management controls are exposed in Phase A | out-of-scope: #190 Phase B; this slice only ports the canonical-chat row action and does not imply unsupported actions work |
 
 ## Visual report
 
 - pending: #190
 
-No rendered Desktop/Android evidence was captured in this change. The pending issue is intentional; this page does not claim pixel parity.
+No rendered Desktop/Android side-by-side was captured in this change. This is
+explicitly pending evidence, not a pixel-parity claim. A separately owned visual
+capture issue should replace `#190` before reviewer sign-off; no such issue was
+created here because this task does not permit GitHub changes.

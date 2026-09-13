@@ -2608,6 +2608,8 @@ class ChatViewModelTest {
             return durableId
         }
 
+        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
+
 
         var branchResult = "new-durable"
         var historyResult = emptyList<TranscriptEntry>()

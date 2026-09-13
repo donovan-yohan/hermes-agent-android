@@ -160,6 +160,7 @@ private class FakeRepository(private val response: PendingInputResponse) : Gatew
 
     override suspend fun refreshSessions() = Unit
     override suspend fun openSession(durableId: String): String = durableId
+        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
     override suspend fun createSession(workspacePath: String?): String = "new"
     override suspend fun submit(durableId: String, text: String) =
         com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted
@@ -178,6 +179,7 @@ private object ThrowingRepository : GatewaySessionRepository {
 
     override suspend fun refreshSessions() = Unit
     override suspend fun openSession(durableId: String): String = durableId
+        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
     override suspend fun createSession(workspacePath: String?): String = "new"
     override suspend fun submit(durableId: String, text: String) =
         com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted

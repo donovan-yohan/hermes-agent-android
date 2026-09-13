@@ -179,7 +179,12 @@ interface GatewaySessionRepository {
     suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
         error("Project creation is not implemented by this repository.")
     suspend fun openSession(durableId: String): String
-    suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
+    /**
+     * Resume a session in an explicitly named profile.  This is deliberately
+     * not a convenience default: silently dropping the profile can open a
+     * same-id session from the Gateway launch profile.
+     */
+    suspend fun openSession(durableId: String, profile: String): String
     suspend fun createSession(workspacePath: String? = null): String
     suspend fun createSession(
         workspacePath: String?,

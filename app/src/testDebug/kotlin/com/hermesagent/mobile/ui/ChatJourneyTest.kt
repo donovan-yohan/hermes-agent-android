@@ -685,6 +685,7 @@ class ChatJourneyTest {
             opened += durableId
             return durableId
         }
+        override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
         override suspend fun createSession(workspacePath: String?): String {
             cache.upsertSession(SessionSummary("created-live", "New session", "", NOW + 1))

@@ -244,4 +244,49 @@ class BotsPluginRepositoryTest {
 
         assertEquals(BotsRosterLoad.Loaded(emptyList()), load)
     }
+
+    // ── canonical Bot Chat lookup ────────────────────────────────────────────
+
+    @Test
+    fun `canonical lookup sends the exact hidden profile scoped request and prefers resolved id`() = runTest {
+        val host = FakeHost(
+            PluginHostResult.Success(json("""{"sessions":[{"id":"old-tip","resolved_id":"durable-tip","title":"Bot Chat"}]}""")),
+        )
+
+        assertEquals(BotChatLookup.Found("durable-tip"), BotsPluginRepository(host).findCanonicalChat("bot-a", null))
+        assertEquals("session.list", host.lastMethod)
+        assertEquals(
+            buildJsonObject {
+                put("profile", JsonPrimitive("bot-a"))
+                put("title", JsonPrimitive("Bot Chat"))
+                put("limit", JsonPrimitive(200))
+                put("include_hidden", JsonPrimitive(true))
+            },
+            host.lastParams,
+        )
+    }
+
+    @Test
+    fun `canonical lookup falls back to id and never emits a create or submit`() = runTest {
+        val host = FakeHost(
+            PluginHostResult.Success(json("""{"sessions":[{"id":"durable-tip","title":"Bot Chat"}]}""")),
+        )
+
+        assertEquals(BotChatLookup.Found("durable-tip"), BotsPluginRepository(host).findCanonicalChat("bot-a", null))
+        assertEquals(listOf("session.list"), listOfNotNull(host.lastMethod))
+    }
+
+    @Test
+    fun `canonical lookup fails closed for absent ambiguous malformed refused or unavailable answers`() = runTest {
+        suspend fun lookup(result: PluginHostResult, canonicalId: String? = null) =
+            BotsPluginRepository(FakeHost(result)).findCanonicalChat("bot-a", canonicalId)
+
+        assertEquals(BotChatLookup.Missing, lookup(PluginHostResult.Success(json("""{"sessions":[]}"""))))
+        assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.Success(json("""{"sessions":[]}""")), "roster-tip"))
+        assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.Success(json("""{"sessions":[{"id":"x","title":"Other"}]}"""))))
+        assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.Success(json("""{"sessions":[{"id":"x","title":"Bot Chat"},{"id":"y","title":"Bot Chat"}]}"""))))
+        assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.Success(json("""{"sessions":[null]}"""))))
+        assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.Refused(500, "nope")))
+        assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.UnavailableOnGateway))
+    }
 }

@@ -245,6 +245,23 @@ class GatewayProfileRoutingTest {
         assertNull(rpc.calls.last { it.first == "session.resume" }.second["profile"])
     }
 
+    @Test
+    fun `an uncached hidden canonical session resumes its resolved durable id in the explicit roster profile`() = runTest {
+        val rpc = FakeProfileRpc()
+        val repository = repository(SessionCache(), rpc, backgroundScope)
+        runCurrent()
+
+        repository.openSession("canonical-tip", "bot-a")
+
+        assertEquals(
+            buildJsonObject {
+                put("session_id", JsonPrimitive("canonical-tip"))
+                put("profile", JsonPrimitive("bot-a"))
+            },
+            rpc.calls.last { it.first == "session.resume" }.second,
+        )
+    }
+
     private fun repository(
         cache: SessionCache,
         rpc: FakeProfileRpc,
