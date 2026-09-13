@@ -61,7 +61,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -79,10 +78,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelTest {
-    // Keep this class's virtual time independent of any Main dispatcher that
-    // another test may have installed while JUnit constructs test instances.
-    private val scheduler = TestCoroutineScheduler()
-    private val dispatcher = StandardTestDispatcher(scheduler)
+    private val dispatcher = StandardTestDispatcher()
     private lateinit var cache: SessionCache
     private lateinit var repository: FakeRepository
     private lateinit var sidebarStore: FakeSidebarViewStore
@@ -128,7 +124,7 @@ class ChatViewModelTest {
 
         viewModel.refreshProcesses()
         runCurrent()
-        assertEquals("Background work could not be refreshed. Try again.", viewModel.uiState.value.notice)
+        assertEquals("Background work could not be refreshed. Try again.", viewModel.uiState.value.notice?.text)
         assertEquals(listOf("session-a", "session-a"), repository.processListCalls)
     }
 
