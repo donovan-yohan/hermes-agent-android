@@ -4,6 +4,11 @@ A native Kotlin and Jetpack Compose Android client for a **self-hosted Hermes
 Agent**. It hosts no runtime of its own: it connects to a Hermes you already
 run, and gives you that agent's sessions, live turns and tools on a phone.
 
+> [!IMPORTANT]
+> Hermes Mobile is an independent community project. It is not officially
+> affiliated with, endorsed by, or maintained by Nous Research or the Hermes
+> Agent team.
+
 <!-- Captures are added by the media lane; see docs/media/README.md for the
      agreed file names and the capture rule. -->
 <p align="center">
