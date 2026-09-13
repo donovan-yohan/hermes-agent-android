@@ -140,9 +140,10 @@ lifecycle.
 - A read-only roster behind "Manage profiles…" — label, Default badge, path,
   model, provider and skill count. Creating, renaming, deleting, recolouring,
   reordering, avatars and the SOUL.md editor are absent.
-- The project catalog remains the Gateway's own profile's: the Gateway's project
-  RPCs take no profile, so the Project grouping states that outside the default
-  scope rather than listing another profile's projects.
+- Project grouping reads the selected named profile's Gateway-authored catalog,
+  membership and project-specific sessions. `projects.tree`,
+  `projects.project_sessions`, and project creation carry the same explicit
+  profile; blank/omitted preserves the Gateway launch profile.
 
 ### Chat and composer
 

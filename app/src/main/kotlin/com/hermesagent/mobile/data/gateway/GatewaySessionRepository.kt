@@ -86,7 +86,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlin.coroutines.CoroutineContext
 
 /**
- * How this connection's session RPCs are scoped to a Hermes profile.
+ * How this connection's profile-scoped RPCs are routed to a Hermes profile.
  *
  * `session.create` (`tui_gateway/methods_session.py:42`), `session.list`
  * (`:163`) and `session.resume` (`:324`) all accept a `profile` parameter at
@@ -412,6 +412,8 @@ sealed interface GatewayGoalStatusOutcome {
 data class ProjectCreateOutcome(
     val projectId: String,
     val catalogRefreshed: Boolean,
+    /** False when a successful write belongs to a profile or endpoint left while it ran. */
+    val scopeCurrent: Boolean = true,
 )
 
 data class SessionRehome(
@@ -875,6 +877,8 @@ internal class LiveGatewaySessionRepository(
      * becomes a `profile` parameter on a session RPC.
      */
     private var profileRouting = ProfileRouting()
+    /** Bumps with every scope move, fencing project snapshots as well as sessions. */
+    private var projectScopeRevision = 0L
 
     /** Session REST routes over the connection-owned transport; holds no credential. */
     private val rest = GatewayRestClient(restContext, http)
@@ -1127,8 +1131,15 @@ internal class LiveGatewaySessionRepository(
     override fun setProfileRouting(routing: ProfileRouting) {
         synchronized(stateLock) {
             val previous = profileRouting.activeProfile
+            if (profileRouting == routing) return
             profileRouting = routing
             if (previous == routing.activeProfile) return
+            // The catalog and its hydrated membership are one profile's
+            // authoritative snapshot. Unlike session rows they must never
+            // merge across profiles; clear before a new request can publish.
+            projectScopeRevision++
+            lastHydratedProjectId = null
+            cache.clearProjects()
             approvalModeRevision++
             confirmedApprovalMode = null
             approvalModeFlow.value = ApprovalModeState()
@@ -1901,15 +1912,19 @@ internal class LiveGatewaySessionRepository(
     override suspend fun refreshProjects() {
         val rehydrate = projectMutex.withLock {
             val connection = connectionSnapshot()
+            val scope = projectScopeSnapshot(connection)
             val payload = try {
                 connection.client.request(
                     "projects.tree",
-                    buildJsonObject { put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT)) },
+                    buildJsonObject {
+                        put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT))
+                        scope.profile?.let { put("profile", JsonPrimitive(it)) }
+                    },
                 )
             } catch (failure: Throwable) {
                 if (failure.isMissingProjectsMethod()) {
                     synchronized(stateLock) {
-                        ensureCurrent(connection)
+                        ensureCurrentProject(connection, scope)
                         cache.markProjectsUnavailable()
                     }
                     return@withLock null
@@ -1918,7 +1933,7 @@ internal class LiveGatewaySessionRepository(
             }
             val overview = parseProjectOverview(payload, clock())
             synchronized(stateLock) {
-                ensureCurrent(connection)
+                ensureCurrentProject(connection, scope)
                 cache.replaceProjectOverview(overview.projects, overview.activeProjectId)
                 lastHydratedProjectId?.takeIf { projectId ->
                     overview.projects.any { it.id == projectId }
@@ -1934,8 +1949,9 @@ internal class LiveGatewaySessionRepository(
     override suspend fun openProject(projectId: String) = projectMutex.withLock {
         require(projectId.isNotBlank())
         val connection = connectionSnapshot()
+        val scope = projectScopeSnapshot(connection)
         synchronized(stateLock) {
-            ensureCurrent(connection)
+            ensureCurrentProject(connection, scope)
             if (cache.state.value.projects.available == true &&
                 projectId !in cache.state.value.projects.projects
             ) {
@@ -1944,11 +1960,14 @@ internal class LiveGatewaySessionRepository(
         }
         val result = connection.client.request(
             "projects.project_sessions",
-            buildJsonObject { put("project_id", JsonPrimitive(projectId)) },
+            buildJsonObject {
+                put("project_id", JsonPrimitive(projectId))
+                scope.profile?.let { put("profile", JsonPrimitive(it)) }
+            },
         )
         val details = parseProjectDetails(result, clock())
         synchronized(stateLock) {
-            ensureCurrent(connection)
+            ensureCurrentProject(connection, scope)
             lastHydratedProjectId = projectId
             cache.replaceProjectDetails(details.project, details.sessions)
         }
@@ -1959,8 +1978,9 @@ internal class LiveGatewaySessionRepository(
         val cleanPath = folderPath.trim()
         require(cleanName.isNotEmpty())
         require(cleanPath.isNotEmpty())
-        val projectId = projectMutex.withLock {
+        val creation = projectMutex.withLock {
             val connection = connectionSnapshot()
+            val scope = projectScopeSnapshot(connection)
             val result = connection.client.request(
                 "projects.create",
                 buildJsonObject {
@@ -1968,18 +1988,25 @@ internal class LiveGatewaySessionRepository(
                     put("folders", JsonArray(listOf(JsonPrimitive(cleanPath))))
                     put("primary_path", JsonPrimitive(cleanPath))
                     put("use", JsonPrimitive(true))
+                    scope.profile?.let { put("profile", JsonPrimitive(it)) }
                 },
             ).asObject("projects.create")
-            synchronized(stateLock) { ensureCurrent(connection) }
             val project = result["project"] as? JsonObject
                 ?: throw GatewayRpcException("Hermes did not return the created project.")
-            project.string("id")?.takeIf(String::isNotBlank)
+            val id = project.string("id")?.takeIf(String::isNotBlank)
                 ?: throw GatewayRpcException("Hermes did not return a project id.")
+            ProjectCreateAcceptance(id, connection, scope)
         }
+        val (projectId, connection, scope) = creation
+        val scopeCurrent = synchronized(stateLock) { isCurrentProject(connection, scope) }
+        // An accepted write is truth even if its profile or endpoint changes
+        // before the response arrives. It cannot refresh or publish into the
+        // new subject, but it also must not masquerade as a failed mutation.
+        if (!scopeCurrent) return ProjectCreateOutcome(projectId, catalogRefreshed = false, scopeCurrent = false)
         // Re-read backend truth instead of teaching this write path a second
         // project-tree parser. Creation has already succeeded at this point, so
         // a refresh failure must not tell callers to retry the write.
-        val catalogRefreshed = try {
+        var catalogRefreshed = try {
             refreshProjects()
             true
         } catch (failure: CancellationException) {
@@ -1987,7 +2014,9 @@ internal class LiveGatewaySessionRepository(
         } catch (_: Throwable) {
             false
         }
-        return ProjectCreateOutcome(projectId, catalogRefreshed)
+        val stillCurrent = synchronized(stateLock) { isCurrentProject(connection, scope) }
+        if (!stillCurrent) catalogRefreshed = false
+        return ProjectCreateOutcome(projectId, catalogRefreshed, scopeCurrent = stillCurrent)
     }
 
     override suspend fun openSession(durableId: String): String = openSessionInternal(durableId, null)
@@ -5252,6 +5281,24 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    private fun projectScopeSnapshot(connection: ConnectionSnapshot): ProjectScopeSnapshot = synchronized(stateLock) {
+        ensureCurrent(connection)
+        ProjectScopeSnapshot(profileRouting.activeProfile, projectScopeRevision)
+    }
+
+    private fun ensureCurrentProject(connection: ConnectionSnapshot, scope: ProjectScopeSnapshot) {
+        if (!isCurrentProject(connection, scope)) {
+            throw GatewayRpcException("The profile scope changed.")
+        }
+    }
+
+    private fun isCurrentProject(connection: ConnectionSnapshot?, scope: ProjectScopeSnapshot): Boolean =
+        connection != null &&
+            connection.generation == connectionGeneration &&
+            clientFlow.value === connection.client &&
+            scope.revision == projectScopeRevision &&
+            scope.profile == profileRouting.activeProfile
+
     private fun canonicalSummary(
         requestedId: String,
         canonicalId: String,
@@ -5415,6 +5462,12 @@ internal class LiveGatewaySessionRepository(
     }
 
     private data class ConnectionSnapshot(val client: GatewayRpcClient, val generation: Long)
+    private data class ProjectScopeSnapshot(val profile: String?, val revision: Long)
+    private data class ProjectCreateAcceptance(
+        val projectId: String,
+        val connection: ConnectionSnapshot,
+        val scope: ProjectScopeSnapshot,
+    )
     private data class RuntimeEventRevision(val live: Long = 0, val progress: Long = 0)
     private data class ConnectionReset(
         val generation: Long,

@@ -283,7 +283,7 @@ class ProfileRailJourneyTest {
     }
 
     @Test
-    fun `a named scope hides the catalog and falls back to its own chats`() {
+    fun `a named scope renders its project catalog rather than fallback chats`() {
         launch()
         openSessions()
         compose.onNodeWithContentDescription("Filters").performClick()
@@ -294,16 +294,21 @@ class ProfileRailJourneyTest {
         compose.onNodeWithContentDescription("Switch to work").performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithTag(PROJECT_PROFILE_SCOPE_NOTE).assertIsDisplayed()
-        assertEquals(0, compose.countWithText("Hermes mobile"))
-        // The pane is not blank behind the note: the scope's own chats list by
-        // date, so the grouping control is not the only way out of the state.
-        assertEquals(1, compose.rows("work-row"))
-        assertEquals(0, compose.rows("home-row"))
+        assertEquals(0, compose.onAllNodesWithTag(PROJECT_PROFILE_SCOPE_NOTE).fetchSemanticsNodes().size)
+        assertEquals(1, compose.countWithText("Hermes mobile"))
+        assertEquals(1, compose.nodesWithDescription("New project"))
+        assertEquals(1, compose.countWithText("PROJECTS"))
+        compose.onNodeWithContentDescription("Open project Hermes mobile. 1 session").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("All projects").assertIsDisplayed()
+        assertEquals(listOf("project-mobile"), repository.openedProjects)
+        compose.onNodeWithContentDescription("All projects").performClick()
+        compose.waitForIdle()
+        assertEquals(1, compose.countWithText("Hermes mobile"))
     }
 
     @Test
-    fun `the named scope fallback heads the pane as sessions, not projects`() {
+    fun `named project grouping does not fall back to date sessions`() {
         launch()
         openSessions()
         compose.onNodeWithContentDescription("Switch to work").performClick()
@@ -311,11 +316,8 @@ class ProfileRailJourneyTest {
         compose.onNodeWithText("Project").performClick()
         compose.waitForIdle()
 
-        // `+` creating a project into a catalog this scope cannot list, and a
-        // field searching it, are both actions with nothing behind them.
-        compose.onNodeWithContentDescription("New session").assertIsDisplayed()
-        assertEquals(0, compose.nodesWithDescription("New project"))
-        assertEquals(1, compose.countWithText("SESSIONS"))
+        assertEquals(0, compose.rows("work-row"))
+        assertEquals(1, compose.countWithText("Hermes mobile"))
     }
 
     /**
@@ -382,7 +384,7 @@ class ProfileRailJourneyTest {
             listOf(ProjectSummary("project-mobile", "Hermes mobile", "/work/mobile", sessionCount = 1)),
             activeProjectId = null,
         )
-        repository = RailRepository()
+        repository = RailRepository(cache)
         viewModel = ChatViewModel(
             cache = cache,
             repository = repository,
@@ -399,6 +401,8 @@ class ProfileRailJourneyTest {
                 appearance = AppearanceSelection(),
                 chatActions = ChatActions(
                     onSidebarGroupingChange = viewModel::setSidebarGrouping,
+                    onSelectProject = viewModel::selectProject,
+                    onExitProject = viewModel::exitProject,
                     onSelectSession = viewModel::selectSession,
                     onSelectProfile = viewModel::selectProfile,
                     onShowAllProfiles = viewModel::showAllProfiles,
@@ -427,17 +431,25 @@ class ProfileRailJourneyTest {
         override fun connectionChanged(state: com.hermesagent.mobile.data.profiles.GatewayProfileConnectionState) = Unit
     }
 
-    private class RailRepository : GatewaySessionRepository {
+    private class RailRepository(private val cache: SessionCache) : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
         var routing = ProfileRouting()
         val interrupted = mutableListOf<String>()
+        val openedProjects = mutableListOf<String>()
 
         override fun setProfileRouting(routing: ProfileRouting) {
             this.routing = routing
         }
 
         override suspend fun refreshSessions() = Unit
+        override suspend fun openProject(projectId: String) {
+            openedProjects += projectId
+            cache.replaceProjectDetails(
+                requireNotNull(cache.state.value.projects.projects[projectId]),
+                listOf(requireNotNull(cache.session("work-row"))),
+            )
+        }
         override suspend fun openSession(durableId: String): String = durableId
         override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
         override suspend fun createSession(workspacePath: String?): String = "created"

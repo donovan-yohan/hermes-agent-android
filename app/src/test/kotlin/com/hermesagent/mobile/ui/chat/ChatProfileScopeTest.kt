@@ -8,6 +8,7 @@ import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.gateway.ProfileRouting
+import com.hermesagent.mobile.data.gateway.ProjectCreateOutcome
 import com.hermesagent.mobile.data.prefs.ProfileScopeStore
 import com.hermesagent.mobile.data.profiles.GatewayProfileConnectionState
 import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
@@ -19,6 +20,7 @@ import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -334,6 +336,8 @@ class ChatProfileScopeTest {
         var routing = ProfileRouting()
         val interrupted = mutableListOf<String>()
         val listed = mutableListOf<ProfileRouting>()
+        var createGate: CompletableDeferred<Unit>? = null
+        var createOutcome = ProjectCreateOutcome("project-created", catalogRefreshed = true)
 
         override fun setProfileRouting(routing: ProfileRouting) {
             this.routing = routing
@@ -354,6 +358,11 @@ class ChatProfileScopeTest {
         override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
         override suspend fun createSession(workspacePath: String?): String = "created"
+
+        override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
+            createGate?.await()
+            return createOutcome
+        }
 
         override suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome =
             GatewaySubmitOutcome.Accepted
@@ -398,6 +407,26 @@ class ChatProfileScopeTest {
 
         assertEquals(emptyList<ProfileRouting>(), repository.archivedReads)
         assertEquals(ArchivedPoolState.Idle, viewModel.uiState.value.archivedPool)
+    }
+
+    @Test
+    fun `stale profile creation is silently ignored after routing changes`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.createGate = CompletableDeferred()
+        viewModel.selectProfile("work")
+        runCurrent()
+        viewModel.createProject("Demo", "/srv/demo")
+        runCurrent()
+        viewModel.selectProfile("lab")
+        runCurrent()
+        repository.createOutcome = ProjectCreateOutcome("project-a", catalogRefreshed = true, scopeCurrent = false)
+        repository.createGate?.complete(Unit)
+        runCurrent()
+
+        assertEquals("lab", repository.routing.activeProfile)
+        assertNull(viewModel.uiState.value.selectedProject)
+        assertNull(viewModel.uiState.value.notice)
     }
 
     private companion object {
