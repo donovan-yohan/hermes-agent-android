@@ -86,6 +86,21 @@ class VisualParityContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             contract.validate_receipt(android, "android")
 
+    def test_collapsed_queue_retains_initial_accessibility_without_a_tap(self) -> None:
+        android = self.android_receipt()
+        android.update({
+            "surface": "composer-status-stack", "state": "queue-parked-collapsed",
+            "fixture_id": "composer-status-stack-synthetic-v1",
+            "interactions": [],
+            "accessibility": {"expected_description": "Queue, 2 messages, parked, expand", "nodes": []},
+        })
+        android["application"]["component"] = "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerStatusParityActivity"
+        contract.validate_receipt(android, "android")
+
+        android["interactions"] = ["tap:Queue"]
+        with self.assertRaises(ValueError):
+            contract.validate_receipt(android, "android")
+
     def test_packet_rejects_secret_and_private_path(self) -> None:
         for unsafe in ("Authorization: Bearer ***", "/home/someone/private", "-----BEGIN PRIVATE KEY-----"):
             with self.subTest(unsafe=unsafe):

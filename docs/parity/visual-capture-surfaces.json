@@ -14,7 +14,7 @@
         "goal-paused": { "interaction": [] },
         "goal-done": { "interaction": [] },
         "queue-parked-collapsed": {
-          "interaction": ["tap:Queue"],
+          "interaction": [],
           "post_interaction_accessibility": "Queue, 2 messages, parked, expand"
         },
         "background-open": {

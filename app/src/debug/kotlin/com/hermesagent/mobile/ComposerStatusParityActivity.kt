@@ -86,8 +86,8 @@ private fun ComposerStatusParityFixture(state: ComposerStatusFixtureState) {
         ComposerStatusStack(
             activeSessionId = "visual-parity-session",
             status = status,
-            // Queue starts expanded because it is parked; the catalogued Queue tap
-            // genuinely collapses it and the capture helper checks the resulting a11y state.
+            // Queue starts collapsed in the real surface. The catalog retains that
+            // initial accessibility state without tapping it open before capture.
             hasQueue = state == ComposerStatusFixtureState.QueueParkedCollapsed,
             queueContent = if (state == ComposerStatusFixtureState.QueueParkedCollapsed) {
                 {
