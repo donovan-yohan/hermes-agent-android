@@ -538,6 +538,7 @@ internal class ChatViewModel(
         }
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
+    private var pendingProfileUnavailableNotice = false
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
 
     /**
@@ -689,11 +690,9 @@ internal class ChatViewModel(
         // the later navigation event cannot create a blank intermediate frame.
         val displayedActiveId = activeId?.let { cacheState.rehomes[it] ?: it }
         val active = displayedActiveId?.let(cacheState.sessions::get)
-        // `projects.tree` and `projects.project_sessions` resolve through the
-        // Gateway's own HERMES_HOME and take no profile
-        // (`tui_gateway/methods_config.py:108-132,135`), so the project catalog
-        // belongs to the launch profile. A named scope must not browse it as if
-        // it were that profile's.
+        // Project handlers at `564aef2946c436500a5e80ee117b66b789b3f99a` are
+        // profile-scoped and reject unknown profiles. Catalog state therefore
+        // belongs only to the profile it was read from.
         val profileScopeState = navigation.sidebarView.profileScope
         val projectScope = projectProfileScopeOf(profileScopeState)
         val selectedProject = navigation.projectId
@@ -1082,12 +1081,10 @@ internal class ChatViewModel(
         }
         // A persisted scope can name a profile this Gateway does not have — it
         // was deleted or renamed on the host, or the scope came from another
-        // Gateway entirely. The Gateway does not refuse that name: an
-        // unresolvable profile falls back to the launch handle
-        // (`tui_gateway/server.py:1556-1571,1599-1613`), so a named scope would
-        // quietly list the launch profile's rows and stamp them with an owner
-        // that does not exist. Once the roster has actually answered, a scope
-        // it does not contain goes back to the Gateway's own profile.
+        // Gateway entirely. At `564aef2946c436500a5e80ee117b66b789b3f99a`,
+        // profile-scoped project handlers reject that request rather than
+        // falling back to the launch profile. Once the roster has answered, a
+        // scope it does not contain goes back to the Gateway's own profile.
         viewModelScope.launch {
             combine(profileScope, profileRepository.roster) { scope, roster -> scope to roster }
                 .collect { (scope, roster) ->
@@ -1097,8 +1094,8 @@ internal class ChatViewModel(
                     if (roster.profiles.any { it.key == active }) return@collect
                     // The unified view is kept: only the profile new work
                     // targets is stale, not the choice to browse everything.
+                    pendingProfileUnavailableNotice = true
                     applyProfileScope(scope.copy(activeProfile = DEFAULT_PROFILE))
-                    noticeLine = "That profile is no longer available."
                 }
         }
         // The repository only ever learns the scope as the `profile` parameter
@@ -1106,6 +1103,7 @@ internal class ChatViewModel(
         // a newly visible profile's rows arrive; the cache keeps the rest.
         viewModelScope.launch {
             var seenRouting = false
+            var projectSubject: String? = null
             combine(profileScope, profileRepository.roster) { scope, roster ->
                 ProfileRouting(scope.sessionProfileParam, sessionListProfiles(scope, roster.profiles))
             }
@@ -1113,15 +1111,23 @@ internal class ChatViewModel(
                 .collect { routing ->
                     val first = !seenRouting
                     seenRouting = true
+                    val projectSubjectChanged = projectSubject != routing.activeProfile
+                    projectSubject = routing.activeProfile
+                    if (!first && projectSubjectChanged) navigationGeneration += 1
                     repository.setProfileRouting(routing)
-                    if (!first) {
+                    if (!first && projectSubjectChanged) {
                         // A project detail, its loading marker and a failure are
                         // UI state about the scope just left. The repository
                         // clears backend snapshots above; this clears the rest
                         // before a new profile can paint.
                         selectedProjectId.value = null
                         projectLoadingId.value = null
-                        noticeLine = null
+                        noticeLine = if (pendingProfileUnavailableNotice) {
+                            pendingProfileUnavailableNotice = false
+                            "That profile is no longer available."
+                        } else {
+                            null
+                        }
                     }
                     // The archived pool is one profile scope's set exactly as
                     // the live list is, and only the live list is re-listed
@@ -1786,6 +1792,7 @@ internal class ChatViewModel(
             runCatching { repository.createProject(name, folderPath) }
                 .onSuccess { outcome ->
                     if (navigationGeneration != createGeneration) return@onSuccess
+                    if (!outcome.scopeCurrent) return@onSuccess
                     if (!outcome.catalogRefreshed) {
                         noticeLine = "The project was created, but Projects could not be refreshed. Reopen Sessions to refresh."
                         return@onSuccess

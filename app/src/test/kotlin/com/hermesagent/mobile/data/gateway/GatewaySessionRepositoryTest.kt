@@ -1418,6 +1418,95 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `accepted creation in a profile left while waiting is stale success and reconciles on return`() = runTest {
+        val cache = SessionCache()
+        val create = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { projectCreateResponse = create }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        rpc.calls.clear()
+
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha", listProfiles = listOf("alpha")))
+        val outcome = CompletableDeferred<ProjectCreateOutcome>()
+        backgroundScope.launch { outcome.complete(repository.createProject("Demo", "/srv/demo")) }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "beta", listProfiles = listOf("beta")))
+        create.complete(json(PROJECT_CREATE))
+        runCurrent()
+
+        assertEquals("project-created", outcome.await().projectId)
+        assertFalse(outcome.await().scopeCurrent)
+        assertFalse(outcome.await().catalogRefreshed)
+        assertEquals(1, rpc.calls.count { it.method == "projects.create" })
+        assertEquals("alpha", rpc.call("projects.create").params.string("profile"))
+        assertTrue(rpc.calls.none { it.method == "projects.tree" })
+        assertEquals(emptyMap<String, ProjectSummary>(), cache.state.value.projects.projects)
+
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha", listProfiles = listOf("alpha")))
+        rpc.projectTreeResult = PROJECT_TREE_CREATED
+        repository.refreshProjects()
+        assertTrue("project-created" in cache.state.value.projects.projects)
+    }
+
+    @Test
+    fun `profile switch fences an in flight project detail without retaining hydration`() = runTest {
+        val cache = SessionCache()
+        val detail = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { projectDetailsResponse = detail }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha", listProfiles = listOf("alpha")))
+        repository.refreshProjects()
+
+        backgroundScope.launch { runCatching { repository.openProject("project-mobile") } }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "beta", listProfiles = listOf("beta")))
+        detail.complete(json(PROJECT_DETAILS))
+        runCurrent()
+
+        assertEquals(emptyMap<String, ProjectSummary>(), cache.state.value.projects.projects)
+        assertTrue(cache.state.value.projects.memberships.isEmpty())
+        rpc.projectDetailsResponse = null
+        repository.refreshProjects()
+        repository.openProject("project-mobile")
+        assertEquals(listOf("durable-a", "durable-b"), cache.state.value.projects.memberships["project-mobile"])
+    }
+
+    @Test
+    fun `roster-only routing change does not stale project work for the same active profile`() = runTest {
+        val cache = SessionCache()
+        val create = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { projectCreateResponse = create }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha", listProfiles = listOf("alpha", "beta")))
+        val outcome = CompletableDeferred<ProjectCreateOutcome>()
+        backgroundScope.launch { outcome.complete(repository.createProject("Demo", "/srv/demo")) }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha", listProfiles = listOf("beta", "alpha")))
+        create.complete(json(PROJECT_CREATE))
+        runCurrent()
+
+        assertTrue(outcome.await().scopeCurrent)
+        assertEquals("alpha", rpc.call("projects.create").params.string("profile"))
+    }
+
+    @Test
     fun `unknown named profile leaves the catalog empty rather than using launch data`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { projectTreeFailure = GatewayRpcException("unknown profile") }
@@ -6670,6 +6759,7 @@ class GatewaySessionRepositoryTest {
         var projectTreeFailure: Throwable? = null
         var projectTreeResponse: CompletableDeferred<JsonElement>? = null
         var projectDetailsResponse: CompletableDeferred<JsonElement>? = null
+        var projectCreateResponse: CompletableDeferred<JsonElement>? = null
         var promptResponse: CompletableDeferred<JsonElement>? = null
         var redirectResult = """{"status":"redirected"}"""
         var redirectFailure: Throwable? = null
@@ -6713,7 +6803,7 @@ class GatewaySessionRepositoryTest {
                     projectTreeResponse?.await() ?: json(projectTreeResult)
                 }
                 "projects.project_sessions" -> projectDetailsResponse?.await() ?: json(projectDetailsResult)
-                "projects.create" -> json(projectCreateResult)
+                "projects.create" -> projectCreateResponse?.await() ?: json(projectCreateResult)
                 "session.resume" -> {
                     if (resumeFailures > 0) {
                         resumeFailures--
@@ -6992,6 +7082,9 @@ class GatewaySessionRepositoryTest {
             {"id":"durable-b","title":"Project detail B","preview":"b","last_active":1700000300,"message_count":3}
         ]}]}]}}"""
         const val PROJECT_CREATE = """{"project":{"id":"project-created","name":"Demo","primary_path":"/srv/demo"}}"""
+        const val PROJECT_TREE_CREATED = """{"projects":[
+            {"id":"project-created","label":"Demo","path":"/srv/demo","isAuto":false,"isNoProject":false,"sessionCount":0,"lastActive":1700000600,"repos":[],"previewSessions":[]}
+        ],"active_id":"project-created","scoped_session_ids":[]}"""
         const val PROJECT_TREE_RECONNECTED = """{"projects":[
             {"id":"project-reconnected","label":"Reconnected","path":"/work/current","isAuto":false,"isNoProject":false,"sessionCount":0,"lastActive":1700000500,"repos":[],"previewSessions":[]}
         ],"active_id":"project-reconnected","scoped_session_ids":[]}"""
