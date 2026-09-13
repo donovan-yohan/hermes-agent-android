@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -90,7 +91,9 @@ class ComposerStatusStackVisibilityTest {
             ),
         )
 
-        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Queued next, 1, expand").assertIsDisplayed()
+        compose.onAllNodesWithText("inspect this screenshot").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Queued next, 1, expand").performClick()
         compose.onNodeWithText("inspect this screenshot").assertIsDisplayed()
     }
 
@@ -104,7 +107,7 @@ class ComposerStatusStackVisibilityTest {
             ),
         )
 
-        compose.onNodeWithContentDescription("Queued next, 1, collapse").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Queued next, 1, expand").assertIsDisplayed().performClick()
         compose.onNodeWithText("@file:`notes.txt` check this").assertIsDisplayed()
     }
 }

@@ -201,7 +201,7 @@ fun ComposerStatusStack(
             StatusGroup(
                 "${activeSessionId}:gateway-queue",
                 "Queued next",
-                defaultExpanded = true,
+                defaultExpanded = false,
                 count = prompts.size,
                 fusedToComposer = fuseSingleGroup,
             ) {
