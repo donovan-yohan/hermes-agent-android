@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -75,7 +76,10 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelTest {
-    private val dispatcher = StandardTestDispatcher()
+    // Keep this class's virtual time independent of any Main dispatcher that
+    // another test may have installed while JUnit constructs test instances.
+    private val scheduler = TestCoroutineScheduler()
+    private val dispatcher = StandardTestDispatcher(scheduler)
     private lateinit var cache: SessionCache
     private lateinit var repository: FakeRepository
     private lateinit var sidebarStore: FakeSidebarViewStore
@@ -108,16 +112,21 @@ class ChatViewModelTest {
     @Test
     fun `automatic process reconciliation is silent while manual refresh reports failure`() = runTest(dispatcher) {
         collectState()
-        repository.processListOutcome = GatewayProcessListOutcome.Failed
         runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSessionId)
+        assertTrue(repository.processListCalls.isEmpty())
+
+        repository.processListOutcome = GatewayProcessListOutcome.Failed
 
         viewModel.reconcileProcesses()
         runCurrent()
         assertNull(viewModel.uiState.value.notice)
+        assertEquals(listOf("session-a"), repository.processListCalls)
 
         viewModel.refreshProcesses()
         runCurrent()
         assertEquals("Background work could not be refreshed. Try again.", viewModel.uiState.value.notice)
+        assertEquals(listOf("session-a", "session-a"), repository.processListCalls)
     }
 
     @Test
@@ -2245,8 +2254,12 @@ class ChatViewModelTest {
 
         val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         var processListOutcome: GatewayProcessListOutcome = GatewayProcessListOutcome.Unsupported
+        val processListCalls = mutableListOf<String>()
 
-        override suspend fun listProcesses(durableId: String): GatewayProcessListOutcome = processListOutcome
+        override suspend fun listProcesses(durableId: String): GatewayProcessListOutcome {
+            processListCalls += durableId
+            return processListOutcome
+        }
 
         override val pendingInputs =
             MutableStateFlow<Map<com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputRequest>>(
