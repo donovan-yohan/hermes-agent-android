@@ -47,7 +47,7 @@ class ComposerStatusParityActivity : ComponentActivity() {
 }
 
 /** Every status-stack state in the capture catalog. Unknown or wrong-surface values fail before rendering. */
-private enum class ComposerStatusFixtureState(val wireValue: String, val goalState: ComposerGoalState) {
+internal enum class ComposerStatusFixtureState(val wireValue: String, val goalState: ComposerGoalState) {
     FullStackTaskList("full-stack-task-list", ComposerGoalState.Active),
     GoalActive("goal-active", ComposerGoalState.Active),
     GoalWaiting("goal-waiting", ComposerGoalState.Waiting),
@@ -64,19 +64,28 @@ private enum class ComposerStatusFixtureState(val wireValue: String, val goalSta
 }
 
 @Composable
-private fun ComposerStatusParityFixture(state: ComposerStatusFixtureState) {
-    val status = ComposerStatusState(
-        goal = ComposerGoalStatus("Synthetic capture goal", state.goalState, "Synthetic capture goal"),
-        todos = listOf(
-            ComposerTodoStatus("outline", "Outline the synthetic fixture", ComposerTodoState.Completed),
-            ComposerTodoStatus("render", "Render the status stack", ComposerTodoState.InProgress),
-            ComposerTodoStatus("record", "Record visual provenance", ComposerTodoState.Pending),
-        ),
-        subagents = listOf(ComposerSubagentStatus("helper", "Fixture helper", "render")),
-        backgroundProcesses = listOf(
-            ComposerBackgroundProcess("preview", "Synthetic preview", ComposerBackgroundProcessState.Running),
-        ),
-    )
+internal fun ComposerStatusParityFixture(state: ComposerStatusFixtureState) {
+    val goal = ComposerGoalStatus("Synthetic capture goal", state.goalState, "Synthetic capture goal")
+    val background = ComposerBackgroundProcess("preview", "Synthetic preview", ComposerBackgroundProcessState.Running)
+    val status = when (state) {
+        ComposerStatusFixtureState.FullStackTaskList -> ComposerStatusState(
+            goal = goal,
+            todos = listOf(
+                ComposerTodoStatus("outline", "Outline the synthetic fixture", ComposerTodoState.Completed),
+                ComposerTodoStatus("render", "Render the status stack", ComposerTodoState.InProgress),
+                ComposerTodoStatus("record", "Record visual provenance", ComposerTodoState.Pending),
+            ),
+            subagents = listOf(ComposerSubagentStatus("helper", "Fixture helper", "render")),
+            backgroundProcesses = listOf(background),
+        )
+        ComposerStatusFixtureState.QueueParkedCollapsed -> ComposerStatusState()
+        ComposerStatusFixtureState.BackgroundOpen -> ComposerStatusState(backgroundProcesses = listOf(background))
+        ComposerStatusFixtureState.GoalActive,
+        ComposerStatusFixtureState.GoalWaiting,
+        ComposerStatusFixtureState.GoalPaused,
+        ComposerStatusFixtureState.GoalDone,
+        -> ComposerStatusState(goal = goal)
+    }
     val queue = listOf(
         QueuedPrompt("first", "Synthetic queued message", queuedAtMillis = 0L, delivery = QueuedPromptDelivery.Ready),
         QueuedPrompt("second", "Second synthetic queued message", queuedAtMillis = 1L, delivery = QueuedPromptDelivery.Ready),
