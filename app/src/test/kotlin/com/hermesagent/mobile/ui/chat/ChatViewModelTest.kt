@@ -1211,17 +1211,30 @@ class ChatViewModelTest {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()
         runCurrent()
+        viewModel.setDraft("blocked")
         viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
         runCurrent()
         assertTrue(viewModel.uiState.value.readOnly)
 
-        viewModel.setDraft("blocked")
         viewModel.submit()
         viewModel.queueDraft()
         viewModel.redirectDraftFromUi()
         viewModel.sendNext("queued-entry")
         viewModel.regenerateReply("reply-entry")
         viewModel.branchFromReply("reply-entry")
+        viewModel.stop()
+        viewModel.resumeQueue()
+        viewModel.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
+        viewModel.selectModel(ComposerModelSelection("model/blocked", "provider"))
+        viewModel.selectReasoning(ReasoningEffort.High)
+        viewModel.selectFast(FastMode.Fast)
+        viewModel.deleteQueuedEntry("queued-entry")
+        viewModel.beginQueueEdit("queued-entry")
+        viewModel.saveQueueEdit()
+        viewModel.cancelQueueEdit()
+        viewModel.markQueuedEntryReadyAfterReview("queued-entry")
+        viewModel.undoDraft()
+        viewModel.redoDraft()
         runCurrent()
 
         assertTrue(repository.submitted.isEmpty())
@@ -1229,6 +1242,11 @@ class ChatViewModelTest {
         assertTrue(repository.redirects.isEmpty())
         assertTrue(repository.regenerateCalls.isEmpty())
         assertTrue(repository.branchCalls.isEmpty())
+        assertTrue(repository.interrupted.isEmpty())
+        assertTrue(repository.pendingResponses.isEmpty())
+        assertTrue(repository.modelSelections.isEmpty())
+        assertTrue(repository.reasoningSelections.isEmpty())
+        assertTrue(repository.fastSelections.isEmpty())
         assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
         assertEquals("Bot Chat is read-only. Open a regular chat to send a message.", viewModel.uiState.value.notice?.text)
 
@@ -1275,6 +1293,49 @@ class ChatViewModelTest {
         assertEquals(listOf(false), completions)
         assertFalse(subject.uiState.value.readOnly)
         assertEquals(null, subject.uiState.value.activeSessionId)
+    }
+
+    @Test
+    fun `endpoint switch synchronously fences an active Bot Chat before collectors run`() = runTest(dispatcher) {
+        val generation = MutableStateFlow(0L)
+        cache.upsertSession(summary("bot-chat", 3_000))
+        val subject = ChatViewModel(
+            cache,
+            repository,
+            sidebarStore,
+            clock = { CLOCK },
+            connectionGeneration = { generation.value },
+        )
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        subject.setDraft("blocked")
+        subject.openReadOnlyBotChat("researcher", "bot-chat") { }
+        runCurrent()
+
+        generation.value = 1L
+        cache.resetForEndpointSwitch()
+        // No runCurrent: exercise the mutation boundary before collector cleanup.
+        subject.submit()
+        subject.queueDraft()
+        subject.redirectDraftFromUi()
+        subject.stop()
+        subject.resumeQueue()
+        subject.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
+        subject.selectModel(ComposerModelSelection("model/blocked", "provider"))
+        subject.selectReasoning(ReasoningEffort.High)
+        subject.selectFast(FastMode.Fast)
+        runCurrent()
+
+        assertNull(subject.uiState.value.activeSessionId)
+        assertFalse(subject.uiState.value.readOnly)
+        assertTrue(repository.submitted.isEmpty())
+        assertTrue(repository.queuedSubmissions.isEmpty())
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.interrupted.isEmpty())
+        assertTrue(repository.pendingResponses.isEmpty())
+        assertTrue(repository.modelSelections.isEmpty())
+        assertTrue(repository.reasoningSelections.isEmpty())
+        assertTrue(repository.fastSelections.isEmpty())
     }
 
     @Test
@@ -2521,11 +2582,15 @@ class ChatViewModelTest {
                 emptyMap(),
             )
 
+        val pendingResponses = mutableListOf<com.hermesagent.mobile.data.gateway.PendingInputKey>()
+
         override suspend fun respondToPendingInput(
             key: com.hermesagent.mobile.data.gateway.PendingInputKey,
             action: com.hermesagent.mobile.data.gateway.PendingInputAction,
-        ): com.hermesagent.mobile.data.gateway.PendingInputResponse =
-            com.hermesagent.mobile.data.gateway.PendingInputResponse.Resolved
+        ): com.hermesagent.mobile.data.gateway.PendingInputResponse {
+            pendingResponses += key
+            return com.hermesagent.mobile.data.gateway.PendingInputResponse.Resolved
+        }
 
         override val connectionState = connection
         private val rehomeEvents = MutableSharedFlow<SessionRehome>(extraBufferCapacity = 1)
