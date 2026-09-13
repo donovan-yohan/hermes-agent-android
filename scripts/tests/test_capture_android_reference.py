@@ -82,17 +82,24 @@ class AndroidCaptureIdentityTest(unittest.TestCase):
         self.assertEqual("Queue, 2 messages, parked, expand", evidence["expected_description"])
         self.assertEqual(1, len(evidence["nodes"]))
 
-    def test_accepts_complete_expected_phrase_inside_merged_platform_description(self) -> None:
-        xml = '<hierarchy><node class="Row" content-desc="Queue, 2 messages, parked, expand, Resume queued messages" /></hierarchy>'
-        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", xml]):
-            evidence = capture.accessibility_snapshot("emulator-5554", "Queue, 2 messages, parked, expand")
+    def test_retries_until_expected_description_reaches_platform_tree(self) -> None:
+        missing = '<hierarchy><node class="Row" content-desc="Composer status" /></hierarchy>'
+        expected = '<hierarchy><node class="Row" content-desc="Queue, 2 messages, parked, expand" /></hierarchy>'
+        with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", missing, "UI hierarchy dumped", expected]), \
+             mock.patch.object(capture.time, "sleep") as sleep:
+            evidence = capture.accessibility_snapshot(
+                "emulator-5554",
+                "Queue, 2 messages, parked, expand",
+                attempts=2,
+            )
         self.assertEqual(1, len(evidence["nodes"]))
+        sleep.assert_called_once_with(0.25)
 
     def test_rejects_missing_post_interaction_accessibility_state(self) -> None:
         xml = '<hierarchy><node text="Queue" content-desc="Queue, 2 messages, parked, collapse" /></hierarchy>'
         with mock.patch.object(capture, "shell", side_effect=["UI hierarchy dumped", xml]):
             with self.assertRaises(SystemExit):
-                capture.accessibility_snapshot("emulator-5554", "Queue, 2 messages, parked, expand")
+                capture.accessibility_snapshot("emulator-5554", "Queue, 2 messages, parked, expand", attempts=1)
 
     def test_pulls_installed_base_apk_and_records_package_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

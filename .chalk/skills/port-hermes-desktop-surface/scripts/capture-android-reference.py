@@ -81,31 +81,37 @@ def ui_hierarchy(serial: str | None) -> ET.Element:
     return ET.fromstring(shell(serial, "cat", "/sdcard/window.xml"))
 
 
-def accessibility_snapshot(serial: str | None, expected_description: str | None = None) -> dict[str, object]:
-    """Retain a compact, post-interaction accessibility snapshot without bounds."""
-    root = ui_hierarchy(serial)
-    nodes = []
-    descriptions = set()
-    for node in root.iter("node"):
-        text = node.attrib.get("text", "")
-        description = node.attrib.get("content-desc", "")
-        if description:
-            descriptions.add(description)
-        if text or description:
-            nodes.append({
-                "class": node.attrib.get("class", ""),
-                "text": text,
-                "content_description": description,
-                "clickable": node.attrib.get("clickable") == "true",
-                "enabled": node.attrib.get("enabled") == "true",
-                "selected": node.attrib.get("selected") == "true",
-            })
-    # Compose may publish a clickable parent's description together with a
-    # descendant action in one platform node. Require the complete expected
-    # phrase, but do not require it to be the node's entire merged value.
-    if expected_description and not any(expected_description in description for description in descriptions):
-        raise SystemExit(f"post-interaction state did not expose {expected_description!r} in accessibility")
-    return {"expected_description": expected_description, "nodes": nodes}
+def accessibility_snapshot(
+    serial: str | None,
+    expected_description: str | None = None,
+    *,
+    attempts: int = 6,
+    retry_seconds: float = 0.25,
+) -> dict[str, object]:
+    """Retain a compact post-interaction snapshot after bounded platform publication retries."""
+    for attempt in range(attempts):
+        root = ui_hierarchy(serial)
+        nodes = []
+        descriptions = set()
+        for node in root.iter("node"):
+            text = node.attrib.get("text", "")
+            description = node.attrib.get("content-desc", "")
+            if description:
+                descriptions.add(description)
+            if text or description:
+                nodes.append({
+                    "class": node.attrib.get("class", ""),
+                    "text": text,
+                    "content_description": description,
+                    "clickable": node.attrib.get("clickable") == "true",
+                    "enabled": node.attrib.get("enabled") == "true",
+                    "selected": node.attrib.get("selected") == "true",
+                })
+        if not expected_description or expected_description in descriptions:
+            return {"expected_description": expected_description, "nodes": nodes}
+        if attempt + 1 < attempts:
+            time.sleep(retry_seconds)
+    raise SystemExit(f"post-interaction state did not expose {expected_description!r} in accessibility")
 
 
 def resolve_apksigner() -> str:
