@@ -157,12 +157,6 @@ fun SessionList(
     projectScope: ProjectProfileScope = ProjectProfileScope.Own,
 ) {
     val tokens = HermesTheme.tokens
-    // A scope whose catalog this Gateway cannot list is not a project view at
-    // all: it has no catalog to head, nothing for `+` to create into, and
-    // nothing for the field to search. The rail falls back to the session
-    // list for that scope — which is date-grouped and already scoped to the
-    // profile on screen — rather than drawing an empty pane with the
-    // grouping control the way out and no sign that it is.
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project &&
         selectedProject == null && projectScope.showsCatalog
     val title = selectedProject?.label ?: if (showingProjectOverview) "Projects" else "Sessions"
@@ -285,24 +279,9 @@ fun SessionList(
                 )
             }
 
-            if (sidebarGrouping == SidebarGrouping.Project && projectScope != ProjectProfileScope.Own) {
-                // Ahead of the load note, because a scope that cannot list the
-                // catalog never asks for it: `Loading projects…` beside a list
-                // that is not waiting on projects is a sentence about nothing.
-                // The second clause names no grouping: the control's own label
-                // is `Updated`, and `by date` would be a word this product does
-                // not use anywhere a reader could check it against.
-                // The catalog is one profile's either way; only the next action
-                // differs between browsing everything and standing in another
-                // profile, where the rail falls back to this profile's chats.
+            if (sidebarGrouping == SidebarGrouping.Project && projectScope == ProjectProfileScope.Unified) {
                 Text(
-                    text = when (projectScope) {
-                        ProjectProfileScope.Unified ->
-                            "Projects come from one profile on this Gateway, not from every profile in view."
-                        else ->
-                            "Projects come from one profile on this Gateway. Switch to the default profile to " +
-                                "browse them — this profile’s chats stay listed below."
-                    },
+                    text = "Projects come from one profile on this Gateway, not from every profile in view.",
                     style = HermesTheme.type.scaffoldMeta,
                     color = tokens.textTertiary,
                     modifier = Modifier

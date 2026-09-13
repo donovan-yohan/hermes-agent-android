@@ -220,10 +220,9 @@ data class BackgroundPendingInput(
 /**
  * How the project catalog relates to the profile scope on screen.
  *
- * `projects.tree` and `projects.project_sessions` take no `profile` and resolve
- * through the Gateway's own home (`tui_gateway/methods_config.py:85-113` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), so the catalog is always one
- * profile's. Desktop never has to say so: its backend is per profile.
+ * Project RPCs are profile-scoped (`tui_gateway/methods_config.py:85-113` @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`), so a named sidebar scope can
+ * show that profile's own backend catalog.
  */
 enum class ProjectProfileScope {
     /** The sidebar is in the profile the catalog came from. Nothing to say. */
@@ -232,13 +231,10 @@ enum class ProjectProfileScope {
     /** Every profile is in view, but only one profile's projects exist. */
     Unified,
 
-    /** Another profile is in view, whose projects this Gateway cannot list. */
-    Other,
-
     ;
 
     /** Whether the catalog may be browsed at all in this scope. */
-    val showsCatalog: Boolean get() = this != Other
+    val showsCatalog: Boolean get() = true
 }
 
 /**
@@ -249,9 +245,8 @@ enum class ProjectProfileScope {
  * second copy of the mapping is how they stop agreeing.
  */
 fun projectProfileScopeOf(scope: ProfileScope): ProjectProfileScope = when {
-    scope.isDefault -> ProjectProfileScope.Own
     scope.isAll -> ProjectProfileScope.Unified
-    else -> ProjectProfileScope.Other
+    else -> ProjectProfileScope.Own
 }
 
 /**
@@ -1119,6 +1114,15 @@ internal class ChatViewModel(
                     val first = !seenRouting
                     seenRouting = true
                     repository.setProfileRouting(routing)
+                    if (!first) {
+                        // A project detail, its loading marker and a failure are
+                        // UI state about the scope just left. The repository
+                        // clears backend snapshots above; this clears the rest
+                        // before a new profile can paint.
+                        selectedProjectId.value = null
+                        projectLoadingId.value = null
+                        noticeLine = null
+                    }
                     // The archived pool is one profile scope's set exactly as
                     // the live list is, and only the live list is re-listed
                     // below. Invalidated *after* the routing is installed, so
@@ -1141,6 +1145,7 @@ internal class ChatViewModel(
                     if (first && routing == ProfileRouting()) return@collect
                     if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return@collect
                     runCatching { repository.refreshSessions() }
+                    runCatching { repository.refreshProjects() }
                 }
         }
         // The other half of the archived pool's scope: which backend it came

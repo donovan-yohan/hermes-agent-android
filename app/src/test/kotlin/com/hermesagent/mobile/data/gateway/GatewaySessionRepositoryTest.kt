@@ -1354,12 +1354,87 @@ class GatewaySessionRepositoryTest {
         assertEquals(listOf("__no_project__", "project-mobile"), catalog.projects.keys.toList())
         assertEquals("Project preview", catalog.projects.getValue("project-mobile").previewSessions.single().title)
         assertEquals(3, rpc.call("projects.tree").params["preview_limit"]?.toString()?.toInt())
+        assertNull(rpc.call("projects.tree").params["profile"])
 
         repository.openProject("project-mobile")
 
         assertEquals(listOf("durable-a", "durable-b"), cache.state.value.projects.memberships["project-mobile"])
         assertEquals("Project detail A", cache.session("durable-a")?.title)
         assertEquals("project-mobile", rpc.call("projects.project_sessions").params.string("project_id"))
+        assertNull(rpc.call("projects.project_sessions").params["profile"])
+    }
+
+    @Test
+    fun `named profile routes project catalog detail and creation explicitly`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        rpc.calls.clear()
+
+        repository.setProfileRouting(ProfileRouting(activeProfile = "research", listProfiles = listOf("research")))
+        repository.refreshProjects()
+        repository.openProject("project-mobile")
+        repository.createProject("Demo", "/srv/demo")
+
+        assertEquals("research", rpc.calls.last { it.method == "projects.tree" }.params.string("profile"))
+        assertEquals("research", rpc.call("projects.project_sessions").params.string("profile"))
+        assertEquals("research", rpc.call("projects.create").params.string("profile"))
+    }
+
+    @Test
+    fun `profile switch fences a catalog response already in flight`() = runTest {
+        val cache = SessionCache()
+        val delayed = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        rpc.calls.clear()
+        rpc.projectTreeResponse = delayed
+
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha", listProfiles = listOf("alpha")))
+        backgroundScope.launch { runCatching { repository.refreshProjects() } }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "beta", listProfiles = listOf("beta")))
+        delayed.complete(json(PROJECT_TREE))
+        runCurrent()
+
+        assertEquals(emptyMap<String, ProjectSummary>(), cache.state.value.projects.projects)
+        assertEquals(null, cache.state.value.projects.available)
+        rpc.projectTreeResponse = null
+        repository.refreshProjects()
+        assertEquals("beta", rpc.calls.last { it.method == "projects.tree" }.params.string("profile"))
+        assertTrue(cache.state.value.projects.available == true)
+    }
+
+    @Test
+    fun `unknown named profile leaves the catalog empty rather than using launch data`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { projectTreeFailure = GatewayRpcException("unknown profile") }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "deleted", listProfiles = listOf("deleted")))
+
+        val failure = runCatching { repository.refreshProjects() }.exceptionOrNull()
+        assertTrue(failure is GatewayRpcException)
+        assertEquals(emptyMap<String, ProjectSummary>(), cache.state.value.projects.projects)
+        assertEquals(null, cache.state.value.projects.available)
+        assertEquals("deleted", rpc.call("projects.tree").params.string("profile"))
     }
 
     @Test
