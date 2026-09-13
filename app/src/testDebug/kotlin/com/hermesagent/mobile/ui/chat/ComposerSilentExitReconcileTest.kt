@@ -1,0 +1,227 @@
+package com.hermesagent.mobile.ui.chat
+
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
+import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
+import com.hermesagent.mobile.data.session.ComposerStatusState
+import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.theme.HermesTheme
+import com.hermesagent.mobile.ui.theme.HermesThemeMode
+import kotlinx.coroutines.awaitCancellation
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * The bounded stand-in for Desktop's 5 second `process.list` interval
+ * (`apps/desktop/src/app/chat/composer/status-stack/index.tsx:41-43,151-163`
+ * @ `564aef2946`).
+ *
+ * Time is the test's, never the wall's: the rungs are driven by the Compose
+ * test clock, so what is asserted is the *shape* — armed by a Running claim,
+ * gated on the foreground, and finite.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class ComposerSilentExitReconcileTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    private var reconciliations = 0
+    private var manualRefreshes = 0
+    private val activeSessionId = mutableStateOf<String?>("session-a")
+    private val status = mutableStateOf(ComposerStatusState(backgroundProcesses = listOf(running("build"))))
+
+    @Test
+    fun `a row that claims Running is re-checked on a ladder that ends`() {
+        setContent()
+
+        compose.mainClock.advanceTimeBy(9_000)
+        assertEquals("the first rung has not come due", 0, reconciliations)
+        compose.mainClock.advanceTimeBy(2_000)
+        assertEquals(1, reconciliations)
+        compose.mainClock.advanceTimeBy(30_000)
+        assertEquals(2, reconciliations)
+        compose.mainClock.advanceTimeBy(90_000)
+        assertEquals(3, reconciliations)
+
+        // The point of the whole design: it is a ladder, not an interval. Ten
+        // more minutes of the same unchanged claim buy no further round trips,
+        // and the Background group's Refresh stays the explicit escape.
+        compose.mainClock.advanceTimeBy(600_000)
+        assertEquals(3, reconciliations)
+    }
+
+    @Test
+    fun `a settled process arms nothing at all`() {
+        status.value = ComposerStatusState(
+            backgroundProcesses = listOf(
+                ComposerBackgroundProcess("build", "Build", ComposerBackgroundProcessState.Done),
+            ),
+        )
+        setContent()
+
+        compose.mainClock.advanceTimeBy(600_000)
+        assertEquals("nothing claims to be running, so nothing is asked", 0, reconciliations)
+    }
+
+    @Test
+    fun `the answer retiring the row ends the ladder with it`() {
+        setContent()
+
+        compose.mainClock.advanceTimeBy(10_000)
+        assertEquals(1, reconciliations)
+        // What a refresh that finds a dead process does to the state it feeds.
+        compose.runOnIdle {
+            status.value = ComposerStatusState(
+                backgroundProcesses = listOf(
+                    ComposerBackgroundProcess("build", "Build", ComposerBackgroundProcessState.Done),
+                ),
+            )
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(600_000)
+        assertEquals(1, reconciliations)
+    }
+
+    @Test
+    fun `backgrounding cancels an in flight read and prevents overlapping rungs`() {
+        var starts = 0
+        var inFlight = 0
+        var maxInFlight = 0
+        var cancellations = 0
+        setContent {
+            starts += 1
+            inFlight += 1
+            maxInFlight = maxOf(maxInFlight, inFlight)
+            try {
+                awaitCancellation()
+            } finally {
+                inFlight -= 1
+                cancellations += 1
+            }
+        }
+
+        compose.mainClock.advanceTimeBy(10_000)
+        assertEquals(1, starts)
+        assertEquals(1, inFlight)
+        compose.mainClock.advanceTimeBy(600_000)
+        assertEquals("an unfinished rung blocks every later rung", 1, starts)
+        assertEquals(1, maxInFlight)
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.waitForIdle()
+        assertEquals(0, inFlight)
+        assertEquals(1, cancellations)
+    }
+
+    @Test
+    fun `removing the active session cancels an in flight read`() {
+        var inFlight = false
+        var cancellations = 0
+        setContent {
+            inFlight = true
+            try {
+                awaitCancellation()
+            } finally {
+                inFlight = false
+                cancellations += 1
+            }
+        }
+
+        compose.mainClock.advanceTimeBy(10_000)
+        assertEquals(true, inFlight)
+        compose.runOnIdle { activeSessionId.value = null }
+        compose.waitForIdle()
+
+        assertEquals(false, inFlight)
+        assertEquals(1, cancellations)
+    }
+
+    @Test
+    fun `a new running process is new evidence, so it starts a fresh ladder`() {
+        setContent()
+
+        compose.mainClock.advanceTimeBy(130_000)
+        assertEquals("the ladder is exhausted", 3, reconciliations)
+        compose.runOnIdle {
+            status.value = ComposerStatusState(
+                backgroundProcesses = listOf(running("build"), running("tests")),
+            )
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(10_000)
+        assertEquals(4, reconciliations)
+    }
+
+    @Test
+    fun `a hidden seventh running process does not arm the visible background group`() {
+        status.value = ComposerStatusState(
+            backgroundProcesses = List(6) { index ->
+                ComposerBackgroundProcess("done-$index", "Done $index", ComposerBackgroundProcessState.Done)
+            } + running("hidden-running"),
+        )
+        setContent()
+
+        compose.mainClock.advanceTimeBy(600_000)
+
+        assertEquals("only the six rendered rows may arm the radio", 0, reconciliations)
+    }
+
+    @Test
+    fun `a backgrounded app asks nothing, and returning to it re-arms the ladder`() {
+        setContent()
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.mainClock.advanceTimeBy(600_000)
+        assertEquals("a backgrounded app never wakes the radio for this", 0, reconciliations)
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.mainClock.advanceTimeBy(10_000)
+        // Coming back is the edge a silent exit is most likely to hide behind,
+        // and it costs one round trip rather than an interval's worth.
+        assertEquals(1, reconciliations)
+    }
+
+    @Test
+    fun `the visible Refresh uses the manual callback, not silent reconciliation`() {
+        setContent()
+
+        compose.onNodeWithContentDescription("Background, 1, expand").performClick()
+        compose.onNodeWithContentDescription("Refresh background processes").performClick()
+
+        assertEquals(1, manualRefreshes)
+        assertEquals(0, reconciliations)
+    }
+
+    private fun setContent(onReconcile: suspend () -> Unit = { reconciliations += 1 }) {
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box(Modifier.width(360.dp)) {
+                    ComposerStatusStack(
+                        activeSessionId = activeSessionId.value,
+                        status = status.value,
+                        onRefreshProcesses = { manualRefreshes += 1 },
+                        onReconcileProcesses = onReconcile,
+                    )
+                }
+            }
+        }
+    }
+
+    private companion object {
+        fun running(id: String) =
+            ComposerBackgroundProcess(id, "Build", ComposerBackgroundProcessState.Running)
+    }
+}

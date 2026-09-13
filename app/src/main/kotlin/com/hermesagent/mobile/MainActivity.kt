@@ -418,6 +418,7 @@ class MainActivity : ComponentActivity() {
                     onOpenCodingReview = chatViewModel::openCodingReview,
                     onDismissCodingReview = chatViewModel::dismissCodingReview,
                     onRefreshProcesses = chatViewModel::refreshProcesses,
+                    onReconcileProcesses = chatViewModel::reconcileProcesses,
                     onKillProcess = chatViewModel::killProcess,
                     onSelectApprovalMode = chatViewModel::selectApprovalMode,
                     onSelectModel = chatViewModel::selectModel,
