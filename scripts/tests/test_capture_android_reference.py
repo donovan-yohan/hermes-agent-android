@@ -17,6 +17,28 @@ spec.loader.exec_module(capture)
 
 
 class AndroidCaptureIdentityTest(unittest.TestCase):
+    def test_resolves_apksigner_from_path_first(self) -> None:
+        with mock.patch.object(capture.shutil, "which", return_value="/tools/apksigner"):
+            self.assertEqual("/tools/apksigner", capture.resolve_apksigner())
+
+    def test_resolves_newest_installed_sdk_apksigner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = Path(directory)
+            old = sdk / "build-tools/9.0.0/apksigner"
+            newest = sdk / "build-tools/35.0.0/apksigner"
+            for binary in (old, newest):
+                binary.parent.mkdir(parents=True)
+                binary.touch(mode=0o755)
+            with mock.patch.object(capture.shutil, "which", return_value=None), \
+                 mock.patch.dict(capture.os.environ, {"ANDROID_HOME": str(sdk)}, clear=True):
+                self.assertEqual(str(newest), capture.resolve_apksigner())
+
+    def test_rejects_missing_apksigner(self) -> None:
+        with mock.patch.object(capture.shutil, "which", return_value=None), \
+             mock.patch.dict(capture.os.environ, {}, clear=True):
+            with self.assertRaisesRegex(SystemExit, "apksigner was not found"):
+                capture.resolve_apksigner()
+
     def test_accepts_resolved_focused_expected_activity(self) -> None:
         component = "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity"
         focused = f"mCurrentFocus=Window{{synthetic u0 {component}}}"
@@ -66,8 +88,10 @@ class AndroidCaptureIdentityTest(unittest.TestCase):
             signer = "Signer #1 certificate SHA-256 digest: AA:BB:CC\n"
             with mock.patch.object(capture, "shell", side_effect=["package:/data/app/example/base.apk", package_dump]), \
                  mock.patch.object(capture, "adb", side_effect=adb), \
+                 mock.patch.object(capture, "resolve_apksigner", return_value="/sdk/apksigner") as resolve, \
                  mock.patch.object(capture.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=signer)):
                 provenance = capture.installed_apk_provenance("emulator-5554", "com.hermesagent.mobile.debug", local)
+        resolve.assert_called_once_with()
         self.assertEqual(provenance["apk_sha256"], provenance["installed_apk_sha256"])
         self.assertEqual("42", provenance["version_code"])
         self.assertEqual("1.2.3", provenance["version_name"])

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -101,6 +103,31 @@ def accessibility_snapshot(serial: str | None, expected_description: str | None 
     return {"expected_description": expected_description, "nodes": nodes}
 
 
+def resolve_apksigner() -> str:
+    """Resolve apksigner from PATH or the build-tools installed in the Android SDK."""
+    on_path = shutil.which("apksigner")
+    if on_path:
+        return on_path
+    sdk_roots = {
+        Path(value)
+        for name in ("ANDROID_HOME", "ANDROID_SDK_ROOT")
+        if (value := os.environ.get(name))
+    }
+    candidates = [
+        candidate
+        for root in sdk_roots
+        for candidate in (root / "build-tools").glob("*/apksigner")
+        if candidate.is_file() and os.access(candidate, os.X_OK)
+    ]
+    if not candidates:
+        raise SystemExit("apksigner was not found on PATH or under Android SDK build-tools")
+
+    def version_key(candidate: Path) -> tuple[int, ...]:
+        return tuple(int(part) for part in re.findall(r"\d+", candidate.parent.name))
+
+    return str(max(candidates, key=version_key))
+
+
 def tap_visible_text(serial: str | None, text: str) -> None:
     """Tap one exact synthetic control label through the real accessibility tree."""
     # Coordinates locate the real control but are intentionally not retained.
@@ -130,7 +157,7 @@ def installed_apk_provenance(serial: str | None, package: str, local_apk: Path) 
         if installed_sha != local_sha:
             raise SystemExit("installed base APK SHA-256 does not match the local capture APK")
         signer = subprocess.run(
-            ["apksigner", "verify", "--verbose", "--print-certs", str(installed)],
+            [resolve_apksigner(), "verify", "--verbose", "--print-certs", str(installed)],
             check=True,
             capture_output=True,
             text=True,
