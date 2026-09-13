@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.plugins
 
 import com.hermesagent.mobile.plugins.bots.BotsPlugin
+import com.hermesagent.mobile.plugins.kanban.KanbanPlugin
 import com.hermesagent.mobile.plugins.relay.RelayPlugin
 
 /**
@@ -14,5 +15,6 @@ object BundledPlugins {
     val ALL: List<HermesPlugin> = listOf(
         RelayPlugin(),
         BotsPlugin(),
+        KanbanPlugin(),
     )
 }
