@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -17,6 +18,19 @@ spec.loader.exec_module(capture)
 
 
 class AndroidCaptureIdentityTest(unittest.TestCase):
+    def test_hashes_signing_certificate_der_without_display_label(self) -> None:
+        output = """Signer certificate details changed\n-----BEGIN CERTIFICATE-----\nY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n"""
+        self.assertEqual(hashlib.sha256(b"certificate").hexdigest(), capture.signing_certificate_sha256(output))
+
+    def test_rejects_missing_signing_certificate_pem(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "did not emit"):
+            capture.signing_certificate_sha256("Signer #1 certificate SHA-256 digest: aabbcc")
+
+    def test_rejects_empty_signing_certificate_pem(self) -> None:
+        output = "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n"
+        with self.assertRaisesRegex(SystemExit, "empty PEM"):
+            capture.signing_certificate_sha256(output)
+
     def test_resolves_apksigner_from_path_first(self) -> None:
         with mock.patch.object(capture.shutil, "which", return_value="/tools/apksigner"):
             self.assertEqual("/tools/apksigner", capture.resolve_apksigner())
@@ -85,17 +99,20 @@ class AndroidCaptureIdentityTest(unittest.TestCase):
                 return "1 file pulled"
 
             package_dump = "versionCode=42 minSdk=23\nversionName=1.2.3\n"
-            signer = "Signer #1 certificate SHA-256 digest: AA:BB:CC\n"
+            signer = "-----BEGIN CERTIFICATE-----\nY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n"
             with mock.patch.object(capture, "shell", side_effect=["package:/data/app/example/base.apk", package_dump]), \
                  mock.patch.object(capture, "adb", side_effect=adb), \
                  mock.patch.object(capture, "resolve_apksigner", return_value="/sdk/apksigner") as resolve, \
-                 mock.patch.object(capture.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=signer)):
+                 mock.patch.object(capture.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=signer)) as run:
                 provenance = capture.installed_apk_provenance("emulator-5554", "com.hermesagent.mobile.debug", local)
         resolve.assert_called_once_with()
+        signer_command = run.call_args.args[0]
+        self.assertEqual(["/sdk/apksigner", "verify", "--verbose", "--print-certs-pem"], signer_command[:4])
+        self.assertEqual("base.apk", Path(signer_command[4]).name)
         self.assertEqual(provenance["apk_sha256"], provenance["installed_apk_sha256"])
         self.assertEqual("42", provenance["version_code"])
         self.assertEqual("1.2.3", provenance["version_name"])
-        self.assertEqual("aabbcc", provenance["signing_certificate_sha256"])
+        self.assertEqual(hashlib.sha256(b"certificate").hexdigest(), provenance["signing_certificate_sha256"])
 
 
 if __name__ == "__main__":

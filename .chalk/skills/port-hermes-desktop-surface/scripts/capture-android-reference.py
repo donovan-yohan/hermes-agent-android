@@ -8,6 +8,8 @@ to be byte-for-byte equal to the local APK named in the receipt.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
 import re
@@ -26,7 +28,7 @@ from visual_parity_contract import sha256, validate_receipt
 
 DEFAULT_PACKAGE = "com.hermesagent.mobile.debug"
 DEFAULT_ACTIVITY = "com.hermesagent.mobile.MainActivity"
-CERT_SHA256 = re.compile(r"Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f:]+)")
+PEM_CERTIFICATE = re.compile(r"-----BEGIN CERTIFICATE-----\s*(.*?)\s*-----END CERTIFICATE-----", re.DOTALL)
 VERSION_CODE = re.compile(r"\bversionCode=(\d+)")
 VERSION_NAME = re.compile(r"\bversionName=([^\s]+)")
 
@@ -128,6 +130,20 @@ def resolve_apksigner() -> str:
     return str(max(candidates, key=version_key))
 
 
+def signing_certificate_sha256(apksigner_output: str) -> str:
+    """Hash the first signer certificate's DER bytes instead of scraping display labels."""
+    certificate = PEM_CERTIFICATE.search(apksigner_output)
+    if not certificate:
+        raise SystemExit("apksigner did not emit an installed APK signing certificate")
+    try:
+        der = base64.b64decode("".join(certificate.group(1).split()), validate=True)
+    except ValueError as error:
+        raise SystemExit("apksigner emitted an invalid PEM signing certificate") from error
+    if not der:
+        raise SystemExit("apksigner emitted an empty PEM signing certificate")
+    return hashlib.sha256(der).hexdigest()
+
+
 def tap_visible_text(serial: str | None, text: str) -> None:
     """Tap one exact synthetic control label through the real accessibility tree."""
     # Coordinates locate the real control but are intentionally not retained.
@@ -157,14 +173,12 @@ def installed_apk_provenance(serial: str | None, package: str, local_apk: Path) 
         if installed_sha != local_sha:
             raise SystemExit("installed base APK SHA-256 does not match the local capture APK")
         signer = subprocess.run(
-            [resolve_apksigner(), "verify", "--verbose", "--print-certs", str(installed)],
+            [resolve_apksigner(), "verify", "--verbose", "--print-certs-pem", str(installed)],
             check=True,
             capture_output=True,
             text=True,
         ).stdout
-    certificate = CERT_SHA256.search(signer)
-    if not certificate:
-        raise SystemExit("apksigner did not report an installed APK signing certificate SHA-256")
+    certificate_sha256 = signing_certificate_sha256(signer)
     package_dump = shell(serial, "dumpsys", "package", package)
     version_code = VERSION_CODE.search(package_dump)
     version_name = VERSION_NAME.search(package_dump)
@@ -175,7 +189,7 @@ def installed_apk_provenance(serial: str | None, package: str, local_apk: Path) 
         "installed_apk_sha256": installed_sha,
         "version_code": version_code.group(1),
         "version_name": version_name.group(1),
-        "signing_certificate_sha256": certificate.group(1).replace(":", "").lower(),
+        "signing_certificate_sha256": certificate_sha256,
     }
 
 
