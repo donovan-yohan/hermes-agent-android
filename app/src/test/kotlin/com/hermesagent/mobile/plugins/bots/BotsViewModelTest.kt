@@ -355,12 +355,14 @@ class BotsViewModelTest {
         val host = loadedHost()
         val connected = MutableStateFlow(true)
         val endpoint = MutableStateFlow(0L)
+        val attention = BotAttentionStore { now }
         val viewModel = BotsViewModel(
             repository = BotsPluginRepository(host),
             scope = drivenScope(),
             clock = { now },
             connected = connected,
             endpointGeneration = endpoint,
+            attention = attention,
         )
         viewModel.refreshNow()
         host.result = PluginHostResult.Refused(0, "The Gateway did not answer in time.")
@@ -391,6 +393,7 @@ class BotsViewModelTest {
         assertNull(dropped.safeMessage)
         assertFalse(dropped.stale)
         assertTrue(dropped.attentionByKey.isEmpty())
+        assertTrue(attention.entries.value.isEmpty())
 
         // The search box survives the switch, so a keystroke over the dropped
         // roster is reachable in one tap — and it must not turn "nothing has
@@ -409,6 +412,60 @@ class BotsViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(BotsRosterPhase.Ready, state.phase)
         assertEquals(listOf("beta-only"), state.sections.flatMap { it.rows }.map { it.name })
+    }
+
+    @Test
+    fun `presentation changes cannot turn a dead-leg wait into an empty answer`() = runTest {
+        val host = loadedHost()
+        val connected = MutableStateFlow(true)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+        )
+        viewModel.refreshNow()
+        // A live query and filter keep both controls reachable after the roster
+        // becomes empty.
+        viewModel.setSearchQuery("researcher")
+        viewModel.setKindFilter(RosterKindFilter.Bots)
+        host.result = PluginHostResult.Success(Json.parseToJsonElement("""{"profiles": []}"""))
+        viewModel.refreshNow()
+        assertEquals(BotsRosterPhase.Empty, viewModel.uiState.value.phase)
+
+        connected.value = false
+        runCurrent()
+        host.result = PluginHostResult.Refused(0, "Reconnect to the Gateway and try again.")
+        viewModel.surfaceResumed()
+        advanceUntilIdle()
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+
+        viewModel.setSearchQuery("researchers")
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+        viewModel.setKindFilter(RosterKindFilter.Groups)
+        assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
+    }
+
+    @Test
+    fun `a dead leg replaces a rosterless refusal with the waiting state`() = runTest {
+        val host = ScriptedHost(PluginHostResult.Refused(500, "The Gateway refused that request."))
+        val connected = MutableStateFlow(true)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+        )
+        viewModel.refreshNow()
+        assertEquals(BotsRosterPhase.Refused, viewModel.uiState.value.phase)
+
+        connected.value = false
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Loading, state.phase)
+        assertNull(state.safeMessage)
+        assertFalse(state.connectionUp)
     }
 
     @Test

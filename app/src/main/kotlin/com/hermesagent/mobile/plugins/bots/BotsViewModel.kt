@@ -195,7 +195,23 @@ class BotsViewModel(
             combine(connected, endpointGeneration) { up, _ -> up }
                 .collect { up ->
                     if (endpointGeneration.value != rosterEndpoint) dropRosterForEndpointSwitch()
-                    _uiState.update { it.copy(connectionUp = up) }
+                    _uiState.update { state ->
+                        val rosterlessFailure =
+                            state.phase == BotsRosterPhase.Refused ||
+                                state.phase == BotsRosterPhase.UnavailableOnGateway
+                        if (!up && roster.isEmpty() && rosterlessFailure) {
+                            // With no cached rows and no live leg there is no
+                            // actionable Gateway failure to report. Desktop
+                            // gives its waiting state precedence here too.
+                            state.copy(
+                                phase = BotsRosterPhase.Loading,
+                                safeMessage = null,
+                                connectionUp = false,
+                            )
+                        } else {
+                            state.copy(connectionUp = up)
+                        }
+                    }
                     if (up) refresh()
                 }
         }
@@ -282,11 +298,7 @@ class BotsViewModel(
                 roster = load.rows
                 rosterEndpoint = endpoint
                 answeredEndpoint = endpoint
-                recompute()
-                // Only an answer clears the notice: a filter change or a
-                // keystroke in the search box re-derives the same list, and
-                // must not dismiss a banner that is still true.
-                _uiState.update { it.copy(safeMessage = null) }
+                recompute(rosterAnswered = true)
             }
 
             BotsRosterLoad.UnavailableOnGateway -> _uiState.update {
@@ -347,32 +359,51 @@ class BotsViewModel(
         recompute()
     }
 
-    private fun recompute() {
+    private fun recompute(rosterAnswered: Boolean = false) {
         // One clock read per derivation: `update`'s block may be evaluated more
         // than once under a concurrent writer, and the rows' activity bands
         // must not move between two attempts at the same list.
         val now = clock()
         _uiState.update { state ->
-            derivedState(state, whenEmpty = emptyRosterPhase(state.phase), now = now)
+            val from = if (rosterAnswered) state.copy(safeMessage = null) else state
+            val whenEmpty =
+                if (rosterAnswered) BotsRosterPhase.Empty else emptyRosterPhase(state.phase)
+            derivedState(
+                from = from,
+                // Only an answer may replace a terminal or waiting state with
+                // Empty. Presentation changes merely re-derive what is held.
+                whenEmpty = whenEmpty,
+                now = now,
+            )
         }
     }
 
     /**
-     * What a roster-less surface is claiming. A terminal response remains
-     * terminal across presentation-only changes; otherwise the choice is an
-     * answered-but-empty Gateway ([BotsRosterPhase.Empty]) or one nothing has
-     * been asked of yet ([BotsRosterPhase.Loading]).
+     * What a roster-less surface is claiming during presentation-only changes.
+     * A terminal response or an explicit wait remains in force; only a real
+     * roster answer may replace either with [BotsRosterPhase.Empty].
      *
      * Only [answeredEndpoint] can tell them apart — see its KDoc. The endpoint
      * it was answered in has to be *this* one, not merely answered at some
      * point in the past.
      */
     private fun emptyRosterPhase(previous: BotsRosterPhase): BotsRosterPhase =
-        when {
-            previous == BotsRosterPhase.Refused ||
-                previous == BotsRosterPhase.UnavailableOnGateway -> previous
-            answeredEndpoint != endpointGeneration.value -> BotsRosterPhase.Loading
-            else -> BotsRosterPhase.Empty
+        when (previous) {
+            BotsRosterPhase.Loading -> BotsRosterPhase.Loading
+            BotsRosterPhase.Refused,
+            BotsRosterPhase.UnavailableOnGateway,
+            -> if (rosterEndpoint == endpointGeneration.value) {
+                previous
+            } else {
+                BotsRosterPhase.Loading
+            }
+            BotsRosterPhase.Ready,
+            BotsRosterPhase.Empty,
+            -> if (answeredEndpoint == endpointGeneration.value) {
+                BotsRosterPhase.Empty
+            } else {
+                BotsRosterPhase.Loading
+            }
         }
 
     /**
@@ -418,10 +449,8 @@ class BotsViewModel(
     /**
      * The surface's own fields, re-derived from [roster].
      *
-     * [whenEmpty] is the phase a roster-less surface is in; both callers pass
-     * [emptyRosterPhase] rather than deciding for themselves. [now] is passed
-     * in rather than read here for the same reason: one derivation, one
-     * instant.
+     * [whenEmpty] is the phase a roster-less surface is in. [now] is passed in
+     * rather than read here for the same reason: one derivation, one instant.
      */
     private fun derivedState(
         from: BotsRosterUiState,

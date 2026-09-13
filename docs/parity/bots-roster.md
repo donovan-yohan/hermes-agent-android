@@ -71,7 +71,9 @@ Gateways route form persists per keystroke and tears down after each), a
 disconnect and an endpoint's removal — and survives exactly what the cache
 survives. An empty roster distinguishes the two claims it can make on that
 boundary: `Empty` only after this endpoint answered, `Loading` while nothing has
-been asked of it (`BotsViewModel.answeredEndpoint`).
+been asked of it (`BotsViewModel.answeredEndpoint`). Search and filter changes
+cannot manufacture a new answer: they preserve the current waiting or terminal
+phase, and a roster-less failure returns to waiting when its connection drops.
 
 ## Copy
 
