@@ -136,7 +136,7 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithText("line one\nline two").assertIsDisplayed()
         compose.onNodeWithTag("Kanban Task actions").performClick()
         compose.waitForIdle()
-        assertWipOrder("Move task", "Copy task id", "Copy title", "Archive", "Delete")
+        assertWipOrder("Move to", "Copy task id", "Copy title", "Archive", "Delete")
         compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(2)
         compose.onNodeWithContentDescription("Back to board").performClick()
         compose.onNodeWithTag("Kanban board").assertIsDisplayed()

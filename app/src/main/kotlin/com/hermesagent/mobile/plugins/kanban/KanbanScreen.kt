@@ -217,7 +217,7 @@ private val BOARD_CONTROL_GROUPS = listOf(
     listOf("Filters", "Filter cards…", "Orchestration settings", "New task"),
 )
 private val TASK_ACTION_GROUPS = listOf(
-    listOf("Move task"),
+    listOf("Move to"),
     listOf("Copy task id", "Copy title"),
     listOf("Archive", "Delete"),
 )
