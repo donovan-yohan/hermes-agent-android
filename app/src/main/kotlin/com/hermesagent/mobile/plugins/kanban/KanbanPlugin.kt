@@ -21,7 +21,7 @@ class KanbanPlugin : HermesPlugin {
             PluginContribution(id = "route", area = PluginAreas.ROUTES_AREA, title = "Kanban", render = {
                 val nav = LocalPluginNavigation.current
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
-                KanbanScreen(state, nav.onBack, viewModel::refresh, viewModel::openTask, viewModel::closeDetail)
+                KanbanScreen(state, nav.onBack, viewModel::refreshCurrent, viewModel::openTask, viewModel::closeDetail)
             }),
             PluginContribution(id = "sidebar-nav", area = PluginAreas.SIDEBAR_NAV_AREA, title = "Kanban", order = 450, render = {
                 val nav = LocalPluginNavigation.current
