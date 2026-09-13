@@ -194,7 +194,7 @@ class BotsViewModel(
             // collector waking late behind it must not clear them again.
             combine(connected, endpointGeneration) { up, _ -> up }
                 .collect { up ->
-                    if (endpointGeneration.value != rosterEndpoint) dropRosterForEndpointSwitch()
+                    dropRosterIfEndpointChanged()
                     _uiState.update { state ->
                         val rosterlessFailure =
                             state.phase == BotsRosterPhase.Refused ||
@@ -281,6 +281,11 @@ class BotsViewModel(
 
     /** [refresh] without the scope, so a test can await it deterministically. */
     suspend fun refreshNow() {
+        // The endpoint flow can move before its collector gets a dispatcher
+        // turn. Public entry points enforce the same boundary synchronously so
+        // no presentation or direct refresh can expose the old machine's rows
+        // in that window.
+        dropRosterIfEndpointChanged()
         // The endpoint this read is being made against. A switch that lands
         // while the read is on the wire answers about a machine this device has
         // left, and that answer says nothing about the one it is on now —
@@ -293,6 +298,10 @@ class BotsViewModel(
         }
         val load = repository.loadRoster()
         if (endpoint != endpointGeneration.value) return
+        // A generation can also move after the request starts but before this
+        // outcome is reduced. The equality above fences the answer; this call
+        // fences any rows held before that answer.
+        if (dropRosterIfEndpointChanged()) return
         when (load) {
             is BotsRosterLoad.Loaded -> {
                 roster = load.rows
@@ -360,6 +369,10 @@ class BotsViewModel(
     }
 
     private fun recompute(rosterAnswered: Boolean = false) {
+        // The drop already derives the current presentation fields from the
+        // updated state, so a caller must not continue and overwrite Loading
+        // with a stale answer's phase.
+        if (dropRosterIfEndpointChanged()) return
         // One clock read per derivation: `update`'s block may be evaluated more
         // than once under a concurrent writer, and the rows' activity bands
         // must not move between two attempts at the same list.
@@ -405,6 +418,13 @@ class BotsViewModel(
                 BotsRosterPhase.Loading
             }
         }
+
+    /** Returns true when this call performed the endpoint-boundary drop. */
+    private fun dropRosterIfEndpointChanged(): Boolean {
+        if (endpointGeneration.value == rosterEndpoint) return false
+        dropRosterForEndpointSwitch()
+        return true
+    }
 
     /**
      * Forget the roster, because this device has changed endpoint.

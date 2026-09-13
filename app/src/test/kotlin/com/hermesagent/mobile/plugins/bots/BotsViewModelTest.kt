@@ -382,7 +382,11 @@ class BotsViewModelTest {
         connected.value = false
         advanceUntilIdle()
         endpoint.value = 1L
-        advanceUntilIdle()
+
+        // A presentation action can beat the generation collector by one
+        // dispatcher turn. The public entry point owns the same boundary, so
+        // it drops the old machine synchronously rather than rendering it once.
+        viewModel.setSearchQuery("beta")
 
         // No row from the machine we left survives the boundary, and neither
         // does the banner that said those rows were old. The surface waits
@@ -395,11 +399,11 @@ class BotsViewModelTest {
         assertTrue(dropped.attentionByKey.isEmpty())
         assertTrue(attention.entries.value.isEmpty())
 
-        // The search box survives the switch, so a keystroke over the dropped
-        // roster is reachable in one tap — and it must not turn "nothing has
-        // been asked of this endpoint yet" into "it answered, and it has no
-        // bots".
-        viewModel.setSearchQuery("beta")
+        // The search box survives the switch, and another keystroke over the
+        // dropped roster must not turn "nothing has been asked of this endpoint
+        // yet" into "it answered, and it has no bots".
+        advanceUntilIdle()
+        viewModel.setSearchQuery("beta-")
         assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
         assertEquals(emptyList<BotSectionBlock>(), viewModel.uiState.value.sections)
         viewModel.setSearchQuery("")
@@ -412,6 +416,31 @@ class BotsViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(BotsRosterPhase.Ready, state.phase)
         assertEquals(listOf("beta-only"), state.sections.flatMap { it.rows }.map { it.name })
+    }
+
+    @Test
+    fun `a direct refresh drops old rows before the generation collector runs`() = runTest {
+        val host = loadedHost()
+        val endpoint = MutableStateFlow(0L)
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = MutableStateFlow(true),
+            endpointGeneration = endpoint,
+        )
+        viewModel.refreshNow()
+        assertEquals(3, viewModel.uiState.value.sections.flatMap { it.rows }.size)
+
+        endpoint.value = 1L
+        host.result = PluginHostResult.Refused(0, "The Gateway did not answer in time.")
+        // Do not run the collector: this direct call is intentionally first.
+        viewModel.refreshNow()
+
+        val state = viewModel.uiState.value
+        assertEquals(BotsRosterPhase.Refused, state.phase)
+        assertEquals(emptyList<BotSectionBlock>(), state.sections)
+        assertEquals("The Gateway did not answer in time.", state.safeMessage)
     }
 
     @Test

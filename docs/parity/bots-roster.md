@@ -62,7 +62,10 @@ Desktop draws the same boundary a
 different way — its roster query is keyed by the active connection id
 (`data.ts:638` @ the pin), so one machine's answer is never the next machine's
 cache — and the rule is the one `AGENTS.md` states for the session cache: the
-next backend is a different machine that can recycle the same durable ids. A
+next backend is a different machine that can recycle the same durable ids. The
+generation collector and every direct refresh/presentation entry point enforce
+the same idempotent drop, so none can expose the old roster while the collector
+is waiting for its dispatcher turn. A
 *transport* redial on the same endpoint drops nothing; the last good list under
 its banner is exactly what that path is for. Which paths count as leaving is the
 session cache's own rule, not a second one drawn here: the roster reads the app's
