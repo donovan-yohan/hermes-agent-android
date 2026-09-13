@@ -43,7 +43,9 @@ import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.TranscriptRowId
+import com.hermesagent.mobile.data.gateway.GatewayRpcError
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
+import com.hermesagent.mobile.data.gateway.SESSION_NOT_OWNED_REASON
 import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
 import com.hermesagent.mobile.data.composer.ComposerQueueController
 import com.hermesagent.mobile.data.composer.ComposerQueueSubmitter
@@ -68,6 +70,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -913,7 +916,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals("keep me", viewModel.uiState.value.draft)
-        assertEquals("The message was not sent. Reconnect to the Gateway and try again.", viewModel.uiState.value.notice)
+        assertEquals("The message was not sent. Reconnect to the Gateway and try again.", viewModel.uiState.value.notice?.text)
     }
 
     @Test
@@ -931,9 +934,144 @@ class ChatViewModelTest {
         assertEquals("", viewModel.uiState.value.draft)
         assertEquals(
             "This message may have been sent. Check this session and wait for Hermes before trying again.",
+            viewModel.uiState.value.notice?.text,
+        )
+        assertFalse(viewModel.uiState.value.notice?.text.orEmpty().contains("not sent"))
+    }
+
+    /**
+     * #220. Another surface holds the lease, so the send is refused for as long
+     * as it does: the notice has to carry the way out, not just the news.
+     * Desktop reaches the same place from the same reason code — it stamps the
+     * failed turn `{code: SESSION_NOT_OWNED, retryable: false}`, hides Retry and
+     * offers `Start new session` (`c80003ff57` @ `564aef2946`).
+     */
+    @Test
+    fun `a live-owner refusal carries the escape that ends it`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "refused", SESSION_NOT_OWNED_REASON)
+        viewModel.setDraft("send into a held session")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(
+            ChatNotice(NOT_OWNED_NOTICE, ChatNoticeAction.StartNewSession),
             viewModel.uiState.value.notice,
         )
-        assertFalse(viewModel.uiState.value.notice.orEmpty().contains("not sent"))
+    }
+
+    /**
+     * The busy refusal shares the *code* and wants the opposite advice: wait or
+     * interrupt, not a session this turn would have to be retyped into. So the
+     * escape is keyed on the reason, and a bare 4090 must not grow one.
+     */
+    @Test
+    fun `a busy refusal on the same code offers no new session`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "Hermes is already working in this session.", "SESSION_BUSY")
+        viewModel.setDraft("send while busy")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+
+        val notice = viewModel.uiState.value.notice
+        assertEquals("The message was not sent. Reconnect to the Gateway and try again.", notice?.text)
+        assertNull(notice?.action)
+    }
+
+    /** An accepted send is proof the lease moved: the escape goes with the refusal. */
+    @Test
+    fun `a later accepted send clears the escape`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "refused", SESSION_NOT_OWNED_REASON)
+        viewModel.setDraft("send into a held session")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertNotNull(viewModel.uiState.value.notice?.action)
+
+        repository.submitFailure = null
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals(listOf("session-a" to "send into a held session"), repository.submitted)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    /** The refusal belonged to one session; the composer is now homed on another. */
+    @Test
+    fun `switching sessions takes the escape with it`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "refused", SESSION_NOT_OWNED_REASON)
+        viewModel.setDraft("send into a held session")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertNotNull(viewModel.uiState.value.notice?.action)
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    /**
+     * The switch clears the notice on its way out, but the refusal can answer
+     * after that. Foreground isolation: an escape must never appear in a
+     * session the person is now reading, where following it would start a chat
+     * out of nowhere.
+     */
+    @Test
+    fun `a refusal that lands after a switch brings no escape with it`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.submitGate = gate
+        repository.submitFailure = GatewayRpcError(4090, "refused", SESSION_NOT_OWNED_REASON)
+        viewModel.setDraft("send into a held session")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+        assertNull(viewModel.uiState.value.notice)
+
+        gate.complete(Unit)
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.notice?.action)
+    }
+
+    /**
+     * Every other notice in this ViewModel is written as a bare line, which is
+     * what makes replacement — not bookkeeping — the thing that retires an
+     * escape. A generic send failure after a refusal must not inherit one.
+     */
+    @Test
+    fun `the next notice of any kind replaces the escape`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "refused", SESSION_NOT_OWNED_REASON)
+        viewModel.setDraft("send into a held session")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertNotNull(viewModel.uiState.value.notice?.action)
+
+        repository.submitFailure = null
+        repository.failSubmit = true
+        viewModel.submit()
+        runCurrent()
+
+        val notice = viewModel.uiState.value.notice
+        assertEquals("The message was not sent. Reconnect to the Gateway and try again.", notice?.text)
+        assertNull(notice?.action)
     }
 
     @Test
@@ -1136,7 +1274,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(null, viewModel.uiState.value.selectedProject)
-        assertEquals("That project is no longer available.", viewModel.uiState.value.notice)
+        assertEquals("That project is no longer available.", viewModel.uiState.value.notice?.text)
     }
 
     @Test
@@ -1164,7 +1302,7 @@ class ChatViewModelTest {
         assertEquals(null, viewModel.uiState.value.selectedProject)
         assertEquals(
             "The project was created, but Projects could not be refreshed. Reopen Sessions to refresh.",
-            viewModel.uiState.value.notice,
+            viewModel.uiState.value.notice?.text,
         )
     }
 
@@ -1203,7 +1341,7 @@ class ChatViewModelTest {
         viewModel.createSession()
         runCurrent()
         assertEquals(0, repository.created)
-        assertEquals("Connect to a Gateway before starting a session.", viewModel.uiState.value.notice)
+        assertEquals("Connect to a Gateway before starting a session.", viewModel.uiState.value.notice?.text)
     }
 
     @Test
@@ -1221,7 +1359,7 @@ class ChatViewModelTest {
         viewModel.branchFromReply("a1")
         runCurrent()
 
-        assertEquals("Nothing to branch. Start or resume a chat before branching.", viewModel.uiState.value.notice)
+        assertEquals("Nothing to branch. Start or resume a chat before branching.", viewModel.uiState.value.notice?.text)
         assertEquals(emptyList<Pair<String, Int?>>(), repository.branchCalls)
     }
 
@@ -1240,7 +1378,7 @@ class ChatViewModelTest {
         viewModel.branchFromReply("a1")
         runCurrent()
 
-        assertEquals("Session busy. Stop the current turn before branching this chat.", viewModel.uiState.value.notice)
+        assertEquals("Session busy. Stop the current turn before branching this chat.", viewModel.uiState.value.notice?.text)
         assertEquals(emptyList<Pair<String, Int?>>(), repository.branchCalls)
     }
 
@@ -1499,7 +1637,7 @@ class ChatViewModelTest {
         assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
         assertEquals(
             "The message was not sent. Reconnect to the Gateway and try again.",
-            viewModel.uiState.value.notice,
+            viewModel.uiState.value.notice?.text,
         )
 
         repository.failSubmit = false
@@ -1526,7 +1664,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(listOf("session-a" to "send the healthy text"), repository.submitted)
-        assertEquals(refused.safeMessage, viewModel.uiState.value.notice)
+        assertEquals(refused.safeMessage, viewModel.uiState.value.notice?.text)
         assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Refused)
     }
 
@@ -1583,7 +1721,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(QueuedPromptDelivery.Ambiguous, viewModel.uiState.value.composer.runtime.queueEntries.single().delivery)
-        assertTrue(viewModel.uiState.value.notice!!.contains("may have reached Hermes"))
+        assertTrue(viewModel.uiState.value.notice?.text!!.contains("may have reached Hermes"))
     }
 
     @Test
@@ -1630,7 +1768,7 @@ class ChatViewModelTest {
         assertTrue(cache.session("session-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
         assertEquals(
             "Stopped. Any queued next-turn messages were discarded with the turn.",
-            viewModel.uiState.value.notice,
+            viewModel.uiState.value.notice?.text,
         )
     }
 
@@ -1748,7 +1886,7 @@ class ChatViewModelTest {
         )
         assertEquals(false, cache.session("session-a")?.unread)
         // `unreadFailed` verbatim (`i18n/en.ts:2307`) plus the honest count.
-        assertEquals("Could not update unread state for 1 of 2 chats.", viewModel.uiState.value.notice)
+        assertEquals("Could not update unread state for 1 of 2 chats.", viewModel.uiState.value.notice?.text)
     }
 
     @Test
@@ -1761,7 +1899,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(1, repository.flagWrites.size)
-        assertNull(viewModel.uiState.value.notice)
+        assertNull(viewModel.uiState.value.notice?.text)
         assertEquals(0, viewModel.uiState.value.unreadCount)
     }
 
@@ -1838,7 +1976,7 @@ class ChatViewModelTest {
         // The pin's own sentence, not the read-state one.
         assertEquals(
             "Could not update pin. Check the Gateway and try again.",
-            viewModel.uiState.value.notice,
+            viewModel.uiState.value.notice?.text,
         )
     }
 
@@ -1890,7 +2028,7 @@ class ChatViewModelTest {
                 "$flag was never written",
                 Triple(flag, id, true) in repository.flagWrites,
             )
-            assertNull(viewModel.uiState.value.notice)
+            assertNull(viewModel.uiState.value.notice?.text)
         }
 
         assertEquals(true, cache.session("session-archived")?.archived)
@@ -1994,7 +2132,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(ArchivedPoolState.Failed, viewModel.uiState.value.archivedPool)
-        assertEquals("Could not reach the Gateway.", viewModel.uiState.value.notice)
+        assertEquals("Could not reach the Gateway.", viewModel.uiState.value.notice?.text)
     }
 
     /**
@@ -2013,7 +2151,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(ArchivedPoolState.Unsupported, viewModel.uiState.value.archivedPool)
-        assertEquals(ARCHIVED_UNSUPPORTED, viewModel.uiState.value.notice)
+        assertEquals(ARCHIVED_UNSUPPORTED, viewModel.uiState.value.notice?.text)
     }
 
     /**
@@ -2033,7 +2171,7 @@ class ChatViewModelTest {
         assertEquals(ArchivedPoolState.Failed, viewModel.uiState.value.archivedPool)
         assertEquals(
             "Could not load archived chats. Check the Gateway and try again.",
-            viewModel.uiState.value.notice,
+            viewModel.uiState.value.notice?.text,
         )
     }
 
@@ -2138,7 +2276,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(ReadAloudUiState.Idle, subject.uiState.value.readAloud)
-        assertEquals("Read aloud failed. Gateway failure", subject.uiState.value.notice)
+        assertEquals("Read aloud failed. Gateway failure", subject.uiState.value.notice?.text)
     }
 
     @Test
@@ -2299,6 +2437,8 @@ class ChatViewModelTest {
         var created = 0
         var createdWorkspace: String? = null
         var failSubmit = false
+        /** A specific refusal, for the failures whose *kind* is what is under test. */
+        var submitFailure: Throwable? = null
         var submitGate: CompletableDeferred<Unit>? = null
         var submitAttempts = 0
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
@@ -2527,6 +2667,7 @@ class ChatViewModelTest {
         ): GatewaySubmitOutcome {
             submitAttempts += 1
             submitGate?.await()
+            submitFailure?.let { throw it }
             if (failSubmit) error("fixture failure")
             queuedSubmissions += durableId to queued
             if (attachments.isNotEmpty()) submittedAttachments += durableId to attachments
@@ -2725,7 +2866,7 @@ class ChatViewModelTest {
         assertEquals(1, repository.regenerateCalls.size)
         assertEquals(Triple("a", "first", TranscriptRowId(1L)), repository.regenerateCalls.first())
         assertEquals(listOf("1"), repository.regenerateEntryIds)
-        assertNull(vm.uiState.value.notice)
+        assertNull(vm.uiState.value.notice?.text)
     }
 
     @Test
@@ -2774,7 +2915,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(0, repository.regenerateCalls.size)
-        assertEquals("Refresh could not find this turn in the session history. Reopen the session and try again.", vm.uiState.value.notice)
+        assertEquals("Refresh could not find this turn in the session history. Reopen the session and try again.", vm.uiState.value.notice?.text)
     }
 
     @Test
@@ -2895,7 +3036,7 @@ class ChatViewModelTest {
 
         assertTrue(repository.interrupted.isEmpty())
         assertTrue(repository.regenerateCalls.isEmpty())
-        assertNull(vm.uiState.value.notice)
+        assertNull(vm.uiState.value.notice?.text)
     }
 
     @Test
@@ -2929,7 +3070,7 @@ class ChatViewModelTest {
 
         assertEquals(listOf("a"), repository.interrupted)
         assertTrue(repository.regenerateCalls.isEmpty())
-        assertEquals("Hermes could not be stopped. Check the Gateway connection.", vm.uiState.value.notice)
+        assertEquals("Hermes could not be stopped. Check the Gateway connection.", vm.uiState.value.notice?.text)
     }
 
     @Test
@@ -2979,7 +3120,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertTrue(repository.regenerateCalls.isEmpty())
-        assertEquals("Connect to a Gateway before refreshing this reply.", vm.uiState.value.notice)
+        assertEquals("Connect to a Gateway before refreshing this reply.", vm.uiState.value.notice?.text)
     }
 
     @Test
@@ -3003,7 +3144,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(0, repository.regenerateCalls.size)
-        assertEquals("Hermes needs a response. Answer the request above.", vm.uiState.value.notice)
+        assertEquals("Hermes needs a response. Answer the request above.", vm.uiState.value.notice?.text)
     }
 
     @Test
@@ -3024,7 +3165,7 @@ class ChatViewModelTest {
         vm.regenerateReply("2")
         runCurrent()
 
-        assertEquals("Regenerate failed. Check the Gateway and try again.", vm.uiState.value.notice)
+        assertEquals("Regenerate failed. Check the Gateway and try again.", vm.uiState.value.notice?.text)
     }
     private companion object {
         const val CLOCK = 1_800_000_000_000L
@@ -3099,7 +3240,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertTrue("session-a" in repository.opened)
-        assertNull(viewModel.uiState.value.notice)
+        assertNull(viewModel.uiState.value.notice?.text)
     }
 
     @Test
@@ -3123,7 +3264,7 @@ class ChatViewModelTest {
         assertTrue(chips.single().stage is AttachmentStage.ReviewRequired)
         // The editor stays clear (the send was accepted into the wire), but the
         // chip itself carries the exact caption for review.
-        assertTrue(viewModel.uiState.value.notice!!.contains("may have been sent"))
+        assertTrue(viewModel.uiState.value.notice?.text!!.contains("may have been sent"))
         val chip = chips.single().stage as AttachmentStage.ReviewRequired
         assertEquals("with a file", chip.submittedText)
 
@@ -3145,7 +3286,7 @@ class ChatViewModelTest {
 
         assertEquals(listOf("session-a"), repository.deleted)
         assertNull(viewModel.uiState.value.activeSession)
-        assertEquals("Session deleted", viewModel.uiState.value.notice)
+        assertEquals("Session deleted", viewModel.uiState.value.notice?.text)
         assertEquals(listOf("session-b"), cache.state.value.sessions.keys.toList())
     }
 
@@ -3163,7 +3304,7 @@ class ChatViewModelTest {
         assertEquals(listOf("session-b"), repository.deleted)
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
         assertEquals("active draft", viewModel.uiState.value.draft)
-        assertEquals("Session deleted", viewModel.uiState.value.notice)
+        assertEquals("Session deleted", viewModel.uiState.value.notice?.text)
     }
 
     @Test
@@ -3298,7 +3439,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(listOf("session-a"), viewModel.uiState.value.sessionRows.rowIds())
-        assertNull(viewModel.uiState.value.notice)
+        assertNull(viewModel.uiState.value.notice?.text)
     }
 
     /**
@@ -3530,7 +3671,7 @@ class ChatViewModelTest {
             runCurrent()
 
             assertEquals(listOf("session-a"), viewModel.uiState.value.sessionRows.rowIds())
-            assertNull(viewModel.uiState.value.notice)
+            assertNull(viewModel.uiState.value.notice?.text)
         }
 
     /**

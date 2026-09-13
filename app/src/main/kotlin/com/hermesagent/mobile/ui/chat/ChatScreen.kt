@@ -874,10 +874,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
             canSend = state.canSend,
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             statusLine = state.composerStatus(),
-            // A notice about a project or a profile is reporting, not
-            // directing, and `composerStatus` renders it ahead of the
-            // connection — so it must not inherit the connection's door.
-            statusAction = gatewayDoor.takeIf { state.notice == null },
+            statusAction = state.composerStatusAction(actions, gatewayDoor),
             editorIdentity = state.activeSession?.id,
             codingHeader = {
                 CodingStatusRow(
@@ -1068,7 +1065,7 @@ private fun ChatUiState.chromeSubtitle(): String = when {
     else -> connection.status.label
 }
 
-private fun ChatUiState.composerStatus(): String = notice ?: when {
+private fun ChatUiState.composerStatus(): String = notice?.text ?: when {
     connection.status == GatewayConnectionStatus.Connecting -> "Connecting to Gateway"
     connection.status == GatewayConnectionStatus.NeedsAttention ->
         connection.message ?: "Open Gateways to reconnect"
@@ -1076,6 +1073,43 @@ private fun ChatUiState.composerStatus(): String = notice ?: when {
     isStreaming -> "Hermes is responding — use Stop to end the turn"
     else -> "Connected to Gateway"
 }
+
+/**
+ * Which door the composer's status line is, given what it is currently saying.
+ *
+ * Three cases, in this order:
+ *
+ * - A notice that brought its own escape is that escape. Desktop puts the same
+ *   one on the failed turn's error card as a button ahead of every other
+ *   recovery action
+ *   (`apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx:559-563`
+ *   @ `564aef2946c436500a5e80ee117b66b789b3f99a`); here the line the refusal
+ *   already writes is the control, which is the same seam the connection door
+ *   below uses.
+ * - Any other notice is reporting, not directing — a project or a profile
+ *   failure — and [composerStatus] renders it *ahead* of the connection, so it
+ *   must not inherit the connection's door and send someone to Gateways for a
+ *   problem Gateways does not fix.
+ * - Otherwise the line is the connection's, and so is the door.
+ */
+private fun ChatUiState.composerStatusAction(
+    actions: ChatActions,
+    gatewayDoor: StatusAction?,
+): StatusAction? = when (notice?.action) {
+    ChatNoticeAction.StartNewSession -> StatusAction(START_NEW_SESSION, actions.onCreateSession)
+    null -> gatewayDoor.takeIf { notice == null }
+}
+
+/**
+ * Desktop's own label for the live-owner escape: `errorStartNewSession: 'Start
+ * new session'` (`apps/desktop/src/i18n/en.ts:3714` @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ *
+ * Desktop draws it as a button and so has somewhere to print it; here it is
+ * the spoken name of the door the status line already is, so the words stay
+ * verbatim even though the affordance is the line itself.
+ */
+private const val START_NEW_SESSION = "Start new session"
 
 // ── Previews ──────────────────────────────────────────────────────────────
 // Phone dark, phone light, the monospace-everything preset and a wide layout.

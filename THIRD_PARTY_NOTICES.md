@@ -20,7 +20,7 @@ set in the face Hermes Desktop sets it in.
 
 - Foundry: Blaze Type (designed by Axel Andre)
 - Source: `web/public/fonts/Collapse-Bold.woff2` in the pinned hermes-agent
-  checkout `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, the same file Desktop
+  checkout `564aef2946c436500a5e80ee117b66b789b3f99a`, the same file Desktop
   loads from `@nous-research/ui`
 - Notice in the font: © 2023 Keussel, Blaze Type; licence pointer
   <https://blazetype.eu/eula>

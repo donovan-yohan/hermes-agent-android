@@ -157,7 +157,14 @@ fun SessionList(
     projectScope: ProjectProfileScope = ProjectProfileScope.Own,
 ) {
     val tokens = HermesTheme.tokens
-    val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project && selectedProject == null
+    // A scope whose catalog this Gateway cannot list is not a project view at
+    // all: it has no catalog to head, nothing for `+` to create into, and
+    // nothing for the field to search. The rail falls back to the session
+    // list for that scope — which is date-grouped and already scoped to the
+    // profile on screen — rather than drawing an empty pane with the
+    // grouping control the way out and no sign that it is.
+    val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project &&
+        selectedProject == null && projectScope.showsCatalog
     val title = selectedProject?.label ?: if (showingProjectOverview) "Projects" else "Sessions"
     var menuVisible by rememberSaveable { mutableStateOf(false) }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
@@ -278,29 +285,36 @@ fun SessionList(
                 )
             }
 
-            if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == null) {
-                Text(
-                    text = if (canCreate) "Loading projects…" else "Connect to a Gateway to load projects.",
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.textTertiary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            } else if (sidebarGrouping == SidebarGrouping.Project && projectScope != ProjectProfileScope.Own) {
+            if (sidebarGrouping == SidebarGrouping.Project && projectScope != ProjectProfileScope.Own) {
+                // Ahead of the load note, because a scope that cannot list the
+                // catalog never asks for it: `Loading projects…` beside a list
+                // that is not waiting on projects is a sentence about nothing.
+                // The second clause names no grouping: the control's own label
+                // is `Updated`, and `by date` would be a word this product does
+                // not use anywhere a reader could check it against.
                 // The catalog is one profile's either way; only the next action
                 // differs between browsing everything and standing in another
-                // profile, where there is nothing here to browse.
+                // profile, where the rail falls back to this profile's chats.
                 Text(
                     text = when (projectScope) {
                         ProjectProfileScope.Unified ->
                             "Projects come from one profile on this Gateway, not from every profile in view."
                         else ->
-                            "Projects come from one profile on this Gateway. Switch to the default profile to browse them."
+                            "Projects come from one profile on this Gateway. Switch to the default profile to " +
+                                "browse them — this profile’s chats stay listed below."
                     },
                     style = HermesTheme.type.scaffoldMeta,
                     color = tokens.textTertiary,
                     modifier = Modifier
                         .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp)
                         .testTag(PROJECT_PROFILE_SCOPE_NOTE),
+                )
+            } else if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == null) {
+                Text(
+                    text = if (canCreate) "Loading projects…" else "Connect to a Gateway to load projects.",
+                    style = HermesTheme.type.scaffoldMeta,
+                    color = tokens.textTertiary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             } else if (sidebarGrouping == SidebarGrouping.Project && projectsAvailable == false) {
                 Text(
@@ -312,8 +326,6 @@ fun SessionList(
             }
 
             when {
-                showingProjectOverview && !projectScope.showsCatalog -> Spacer(listSlot)
-
                 showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
                     title = if (query.isBlank()) "No projects" else "Nothing matches",
                     description = when {
@@ -802,6 +814,13 @@ private fun ProjectRow(
 ) {
     val tokens = HermesTheme.tokens
     val countLabel = if (project.sessionCount == 1) "1 session" else "${project.sessionCount} sessions"
+    // Desktop's own words for the distinction, and its own reasoning for where
+    // the cue has to live: the glyph is `aria-hidden` and the tooltip only
+    // speaks on hover, "so the link's own name carries the auto cue — screen
+    // readers get it too" (`app/chat/sidebar/project-row.tsx` @ `564aef2946`).
+    // A phone has no hover at all, so that argument is stronger here, not
+    // weaker.
+    val autoSuffix = if (project.isAuto) " ($AUTO_DISCOVERED)" else ""
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -810,10 +829,30 @@ private fun ProjectRow(
                 .clickable(onClick = onOpen)
                 .testTag("Project row ${project.id}")
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp)
-                .semantics { contentDescription = "Open project ${project.label}. $countLabel" },
+                .semantics {
+                    contentDescription = "Open project ${project.label}$autoSuffix. $countLabel"
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Desktop swaps two glyphs — `repo` for an auto lane,
+            // `folder-library` for an explicit project. This app never carried
+            // the second one, and giving every project row a lead glyph is a
+            // separate parity change, so only the auto lane is marked. The
+            // distinction Desktop draws survives; the glyph it draws it *with*
+            // is half ported, and the ledger says so.
+            if (project.isAuto) {
+                // `HermesIconGlyph` clears its own semantics, which is what
+                // this needs: the row above already says the whole phrase, and
+                // a speaking glyph inside that merge would be a second name on
+                // one node.
+                // Tagged on a wrapper rather than on the glyph: `HermesIconGlyph`
+                // ends its modifier chain with `clearAndSetSemantics {}`, which
+                // would take the tag with everything else it clears.
+                Box(Modifier.testTag(AUTO_PROJECT_GLYPH)) {
+                    HermesIconGlyph(icon = HermesIcon.Repo, color = tokens.textTertiary)
+                }
+            }
             Text(
                 text = project.label,
                 style = HermesTheme.type.sessionTitle,
@@ -840,6 +879,14 @@ private fun ProjectRow(
 
 /** The one line that says the project catalog belongs to a single profile. */
 internal const val PROJECT_PROFILE_SCOPE_NOTE = "Project profile scope note"
+
+/**
+ * Desktop's `chat.sidebar.projects.autoDiscovered` verbatim
+ * (`i18n/en.ts` @ `564aef2946`), added upstream alongside the glyph swap.
+ */
+internal const val AUTO_DISCOVERED = "Auto-discovered"
+
+internal const val AUTO_PROJECT_GLYPH = "Auto-discovered project glyph"
 
 private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.Divider -> "divider-${bucket.name}"

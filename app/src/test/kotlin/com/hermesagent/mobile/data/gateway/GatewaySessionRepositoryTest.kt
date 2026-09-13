@@ -989,6 +989,225 @@ class GatewaySessionRepositoryTest {
         assertTrue(cache.transcript("durable-b").filterIsInstance<AssistantTurn>().none { it.error != null })
     }
 
+    /**
+     * The session-less path, exercised where it joins the repository: the
+     * frame reaches the global lane, and none of it becomes session state.
+     */
+    @Test
+    fun `a session-less hint reaches the global lane and leaves session state alone`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+        val hints = mutableListOf<GatewayChangeHint>()
+        val surface = launch { repository.globalChangeHints.collect { hints += it } }
+        runCurrent()
+        val transcriptBefore = cache.transcript("durable-a")
+        val listCallsBefore = rpc.calls.count { it.method == "session.list" }
+
+        rpc.emit("cron.changed", null, """{"jobs":2}""")
+        runCurrent()
+
+        assertEquals(listOf(GatewayChangeHintKind.Cron), hints.map { it.kind })
+        assertEquals("2", (hints.single().payload as JsonObject).string("jobs"))
+        assertEquals("a hint is not a transcript row", transcriptBefore, cache.transcript("durable-a"))
+        assertEquals(
+            "a hint no session lane reads must not pull the session list",
+            listCallsBefore,
+            rpc.calls.count { it.method == "session.list" },
+        )
+        surface.cancel()
+    }
+
+    /**
+     * The one session-less frame whose refetch this repository owns: the hint
+     * *is* "the backend's rows moved", so it reads them again — once per hint,
+     * on the backend's schedule and never on a timer of its own.
+     */
+    @Test
+    fun `a sessions changed hint rescans the list once per hint`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        val hints = mutableListOf<GatewayChangeHintKind>()
+        val surface = launch { repository.globalChangeHints.collect { hints += it.kind } }
+        runCurrent()
+        val baseline = rpc.calls.count { it.method == "session.list" }
+
+        // A hint this repository owns no surface for is delivered and nothing
+        // more: no list read, no session state.
+        rpc.emit("cron.changed", null, "{}")
+        runCurrent()
+        advanceUntilIdle()
+        assertEquals(listOf(GatewayChangeHintKind.Cron), hints)
+        assertEquals(baseline, rpc.calls.count { it.method == "session.list" })
+
+        // The list hint reads the rows again — exactly once.
+        rpc.emit("sessions.changed", null, "{}")
+        runCurrent()
+        advanceUntilIdle()
+        assertEquals(listOf(GatewayChangeHintKind.Cron, GatewayChangeHintKind.Sessions), hints)
+        assertEquals(
+            "calls=${rpc.calls.map { it.method }}",
+            baseline + 1,
+            rpc.calls.count { it.method == "session.list" },
+        )
+
+        // And again on the next hint: the refetch belongs to the hint, not to a
+        // one-shot latch.
+        rpc.emit("sessions.changed", null, "{}")
+        runCurrent()
+        advanceUntilIdle()
+        assertEquals(
+            "hints=$hints calls=${rpc.calls.map { it.method }}",
+            baseline + 2,
+            rpc.calls.count { it.method == "session.list" },
+        )
+        surface.cancel()
+    }
+
+    /**
+     * What `LifecycleResumeEffect` binds at a surface: one refetch per hint
+     * while the surface is resumed, and nothing at all once it leaves. Both
+     * halves matter — a bare collector would refetch in the background, and a
+     * bare timer would refetch without a hint.
+     */
+    @Test
+    fun `a resumed surface refetches once per hint and nothing while it is away`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        val hints = mutableListOf<GatewayChangeHintKind>()
+        var refetches = 0
+        val resumed = launch {
+            repository.globalChangeHints.collect { hint ->
+                hints += hint.kind
+                refetches++
+            }
+        }
+        runCurrent()
+
+        rpc.emit("cron.changed", null, "{}")
+        runCurrent()
+        rpc.emit("bot_relay.outbox.pending", null, "{}")
+        runCurrent()
+
+        assertEquals(2, refetches)
+        assertEquals(listOf(GatewayChangeHintKind.Cron, GatewayChangeHintKind.BotRelayOutbox), hints)
+
+        // `onPauseOrDispose`: the subscription ends with the screen.
+        resumed.cancel()
+        runCurrent()
+        rpc.emit("cron.changed", null, "{}")
+        advanceUntilIdle()
+
+        assertEquals("a surface that is not resumed has nothing to refresh", 2, refetches)
+    }
+
+    /**
+     * The replay watermark's two halves, wired end to end: a session event's
+     * `seq` is what a replay would resume from, and a new `replay_epoch` — the
+     * gateway process restarting — is what invalidates it
+     * (`tui_gateway/event_replay.py:20-25,39-60` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+     */
+    @Test
+    fun `a session seq becomes a watermark and a new replay epoch clears it`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        rpc.emit("message.delta", "runtime-a", json("""{"delta":"hi"}"""), seq = 97)
+        runCurrent()
+        assertEquals(mapOf("runtime-a" to 97L), repository.globalEvents.watermarks())
+
+        rpc.emit("gateway.ready", null, """{"change_events":true,"replay_epoch":"epoch-two"}""")
+        runCurrent()
+
+        assertEquals("epoch-two", repository.globalEvents.replayEpoch())
+        assertTrue(
+            "a restart renumbers every session from 1; the old watermark must not survive",
+            repository.globalEvents.watermarks().isEmpty(),
+        )
+    }
+
+    /**
+     * `session.reclaimed` is broadcast session-less — there is no transport to
+     * target, which is why the runtime it names arrives in the payload — so it
+     * now arrives through the global lane and must still settle that runtime.
+     */
+    @Test
+    fun `a reclaimed session still settles and unbinds through the global lane`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit("session.info", "runtime-a", """{"running":true}""")
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant"}""")
+        runCurrent()
+        val listCallsBefore = rpc.calls.count { it.method == "session.list" }
+
+        rpc.emit(
+            "session.reclaimed",
+            null,
+            """{"session_id":"runtime-a","stored_session_id":"durable-a","reason":"lru_evict"}""",
+        )
+        runCurrent()
+
+        // Settled: the partial turn is sealed with the reason the backend gave.
+        val sealed = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().lastOrNull()
+        assertEquals(TurnTermination.LruEvict, sealed?.termination)
+        assertFalse("a sealed turn is not still streaming", sealed?.streaming == true)
+
+        // Unbound: a late frame for the dead runtime can no longer paint here.
+        rpc.emit("message.delta", "runtime-a", """{"delta":"late"}""")
+        rpc.emit("session.info", "runtime-a", """{"running":true}""")
+        runCurrent()
+        assertTrue(
+            cache.transcript("durable-a").filterIsInstance<AssistantTurn>().none { it.markdown == "late" },
+        )
+
+        advanceUntilIdle()
+        assertEquals(
+            "the reclaimed row's ended_at moved, so the list is read again",
+            listCallsBefore + 1,
+            rpc.calls.count { it.method == "session.list" },
+        )
+    }
+
     @Test
     fun `session refresh preserves active timer origin`() = runTest {
         var now = CLOCK
@@ -6526,8 +6745,8 @@ class GatewaySessionRepositoryTest {
 
         fun call(method: String): RpcCall = calls.last { it.method == method }
 
-        fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull) {
-            if (eventChannel.trySend(GatewayEvent(type, runtimeId, payload)).isFailure) {
+        fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull, seq: Long? = null) {
+            if (eventChannel.trySend(GatewayEvent(type, runtimeId, payload, seq)).isFailure) {
                 eventOverflowed = true
             }
         }

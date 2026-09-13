@@ -1,56 +1,109 @@
 package com.hermesagent.mobile.ui.settings
 
 /**
- * Copy for Settings ▸ Plugins.
+ * Copy for this app's Plugins surface.
  *
- * Desktop source: `apps/desktop/src/i18n/en.ts:408-421` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * Desktop source: `apps/desktop/src/app/skills/plugins-tab.tsx` and the two copy
+ * blocks it reads — `skills.plugins.*` (`apps/desktop/src/i18n/en.ts:1587-1630`)
+ * and `settings.plugins.*` (`:445-457`) — @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`.
  *
- * This app ships **bundled** plugins only (no disk door), so copy that would
- * claim folder-backed installs is adapted and ledgered in
- * `docs/parity/settings-plugins.md`.
+ * Upstream `61afcde8f9` folded Desktop's two half-pages into one: Capabilities ▸
+ * Plugins now owns agent plugins, desktop plugins, install and the catalog, and
+ * Settings ▸ Plugins was deleted along with the `settings.nav.plugins` key this
+ * file used to quote. Only the naming ported (see
+ * `docs/parity/settings-plugins.md`): the page is called **Plugins**, and what
+ * this app ships is Desktop's *desktop half* — plugins that extend this app,
+ * the same for every profile, gateway or machine. The agent half, its install
+ * path and the catalog are not backed here; the agent half is marked rather
+ * than hidden, per `docs/workflows/review-desktop-parity.md`.
  */
 object PluginsCopy {
-    /** Verbatim `settings.sectionEntries.plugins` (`en.ts:408` @ the pin). */
+    /**
+     * Verbatim `skills.tabPlugins` (`i18n/en.ts:1587` @ the pin).
+     *
+     * The old stamp quoted `settings.sectionEntries.plugins` at `en.ts:408` @
+     * `3ca096de`, which named the wrong key (that line was `settings.nav.plugins`)
+     * and no longer exists at all: `61afcde8f9` dropped it when Settings ▸
+     * Plugins was removed. The word Desktop draws on the tab is unchanged, so
+     * only the citation moves.
+     */
     const val SETTINGS_ROW_TITLE: String = "Plugins"
-    const val SETTINGS_ROW_DETAIL: String = "Enable or disable bundled plugins."
 
     /**
-     * Mobile adaptation of `settings.plugins.title` (`en.ts:411` @ the pin).
+     * Mobile adaptation of `settings.plugins.blurb` (`en.ts:447-448` @ the pin),
+     * shortened to the one clause a destination row has space for.
      *
-     * Desktop calls this section “Desktop plugins” because it supports disk
-     * installs. Android ships bundled-only, so “Desktop” would be untrue here.
+     * Desktop reaches this surface from a Capabilities pane and a command
+     * palette, neither of which a phone has; this app's only destination list is
+     * Settings, so the row says what the surface is for rather than where it sits.
+     */
+    const val SETTINGS_ROW_DETAIL: String = "Extend this app. Enable or disable bundled plugins."
+
+    /**
+     * Verbatim `skills.tabPlugins` (`en.ts:1587` @ the pin) — the page's own name.
+     *
+     * It used to read as an adaptation of `settings.plugins.title`
+     * ("Desktop plugins"), which scoped the surface to Desktop's disk door. Since
+     * `61afcde8f9` the page Desktop calls "Plugins" is the whole plugins surface,
+     * so this app's title is the same word for the same thing.
      */
     const val TITLE: String = "Plugins"
 
     /**
-     * Mobile adaptation of `settings.plugins.blurb` (`en.ts:412` @ the pin).
+     * Mobile adaptation of `settings.plugins.blurb` (`en.ts:447-448` @ the pin).
      *
-     * Desktop mentions the `desktop-plugins` folder and a Rescan control, both
-     * non-goals on Android (no disk door).
+     * Desktop's first clause — "Extend this app, not an agent — installed once
+     * for the whole app, whichever profile, gateway, or machine you connect to"
+     * — is true here and is the fact that separates this list from the agent half
+     * below it, so it is kept. Its second clause names the `desktop-plugins`
+     * folder, a non-goal on Android (`docs/adr/0003-bundled-plugin-sdk.md`), so
+     * the sentence states the only delivery mode this app has.
      */
-    const val BLURB: String = "Bundled plugins. Disable to unload live."
+    const val BLURB: String =
+        "Extend this app, not an agent — the same for every profile, gateway or machine you " +
+            "connect to. Bundled with the app; toggles apply live."
 
-    /** Verbatim `settings.plugins.count` (`en.ts:413` @ the pin). */
+    /** Verbatim `settings.plugins.count` (`en.ts:449` @ the pin). */
     fun count(n: Int): String = "$n installed"
 
-    /** Verbatim `settings.plugins.enable` / `disable` (`en.ts:417-418` @ the pin). */
+    /** Verbatim `settings.plugins.enable` / `disable` (`en.ts:453-454` @ the pin). */
     const val ENABLE: String = "Enable"
     const val DISABLE: String = "Disable"
 
-    /** Verbatim `settings.plugins.failed` (`en.ts:419` @ the pin). */
+    /** Verbatim `settings.plugins.failed` (`en.ts:455` @ the pin). */
     const val FAILED: String = "failed"
 
     /**
-     * Mobile adaptation of `settings.plugins.empty` (`en.ts:420` @ the pin).
+     * Verbatim `skills.plugins.emptyAll` (`en.ts:1609` @ the pin).
      *
-     * Desktop calls them “desktop plugins”; Android shows “plugins”.
+     * The page-level empty, not `settings.plugins.empty` ("No desktop plugins
+     * installed yet.", `:456`): that one is scoped to Desktop's desktop-half
+     * list, and this app's list is the whole page.
      */
-    const val EMPTY: String = "No plugins installed yet."
+    const val EMPTY: String = "No plugins yet."
 
-    /** Verbatim `settings.plugins.kinds.*` (`en.ts:421` @ the pin). */
+    /** Verbatim `settings.plugins.kinds.*` (`en.ts:457` @ the pin). */
     const val KIND_BUNDLED: String = "bundled"
     const val KIND_DISK: String = "on disk"
     const val KIND_RUNTIME: String = "runtime"
-}
 
+    /** Verbatim `skills.plugins.agentTitle` (`en.ts:1589` @ the pin). */
+    const val AGENT_TITLE: String = "Agent plugins"
+
+    /**
+     * Mobile adaptation of `skills.plugins.agentBlurb` (`en.ts:1590-1591` @ the
+     * pin), which reads "Extend the agent for the selected profile — tools,
+     * hooks, providers. Take effect after a gateway restart."
+     *
+     * Desktop scopes that sentence to the profile selector it draws in the Agent
+     * column header; this app has no such selector on this screen, so a promise
+     * about "the selected profile" would name a control that is not there. What
+     * is kept is the contrast the row exists to teach — this half extends the
+     * agent, the list above extends the app — mirroring
+     * `skills.plugins.halfDesktopHint` ("this app, same for every profile",
+     * `:1594`). The gateway-restart caveat is dropped: it is a fact about
+     * applying a change, and nothing here can be changed yet.
+     */
+    const val AGENT_BLURB: String = "Extend the agent, not this app — tools, hooks, providers."
+}

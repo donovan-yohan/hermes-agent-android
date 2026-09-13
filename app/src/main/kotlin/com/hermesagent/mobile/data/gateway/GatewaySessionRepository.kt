@@ -120,6 +120,19 @@ interface GatewaySessionRepository {
      */
     val turnOutcomes: Flow<GatewayTurnOutcome> get() = emptyFlow()
 
+    /**
+     * Session-less gateway broadcasts, as refetch triggers for the surface that
+     * owns them.
+     *
+     * A hint is not data: upstream never seq-stamps or replays these frames
+     * (`tui_gateway/event_replay.py:46-49` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), so the only correct
+     * response is to read that surface again through its own RPC — and only
+     * while that surface is resumed, so the read is bounded by a screen rather
+     * than by a timer nobody owns.
+     */
+    val globalChangeHints: Flow<GatewayChangeHint> get() = emptyFlow()
+
     /** Active turns submitted or live on this client, keyed by durable session ID. */
     val activeTurns: StateFlow<Set<String>> get() = NO_ACTIVE_TURNS
 
@@ -764,6 +777,17 @@ internal class LiveGatewaySessionRepository(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val turnOutcomes: Flow<GatewayTurnOutcome> = turnOutcomeEvents
+
+    /**
+     * The session-less lane beside [applyEvent]: frames the gateway broadcasts
+     * to every client and never routes by a runtime session id.
+     *
+     * `internal` rather than `private` so the one wiring that has no public
+     * surface — a session event's `seq` becoming a watermark, and an epoch
+     * change clearing it — is verifiable from this module's tests.
+     */
+    internal val globalEvents = GatewayGlobalEventLane()
+    override val globalChangeHints: Flow<GatewayChangeHint> = globalEvents.changeHints
     private val mutablePendingInputs =
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
     override val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>> = mutablePendingInputs
@@ -983,6 +1007,9 @@ internal class LiveGatewaySessionRepository(
                     approvalModeRevision++
                     confirmedApprovalMode = null
                     approvalModeFlow.value = ApprovalModeState()
+                    // A replay epoch names one gateway process, so it — and the
+                    // seq watermarks it guards — die with the connection.
+                    globalEvents.clearConnectionState()
                     // Branch labels are connection-scoped server truth; the
                     // next session.info re-reports them after reconnect.
                     branchByDurableId.clear()
@@ -1043,7 +1070,15 @@ internal class LiveGatewaySessionRepository(
                             val refreshMetadata = synchronized(stateLock) {
                                 if (reset.generation != connectionGeneration || clientFlow.value !== next) {
                                     false
+                                } else if (gatewayEventLane(event.type) == GatewayEventLane.Global) {
+                                    // No runtime to route by: the session lane's
+                                    // `applyEvent` can never see these.
+                                    applyGlobalEvent(event)
                                 } else {
+                                    // A `seq` is the resume point a replay would
+                                    // use; the epoch on `gateway.ready` is what
+                                    // invalidates it.
+                                    globalEvents.noteSessionSeq(event.runtimeSessionId, event.seq)
                                     applyEvent(event)
                                 }
                             }
@@ -3009,6 +3044,77 @@ internal class LiveGatewaySessionRepository(
                             action.value.fill(0.toChar())
                         }
                     }
+
+                    // The three vault answers below are the sudo path with a
+                    // different parameter name each. The Gateway reads exactly
+                    // one key per method — `password`, `login`, `code`
+                    // (`tui_gateway/methods_prompt.py:1099-1101` @
+                    // `564aef2946c436500a5e80ee117b66b789b3f99a`) — and every
+                    // one of them tolerates a late answer, so a request that
+                    // expired while the dialog was open answers `expired`
+                    // rather than raising a bare 4009 (`:1096-1103`).
+                    is PendingInputAction.VaultUnlockPassword -> {
+                        val password = action.password.concatToString()
+                        try {
+                            connection.client.request(
+                                "vault.unlock.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    // "" is not a refusal to answer: it is the
+                                    // answer "keep it locked", and the turn
+                                    // resumes without the manager
+                                    // (`input-requests.ts:421-423` @ the pin).
+                                    put("password", JsonPrimitive(password))
+                                },
+                            )
+                        } finally {
+                            action.password.fill(0.toChar())
+                        }
+                    }
+
+                    is PendingInputAction.VaultLogin -> {
+                        // Desktop sends the pair as one JSON string in `login`
+                        // and the backend refuses anything without a password
+                        // (`prompt-overlays.tsx:435` and
+                        // `tui_gateway/agent_callbacks.py:182-189` @ the pin).
+                        // Declining is the empty string, not `{}`: an empty
+                        // `login` is what `save_login_cb` reads as "no login".
+                        val login = if (action.password.isEmpty()) {
+                            ""
+                        } else {
+                            buildJsonObject {
+                                put("identifier", JsonPrimitive(action.identifier.concatToString()))
+                                put("password", JsonPrimitive(action.password.concatToString()))
+                            }.toString()
+                        }
+                        try {
+                            connection.client.request(
+                                "vault.save_login.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("login", JsonPrimitive(login))
+                                },
+                            )
+                        } finally {
+                            action.identifier.fill(0.toChar())
+                            action.password.fill(0.toChar())
+                        }
+                    }
+
+                    is PendingInputAction.VaultCode -> {
+                        val code = action.code.concatToString()
+                        try {
+                            connection.client.request(
+                                "vault.code.respond",
+                                buildJsonObject {
+                                    put("request_id", JsonPrimitive(key.requestId))
+                                    put("code", JsonPrimitive(code))
+                                },
+                            )
+                        } finally {
+                            action.code.fill(0.toChar())
+                        }
+                    }
                 }
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
@@ -3885,30 +3991,54 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    /**
+     * The session-less lane's dispatch, parallel to [applyEvent].
+     *
+     * These frames carry no runtime session id to route by, which is exactly
+     * why they need their own path: [applyEvent]'s first act is to resolve one.
+     * Two of them are session *lifecycle* rather than change hints — a reclaim
+     * still has to settle and unbind the runtime it names — and the rest are
+     * hints the lane fans out.
+     */
+    private fun applyGlobalEvent(event: GatewayEvent): Boolean =
+        if (event.type == "session.reclaimed") {
+            applyReclaimedEvent(event)
+        } else {
+            globalEvents.accept(event)
+        }
+
+    /**
+     * The backend reclaimed a live session this client may still be holding —
+     * idle TTL, LRU cap, or the WebSocket-orphan reap
+     * (`tui_gateway/session_lifecycle.py:275-286` @
+     * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). It is *broadcast*, not
+     * session-targeted, so the runtime it names arrives in the payload rather
+     * than in the envelope.
+     */
+    private fun applyReclaimedEvent(event: GatewayEvent): Boolean {
+        val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
+        val reclaimedRuntime = payload.string("session_id")?.takeIf(String::isNotBlank) ?: return true
+        val termination = reclaimedTurnTermination(payload.string("reason"))
+        val mappedDurableId = identities.durableFor(reclaimedRuntime)
+        if (mappedDurableId != null) {
+            advanceLiveEventRevision(reclaimedRuntime)
+            val durableId = payload.string("stored_session_id")
+                ?.takeIf(String::isNotBlank)
+                ?.let { rehomeDurableSession(mappedDurableId, it, reclaimedRuntime) }
+                ?: mappedDurableId
+            settleStoppedRuntime(durableId, reclaimedRuntime, termination = termination)
+            identities.unbindRuntime(reclaimedRuntime)
+        }
+        return true
+    }
+
     /** Returns true when authoritative list metadata should be refreshed. */
     private fun applyEvent(event: GatewayEvent): Boolean {
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
-        if (event.type == "session.reclaimed") {
-            val reclaimedRuntime = payload.string("session_id")?.takeIf(String::isNotBlank) ?: return true
-            val termination = reclaimedTurnTermination(payload.string("reason"))
-            val mappedDurableId = identities.durableFor(reclaimedRuntime)
-            if (mappedDurableId != null) {
-                advanceLiveEventRevision(reclaimedRuntime)
-                val durableId = payload.string("stored_session_id")
-                    ?.takeIf(String::isNotBlank)
-                    ?.let { rehomeDurableSession(mappedDurableId, it, reclaimedRuntime) }
-                    ?: mappedDurableId
-                settleStoppedRuntime(durableId, reclaimedRuntime, termination = termination)
-                identities.unbindRuntime(reclaimedRuntime)
-            }
-            return true
-        }
-
         val runtimeId = event.runtimeSessionId ?: unscopedRuntimeId ?: return false
         var durableId = identities.durableFor(runtimeId) ?: return false
         if (event.type in LIVE_RUNTIME_EVENT_TYPES) advanceLiveEventRevision(runtimeId)
         return when (event.type) {
-            "gateway.ready" -> false
             "session.info" -> {
                 val eventDurable = payload.string("stored_session_id")
                     ?: payload.string("session_key")
@@ -4098,8 +4228,21 @@ internal class LiveGatewaySessionRepository(
                 true
             }
 
-            "clarify.request", "approval.request", "sudo.request", "secret.request" -> {
+            "clarify.request", "approval.request", "sudo.request", "secret.request",
+            "vault.code.request", "vault.save_login.request", "vault.unlock.request",
+            -> {
                 applyPendingInputEvent(event.type, durableId, runtimeId, payload)
+                false
+            }
+
+            // Only the vault kinds take their expiry here. The Gateway emits
+            // `.expire` for every bounded prompt it parks
+            // (`tui_gateway/server.py:1249-1254,1282-1294` @
+            // `564aef2946c436500a5e80ee117b66b789b3f99a`), but clarify, sudo
+            // and secret shipped without it and changing when *those* cards
+            // disappear is a behaviour change #223 did not own; that is #239.
+            "vault.code.expire", "vault.save_login.expire", "vault.unlock.expire" -> {
+                applyPendingInputExpiry(event.type, durableId, runtimeId, payload)
                 false
             }
 
@@ -4128,12 +4271,7 @@ internal class LiveGatewaySessionRepository(
         runtimeId: String,
         payload: JsonObject,
 ) {
-        val kind = when (type) {
-            "clarify.request" -> PendingInputKind.Clarify
-            "approval.request" -> PendingInputKind.Approval
-            "sudo.request" -> PendingInputKind.Sudo
-            else -> PendingInputKind.Secret
-        }
+        val kind = pendingInputKind(type) ?: return
         val requestId = payload.string("request_id")?.takeIf(String::isNotBlank) ?: return
         val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
         val request: PendingInputRequest = when (kind) {
@@ -4147,6 +4285,47 @@ internal class LiveGatewaySessionRepository(
                 envVarLabel = payload.string("env_var").orEmpty().redactSafeBounded(),
                 prompt = payload.string("prompt").orEmpty().redactSafeBounded(),
             )
+            // The vault payloads are display text and nothing else: the site,
+            // where the code was sent, the origin, the manager's name
+            // (`input-requests.ts:370-446` @
+            // `564aef2946c436500a5e80ee117b66b789b3f99a`). None of them is
+            // required, and a request with an empty one still has to be
+            // answerable — a turn parked behind a prompt this client dropped
+            // for want of a label blocks until the Gateway's own timeout.
+            PendingInputKind.VaultCode -> VaultCodePending(
+                key = key,
+                durableSessionId = durableId,
+                runtimeSessionId = runtimeId,
+                site = payload.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL),
+                hint = payload.string("hint").orEmpty().redactSafeBounded(MAX_PENDING_LABEL),
+            )
+            PendingInputKind.VaultSaveLogin -> {
+                val origin = payload.string("origin").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
+                VaultSaveLoginPending(
+                    key = key,
+                    durableSessionId = durableId,
+                    runtimeSessionId = runtimeId,
+                    origin = origin,
+                    // Desktop's own fallback: `site` is what the card is
+                    // titled after, and the origin is the honest stand-in
+                    // (`input-requests.ts:402`).
+                    site = payload.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
+                        .ifBlank { origin },
+                )
+            }
+            PendingInputKind.VaultUnlock -> {
+                val backend = payload.string("backend").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
+                VaultUnlockPending(
+                    key = key,
+                    durableSessionId = durableId,
+                    runtimeSessionId = runtimeId,
+                    backend = backend,
+                    // `display_name || backend`, Desktop's fallback at `:428`.
+                    displayName = payload.string("display_name").orEmpty()
+                        .redactSafeBounded(MAX_PENDING_LABEL)
+                        .ifBlank { backend },
+                )
+            }
         }
         // A newer same-kind request for this runtime supersedes the older one.
         val current = mutablePendingInputs.value
@@ -4158,6 +4337,57 @@ internal class LiveGatewaySessionRepository(
         mutablePendingInputs.value = next
         retire(current.keys - next.keys)
         setStatus(durableId, SessionStatus.NeedsInput)
+    }
+
+    /**
+     * The one place an event name becomes a [PendingInputKind], for both the
+     * `.request` and the `.expire` half of a family.
+     *
+     * It returns null rather than falling through to a default. The version
+     * before #223 read anything that was not clarify/approval/sudo as a secret,
+     * which was safe only while those four were the whole list: the first vault
+     * event to reach it would have been parked as a `SecretPending` and
+     * answered with `secret.respond`, sending a master password to the wrong
+     * method.
+     */
+    private fun pendingInputKind(type: String): PendingInputKind? = when (type) {
+        "clarify.request" -> PendingInputKind.Clarify
+        "approval.request" -> PendingInputKind.Approval
+        "sudo.request" -> PendingInputKind.Sudo
+        "secret.request" -> PendingInputKind.Secret
+        "vault.code.request", "vault.code.expire" -> PendingInputKind.VaultCode
+        "vault.save_login.request", "vault.save_login.expire" -> PendingInputKind.VaultSaveLogin
+        "vault.unlock.request", "vault.unlock.expire" -> PendingInputKind.VaultUnlock
+        else -> null
+    }
+
+    /**
+     * The Gateway gave up waiting: `_block` pops its pending entry and emits
+     * `<family>.expire {request_id}` (`tui_gateway/server.py:1282-1294` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`). The turn is already moving
+     * again, so the card has to go — a prompt left on screen would take a
+     * password for a request nothing is behind.
+     *
+     * Request-correlated, exactly as Desktop is (`input-requests.ts:173-204`):
+     * a late expiry for a prompt the Gateway has already replaced must not
+     * erase the newer one. And it clears one kind, not the session: a session
+     * can be parked on a vault prompt and something else at once.
+     */
+    private fun applyPendingInputExpiry(
+        type: String,
+        durableId: String,
+        runtimeId: String,
+        payload: JsonObject,
+    ) {
+        val kind = pendingInputKind(type) ?: return
+        val requestId = payload.string("request_id")?.takeIf(String::isNotBlank) ?: return
+        val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
+        if (key !in mutablePendingInputs.value) return
+        removePendingInput(key)
+        // Same reading as an answered request: the session owes nothing now.
+        // Only when nothing else is parked on this runtime, so expiring one
+        // prompt cannot paint a session idle that is still holding another.
+        if (!hasPendingInput(runtimeId)) setStatus(durableId, SessionStatus.Idle)
     }
 
     private fun parseClarify(
@@ -5710,6 +5940,30 @@ private fun Throwable.isUnsupportedGatewayCapability(): Boolean =
             message.contains("unsupported", ignoreCase = true)
         )
 
+/**
+ * Another surface holds this session's live-owner lease.
+ *
+ * The Gateway ships it as machine data: `prompt.submit` answers JSON-RPC 4090
+ * with `error.data.reason = SESSION_NOT_OWNED`. Desktop classifies off that
+ * code "reason code first, prose only for pre-contract backends"
+ * (`c80003ff57` @ `564aef2946`), having deleted its own sentence matcher
+ * because it "would silently miss a reworded or localized message". This keeps
+ * the same order and the same narrow fallback.
+ *
+ * Distinct from *busy*, which is the same code and the opposite advice: busy
+ * means wait or interrupt, and this means the session is being driven
+ * somewhere else and waiting will not help.
+ */
+internal fun Throwable.isSessionNotOwned(): Boolean {
+    val error = this as? GatewayRpcError ?: return false
+    if (error.reason != null) return error.reason.equals(SESSION_NOT_OWNED_REASON, ignoreCase = true)
+    return error.code == SESSION_REFUSED_CODE &&
+        error.message.contains("not owned", ignoreCase = true)
+}
+
+internal const val SESSION_NOT_OWNED_REASON: String = "SESSION_NOT_OWNED"
+private const val SESSION_REFUSED_CODE = 4090
+
 private fun Throwable.isAmbiguousGatewayMutation(): Boolean =
     this is GatewayRpcException && requestMayHaveBeenAccepted
 
@@ -6240,6 +6494,14 @@ private const val MAX_RETIRED_KEYS = 256
 
 private const val MAX_PENDING_TEXT = 1_024
 private const val MAX_PENDING_CHOICE = 240
+
+/**
+ * A vault prompt's site, origin or manager name: a label, not prose. Bounded
+ * tighter than a clarify question because each one is interpolated into the
+ * secure card's title or its single-sentence description, where an unbounded
+ * one would push the entry field and its buttons off a phone screen.
+ */
+private const val MAX_PENDING_LABEL = 160
 private const val MAX_PENDING_CHOICES = 12
 private const val MAX_PENDING_QUESTIONS = 20
 private const val MAX_SESSION_BRANCH = 512

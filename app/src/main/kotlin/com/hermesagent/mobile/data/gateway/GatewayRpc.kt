@@ -2,13 +2,21 @@ package com.hermesagent.mobile.data.gateway
 
 import android.util.Log
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -18,6 +26,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
@@ -32,6 +41,12 @@ internal data class GatewayEvent(
     val type: String,
     val runtimeSessionId: String?,
     val payload: JsonElement,
+    /**
+     * The gateway's per-session replay sequence
+     * (`tui_gateway/event_replay.py:39-60` @ `72a3277cd7`). Absent on
+     * session-less frames, which upstream never stamps.
+     */
+    val seq: Long? = null,
 )
 
 /** One logcat tag for the whole gateway package: connections and the sign-in that opens them. */
@@ -62,6 +77,17 @@ internal class GatewayRpcException(
 internal class GatewayRpcError(
     val code: Int?,
     override val message: String,
+    /**
+     * `error.data.reason`, when the Gateway sent one.
+     *
+     * The refusal this exists for ships as machine data — `prompt.submit`
+     * answers JSON-RPC 4090 with `data.reason = SESSION_NOT_OWNED`
+     * (`apps/desktop/.../use-message-stream/submit.ts` @ `564aef2946`).
+     * Desktop matched the English sentence first and then removed that, for
+     * the reason this app should never add it: prose "would silently miss a
+     * reworded or localized message".
+     */
+    val reason: String? = null,
 ) : Exception(message)
 
 /** The small wire seam needed to prove correlation and close behavior offline. */
@@ -93,6 +119,18 @@ internal enum class GatewayCloseCause {
 }
 
 internal interface GatewayRpcClient : Closeable {
+    /**
+     * Gateway events, in arrival order, to **every** collector.
+     *
+     * This is a broadcast, not a queue with one reader: the app's transcript
+     * pump and a plugin's tap each receive every event, and one of them
+     * stopping ends only its own subscription. A burst that arrives before the
+     * first collector is buffered, not dropped, and a close still drains. The
+     * stream is a live subscription, so it does not complete when the client
+     * closes — [closed] is what reports that — and a collector that stops
+     * draining fills its buffer, which fails the connection rather than
+     * dropping transcript bytes.
+     */
     val events: Flow<GatewayEvent>
     val closed: Flow<GatewayCloseCause> get() = emptyFlow()
     suspend fun request(method: String, params: JsonObject = JsonObject(emptyMap())): JsonElement
@@ -106,6 +144,7 @@ internal interface GatewayRpcClient : Closeable {
 internal class CorrelatedGatewayRpc(
     private val wire: GatewayRpcWire,
     private val timeoutMillisForMethod: (String) -> Long = ::gatewayRpcTimeoutMillis,
+    eventPumpDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : GatewayRpcClient {
     constructor(wire: GatewayRpcWire, timeoutMillis: Long) : this(wire, { timeoutMillis })
 
@@ -116,10 +155,27 @@ internal class CorrelatedGatewayRpc(
     // deltas through normal bursts; overflow fails the connection rather than
     // silently dropping transcript bytes or allowing unbounded remote input.
     private val eventChannel = Channel<GatewayEvent>(EVENT_BUFFER_CAPACITY)
+    // That channel is the ingest buffer; this is the fan-out. Every consumer of
+    // `events` — the app's transcript pump, a plugin's tap — is a subscriber
+    // here rather than a competing receiver of one queue, so a subscriber
+    // ends only its own subscription and no longer takes events from the
+    // others. A subscriber that stops draining fills its buffer, and that —
+    // like the ingest channel overflowing — fails the connection rather than
+    // dropping transcript bytes.
+    private val eventListeners = MutableSharedFlow<GatewayEvent>(
+        extraBufferCapacity = EVENT_BUFFER_CAPACITY,
+    )
+    // One drain for every subscriber, owned by the connection rather than by
+    // whichever subscriber arrived first.
+    private val eventPump = CoroutineScope(SupervisorJob() + eventPumpDispatcher)
+    private val eventPumpStarted = AtomicBoolean(false)
     private val closedFlow = MutableSharedFlow<GatewayCloseCause>(replay = 1)
     private var isClosed = false
 
-    override val events: Flow<GatewayEvent> = eventChannel.receiveAsFlow()
+    override val events: Flow<GatewayEvent> = flow {
+        startEventPump()
+        emitAll(eventListeners)
+    }
     override val closed: Flow<GatewayCloseCause> = closedFlow
 
     override suspend fun request(method: String, params: JsonObject): JsonElement {
@@ -166,6 +222,7 @@ internal class CorrelatedGatewayRpc(
                         GatewayRpcError(
                             code = (error["code"] as? JsonPrimitive)?.content?.toIntOrNull(),
                             message = error.string("message") ?: "The gateway rejected the request.",
+                            reason = (error["data"] as? JsonObject)?.string("reason"),
                         ),
                     )
                 }
@@ -184,9 +241,33 @@ internal class CorrelatedGatewayRpc(
                 type,
                 params.string("session_id")?.takeIf(String::isNotBlank),
                 params["payload"] ?: JsonNull,
+                (params["seq"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.longOrNull,
             ),
         )
-        if (accepted.isFailure) connectionClosed("The gateway event stream exceeded its safe buffer.")
+        if (accepted.isFailure) connectionClosed(EVENT_OVERFLOW_MESSAGE)
+    }
+
+    /**
+     * Drain the ingest channel into the listener fan-out, once per client.
+     *
+     * Nothing leaves the buffer until something is listening, and nothing is
+     * taken while every listener has gone — so a burst that arrives before the
+     * app's pump subscribes, the reason the ingest channel is buffered at all,
+     * is still delivered, and neither a plugin attaching or detaching nor the
+     * app's pump restarting can consume another subscriber's events.
+     */
+    private fun startEventPump() {
+        if (!eventPumpStarted.compareAndSet(false, true)) return
+        eventPump.launch {
+            while (true) {
+                eventListeners.subscriptionCount.first { it > 0 }
+                val event = eventChannel.receiveCatching().getOrNull() ?: return@launch
+                if (!eventListeners.tryEmit(event)) {
+                    connectionClosed(EVENT_OVERFLOW_MESSAGE)
+                    return@launch
+                }
+            }
+        }
     }
 
     /**
@@ -215,10 +296,22 @@ internal class CorrelatedGatewayRpc(
 
     private companion object {
         const val EVENT_BUFFER_CAPACITY = 1_024
+        const val EVENT_OVERFLOW_MESSAGE = "The gateway event stream exceeded its safe buffer."
         val JSON = Json { ignoreUnknownKeys = true }
+
+        /**
+         * The types this client admits at all: the session-scoped ones, plus
+         * every session-less broadcast [gatewayEventLane] classifies as global.
+         * Deriving the second half keeps the two lists from drifting — a
+         * broadcast the lane handles can never be silently refused here.
+         *
+         * Session-less frames carry an empty `session_id` and are never
+         * seq-stamped or buffered upstream, so nothing in that half is data:
+         * each one is a refetch trigger
+         * (`tui_gateway/change_watcher.py:177-184` @
+         * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+         */
         val SUPPORTED_EVENTS = setOf(
-            "gateway.ready",
-            "session.reclaimed",
             "session.info",
             "message.start",
             "message.delta",
@@ -235,7 +328,7 @@ internal class CorrelatedGatewayRpc(
             "approval.request",
             "sudo.request",
             "secret.request",
-        )
+        ) + GATEWAY_GLOBAL_EVENT_TYPES
     }
 }
 
@@ -304,9 +397,12 @@ internal class OkHttpGatewayRpcClient private constructor(
             requestTimeoutMillis: Long,
         ): OkHttpGatewayRpcClient {
             val wire = SocketWire()
-            val rpc = CorrelatedGatewayRpc(wire) { method ->
-                gatewayRpcTimeoutMillis(method, defaultTimeoutMillis = requestTimeoutMillis)
-            }
+            val rpc = CorrelatedGatewayRpc(
+                wire,
+                timeoutMillisForMethod = { method ->
+                    gatewayRpcTimeoutMillis(method, defaultTimeoutMillis = requestTimeoutMillis)
+                },
+            )
 
             return suspendCancellableCoroutine { continuation ->
                 var connected: OkHttpGatewayRpcClient? = null
