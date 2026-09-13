@@ -226,7 +226,7 @@ class ChatProfileScopeTest {
 
         assertEquals(DEFAULT_PROFILE, subject.uiState.value.profileRail.scope.activeProfile)
         assertNull(repository.routing.activeProfile)
-        assertEquals("That profile is no longer available.", subject.uiState.value.notice)
+        assertEquals("That profile is no longer available.", subject.uiState.value.notice?.text)
     }
 
     @Test
@@ -249,7 +249,7 @@ class ChatProfileScopeTest {
         runCurrent()
 
         assertEquals("retired", subject.uiState.value.profileRail.scope.activeProfile)
-        assertNull(subject.uiState.value.notice)
+        assertNull(subject.uiState.value.notice?.text)
     }
 
     @Test

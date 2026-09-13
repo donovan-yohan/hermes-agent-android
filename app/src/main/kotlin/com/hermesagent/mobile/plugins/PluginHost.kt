@@ -8,9 +8,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -43,6 +47,27 @@ interface PluginHost {
     ): PluginHostResult
 
     /**
+     * Whether a live connection exists behind this door, right now.
+     *
+     * The door resolves the *live* connection per call; this is the same slot
+     * as a value, so a plugin that has to recover from a cold start observes
+     * the connection instead of polling it. A plugin loads before the app has
+     * dialled anything (`HermesApplication` discovers plugins before it starts
+     * following the active connection), and [request] refuses while no client
+     * exists — so without this edge a plugin's one read at registration lands
+     * in a refusal it can never leave.
+     *
+     * It is a [StateFlow], not a one-shot event: a collector that starts late
+     * still receives the current value, so a plugin activated on an
+     * already-connected app reads immediately rather than never. The app
+     * publishes a client only once the leg it will actually use has answered
+     * and clears it on every close, so `true` here means "a request will be
+     * sent", not "a socket object exists".
+     */
+    val connected: StateFlow<Boolean>
+        get() = NO_CONNECTION
+
+    /**
      * Subscribe to gateway events by `type`, or `'*'` for everything. Returns
      * a disposer. Listeners are isolated: one that throws never breaks the
      * event pump, and never reaches another subscriber.
@@ -61,6 +86,15 @@ interface PluginHost {
     companion object {
         /** Every event type. */
         const val ALL_EVENTS = "*"
+
+        /**
+         * What a door with no live route reports: never connected.
+         *
+         * The default for an implementation that does not track a connection —
+         * so a plugin waiting on an edge is simply never told one, rather than
+         * being handed a stream that lies about a live Gateway.
+         */
+        private val NO_CONNECTION: StateFlow<Boolean> = MutableStateFlow(false)
     }
 }
 
@@ -128,9 +162,9 @@ fun normalizePluginHostMethod(caller: String, method: String): String {
 
 /**
  * The host door of a context with no live Gateway route: every call refuses
- * with the transport's own reconnect sentence and no event is ever delivered.
- * This is what a plugin gets before the app has connected, and what tests get
- * when they are not exercising the door.
+ * with the transport's own reconnect sentence, [connected] never turns true,
+ * and no event is ever delivered. This is what a plugin gets before the app
+ * has connected, and what tests get when they are not exercising the door.
  */
 object UnavailablePluginHost : PluginHost {
     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
@@ -154,6 +188,21 @@ internal class GatewayPluginHost(
     private val scope: CoroutineScope,
     private val clients: StateFlow<GatewayRpcClient?>,
 ) : PluginHost {
+    /**
+     * The client slot as a readiness edge. `GatewayConnection` publishes the
+     * client only after an authenticated round trip on the leg the app will
+     * use, and clears it in the same place it closes that leg, so this tracks
+     * one connection's whole life including every reconnect.
+     *
+     * Lazily, so a plugin that never asks about the connection does not pay for
+     * a collector: the door is built per activation for every plugin, and most
+     * never read this. The first reader still gets the slot's *current* value
+     * as the initial value, so a late read is a correct read.
+     */
+    override val connected: StateFlow<Boolean> by lazy {
+        clients.map { it != null }.stateIn(scope, SharingStarted.Eagerly, clients.value != null)
+    }
+
     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
         val normalized = normalizePluginHostMethod(CALLER, method)
         val rpc = clients.value ?: return PluginHostResult.Refused(0, RECONNECT_MESSAGE)

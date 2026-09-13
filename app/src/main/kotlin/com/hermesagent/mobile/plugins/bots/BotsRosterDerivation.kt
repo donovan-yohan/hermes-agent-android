@@ -94,13 +94,51 @@ fun isActiveNow(row: BotRosterRow, nowMillis: Long): Boolean {
 }
 
 /**
+ * True while this bot's freshest kanban/tool worker looks alive.
+ *
+ * Workers never surface in conversation lists, so without this a profile
+ * grinding through a 30-minute task reads idle ("3 hr ago") the whole time
+ * (hermes-agent#90268). `worker_session` is on the wire whenever
+ * `include_sessions` is on (`tui_gateway/methods_profiles.py:216` @ the pin)
+ * and a live worker heartbeats `last_activity_at` at least every 60 s, so the
+ * window is Desktop's own [BotsRosterLimits.WORKER_ACTIVE_WINDOW_SECONDS] —
+ * wider than [BotsRosterLimits.ACTIVE_WINDOW_SECONDS] to bridge one missed
+ * heartbeat (`row-helpers.ts:76-86` @ the pin). Older gateways omit the field,
+ * which reads as not working.
+ */
+fun workerActiveAt(row: BotRosterRow, nowMillis: Long): Boolean {
+    val last = row.workerSession?.lastActiveSeconds?.takeIf { it > 0L } ?: return false
+    return nowMillis - last * 1000L < BotsRosterLimits.WORKER_ACTIVE_WINDOW_SECONDS * 1000L
+}
+
+/**
+ * The stamp a row's age label reads. A live worker is activity
+ * (`bot-row.tsx:138-146` @ the pin): while one runs the label follows the
+ * fresher of the bot's chat activity and the worker, and falls back to chat
+ * activity alone once the worker stops. Sorting and the activity filters keep
+ * reading [BotRosterRow.lastActiveMillis] — Desktop sorts on
+ * `max(created, lastMsg)` and never on the worker (`roster-pane-derivation.ts`
+ * `sortRosterBots`).
+ */
+fun botRowAgeMillis(row: BotRosterRow, nowMillis: Long): Long? {
+    val activity = row.lastActiveMillis
+    if (!workerActiveAt(row, nowMillis)) {
+        return activity
+    }
+    val worker = row.workerSession?.lastActiveSeconds?.times(1000L) ?: 0L
+    return maxOf(activity ?: 0L, worker).takeIf { it > 0L }
+}
+
+/**
  * Match a row against the activity filter.
  *
- * Desktop ORs live turn/worker liveness into `active`
- * (`roster-pane-derivation.ts`, `row-helpers.ts:170-186` @ the pin); those
- * signals arrive with the live-state slice, so here `active` is the age window
- * alone. `Recent` is a seven-day window and `Older` is its complement, exactly
- * as Desktop defines them.
+ * Desktop ORs worker liveness into `active` (`row-helpers.ts:125-138` @ the
+ * pin, `roster-pane-derivation.ts` `activeBots`): a bot whose kanban/tool
+ * worker is alive is "Active now" even though nothing has been said in its
+ * chats. The remaining term it has and this does not is live-turn liveness,
+ * which arrives with the live-state slice.
+ * `Recent` is a seven-day window and `Older` is its complement, exactly as
+ * Desktop defines them; both read chat activity only.
  */
 fun rosterActivityMatches(
     row: BotRosterRow,
@@ -111,7 +149,7 @@ fun rosterActivityMatches(
         return true
     }
     if (filter == RosterActivityFilter.Active) {
-        return isActiveNow(row, nowMillis)
+        return workerActiveAt(row, nowMillis) || isActiveNow(row, nowMillis)
     }
     val activity = row.lastActiveMillis ?: 0L
     val recent = activity > 0L &&
@@ -262,6 +300,16 @@ data class RosterPresentationState(
     val showRosterSearch: Boolean = false,
     val showRosterFilters: Boolean = false,
     val showRosterTools: Boolean = false,
+    /**
+     * Whether the user has made sections at all.
+     *
+     * With none, Desktop renders the plain flat list — "No sections made: the
+     * plain list, exactly as before this feature"
+     * (`roster-pane-sections.tsx` `renderUserSections`) — so no block carries a
+     * header, the unlabelled loose bucket included. With sections, every block
+     * that is drawn carries one, Unassigned last.
+     */
+    val hasUserSections: Boolean = false,
 )
 
 /**
@@ -280,6 +328,8 @@ fun deriveRosterPresentation(
     kindFilter: RosterKindFilter,
     activityFilter: RosterActivityFilter,
     hiddenExpanded: Boolean,
+    /** How many user sections survive [normalizeBotSections]. */
+    userSectionCount: Int,
 ): RosterPresentationState {
     val activeFilterCount =
         (if (kindFilter == RosterKindFilter.All) 0 else 1) +
@@ -310,5 +360,6 @@ fun deriveRosterPresentation(
         showRosterSearch = showRosterSearch,
         showRosterFilters = showRosterFilters,
         showRosterTools = showRosterSearch || showRosterFilters,
+        hasUserSections = userSectionCount > 0,
     )
 }
