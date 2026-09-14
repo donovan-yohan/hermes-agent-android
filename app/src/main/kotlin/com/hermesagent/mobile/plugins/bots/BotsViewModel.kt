@@ -307,7 +307,8 @@ class BotsViewModel(
             val outcome = repository.openCanonicalChat(
                 profile = row.name,
                 rosterCanonicalId = row.canonicalSession?.id,
-            ) { endpoint == endpointGeneration.value }
+                expectedEndpointGeneration = endpoint,
+            )
             when (outcome) {
                 is BotChatOpen.Opened -> if (endpoint == endpointGeneration.value) {
                     // Discovery and resume are one roster operation.  In

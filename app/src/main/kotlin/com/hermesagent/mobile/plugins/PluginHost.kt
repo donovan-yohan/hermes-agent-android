@@ -63,6 +63,31 @@ interface PluginHost {
     ): PluginHostResult
 
     /**
+     * One request bound to the endpoint generation the caller observed.
+     *
+     * The ordinary [request] deliberately follows the live client slot. A
+     * multi-call mutation must not: after it has read one Gateway, a switch
+     * must not let its next call mutate the replacement Gateway. Production
+     * overrides this method so the generation is checked around the client
+     * snapshot; the default keeps simple test and unavailable hosts honest.
+     */
+    suspend fun requestAtEndpoint(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject = JsonObject(emptyMap()),
+    ): PluginHostResult {
+        if (endpointGeneration.value != expectedGeneration) {
+            return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        }
+        val result = request(method, params)
+        return if (endpointGeneration.value == expectedGeneration) {
+            result
+        } else {
+            PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        }
+    }
+
+    /**
      * Whether a live connection exists behind this door, right now.
      *
      * The door resolves the *live* connection per call; this is the same slot
@@ -269,6 +294,36 @@ internal class GatewayPluginHost(
     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
         val normalized = normalizePluginHostMethod(CALLER, method)
         val rpc = clients.value ?: return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+
+        return request(rpc, normalized, params)
+    }
+
+    override suspend fun requestAtEndpoint(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+    ): PluginHostResult {
+        val normalized = normalizePluginHostMethod(CALLER, method)
+        if (endpointGeneration.value != expectedGeneration) {
+            return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        }
+        val rpc = clients.value ?: return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        // ConnectionSwitchController disconnects (clearing this slot) before
+        // it bumps the endpoint generation, and only publishes the replacement
+        // client after that bump. Checking both sides of the client snapshot
+        // therefore cannot bind an old operation to the replacement Gateway.
+        if (endpointGeneration.value != expectedGeneration || clients.value !== rpc) {
+            return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        }
+
+        return request(rpc, normalized, params)
+    }
+
+    private suspend fun request(
+        rpc: GatewayRpcClient,
+        normalized: String,
+        params: JsonObject,
+    ): PluginHostResult {
 
         val call = scope.async { exchange(rpc, normalized, params) }
         return try {

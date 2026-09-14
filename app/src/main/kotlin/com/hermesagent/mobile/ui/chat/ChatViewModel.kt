@@ -1872,7 +1872,7 @@ internal class ChatViewModel(
         flushDraft()
         botChatSessionId = durableId
         botChatEndpoint = BotChatEndpoint(cache.endpointGeneration.value, endpoint)
-        rehome(durableId)
+        rehome(durableId, applyOpenSideEffects = false)
         viewModelScope.launch {
             var finished = false
             fun finish(opened: Boolean) {
@@ -1899,7 +1899,7 @@ internal class ChatViewModel(
                     finish(false)
                     return@launch
                 }
-                adoptCanonicalSession(durableId, canonicalId)
+                adoptCanonicalSession(durableId, canonicalId, applyOpenSideEffects = false)
                 finish(true)
             } catch (cancelled: CancellationException) {
                 if (stillOwnsRequest()) {
@@ -2340,7 +2340,7 @@ internal class ChatViewModel(
         }
     }
 
-    private fun rehome(id: String?) {
+    private fun rehome(id: String?, applyOpenSideEffects: Boolean = true) {
         activeSessionId.value?.let(composerHistoryController::reset)
         id?.let(composerHistoryController::reset)
         invalidateHistory()
@@ -2349,13 +2349,19 @@ internal class ChatViewModel(
         invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
         noticeLine = null
-        id?.let(::markRead)
-        id?.let(::drainQueueIfIdle)
+        if (applyOpenSideEffects) {
+            id?.let(::markRead)
+            id?.let(::drainQueueIfIdle)
+        }
         if (id == null) refreshComposer(null)
     }
 
     /** Adopt a compressed session tip without clearing a draft for the same logical session. */
-    private suspend fun adoptCanonicalSession(requestedId: String, canonicalId: String) {
+    private suspend fun adoptCanonicalSession(
+        requestedId: String,
+        canonicalId: String,
+        applyOpenSideEffects: Boolean = true,
+    ) {
         if (botChatSessionId == requestedId) botChatSessionId = canonicalId
         createdProjectBySession.remove(requestedId)?.let { projectId ->
             createdProjectBySession[canonicalId] = projectId
@@ -2397,9 +2403,9 @@ internal class ChatViewModel(
         liveComposerControls = liveComposerControls?.copy(durableId = canonicalId)
         activeSessionId.value = canonicalId
         draft.value = winner.orEmpty()
-        markRead(canonicalId)
+        if (applyOpenSideEffects) markRead(canonicalId)
         refreshComposer(canonicalId)
-        drainQueueIfIdle(canonicalId)
+        if (applyOpenSideEffects) drainQueueIfIdle(canonicalId)
     }
 
     /** The explicit idle action; a busy action is resolved by [performComposerPrimaryAction]. */

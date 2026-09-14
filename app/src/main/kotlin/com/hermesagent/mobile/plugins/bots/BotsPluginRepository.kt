@@ -78,16 +78,20 @@ class BotsPluginRepository(private val host: PluginHost) {
     }
 
     /** Hidden canonical chats bypass SessionCache and are resolved by exact title. */
-    suspend fun findCanonicalChat(profile: String, rosterCanonicalId: String?): BotChatLookup {
-        val result = host.request(
-            method = SESSION_LIST,
-            params = buildJsonObject {
-                put("profile", JsonPrimitive(profile))
-                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
-                put("limit", JsonPrimitive(CANONICAL_LOOKUP_LIMIT))
-                put("include_hidden", JsonPrimitive(true))
-            },
-        )
+    suspend fun findCanonicalChat(
+        profile: String,
+        rosterCanonicalId: String?,
+        expectedEndpointGeneration: Long? = null,
+    ): BotChatLookup {
+        val params = buildJsonObject {
+            put("profile", JsonPrimitive(profile))
+            put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+            put("limit", JsonPrimitive(CANONICAL_LOOKUP_LIMIT))
+            put("include_hidden", JsonPrimitive(true))
+        }
+        val result = expectedEndpointGeneration?.let { endpoint ->
+            host.requestAtEndpoint(endpoint, SESSION_LIST, params)
+        } ?: host.request(SESSION_LIST, params)
         if (result !is PluginHostResult.Success) return BotChatLookup.Unsafe
         val sessions = (result.result as? JsonObject)?.get("sessions") as? JsonArray ?: return BotChatLookup.Unsafe
         if (sessions.isEmpty()) return if (rosterCanonicalId.isNullOrBlank()) BotChatLookup.Missing else BotChatLookup.Unsafe
@@ -129,28 +133,26 @@ class BotsPluginRepository(private val host: PluginHost) {
      * opening a chat stays inert and the person's first message is the one that
      * arms live delivery.
      *
-     * [isCurrent] is the caller's endpoint fence, consulted before every call
-     * after the first: a switch mid-flight must never let this attempt read,
-     * create, title or adopt on the machine the app has moved to.
+     * [expectedEndpointGeneration] binds every call to the Gateway the roster
+     * row came from. The host snapshots the client under that generation, so a
+     * switch cannot redirect any create or title mutation to the replacement.
      */
     suspend fun openCanonicalChat(
         profile: String,
         rosterCanonicalId: String?,
-        isCurrent: () -> Boolean = { true },
+        expectedEndpointGeneration: Long = host.endpointGeneration.value,
     ): BotChatOpen {
-        when (val first = findCanonicalChat(profile, rosterCanonicalId)) {
+        when (val first = findCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
             is BotChatLookup.Found -> return BotChatOpen.Opened(first.durableId)
             BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
             BotChatLookup.Missing -> Unit
         }
-        if (!isCurrent()) return BotChatOpen.Unsafe
-        when (val concurrent = findCanonicalChat(profile, rosterCanonicalId)) {
+        when (val concurrent = findCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
             is BotChatLookup.Found -> return BotChatOpen.Opened(concurrent.durableId)
             BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
             BotChatLookup.Missing -> Unit
         }
-        if (!isCurrent()) return BotChatOpen.Unsafe
-        val created = createCanonicalChat(profile, isCurrent) ?: return BotChatOpen.Unsafe
+        val created = createCanonicalChat(profile, expectedEndpointGeneration) ?: return BotChatOpen.Unsafe
         return BotChatOpen.Opened(created)
     }
 
@@ -173,8 +175,9 @@ class BotsPluginRepository(private val host: PluginHost) {
      * Returns the durable id to resume, or null when the chat's identity could
      * not be confirmed.
      */
-    private suspend fun createCanonicalChat(profile: String, isCurrent: () -> Boolean): String? {
-        val created = host.request(
+    private suspend fun createCanonicalChat(profile: String, expectedEndpointGeneration: Long): String? {
+        val created = host.requestAtEndpoint(
+            expectedGeneration = expectedEndpointGeneration,
             method = SESSION_CREATE,
             params = buildJsonObject {
                 put("profile", JsonPrimitive(profile))
@@ -189,26 +192,29 @@ class BotsPluginRepository(private val host: PluginHost) {
         val storedId = result.text("stored_session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
         val runtimeId = result.text("session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
 
-        if (!isCurrent()) return null
-        val titled = host.request(
+        val titled = host.requestAtEndpoint(
+            expectedGeneration = expectedEndpointGeneration,
             method = SESSION_TITLE,
             params = buildJsonObject {
                 put("session_id", JsonPrimitive(runtimeId))
                 put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
             },
         )
-        if (!isCurrent()) return null
-        // A `{"pending": true}` answer still names this runtime's title as
-        // queued and the gateway persisted its row before answering, so it is
-        // the titled case, exactly as Desktop reads it.
-        if (titled is PluginHostResult.Success) return storedId
+        val titleResult = (titled as? PluginHostResult.Success)?.result as? JsonObject
+        // `pending:false` is the Gateway's explicit durability receipt. With
+        // `pending:true`, row creation did not take and only the runtime holds
+        // a deferred title; opening it would revive the duplicate-mint window.
+        if (
+            titleResult?.flag("pending") == false &&
+            titleResult.text("title") == CANONICAL_CHAT_TITLE
+        ) {
+            return storedId
+        }
 
         // The title write did not land. Only the registry can say whether a
         // concurrent writer took the canonical title (adopt its row) or the
         // write could not be made at all (abandon the attempt).
-        if (!isCurrent()) return null
-        val winner = findCanonicalChat(profile, null)
-        if (!isCurrent()) return null
+        val winner = findCanonicalChat(profile, null, expectedEndpointGeneration)
         return when (winner) {
             is BotChatLookup.Found -> winner.durableId
             BotChatLookup.Missing, BotChatLookup.Unsafe -> null

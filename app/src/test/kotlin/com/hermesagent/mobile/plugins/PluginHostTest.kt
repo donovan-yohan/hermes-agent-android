@@ -9,12 +9,16 @@ import com.hermesagent.mobile.data.gateway.GatewayRpcWire
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -44,7 +48,11 @@ import org.junit.Test
  * Everything here runs on virtual time with injected timing — no test sleeps,
  * and no fake reaches a real socket.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(
+    ExperimentalCoroutinesApi::class,
+    ExperimentalForInheritanceCoroutinesApi::class,
+    InternalCoroutinesApi::class,
+)
 class PluginHostTest {
 
     /**
@@ -71,6 +79,25 @@ class PluginHostTest {
         override fun close() {}
     }
 
+    /** Switches the endpoint/client between the host's first fence read and client snapshot. */
+    private class SwitchingEndpoint(
+        private val state: MutableStateFlow<Long>,
+        private val switch: () -> Unit,
+    ) : StateFlow<Long> {
+        private var reads = 0
+
+        override val value: Long
+            get() {
+                val current = state.value
+                if (reads++ == 0) switch()
+                return current
+            }
+
+        override val replayCache: List<Long> get() = state.replayCache
+
+        override suspend fun collect(collector: FlowCollector<Long>): Nothing = state.collect(collector)
+    }
+
     private fun scopeFor(owner: CoroutineScope): CoroutineScope =
         CoroutineScope(owner.coroutineContext + SupervisorJob(owner.coroutineContext[Job]))
 
@@ -95,6 +122,27 @@ class PluginHostTest {
         assertEquals("remote", (onRemote as PluginHostResult.Success).result.jsonObject["leg"]?.jsonPrimitive?.content)
         assertEquals(1, remoteLeg.calls)
 
+        scope.cancel()
+    }
+
+    @Test
+    fun `an endpoint-bound request cannot follow a client switch between its fence and snapshot`() = runTest {
+        val oldLeg = FakeRpc()
+        val newLeg = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldLeg)
+        val endpointState = MutableStateFlow(0L)
+        val endpoint = SwitchingEndpoint(endpointState) {
+            clients.value = newLeg
+            endpointState.value = 1L
+        }
+        val scope = scopeFor(this)
+        val host = GatewayPluginHost(scope, clients, endpoint)
+
+        val result = host.requestAtEndpoint(0L, "session.create")
+
+        assertEquals(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."), result)
+        assertEquals("the old Gateway is not called after the switch", 0, oldLeg.calls)
+        assertEquals("the replacement Gateway is never mutated by the stale operation", 0, newLeg.calls)
         scope.cancel()
     }
 

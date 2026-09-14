@@ -32,7 +32,9 @@ class BotChatPhaseBViewModelTest {
     private fun TestScope.scope(): CoroutineScope =
         CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
 
-    private class ScriptedHost : PluginHost {
+    private class ScriptedHost(
+        override val endpointGeneration: MutableStateFlow<Long> = MutableStateFlow(0L),
+    ) : PluginHost {
         private val answers = mutableMapOf<String, ArrayDeque<PluginHostResult>>()
         val methods = mutableListOf<String>()
         var onCall: ((String) -> Unit)? = null
@@ -66,6 +68,10 @@ class BotChatPhaseBViewModelTest {
 
     private fun createdTitle() = PluginHostResult.Success(
         Json.parseToJsonElement("""{"pending":false,"title":"Bot Chat"}"""),
+    )
+
+    private fun pendingTitle() = PluginHostResult.Success(
+        Json.parseToJsonElement("""{"pending":true,"title":"Bot Chat"}"""),
     )
 
     private fun titleConflict() = PluginHostResult.Refused(
@@ -207,6 +213,26 @@ class BotChatPhaseBViewModelTest {
     }
 
     @Test
+    fun `a pending title is not a durability receipt and must be confirmed by the registry`() = runTest {
+        val host = ScriptedHost().apply {
+            answer("session.list", emptyRegistry(), emptyRegistry(), emptyRegistry())
+            answer("session.create", created())
+            answer("session.title", pendingTitle())
+        }
+        val viewModel = BotsViewModel(BotsPluginRepository(host), scope())
+        var opens = 0
+
+        viewModel.openBotChat(BotRosterRow(name = "researcher")) { _, _, _ -> opens += 1 }
+        runCurrent()
+
+        assertEquals(0, opens)
+        assertEquals(
+            listOf("session.list", "session.list", "session.create", "session.title", "session.list"),
+            host.methods,
+        )
+    }
+
+    @Test
     fun `an endpoint switch during creation discards the result and never navigates`() = runTest {
         // Each case flips the endpoint during one call of the create sequence:
         // the create itself, the eager title, or the post-conflict registry
@@ -215,7 +241,7 @@ class BotChatPhaseBViewModelTest {
         val cases = listOf("session.create" to 3, "session.title" to 4, "session.list" to 5)
         for ((stopAt, expectedCalls) in cases) {
             val endpoint = MutableStateFlow(0L)
-            val host = ScriptedHost().apply {
+            val host = ScriptedHost(endpoint).apply {
                 answer("session.list", emptyRegistry(), emptyRegistry(), registryRow(resolvedId = "winner-tip"))
                 answer("session.create", created())
                 answer("session.title", titleConflict())

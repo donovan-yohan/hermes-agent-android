@@ -1299,6 +1299,7 @@ class ChatViewModelTest {
         // an open.
         assertTrue(queueSubmits.isEmpty())
         assertTrue(repository.submitted.isEmpty())
+        assertTrue(repository.flagWrites.isEmpty())
         assertEquals(1, controller.queue("bot-chat").size)
     }
 
@@ -1322,11 +1323,15 @@ class ChatViewModelTest {
         assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueMutation.Applied, controller.enqueue("bot-chat", "queued before Bot Chat"))
         val before = controller.queue("bot-chat")
         assertEquals(1, before.size)
+        cache.upsertSession(summary("bot-chat", 3_000).copy(status = SessionStatus.Working, unread = true))
+        runCurrent()
+        val flagsBeforeOpen = repository.flagWrites.toList()
 
         subject.openBotChat("researcher", "bot-chat") { }
         runCurrent()
         val entryId = before.single().id
         val flagsBeforeGuardedCalls = repository.flagWrites.toList()
+        assertEquals("opening the unread Bot Chat adds no remote write", flagsBeforeOpen, flagsBeforeGuardedCalls)
         subject.deleteQueuedEntry(entryId)
         subject.beginQueueEdit(entryId)
         subject.setQueueEditText("changed")

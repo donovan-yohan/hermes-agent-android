@@ -3,6 +3,7 @@ package com.hermesagent.mobile.plugins.bots
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostEvent
 import com.hermesagent.mobile.plugins.PluginHostResult
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -298,7 +299,9 @@ class BotsPluginRepositoryTest {
      * `onCall` runs between the answer and the caller's next step, which is
      * what lets an endpoint fence be flipped mid-sequence.
      */
-    private class ScriptedHost : PluginHost {
+    private class ScriptedHost(
+        override val endpointGeneration: MutableStateFlow<Long> = MutableStateFlow(0L),
+    ) : PluginHost {
         private val answers = mutableMapOf<String, ArrayDeque<PluginHostResult>>()
         val calls = mutableListOf<Pair<String, JsonObject>>()
         var onCall: ((String) -> Unit)? = null
@@ -466,19 +469,19 @@ class BotsPluginRepositoryTest {
             "session.list#3" to 5,
         )
         for ((stopAt, expectedCalls) in stops) {
-            val current = java.util.concurrent.atomic.AtomicBoolean(true)
-            val host = ScriptedHost().apply {
+            val endpoint = MutableStateFlow(0L)
+            val host = ScriptedHost(endpoint).apply {
                 answer("session.list", emptyRegistry(), emptyRegistry(), registryRow(resolvedId = "winner-tip"))
                 answer("session.create", created())
                 answer("session.title", PluginHostResult.Refused(5007, "title rejected"))
                 val seen = mutableMapOf<String, Int>()
                 onCall = { method ->
                     val ordinal = seen.merge(method, 1, Int::plus)!!
-                    if ("$method#$ordinal" == stopAt) current.set(false)
+                    if ("$method#$ordinal" == stopAt) endpoint.value = 1L
                 }
             }
 
-            val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null) { current.get() }
+            val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null, expectedEndpointGeneration = 0L)
 
             assertEquals(stopAt, BotChatOpen.Unsafe, open)
             assertEquals(stopAt, expectedCalls, host.calls.size)
