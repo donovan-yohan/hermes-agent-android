@@ -49,6 +49,61 @@ class PendingInputTest {
     }
 
     @Test
+    fun `batch clarify accepts the gateway qid wire key`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.emit(
+            "clarify.request",
+            "runtime-a",
+            """{"request_id":"req-batch","questions":[{"qid":"q0","question":"Choose a route","choices":["Remote","Local"],"multi_select":false}]}""",
+        )
+        advanceUntilIdle()
+
+        val pending = singlePending(env) as ClarifyPending
+        assertEquals("q0", pending.questions.single().questionId)
+        assertEquals("Choose a route", pending.questions.single().question)
+        assertEquals(listOf("Remote", "Local"), pending.questions.single().choices)
+        assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `batch clarify accepts the legacy question id wire key`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.emit(
+            "clarify.request",
+            "runtime-a",
+            """{"request_id":"req-legacy","questions":[{"question_id":"legacy-id","question":"Choose a route"}]}""",
+        )
+        advanceUntilIdle()
+
+        assertEquals("legacy-id", (singlePending(env) as ClarifyPending).questions.single().questionId)
+    }
+
+    @Test
+    fun `batch clarify falls back to legacy question id when qid is blank`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.emit(
+            "clarify.request",
+            "runtime-a",
+            """{"request_id":"req-blank-qid","questions":[{"qid":"","question_id":"legacy-id","question":"Choose a route"}]}""",
+        )
+        advanceUntilIdle()
+
+        assertEquals("legacy-id", (singlePending(env) as ClarifyPending).questions.single().questionId)
+    }
+
+    @Test
     fun `malformed prompt without a request id is discarded`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
