@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -30,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.data.composer.QueuedPrompt
 import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
+import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.common.TablerIcon
 import com.hermesagent.mobile.ui.common.TablerIconGlyph
 import com.hermesagent.mobile.ui.common.TextButton
@@ -231,12 +233,13 @@ private fun QueueIconAction(
     onClick: () -> Unit,
     color: Color = HermesTheme.tokens.textSecondary,
 ) {
+    val safeDescription = remember(description) { redact(description) }
     Box(
         Modifier
             .size(HermesTheme.spacing.touchTarget)
             .clickable(onClick = onClick)
             .semantics {
-                contentDescription = description
+                contentDescription = safeDescription
                 role = Role.Button
             },
         contentAlignment = Alignment.Center,
