@@ -4439,7 +4439,13 @@ internal class LiveGatewaySessionRepository(
         payload: JsonObject,
     ): ClarifyPending? {
         fun parseQuestion(obj: JsonObject): ClarifyQuestion? {
-            val qid = obj.string("question_id")?.takeIf(String::isNotBlank) ?: return null
+            // Batch requests use the Gateway's `qid` wire key. Accept the old
+            // spelling as a compatibility rung, but do not require it: doing so
+            // discarded every current batch and left only the transcript's
+            // inert Clarify tool row visible.
+            val qid = obj.string("qid")?.takeIf(String::isNotBlank)
+                ?: obj.string("question_id")?.takeIf(String::isNotBlank)
+                ?: return null
             val question = obj.string("question").orEmpty().redactSafeBounded()
             if (question.isBlank()) return null
             val choices = (obj["choices"] as? JsonArray)
