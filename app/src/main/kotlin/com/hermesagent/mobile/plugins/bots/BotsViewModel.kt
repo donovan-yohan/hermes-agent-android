@@ -51,7 +51,7 @@ data class BotsRosterUiState(
     val safeMessage: String? = null,
     /** Whether a live Gateway connection exists behind the plugin host door. */
     val connectionUp: Boolean = false,
-    /** Product-safe result of the most recent read-only Bot Chat open attempt. */
+    /** Product-safe result of the most recent Bot Chat open-or-create attempt. */
     val botChatMessage: String? = null,
     /** The roster row currently resolving; independent of roster refresh state. */
     val openingBotKey: String? = null,
