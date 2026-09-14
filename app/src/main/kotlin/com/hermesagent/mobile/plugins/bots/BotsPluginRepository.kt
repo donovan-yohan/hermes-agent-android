@@ -12,9 +12,10 @@ import kotlinx.serialization.json.put
 import java.math.RoundingMode
 
 /**
- * `profiles.list` over the plugin host door — the roster's only data source.
+ * The bots plugin's Gateway door: the roster read, the canonical-chat lookup,
+ * and (Phase B) the one open-or-create path.
  *
- * The handler is `tui_gateway/methods_profiles.py:237-254` @
+ * The roster handler is `tui_gateway/methods_profiles.py:237-254` @
  * `564aef2946c436500a5e80ee117b66b789b3f99a`. `include_sessions` defaults to
  * true there and is what attaches `last_session` / `canonical_session`; the
  * roster renders both, so it is requested explicitly rather than relied on.
@@ -32,9 +33,30 @@ sealed interface BotsRosterLoad {
 
 /** The only conclusions a read-only canonical lookup is allowed to make. */
 sealed interface BotChatLookup {
+    /** The registry named exactly one exact-title row; `resolved_id` wins over `id`. */
     data class Found(val durableId: String) : BotChatLookup
+
+    /**
+     * The registry confirmed this profile has no canonical chat: a successful,
+     * well-formed answer with zero rows, and a roster that claims no
+     * `canonical_session` either. Only this outcome can license a creation.
+     */
     data object Missing : BotChatLookup
+
+    /** Nothing could be concluded — refusal, unavailable, malformed or ambiguous. */
     data object Unsafe : BotChatLookup
+}
+
+/** What one open-or-create attempt established for the tapped roster row. */
+sealed interface BotChatOpen {
+    /**
+     * The registry now names exactly one exact-title row — the row that was
+     * already there, or the one this attempt just created and titled.
+     */
+    data class Opened(val durableId: String) : BotChatOpen
+
+    /** Nothing could be confirmed. Fail closed: no navigation, no prompt, no second mint. */
+    data object Unsafe : BotChatOpen
 }
 
 class BotsPluginRepository(private val host: PluginHost) {
@@ -80,9 +102,124 @@ class BotsPluginRepository(private val host: PluginHost) {
         return BotChatLookup.Found(id)
     }
 
+    /**
+     * Phase B: the bot's one forever-chat, created only from a registry that
+     * twice confirmed none exists.
+     *
+     * The pinned Desktop path is `openBotCanonicalChat` / `createCanonicalChat`
+     * (`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:485-519`,
+     * `:290-475` @ the pin) and this mirrors its order:
+     *
+     * 1. Consult the registry. A row opens as-is; an unreadable answer fails
+     *    closed without touching `session.create`.
+     * 2. Adopt before minting (`:335-346`): the lookup runs a second time, so a
+     *    chat created by another surface between the tap and the create is
+     *    opened rather than forked.
+     * 3. Create it titled, hidden and profile-following, then write the title
+     *    eagerly so the row exists before anything is opened or sent.
+     * 4. If that title write did not land, re-read the registry and adopt the
+     *    exact-title row a concurrent writer won (`:387-410`). No winner means
+     *    the attempt is abandoned — the stray lazy session holds no messages and
+     *    the gateway prunes it — never a second titled chat.
+     *
+     * Deliberately absent, and ledgered in `docs/parity/bot-chat.md`: Desktop's
+     * kickoff intro. `createCanonicalChat` submits it only on New Agent
+     * creation (`kickoff`) or as a legacy-gateway persistence fallback; the pin's
+     * gateway materializes the row through the eager title write instead, so
+     * opening a chat stays inert and the person's first message is the one that
+     * arms live delivery.
+     *
+     * [isCurrent] is the caller's endpoint fence, consulted before every call
+     * after the first: a switch mid-flight must never let this attempt read,
+     * create, title or adopt on the machine the app has moved to.
+     */
+    suspend fun openCanonicalChat(
+        profile: String,
+        rosterCanonicalId: String?,
+        isCurrent: () -> Boolean = { true },
+    ): BotChatOpen {
+        when (val first = findCanonicalChat(profile, rosterCanonicalId)) {
+            is BotChatLookup.Found -> return BotChatOpen.Opened(first.durableId)
+            BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
+            BotChatLookup.Missing -> Unit
+        }
+        if (!isCurrent()) return BotChatOpen.Unsafe
+        when (val concurrent = findCanonicalChat(profile, rosterCanonicalId)) {
+            is BotChatLookup.Found -> return BotChatOpen.Opened(concurrent.durableId)
+            BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
+            BotChatLookup.Missing -> Unit
+        }
+        if (!isCurrent()) return BotChatOpen.Unsafe
+        val created = createCanonicalChat(profile, isCurrent) ?: return BotChatOpen.Unsafe
+        return BotChatOpen.Opened(created)
+    }
+
+    /**
+     * Create the bot's canonical chat, then make its identity durable.
+     *
+     * `session.create` is lazy on the pinned gateway — its row appears on the
+     * first prompt or on this title write (`tui_gateway/methods_session.py:325-390`
+     * @ the pin) — so the eager `session.title` is what closes the untitled
+     * window a second tap could mint through (`canonical-chat.ts:368-412`).
+     *
+     * The request is Desktop's exactly, `source` included in its absence: the
+     * bot-chat create does not send one (`canonical-chat.ts:348-363`), so the
+     * gateway resolves it from its own environment. This app's own
+     * `createSession` sends `"desktop"`, and that difference is deliberate —
+     * `source` decides `track_liveness` and the desktop-only cleanup lifecycle
+     * (`tui_gateway/session_lifecycle.py:37` @ the pin), and a canonical chat
+     * is not this app's ordinary session.
+     *
+     * Returns the durable id to resume, or null when the chat's identity could
+     * not be confirmed.
+     */
+    private suspend fun createCanonicalChat(profile: String, isCurrent: () -> Boolean): String? {
+        val created = host.request(
+            method = SESSION_CREATE,
+            params = buildJsonObject {
+                put("profile", JsonPrimitive(profile))
+                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+                put("hidden", JsonPrimitive(true))
+                put("follow_profile_config", JsonPrimitive(true))
+            },
+        )
+        // A refused, unavailable or unreadable creation is never partially
+        // adopted: without both ids there is no durable row to open or title.
+        val result = (created as? PluginHostResult.Success)?.result as? JsonObject ?: return null
+        val storedId = result.text("stored_session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val runtimeId = result.text("session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+
+        if (!isCurrent()) return null
+        val titled = host.request(
+            method = SESSION_TITLE,
+            params = buildJsonObject {
+                put("session_id", JsonPrimitive(runtimeId))
+                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+            },
+        )
+        if (!isCurrent()) return null
+        // A `{"pending": true}` answer still names this runtime's title as
+        // queued and the gateway persisted its row before answering, so it is
+        // the titled case, exactly as Desktop reads it.
+        if (titled is PluginHostResult.Success) return storedId
+
+        // The title write did not land. Only the registry can say whether a
+        // concurrent writer took the canonical title (adopt its row) or the
+        // write could not be made at all (abandon the attempt).
+        if (!isCurrent()) return null
+        val winner = findCanonicalChat(profile, null)
+        if (!isCurrent()) return null
+        return when (winner) {
+            is BotChatLookup.Found -> winner.durableId
+            BotChatLookup.Missing, BotChatLookup.Unsafe -> null
+        }
+    }
+
     private companion object {
         const val PROFILES_LIST = "profiles.list"
         const val SESSION_LIST = "session.list"
+        const val SESSION_CREATE = "session.create"
+        const val SESSION_TITLE = "session.title"
         const val CANONICAL_CHAT_TITLE = "Bot Chat"
         const val CANONICAL_LOOKUP_LIMIT = 200
 

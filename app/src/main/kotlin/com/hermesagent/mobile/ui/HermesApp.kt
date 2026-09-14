@@ -70,7 +70,7 @@ data class PluginNavigation(
     val onBack: () -> Unit = {},
     val onOpenGateways: (SignInOrigin) -> Unit = {},
     val onNavigate: (String) -> Unit = {},
-    val onOpenReadOnlyBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
 )
 
 val LocalPluginNavigation = staticCompositionLocalOf { PluginNavigation() }
@@ -224,8 +224,8 @@ fun HermesApp(
             onNavigate = { target ->
                 destination = HermesDestination.Route(target)
             },
-            onOpenReadOnlyBotChat = { profile, durableId, onFinished ->
-                chatActions.onOpenReadOnlyBotChat(profile, durableId) { opened ->
+            onOpenBotChat = { profile, durableId, onFinished ->
+                chatActions.onOpenBotChat(profile, durableId) { opened ->
                     if (opened) destination = HermesDestination.Chat
                     onFinished(opened)
                 }

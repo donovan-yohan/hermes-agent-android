@@ -289,4 +289,199 @@ class BotsPluginRepositoryTest {
         assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.Refused(500, "nope")))
         assertEquals(BotChatLookup.Unsafe, lookup(PluginHostResult.UnavailableOnGateway))
     }
+
+    // ── canonical Bot Chat open-or-create (Phase B) ───────────────────────────
+
+    /**
+     * A host that answers per method from a script and records every call.
+     *
+     * `onCall` runs between the answer and the caller's next step, which is
+     * what lets an endpoint fence be flipped mid-sequence.
+     */
+    private class ScriptedHost : PluginHost {
+        private val answers = mutableMapOf<String, ArrayDeque<PluginHostResult>>()
+        val calls = mutableListOf<Pair<String, JsonObject>>()
+        var onCall: ((String) -> Unit)? = null
+
+        fun answer(method: String, vararg results: PluginHostResult) {
+            answers[method] = ArrayDeque(results.toList())
+        }
+
+        override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+            calls += method to params
+            onCall?.invoke(method)
+            return answers[method]?.removeFirstOrNull() ?: error("no scripted answer for $method")
+        }
+
+        override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
+    }
+
+    private fun sessions(body: String) = PluginHostResult.Success(json(body))
+
+    private fun emptyRegistry() = sessions("""{"sessions":[]}""")
+
+    private fun registryRow(resolvedId: String? = null, id: String = "root") =
+        sessions(
+            """{"sessions":[{"id":"$id"${if (resolvedId != null) ""","resolved_id":"$resolvedId"""" else ""},"title":"Bot Chat"}]}""",
+        )
+
+    private fun created(storedId: String = "created-durable", runtimeId: String = "created-runtime") =
+        PluginHostResult.Success(
+            json("""{"session_id":"$runtimeId","stored_session_id":"$storedId","messages":[]}"""),
+        )
+
+    @Test
+    fun `an existing canonical chat opens without ever creating`() = runTest {
+        val host = ScriptedHost().apply { answer("session.list", registryRow(resolvedId = "durable-tip")) }
+
+        val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
+
+        assertEquals(BotChatOpen.Opened("durable-tip"), open)
+        assertEquals(listOf("session.list"), host.calls.map { it.first })
+    }
+
+    @Test
+    fun `a registry that twice confirms no chat creates one titled hidden and profile following`() = runTest {
+        val host = ScriptedHost().apply {
+            answer("session.list", emptyRegistry(), emptyRegistry())
+            answer("session.create", created())
+            answer("session.title", PluginHostResult.Success(json("""{"pending":false,"title":"Bot Chat"}""")))
+        }
+
+        val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
+
+        assertEquals(BotChatOpen.Opened("created-durable"), open)
+        // The whole sequence, in order: two reads (adopt-before-mint), the
+        // create, and the eager title that materializes the row. No prompt is
+        // submitted anywhere in it — Android's open path ships no kickoff.
+        assertEquals(
+            listOf("session.list", "session.list", "session.create", "session.title"),
+            host.calls.map { it.first },
+        )
+        assertEquals(
+            buildJsonObject {
+                put("profile", JsonPrimitive("bot-a"))
+                put("title", JsonPrimitive("Bot Chat"))
+                put("hidden", JsonPrimitive(true))
+                put("follow_profile_config", JsonPrimitive(true))
+            },
+            host.calls[2].second,
+        )
+        assertEquals(
+            buildJsonObject {
+                put("session_id", JsonPrimitive("created-runtime"))
+                put("title", JsonPrimitive("Bot Chat"))
+            },
+            host.calls[3].second,
+        )
+    }
+
+    @Test
+    fun `a create race is reconciled by re-reading and adopting the exact title winner`() = runTest {
+        val host = ScriptedHost().apply {
+            answer("session.list", emptyRegistry(), emptyRegistry(), registryRow(resolvedId = "winner-tip", id = "winner-root"))
+            answer("session.create", created())
+            // The loser's eager title hits the winner's row.
+            answer("session.title", PluginHostResult.Refused(4022, "Title 'Bot Chat' is already in use by session winner-root"))
+        }
+
+        val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
+
+        assertEquals(BotChatOpen.Opened("winner-tip"), open)
+        assertEquals(
+            listOf("session.list", "session.list", "session.create", "session.title", "session.list"),
+            host.calls.map { it.first },
+        )
+    }
+
+    @Test
+    fun `a title write that cannot be made and confirms no winner fails closed and creates nothing more`() = runTest {
+        val host = ScriptedHost().apply {
+            answer("session.list", emptyRegistry(), emptyRegistry(), emptyRegistry())
+            answer("session.create", created())
+            answer("session.title", PluginHostResult.Refused(5007, "disk said no"))
+        }
+
+        val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
+
+        assertEquals(BotChatOpen.Unsafe, open)
+        assertEquals(
+            listOf("session.list", "session.list", "session.create", "session.title", "session.list"),
+            host.calls.map { it.first },
+        )
+        assertEquals(1, host.calls.count { it.first == "session.create" })
+    }
+
+    @Test
+    fun `no create is sent after a refused unavailable ambiguous or malformed read`() = runTest {
+        // Every answer here is something other than a confirmed-absent
+        // registry. A zero-row answer without a roster claim is deliberately
+        // not in this list: that is the one licence to create, and
+        // `a registry that twice confirms no chat creates one...` owns it.
+        val cases = listOf(
+            PluginHostResult.Refused(500, "backend prose"),
+            PluginHostResult.UnavailableOnGateway,
+            sessions("""{"sessions":[{"id":"x","title":"Other"}]}"""),
+            sessions("""{"sessions":[{"id":"x","title":"Bot Chat"},{"id":"y","title":"Bot Chat"}]}"""),
+            PluginHostResult.Success(json("""{"sessions":"nope"}""")),
+        )
+        for (result in cases) {
+            val host = ScriptedHost().apply { answer("session.list", result) }
+            val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
+
+            assertEquals("$result", BotChatOpen.Unsafe, open)
+            assertEquals("$result", listOf("session.list"), host.calls.map { it.first })
+        }
+
+        // The roster-backed zero-row answer: the registry says nothing while
+        // the roster says a chat exists, so absence is unconfirmed.
+        val rosterBacked = ScriptedHost().apply { answer("session.list", emptyRegistry()) }
+        assertEquals(
+            BotChatOpen.Unsafe,
+            BotsPluginRepository(rosterBacked).openCanonicalChat("bot-a", "roster-tip"),
+        )
+        assertEquals(listOf("session.list"), rosterBacked.calls.map { it.first })
+    }
+
+    @Test
+    fun `a creation answer without both ids is never adopted`() = runTest {
+        val host = ScriptedHost().apply {
+            answer("session.list", emptyRegistry(), emptyRegistry())
+            answer("session.create", PluginHostResult.Success(json("""{"session_id":"runtime-only"}""")))
+        }
+
+        assertEquals(BotChatOpen.Unsafe, BotsPluginRepository(host).openCanonicalChat("bot-a", null))
+        assertEquals(listOf("session.list", "session.list", "session.create"), host.calls.map { it.first })
+    }
+
+    @Test
+    fun `the endpoint fence stops the sequence before every later call`() = runTest {
+        // Flip the fence during the Nth call of the sequence; nothing after it
+        // may reach the Gateway, and the attempt answers Unsafe. The sizes are
+        // the calls sent up to and including the one the switch landed on.
+        val stops = listOf(
+            "session.list#2" to 2,
+            "session.create#1" to 3,
+            "session.title#1" to 4,
+            "session.list#3" to 5,
+        )
+        for ((stopAt, expectedCalls) in stops) {
+            val current = java.util.concurrent.atomic.AtomicBoolean(true)
+            val host = ScriptedHost().apply {
+                answer("session.list", emptyRegistry(), emptyRegistry(), registryRow(resolvedId = "winner-tip"))
+                answer("session.create", created())
+                answer("session.title", PluginHostResult.Refused(5007, "title rejected"))
+                val seen = mutableMapOf<String, Int>()
+                onCall = { method ->
+                    val ordinal = seen.merge(method, 1, Int::plus)!!
+                    if ("$method#$ordinal" == stopAt) current.set(false)
+                }
+            }
+
+            val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null) { current.get() }
+
+            assertEquals(stopAt, BotChatOpen.Unsafe, open)
+            assertEquals(stopAt, expectedCalls, host.calls.size)
+        }
+    }
 }

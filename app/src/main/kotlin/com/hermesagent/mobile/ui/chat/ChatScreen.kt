@@ -256,11 +256,11 @@ private fun CompactLayout(
                 },
                 onOpenSettings = onOpenSettings,
                 gatewayDoor = gatewayDoor,
-                onRenameSession = actions.onRenameSession.takeUnless { state.readOnly },
-                onDeleteSession = actions.onDeleteSession.takeUnless { state.readOnly },
-                onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.readOnly },
-                onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.readOnly },
-                onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.readOnly },
+                onRenameSession = actions.onRenameSession.takeUnless { state.botChat },
+                onDeleteSession = actions.onDeleteSession.takeUnless { state.botChat },
+                onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.botChat },
+                onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.botChat },
+                onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
                 sessionPinned = state.activeSession?.pinned == true,
                 sessionUnread = state.activeSession.isUnread(),
                 sessionArchived = state.activeSession?.archived == true,
@@ -327,11 +327,11 @@ private fun WideLayout(
                 onOpenSessions = null,
                 onOpenSettings = onOpenSettings,
                 gatewayDoor = gatewayDoor,
-                onRenameSession = actions.onRenameSession.takeUnless { state.readOnly },
-                onDeleteSession = actions.onDeleteSession.takeUnless { state.readOnly },
-                onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.readOnly },
-                onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.readOnly },
-                onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.readOnly },
+                onRenameSession = actions.onRenameSession.takeUnless { state.botChat },
+                onDeleteSession = actions.onDeleteSession.takeUnless { state.botChat },
+                onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.botChat },
+                onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.botChat },
+                onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
                 sessionPinned = state.activeSession?.pinned == true,
                 sessionUnread = state.activeSession.isUnread(),
                 sessionArchived = state.activeSession?.archived == true,
@@ -792,15 +792,6 @@ private fun JumpToLatestButton(
 
 @Composable
 private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: StatusAction?) {
-    if (state.readOnly) {
-        Text(
-            text = "Bot Chat is read-only on mobile.",
-            style = HermesTheme.type.caption,
-            color = HermesTheme.tokens.textTertiary,
-            modifier = Modifier.padding(HermesTheme.spacing.pageInset),
-        )
-        return
-    }
     val composerStatus = state.activeSession?.composerStatus
     val hasQueue = state.composer.runtime.queueEntries.isNotEmpty()
     val fuseStatusStack = composerStatusGroupCount(composerStatus, hasQueue) == 1 &&

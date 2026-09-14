@@ -283,6 +283,19 @@ class BotsViewModel(
         refresh()
     }
 
+    /**
+     * Resolve the tapped bot's canonical chat and hand it to the chat screen.
+     *
+     * Since Phase B this is an open-or-create: a registry that confirms no chat
+     * exists is what licenses `session.create` (in [BotsPluginRepository]),
+     * and every other answer — ambiguous, refused, unavailable, unreadable — is
+     * still just a report. Nothing is created, opened or navigated from a read
+     * this app could not fully stand behind.
+     *
+     * The endpoint captured here is the fence for the whole attempt: the
+     * repository consults it before each wire call after its first, and this
+     * coroutine drops a late answer that belongs to a machine the app has left.
+     */
     fun openBotChat(
         row: BotRosterRow,
         onOpen: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit,
@@ -291,8 +304,12 @@ class BotsViewModel(
         val endpoint = endpointGeneration.value
         _uiState.update { it.copy(openingBotKey = row.rosterKey, botChatMessage = null) }
         scope.launch {
-            when (val outcome = repository.findCanonicalChat(row.name, row.canonicalSession?.id)) {
-                is BotChatLookup.Found -> if (endpoint == endpointGeneration.value) {
+            val outcome = repository.openCanonicalChat(
+                profile = row.name,
+                rosterCanonicalId = row.canonicalSession?.id,
+            ) { endpoint == endpointGeneration.value }
+            when (outcome) {
+                is BotChatOpen.Opened -> if (endpoint == endpointGeneration.value) {
                     // Discovery and resume are one roster operation.  In
                     // particular, do not clear the row spinner just because
                     // the resume coroutine was launched.
@@ -301,18 +318,15 @@ class BotsViewModel(
                         _uiState.update {
                             it.copy(
                                 openingBotKey = null,
-                                botChatMessage = if (opened) null else
-                                    "Bot Chat could not be opened. Check the Gateway and try again.",
+                                botChatMessage = if (opened) null else BOT_CHAT_OPEN_FAILED,
                             )
                         }
                     }
                     return@launch
                 }
-                BotChatLookup.Missing -> if (endpoint == endpointGeneration.value) {
-                    _uiState.update { it.copy(botChatMessage = "No Bot Chat is available for this bot yet.") }
-                }
-                BotChatLookup.Unsafe -> if (endpoint == endpointGeneration.value) {
-                    _uiState.update { it.copy(botChatMessage = "Bot Chat could not be opened. Check the Gateway and try again.") }
+
+                BotChatOpen.Unsafe -> if (endpoint == endpointGeneration.value) {
+                    _uiState.update { it.copy(botChatMessage = BOT_CHAT_OPEN_FAILED) }
                 }
             }
             if (endpoint == endpointGeneration.value) _uiState.update { it.copy(openingBotKey = null) }
@@ -570,3 +584,12 @@ class BotsViewModel(
         )
     }
 }
+
+/**
+ * What a roster row says when its canonical chat could not be resolved.
+ *
+ * One sentence for both a read that failed and a creation that could not be
+ * confirmed: from here they are the same outcome — nothing was opened — and
+ * the row stays actionable for a retry.
+ */
+private const val BOT_CHAT_OPEN_FAILED = "Bot Chat could not be opened. Check the Gateway and try again."

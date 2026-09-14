@@ -1195,7 +1195,7 @@ class ChatViewModelTest {
         repository.botOpenFailure = true
         val completions = mutableListOf<Boolean>()
 
-        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { completions += it }
+        viewModel.openBotChat("researcher", "bot-chat") { completions += it }
         runCurrent()
 
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
@@ -1207,16 +1207,25 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `a successful Bot Chat centrally refuses every prompt mutation while New Chat and selection escape`() = runTest(dispatcher) {
+    fun `a Bot Chat sends the first prompt and still refuses every other mutation while New Chat and selection escape`() = runTest(dispatcher) {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()
         runCurrent()
-        viewModel.setDraft("blocked")
-        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
+        viewModel.openBotChat("researcher", "bot-chat") { }
         runCurrent()
-        assertTrue(viewModel.uiState.value.readOnly)
+        assertTrue(viewModel.uiState.value.botChat)
 
+        // Phase B opens the composer in exactly one way: the person's typed
+        // message goes to `prompt.submit`. That prompt is also what arms this
+        // gateway runtime as the bot's live delivery consumer.
+        viewModel.setDraft("hello bot")
+        runCurrent()
+        assertEquals("hello bot", viewModel.uiState.value.draft)
         viewModel.submit()
+        runCurrent()
+        assertEquals(listOf("bot-chat" to "hello bot"), repository.submitted)
+
+        viewModel.setDraft("blocked")
         viewModel.queueDraft()
         viewModel.redirectDraftFromUi()
         viewModel.sendNext("queued-entry")
@@ -1233,12 +1242,12 @@ class ChatViewModelTest {
         viewModel.saveQueueEdit()
         viewModel.cancelQueueEdit()
         viewModel.markQueuedEntryReadyAfterReview("queued-entry")
-        viewModel.undoDraft()
-        viewModel.redoDraft()
         runCurrent()
 
-        assertTrue(repository.submitted.isEmpty())
-        assertTrue(repository.queuedSubmissions.isEmpty())
+        assertEquals(listOf("bot-chat" to "hello bot"), repository.submitted)
+        // The fake records every submit with its `queued` flag: the prompt
+        // send is the only one, and it is not the queued variant.
+        assertEquals(listOf("bot-chat" to false), repository.queuedSubmissions)
         assertTrue(repository.redirects.isEmpty())
         assertTrue(repository.regenerateCalls.isEmpty())
         assertTrue(repository.branchCalls.isEmpty())
@@ -1248,19 +1257,49 @@ class ChatViewModelTest {
         assertTrue(repository.reasoningSelections.isEmpty())
         assertTrue(repository.fastSelections.isEmpty())
         assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
-        assertEquals("Bot Chat is read-only. Open a regular chat to send a message.", viewModel.uiState.value.notice?.text)
+        assertEquals("Only messages can be sent from a Bot Chat on mobile.", viewModel.uiState.value.notice?.text)
 
         viewModel.createSession()
         runCurrent()
         assertEquals(1, repository.created)
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
 
-        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
+        viewModel.openBotChat("researcher", "bot-chat") { }
         runCurrent()
-        assertTrue(viewModel.uiState.value.readOnly)
+        assertTrue(viewModel.uiState.value.botChat)
         viewModel.selectSession("session-a")
         runCurrent()
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
+    }
+
+    @Test
+    fun `opening a Bot Chat is inert and drains no stored queue`() = runTest(dispatcher) {
+        val queueSubmits = mutableListOf<Pair<String, String>>()
+        val controller = ComposerQueueController(
+            store = TransientComposerQueueStore(),
+            submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome {
+                    queueSubmits += durableSessionId to text
+                    return QueueSubmissionOutcome.Accepted
+                }
+            },
+        )
+        cache.upsertSession(summary("bot-chat", 3_000))
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, composerQueueController = controller)
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueMutation.Applied, controller.enqueue("bot-chat", "queued before Bot Chat"))
+
+        subject.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+
+        // The first prompt in a Bot Chat is the one the person types there, so
+        // an open neither sends it nor lets a stored queue send it: a queued
+        // message landing as a turn on open would arm delivery from nothing but
+        // an open.
+        assertTrue(queueSubmits.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertEquals(1, controller.queue("bot-chat").size)
     }
 
     @Test
@@ -1284,7 +1323,7 @@ class ChatViewModelTest {
         val before = controller.queue("bot-chat")
         assertEquals(1, before.size)
 
-        subject.openReadOnlyBotChat("researcher", "bot-chat") { }
+        subject.openBotChat("researcher", "bot-chat") { }
         runCurrent()
         val entryId = before.single().id
         val flagsBeforeGuardedCalls = repository.flagWrites.toList()
@@ -1330,26 +1369,26 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `canonical Bot id stays read-only and an ordinary selection clears its capability`() = runTest(dispatcher) {
+    fun `canonical Bot id keeps its send capability and an ordinary selection clears it`() = runTest(dispatcher) {
         cache.upsertSessions(listOf(summary("bot-requested", 3_000), summary("bot-canonical", 3_001)))
         repository.botOpenResult = "bot-canonical"
         collectState()
         runCurrent()
 
-        viewModel.openReadOnlyBotChat("researcher", "bot-requested") { }
+        viewModel.openBotChat("researcher", "bot-requested") { }
         runCurrent()
         assertEquals("bot-canonical", viewModel.uiState.value.activeSessionId)
-        assertTrue(viewModel.uiState.value.readOnly)
+        assertTrue(viewModel.uiState.value.botChat)
         viewModel.renameSession("bot-canonical", "must not write")
         runCurrent()
         assertTrue(repository.renamed.isEmpty())
 
         viewModel.selectSession("session-a")
         runCurrent()
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
         viewModel.selectSession("bot-canonical")
         runCurrent()
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
     }
 
     @Test
@@ -1369,18 +1408,18 @@ class ChatViewModelTest {
         runCurrent()
         val completions = mutableListOf<Boolean>()
 
-        subject.openReadOnlyBotChat("researcher", "bot-chat") { completions += it }
+        subject.openBotChat("researcher", "bot-chat") { completions += it }
         runCurrent()
-        assertTrue(subject.uiState.value.readOnly)
+        assertTrue(subject.uiState.value.botChat)
         generation.value = 1L
         cache.resetForEndpointSwitch()
         runCurrent()
-        assertFalse(subject.uiState.value.readOnly)
+        assertFalse(subject.uiState.value.botChat)
 
         repository.botOpenGate!!.complete(Unit)
         runCurrent()
         assertEquals(listOf(false), completions)
-        assertFalse(subject.uiState.value.readOnly)
+        assertFalse(subject.uiState.value.botChat)
         assertEquals(null, subject.uiState.value.activeSessionId)
     }
 
@@ -1398,7 +1437,7 @@ class ChatViewModelTest {
         backgroundScope.launch { subject.uiState.collect { } }
         runCurrent()
         subject.setDraft("blocked")
-        subject.openReadOnlyBotChat("researcher", "bot-chat") { }
+        subject.openBotChat("researcher", "bot-chat") { }
         runCurrent()
 
         generation.value = 1L
@@ -1416,7 +1455,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertNull(subject.uiState.value.activeSessionId)
-        assertFalse(subject.uiState.value.readOnly)
+        assertFalse(subject.uiState.value.botChat)
         assertTrue(repository.submitted.isEmpty())
         assertTrue(repository.queuedSubmissions.isEmpty())
         assertTrue(repository.redirects.isEmpty())

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -35,7 +36,7 @@ class BotsBotChatJourneyTest {
     val compose = createComposeRule()
 
     @Test
-    fun `row action remains visibly loading until resume then renders transcript-only Chat`() {
+    fun `row action remains visibly loading until resume then renders the writable Bot Chat`() {
         var roster by mutableStateOf(rosterState())
         var route by mutableStateOf(Route.Roster)
         var completion: ((Boolean) -> Unit)? = null
@@ -53,8 +54,8 @@ class BotsBotChatJourneyTest {
                             }
                         },
                     )
-                    Route.Chat -> ChatScreen(readOnlyChat(), ChatActions(), onOpenSettings = {})
-                    Route.OrdinaryChat -> ChatScreen(chat(readOnly = false), ChatActions(), onOpenSettings = {})
+                    Route.Chat -> ChatScreen(botChat(), ChatActions(), onOpenSettings = {})
+                    Route.OrdinaryChat -> ChatScreen(chat(botChat = false), ChatActions(), onOpenSettings = {})
                 }
             }
         }
@@ -64,13 +65,17 @@ class BotsBotChatJourneyTest {
         compose.onNodeWithText("Researcher").assertIsDisplayed()
 
         compose.runOnIdle { completion!!.invoke(true) }
-        compose.onNodeWithText("Bot Chat is read-only on mobile.").assertIsDisplayed()
         compose.onNodeWithText("canonical transcript").assertIsDisplayed()
-        compose.onAllNodesWithTag("Composer field shell").assertCountEquals(0)
-        compose.onAllNodesWithContentDescription("Send message").assertCountEquals(0)
+        // Phase B renders the ordinary composer in a Bot Chat: the person's
+        // first prompt is what arms live delivery, so the send affordance has
+        // to be here. The Phase A notice is gone.
+        compose.onNodeWithTag("Composer field shell").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send message").assertIsDisplayed()
+        compose.onAllNodesWithText("Bot Chat is read-only on mobile.").assertCountEquals(0)
 
         compose.runOnIdle { route = Route.OrdinaryChat }
         compose.onNodeWithTag("Composer field shell").assertIsDisplayed()
+        compose.onNodeWithText("canonical transcript").assertIsDisplayed()
     }
 
     @Test
@@ -110,13 +115,13 @@ class BotsBotChatJourneyTest {
         ),
     )
 
-    private fun readOnlyChat() = chat(readOnly = true)
+    private fun botChat() = chat(botChat = true)
 
-    private fun chat(readOnly: Boolean) = ChatUiState(
+    private fun chat(botChat: Boolean) = ChatUiState(
         activeSession = SessionSummary("bot-chat", "Bot Chat", "", 1L),
         transcript = listOf(AssistantTurn("reply", "canonical transcript", 1L)),
         connection = GatewayConnectionState(GatewayConnectionStatus.Connected),
-        readOnly = readOnly,
+        botChat = botChat,
     )
 
     private enum class Route { Roster, Chat, OrdinaryChat }
