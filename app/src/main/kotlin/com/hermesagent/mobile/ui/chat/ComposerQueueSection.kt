@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -19,12 +21,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.composer.QueuedPrompt
 import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
+import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -155,12 +163,6 @@ private fun ComposerQueueRow(
                     style = HermesTheme.type.scaffoldMeta,
                     color = tokens.destructive,
                 )
-            } else {
-                Text(
-                    text = "Ready",
-                    style = HermesTheme.type.scaffoldMeta,
-                    color = tokens.textTertiary,
-                )
             }
             QueueActions(
                 entry = entry,
@@ -209,47 +211,37 @@ private fun QueueActions(
     onRedirectNow: () -> Unit,
     onMarkReadyAfterReview: () -> Unit,
 ) {
-    // Rows group by meaning — delivery (Send next/Redirect) above maintenance
-    // (Edit/Delete) — so a ready entry reads as one compact card instead of
-    // two scattered action rows. Targets stay ≥48dp tall; the widest delivery
-    // row (Send next + Redirect now) fits narrow 320dp screens.
-    Column(Modifier.fillMaxWidth()) {
+    // Desktop keeps these as one trailing icon rail. Android preserves that
+    // hierarchy while giving every glyph a full 48dp touch target.
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        QueueIconAction(HermesIcon.Edit, "Edit queued message", onEdit)
         if (entry.delivery == QueuedPromptDelivery.Ambiguous) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(
-                    label = "Mark ready",
-                    onClick = onMarkReadyAfterReview,
-                    modifier = Modifier.semantics { contentDescription = "Mark queued message ready after review" },
-                )
-            }
+            QueueIconAction(HermesIcon.Check, "Mark queued message ready after review", onMarkReadyAfterReview)
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(
-                    label = "Send next",
-                    onClick = onSendNext,
-                    modifier = Modifier.semantics { contentDescription = "Send next queued message" },
-                )
-                if (canRedirectNow) {
-                    TextButton(
-                        label = "Redirect now",
-                        onClick = onRedirectNow,
-                        modifier = Modifier.semantics { contentDescription = "Redirect with queued message" },
-                    )
-                }
-            }
+            if (canRedirectNow) QueueIconAction(HermesIcon.Refresh, "Steer with queued message", onRedirectNow)
+            QueueIconAction(HermesIcon.ArrowUp, "Send next queued message", onSendNext)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(
-                label = "Edit",
-                onClick = onEdit,
-                modifier = Modifier.semantics { contentDescription = "Edit queued message" },
-            )
-            TextButton(
-                label = "Delete",
-                onClick = onDelete,
-                color = HermesTheme.tokens.destructive,
-                modifier = Modifier.semantics { contentDescription = "Delete queued message" },
-            )
-        }
+        QueueIconAction(HermesIcon.Trash, "Delete queued message", onDelete, HermesTheme.tokens.destructive)
+    }
+}
+
+@Composable
+private fun QueueIconAction(
+    icon: HermesIcon,
+    description: String,
+    onClick: () -> Unit,
+    color: Color = HermesTheme.tokens.textSecondary,
+) {
+    Box(
+        Modifier
+            .size(HermesTheme.spacing.touchTarget)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = description
+                role = Role.Button
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        HermesIconGlyph(icon = icon, color = color, size = 16.sp)
     }
 }

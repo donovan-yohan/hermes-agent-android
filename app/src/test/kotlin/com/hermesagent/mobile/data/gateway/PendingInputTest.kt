@@ -49,6 +49,27 @@ class PendingInputTest {
     }
 
     @Test
+    fun `batch clarify accepts the gateway qid wire key`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.emit(
+            "clarify.request",
+            "runtime-a",
+            """{"request_id":"req-batch","questions":[{"qid":"q0","question":"Choose a route","choices":["Remote","Local"],"multi_select":false}]}""",
+        )
+        advanceUntilIdle()
+
+        val pending = singlePending(env) as ClarifyPending
+        assertEquals("q0", pending.questions.single().questionId)
+        assertEquals("Choose a route", pending.questions.single().question)
+        assertEquals(listOf("Remote", "Local"), pending.questions.single().choices)
+        assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
+    }
+
+    @Test
     fun `malformed prompt without a request id is discarded`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()

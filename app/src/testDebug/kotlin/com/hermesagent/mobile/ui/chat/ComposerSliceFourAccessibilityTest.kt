@@ -142,11 +142,19 @@ class ComposerSliceFourAccessibilityTest {
         // park's Resume is the only control a reader has without opening one,
         // and no row's actions exist until their group is opened.
         compose.onNodeWithContentDescription("Resume queued messages").assertHeightIsAtLeast(floor)
-        assertEquals(0, compose.onAllNodes(hasText("Edit")).fetchSemanticsNodes().size)
+        assertEquals(
+            0,
+            compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Edit queued message"))
+                .fetchSemanticsNodes().size,
+        )
         compose.onNodeWithContentDescription("Queue, 1 messages, parked, expand").performClick()
-        assertEquals(1, compose.onAllNodes(hasText("Edit")).fetchSemanticsNodes().size)
+        assertEquals(
+            1,
+            compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Edit queued message"))
+                .fetchSemanticsNodes().size,
+        )
         compose.onNodeWithContentDescription("Send next queued message").assertHeightIsAtLeast(floor)
-        compose.onNodeWithContentDescription("Redirect with queued message").assertHeightIsAtLeast(floor)
+        compose.onNodeWithContentDescription("Steer with queued message").assertHeightIsAtLeast(floor)
         compose.onNodeWithContentDescription("Queue, 1 messages, expand").performClick()
         compose.onNodeWithContentDescription("Mark queued message ready after review").assertHeightIsAtLeast(floor)
         compose.onNodeWithText("Review required · this message will not send automatically.").assertIsDisplayed()
