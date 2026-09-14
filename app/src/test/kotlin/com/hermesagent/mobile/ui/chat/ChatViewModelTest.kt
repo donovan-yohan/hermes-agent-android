@@ -1316,7 +1316,18 @@ class ChatViewModelTest {
             },
         )
         cache.upsertSession(summary("bot-chat", 3_000).copy(status = SessionStatus.Working, unread = true))
-        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, composerQueueController = controller)
+        // A reply entry exists, so the read-aloud sweep below is a real tap and
+        // not an early return on a missing entry.
+        cache.appendEntry("bot-chat", AssistantTurn(id = "reply-entry", markdown = "Hello", atMillis = 1_000L))
+        val speaker = FakeReplySpeaker()
+        val subject = ChatViewModel(
+            cache,
+            repository,
+            sidebarStore,
+            clock = { CLOCK },
+            composerQueueController = controller,
+            replySpeaker = speaker,
+        )
         backgroundScope.launch { subject.uiState.collect { } }
         runCurrent()
         // The real entry is made while writable; busy Bot activation prevents auto-drain on rehome.
@@ -1354,6 +1365,8 @@ class ChatViewModelTest {
         subject.voiceConversationStart = { voiceStarts++ }
         subject.toggleDictation()
         subject.toggleVoiceConversation()
+        subject.toggleReadAloud("reply-entry")
+        subject.toggleReadAloud("reply-entry")
         runCurrent()
 
         assertEquals(before, controller.queue("bot-chat"))
@@ -1365,6 +1378,10 @@ class ChatViewModelTest {
         assertEquals(0, repository.approvalWrites)
         assertEquals(0, dictationStarts)
         assertEquals(0, voiceStarts)
+        // Read-aloud is a Gateway voice mutation too, and both halves of the
+        // toggle are the same door.
+        assertEquals(0, speaker.speakCalls)
+        assertEquals(0, speaker.stopCalledCount)
 
         subject.renameSession("session-a", "allowed")
         subject.setSessionPinnedAsync("session-a", true)
@@ -1426,6 +1443,39 @@ class ChatViewModelTest {
         assertEquals(listOf(false), completions)
         assertFalse(subject.uiState.value.botChat)
         assertEquals(null, subject.uiState.value.activeSessionId)
+
+        // The resume was asked for on the endpoint the tap resolved it on, and
+        // the switch that landed while it waited refused it: no session was
+        // resumed on the machine the app moved to.
+        assertEquals(listOf(0L), repository.botOpenEndpointBindings)
+        assertTrue(repository.botOpenResumes.isEmpty())
+    }
+
+    @Test
+    fun `endpoint switch while a Bot prompt is queued never submits it on the replacement`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        assertTrue(viewModel.uiState.value.botChat)
+        viewModel.setDraft("hello bot")
+        val gate = CompletableDeferred<Unit>()
+        repository.botSubmitGate = gate
+
+        viewModel.submit()
+        runCurrent()
+        // The prompt is waiting at the repository, and the app leaves the
+        // endpoint before its dispatch runs.
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(listOf(0L), repository.botSubmitEndpointBindings)
+        assertTrue("the replacement Gateway never receives the prompt", repository.submitted.isEmpty())
+        assertTrue(repository.queuedSubmissions.isEmpty())
+        assertTrue("the failed send says so", viewModel.uiState.value.notice != null)
     }
 
     @Test
@@ -2483,6 +2533,45 @@ class ChatViewModelTest {
         filterIsInstance<SessionListRow.Row>().map { it.session.id }
 
     @Test
+    fun `a Bot Chat refuses read-aloud speak and stop without touching playback`() = runTest(dispatcher) {
+        val speaker = FakeReplySpeaker()
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, replySpeaker = speaker)
+        backgroundScope.launch { subject.uiState.collect { } }
+        cache.upsertSession(summary("bot-chat", 3_000))
+        cache.appendEntry("session-a", AssistantTurn(id = "reply-a", markdown = "Hello", atMillis = 1_000L))
+        runCurrent()
+
+        // The control is live in an ordinary session, so the refusal below is
+        // this door and not a dead one.
+        subject.selectSession("session-a")
+        runCurrent()
+        speaker.delayCompletion = kotlinx.coroutines.sync.Mutex(true)
+        subject.toggleReadAloud("reply-a")
+        runCurrent()
+        assertEquals(1, speaker.speakCalls)
+        assertEquals(ReadAloudUiState.Speaking("reply-a"), subject.uiState.value.readAloud)
+
+        // In the Bot Chat both halves of the same door are refused — read-aloud
+        // is a Gateway voice mutation — and the playback that started outside
+        // it is left running.
+        subject.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        assertTrue(subject.uiState.value.botChat)
+        subject.toggleReadAloud("reply-a")
+        runCurrent()
+        assertEquals(
+            "Only messages can be sent from a Bot Chat on mobile.",
+            subject.uiState.value.notice?.text,
+        )
+        subject.toggleReadAloud("reply-a")
+        runCurrent()
+
+        assertEquals(1, speaker.speakCalls)
+        assertEquals(0, speaker.stopCalledCount)
+        assertEquals(ReadAloudUiState.Speaking("reply-a"), subject.uiState.value.readAloud)
+    }
+
+    @Test
     fun `toggleReadAloud lifecycle and stop`() = runTest(dispatcher) {
         val speaker = FakeReplySpeaker()
         val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, replySpeaker = speaker)
@@ -2653,6 +2742,7 @@ class ChatViewModelTest {
     private class FakeReplySpeaker : com.hermesagent.mobile.data.voice.ReplySpeaker {
         var onSpeakingFired = false
         var stopCalledCount = 0
+        var speakCalls = 0
         var shouldThrow: Exception? = null
         var speakCalledWith: Pair<com.hermesagent.mobile.data.voice.VoiceSessionKey, String>? = null
         var delaySpeak: kotlinx.coroutines.sync.Mutex? = null
@@ -2664,6 +2754,7 @@ class ChatViewModelTest {
             text: String,
             onSpeaking: () -> Unit
         ): Boolean {
+            speakCalls += 1
             speakCalledWith = key to text
             delaySpeak?.lock()
             if (shouldThrow != null) throw shouldThrow!!
@@ -2746,6 +2837,45 @@ class ChatViewModelTest {
         var botOpenFailure = false
         var botOpenGate: CompletableDeferred<Unit>? = null
         var botOpenResult: String? = null
+        /** Endpoint generations each Bot Chat open was bound to. */
+        val botOpenEndpointBindings = mutableListOf<Long>()
+        /** Durable ids whose endpoint-bound resume actually passed the fence. */
+        val botOpenResumes = mutableListOf<String>()
+        /** Endpoint generations each Bot prompt was bound to. */
+        val botSubmitEndpointBindings = mutableListOf<Long>()
+        var botSubmitGate: CompletableDeferred<Unit>? = null
+
+        override suspend fun openSessionAtEndpoint(
+            durableId: String,
+            profile: String,
+            expectedEndpointGeneration: Long,
+        ): String {
+            botOpenEndpointBindings += expectedEndpointGeneration
+            // The live repository re-checks after its navigation mutex; this
+            // fake models that by reading the endpoint the moment it is asked.
+            botOpenGate?.await()
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) {
+                throw GatewayRpcException("The gateway connection changed.")
+            }
+            botOpenResumes += durableId
+            return openSession(durableId, profile)
+        }
+
+        override suspend fun submitAtEndpoint(
+            durableId: String,
+            text: String,
+            queued: Boolean,
+            expectedEndpointGeneration: Long,
+        ): GatewaySubmitOutcome {
+            botSubmitEndpointBindings += expectedEndpointGeneration
+            // Same shape as the open above: the fence reads the endpoint at its
+            // own dispatch, after whatever queued the call.
+            botSubmitGate?.await()
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) {
+                throw GatewayRpcException("The gateway connection changed.")
+            }
+            return submit(durableId, text, queued, emptyList())
+        }
 
         /** Every backend search this repository was actually asked for. */
         val searches = mutableListOf<Pair<String, String?>>()

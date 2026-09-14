@@ -2,6 +2,7 @@ package com.hermesagent.mobile.data.connections
 
 import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
+import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.ConnectionCredentialProbe
@@ -122,6 +123,8 @@ internal class ConnectionSwitchController(
      * that does not care about the System panel does not have to say so.
      */
     private val endpointScopedState: EndpointScopedState = EndpointScopedState {},
+    /** Shared with endpoint-bound plugin dispatch; invalidated before teardown. */
+    private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
     private val settleTimeoutMillis: Long = SETTLE_TIMEOUT_MILLIS,
 ) {
     private val switching = Mutex()
@@ -219,6 +222,10 @@ internal class ConnectionSwitchController(
      * active row being removed — and never for a keystroke.
      */
     private suspend fun leaveLocked(dropDrafts: Boolean) {
+        // This is the endpoint's linearization point for mutations. It must
+        // happen before disconnect/cache generation change: an operation that
+        // was queued after its first ownership read now fails at the wire gate.
+        endpointDispatchFence.invalidate()
         gateway.disconnect()
         cache.resetForEndpointSwitch()
         endpointScopedState.resetForEndpointSwitch()

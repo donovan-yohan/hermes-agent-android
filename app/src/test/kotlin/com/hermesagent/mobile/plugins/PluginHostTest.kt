@@ -1,19 +1,24 @@
 package com.hermesagent.mobile.plugins
 
 import com.hermesagent.mobile.data.gateway.CorrelatedGatewayRpc
+import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
+import com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayEvent
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayRpcError
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.GatewayRpcWire
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -64,7 +69,8 @@ class PluginHostTest {
     private class FakeRpc(
         override val events: Flow<GatewayEvent> = emptyFlow(),
         private val answer: suspend (String, JsonObject) -> JsonElement = { _, _ -> JsonNull },
-    ) : GatewayRpcClient {
+        private val beforeEndpointWire: suspend () -> Unit = {},
+    ) : EndpointDispatchingGatewayRpcClient {
         var lastMethod: String? = null
         var lastParams: JsonObject? = null
         var calls = 0
@@ -73,6 +79,27 @@ class PluginHostTest {
             calls += 1
             lastMethod = method
             lastParams = params
+            return answer(method, params)
+        }
+
+        override suspend fun requestAtEndpointDispatch(
+            method: String,
+            params: JsonObject,
+            dispatch: (() -> Boolean) -> Boolean,
+        ): JsonElement {
+            // This is the production contract in miniature: the test may stop
+            // immediately before the actual wire hand-off, but the mutation
+            // counter moves only inside the host's dispatch gate.
+            beforeEndpointWire()
+            if (!dispatch({
+                    calls += 1
+                    lastMethod = method
+                    lastParams = params
+                    true
+                })
+            ) {
+                throw GatewayRpcException("The endpoint dispatch lease is no longer current.")
+            }
             return answer(method, params)
         }
 
@@ -96,6 +123,31 @@ class PluginHostTest {
         override val replayCache: List<Long> get() = state.replayCache
 
         override suspend fun collect(collector: FlowCollector<Long>): Nothing = state.collect(collector)
+    }
+
+    /**
+     * A dispatcher the test pumps by hand.
+     *
+     * "The scope has not run the exchange yet" is then a fact rather than a
+     * race, which is what lets the switch below land in exactly the window the
+     * dispatch gate exists to close: after the fence accepted the call and
+     * before any frame reached a transport.
+     */
+    private class PausedDispatcher : CoroutineDispatcher() {
+        private val queued = ArrayDeque<Runnable>()
+
+        val pending: Boolean get() = queued.isNotEmpty()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            queued += block
+        }
+
+        /** Runs one queued dispatch on the caller's thread, like a worker waking up. */
+        fun runNext(): Boolean {
+            val next = queued.removeFirstOrNull() ?: return false
+            next.run()
+            return true
+        }
     }
 
     private fun scopeFor(owner: CoroutineScope): CoroutineScope =
@@ -142,6 +194,106 @@ class PluginHostTest {
 
         assertEquals(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."), result)
         assertEquals("the old Gateway is not called after the switch", 0, oldLeg.calls)
+        assertEquals("the replacement Gateway is never mutated by the stale operation", 0, newLeg.calls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `a switch that lands while the dispatch is queued keeps both gateways untouched`() = runTest {
+        // The fence accepted the call, and the exchange is still queued behind
+        // the scope's dispatcher — the window the first check cannot cover,
+        // because a whole switch can land in it. The dispatch gate re-reads the
+        // door there, so the stale call is refused before any frame is sent.
+        val oldLeg = FakeRpc()
+        val newLeg = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldLeg)
+        val endpointState = MutableStateFlow(0L)
+        val paused = PausedDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + paused)
+        val host = GatewayPluginHost(scope, clients, endpointState)
+
+        val outcome = async { host.requestAtEndpoint(0L, "session.create") }
+        runCurrent()
+        assertTrue("the exchange is queued behind the paused dispatcher", paused.pending)
+
+        clients.value = newLeg
+        endpointState.value = 1L
+        assertTrue(paused.runNext())
+        runCurrent()
+
+        assertEquals(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."), outcome.await())
+        assertEquals("the old Gateway is not called after the switch", 0, oldLeg.calls)
+        assertEquals("the replacement Gateway is never mutated by the stale operation", 0, newLeg.calls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `endpoint invalidation after final ownership validation but before wire send reaches neither gateway`() = runTest {
+        // The host has already accepted the old endpoint when this latch opens.
+        // The fake is stopped at its exact wire hand-off, not at a dispatcher
+        // queue. A real switch invalidates the shared lease first; releasing
+        // the old client afterwards must therefore admit no stale mutation.
+        val beforeWire = CompletableDeferred<Unit>()
+        val releaseWire = CompletableDeferred<Unit>()
+        val oldLeg = FakeRpc(beforeEndpointWire = {
+            beforeWire.complete(Unit)
+            releaseWire.await()
+        })
+        val newLeg = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldLeg)
+        val endpointState = MutableStateFlow(0L)
+        val fence = EndpointDispatchFence()
+        val scope = scopeFor(this)
+        val host = GatewayPluginHost(scope, clients, endpointState, fence)
+
+        val outcome = async { host.requestAtEndpoint(0L, "session.create") }
+        beforeWire.await()
+
+        // This is the order ConnectionSwitchController.leaveLocked uses: make
+        // old leases ineligible, then withdraw/replace the route and publish
+        // its new endpoint generation.
+        fence.invalidate()
+        clients.value = newLeg
+        endpointState.value = 1L
+        releaseWire.complete(Unit)
+        runCurrent()
+
+        assertEquals(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."), outcome.await())
+        assertEquals("the old wire is never handed the stale mutation", 0, oldLeg.calls)
+        assertEquals("the replacement wire is never used by an old lease", 0, newLeg.calls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `a switch during the exchange rejects the stale answer`() = runTest {
+        // The frame was already at the Gateway the app was on when the endpoint
+        // moved, so the request itself cannot be undone — but its answer is not
+        // this endpoint's truth any more, and the door refuses it rather than
+        // letting a stale result be adopted as canonical.
+        val arrived = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val oldLeg = FakeRpc(answer = { _, _ ->
+            arrived.complete(Unit)
+            release.await()
+            buildJsonObject { put("stale", JsonPrimitive(true)) }
+        })
+        val newLeg = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldLeg)
+        val endpointState = MutableStateFlow(0L)
+        val scope = scopeFor(this)
+        val host = GatewayPluginHost(scope, clients, endpointState)
+
+        val outcome = async { host.requestAtEndpoint(0L, "session.title") }
+        runCurrent()
+        assertTrue("the frame reached the old Gateway before the switch", arrived.isCompleted)
+
+        clients.value = newLeg
+        endpointState.value = 1L
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals(PluginHostResult.Refused(0, "Reconnect to the Gateway and try again."), outcome.await())
+        assertEquals("the in-flight frame was the old Gateway's own", 1, oldLeg.calls)
         assertEquals("the replacement Gateway is never mutated by the stale operation", 0, newLeg.calls)
         scope.cancel()
     }

@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.connections
 
+import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
 import com.hermesagent.mobile.data.gateway.GatewayBrowserLauncher
 import com.hermesagent.mobile.data.gateway.GatewayConnectResult
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
@@ -57,6 +58,26 @@ class ConnectionSwitchControllerTest {
         assertTrue("the previous machine's sessions must not survive", cache.state.value.sessions.isEmpty())
         assertTrue(cache.state.value.transcripts.isEmpty())
         assertEquals("two", store.connectionRegistry.first().activeId)
+    }
+
+    @Test
+    fun `leaving invalidates endpoint dispatch before it disconnects`() = runTest {
+        val gateway = RecordingGateway()
+        val fence = EndpointDispatchFence()
+        val lease = checkNotNull(fence.leaseAt(0L) { true })
+        gateway.onDisconnect = {
+            assertFalse(
+                "an old endpoint lease is already ineligible when teardown begins",
+                fence.dispatchIfCurrent(lease, stillOwns = { true }) { true },
+            )
+        }
+
+        ConnectionSwitchController(
+            store = MemoryRegistryStore(TWO_ROWS, activeId = "one"),
+            gateway = gateway,
+            cache = SessionCache(),
+            endpointDispatchFence = fence,
+        ).leaveCurrentEndpoint()
     }
 
     @Test
@@ -459,6 +480,7 @@ class ConnectionSwitchControllerTest {
         private val _state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val state: StateFlow<GatewayConnectionState> = _state.asStateFlow()
         val calls = mutableListOf<String>()
+        var onDisconnect: (() -> Unit)? = null
         private var settleImmediately = false
 
         /** Land the new endpoint the moment it is dialled, for tests that are not about waiting. */
@@ -488,6 +510,7 @@ class ConnectionSwitchControllerTest {
         }
 
         override suspend fun disconnect() {
+            onDisconnect?.invoke()
             calls += "disconnect"
             _state.value = GatewayConnectionState(
                 if (settleImmediately) GatewayConnectionStatus.Connected else GatewayConnectionStatus.Disconnected,

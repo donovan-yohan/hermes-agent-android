@@ -57,6 +57,40 @@ class GatewayRpcTest {
     }
 
     @Test
+    fun `a request that arrives after close never reaches the wire`() = runTest {
+        // The closed check and the send are one act under the client's lock, so
+        // a teardown that got there first refuses the frame instead of letting
+        // an endpoint-bound caller's last dispatch slip onto a leg the app has
+        // already left.
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+        rpc.close()
+
+        val failure = runCatching { rpc.request("session.create") }.exceptionOrNull()
+
+        assertTrue(failure is GatewayRpcException)
+        assertTrue("a closed leg takes no frame", wire.frames.isEmpty())
+    }
+
+    @Test
+    fun `an invalidated endpoint dispatch lease never reaches the wire`() = runTest {
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+        val fence = EndpointDispatchFence()
+        val lease = checkNotNull(fence.leaseAt(0L) { true })
+        fence.invalidate()
+
+        val failure = runCatching {
+            rpc.requestAtEndpointDispatch("session.create") { send ->
+                fence.dispatchIfCurrent(lease, stillOwns = { true }, send = send)
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is GatewayRpcException)
+        assertTrue("an invalid endpoint lease takes no frame", wire.frames.isEmpty())
+    }
+
+    @Test
     fun `prompt submit keeps its authoritative long acknowledgement timeout`() = runTest {
         val rpc = CorrelatedGatewayRpc(RecordingWire())
         val prompt = async { rpc.request("prompt.submit") }

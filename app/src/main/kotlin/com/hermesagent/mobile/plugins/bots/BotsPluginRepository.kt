@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.math.RoundingMode
@@ -99,9 +100,9 @@ class BotsPluginRepository(private val host: PluginHost) {
         // surprising extra or malformed row therefore means the response no
         // longer proves which hidden chat is canonical; never pick arbitrarily.
         val exact = sessions.singleOrNull() as? JsonObject ?: return BotChatLookup.Unsafe
-        if (exact.text("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
-        val id = exact.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
-            ?: exact.text("id")?.trim()?.takeIf(String::isNotEmpty)
+        if (exact.string("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
+        val id = exact.string("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: exact.string("id")?.trim()?.takeIf(String::isNotEmpty)
             ?: return BotChatLookup.Unsafe
         return BotChatLookup.Found(id)
     }
@@ -188,9 +189,11 @@ class BotsPluginRepository(private val host: PluginHost) {
         )
         // A refused, unavailable or unreadable creation is never partially
         // adopted: without both ids there is no durable row to open or title.
+        // Ids are JSON strings on this wire; a number or boolean is a
+        // malformed answer, not an id to coerce into one.
         val result = (created as? PluginHostResult.Success)?.result as? JsonObject ?: return null
-        val storedId = result.text("stored_session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        val runtimeId = result.text("session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val storedId = result.string("stored_session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val runtimeId = result.string("session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
 
         val titled = host.requestAtEndpoint(
             expectedGeneration = expectedEndpointGeneration,
@@ -204,9 +207,13 @@ class BotsPluginRepository(private val host: PluginHost) {
         // `pending:false` is the Gateway's explicit durability receipt. With
         // `pending:true`, row creation did not take and only the runtime holds
         // a deferred title; opening it would revive the duplicate-mint window.
+        // Only a literal JSON boolean is a receipt: an absent member, a string
+        // or a number is a malformed answer that proves nothing about
+        // durability, so it takes the same route as `pending:true` and is
+        // reconciled against the registry rather than adopted as canonical.
         if (
-            titleResult?.flag("pending") == false &&
-            titleResult.text("title") == CANONICAL_CHAT_TITLE
+            titleResult?.literalBoolean("pending") == false &&
+            titleResult.string("title") == CANONICAL_CHAT_TITLE
         ) {
             return storedId
         }
@@ -273,8 +280,8 @@ fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
 private fun parseSessionPreview(element: JsonElement?): BotSessionPreview? {
     val row = element as? JsonObject ?: return null
     return BotSessionPreview(
-        id = row.text("id")?.trim()?.takeIf(String::isNotEmpty),
-        resolvedId = row.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty),
+        id = row.string("id")?.trim()?.takeIf(String::isNotEmpty),
+        resolvedId = row.string("resolved_id")?.trim()?.takeIf(String::isNotEmpty),
         lastActiveSeconds = row.epochSeconds("last_active"),
         preview = row.text("preview"),
     )
@@ -303,6 +310,29 @@ private fun JsonObject.epochSeconds(name: String): Long =
 
 private fun JsonObject.text(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
+
+/**
+ * A member the contract types as a JSON string.
+ *
+ * [text] coerces a number or a boolean into its content, which is right for
+ * prose fields and wrong for the ids and titles this file adopts as backend
+ * identity: a coerced `7` is an id no Gateway minted, and a coerced title is a
+ * row this app did not find. `JsonNull` is a `JsonPrimitive` that reports
+ * `isString`, so it is excluded by name.
+ */
+private fun JsonObject.string(name: String): String? =
+    (this[name] as? JsonPrimitive)?.takeIf { it !is JsonNull && it.isString }?.content
+
+/**
+ * A literal JSON boolean — the shape of `session.title`'s `pending` receipt —
+ * and null for an absent member or any other primitive.
+ *
+ * [flag] cannot state this contract: it reads an absent key, a string and a
+ * number as false, and `false` is exactly the value that turns a malformed
+ * answer into a durability claim.
+ */
+private fun JsonObject.literalBoolean(name: String): Boolean? =
+    (this[name] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
 
 private fun JsonObject.flag(name: String): Boolean = when (val value = this[name]) {
     is JsonPrimitive -> value.content.equals("true", ignoreCase = true) || value.content == "1"

@@ -16,6 +16,7 @@ import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInLog
 import com.hermesagent.mobile.data.gateway.androidGatewayAppFailureLog
 import com.hermesagent.mobile.data.gateway.androidGatewayConnectEventLog
 import com.hermesagent.mobile.data.gateway.AndroidGatewayTokenStore
+import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
 import com.hermesagent.mobile.data.gateway.GatewayConnectionController
 import com.hermesagent.mobile.data.gateway.GatewayConnectionMode
 import com.hermesagent.mobile.data.gateway.GatewayConnectionManager
@@ -95,6 +96,8 @@ class HermesApplication : Application() {
     }
 
     val cache: SessionCache by lazy(::SessionCache)
+    /** The single endpoint-dispatch fence shared by switching and plugin RPCs. */
+    internal val endpointDispatchFence: EndpointDispatchFence by lazy(::EndpointDispatchFence)
     val preferences: HermesPreferences by lazy { HermesPreferences(this) }
     val draftStore: AndroidSessionDraftStore by lazy { AndroidSessionDraftStore(this) }
     /**
@@ -188,6 +191,7 @@ class HermesApplication : Application() {
             // belong to the machine this device is leaving, exactly as its
             // session ids do. Same seam, one clear.
             endpointScopedState = { updateController.reset() },
+            endpointDispatchFence = endpointDispatchFence,
         )
     }
 
@@ -255,7 +259,12 @@ class HermesApplication : Application() {
             // what a plugin holding its own backend copy has to know before it
             // paints one Gateway's rows under another's.
             hostFactory = { scope ->
-                GatewayPluginHost(scope, gatewayConnection.client, cache.endpointGeneration)
+                GatewayPluginHost(
+                    scope,
+                    gatewayConnection.client,
+                    cache.endpointGeneration,
+                    endpointDispatchFence,
+                )
             },
         )
     }
@@ -265,7 +274,12 @@ class HermesApplication : Application() {
     }
 
     internal val sessionRepository: LiveGatewaySessionRepository by lazy {
-        LiveGatewaySessionRepository(cache, gatewayConnection, appScope)
+        LiveGatewaySessionRepository(
+            cache = cache,
+            connection = gatewayConnection,
+            scope = appScope,
+            endpointDispatchFence = endpointDispatchFence,
+        )
     }
 
     /**

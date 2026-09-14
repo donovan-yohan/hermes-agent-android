@@ -416,6 +416,112 @@ class BotsPluginRepositoryTest {
     }
 
     @Test
+    fun `a literal false receipt with the canonical title is the only durability claim`() = runTest {
+        val host = ScriptedHost().apply {
+            answer("session.list", emptyRegistry(), emptyRegistry())
+            answer("session.create", created())
+            answer("session.title", PluginHostResult.Success(json("""{"pending":false,"title":"Bot Chat"}""")))
+        }
+
+        val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
+
+        assertEquals(BotChatOpen.Opened("created-durable"), open)
+        assertEquals(
+            listOf("session.list", "session.list", "session.create", "session.title"),
+            host.calls.map { it.first },
+        )
+    }
+
+    @Test
+    fun `a malformed title receipt is never durability and only the registry can adopt`() = runTest {
+        // `pending` is a literal JSON boolean on this wire. The absence of a
+        // member, a string or a number must not read as `false`: that value is
+        // what turns a malformed answer into a durability claim, so each shape
+        // here reconciles against the registry instead of returning the id this
+        // attempt just created.
+        val receipts = listOf(
+            """{"title":"Bot Chat"}""",
+            """{"pending":"false","title":"Bot Chat"}""",
+            """{"pending":"garbage","title":"Bot Chat"}""",
+            """{"pending":0,"title":"Bot Chat"}""",
+            """{"pending":null,"title":"Bot Chat"}""",
+            """{"pending":false}""",
+            """{"pending":false,"title":"Other"}""",
+        )
+        for (receipt in receipts) {
+            // A concurrent writer won the title: the registry's exact-title row
+            // is what opens, never this attempt's own create.
+            val winner = ScriptedHost().apply {
+                answer("session.list", emptyRegistry(), emptyRegistry(), registryRow(resolvedId = "winner-tip"))
+                answer("session.create", created())
+                answer("session.title", PluginHostResult.Success(json(receipt)))
+            }
+
+            assertEquals(receipt, BotChatOpen.Opened("winner-tip"), BotsPluginRepository(winner).openCanonicalChat("bot-a", null))
+            assertEquals(
+                receipt,
+                listOf("session.list", "session.list", "session.create", "session.title", "session.list"),
+                winner.calls.map { it.first },
+            )
+            assertEquals(receipt, 1, winner.calls.count { it.first == "session.create" })
+
+            // And with no winner in the registry it fails closed rather than
+            // adopting the malformed receipt or minting a second chat.
+            val orphan = ScriptedHost().apply {
+                answer("session.list", emptyRegistry(), emptyRegistry(), emptyRegistry())
+                answer("session.create", created())
+                answer("session.title", PluginHostResult.Success(json(receipt)))
+            }
+
+            assertEquals(receipt, BotChatOpen.Unsafe, BotsPluginRepository(orphan).openCanonicalChat("bot-a", null))
+            assertEquals(receipt, 1, orphan.calls.count { it.first == "session.create" })
+        }
+    }
+
+    @Test
+    fun `ids and titles that are not JSON strings are malformed and never adopted`() = runTest {
+        // A creation answer whose ids are numbers or booleans is not an id this
+        // app can open or title: no title write may follow, and nothing may be
+        // adopted.
+        val creationAnswers = listOf(
+            """{"session_id":"runtime-created","stored_session_id":7}""",
+            """{"session_id":true,"stored_session_id":"created-durable"}""",
+            """{"session_id":"runtime-created","stored_session_id":null}""",
+        )
+        for (answer in creationAnswers) {
+            val host = ScriptedHost().apply {
+                answer("session.list", emptyRegistry(), emptyRegistry())
+                answer("session.create", PluginHostResult.Success(json(answer)))
+                answer("session.title", PluginHostResult.Success(json("""{"pending":false,"title":"Bot Chat"}""")))
+            }
+
+            assertEquals(answer, BotChatOpen.Unsafe, BotsPluginRepository(host).openCanonicalChat("bot-a", null))
+            assertEquals(
+                answer,
+                listOf("session.list", "session.list", "session.create"),
+                host.calls.map { it.first },
+            )
+        }
+
+        // The same rule at the read: a row whose id or title is not a string
+        // proves nothing about which hidden chat is canonical. The `resolved_id`
+        // preference is a fallback chain, so a non-string member is skipped —
+        // but with no string id left, the answer is unsafe rather than coerced.
+        val rows = listOf(
+            """{"sessions":[{"id":7,"title":"Bot Chat"}]}""",
+            """{"sessions":[{"id":true,"title":"Bot Chat"}]}""",
+            """{"sessions":[{"id":null,"title":"Bot Chat"}]}""",
+            """{"sessions":[{"id":"x","title":7}]}""",
+        )
+        for (row in rows) {
+            val host = ScriptedHost().apply { answer("session.list", sessions(row)) }
+
+            assertEquals(row, BotChatOpen.Unsafe, BotsPluginRepository(host).openCanonicalChat("bot-a", null))
+            assertEquals(row, listOf("session.list"), host.calls.map { it.first })
+        }
+    }
+
+    @Test
     fun `no create is sent after a refused unavailable ambiguous or malformed read`() = runTest {
         // Every answer here is something other than a confirmed-absent
         // registry. A zero-row answer without a roster claim is deliberately

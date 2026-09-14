@@ -1313,11 +1313,18 @@ internal class GatewayConnectionManager(
         active = null
         liveRemoteProfile.set(null)
         localRouteActive.set(false)
+        // Retire the RPC before withdrawing it from the public slot. Endpoint-
+        // bound dispatch first verifies that slot and then enters the RPC's
+        // close/send lock. If the slot disappeared first, a request that had
+        // just passed the verification could still send before close reached
+        // that lock. Closing first makes the two possible orders safe: the send
+        // wins and was handed to the old transport before teardown, or close
+        // wins and the request is refused without a frame.
+        if (closing != null) runCatching { closing.rpc.close() }
         _client.value = null
         _gatewayHttp.value = null
         _imageLoader.value = null
         if (closing != null) {
-            runCatching { closing.rpc.close() }
             when (closing) {
                 is ActiveConnection.Remote -> Unit
                 // Closing the socket is the whole teardown. The runtime on this

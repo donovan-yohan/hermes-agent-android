@@ -1871,7 +1871,8 @@ internal class ChatViewModel(
         val previousActiveId = activeSessionId.value
         flushDraft()
         botChatSessionId = durableId
-        botChatEndpoint = BotChatEndpoint(cache.endpointGeneration.value, endpoint)
+        val endpointBinding = BotChatEndpoint(cache.endpointGeneration.value, endpoint)
+        botChatEndpoint = endpointBinding
         rehome(durableId, applyOpenSideEffects = false)
         viewModelScope.launch {
             var finished = false
@@ -1889,7 +1890,16 @@ internal class ChatViewModel(
                     activeSessionId.value == durableId
 
             try {
-                val canonicalId = repository.openSession(durableId, profile)
+                // The resume is bound to the endpoint the roster resolved this
+                // id on. This call waits on the repository's navigation mutex,
+                // and the app can leave the endpoint while it waits — the
+                // replacement never minted the id, so the repository refuses
+                // rather than resuming it there.
+                val canonicalId = repository.openSessionAtEndpoint(
+                    durableId,
+                    profile,
+                    endpointBinding.cacheGeneration,
+                )
                 if (!stillOwnsRequest()) {
                     // The current request still completes, but an intervening
                     // navigation or endpoint owns the screen now. If its
@@ -2529,16 +2539,28 @@ internal class ChatViewModel(
                 attachment
             }
         }
+        // The Bot Chat's one allowed write is bound to the endpoint that minted
+        // the chat. The capability check above is the last synchronous moment
+        // it is known to be current, and this submit is about to move onto
+        // viewModelScope, where a switch can land first; the repository refuses
+        // then instead of submitting a foreign durable id to the replacement.
+        val botPromptEndpoint = botChatEndpoint
+            ?.takeIf { botChatSessionId == sessionId }
+            ?.cacheGeneration
         clearDraftAfterDelivery(sessionId)
         noticeLine = refusalWarning
         viewModelScope.launch {
             try {
-                val result = repository.submit(
-                    sessionId,
-                    submittedPrompt,
-                    queued = queued,
-                    attachments = outgoing.map { it.outgoing },
-                )
+                val result = if (botPromptEndpoint != null) {
+                    repository.submitAtEndpoint(sessionId, submittedPrompt, queued, botPromptEndpoint)
+                } else {
+                    repository.submit(
+                        sessionId,
+                        submittedPrompt,
+                        queued = queued,
+                        attachments = outgoing.map { it.outgoing },
+                    )
+                }
                 when (result) {
                     GatewaySubmitOutcome.Accepted -> {
                         claimedIds.forEach { occurrenceId ->
@@ -2792,6 +2814,11 @@ internal class ChatViewModel(
     }
 
     fun toggleReadAloud(entryId: String) {
+        // Read-aloud is a Gateway voice mutation (`POST api/audio/speak`), so it
+        // takes the same Bot Chat gate as every other one: the composer's one
+        // allowed write is the plain prompt. The gate covers the stop half too —
+        // one refusal sentence, one door.
+        if (refuseBotChatMutation() != null) return
         val current = readAloudState.value
         if (current is ReadAloudUiState.Speaking && current.entryId == entryId) {
             replySpeaker?.stop()

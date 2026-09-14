@@ -28,8 +28,11 @@ import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.buildSessionRows
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +80,286 @@ class GatewaySessionRepositoryTest {
 
         assertTrue(failure is IllegalArgumentException)
         assertEquals(callsBefore, rpc.calls.size)
+    }
+
+    @Test
+    fun `an endpoint-bound resume queued across a switch never reaches the replacement gateway`() = runTest {
+        val cache = SessionCache()
+        val oldRpc = FakeRpc()
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        // One navigation holds the navigation mutex while the endpoint-bound
+        // resume waits behind it; the app leaves the endpoint in that window.
+        val gate = CompletableDeferred<JsonElement>()
+        oldRpc.historyResponse = gate
+        val blocker = async { runCatching { repository.openSession("durable-a") } }
+        runCurrent()
+        val queued = async { runCatching { repository.openSessionAtEndpoint("durable-a", "bot-a", 0L) } }
+        runCurrent()
+
+        cache.resetForEndpointSwitch()
+        clients.value = newRpc
+        runCurrent()
+        gate.complete(json(HISTORY))
+        runCurrent()
+
+        val failure = queued.await().exceptionOrNull()
+        assertNotNull("the queued resume must fail rather than land on the replacement", failure)
+        assertEquals(
+            "the replacement gateway never sees an id it did not mint",
+            0,
+            newRpc.calls.count { it.method == "session.resume" },
+        )
+        assertEquals(
+            "and it is never asked to activate one either",
+            0,
+            newRpc.calls.count { it.method == "session.activate" },
+        )
+        assertTrue(blocker.await().isFailure)
+    }
+
+    @Test
+    fun `an endpoint-bound resume refuses outright once the app has left the endpoint`() = runTest {
+        val cache = SessionCache()
+        val oldRpc = FakeRpc()
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        clients.value = newRpc
+        runCurrent()
+
+        val failure = runCatching { repository.openSessionAtEndpoint("durable-a", "bot-a", 0L) }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(0, newRpc.calls.count { it.method == "session.resume" })
+        // The ordinary overload still follows the live connection: the fence
+        // belongs to the endpoint-bound caller, not to every resume.
+        repository.openSession("durable-a", "bot-a")
+        assertEquals(1, newRpc.calls.count { it.method == "session.resume" })
+    }
+
+    @Test
+    fun `an endpoint-bound prompt refuses to submit on the replacement gateway`() = runTest {
+        val cache = SessionCache()
+        val oldRpc = FakeRpc()
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        cache.resetForEndpointSwitch()
+        clients.value = newRpc
+        runCurrent()
+
+        val failure = runCatching {
+            repository.submitAtEndpoint("durable-a", "hello bot", queued = false, expectedEndpointGeneration = 0L)
+        }.exceptionOrNull()
+
+        assertNotNull("the prompt cannot cross to the machine the app moved to", failure)
+        assertEquals(0, oldRpc.calls.count { it.method == "prompt.submit" })
+        assertEquals(0, newRpc.calls.count { it.method == "prompt.submit" })
+        assertEquals(
+            "and the runtime is not resolved there either",
+            0,
+            newRpc.calls.count { it.method == "session.resume" },
+        )
+    }
+
+    @Test
+    fun `a switch during an endpoint-bound prompt's flight rejects its acknowledgement`() = runTest {
+        val cache = SessionCache()
+        val oldRpc = FakeRpc()
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        runCurrent()
+
+        val flight = CompletableDeferred<JsonElement>()
+        oldRpc.promptResponse = flight
+        val submission = async {
+            runCatching {
+                repository.submitAtEndpoint("durable-a", "hello bot", queued = false, expectedEndpointGeneration = 0L)
+            }
+        }
+        runCurrent()
+        assertEquals("the frame was on the old gateway when the switch landed", 1, oldRpc.calls.count { it.method == "prompt.submit" })
+
+        cache.resetForEndpointSwitch()
+        clients.value = newRpc
+        runCurrent()
+        flight.complete(json("""{"status":"streaming"}"""))
+        runCurrent()
+
+        val failure = submission.await().exceptionOrNull()
+        assertNotNull("a stale acknowledgement is not a delivered prompt", failure)
+        assertEquals(0, newRpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `a switch at the resume wire boundary dispatches no Bot mutation to either endpoint`() = runTest {
+        val cache = SessionCache()
+        val fence = EndpointDispatchFence()
+        val beforeWire = CompletableDeferred<Unit>()
+        val releaseWire = CompletableDeferred<Unit>()
+        val oldRpc = FakeRpc().apply {
+            beforeEndpointWire = { method ->
+                if (method == "session.resume") {
+                    beforeWire.complete(Unit)
+                    releaseWire.await()
+                }
+            }
+        }
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repositoryScope = CoroutineScope(coroutineContext + SupervisorJob())
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            repositoryScope,
+            endpointDispatchFence = fence,
+        ) { CLOCK }
+        runCurrent()
+        // Isolate the direct endpoint-bound call from ordinary reconnect
+        // hydration, whose normal-session semantics are not under test here.
+        repositoryScope.cancel()
+
+        val attempt = async { runCatching { repository.openSessionAtEndpoint("durable-a", "bot-a", 0L) } }
+        beforeWire.await()
+        fence.invalidate()
+        clients.value = null
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        clients.value = newRpc
+        releaseWire.complete(Unit)
+        runCurrent()
+
+        assertNotNull(attempt.await().exceptionOrNull())
+        assertNoBotEndpointMutation(oldRpc, "old")
+        assertNoBotEndpointMutation(newRpc, "replacement")
+    }
+
+    @Test
+    fun `a switch at the activate wire boundary dispatches no Bot mutation to either endpoint`() = runTest {
+        val cache = SessionCache()
+        val fence = EndpointDispatchFence()
+        val beforeWire = CompletableDeferred<Unit>()
+        val releaseWire = CompletableDeferred<Unit>()
+        val oldRpc = FakeRpc()
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repositoryScope = CoroutineScope(coroutineContext + SupervisorJob())
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            repositoryScope,
+            endpointDispatchFence = fence,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        oldRpc.calls.clear()
+        // Stop only automatic ordinary-session reconnect hydration; the direct
+        // endpoint-bound activate below does not depend on this owner scope.
+        repositoryScope.cancel()
+        oldRpc.beforeEndpointWire = { method ->
+            if (method == "session.activate") {
+                beforeWire.complete(Unit)
+                releaseWire.await()
+            }
+        }
+
+        val attempt = async { runCatching { repository.openSessionAtEndpoint("durable-a", "bot-a", 0L) } }
+        beforeWire.await()
+        fence.invalidate()
+        clients.value = null
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        clients.value = newRpc
+        releaseWire.complete(Unit)
+        runCurrent()
+
+        assertNotNull(attempt.await().exceptionOrNull())
+        assertNoBotEndpointMutation(oldRpc, "old")
+        assertNoBotEndpointMutation(newRpc, "replacement")
+    }
+
+    @Test
+    fun `a switch at the first prompt wire boundary dispatches no Bot mutation to either endpoint`() = runTest {
+        val cache = SessionCache()
+        val fence = EndpointDispatchFence()
+        val beforeWire = CompletableDeferred<Unit>()
+        val releaseWire = CompletableDeferred<Unit>()
+        val oldRpc = FakeRpc()
+        val newRpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+        val repositoryScope = CoroutineScope(coroutineContext + SupervisorJob())
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            repositoryScope,
+            endpointDispatchFence = fence,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        oldRpc.calls.clear()
+        // Stop only automatic ordinary-session reconnect hydration; the direct
+        // endpoint-bound prompt below does not depend on this owner scope.
+        repositoryScope.cancel()
+        oldRpc.beforeEndpointWire = { method ->
+            if (method == "prompt.submit") {
+                beforeWire.complete(Unit)
+                releaseWire.await()
+            }
+        }
+
+        val attempt = async {
+            runCatching {
+                repository.submitAtEndpoint("durable-a", "hello bot", queued = false, expectedEndpointGeneration = 0L)
+            }
+        }
+        beforeWire.await()
+        fence.invalidate()
+        clients.value = null
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        clients.value = newRpc
+        releaseWire.complete(Unit)
+        runCurrent()
+
+        assertNotNull(attempt.await().exceptionOrNull())
+        assertNoBotEndpointMutation(oldRpc, "old")
+        assertNoBotEndpointMutation(newRpc, "replacement")
     }
 
     @Test
@@ -6739,10 +7022,19 @@ class GatewaySessionRepositoryTest {
 
     private data class RpcCall(val method: String, val params: JsonObject)
 
-    private class FakeRpc : GatewayRpcClient {
+    private fun assertNoBotEndpointMutation(rpc: FakeRpc, endpoint: String) {
+        assertTrue(
+            "$endpoint endpoint receives no endpoint-bound Bot mutation",
+            rpc.calls.none { it.method in BOT_ENDPOINT_MUTATIONS },
+        )
+    }
+
+    private class FakeRpc : EndpointDispatchingGatewayRpcClient {
         private val eventChannel = Channel<GatewayEvent>(capacity = 1_024)
         override val events = eventChannel.receiveAsFlow()
         val calls = mutableListOf<RpcCall>()
+        /** Pauses after the repository's final ownership validation, before the wire hand-off. */
+        var beforeEndpointWire: (suspend (String) -> Unit)? = null
         var promptFailures = 0
         var resumeFailures = 0
         var completeDuringSubmit = false
@@ -6796,7 +7088,29 @@ class GatewaySessionRepositoryTest {
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
-            return when (method) {
+            return responseFor(method, params)
+        }
+
+        override suspend fun requestAtEndpointDispatch(
+            method: String,
+            params: JsonObject,
+            dispatch: (() -> Boolean) -> Boolean,
+        ): JsonElement {
+            // Contract-faithful immediate-send seam: the test latch opens after
+            // the repository captured its lease and exact client identity, but
+            // before the callback that represents `wire.send` is admitted.
+            beforeEndpointWire?.invoke(method)
+            if (!dispatch {
+                    calls += RpcCall(method, params)
+                    true
+                }
+            ) {
+                throw GatewayRpcException("The endpoint dispatch lease is no longer current.")
+            }
+            return responseFor(method, params)
+        }
+
+        private suspend fun responseFor(method: String, params: JsonObject): JsonElement = when (method) {
                 "session.list" -> json(sessionListResult)
                 "projects.tree" -> {
                     projectTreeFailure?.let { throw it }
@@ -6924,7 +7238,6 @@ class GatewaySessionRepositoryTest {
                 }
                 else -> error("unexpected method $method")
             }
-        }
 
         fun call(method: String): RpcCall = calls.last { it.method == method }
 
@@ -6941,6 +7254,7 @@ class GatewaySessionRepositoryTest {
 
     private companion object {
         const val CLOCK = 1_800_000_000_000L
+        val BOT_ENDPOINT_MUTATIONS = setOf("session.resume", "session.activate", "prompt.submit")
         /**
          * `{"sessions": [...], "total": N, "limit": L, "offset": O}` with one
          * fully populated row (`sessions.py:159`; the row's own keys at
