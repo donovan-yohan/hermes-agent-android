@@ -28,11 +28,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.data.composer.QueuedPrompt
 import com.hermesagent.mobile.data.composer.QueuedPromptDelivery
-import com.hermesagent.mobile.ui.common.HermesIcon
-import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.TablerIcon
+import com.hermesagent.mobile.ui.common.TablerIconGlyph
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -214,20 +213,20 @@ private fun QueueActions(
     // Desktop keeps these as one trailing icon rail. Android preserves that
     // hierarchy while giving every glyph a full 48dp touch target.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        QueueIconAction(HermesIcon.Edit, "Edit queued message", onEdit)
+        QueueIconAction(TablerIcon.Pencil, "Edit queued message", onEdit)
         if (entry.delivery == QueuedPromptDelivery.Ambiguous) {
-            QueueIconAction(HermesIcon.Check, "Mark queued message ready after review", onMarkReadyAfterReview)
+            QueueIconAction(TablerIcon.Check, "Mark queued message ready after review", onMarkReadyAfterReview)
         } else {
-            if (canRedirectNow) QueueIconAction(HermesIcon.Refresh, "Steer with queued message", onRedirectNow)
-            QueueIconAction(HermesIcon.ArrowUp, "Send next queued message", onSendNext)
+            if (canRedirectNow) QueueIconAction(TablerIcon.SteeringWheel, "Steer with queued message", onRedirectNow)
+            QueueIconAction(TablerIcon.CornerDownLeft, "Send next queued message", onSendNext)
         }
-        QueueIconAction(HermesIcon.Trash, "Delete queued message", onDelete, HermesTheme.tokens.destructive)
+        QueueIconAction(TablerIcon.Trash, "Delete queued message", onDelete)
     }
 }
 
 @Composable
 private fun QueueIconAction(
-    icon: HermesIcon,
+    icon: TablerIcon,
     description: String,
     onClick: () -> Unit,
     color: Color = HermesTheme.tokens.textSecondary,
@@ -242,6 +241,6 @@ private fun QueueIconAction(
             },
         contentAlignment = Alignment.Center,
     ) {
-        HermesIconGlyph(icon = icon, color = color, size = 16.sp)
+        TablerIconGlyph(icon = icon, color = color, size = 12.dp)
     }
 }

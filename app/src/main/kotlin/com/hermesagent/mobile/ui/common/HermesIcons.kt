@@ -8,13 +8,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -188,6 +192,72 @@ enum class HermesIcon(val glyph: String) {
     Unmute("\uEB75"),
 }
 
+/**
+ * Tabler 3.44.0 outlines — the family Desktop actually draws these controls
+ * from (`apps/desktop/src/lib/icons.ts`, `@tabler/icons-react` 3.44.0 @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`). Codicons 0.0.45 ships no
+ * steering wheel, and a near-miss glyph in a different family is not the same
+ * icon, so these arrive as shared vector data instead of a font substitution.
+ *
+ * Path data is copied verbatim from the published icon sources: 24px viewBox,
+ * 2px round stroke.
+ */
+enum class TablerIcon(vararg paths: String) {
+    Pencil(
+        "M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4",
+        "M13.5 6.5l4 4",
+    ),
+    SteeringWheel(
+        "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0",
+        "M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
+        "M12 14l0 7",
+        "M10 12l-6.75 -2",
+        "M14 12l6.75 -2",
+    ),
+    CornerDownLeft("M18 6v6a3 3 0 0 1 -3 3h-10l4 -4m0 8l-4 -4"),
+    Trash(
+        "M4 7l16 0",
+        "M10 11l0 6",
+        "M14 11l0 6",
+        "M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12",
+        "M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3",
+    ),
+    Bolt("M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11"),
+    Check("M5 12l5 5l10 -10"),
+
+    ;
+
+    internal val pathData = paths.toList()
+}
+
+/** Paints Desktop's 24px Tabler path data inside an Android-sized visual box. */
+@Composable
+fun TablerIconGlyph(
+    icon: TablerIcon,
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 16.dp,
+    filled: Boolean = false,
+) {
+    val paths = remember(icon) { icon.pathData.map { PathParser().parsePathString(it).toPath() } }
+    Canvas(modifier.size(size).clearAndSetSemantics {}) {
+        val factor = this.size.width / 24f
+        scale(factor, factor, pivot = Offset.Zero) {
+            paths.forEach { path ->
+                drawPath(
+                    path = path,
+                    color = color,
+                    style = if (filled) {
+                        Fill
+                    } else {
+                        Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    },
+                )
+            }
+        }
+    }
+}
+
 internal val CodiconFont = FontFamily(Font(R.font.codicon))
 
 /** A decorative Codicon. The owning control supplies its spoken label. */
@@ -279,37 +349,12 @@ fun ZapGlyph(
     modifier: Modifier = Modifier,
     filled: Boolean = false,
     size: Dp = 14.dp,
-) {
-    Canvas(modifier.size(size).clearAndSetSemantics {}) {
-        val unit = this.size.minDimension / VIEWPORT
-        val left = (this.size.width - VIEWPORT * unit) / 2f
-        val top = (this.size.height - VIEWPORT * unit) / 2f
-        val bolt = Path()
-        BOLT_POINTS.forEachIndexed { index, (px, py) ->
-            val dx = left + px * unit
-            val dy = top + py * unit
-            if (index == 0) bolt.moveTo(dx, dy) else bolt.lineTo(dx, dy)
-        }
-        bolt.close()
-        drawPath(
-            path = bolt,
-            color = color,
-            style = if (filled) Fill else Stroke(width = 2f * unit, join = StrokeJoin.Round),
-        )
-    }
-}
-
-/** Tabler's icon viewport; every coordinate below is on this square. */
-private const val VIEWPORT = 24f
-
-/** Tabler `bolt`, `M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11`, as absolute points. */
-private val BOLT_POINTS = listOf(
-    13f to 3f,
-    13f to 10f,
-    19f to 10f,
-    11f to 21f,
-    11f to 14f,
-    5f to 14f,
+) = TablerIconGlyph(
+    icon = TablerIcon.Bolt,
+    color = color,
+    modifier = modifier,
+    size = size,
+    filled = filled,
 )
 
 /** Desktop's 8px two-tone checker mark from `.dither`. */
