@@ -421,13 +421,20 @@ data class ChatUiState(
      * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
      */
     val approvalMode: ApprovalMode? = null,
-    /** Canonical Bot Chats are transcript-only in Phase A. */
-    val readOnly: Boolean = false,
+    /**
+     * True while the foreground session is a canonical Bot Chat this screen
+     * opened and still owns on this endpoint.
+     *
+     * It hides the session-menu controls, which Phase B leaves unwired inside a
+     * Bot Chat; the composer itself is open (sending is the one mutation the
+     * chat accepts here).
+     */
+    val botChat: Boolean = false,
 ) {
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
     val canSend: Boolean
-        get() = !readOnly && canCreateSession &&
+        get() = canCreateSession &&
             activeSession?.status == SessionStatus.Idle &&
             (draft.isNotBlank() || composer.runtime.hasReadyAttachment)
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
@@ -460,11 +467,11 @@ internal class ChatViewModel(
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     /** UI routing state, never backend/session-cache authority. */
-    private var readOnlyBotSessionId: String? = null
+    private var botChatSessionId: String? = null
     /** Endpoint generations that minted the transient Bot Chat capability. */
-    private var readOnlyBotEndpoint: ReadOnlyBotEndpoint? = null
+    private var botChatEndpoint: BotChatEndpoint? = null
 
-    private data class ReadOnlyBotEndpoint(
+    private data class BotChatEndpoint(
         val cacheGeneration: Long,
         val connectionGeneration: Long,
     )
@@ -874,10 +881,10 @@ internal class ChatViewModel(
             // is also *known*, because it shows no optimistic default.
             approvalMode = composerBundle.chrome.approval.mode
                 ?.takeIf { navigation.connection.status == GatewayConnectionStatus.Connected },
-            readOnly = displayedActiveId != null &&
-                displayedActiveId == readOnlyBotSessionId &&
-                readOnlyBotEndpoint?.cacheGeneration == cacheAndEndpoint.second &&
-                readOnlyBotEndpoint?.connectionGeneration == connectionGeneration(),
+            botChat = displayedActiveId != null &&
+                displayedActiveId == botChatSessionId &&
+                botChatEndpoint?.cacheGeneration == cacheAndEndpoint.second &&
+                botChatEndpoint?.connectionGeneration == connectionGeneration(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -1172,9 +1179,9 @@ internal class ChatViewModel(
                     if (endpoint != generation) {
                         generation = endpoint
                         // A durable id is only meaningful on the endpoint that
-                        // produced it. Drop the Phase A capability before any
+                        // produced it. Drop the Bot Chat capability before any
                         // later cache/rehome event can reuse that id here.
-                        clearReadOnlyBotCapability(rehomeActive = true)
+                        clearBotChatCapability(rehomeActive = true)
                         invalidateArchivedPool()
                     } else {
                         reloadArchivedPoolWhenReady()
@@ -1395,7 +1402,6 @@ internal class ChatViewModel(
      * IME composition during an inline completion replacement.
      */
     fun onEditorSelectionChange(text: String, selectionStart: Int, selectionEnd: Int) {
-        if (refuseReadOnlyMutation() != null) return
         val safeStart = selectionStart.coerceIn(0, text.length)
         val safeEnd = selectionEnd.coerceIn(0, text.length)
         val request = completionRequest(text, safeStart, safeEnd)
@@ -1484,7 +1490,6 @@ internal class ChatViewModel(
 
     /** URL/snippet insertion is performed at the editor caret, then echoed through setDraft. */
     fun onInsertText(text: String) {
-        if (refuseReadOnlyMutation() != null) return
         if (text.isBlank()) return
         inputGeneration += 1
         completionLoad?.cancel()
@@ -1492,7 +1497,6 @@ internal class ChatViewModel(
     }
 
     fun setDraft(value: String) {
-        if (refuseReadOnlyMutation() != null) return
         val activeId = activeSessionId.value
         if (activeId != null) {
             composerHistoryController.recordOrdinaryEdit(activeId, draft.value, value)
@@ -1520,7 +1524,7 @@ internal class ChatViewModel(
     fun selectApprovalMode(mode: ApprovalMode) {
         // Approval mode is profile-global, not Bot-session state. Phase A is
         // transcript-only nevertheless, so this surface cannot change it.
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         if (repository.approvalMode.value.mode == mode) return
         viewModelScope.launch {
             val outcome = runCatching { repository.setApprovalMode(mode) }.getOrElse { failure ->
@@ -1577,7 +1581,7 @@ internal class ChatViewModel(
     }
 
     fun selectModel(selection: ComposerModelSelection) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val liveId = activeSessionId.value
         if (liveId == null) {
             saveNewDraftPreference { current ->
@@ -1592,7 +1596,7 @@ internal class ChatViewModel(
     }
 
     fun selectReasoning(effort: ReasoningEffort) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val liveId = activeSessionId.value
         if (liveId == null) {
             saveNewDraftPreference { current -> current.copy(reasoning = effort) }
@@ -1607,7 +1611,7 @@ internal class ChatViewModel(
     }
 
     fun selectFast(mode: FastMode) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val liveId = activeSessionId.value
         if (liveId == null) {
             saveNewDraftPreference { current -> current.copy(fast = mode) }
@@ -1842,22 +1846,34 @@ internal class ChatViewModel(
         if (activeSessionId.value == id) return
         navigationGeneration += 1
         flushDraft()
-        clearReadOnlyBotCapability()
+        clearBotChatCapability()
         rehome(id)
         viewModelScope.launch {
             openAndAdopt(id)
         }
     }
 
-    /** Phase A handoff: explicit roster profile, read-only transcript, no create or submit. */
-    fun openReadOnlyBotChat(profile: String, durableId: String, onFinished: (Boolean) -> Unit) {
+    /**
+     * Phase B handoff: explicit roster profile, writable canonical Bot Chat.
+     *
+     * The capability recorded here is what licenses the composer's send path in
+     * this one chat; every other mutation door stays refused by
+     * [refuseBotChatMutation]. It is endpoint-scoped, so a switch retires it
+     * before a durable id from the machine this device left can be reused.
+     *
+     * Opening stays inert: this resumes or opens the chat that the roster
+     * resolved (or that Phase B just created and titled), and sends nothing. The
+     * person's first prompt is what arms live delivery.
+     */
+    fun openBotChat(profile: String, durableId: String, onFinished: (Boolean) -> Unit) {
         val generation = ++navigationGeneration
         val endpoint = connectionGeneration()
         val previousActiveId = activeSessionId.value
         flushDraft()
-        readOnlyBotSessionId = durableId
-        readOnlyBotEndpoint = ReadOnlyBotEndpoint(cache.endpointGeneration.value, endpoint)
-        rehome(durableId)
+        botChatSessionId = durableId
+        val endpointBinding = BotChatEndpoint(cache.endpointGeneration.value, endpoint)
+        botChatEndpoint = endpointBinding
+        rehome(durableId, applyOpenSideEffects = false)
         viewModelScope.launch {
             var finished = false
             fun finish(opened: Boolean) {
@@ -1870,11 +1886,20 @@ internal class ChatViewModel(
             fun stillOwnsRequest(): Boolean =
                 generation == navigationGeneration &&
                     endpoint == connectionGeneration() &&
-                    readOnlyBotEndpoint == ReadOnlyBotEndpoint(cache.endpointGeneration.value, endpoint) &&
+                    botChatEndpoint == BotChatEndpoint(cache.endpointGeneration.value, endpoint) &&
                     activeSessionId.value == durableId
 
             try {
-                val canonicalId = repository.openSession(durableId, profile)
+                // The resume is bound to the endpoint the roster resolved this
+                // id on. This call waits on the repository's navigation mutex,
+                // and the app can leave the endpoint while it waits — the
+                // replacement never minted the id, so the repository refuses
+                // rather than resuming it there.
+                val canonicalId = repository.openSessionAtEndpoint(
+                    durableId,
+                    profile,
+                    endpointBinding.cacheGeneration,
+                )
                 if (!stillOwnsRequest()) {
                     // The current request still completes, but an intervening
                     // navigation or endpoint owns the screen now. If its
@@ -1884,18 +1909,18 @@ internal class ChatViewModel(
                     finish(false)
                     return@launch
                 }
-                adoptCanonicalSession(durableId, canonicalId)
+                adoptCanonicalSession(durableId, canonicalId, applyOpenSideEffects = false)
                 finish(true)
             } catch (cancelled: CancellationException) {
                 if (stillOwnsRequest()) {
-                    clearReadOnlyBotCapability()
+                    clearBotChatCapability()
                     rehome(previousActiveId)
                 }
                 finish(false)
                 throw cancelled
             } catch (_: Throwable) {
                 if (stillOwnsRequest()) {
-                    clearReadOnlyBotCapability()
+                    clearBotChatCapability()
                     // The Bot Chat has not become the active chat unless its
                     // resume succeeded. Restore the regular chat it replaced.
                     rehome(previousActiveId)
@@ -1906,9 +1931,9 @@ internal class ChatViewModel(
     }
 
     fun createSession() {
-        // This is the person's explicit escape from a transcript-only Bot
-        // Chat, not a Bot-open side effect. Clear first so New Chat is usable.
-        clearReadOnlyBotCapability()
+        // This is the person's explicit escape from a Bot Chat, not a Bot-open
+        // side effect. Clear first so New Chat is usable.
+        clearBotChatCapability()
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
             noticeLine = "Connect to a Gateway before starting a session."
             return
@@ -1949,7 +1974,7 @@ internal class ChatViewModel(
     }
 
     fun branchFromReply(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value
         if (sessionId == null || repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
             noticeLine = "Nothing to branch. Start or resume a chat before branching."
@@ -2009,7 +2034,7 @@ internal class ChatViewModel(
     }
 
     fun regenerateReply(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
 
         viewModelScope.launch {
@@ -2120,7 +2145,7 @@ internal class ChatViewModel(
     }
 
     suspend fun renameSessionAsync(id: String, newTitle: String): String {
-        refuseReadOnlyMutation(id)?.let { throw it }
+        refuseBotChatMutation(id)?.let { throw it }
         return repository.renameSession(id, newTitle)
     }
 
@@ -2137,7 +2162,7 @@ internal class ChatViewModel(
     }
 
     suspend fun deleteSessionAsync(id: String) {
-        refuseReadOnlyMutation(id)?.let { throw it }
+        refuseBotChatMutation(id)?.let { throw it }
         repository.deleteSession(id)
         if (activeSessionId.value == id) {
             startFreshSessionInScope()
@@ -2160,7 +2185,7 @@ internal class ChatViewModel(
      * Gateway never told, and neither the success nor the rollback branch run.
      */
     fun setSessionPinnedAsync(id: String, pinned: Boolean) {
-        if (refuseReadOnlyMutation(id) != null) return
+        if (refuseBotChatMutation(id) != null) return
         viewModelScope.launch {
             reportingFailure("Could not update pin. Check the Gateway and try again.") {
                 repository.setSessionPinned(id, pinned)
@@ -2169,7 +2194,7 @@ internal class ChatViewModel(
     }
 
     fun setSessionArchivedAsync(id: String, archived: Boolean) {
-        if (refuseReadOnlyMutation(id) != null) return
+        if (refuseBotChatMutation(id) != null) return
         viewModelScope.launch {
             reportingFailure("Could not update that chat. Check the Gateway and try again.") {
                 repository.setSessionArchived(id, archived)
@@ -2179,7 +2204,7 @@ internal class ChatViewModel(
     }
 
     fun setSessionUnreadAsync(id: String, unread: Boolean) {
-        if (refuseReadOnlyMutation(id) != null) return
+        if (refuseBotChatMutation(id) != null) return
         viewModelScope.launch {
             reportingFailure(UNREAD_FAILED) { repository.setSessionUnread(id, unread) }
         }
@@ -2285,7 +2310,7 @@ internal class ChatViewModel(
     fun markAllSessionsRead() {
         // This bulk action remains useful for ordinary rows, but it must never
         // smuggle a write to the active transcript-only Bot session.
-        val ids = unreadSessionsInScope().map(SessionSummary::id).filter { refuseReadOnlyMutation(it) == null }
+        val ids = unreadSessionsInScope().map(SessionSummary::id).filter { refuseBotChatMutation(it) == null }
         if (ids.isEmpty()) return
         viewModelScope.launch {
             var failed = 0
@@ -2325,7 +2350,7 @@ internal class ChatViewModel(
         }
     }
 
-    private fun rehome(id: String?) {
+    private fun rehome(id: String?, applyOpenSideEffects: Boolean = true) {
         activeSessionId.value?.let(composerHistoryController::reset)
         id?.let(composerHistoryController::reset)
         invalidateHistory()
@@ -2334,14 +2359,20 @@ internal class ChatViewModel(
         invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
         noticeLine = null
-        id?.let(::markRead)
-        id?.let(::drainQueueIfIdle)
+        if (applyOpenSideEffects) {
+            id?.let(::markRead)
+            id?.let(::drainQueueIfIdle)
+        }
         if (id == null) refreshComposer(null)
     }
 
     /** Adopt a compressed session tip without clearing a draft for the same logical session. */
-    private suspend fun adoptCanonicalSession(requestedId: String, canonicalId: String) {
-        if (readOnlyBotSessionId == requestedId) readOnlyBotSessionId = canonicalId
+    private suspend fun adoptCanonicalSession(
+        requestedId: String,
+        canonicalId: String,
+        applyOpenSideEffects: Boolean = true,
+    ) {
+        if (botChatSessionId == requestedId) botChatSessionId = canonicalId
         createdProjectBySession.remove(requestedId)?.let { projectId ->
             createdProjectBySession[canonicalId] = projectId
         }
@@ -2382,50 +2413,67 @@ internal class ChatViewModel(
         liveComposerControls = liveComposerControls?.copy(durableId = canonicalId)
         activeSessionId.value = canonicalId
         draft.value = winner.orEmpty()
-        markRead(canonicalId)
+        if (applyOpenSideEffects) markRead(canonicalId)
         refreshComposer(canonicalId)
-        drainQueueIfIdle(canonicalId)
+        if (applyOpenSideEffects) drainQueueIfIdle(canonicalId)
     }
 
     /** The explicit idle action; a busy action is resolved by [performComposerPrimaryAction]. */
     fun submit() = submitToGateway(queued = false)
 
     /**
-     * One hard gate for every route which could reach `prompt.submit`.  The
-     * Composer visibility is presentation, not authorization. Queue and redirect
-     * entry points remain public ViewModel methods.
+     * One hard gate for every route which could reach a Gateway mutation while
+     * this screen holds a canonical Bot Chat.
+     *
+     * Phase B opens exactly one door inside that chat: [allowPromptSend], the
+     * person's own typed message through `prompt.submit`. That first real prompt
+     * is what makes this Gateway runtime the profile's live delivery consumer
+     * (there is no client-side advertisement RPC — see
+     * `docs/spikes/bot-mode-gateway-contracts-2026-09-12.md`), so it stays an
+     * explicit, narrow exception rather than an open composer: queue, session
+     * management, approvals, attachments, voice and live-control all remain
+     * refused here until a later slice ports them with their consent story.
+     *
+     * Composer *editing* is not gated at all — the draft, the history and the
+     * undo stack are this app's own state, and the send button has to be
+     * reachable for the exception above to mean anything.
      */
-    private fun refuseReadOnlyMutation(targetId: String? = activeSessionId.value): ReadOnlyBotChatMutationException? {
-        val botId = readOnlyBotSessionId ?: return null
+    private fun refuseBotChatMutation(
+        targetId: String? = activeSessionId.value,
+        allowPromptSend: Boolean = false,
+    ): BotChatMutationException? {
+        val botId = botChatSessionId ?: return null
         val activeId = activeSessionId.value
-        val endpoint = readOnlyBotEndpoint
+        val endpoint = botChatEndpoint
         if (
             endpoint == null ||
             endpoint.cacheGeneration != cache.endpointGeneration.value ||
             endpoint.connectionGeneration != connectionGeneration()
         ) {
             val staleBotIsActive = activeId == botId
-            clearReadOnlyBotCapability(rehomeActive = staleBotIsActive)
+            clearBotChatCapability(rehomeActive = staleBotIsActive)
             if (!staleBotIsActive || targetId != botId) return null
         } else if (targetId != botId) {
             return null
+        } else if (allowPromptSend) {
+            return null
         }
-        val refusal = ReadOnlyBotChatMutationException()
+        val refusal = BotChatMutationException()
         noticeLine = refusal.message
         return refusal
     }
 
     /** Retiring this endpoint-local capability must never revive an old active id. */
-    private fun clearReadOnlyBotCapability(rehomeActive: Boolean = false) {
-        val botId = readOnlyBotSessionId
-        readOnlyBotSessionId = null
-        readOnlyBotEndpoint = null
+    private fun clearBotChatCapability(rehomeActive: Boolean = false) {
+        val botId = botChatSessionId
+        botChatSessionId = null
+        botChatEndpoint = null
         if (rehomeActive && activeSessionId.value == botId) rehome(null)
     }
 
     /** Attachments can use the Gateway's busy queue; the durable local queue remains text-only. */
     private fun submitToGateway(queued: Boolean) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation(allowPromptSend = !queued) != null) return
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
         val pending = attachments.value.filter { it.durableSessionId == sessionId }
@@ -2491,16 +2539,28 @@ internal class ChatViewModel(
                 attachment
             }
         }
+        // The Bot Chat's one allowed write is bound to the endpoint that minted
+        // the chat. The capability check above is the last synchronous moment
+        // it is known to be current, and this submit is about to move onto
+        // viewModelScope, where a switch can land first; the repository refuses
+        // then instead of submitting a foreign durable id to the replacement.
+        val botPromptEndpoint = botChatEndpoint
+            ?.takeIf { botChatSessionId == sessionId }
+            ?.cacheGeneration
         clearDraftAfterDelivery(sessionId)
         noticeLine = refusalWarning
         viewModelScope.launch {
             try {
-                val result = repository.submit(
-                    sessionId,
-                    submittedPrompt,
-                    queued = queued,
-                    attachments = outgoing.map { it.outgoing },
-                )
+                val result = if (botPromptEndpoint != null) {
+                    repository.submitAtEndpoint(sessionId, submittedPrompt, queued, botPromptEndpoint)
+                } else {
+                    repository.submit(
+                        sessionId,
+                        submittedPrompt,
+                        queued = queued,
+                        attachments = outgoing.map { it.outgoing },
+                    )
+                }
                 when (result) {
                     GatewaySubmitOutcome.Accepted -> {
                         claimedIds.forEach { occurrenceId ->
@@ -2616,7 +2676,7 @@ internal class ChatViewModel(
 
     /** Read one locally granted source into an in-memory draft. */
     fun addAttachmentFromGrant(uriString: String, displayName: String, claimedMime: String?) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         if (attachments.value.count { it.durableSessionId == sessionId } >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) {
             noticeLine = "That is more attachments than one message can carry."
@@ -2689,7 +2749,7 @@ internal class ChatViewModel(
     }
 
     fun removeAttachment(occurrenceId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         attachmentPayloads.remove(occurrenceId)?.fill(0)
         attachmentMimes.remove(occurrenceId)
         attachmentThumbnails.value = attachmentThumbnails.value - occurrenceId
@@ -2721,7 +2781,7 @@ internal class ChatViewModel(
         // refuse. A running capture still reaches toggleDictation to stop.
         if (voice.value !is VoiceUiState.DictationRecording &&
             voice.value !is VoiceUiState.DictationTranscribing &&
-            refuseReadOnlyMutation() != null
+            refuseBotChatMutation() != null
         ) return
         onToggleDictationRequested?.invoke() ?: toggleDictation()
     }
@@ -2736,7 +2796,7 @@ internal class ChatViewModel(
             }
             is VoiceUiState.DictationTranscribing -> Unit
             else -> {
-                if (refuseReadOnlyMutation() != null) return
+                if (refuseBotChatMutation() != null) return
                 voice.value = VoiceUiState.DictationRecording(elapsedMillis = 0L, level = 0f)
                 dictationStop = onDictationCapture?.invoke(sessionId) { result ->
                     viewModelScope.launch {
@@ -2754,6 +2814,11 @@ internal class ChatViewModel(
     }
 
     fun toggleReadAloud(entryId: String) {
+        // Read-aloud is a Gateway voice mutation (`POST api/audio/speak`), so it
+        // takes the same Bot Chat gate as every other one: the composer's one
+        // allowed write is the plain prompt. The gate covers the stop half too —
+        // one refusal sentence, one door.
+        if (refuseBotChatMutation() != null) return
         val current = readAloudState.value
         if (current is ReadAloudUiState.Speaking && current.entryId == entryId) {
             replySpeaker?.stop()
@@ -2840,7 +2905,7 @@ internal class ChatViewModel(
             noticeLine = "Connect to a Gateway before starting a voice conversation."
             return
         }
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         voice.value = VoiceUiState.Conversation(VoiceUiState.ConversationPhase.Listening, muted = false)
         voiceConversationStart?.invoke(sessionId)
     }
@@ -2848,7 +2913,7 @@ internal class ChatViewModel(
     fun toggleVoiceMute() {
         val current = voice.value
         if (current is VoiceUiState.Conversation) {
-            if (refuseReadOnlyMutation() != null) return
+            if (refuseBotChatMutation() != null) return
             voice.value = current.copy(muted = !current.muted)
             voiceConversationMute?.invoke(!current.muted)
         }
@@ -2900,7 +2965,7 @@ internal class ChatViewModel(
      * routes cannot drift apart.
      */
     fun queueDraft() {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         if (attachments.value.any { it.durableSessionId == sessionId }) {
             submitToGateway(queued = true)
@@ -2928,7 +2993,7 @@ internal class ChatViewModel(
     }
 
     fun redirectDraftFromUi() {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
         if (prompt.isEmpty() || redirectInFlight) return
@@ -2983,7 +3048,7 @@ internal class ChatViewModel(
     }
 
     fun stop() {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         // Authoritative cache truth, not the possibly stale projected kind:
         // an explicit Stop must never cancel a required-input turn.
@@ -3018,7 +3083,7 @@ internal class ChatViewModel(
     }
 
     fun resumeQueue() {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
             composerQueueController.resume(sessionId)
@@ -3027,7 +3092,7 @@ internal class ChatViewModel(
     }
 
     fun sendNext(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
             val state = uiState.value
@@ -3104,7 +3169,7 @@ internal class ChatViewModel(
     }
 
     fun redirectQueuedEntry(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         val entry = uiState.value.composer.runtime.queueEntries.firstOrNull { it.id == entryId } ?: return
         if (!uiState.value.composer.runtime.canRedirect || entry.delivery == QueuedPromptDelivery.Ambiguous) return
@@ -3132,7 +3197,7 @@ internal class ChatViewModel(
     }
 
     fun deleteQueuedEntry(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
             composerQueueController.remove(sessionId, entryId)
@@ -3141,7 +3206,7 @@ internal class ChatViewModel(
     }
 
     fun beginQueueEdit(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         val text = uiState.value.composer.runtime.queueEntries.firstOrNull { it.id == entryId }?.text ?: return
         viewModelScope.launch {
@@ -3154,12 +3219,12 @@ internal class ChatViewModel(
     }
 
     fun setQueueEditText(text: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         if (queueEdit.value != null) queueEditText.value = text
     }
 
     fun saveQueueEdit() {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val snapshot = queueEdit.value ?: return
         val text = queueEditText.value.trim()
         if (text.isEmpty()) return
@@ -3172,7 +3237,7 @@ internal class ChatViewModel(
     }
 
     fun cancelQueueEdit() {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val snapshot = queueEdit.value ?: return
         viewModelScope.launch {
             finishQueueEdit(resetDraft = composerQueueController.cancelEdit(snapshot))
@@ -3180,7 +3245,7 @@ internal class ChatViewModel(
     }
 
     fun markQueuedEntryReadyAfterReview(entryId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
             if (composerQueueController.markReadyAfterReview(sessionId, entryId) == ComposerQueueMutation.Applied) {
@@ -3191,28 +3256,24 @@ internal class ChatViewModel(
 
     /** Keyboard history only starts at an empty ordinary draft; queue edit owns its own field. */
     fun historyOlder(): Boolean {
-        if (refuseReadOnlyMutation() != null) return false
         val sessionId = activeSessionId.value ?: return false
         if (queueEdit.value != null) return false
         return applyHistoryChange(composerHistoryController.browseOlder(sessionId, draft.value))
     }
 
     fun historyNewer(): Boolean {
-        if (refuseReadOnlyMutation() != null) return false
         val sessionId = activeSessionId.value ?: return false
         if (queueEdit.value != null) return false
         return applyHistoryChange(composerHistoryController.browseNewer(sessionId))
     }
 
     fun undoDraft(): Boolean {
-        if (refuseReadOnlyMutation() != null) return false
         val sessionId = activeSessionId.value ?: return false
         if (queueEdit.value != null) return false
         return applyHistoryChange(composerHistoryController.undo(sessionId, draft.value))
     }
 
     fun redoDraft(): Boolean {
-        if (refuseReadOnlyMutation() != null) return false
         val sessionId = activeSessionId.value ?: return false
         if (queueEdit.value != null) return false
         return applyHistoryChange(composerHistoryController.redo(sessionId, draft.value))
@@ -3220,7 +3281,7 @@ internal class ChatViewModel(
 
     /** One deliberate answer for a parked request; the repository owns fencing. */
     fun respondToPendingInput(action: com.hermesagent.mobile.data.gateway.PendingInputAction) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val key = composer.value.runtime.pendingInput?.key ?: return
         viewModelScope.launch {
             runCatching { repository.respondToPendingInput(key, action) }
@@ -3263,6 +3324,11 @@ internal class ChatViewModel(
     }
 
     private fun drainQueueIfIdle(sessionId: String) {
+        // A Bot Chat never auto-drains a stored queue. Its first prompt is the
+        // one the person types here — a drain on open would arm live delivery
+        // from nothing but an open, which is the exact consequence Phase B
+        // keeps honest (`docs/parity/bot-chat.md`).
+        if (sessionId == botChatSessionId) return
         if (!queueScopeReady.value || !isSessionIdle(sessionId)) return
         if (!scheduledQueueDrains.add(sessionId)) return
         viewModelScope.launch {
@@ -3448,7 +3514,7 @@ internal class ChatViewModel(
     }
 
     fun killProcess(processId: String) {
-        if (refuseReadOnlyMutation() != null) return
+        if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
             when (repository.killProcess(sessionId, processId)) {
@@ -3976,10 +4042,19 @@ private const val ARCHIVED_LOAD_FAILED = "Could not load archived chats. Check t
  */
 private const val MODEL_VISIBILITY_NOT_SAVED = "That model list could not be saved. Try again."
 
-/** A rejected session-menu request must not look like a successful no-op to its suspend caller. */
-private class ReadOnlyBotChatMutationException : IllegalStateException(READ_ONLY_BOT_CHAT_NOTICE)
+/** A rejected session-menu or live-control request must not look like a successful no-op to its suspend caller. */
+private class BotChatMutationException : IllegalStateException(BOT_CHAT_MUTATION_NOTICE)
 
-private const val READ_ONLY_BOT_CHAT_NOTICE = "Bot Chat is read-only. Open a regular chat to send a message."
+/**
+ * What a refused action says inside a canonical Bot Chat.
+ *
+ * Phase B keeps the composer's send path as the only open door in a Bot Chat
+ * (see [ChatViewModel.refuseBotChatMutation]); Desktop permits the rest, so
+ * this sentence is a mobile adaptation and is ledgered as one in
+ * `docs/parity/bot-chat.md`. It states the limitation and claims nothing about
+ * delivery, which only starts when the person actually sends.
+ */
+private const val BOT_CHAT_MUTATION_NOTICE = "Only messages can be sent from a Bot Chat on mobile."
 
 /**
  * What a live-owner refusal says.

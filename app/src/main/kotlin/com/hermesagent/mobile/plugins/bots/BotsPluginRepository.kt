@@ -7,14 +7,16 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.math.RoundingMode
 
 /**
- * `profiles.list` over the plugin host door — the roster's only data source.
+ * The bots plugin's Gateway door: the roster read, the canonical-chat lookup,
+ * and (Phase B) the one open-or-create path.
  *
- * The handler is `tui_gateway/methods_profiles.py:237-254` @
+ * The roster handler is `tui_gateway/methods_profiles.py:237-254` @
  * `564aef2946c436500a5e80ee117b66b789b3f99a`. `include_sessions` defaults to
  * true there and is what attaches `last_session` / `canonical_session`; the
  * roster renders both, so it is requested explicitly rather than relied on.
@@ -32,9 +34,30 @@ sealed interface BotsRosterLoad {
 
 /** The only conclusions a read-only canonical lookup is allowed to make. */
 sealed interface BotChatLookup {
+    /** The registry named exactly one exact-title row; `resolved_id` wins over `id`. */
     data class Found(val durableId: String) : BotChatLookup
+
+    /**
+     * The registry confirmed this profile has no canonical chat: a successful,
+     * well-formed answer with zero rows, and a roster that claims no
+     * `canonical_session` either. Only this outcome can license a creation.
+     */
     data object Missing : BotChatLookup
+
+    /** Nothing could be concluded — refusal, unavailable, malformed or ambiguous. */
     data object Unsafe : BotChatLookup
+}
+
+/** What one open-or-create attempt established for the tapped roster row. */
+sealed interface BotChatOpen {
+    /**
+     * The registry now names exactly one exact-title row — the row that was
+     * already there, or the one this attempt just created and titled.
+     */
+    data class Opened(val durableId: String) : BotChatOpen
+
+    /** Nothing could be confirmed. Fail closed: no navigation, no prompt, no second mint. */
+    data object Unsafe : BotChatOpen
 }
 
 class BotsPluginRepository(private val host: PluginHost) {
@@ -56,16 +79,20 @@ class BotsPluginRepository(private val host: PluginHost) {
     }
 
     /** Hidden canonical chats bypass SessionCache and are resolved by exact title. */
-    suspend fun findCanonicalChat(profile: String, rosterCanonicalId: String?): BotChatLookup {
-        val result = host.request(
-            method = SESSION_LIST,
-            params = buildJsonObject {
-                put("profile", JsonPrimitive(profile))
-                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
-                put("limit", JsonPrimitive(CANONICAL_LOOKUP_LIMIT))
-                put("include_hidden", JsonPrimitive(true))
-            },
-        )
+    suspend fun findCanonicalChat(
+        profile: String,
+        rosterCanonicalId: String?,
+        expectedEndpointGeneration: Long? = null,
+    ): BotChatLookup {
+        val params = buildJsonObject {
+            put("profile", JsonPrimitive(profile))
+            put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+            put("limit", JsonPrimitive(CANONICAL_LOOKUP_LIMIT))
+            put("include_hidden", JsonPrimitive(true))
+        }
+        val result = expectedEndpointGeneration?.let { endpoint ->
+            host.requestAtEndpoint(endpoint, SESSION_LIST, params)
+        } ?: host.request(SESSION_LIST, params)
         if (result !is PluginHostResult.Success) return BotChatLookup.Unsafe
         val sessions = (result.result as? JsonObject)?.get("sessions") as? JsonArray ?: return BotChatLookup.Unsafe
         if (sessions.isEmpty()) return if (rosterCanonicalId.isNullOrBlank()) BotChatLookup.Missing else BotChatLookup.Unsafe
@@ -73,16 +100,139 @@ class BotsPluginRepository(private val host: PluginHost) {
         // surprising extra or malformed row therefore means the response no
         // longer proves which hidden chat is canonical; never pick arbitrarily.
         val exact = sessions.singleOrNull() as? JsonObject ?: return BotChatLookup.Unsafe
-        if (exact.text("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
-        val id = exact.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
-            ?: exact.text("id")?.trim()?.takeIf(String::isNotEmpty)
+        if (exact.string("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
+        val id = exact.string("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
+            ?: exact.string("id")?.trim()?.takeIf(String::isNotEmpty)
             ?: return BotChatLookup.Unsafe
         return BotChatLookup.Found(id)
+    }
+
+    /**
+     * Phase B: the bot's one forever-chat, created only from a registry that
+     * twice confirmed none exists.
+     *
+     * The pinned Desktop path is `openBotCanonicalChat` / `createCanonicalChat`
+     * (`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:485-519`,
+     * `:290-475` @ the pin) and this mirrors its order:
+     *
+     * 1. Consult the registry. A row opens as-is; an unreadable answer fails
+     *    closed without touching `session.create`.
+     * 2. Adopt before minting (`:335-346`): the lookup runs a second time, so a
+     *    chat created by another surface between the tap and the create is
+     *    opened rather than forked.
+     * 3. Create it titled, hidden and profile-following, then write the title
+     *    eagerly so the row exists before anything is opened or sent.
+     * 4. If that title write did not land, re-read the registry and adopt the
+     *    exact-title row a concurrent writer won (`:387-410`). No winner means
+     *    the attempt is abandoned — the stray lazy session holds no messages and
+     *    the gateway prunes it — never a second titled chat.
+     *
+     * Deliberately absent, and ledgered in `docs/parity/bot-chat.md`: Desktop's
+     * kickoff intro. `createCanonicalChat` submits it only on New Agent
+     * creation (`kickoff`) or as a legacy-gateway persistence fallback; the pin's
+     * gateway materializes the row through the eager title write instead, so
+     * opening a chat stays inert and the person's first message is the one that
+     * arms live delivery.
+     *
+     * [expectedEndpointGeneration] binds every call to the Gateway the roster
+     * row came from. The host snapshots the client under that generation, so a
+     * switch cannot redirect any create or title mutation to the replacement.
+     */
+    suspend fun openCanonicalChat(
+        profile: String,
+        rosterCanonicalId: String?,
+        expectedEndpointGeneration: Long = host.endpointGeneration.value,
+    ): BotChatOpen {
+        when (val first = findCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
+            is BotChatLookup.Found -> return BotChatOpen.Opened(first.durableId)
+            BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
+            BotChatLookup.Missing -> Unit
+        }
+        when (val concurrent = findCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
+            is BotChatLookup.Found -> return BotChatOpen.Opened(concurrent.durableId)
+            BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
+            BotChatLookup.Missing -> Unit
+        }
+        val created = createCanonicalChat(profile, expectedEndpointGeneration) ?: return BotChatOpen.Unsafe
+        return BotChatOpen.Opened(created)
+    }
+
+    /**
+     * Create the bot's canonical chat, then make its identity durable.
+     *
+     * `session.create` is lazy on the pinned gateway — its row appears on the
+     * first prompt or on this title write (`tui_gateway/methods_session.py:325-390`
+     * @ the pin) — so the eager `session.title` is what closes the untitled
+     * window a second tap could mint through (`canonical-chat.ts:368-412`).
+     *
+     * The request is Desktop's exactly, `source` included in its absence: the
+     * bot-chat create does not send one (`canonical-chat.ts:348-363`), so the
+     * gateway resolves it from its own environment. This app's own
+     * `createSession` sends `"desktop"`, and that difference is deliberate —
+     * `source` decides `track_liveness` and the desktop-only cleanup lifecycle
+     * (`tui_gateway/session_lifecycle.py:37` @ the pin), and a canonical chat
+     * is not this app's ordinary session.
+     *
+     * Returns the durable id to resume, or null when the chat's identity could
+     * not be confirmed.
+     */
+    private suspend fun createCanonicalChat(profile: String, expectedEndpointGeneration: Long): String? {
+        val created = host.requestAtEndpoint(
+            expectedGeneration = expectedEndpointGeneration,
+            method = SESSION_CREATE,
+            params = buildJsonObject {
+                put("profile", JsonPrimitive(profile))
+                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+                put("hidden", JsonPrimitive(true))
+                put("follow_profile_config", JsonPrimitive(true))
+            },
+        )
+        // A refused, unavailable or unreadable creation is never partially
+        // adopted: without both ids there is no durable row to open or title.
+        // Ids are JSON strings on this wire; a number or boolean is a
+        // malformed answer, not an id to coerce into one.
+        val result = (created as? PluginHostResult.Success)?.result as? JsonObject ?: return null
+        val storedId = result.string("stored_session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val runtimeId = result.string("session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+
+        val titled = host.requestAtEndpoint(
+            expectedGeneration = expectedEndpointGeneration,
+            method = SESSION_TITLE,
+            params = buildJsonObject {
+                put("session_id", JsonPrimitive(runtimeId))
+                put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
+            },
+        )
+        val titleResult = (titled as? PluginHostResult.Success)?.result as? JsonObject
+        // `pending:false` is the Gateway's explicit durability receipt. With
+        // `pending:true`, row creation did not take and only the runtime holds
+        // a deferred title; opening it would revive the duplicate-mint window.
+        // Only a literal JSON boolean is a receipt: an absent member, a string
+        // or a number is a malformed answer that proves nothing about
+        // durability, so it takes the same route as `pending:true` and is
+        // reconciled against the registry rather than adopted as canonical.
+        if (
+            titleResult?.literalBoolean("pending") == false &&
+            titleResult.string("title") == CANONICAL_CHAT_TITLE
+        ) {
+            return storedId
+        }
+
+        // The title write did not land. Only the registry can say whether a
+        // concurrent writer took the canonical title (adopt its row) or the
+        // write could not be made at all (abandon the attempt).
+        val winner = findCanonicalChat(profile, null, expectedEndpointGeneration)
+        return when (winner) {
+            is BotChatLookup.Found -> winner.durableId
+            BotChatLookup.Missing, BotChatLookup.Unsafe -> null
+        }
     }
 
     private companion object {
         const val PROFILES_LIST = "profiles.list"
         const val SESSION_LIST = "session.list"
+        const val SESSION_CREATE = "session.create"
+        const val SESSION_TITLE = "session.title"
         const val CANONICAL_CHAT_TITLE = "Bot Chat"
         const val CANONICAL_LOOKUP_LIMIT = 200
 
@@ -130,8 +280,8 @@ fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
 private fun parseSessionPreview(element: JsonElement?): BotSessionPreview? {
     val row = element as? JsonObject ?: return null
     return BotSessionPreview(
-        id = row.text("id")?.trim()?.takeIf(String::isNotEmpty),
-        resolvedId = row.text("resolved_id")?.trim()?.takeIf(String::isNotEmpty),
+        id = row.string("id")?.trim()?.takeIf(String::isNotEmpty),
+        resolvedId = row.string("resolved_id")?.trim()?.takeIf(String::isNotEmpty),
         lastActiveSeconds = row.epochSeconds("last_active"),
         preview = row.text("preview"),
     )
@@ -160,6 +310,29 @@ private fun JsonObject.epochSeconds(name: String): Long =
 
 private fun JsonObject.text(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
+
+/**
+ * A member the contract types as a JSON string.
+ *
+ * [text] coerces a number or a boolean into its content, which is right for
+ * prose fields and wrong for the ids and titles this file adopts as backend
+ * identity: a coerced `7` is an id no Gateway minted, and a coerced title is a
+ * row this app did not find. `JsonNull` is a `JsonPrimitive` that reports
+ * `isString`, so it is excluded by name.
+ */
+private fun JsonObject.string(name: String): String? =
+    (this[name] as? JsonPrimitive)?.takeIf { it !is JsonNull && it.isString }?.content
+
+/**
+ * A literal JSON boolean — the shape of `session.title`'s `pending` receipt —
+ * and null for an absent member or any other primitive.
+ *
+ * [flag] cannot state this contract: it reads an absent key, a string and a
+ * number as false, and `false` is exactly the value that turns a malformed
+ * answer into a durability claim.
+ */
+private fun JsonObject.literalBoolean(name: String): Boolean? =
+    (this[name] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
 
 private fun JsonObject.flag(name: String): Boolean = when (val value = this[name]) {
     is JsonPrimitive -> value.content.equals("true", ignoreCase = true) || value.content == "1"

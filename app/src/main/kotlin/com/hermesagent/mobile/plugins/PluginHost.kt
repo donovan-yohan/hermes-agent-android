@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.plugins
 
+import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
+import com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayRpcError
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
@@ -61,6 +63,35 @@ interface PluginHost {
         method: String,
         params: JsonObject = JsonObject(emptyMap()),
     ): PluginHostResult
+
+    /**
+     * One request bound to the endpoint generation the caller observed.
+     *
+     * The ordinary [request] deliberately follows the live client slot. A
+     * multi-call mutation must not: after it has read one Gateway, a switch
+     * must not let its next call mutate the replacement Gateway. The default
+     * checks the generation before the call and again around its answer, which
+     * is what a simple test or unavailable host can honestly offer; production
+     * ([GatewayPluginHost]) additionally re-validates the live client at the
+     * dispatch itself, because the exchange can be queued behind a dispatcher
+     * long enough for a whole switch to land between the first check and the
+     * send.
+     */
+    suspend fun requestAtEndpoint(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject = JsonObject(emptyMap()),
+    ): PluginHostResult {
+        if (endpointGeneration.value != expectedGeneration) {
+            return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        }
+        val result = request(method, params)
+        return if (endpointGeneration.value == expectedGeneration) {
+            result
+        } else {
+            PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+        }
+    }
 
     /**
      * Whether a live connection exists behind this door, right now.
@@ -250,6 +281,8 @@ internal class GatewayPluginHost(
      * generation at its one wiring site.
      */
     override val endpointGeneration: StateFlow<Long> = ENDPOINT_NEVER_MOVES,
+    /** Shared with endpoint teardown; see [EndpointDispatchFence]. */
+    private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
 ) : PluginHost {
     /**
      * The client slot as a readiness edge. `GatewayConnection` publishes the
@@ -270,7 +303,87 @@ internal class GatewayPluginHost(
         val normalized = normalizePluginHostMethod(CALLER, method)
         val rpc = clients.value ?: return PluginHostResult.Refused(0, RECONNECT_MESSAGE)
 
+        return request(rpc, normalized, params)
+    }
+
+    override suspend fun requestAtEndpoint(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+    ): PluginHostResult {
+        val normalized = normalizePluginHostMethod(CALLER, method)
+        val rpc = endpointBoundClient(expectedGeneration) ?: return refusedWithoutRoute()
+        // The snapshot is only an early refusal. The irreversible hand-off is
+        // delegated to a client that explicitly promises to invoke the shared
+        // fence around its immediate wire send. Endpoint teardown invalidates
+        // that fence before disconnecting, so a switch after this snapshot but
+        // before the wire hand-off cannot mutate either endpoint.
+        val dispatchingRpc = rpc as? EndpointDispatchingGatewayRpcClient ?: return refusedWithoutRoute()
+        val stillOwns = { endpointBoundClient(expectedGeneration) === rpc }
+        val lease = endpointDispatchFence.leaseAt(expectedGeneration, stillOwns) ?: return refusedWithoutRoute()
+        return requestAtEndpoint(
+            rpc = dispatchingRpc,
+            normalized = normalized,
+            params = params,
+            lease = lease,
+            stillOwns = stillOwns,
+        )
+    }
+
+    /**
+     * The live client, or null when this door is no longer on
+     * [expectedGeneration].
+     *
+     * Both sides are read twice because the teardown moves them in order —
+     * `ConnectionSwitchController.leaveLocked` disconnects (clearing this slot)
+     * and only then bumps the generation, and the replacement client is
+     * published after that. A single read of either member is therefore not
+     * evidence that the pair the caller bound to is still live: a slot read
+     * alone can observe the replacement of a generation that moved, and a
+     * generation read alone can observe a bump an in-flight clear has not
+     * followed yet.
+     */
+    private fun endpointBoundClient(expectedGeneration: Long): GatewayRpcClient? {
+        if (endpointGeneration.value != expectedGeneration) return null
+        val rpc = clients.value ?: return null
+        return rpc.takeIf { endpointGeneration.value == expectedGeneration && clients.value === rpc }
+    }
+
+    private fun refusedWithoutRoute(): PluginHostResult = PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+
+    private suspend fun request(
+        rpc: GatewayRpcClient,
+        normalized: String,
+        params: JsonObject,
+    ): PluginHostResult {
         val call = scope.async { exchange(rpc, normalized, params) }
+        return awaitRequest(call)
+    }
+
+    private suspend fun requestAtEndpoint(
+        rpc: EndpointDispatchingGatewayRpcClient,
+        normalized: String,
+        params: JsonObject,
+        lease: Long,
+        stillOwns: () -> Boolean,
+    ): PluginHostResult {
+        val call = scope.async {
+            // This is a useful early refusal, but not the dispatch decision:
+            // `requestAtEndpointDispatch` calls the shared fence around the
+            // immediate wire send below.
+            if (!stillOwns()) return@async refusedWithoutRoute()
+            val outcome = exchangeAtEndpoint(rpc, normalized, params, lease, stillOwns)
+            // A frame may have left before a later switch; its answer never
+            // becomes current endpoint truth.
+            if (!stillOwns()) return@async refusedWithoutRoute()
+            outcome
+        }
+        return awaitRequest(call)
+    }
+
+    private suspend fun awaitRequest(
+        call: kotlinx.coroutines.Deferred<PluginHostResult>,
+    ): PluginHostResult {
         return try {
             call.await()
         } catch (timedOut: TimeoutCancellationException) {
@@ -287,6 +400,30 @@ internal class GatewayPluginHost(
             call.cancel()
             throw cancelled
         }
+    }
+
+    private suspend fun exchangeAtEndpoint(
+        rpc: EndpointDispatchingGatewayRpcClient,
+        method: String,
+        params: JsonObject,
+        lease: Long,
+        stillOwns: () -> Boolean,
+    ): PluginHostResult = try {
+        PluginHostResult.Success(
+            rpc.requestAtEndpointDispatch(method, params) { send ->
+                endpointDispatchFence.dispatchIfCurrent(lease, stillOwns, send)
+            },
+        )
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: GatewayRpcError) {
+        if (error.code == METHOD_NOT_FOUND) {
+            PluginHostResult.UnavailableOnGateway
+        } else {
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE)
+        }
+    } catch (_: GatewayRpcException) {
+        PluginHostResult.Refused(0, RECONNECT_MESSAGE)
     }
 
     private suspend fun exchange(

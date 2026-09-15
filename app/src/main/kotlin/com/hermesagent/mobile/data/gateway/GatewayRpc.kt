@@ -145,7 +145,7 @@ internal class CorrelatedGatewayRpc(
     private val wire: GatewayRpcWire,
     private val timeoutMillisForMethod: (String) -> Long = ::gatewayRpcTimeoutMillis,
     eventPumpDispatcher: CoroutineDispatcher = Dispatchers.Default,
-) : GatewayRpcClient {
+) : EndpointDispatchingGatewayRpcClient {
     constructor(wire: GatewayRpcWire, timeoutMillis: Long) : this(wire, { timeoutMillis })
 
     private val nextId = AtomicLong(0)
@@ -178,24 +178,49 @@ internal class CorrelatedGatewayRpc(
     }
     override val closed: Flow<GatewayCloseCause> = closedFlow
 
-    override suspend fun request(method: String, params: JsonObject): JsonElement {
+    override suspend fun request(method: String, params: JsonObject): JsonElement =
+        requestInternal(method, params) { send -> send() }
+
+    /**
+     * The endpoint-bound form admits the actual `wire.send` through its caller's
+     * shared dispatch fence while this RPC's close/send lock is held. A close
+     * that wins first refuses the frame; an endpoint invalidation that wins first
+     * makes [dispatch] return false before the wire sees it.
+     */
+    override suspend fun requestAtEndpointDispatch(
+        method: String,
+        params: JsonObject,
+        dispatch: (() -> Boolean) -> Boolean,
+    ): JsonElement = requestInternal(method, params, dispatch)
+
+    private suspend fun requestInternal(
+        method: String,
+        params: JsonObject,
+        dispatch: (() -> Boolean) -> Boolean,
+    ): JsonElement {
         require(method.isNotBlank())
         val id = "m${nextId.incrementAndGet()}"
         val answer = CompletableDeferred<JsonElement>()
-        synchronized(lock) {
-            if (isClosed) throw GatewayRpcException("The gateway connection is closed.")
-            pending[id] = answer
-        }
-
+        // One act under one lock: `close()` and [connectionClosed] set
+        // `isClosed` under this same lock, so a teardown that gets here first
+        // refuses this frame here rather than after it was queued, and one that
+        // arrives second cannot stop a frame already handed to the transport.
+        // That serialization is what lets an endpoint-bound caller treat "the
+        // leg is closed" as "the frame never left", which an unsynchronized
+        // send could not promise.
         val frame = buildJsonObject {
             put("jsonrpc", JsonPrimitive("2.0"))
             put("id", JsonPrimitive(id))
             put("method", JsonPrimitive(method))
             put("params", params)
         }.toString()
-        val sent = runCatching { wire.send(frame) }.getOrElse {
-            synchronized(lock) { pending.remove(id) }
-            throw GatewayRpcException("The gateway connection could not send the request.")
+        val sent = synchronized(lock) {
+            if (isClosed) throw GatewayRpcException("The gateway connection is closed.")
+            pending[id] = answer
+            runCatching { dispatch { wire.send(frame) } }.getOrElse {
+                pending.remove(id)
+                throw GatewayRpcException("The gateway connection could not send the request.")
+            }
         }
         if (!sent) {
             synchronized(lock) { pending.remove(id) }
@@ -336,7 +361,7 @@ internal class CorrelatedGatewayRpc(
 internal class OkHttpGatewayRpcClient private constructor(
     private val socketWire: SocketWire,
     private val rpc: CorrelatedGatewayRpc,
-) : GatewayRpcClient by rpc {
+) : EndpointDispatchingGatewayRpcClient by rpc {
 
     companion object {
         suspend fun connect(

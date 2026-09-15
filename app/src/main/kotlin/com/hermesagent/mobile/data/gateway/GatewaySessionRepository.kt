@@ -185,6 +185,28 @@ interface GatewaySessionRepository {
      * same-id session from the Gateway launch profile.
      */
     suspend fun openSession(durableId: String, profile: String): String
+    /**
+     * Resume a session bound to the endpoint generation the caller observed.
+     *
+     * The ordinary overloads follow whatever connection is current when they
+     * run. This one refuses instead of resuming when the app has left
+     * [expectedEndpointGeneration] — the value `SessionCache.endpointGeneration`
+     * carries, bumped by the app's one endpoint teardown. A caller that
+     * resolved a durable id on one Gateway (the canonical Bot Chat row is the
+     * one) must not have its resume land on the replacement, because that id is
+     * meaningless there: `session.resume` would create or revive a session on a
+     * machine that never minted it.
+     *
+     * The live repository enforces this at the dispatch, not just at the call:
+     * the resume waits on the navigation mutex, and the endpoint can move while
+     * it is queued. An implementation that cannot tell endpoints apart treats
+     * the call as ordinary; only the live repository backs the claim.
+     */
+    suspend fun openSessionAtEndpoint(
+        durableId: String,
+        profile: String,
+        expectedEndpointGeneration: Long,
+    ): String = openSession(durableId, profile)
     suspend fun createSession(workspacePath: String? = null): String
     suspend fun createSession(
         workspacePath: String?,
@@ -264,6 +286,29 @@ interface GatewaySessionRepository {
         text: String,
         queued: Boolean = false,
         attachments: List<OutgoingAttachment> = emptyList(),
+    ): GatewaySubmitOutcome = submit(durableId, text, queued)
+    /**
+     * Plain prompt submit bound to the endpoint generation the caller
+     * observed.
+     *
+     * The one caller is the Bot Chat's composer: the prompt that arms live
+     * delivery must reach the Gateway that minted the chat, never the
+     * replacement. The live repository refuses the dispatch when the app has
+     * left [expectedEndpointGeneration], including when the endpoint moved
+     * while the call was queued behind another navigation, and it resolves the
+     * session's runtime on that same endpoint rather than resuming a foreign id
+     * on the new one.
+     *
+     * Text-only by contract: the Bot Chat's own mutation guard refuses
+     * attachment staging, so this path never has payloads to carry. An
+     * implementation that cannot tell endpoints apart treats the call as
+     * ordinary.
+     */
+    suspend fun submitAtEndpoint(
+        durableId: String,
+        text: String,
+        queued: Boolean,
+        expectedEndpointGeneration: Long,
     ): GatewaySubmitOutcome = submit(durableId, text, queued)
     suspend fun interrupt(durableId: String)
     /** New callers can distinguish an interruption from a protected input request. */
@@ -752,12 +797,19 @@ internal class LiveGatewaySessionRepository(
      * virtual time injects its own scheduler instead of racing one.
      */
     restContext: CoroutineContext = Dispatchers.IO,
+    /**
+     * The process's one endpoint-dispatch linearization point. HermesApplication
+     * supplies the same instance to ConnectionSwitchController; the default is
+     * only for isolated repository construction in tests.
+     */
+    private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
         cache: SessionCache,
         connection: GatewayConnectionManager,
         scope: CoroutineScope,
+        endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
         clock: () -> Long = System::currentTimeMillis,
     ) : this(
         cache,
@@ -767,6 +819,7 @@ internal class LiveGatewaySessionRepository(
         connection.imageLoader,
         http = { connection.gatewayHttp.value },
         clock = clock,
+        endpointDispatchFence = endpointDispatchFence,
     )
 
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
@@ -2026,8 +2079,26 @@ internal class LiveGatewaySessionRepository(
         return openSessionInternal(durableId, profile.trim())
     }
 
-    private suspend fun openSessionInternal(durableId: String, explicitProfile: String?): String = navigationMutex.withLock {
+    override suspend fun openSessionAtEndpoint(
+        durableId: String,
+        profile: String,
+        expectedEndpointGeneration: Long,
+    ): String {
+        require(profile.isNotBlank()) { "A profile is required to resume this session." }
+        return openSessionInternal(durableId, profile.trim(), expectedEndpointGeneration)
+    }
+
+    private suspend fun openSessionInternal(
+        durableId: String,
+        explicitProfile: String?,
+        expectedEndpointGeneration: Long? = null,
+    ): String = navigationMutex.withLock {
         val connection = connectionSnapshot()
+        // The caller resolved this id on the endpoint it observed, and this
+        // call can have waited on the navigation mutex long enough for the app
+        // to leave it. The replacement Gateway never minted the id, so the
+        // resume is refused before any of its branches run.
+        requireEndpoint(expectedEndpointGeneration)
         val knownRuntime = synchronized(stateLock) { identities.runtimeFor(durableId) }
         val liveSnapshot: JsonObject
         val snapshotRevision: RuntimeEventRevision
@@ -2038,7 +2109,13 @@ internal class LiveGatewaySessionRepository(
                 ensureCurrent(connection)
                 runtimeEventRevision(knownRuntime)
             }
-            liveSnapshot = connection.client.request("session.activate", objectParams("session_id", knownRuntime))
+            requireEndpoint(expectedEndpointGeneration)
+            liveSnapshot = requestAtEndpointDispatch(
+                connection = connection,
+                expectedEndpointGeneration = expectedEndpointGeneration,
+                method = "session.activate",
+                params = objectParams("session_id", knownRuntime),
+            )
                 .asObject("session.activate")
             synchronized(stateLock) { ensureCurrent(connection) }
             runtimeId = knownRuntime
@@ -2049,9 +2126,12 @@ internal class LiveGatewaySessionRepository(
             // profiles' sessions and opening one must reach its state.db
             // (`methods_session.py:327-330`).
             val owningProfile = explicitProfile ?: synchronized(stateLock) { owningProfileParam(durableId) }
-            liveSnapshot = connection.client.request(
-                "session.resume",
-                buildJsonObject {
+            requireEndpoint(expectedEndpointGeneration)
+            liveSnapshot = requestAtEndpointDispatch(
+                connection = connection,
+                expectedEndpointGeneration = expectedEndpointGeneration,
+                method = "session.resume",
+                params = buildJsonObject {
                     put("session_id", JsonPrimitive(durableId))
                     owningProfile?.let { put("profile", JsonPrimitive(it)) }
                 },
@@ -2759,17 +2839,35 @@ internal class LiveGatewaySessionRepository(
         return submitInternal(durableId, prompt, prompt, queued)
     }
 
+    override suspend fun submitAtEndpoint(
+        durableId: String,
+        text: String,
+        queued: Boolean,
+        expectedEndpointGeneration: Long,
+    ): GatewaySubmitOutcome {
+        val prompt = text.trim()
+        return submitInternal(durableId, prompt, prompt, queued, expectedEndpointGeneration)
+    }
+
     private suspend fun submitInternal(
         durableId: String,
         wireText: String,
         optimisticText: String,
         queued: Boolean,
+        expectedEndpointGeneration: Long? = null,
     ): GatewaySubmitOutcome {
         val interruptEpoch = submitInterruptEpoch(durableId)
+        // Before the runtime resolution, because that resolution can itself be
+        // a resume: a foreign id must not even be offered to the replacement.
+        requireEndpoint(expectedEndpointGeneration)
         return submitMutexes.withLock(durableId) {
             require(wireText.isNotEmpty())
-            val binding = ensureRuntime(durableId)
+            val binding = ensureRuntime(durableId, expectedEndpointGeneration)
             val connection = connectionSnapshot()
+            // The snapshot can be the replacement's (the endpoint moved while
+            // this call was queued); the fence is what says so before any
+            // prompt would cross.
+            requireEndpoint(expectedEndpointGeneration)
             submitInternalLocked(
                 binding,
                 connection,
@@ -2778,6 +2876,7 @@ internal class LiveGatewaySessionRepository(
                 queued,
                 gatewayQueueMergeable = true,
                 interruptEpoch = interruptEpoch,
+                expectedEndpointGeneration = expectedEndpointGeneration,
             )
         }
     }
@@ -2823,6 +2922,7 @@ internal class LiveGatewaySessionRepository(
         interruptEpoch: Long,
         truncateBeforeRowId: TranscriptRowId? = null,
         optimisticTranscriptPrefix: List<TranscriptEntry>? = null,
+        expectedEndpointGeneration: Long? = null,
     ): GatewaySubmitOutcome {
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
@@ -2878,7 +2978,18 @@ internal class LiveGatewaySessionRepository(
         try {
             return turnDispatchMutexes.withLock(binding.durableId) {
                 requireUninterruptedSubmit(binding.durableId, interruptEpoch)
-                requestPromptSubmit(connection, binding.runtimeId, wireText, queued, truncateBeforeRowId)
+                // The dispatch itself: everything above may have waited on a
+                // mutex, and an endpoint-bound prompt may not cross after the
+                // app left the Gateway it was bound to.
+                requireEndpoint(expectedEndpointGeneration)
+                requestPromptSubmit(
+                    connection = connection,
+                    runtimeId = binding.runtimeId,
+                    prompt = wireText,
+                    queued = queued,
+                    truncateBeforeRowId = truncateBeforeRowId,
+                    expectedEndpointGeneration = expectedEndpointGeneration,
+                )
                 synchronized(stateLock) {
                     ensureCurrent(connection)
                     val stoppedBeforeAcknowledgement =
@@ -2949,10 +3060,13 @@ internal class LiveGatewaySessionRepository(
         prompt: String,
         queued: Boolean,
         truncateBeforeRowId: TranscriptRowId? = null,
+        expectedEndpointGeneration: Long? = null,
     ) {
-        connection.client.request(
-            "prompt.submit",
-            buildJsonObject {
+        requestAtEndpointDispatch(
+            connection = connection,
+            expectedEndpointGeneration = expectedEndpointGeneration,
+            method = "prompt.submit",
+            params = buildJsonObject {
                 put("session_id", JsonPrimitive(runtimeId))
                 put("text", JsonPrimitive(prompt))
                 if (queued) put("queued", JsonPrimitive(true))
@@ -4019,11 +4133,17 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    private suspend fun ensureRuntime(durableId: String): SessionBinding {
+    private suspend fun ensureRuntime(
+        durableId: String,
+        expectedEndpointGeneration: Long? = null,
+    ): SessionBinding {
         synchronized(stateLock) {
             identities.runtimeFor(durableId)?.let { return SessionBinding(durableId, it) }
         }
-        val canonicalId = openSession(durableId)
+        // The read above found no runtime, so this is a resume — and an
+        // endpoint-bound caller's resume has to happen on the endpoint it
+        // observed, not on whatever the slot holds now.
+        val canonicalId = openSessionInternal(durableId, null, expectedEndpointGeneration)
         return synchronized(stateLock) {
             SessionBinding(
                 canonicalId,
@@ -5279,6 +5399,63 @@ internal class LiveGatewaySessionRepository(
             if (clientFlow.value !== client) throw GatewayRpcException("The gateway connection changed.")
             ConnectionSnapshot(client, connectionGeneration)
         }
+    }
+
+    /**
+     * Refuse an endpoint-bound call whose endpoint the app has left.
+     *
+     * `SessionCache.endpointGeneration` is bumped by the app's one endpoint
+     * teardown (`ConnectionSwitchController.leaveLocked`), so comparing it here
+     * — after the connection snapshot and again at the dispatch — keeps a
+     * durable id resolved on one Gateway from being resumed, activated or
+     * submitted on the replacement, even when the call spent the interval
+     * queued behind another navigation. A null expectation is an ordinary
+     * call: it follows whatever connection is current, which is how every
+     * non-Bot path has always behaved.
+     */
+    private fun requireEndpoint(expectedEndpointGeneration: Long?) {
+        if (expectedEndpointGeneration == null) return
+        if (cache.endpointGeneration.value != expectedEndpointGeneration) {
+            throw GatewayRpcException("The gateway connection changed.")
+        }
+    }
+
+    /**
+     * Admit one Bot Chat mutation at the irreversible wire hand-off.
+     *
+     * A cache-generation check before [GatewayRpcClient.request] is not a
+     * dispatch guarantee: ConnectionSwitchController invalidates this shared
+     * fence before it closes the old RPC and only then advances the cache
+     * generation. Endpoint-bound Bot resume, activate and first-prompt calls
+     * therefore use the client contract that calls our lease around its actual,
+     * non-suspending `wire.send`. Ordinary session operations deliberately stay
+     * on [GatewayRpcClient.request] and retain their existing follow-the-live-
+     * connection behavior.
+     */
+    private suspend fun requestAtEndpointDispatch(
+        connection: ConnectionSnapshot,
+        expectedEndpointGeneration: Long?,
+        method: String,
+        params: JsonObject,
+    ): JsonElement {
+        if (expectedEndpointGeneration == null) return connection.client.request(method, params)
+        val rpc = connection.client as? EndpointDispatchingGatewayRpcClient
+            ?: throw GatewayRpcException("The gateway connection changed.")
+        val stillOwns = {
+            cache.endpointGeneration.value == expectedEndpointGeneration &&
+                synchronized(stateLock) {
+                    connection.generation == connectionGeneration && clientFlow.value === connection.client
+                }
+        }
+        val lease = endpointDispatchFence.leaseAt(expectedEndpointGeneration, stillOwns)
+            ?: throw GatewayRpcException("The gateway connection changed.")
+        val result = rpc.requestAtEndpointDispatch(method, params) { send ->
+            endpointDispatchFence.dispatchIfCurrent(lease, stillOwns, send)
+        }
+        // A frame legitimately handed to the old wire cannot be retracted, but
+        // its response must never become new-endpoint state.
+        if (!stillOwns()) throw GatewayRpcException("The gateway connection changed.")
+        return result
     }
 
     private fun ensureCurrent(connection: ConnectionSnapshot) {

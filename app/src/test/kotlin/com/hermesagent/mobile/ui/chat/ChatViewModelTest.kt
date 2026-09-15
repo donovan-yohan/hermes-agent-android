@@ -1195,7 +1195,7 @@ class ChatViewModelTest {
         repository.botOpenFailure = true
         val completions = mutableListOf<Boolean>()
 
-        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { completions += it }
+        viewModel.openBotChat("researcher", "bot-chat") { completions += it }
         runCurrent()
 
         assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
@@ -1207,16 +1207,25 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `a successful Bot Chat centrally refuses every prompt mutation while New Chat and selection escape`() = runTest(dispatcher) {
+    fun `a Bot Chat sends the first prompt and still refuses every other mutation while New Chat and selection escape`() = runTest(dispatcher) {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()
         runCurrent()
-        viewModel.setDraft("blocked")
-        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
+        viewModel.openBotChat("researcher", "bot-chat") { }
         runCurrent()
-        assertTrue(viewModel.uiState.value.readOnly)
+        assertTrue(viewModel.uiState.value.botChat)
 
+        // Phase B opens the composer in exactly one way: the person's typed
+        // message goes to `prompt.submit`. That prompt is also what arms this
+        // gateway runtime as the bot's live delivery consumer.
+        viewModel.setDraft("hello bot")
+        runCurrent()
+        assertEquals("hello bot", viewModel.uiState.value.draft)
         viewModel.submit()
+        runCurrent()
+        assertEquals(listOf("bot-chat" to "hello bot"), repository.submitted)
+
+        viewModel.setDraft("blocked")
         viewModel.queueDraft()
         viewModel.redirectDraftFromUi()
         viewModel.sendNext("queued-entry")
@@ -1233,12 +1242,12 @@ class ChatViewModelTest {
         viewModel.saveQueueEdit()
         viewModel.cancelQueueEdit()
         viewModel.markQueuedEntryReadyAfterReview("queued-entry")
-        viewModel.undoDraft()
-        viewModel.redoDraft()
         runCurrent()
 
-        assertTrue(repository.submitted.isEmpty())
-        assertTrue(repository.queuedSubmissions.isEmpty())
+        assertEquals(listOf("bot-chat" to "hello bot"), repository.submitted)
+        // The fake records every submit with its `queued` flag: the prompt
+        // send is the only one, and it is not the queued variant.
+        assertEquals(listOf("bot-chat" to false), repository.queuedSubmissions)
         assertTrue(repository.redirects.isEmpty())
         assertTrue(repository.regenerateCalls.isEmpty())
         assertTrue(repository.branchCalls.isEmpty())
@@ -1248,19 +1257,50 @@ class ChatViewModelTest {
         assertTrue(repository.reasoningSelections.isEmpty())
         assertTrue(repository.fastSelections.isEmpty())
         assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
-        assertEquals("Bot Chat is read-only. Open a regular chat to send a message.", viewModel.uiState.value.notice?.text)
+        assertEquals("Only messages can be sent from a Bot Chat on mobile.", viewModel.uiState.value.notice?.text)
 
         viewModel.createSession()
         runCurrent()
         assertEquals(1, repository.created)
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
 
-        viewModel.openReadOnlyBotChat("researcher", "bot-chat") { }
+        viewModel.openBotChat("researcher", "bot-chat") { }
         runCurrent()
-        assertTrue(viewModel.uiState.value.readOnly)
+        assertTrue(viewModel.uiState.value.botChat)
         viewModel.selectSession("session-a")
         runCurrent()
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
+    }
+
+    @Test
+    fun `opening a Bot Chat is inert and drains no stored queue`() = runTest(dispatcher) {
+        val queueSubmits = mutableListOf<Pair<String, String>>()
+        val controller = ComposerQueueController(
+            store = TransientComposerQueueStore(),
+            submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome {
+                    queueSubmits += durableSessionId to text
+                    return QueueSubmissionOutcome.Accepted
+                }
+            },
+        )
+        cache.upsertSession(summary("bot-chat", 3_000))
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, composerQueueController = controller)
+        backgroundScope.launch { subject.uiState.collect { } }
+        runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueMutation.Applied, controller.enqueue("bot-chat", "queued before Bot Chat"))
+
+        subject.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+
+        // The first prompt in a Bot Chat is the one the person types there, so
+        // an open neither sends it nor lets a stored queue send it: a queued
+        // message landing as a turn on open would arm delivery from nothing but
+        // an open.
+        assertTrue(queueSubmits.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertTrue(repository.flagWrites.isEmpty())
+        assertEquals(1, controller.queue("bot-chat").size)
     }
 
     @Test
@@ -1276,18 +1316,33 @@ class ChatViewModelTest {
             },
         )
         cache.upsertSession(summary("bot-chat", 3_000).copy(status = SessionStatus.Working, unread = true))
-        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, composerQueueController = controller)
+        // A reply entry exists, so the read-aloud sweep below is a real tap and
+        // not an early return on a missing entry.
+        cache.appendEntry("bot-chat", AssistantTurn(id = "reply-entry", markdown = "Hello", atMillis = 1_000L))
+        val speaker = FakeReplySpeaker()
+        val subject = ChatViewModel(
+            cache,
+            repository,
+            sidebarStore,
+            clock = { CLOCK },
+            composerQueueController = controller,
+            replySpeaker = speaker,
+        )
         backgroundScope.launch { subject.uiState.collect { } }
         runCurrent()
         // The real entry is made while writable; busy Bot activation prevents auto-drain on rehome.
         assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueMutation.Applied, controller.enqueue("bot-chat", "queued before Bot Chat"))
         val before = controller.queue("bot-chat")
         assertEquals(1, before.size)
+        cache.upsertSession(summary("bot-chat", 3_000).copy(status = SessionStatus.Working, unread = true))
+        runCurrent()
+        val flagsBeforeOpen = repository.flagWrites.toList()
 
-        subject.openReadOnlyBotChat("researcher", "bot-chat") { }
+        subject.openBotChat("researcher", "bot-chat") { }
         runCurrent()
         val entryId = before.single().id
         val flagsBeforeGuardedCalls = repository.flagWrites.toList()
+        assertEquals("opening the unread Bot Chat adds no remote write", flagsBeforeOpen, flagsBeforeGuardedCalls)
         subject.deleteQueuedEntry(entryId)
         subject.beginQueueEdit(entryId)
         subject.setQueueEditText("changed")
@@ -1310,6 +1365,8 @@ class ChatViewModelTest {
         subject.voiceConversationStart = { voiceStarts++ }
         subject.toggleDictation()
         subject.toggleVoiceConversation()
+        subject.toggleReadAloud("reply-entry")
+        subject.toggleReadAloud("reply-entry")
         runCurrent()
 
         assertEquals(before, controller.queue("bot-chat"))
@@ -1321,6 +1378,10 @@ class ChatViewModelTest {
         assertEquals(0, repository.approvalWrites)
         assertEquals(0, dictationStarts)
         assertEquals(0, voiceStarts)
+        // Read-aloud is a Gateway voice mutation too, and both halves of the
+        // toggle are the same door.
+        assertEquals(0, speaker.speakCalls)
+        assertEquals(0, speaker.stopCalledCount)
 
         subject.renameSession("session-a", "allowed")
         subject.setSessionPinnedAsync("session-a", true)
@@ -1330,26 +1391,26 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `canonical Bot id stays read-only and an ordinary selection clears its capability`() = runTest(dispatcher) {
+    fun `canonical Bot id keeps its send capability and an ordinary selection clears it`() = runTest(dispatcher) {
         cache.upsertSessions(listOf(summary("bot-requested", 3_000), summary("bot-canonical", 3_001)))
         repository.botOpenResult = "bot-canonical"
         collectState()
         runCurrent()
 
-        viewModel.openReadOnlyBotChat("researcher", "bot-requested") { }
+        viewModel.openBotChat("researcher", "bot-requested") { }
         runCurrent()
         assertEquals("bot-canonical", viewModel.uiState.value.activeSessionId)
-        assertTrue(viewModel.uiState.value.readOnly)
+        assertTrue(viewModel.uiState.value.botChat)
         viewModel.renameSession("bot-canonical", "must not write")
         runCurrent()
         assertTrue(repository.renamed.isEmpty())
 
         viewModel.selectSession("session-a")
         runCurrent()
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
         viewModel.selectSession("bot-canonical")
         runCurrent()
-        assertFalse(viewModel.uiState.value.readOnly)
+        assertFalse(viewModel.uiState.value.botChat)
     }
 
     @Test
@@ -1369,19 +1430,52 @@ class ChatViewModelTest {
         runCurrent()
         val completions = mutableListOf<Boolean>()
 
-        subject.openReadOnlyBotChat("researcher", "bot-chat") { completions += it }
+        subject.openBotChat("researcher", "bot-chat") { completions += it }
         runCurrent()
-        assertTrue(subject.uiState.value.readOnly)
+        assertTrue(subject.uiState.value.botChat)
         generation.value = 1L
         cache.resetForEndpointSwitch()
         runCurrent()
-        assertFalse(subject.uiState.value.readOnly)
+        assertFalse(subject.uiState.value.botChat)
 
         repository.botOpenGate!!.complete(Unit)
         runCurrent()
         assertEquals(listOf(false), completions)
-        assertFalse(subject.uiState.value.readOnly)
+        assertFalse(subject.uiState.value.botChat)
         assertEquals(null, subject.uiState.value.activeSessionId)
+
+        // The resume was asked for on the endpoint the tap resolved it on, and
+        // the switch that landed while it waited refused it: no session was
+        // resumed on the machine the app moved to.
+        assertEquals(listOf(0L), repository.botOpenEndpointBindings)
+        assertTrue(repository.botOpenResumes.isEmpty())
+    }
+
+    @Test
+    fun `endpoint switch while a Bot prompt is queued never submits it on the replacement`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        assertTrue(viewModel.uiState.value.botChat)
+        viewModel.setDraft("hello bot")
+        val gate = CompletableDeferred<Unit>()
+        repository.botSubmitGate = gate
+
+        viewModel.submit()
+        runCurrent()
+        // The prompt is waiting at the repository, and the app leaves the
+        // endpoint before its dispatch runs.
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(listOf(0L), repository.botSubmitEndpointBindings)
+        assertTrue("the replacement Gateway never receives the prompt", repository.submitted.isEmpty())
+        assertTrue(repository.queuedSubmissions.isEmpty())
+        assertTrue("the failed send says so", viewModel.uiState.value.notice != null)
     }
 
     @Test
@@ -1398,7 +1492,7 @@ class ChatViewModelTest {
         backgroundScope.launch { subject.uiState.collect { } }
         runCurrent()
         subject.setDraft("blocked")
-        subject.openReadOnlyBotChat("researcher", "bot-chat") { }
+        subject.openBotChat("researcher", "bot-chat") { }
         runCurrent()
 
         generation.value = 1L
@@ -1416,7 +1510,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertNull(subject.uiState.value.activeSessionId)
-        assertFalse(subject.uiState.value.readOnly)
+        assertFalse(subject.uiState.value.botChat)
         assertTrue(repository.submitted.isEmpty())
         assertTrue(repository.queuedSubmissions.isEmpty())
         assertTrue(repository.redirects.isEmpty())
@@ -2439,6 +2533,45 @@ class ChatViewModelTest {
         filterIsInstance<SessionListRow.Row>().map { it.session.id }
 
     @Test
+    fun `a Bot Chat refuses read-aloud speak and stop without touching playback`() = runTest(dispatcher) {
+        val speaker = FakeReplySpeaker()
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, replySpeaker = speaker)
+        backgroundScope.launch { subject.uiState.collect { } }
+        cache.upsertSession(summary("bot-chat", 3_000))
+        cache.appendEntry("session-a", AssistantTurn(id = "reply-a", markdown = "Hello", atMillis = 1_000L))
+        runCurrent()
+
+        // The control is live in an ordinary session, so the refusal below is
+        // this door and not a dead one.
+        subject.selectSession("session-a")
+        runCurrent()
+        speaker.delayCompletion = kotlinx.coroutines.sync.Mutex(true)
+        subject.toggleReadAloud("reply-a")
+        runCurrent()
+        assertEquals(1, speaker.speakCalls)
+        assertEquals(ReadAloudUiState.Speaking("reply-a"), subject.uiState.value.readAloud)
+
+        // In the Bot Chat both halves of the same door are refused — read-aloud
+        // is a Gateway voice mutation — and the playback that started outside
+        // it is left running.
+        subject.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        assertTrue(subject.uiState.value.botChat)
+        subject.toggleReadAloud("reply-a")
+        runCurrent()
+        assertEquals(
+            "Only messages can be sent from a Bot Chat on mobile.",
+            subject.uiState.value.notice?.text,
+        )
+        subject.toggleReadAloud("reply-a")
+        runCurrent()
+
+        assertEquals(1, speaker.speakCalls)
+        assertEquals(0, speaker.stopCalledCount)
+        assertEquals(ReadAloudUiState.Speaking("reply-a"), subject.uiState.value.readAloud)
+    }
+
+    @Test
     fun `toggleReadAloud lifecycle and stop`() = runTest(dispatcher) {
         val speaker = FakeReplySpeaker()
         val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, replySpeaker = speaker)
@@ -2609,6 +2742,7 @@ class ChatViewModelTest {
     private class FakeReplySpeaker : com.hermesagent.mobile.data.voice.ReplySpeaker {
         var onSpeakingFired = false
         var stopCalledCount = 0
+        var speakCalls = 0
         var shouldThrow: Exception? = null
         var speakCalledWith: Pair<com.hermesagent.mobile.data.voice.VoiceSessionKey, String>? = null
         var delaySpeak: kotlinx.coroutines.sync.Mutex? = null
@@ -2620,6 +2754,7 @@ class ChatViewModelTest {
             text: String,
             onSpeaking: () -> Unit
         ): Boolean {
+            speakCalls += 1
             speakCalledWith = key to text
             delaySpeak?.lock()
             if (shouldThrow != null) throw shouldThrow!!
@@ -2702,6 +2837,45 @@ class ChatViewModelTest {
         var botOpenFailure = false
         var botOpenGate: CompletableDeferred<Unit>? = null
         var botOpenResult: String? = null
+        /** Endpoint generations each Bot Chat open was bound to. */
+        val botOpenEndpointBindings = mutableListOf<Long>()
+        /** Durable ids whose endpoint-bound resume actually passed the fence. */
+        val botOpenResumes = mutableListOf<String>()
+        /** Endpoint generations each Bot prompt was bound to. */
+        val botSubmitEndpointBindings = mutableListOf<Long>()
+        var botSubmitGate: CompletableDeferred<Unit>? = null
+
+        override suspend fun openSessionAtEndpoint(
+            durableId: String,
+            profile: String,
+            expectedEndpointGeneration: Long,
+        ): String {
+            botOpenEndpointBindings += expectedEndpointGeneration
+            // The live repository re-checks after its navigation mutex; this
+            // fake models that by reading the endpoint the moment it is asked.
+            botOpenGate?.await()
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) {
+                throw GatewayRpcException("The gateway connection changed.")
+            }
+            botOpenResumes += durableId
+            return openSession(durableId, profile)
+        }
+
+        override suspend fun submitAtEndpoint(
+            durableId: String,
+            text: String,
+            queued: Boolean,
+            expectedEndpointGeneration: Long,
+        ): GatewaySubmitOutcome {
+            botSubmitEndpointBindings += expectedEndpointGeneration
+            // Same shape as the open above: the fence reads the endpoint at its
+            // own dispatch, after whatever queued the call.
+            botSubmitGate?.await()
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) {
+                throw GatewayRpcException("The gateway connection changed.")
+            }
+            return submit(durableId, text, queued, emptyList())
+        }
 
         /** Every backend search this repository was actually asked for. */
         val searches = mutableListOf<Pair<String, String?>>()

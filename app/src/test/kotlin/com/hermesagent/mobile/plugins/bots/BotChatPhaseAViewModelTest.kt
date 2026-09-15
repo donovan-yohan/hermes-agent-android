@@ -27,12 +27,24 @@ class BotChatPhaseAViewModelTest {
         val lookup = CompletableDeferred<PluginHostResult>()
         var lookupCalls = 0
 
+        /** Any creation attempt this door was asked for — Phase B's one licence. */
+        var createCalls = 0
+
         override suspend fun request(method: String, params: JsonObject): PluginHostResult {
-            return if (method == "session.list") {
-                lookupCalls += 1
-                lookup.await()
-            } else {
-                PluginHostResult.Success(Json.parseToJsonElement("""{"profiles":[{"name":"researcher"}]}"""))
+            return when (method) {
+                "session.list" -> {
+                    lookupCalls += 1
+                    lookup.await()
+                }
+
+                "session.create" -> {
+                    createCalls += 1
+                    PluginHostResult.Success(
+                        Json.parseToJsonElement("""{"session_id":"runtime","stored_session_id":"durable"}"""),
+                    )
+                }
+
+                else -> PluginHostResult.Success(Json.parseToJsonElement("""{"profiles":[{"name":"researcher"}]}"""))
             }
         }
 
@@ -110,23 +122,31 @@ class BotChatPhaseAViewModelTest {
         assertEquals(1, opens)
         completion!!.invoke(true)
 
+        // A zero-row answer is no longer one of these: Phase B treats a
+        // confirmed-absent registry as the one licence to create, and
+        // `BotChatPhaseBViewModelTest` owns that branch and its refusals.
         for ((result, expected) in listOf(
-            PluginHostResult.Success(Json.parseToJsonElement("""{"sessions":[]}""")) to
-                "No Bot Chat is available for this bot yet.",
             PluginHostResult.Success(Json.parseToJsonElement("""{"sessions":[{"title":"not canonical","id":"x"}]}""")) to
+                "Bot Chat could not be opened. Check the Gateway and try again.",
+            PluginHostResult.Success(Json.parseToJsonElement("""{"sessions":[]}""")) to
                 "Bot Chat could not be opened. Check the Gateway and try again.",
             PluginHostResult.Refused(500, "backend prose") to
                 "Bot Chat could not be opened. Check the Gateway and try again.",
             PluginHostResult.UnavailableOnGateway to
                 "Bot Chat could not be opened. Check the Gateway and try again.",
         )) {
+            // The roster says a canonical chat exists (`rosterCanonicalId` is
+            // set), so the zero-row answer is unconfirmed absence: create is
+            // forbidden and the row reports failure.
             val unsafeHost = LookupHost().also { it.lookup.complete(result) }
             val unsafe = BotsViewModel(BotsPluginRepository(unsafeHost), scope())
             var unsafeOpens = 0
-            unsafe.openBotChat(row) { _, _, _ -> unsafeOpens += 1 }
+            val rosterBacked = BotRosterRow(name = "researcher", canonicalSession = BotSessionPreview(id = "roster-tip"))
+            unsafe.openBotChat(rosterBacked) { _, _, _ -> unsafeOpens += 1 }
             runCurrent()
             assertEquals(0, unsafeOpens)
             assertEquals(expected, unsafe.uiState.value.botChatMessage)
+            assertTrue(unsafeHost.createCalls == 0)
         }
     }
 

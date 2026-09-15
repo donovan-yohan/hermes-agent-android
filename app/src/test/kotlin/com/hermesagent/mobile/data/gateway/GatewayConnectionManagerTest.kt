@@ -87,6 +87,12 @@ class GatewayConnectionManagerTest {
             transport.lastLock().getValue("hermesHome").jsonPrimitive.content,
         )
 
+        rpc.onClose = {
+            assertTrue(
+                "teardown closes the RPC before withdrawing its slot, so endpoint-bound dispatch cannot slip between them",
+                manager.client.value === rpc,
+            )
+        }
         manager.disconnect()
         assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
         assertTrue(transport.forward.closed)
@@ -371,6 +377,7 @@ class GatewayConnectionManagerTest {
         val closeSubscribers: Int get() = closure.subscriptionCount.value
         val calls = mutableListOf<String>()
         var rpcClosed = false
+        var onClose: (() -> Unit)? = null
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += method
@@ -378,6 +385,7 @@ class GatewayConnectionManagerTest {
         }
 
         override fun close() {
+            onClose?.invoke()
             rpcClosed = true
         }
 
