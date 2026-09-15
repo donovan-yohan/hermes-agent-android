@@ -343,6 +343,10 @@ class MainActivity : ComponentActivity() {
             val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
+            val gatewayThemes by app.gatewayThemes.state.collectAsStateWithLifecycle()
+            val activeGatewayRoute by preferences.activeGatewayRoute.collectAsStateWithLifecycle(
+                com.hermesagent.mobile.data.gateway.ActiveGatewayRoute(),
+            )
             // The initial value is the same default the store applies to an
             // absent key, so a person who turned the splash OFF can see it for
             // the one frame before DataStore answers. That is the shape the
@@ -424,6 +428,7 @@ class MainActivity : ComponentActivity() {
                 gatewayState = gatewayState,
                 sshState = sshState,
                 appearance = appearance,
+                gatewayThemes = gatewayThemes,
                 chatActions = ChatActions(
                     onQueryChange = chatViewModel::setQuery,
                     onDraftChange = chatViewModel::setDraft,
@@ -505,7 +510,25 @@ class MainActivity : ComponentActivity() {
                     onToggleVoiceMute = chatViewModel::toggleVoiceMute,
                 ),
                 appearanceActions = AppearanceActions(
-                    onSelectTheme = { name -> lifecycleScope.launch { preferences.setTheme(name) } },
+                    onSelectTheme = { name ->
+                        val connectionId = activeGatewayRoute.connectionId
+                        val endpointGeneration = app.cache.endpointGeneration.value
+                        val customAtTap = gatewayThemes.themes.any { it.name == name }
+                        lifecycleScope.launch {
+                            // The registry write is stamped with the row observed at the tap.
+                            // A route switch during it drops the write; only that confirmed
+                            // local choice may ask its Gateway to remember a custom skin.
+                            val persisted = preferences.setConnectionTheme(name, connectionId)
+                            if (
+                                persisted && customAtTap &&
+                                endpointGeneration == app.cache.endpointGeneration.value &&
+                                app.gatewayThemes.state.value.themes.any { it.name == name }
+                            ) {
+                                app.gatewayThemes.select(name)
+                            }
+                        }
+                    },
+                    onRetryThemes = { app.appScope.launch { app.gatewayThemes.refresh() } },
                     onSelectMode = { mode -> lifecycleScope.launch { preferences.setMode(mode) } },
                     onSetIntroSplash = { on -> lifecycleScope.launch { preferences.setIntroSplash(on) } },
                 ),
@@ -563,7 +586,7 @@ class MainActivity : ComponentActivity() {
             // Dialog is a separate window, and this keeps the OS permission
             // story out of the app's navigation shape entirely.
             if (notificationRationaleVisible) {
-                HermesTheme(appearance) {
+                HermesTheme(appearance, customThemes = gatewayThemes.themes.map { it.preset }) {
                     NotificationPermissionPrompt(
                         onContinue = {
                             notificationRationaleVisible = false

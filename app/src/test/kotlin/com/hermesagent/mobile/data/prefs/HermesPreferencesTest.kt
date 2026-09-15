@@ -17,6 +17,7 @@ import com.hermesagent.mobile.data.gateway.LocalGatewayProfile
 import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
+import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -110,6 +111,31 @@ class HermesPreferencesTest {
         }
     }
 
+    @Test
+    fun `appearance is stored on each row and a stale stamped theme write is dropped`() = runBlocking {
+        val first = SavedConnection("theme-a", "Alpha", ConnectionKind.Remote)
+        val second = SavedConnection("theme-b", "Beta", ConnectionKind.Remote)
+        try {
+            preferences.saveConnection(first)
+            preferences.saveConnection(second)
+            preferences.setActiveConnection(first.id)
+            assertTrue(preferences.setConnectionTheme("custom-a", first.id))
+            assertEquals("custom-a", preferences.appearance.first().themeName)
+
+            preferences.setActiveConnection(second.id)
+            assertTrue(preferences.setConnectionTheme("builtin-b", second.id))
+            assertFalse(preferences.setConnectionTheme("stale", first.id))
+
+            val rows = preferences.connectionRegistry.first().connections.associateBy(SavedConnection::id)
+            assertEquals("custom-a", rows[first.id]?.themeName)
+            assertEquals("builtin-b", rows[second.id]?.themeName)
+            assertEquals("builtin-b", preferences.appearance.first().themeName)
+        } finally {
+            preferences.removeConnection(second.id)
+            preferences.removeConnection(first.id)
+        }
+    }
+
     /**
      * Only the exact string this store writes turns the splash off. Anything
      * else on disk — a value from a build that stored it differently, or a
@@ -191,6 +217,51 @@ class HermesPreferencesTest {
         assertEquals("trust survives the move, or the next connect is a surprise", FINGERPRINT, row.host.acceptedFingerprint)
         assertEquals("https://gateway.example/hermes", row.remote.baseUrl)
         assertEquals("fixture-provider", row.remote.provider)
+    }
+
+    @Test
+    fun `the legacy global theme migrates into row one and is removed`() = runBlocking {
+        val row = SavedConnection("migration-row", "Gateway", ConnectionKind.Remote)
+        val stored = preferencesOf(
+            CONNECTIONS to ConnectionRegistryCodec.encode(listOf(row)),
+            ACTIVE_CONNECTION_ID to row.id,
+            stringPreferencesKey("appearance.theme") to "gateway-custom",
+        )
+
+        assertTrue(AdoptPerConnectionTheme.shouldMigrate(stored))
+        val migrated = AdoptPerConnectionTheme.migrate(stored)
+
+        assertEquals("gateway-custom", ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single().themeName)
+        assertNull(migrated[stringPreferencesKey("appearance.theme")])
+        assertFalse(AdoptPerConnectionTheme.shouldMigrate(migrated))
+    }
+
+    @Test
+    fun `an unreadable registry loses the obsolete global theme without being rewritten`() = runBlocking {
+        val unreadable = """{"version":"2","connections":[]}"""
+        val stored = preferencesOf(
+            CONNECTIONS to unreadable,
+            stringPreferencesKey("appearance.theme") to "gateway-custom",
+        )
+
+        val migrated = AdoptPerConnectionTheme.migrate(stored)
+
+        assertEquals(unreadable, migrated[CONNECTIONS])
+        assertNull(migrated[stringPreferencesKey("appearance.theme")])
+    }
+
+    @Test
+    fun `an unsafe legacy theme is removed without changing row one`() = runBlocking {
+        val row = SavedConnection("migration-row", "Gateway", ConnectionKind.Remote)
+        val stored = preferencesOf(
+            CONNECTIONS to ConnectionRegistryCodec.encode(listOf(row)),
+            stringPreferencesKey("appearance.theme") to " ",
+        )
+
+        val migrated = AdoptPerConnectionTheme.migrate(stored)
+
+        assertEquals(BuiltinThemes.DEFAULT_NAME, ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single().themeName)
+        assertNull(migrated[stringPreferencesKey("appearance.theme")])
     }
 
     @Test

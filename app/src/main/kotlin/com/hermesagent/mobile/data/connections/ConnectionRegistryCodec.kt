@@ -5,6 +5,7 @@ import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.SshDestination
+import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import java.security.SecureRandom
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -54,6 +55,8 @@ internal object ConnectionRegistryCodec {
                         connection.host.remoteHermesProfile.takeIf(String::isNotBlank)
                             ?.let { put("remoteHermesProfile", JsonPrimitive(it)) }
                         put("authMethod", JsonPrimitive(connection.host.authMethod.name))
+                        connection.themeName.takeIf { it != BuiltinThemes.DEFAULT_NAME }
+                            ?.let { put("theme", JsonPrimitive(it)) }
                         connection.host.acceptedFingerprint
                             ?.let { put("acceptedFingerprint", JsonPrimitive(it)) }
                     }
@@ -115,10 +118,19 @@ internal object ConnectionRegistryCodec {
                     ?: AuthMethod.Password,
                 acceptedFingerprint = row.text("acceptedFingerprint")?.takeIf(String::isNotBlank),
             ),
+            themeName = row.text("theme")
+                ?.trim()
+                ?.takeIf(::isSafeStoredThemeName)
+                ?: BuiltinThemes.DEFAULT_NAME,
         )
     }
 
     private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    private fun isSafeStoredThemeName(value: String): Boolean =
+        value.isNotBlank() && value.length <= MAX_THEME_NAME_LENGTH && value.none(Char::isISOControl)
+
+    private const val MAX_THEME_NAME_LENGTH = 64
 }
 
 /**

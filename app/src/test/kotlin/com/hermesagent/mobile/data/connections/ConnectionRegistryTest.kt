@@ -5,6 +5,7 @@ import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
 import com.hermesagent.mobile.data.ssh.SshDestination
+import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -185,6 +186,29 @@ class ConnectionRegistryTest {
         )
 
         assertEquals(rows, ConnectionRegistryCodec.decode(ConnectionRegistryCodec.encode(rows)))
+    }
+
+    @Test
+    fun `a custom theme name round-trips while the default stays absent`() {
+        val custom = remote("one", "Alpha", "https://example.test").copy(themeName = "midnight-custom")
+
+        val encoded = ConnectionRegistryCodec.encode(listOf(custom))
+
+        assertEquals("midnight-custom", ConnectionRegistryCodec.decode(encoded).single().themeName)
+        assertTrue(encoded.contains("\"theme\":\"midnight-custom\""))
+        assertFalse(ConnectionRegistryCodec.encode(listOf(remote("two", "Beta", "https://example.test"))).contains("\"theme\""))
+    }
+
+    @Test
+    fun `an absent or unsafe stored theme falls back to the built-in default`() {
+        val absent = """{"version":"1","connections":[{"id":"one","label":"Alpha","kind":"Remote"}]}"""
+        val blank = """{"version":"1","connections":[{"id":"one","label":"Alpha","kind":"Remote","theme":"  "}]}"""
+        val oversized = """{"version":"1","connections":[{"id":"one","label":"Alpha","kind":"Remote","theme":"${"a".repeat(65)}"}]}"""
+        val control = """{"version":"1","connections":[{"id":"one","label":"Alpha","kind":"Remote","theme":"bad\u0001name"}]}"""
+
+        listOf(absent, blank, oversized, control).forEach { stored ->
+            assertEquals(BuiltinThemes.DEFAULT_NAME, ConnectionRegistryCodec.decode(stored).single().themeName)
+        }
     }
 
     @Test
