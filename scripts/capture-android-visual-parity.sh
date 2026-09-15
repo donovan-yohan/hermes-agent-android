@@ -26,8 +26,10 @@ fi
 # starts, and the system dialog then covers the window this capture reads — the
 # retained tree came back as "Pixel Launcher isn't responding" instead of the
 # sheet. Those dialogs are an emulator artifact, not something this lane
-# measures, so the platform is told not to draw them.
+# measures: stop new ones being drawn, and stop the launcher the fixture never
+# needs so it cannot ANR in the first place.
 adb shell settings put global hide_error_dialogs 1
+adb shell am force-stop com.google.android.apps.nexuslauncher
 
 activity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["android_activity"])' "$request_json")"
 fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixture_id"])' "$request_json")"
@@ -47,10 +49,29 @@ if [[ -n "$expected_accessibility" ]]; then
   accessibility_args=(--expected-accessibility "$expected_accessibility")
 fi
 
+# Tap the named button of a system dialog that is holding the captured window,
+# using the bounds the tree just published. The dialog is an emulator artifact,
+# so the lane dismisses it the way a person would and then re-reads the window.
+dismiss_system_dialog() {
+  local label="$1" tree="$2" node bounds centre
+  grep -qF "isn't responding" <<<"$tree" || return 0
+  node="$(grep -o "<node[^>]*text=\"$label\"[^>]*>" <<<"$tree" | head -1)"
+  bounds="$(grep -o 'bounds="[^"]*"' <<<"$node" | head -1)"
+  centre="$(awk -F'[][,]' '/\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]/ {print int(($2+$5)/2), int(($3+$6)/2)}' <<<"$bounds")"
+  [[ -n "$centre" ]] || return 0
+  echo "dismissing a system dialog holding the capture window at $centre"
+  # The two coordinates are intentionally split into two arguments.
+  # shellcheck disable=SC2086
+  adb shell input tap $centre
+}
+
 # A Compose semantics tree reaches the platform when an accessibility client
 # attaches, and a lazy row's items arrive a beat after the rows around them.
-# Wait, bounded, for this state's catalogued description; the reference capture
-# re-checks the same description itself and still fails if it never appears.
+# Wait, bounded, for this state's catalogued description, dismissing a system
+# dialog that is already holding the window (the launcher's ANR dialog survives
+# the setting above when it was drawn before the lane started). The reference
+# capture re-checks the same description itself and still fails if it never
+# appears.
 if [[ -n "$expected_accessibility" ]]; then
   published=""
   for _ in $(seq 1 20); do
@@ -59,6 +80,7 @@ if [[ -n "$expected_accessibility" ]]; then
       if grep -qF "$expected_accessibility" <<<"$published"; then
         break
       fi
+      dismiss_system_dialog Wait "$published"
     fi
     sleep 0.5
   done
