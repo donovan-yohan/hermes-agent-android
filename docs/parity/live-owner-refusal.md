@@ -65,14 +65,15 @@ onClick)` gives that line a 48dp pointer band and a spoken name
 `session.create` the sidebar's `+` uses.
 
 That line has two homes, and #242 is the second one. The composer's `Full`
-layout shows it as the status line it has always been; below 560dp of composer
-width that row belongs to the model control, so the same sentence is drawn on a
-line of its own above the editor (`Composer.kt`), with the same wording, the
-same band and the same spoken destination — the two houses are handed one
-`statusAction` and differ only in where the words sit. What deliberately does
-*not* travel down with it is the rest of the status line: a connection that
-needs a door reports itself in the header at every width, so the composer owes a
-phone no permanent second row.
+layout shows it as the status line it has always been; at 560dp of composer
+width and below — every width that is not `Full` — the bottom row belongs to the
+model control, so the same sentence is drawn on a line of its own above the
+editor (`Composer.kt`), with the same wording, the same band and the same
+spoken destination — the two houses are handed one `statusAction` and differ
+only in where the words sit. What deliberately does *not* travel down with it
+is the rest of the status line: a connection that needs a door reports itself
+in the header at every width, so the composer owes a phone no permanent second
+row.
 
 ## Divergences
 
@@ -81,7 +82,7 @@ phone no permanent second row.
 | The escape is a button on the failed turn's inline error card, inside the transcript | mobile-adaptation | The escape is the refusal's own notice line, which the composer draws at every width — the status line in `Full`, a line above the editor below it | A refused `prompt.submit` never becomes a transcript turn here — there is no error card to hang a button on — and the notice line is this app's established tappable-status seam, which is what gives the escape a 48dp pointer band and a spoken destination instead of a caption-sized link (`StatusAction.kt:27-30`, `:103-112`). |
 | `Retry` is rendered for retryable failures and hidden for this one | mobile-adaptation | No per-turn Retry control exists; the refused draft is restored into the composer, where Send is the retry | Touch viewport: a per-turn action row costs a phone more than it returns, so the failed prompt comes back to the composer instead (`ChatViewModel.kt` `restoreSubmittedDraft`). Desktop's composer stays sendable in this state too — what it hides is the card's own Retry, and there is none here to hide. |
 | The card shows the gateway's error text and prints the escape's label on a button | mobile-adaptation | One app-written sentence carries both: "Another Hermes has this session open. Start a new session to send here." | Viewport space: the line *is* the control, so there is no button face to print a label on. Desktop's label is kept verbatim as the spoken destination, so a screen reader announces the sentence and then "Start new session". |
-| The escape is visible at every window width | mobile-adaptation | Visible at every width from two homes: the composer's status line in `Full`, and a line above the editor below 560dp of composer width | Viewport space: a narrow composer's bottom row is already the model control's, so the sentence takes the line above the editor — the one-line seam the coding header uses — instead of evicting a control. Wording, 48dp band and spoken destination are the same at both widths because both homes are handed one `statusAction` (`Composer.kt`, `StatusAction.kt`). Asserted at both widths by `SessionNotOwnedEscapeTest`, which used to pin the gap and now pins the contract. |
+| The escape is visible at every window width | mobile-adaptation | Visible at every width from two homes: the composer's status line in `Full`, and a line above the editor at 560dp of composer width and below | Viewport space: a narrow composer's bottom row is already the model control's, so the sentence takes the line above the editor — the one-line seam the coding header uses — instead of evicting a control. Wording, 48dp band and spoken destination are the same at both widths because both homes are handed one `statusAction` (`Composer.kt`, `StatusAction.kt`). Asserted at both widths by `SessionNotOwnedEscapeTest`, which used to pin the gap and now pins the contract. |
 
 ## Visual report
 

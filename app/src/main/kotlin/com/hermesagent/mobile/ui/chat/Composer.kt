@@ -182,6 +182,12 @@ fun Composer(
      * `Full` the notice moves above the editor, unchanged in wording and in
      * whatever door [statusAction] gives it; `Full` keeps the line exactly
      * where it was.
+     *
+     * This and [statusLine] are handed over together — `ChatScreen` derives
+     * both from the same notice — and nothing in Compose holds a caller to
+     * that: pass a notice here beside a connection sentence in [statusLine] and
+     * the two rows disagree. That pairing, like [statusLine] with
+     * [statusAction], is the caller's contract.
      */
     notice: String? = null,
     editorIdentity: String? = null,
@@ -379,8 +385,8 @@ fun Composer(
  * `Full` draws it on the bottom row; below that the notice takes the line
  * above the editor and the bottom row's slot stays the model control's
  * (#242). Two homes, one renderer: the words, the `scaffoldMeta` face and
- * whatever door [action] makes of them are decided here, so the widths cannot
- * drift apart in what the line is or what tapping it does.
+ * whatever door [action] makes of them are decided here, so the widths differ
+ * in where the sentence sits and in nothing this line decides.
  */
 @Composable
 private fun ComposerStatusLine(

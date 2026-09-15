@@ -116,7 +116,13 @@ class SessionNotOwnedEscapeTest {
             "the notice must sit above the editor, was $lineCentre against ${editorBounds.top}",
             lineCentre < editorBounds.top,
         )
-        compose.onNodeWithTag("Composer model control").assertExists()
+        // Not "the control still exists" — it was there before #242 too. The
+        // row it keeps is the claim, so the claim is measured.
+        val control = compose.onNodeWithTag("Composer model control").getUnclippedBoundsInRoot()
+        assertTrue(
+            "the model control keeps the bottom row, was $control against ${editorBounds.bottom}",
+            control.top >= editorBounds.bottom,
+        )
 
         door.performClick()
 

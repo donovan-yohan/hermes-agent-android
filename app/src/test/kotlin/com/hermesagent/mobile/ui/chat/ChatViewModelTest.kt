@@ -1035,11 +1035,14 @@ class ChatViewModelTest {
     }
 
     /**
-     * #242's other half: the escape *is* the fix, so following it has to end
-     * the state that wrote it. `createSession` rehomes onto the new session,
-     * and `rehome` is where every notice is retired — the sentence and its door
-     * leave with the refusal they belong to, rather than waiting for the next
-     * send or the next switch.
+     * Following the escape has to end the state that wrote it — #242's
+     * acceptance, at the seam that can show it. The composed test can prove the
+     * tap reaches `ChatActions.onCreateSession`; that the effect ends the
+     * refusal is the ViewModel's, and it would hold with the narrow-width line
+     * reverted, which is exactly its scope. `createSession` rehomes onto the
+     * new session, and `rehome` is where every notice is retired — the sentence
+     * and its door leave with the refusal they belong to, rather than waiting
+     * for the next send or the next switch.
      */
     @Test
     fun `the escape creates the session that ends the refusal`() = runTest(dispatcher) {
