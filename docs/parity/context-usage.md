@@ -11,33 +11,34 @@ Hermes Desktop's top-bar **Context Meter** and its **Context Usage panel**
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer, Gateway HTTP, CLI | `hermes-agent` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd` | read-only checkout; every citation taken with `git show <sha>:<path>` |
+| Desktop renderer, Gateway HTTP, CLI | `hermes-agent` @ `437116f9497c80d242ce034ff7f5d81dc277a337` | read-only checkout; every citation taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
 ## Paths that settled the port
 
-Every row was re-read with `git show 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd:<path>`.
+Every row was re-read with `git show 437116f9497c80d242ce034ff7f5d81dc277a337:<path>`.
 
 | Question | Path |
 |---|---|
-| Top bar Context Meter status label and glyph bar | `apps/desktop/src/lib/statusbar.tsx:37-60` |
-| Context Usage panel layout, header, token metrics, category list, segment bar | `apps/desktop/src/app/shell/context-usage-panel.tsx:19-105` |
+| Top bar Context Meter status label and glyph bar, including estimated `~` | `apps/desktop/src/lib/statusbar.tsx:37-60` |
+| Context Usage panel layout, header, token metrics, category list, segment bar, and estimated `~` | `apps/desktop/src/app/shell/context-usage-panel.tsx:19-105` |
+| Context breakdown provenance fields and full-view source label | `agent/context_breakdown.py:105-114,167-180,300-309` |
 | Context breakdown fetch lifecycle, gating, caching | `apps/desktop/src/app/shell/hooks/use-context-breakdown.ts:31-62` |
-| `gaugeUsage`: which figures the breakdown overrides, and which it never does | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:251-283` |
+| `gaugeUsage`: which figures the breakdown overrides, and which it never does | `apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:281-294` |
 | Number compacting logic and scale thresholds | `apps/desktop/src/lib/format.ts:4-24` |
 | Gateway RPC method `session.context_breakdown`, and that it routes on `session_id` alone | `tui_gateway/methods_session.py:1146-1169`, `tui_gateway/server.py:1051-1067` |
 | Gateway event `session.usage`, and that its ticker is joined before `message.complete` | `tui_gateway/server.py:2989-3009` |
 | `message.complete` carries the authoritative end-of-turn usage | `tui_gateway/prompt_turn.py:624` |
 | Which colour the Gateway sends for a category, and that it filters `tokens > 0` | `agent/context_breakdown.py:18-27,165-171` |
 | What those eight CSS variables resolve to | `apps/desktop/src/styles.css:210-224`, `:root.dark:561-563` |
-| Localized category names and panel copy | `apps/desktop/src/i18n/en.ts:3266-3282` |
+| Localized category names and panel copy | `apps/desktop/src/i18n/en.ts:3587-3602` |
 
 ## State classification
 
 | Desktop state | Where it comes from | Android |
 |---|---|---|
-| `contextUsed`, `contextMax`, `contextPercent`, `estimatedTotal`, `model` | `session.context_breakdown` RPC or streamed `session.info` / `session.usage` | `ContextBreakdown` and `SessionUsage` on `SessionSummary` / `ChatUiState.contextMeter` |
+| `contextUsed`, `contextMax`, `contextPercent`, `estimatedTotal`, `model`, `contextEstimated`, `contextSource` | `session.context_breakdown` RPC or streamed `session.info` / `session.usage` | `ContextBreakdown` and `SessionUsage` on `SessionSummary` / `ChatUiState.contextMeter` |
 | `categories` | `session.context_breakdown` | `List<ContextUsageCategory>` (capped at 16, safe hex color fallback) |
 | `loading` | `useContextBreakdown` fetch in-flight | `ContextMeterState.loading` |
 | routing | Desktop sends `{ session_id }` alone (`use-context-breakdown.ts:41`) | Android also sends `profile`. It is defensive and unread: `_sess_nowait` resolves the session from `session_id` alone (`tui_gateway/server.py:1051-1067`), and this keeps the routing shape every other session RPC in `GatewaySessionRepository` sends |
@@ -64,6 +65,7 @@ Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the a
 | Context usage details display as a dropdown popover | mobile-adaptation | Displays as a modal bottom sheet | Mobile touch viewports use bottom sheets rather than hoverable dropdown popovers |
 | Popover fixed width (`w-72` / 18rem) | mobile-adaptation | Bottom sheet spans display width | Mobile bottom sheet spans device width rather than desktop popover width |
 | Category colour is a CSS variable resolved by the browser (`styles.css:217-224`) | mobile-adaptation | The same eight expressions resolved in `HermesTokens.contextUsage`, joined to the Gateway's variable names by `resolveCategoryColor` | Android has no CSS custom properties, and the Gateway sends a name rather than a value (`agent/context_breakdown.py:18-27`); `ThemeSemanticParityTest` re-derives all eight per preset and mode, and `ContextUsageSwatchInkTest` reads the painted pixels back |
+| Estimated occupancy prefixes the header and percent with `~`; category counts are always estimated (`context-usage-panel.tsx:42-66`) | mobile-adaptation | Android carries the optional provenance fields, mirrors `~` on occupancy and category counts, and shows a supported source label | `ContextBreakdownRepositoryTest`, `ContextMeterViewModelTest`, `ContextUsageFormatTest`, and `ContextUsageJourneyTest`; the source mapping omits unknown values rather than rendering untrusted server text |
 | Every category gets `min-w-px`, so a zero-token one still shows a 1px sliver (`context-usage-panel.tsx:95`) | mobile-adaptation | A zero-token category paints no segment | `Modifier.weight` has no minimum-width floor, and the producer already filters `if tokens > 0` (`agent/context_breakdown.py:169`), so no such category reaches this client at the pin |
 | Panel type is 12px medium / 11px (`context-usage-panel.tsx:38,42`) | mobile-adaptation | 17sp SemiBold title / 13sp body (`HermesTypography.kt:103,75`) | A desktop popover is read at arm's length with a pointer on it; the app's own type scale is what every other sheet uses, and 11px does not survive a phone at a metre |
 | Meter hidden by default behind statusbar preference toggle | omission | Shown whenever context usage data exists | deferred: #73 — statusbar preference toggle surface is that issue; on mobile the meter is displayed when data is present |
@@ -86,8 +88,9 @@ Android half only, owed its Desktop side by #73:
 | All eight inks re-derived from `styles.css:217-224` for every preset in both modes, and asserted distinct | `ThemeSemanticParityTest` |
 | Gateway RPC `session.context_breakdown` parsing, the 16-category cap, negative clamping, missing keys, label redaction and the 40-char cap | `ContextBreakdownRepositoryTest` |
 | A failed breakdown RPC keeps the last one; an endpoint switch empties the per-session cache; the read never opens a session that has no runtime | `ContextBreakdownRepositoryTest` |
-| `session.info`, `session.usage` and `message.complete` all merge usage, absent keys keeping the last value | `ContextBreakdownRepositoryTest` |
-| `gaugeUsage` overrides only the three context fields, never `total` or `model`; a breakdown with `context_max: 0` hides the meter | `ContextMeterViewModelTest` |
+| `session.info`, `session.usage` and `message.complete` all merge usage, absent keys keeping the last value, including provenance | `ContextBreakdownRepositoryTest` |
+| Estimated vs `provider_usage` provenance survives parsing and gauge merging; `~` markers and source labels are rendered, with unknown sources omitted | `ContextBreakdownRepositoryTest`, `ContextMeterViewModelTest`, `ContextUsageFormatTest`, `ContextUsageJourneyTest` |
+| `gaugeUsage` overrides context fields and provenance, never `total` or `model`; a breakdown with `context_max: 0` hides the meter | `ContextMeterViewModelTest` |
 | Fifty transcript deltas on another session issue zero extra RPCs; a backend that answers nothing is asked once; each turn end re-reads exactly once | `ContextMeterViewModelTest` |
 | Compose rendering of the compact top-bar meter, the figures it speaks, the no-context-window fallback, its spoken name, click opens `ContextUsageSheet`, the pinned category labels and counts | `ContextUsageJourneyTest` under Robolectric |
 | The meter and the approval chip keep their full width on a 360dp status line while the connection line ellipsises, and neither inflates the line's height | `ChatTopBarAlignmentTest` under Robolectric |

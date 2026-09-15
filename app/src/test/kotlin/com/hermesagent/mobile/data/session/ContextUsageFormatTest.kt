@@ -52,8 +52,9 @@ class ContextUsageFormatTest {
     }
 
     @Test
-    fun `usageContextLabel formats max and total branches`() {
+    fun `usageContextLabel formats exact and estimated max branches`() {
         assertEquals("128.2k/272k", usageContextLabel(128200L, 272000L, 0L))
+        assertEquals("~128.2k/272k", usageContextLabel(128200L, 272000L, 0L, contextEstimated = true))
         assertEquals("0/200k", usageContextLabel(null, 200000L, 100L))
         assertEquals("1.3k tok", usageContextLabel(null, null, 1280L))
         assertEquals("", usageContextLabel(null, null, 0L))
@@ -64,6 +65,7 @@ class ContextUsageFormatTest {
     fun `contextBarLabel formats glyph bar and rounded percent`() {
         assertEquals("[█████░░░░░] 47%", contextBarLabel(47.0, 272000L))
         assertEquals("[█████████░] 89%", contextBarLabel(88.6, 272000L))
+        assertEquals("[█████░░░░░] ~47%", contextBarLabel(47.0, 272000L, contextEstimated = true))
         assertEquals("", contextBarLabel(47.0, null))
         assertEquals("", contextBarLabel(47.0, 0L))
     }
@@ -81,8 +83,26 @@ class ContextUsageFormatTest {
     @Test
     fun `the spoken meter reads both figures, or the proportion alone when there is no count`() {
         assertEquals("30k of 200k, 40%", ContextUsageCopy.spokenUsage("30k", "200k", 40))
+        assertEquals("~30k of 200k, ~40%", ContextUsageCopy.spokenUsage("30k", "200k", 40, estimated = true))
         assertEquals("40%", ContextUsageCopy.spokenPercent(40))
+        assertEquals("~40%", ContextUsageCopy.spokenPercent(40, estimated = true))
+        assertEquals("40%", ContextUsageCopy.percent(40))
+        assertEquals("~40%", ContextUsageCopy.percent(40, estimated = true))
+        assertEquals("40% Full", ContextUsageCopy.percentFull(40))
+        assertEquals("~40% Full", ContextUsageCopy.percentFull(40, estimated = true))
         assertEquals("0%", ContextUsageCopy.spokenPercent(0))
+    }
+
+    @Test
+    fun `sourceLabel names supported provenance and omits unknown values`() {
+        assertEquals("Source: local estimate", ContextUsageCopy.sourceLabel("local_estimate"))
+        assertEquals("Source: provider usage", ContextUsageCopy.sourceLabel("provider_usage"))
+        assertEquals(
+            "Source: provider usage + estimated new messages",
+            ContextUsageCopy.sourceLabel("provider_usage_plus_estimate"),
+        )
+        assertNull(ContextUsageCopy.sourceLabel("future_source"))
+        assertNull(ContextUsageCopy.sourceLabel(null))
     }
 
     @Test
@@ -111,8 +131,8 @@ class ContextUsageFormatTest {
 
     /**
      * The eight strings the Gateway actually sends. `_CATEGORY_COLORS` in
-     * `agent/context_breakdown.py:19-28` @
-     * `3ca096de5f8183cb2e0ec23673f294d5978656a3` maps every known id to one of
+     * `agent/context_breakdown.py:18-27` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337` maps every known id to one of
      * these, and `:155` defaults an unknown id to `var(--ui-text-tertiary)` —
      * there is no hex value anywhere on this wire, which is why a test that fed
      * hand-written hex proved nothing about what ships.

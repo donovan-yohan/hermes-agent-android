@@ -82,6 +82,8 @@ class ContextMeterViewModelTest {
             contextPercent = 19,
             estimatedTotal = 7_000,
             model = "breakdown-model",
+            contextEstimated = true,
+            contextSource = "local_estimate",
             categories = listOf(
                 ContextUsageCategory("system", "System Prompt", 3_000, "#ff0000"),
             ),
@@ -97,14 +99,84 @@ class ContextMeterViewModelTest {
         assertEquals(3_000L, meter?.usage?.contextUsed)
         assertEquals(16_000L, meter?.usage?.contextMax)
         assertEquals(19, meter?.usage?.contextPercent)
-        // `gaugeUsage` spreads the streamed figure and overrides only the three
-        // context fields (`use-statusbar-items.tsx:267-280` @ `72a3277cd7`):
-        // `total` and `model` are never taken from the breakdown.
+        assertEquals(true, meter?.usage?.contextEstimated)
+        assertEquals("local_estimate", meter?.usage?.contextSource)
+        // `gaugeUsage` spreads the streamed figure and overrides the context
+        // fields (`use-statusbar-items.tsx:281-294` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`): `total` and `model` are
+        // never taken from the breakdown.
         assertEquals(5_000L, meter?.usage?.total)
         assertEquals("streamed-model", meter?.usage?.model)
         assertEquals(breakdown, meter?.breakdown)
-        assertEquals("3k/16k", meter?.label)
-        assertEquals("[██░░░░░░░░] 19%", meter?.detail)
+        assertEquals("~3k/16k", meter?.label)
+        assertEquals("[██░░░░░░░░] ~19%", meter?.detail)
+
+        job.cancel()
+    }
+
+    @Test
+    fun `breakdown provenance replaces streamed provenance even when absent`() = runTest(dispatcher) {
+        cache.upsertSession(
+            summary("session-1", 2_000).copy(
+                usage = SessionUsage(
+                    contextUsed = 2_000,
+                    contextMax = 10_000,
+                    contextPercent = 20,
+                    contextEstimated = true,
+                    contextSource = "local_estimate",
+                ),
+            ),
+        )
+        repository.breakdowns["session-1"] = ContextBreakdown(
+            contextUsed = 3_000,
+            contextMax = 10_000,
+            contextPercent = 30,
+        )
+
+        val viewModel = ChatViewModel(cache, repository, clock = { 1_000L })
+        val job = launch { viewModel.uiState.collect {} }
+        runCurrent()
+
+        val meter = viewModel.uiState.value.contextMeter
+        assertNotNull(meter)
+        assertNull(meter?.usage?.contextEstimated)
+        assertNull(meter?.usage?.contextSource)
+        assertEquals("3k/10k", meter?.label)
+        assertEquals("[███░░░░░░░] 30%", meter?.detail)
+
+        job.cancel()
+    }
+
+    @Test
+    fun `provider usage keeps exact meter figures without estimate markers`() = runTest(dispatcher) {
+        cache.upsertSession(
+            summary("session-1", 2_000).copy(
+                usage = SessionUsage(
+                    contextUsed = 2_000,
+                    contextMax = 10_000,
+                    contextPercent = 20,
+                    total = 3_000,
+                ),
+            ),
+        )
+        repository.breakdowns["session-1"] = ContextBreakdown(
+            contextUsed = 2_000,
+            contextMax = 10_000,
+            contextPercent = 20,
+            contextEstimated = false,
+            contextSource = "provider_usage",
+        )
+
+        val viewModel = ChatViewModel(cache, repository, clock = { 1_000L })
+        val job = launch { viewModel.uiState.collect {} }
+        runCurrent()
+
+        val meter = viewModel.uiState.value.contextMeter
+        assertNotNull(meter)
+        assertEquals("2k/10k", meter?.label)
+        assertEquals("[██░░░░░░░░] 20%", meter?.detail)
+        assertEquals(false, meter?.usage?.contextEstimated)
+        assertEquals("provider_usage", meter?.usage?.contextSource)
 
         job.cancel()
     }
@@ -234,8 +306,9 @@ class ContextMeterViewModelTest {
 
     @Test
     fun `a resumed session whose breakdown reports no context window stays hidden`() = runTest(dispatcher) {
-        // `agent/context_breakdown.py:142-143` @ `72a3277cd7`: no
-        // `context_compressor` means `context_max: 0`, and such a session has no
+        // `agent/context_breakdown.py:144-145` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`: no `context_compressor`
+        // means `context_max: 0`, and such a session has no
         // measured usage either. Desktop renders '' and hides the item; taking
         // `estimated_total` as `total` here would show "45k tok" instead.
         cache.upsertSession(summary("session-1", 2_000).copy(usage = SessionUsage()))

@@ -40,7 +40,9 @@ class ContextBreakdownRepositoryTest {
                 "input": 200000,
                 "output": 150000,
                 "calls": 12,
-                "model": "claude-3-5-sonnet"
+                "model": "claude-3-5-sonnet",
+                "context_estimated": false,
+                "context_source": "provider_usage"
             }"""
         )
 
@@ -53,6 +55,24 @@ class ContextBreakdownRepositoryTest {
         assertEquals(150000L, usage.output)
         assertEquals(12, usage.calls)
         assertEquals("claude-3-5-sonnet", usage.model)
+        assertEquals(false, usage.contextEstimated)
+        assertEquals("provider_usage", usage.contextSource)
+    }
+
+    @Test
+    fun `parseSessionUsage preserves provenance on partial updates and ignores malformed provenance`() {
+        val initial = SessionUsage(
+            contextEstimated = true,
+            contextSource = "local_estimate",
+        )
+
+        val merged = parseSessionUsage(
+            json("""{"context_estimated":"false","context_source":42}"""),
+            initial,
+        )
+
+        assertEquals(true, merged.contextEstimated)
+        assertEquals("local_estimate", merged.contextSource)
     }
 
     @Test
@@ -95,7 +115,10 @@ class ContextBreakdownRepositoryTest {
                 "context_percent": 19,
                 "context_used": 37700,
                 "estimated_total": 45000,
-                "model": "claude-3-7-sonnet"
+                "model": "claude-3-7-sonnet",
+                "context_estimated": true,
+                "context_source": "local_estimate",
+                "unknown_future_field": "ignored"
             }"""
         )
 
@@ -116,6 +139,19 @@ class ContextBreakdownRepositoryTest {
         assertEquals(37700L, breakdown.contextUsed)
         assertEquals(45000L, breakdown.estimatedTotal)
         assertEquals("claude-3-7-sonnet", breakdown.model)
+        assertEquals(true, breakdown.contextEstimated)
+        assertEquals("local_estimate", breakdown.contextSource)
+    }
+
+    @Test
+    fun `parseContextBreakdown ignores malformed provenance fields`() {
+        val breakdown = parseContextBreakdown(
+            json("""{"context_estimated":"true","context_source":false}"""),
+        )
+
+        assertNotNull(breakdown)
+        assertNull(breakdown?.contextEstimated)
+        assertNull(breakdown?.contextSource)
     }
 
     @Test
@@ -137,6 +173,8 @@ class ContextBreakdownRepositoryTest {
             "context_max": 200000,
             "context_percent": 25,
             "context_used": 50000,
+            "context_estimated": false,
+            "context_source": "provider_usage",
             "estimated_total": 60000,
             "model": "hermes-3"
         }"""
@@ -144,7 +182,8 @@ class ContextBreakdownRepositoryTest {
         repository.setProfileRouting(ProfileRouting(activeProfile = "research"))
         // The read never opens a session itself, so navigation has to have
         // bound the runtime first — Desktop only ever passes an active one
-        // (`use-context-breakdown.ts:41` @ `72a3277cd7`).
+        // (`use-context-breakdown.ts:41` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`).
         repository.openSession("session-1")
         runCurrent()
 
@@ -394,7 +433,8 @@ class ContextBreakdownRepositoryTest {
         assertEquals(10000L, cache.session("session-1")?.usage?.contextUsed)
 
         // `_start_usage_ticker` is stopped and joined before this event
-        // (`tui_gateway/server.py:2990-2991` @ 72a3277cd7), so the figure it
+        // (`tui_gateway/server.py:2989-3009` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`), so the figure it
         // carries (`tui_gateway/prompt_turn.py:624`) is the one the turn ended on.
         rpc.emit(
             "message.complete",

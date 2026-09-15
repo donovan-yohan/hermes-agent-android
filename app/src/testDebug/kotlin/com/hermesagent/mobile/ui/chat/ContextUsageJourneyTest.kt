@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -148,12 +149,14 @@ class ContextUsageJourneyTest {
                 contextUsed = null,
                 contextMax = 200_000,
                 contextPercent = 40,
+                contextEstimated = true,
                 model = "test-model",
             ),
         )
 
-        compose.onNodeWithContentDescription("40%").assertExists()
+        compose.onNodeWithContentDescription("~40%").assertExists()
         compose.onAllNodesWithContentDescription("0 of 200k, 40%").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("40%").assertCountEquals(0)
     }
 
     /** No context window, no proportion: Desktop's own words are what is left. */
@@ -167,14 +170,17 @@ class ContextUsageJourneyTest {
     @Test
     fun `clicking context meter opens context usage sheet with metrics and categories`() {
         // The colours are the strings the Gateway actually sends
-        // (`agent/context_breakdown.py:18-27` @ `72a3277cd7`), and the ids are
-        // its own, so the eight `en.ts` labels are what has to render.
+        // (`agent/context_breakdown.py:18-27` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`), and the ids are its own,
+        // so the eight `en.ts` labels are what has to render.
         val breakdown = ContextBreakdown(
             contextUsed = 4_000,
             contextMax = 20_000,
             contextPercent = 20,
             estimatedTotal = 4_000,
             model = "test-model",
+            contextEstimated = true,
+            contextSource = "local_estimate",
             categories = listOf(
                 ContextUsageCategory("system_prompt", "System prompt", 2_000, "var(--context-usage-system)"),
                 ContextUsageCategory("conversation", "Conversation", 1_500, "var(--context-usage-conversation)"),
@@ -188,16 +194,42 @@ class ContextUsageJourneyTest {
 
         compose.onNodeWithText("Context Usage").assertIsDisplayed()
         compose.onNodeWithText("~4k / 20k Tokens").assertIsDisplayed()
-        compose.onNodeWithText("20% Full").assertIsDisplayed()
+        compose.onNodeWithText("~20% Full").assertIsDisplayed()
+        compose.onNodeWithText("Source: local estimate").assertIsDisplayed()
 
-        // Categories rendered with the pinned `en.ts:2966-2973` names and
-        // compact token counts.
+        // Categories rendered with the pinned `en.ts:3589-3596` names and
+        // local-estimate markers.
         compose.onNodeWithText("System prompt").assertIsDisplayed()
-        compose.onNodeWithText("2k").assertIsDisplayed()
+        compose.onNodeWithText("~2k").assertIsDisplayed()
         compose.onNodeWithText("Conversation").assertIsDisplayed()
-        compose.onNodeWithText("1.5k").assertIsDisplayed()
+        compose.onNodeWithText("~1.5k").assertIsDisplayed()
         compose.onNodeWithText("MCP").assertIsDisplayed()
-        compose.onNodeWithText("500").assertIsDisplayed()
+        compose.onNodeWithText("~500").assertIsDisplayed()
+    }
+
+    @Test
+    fun `provider usage keeps exact occupancy markers while category counts stay estimated`() {
+        val breakdown = ContextBreakdown(
+            contextUsed = 4_000,
+            contextMax = 20_000,
+            contextPercent = 20,
+            estimatedTotal = 4_000,
+            contextEstimated = false,
+            contextSource = "provider_usage",
+            categories = listOf(
+                ContextUsageCategory("conversation", "Conversation", 4_000, "var(--context-usage-conversation)"),
+            ),
+        )
+        launch(breakdown = breakdown)
+
+        compose.onNodeWithTag(CONTEXT_METER_TAG).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("4k / 20k Tokens").assertIsDisplayed()
+        compose.onNodeWithText("20% Full").assertIsDisplayed()
+        compose.onNodeWithText("Source: provider usage").assertIsDisplayed()
+        compose.onAllNodesWithText("~4k / 20k Tokens").assertCountEquals(0)
+        compose.onNodeWithText("~4k").assertIsDisplayed()
     }
 
     @Test
