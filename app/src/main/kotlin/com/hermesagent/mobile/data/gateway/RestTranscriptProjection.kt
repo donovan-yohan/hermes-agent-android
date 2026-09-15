@@ -140,6 +140,35 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
 private data class RestToolCall(val name: String, val arguments: JsonObject?)
 
 /**
+ * The name a preview is looked up under.
+ *
+ * The pin still accepts the cron tool's old spelling at every dispatch seam
+ * (`_LEGACY_TOOL_ALIASES`, `model_tools.py:601-604` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`) and canonicalises it before the
+ * agent loop dispatches (`agent/tool_executor.py:364-368,432-433` @ the same
+ * SHA), so a live turn names the tool `cronjob_manage`. A row an older Gateway
+ * persisted — or one this app already holds from before the rename — still
+ * spells it `cronjob`. Both resolve to the one table entry, so the same call
+ * previews the same however the transcript was fetched.
+ *
+ * The row's own `name` is deliberately not rewritten: it is the call the
+ * transcript stored, and every reader passes it through (Desktop's own REST
+ * reader takes `tool_name` or `name` verbatim, `tool-parts.ts:799,811` @ the
+ * same SHA).
+ */
+private fun canonicalToolName(name: String): String = TOOL_NAME_ALIASES[name] ?: name
+
+/**
+ * Legacy spellings the preview resolves to the name the pin's table keys.
+ *
+ * Scoped to the cron rename: upstream's other aliases (`todo` → `todo_list`,
+ * `process` → `process_manage`, `tour` → `gui_tour`, `tip` → `show_tip`,
+ * `model_tools.py:602-603` @ the same SHA) name no row in [TOOL_PRIMARY_ARGS],
+ * so there is nothing there for an alias to reach.
+ */
+private val TOOL_NAME_ALIASES = mapOf("cronjob" to "cronjob_manage")
+
+/**
  * The `arguments` of a stored tool call: a JSON *string* on every provider that
  * follows the OpenAI shape, an object on the ones that do not
  * (`server.py:9744-9752` parses the string and tolerates a failure as `{}`).
@@ -155,9 +184,11 @@ private fun JsonObject.toolCallArguments(): JsonObject? {
  * projection ships as `context` (`server.py:7740-7756` →
  * `agent/display.py:446`).
  *
- * Ported: the primary-argument table (`display.py:457-468`) and the generic
- * tail (`:576-595`) — which argument stands for the call, one line, truncated
- * at 80 with an ellipsis. NOT ported: the per-tool phrasings above that tail
+ * Ported: the primary-argument table (`agent/display.py:353-360` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`) and the generic tail
+ * (`:464-469` @ the same SHA) — which argument stands for the call, one line,
+ * truncated at 80 with an ellipsis. NOT ported: the per-tool phrasings above
+ * that tail
  * (`terminal`, `read_file`, `todo`, `memory`, `process`, `delegate_task`,
  * `browser_exec`, `session_search`, `send_message`, `skill_view`), which
  * rephrase the same argument rather than name a different one, and would be a
@@ -177,8 +208,9 @@ private fun JsonObject.toolCallArguments(): JsonObject? {
  * every other tool.
  */
 private fun toolArgumentPreview(toolName: String, args: JsonObject): String? {
-    if (toolName in TOOL_PREVIEW_REDACTED) return null
-    val key = TOOL_PRIMARY_ARGS[toolName]
+    val canonical = canonicalToolName(toolName)
+    if (canonical in TOOL_PREVIEW_REDACTED) return null
+    val key = TOOL_PRIMARY_ARGS[canonical]
         ?: TOOL_FALLBACK_ARGS.firstOrNull { it in args }
         ?: return null
     val value = args[key] ?: return null
@@ -202,7 +234,7 @@ private const val GATEWAY_SYSTEM_MARKER = "[System:"
 private const val TOOL_PREVIEW_MAX = 80
 private val PREVIEW_WHITESPACE = Regex("\\s+")
 
-/** `agent/display.py:457-468` @ `3ca096de`, verbatim. */
+/** `agent/display.py:353-360` @ `437116f9497c80d242ce034ff7f5d81dc277a337`, verbatim. */
 private val TOOL_PRIMARY_ARGS = mapOf(
     "terminal" to "command",
     "web_search" to "query",
@@ -219,7 +251,7 @@ private val TOOL_PRIMARY_ARGS = mapOf(
     "vision_analyze" to "question",
     "skill_view" to "name",
     "skills_list" to "category",
-    "cronjob" to "action",
+    "cronjob_manage" to "action",
     "execute_code" to "code",
     "browser_exec" to "code",
     "delegate_task" to "goal",
@@ -227,7 +259,7 @@ private val TOOL_PRIMARY_ARGS = mapOf(
     "skill_manage" to "name",
 )
 
-/** `agent/display.py:578`, in order. */
+/** `agent/display.py:361` @ `437116f9497c80d242ce034ff7f5d81dc277a337`, in order. */
 private val TOOL_FALLBACK_ARGS =
     listOf("query", "text", "command", "path", "name", "prompt", "code", "goal")
 
