@@ -230,7 +230,7 @@ app-wide `HermesTokens.overlayScrim`, classified once on
 
 ## Visual report
 
-- pending: #43 — the rail, the picker sheet and the roster
+- pending: #272 — the rail, the picker sheet and the roster
 - pending: #147 — the sheet's default head row, and the sheet's darkened scrim
 - pending: #262 — the named-profile Project catalog and drill-in; no rendered
   Desktop/Android side-by-side was produced in this environment.
@@ -238,7 +238,7 @@ app-wide `HermesTokens.overlayScrim`, classified once on
 `capture-android-reference.py` needs an attached device or emulator and
 `capture-desktop-reference.mjs` needs a disposable pinned Desktop dev renderer
 with CDP. Neither is available in this environment, so the capture is recorded
-as **missing**, not fabricated, and belongs to the device-QA slice (issue #43).
+as **missing**, not fabricated, and belongs to the capture slice (issue #272).
 
 What this slice ships instead: `@Preview` composables in phone light and dark for
 the rail (default, unified, collapsed) and the roster (populated, empty), the

@@ -2680,7 +2680,7 @@ class RemoteGatewayTest {
     }
 
     @Test
-    fun `a relay rotation and a reconnect ticket share one rotation rather than racing it`() = runTest {
+    fun `a refresh rotation and a reconnect ticket share one rotation rather than racing it`() = runTest {
         // The two entry points C2 names: `ticket()` on the reconnect path and
         // `refreshAccessToken()` from a refused REST leg. They must not both
         // present the same retired token.
@@ -2691,12 +2691,12 @@ class RemoteGatewayTest {
 
         val reconnect = async { authenticator.ticket(PROFILE, browser = null) }
         runCurrent()
-        val relayRotation = async { authenticator.refreshAccessToken(PROFILE) }
+        val refreshRotation = async { authenticator.refreshAccessToken(PROFILE) }
         runCurrent()
 
         gate.complete(Unit)
         assertEquals("ticket-1", reconnect.await())
-        assertTrue(relayRotation.await())
+        assertTrue(refreshRotation.await())
 
         assertEquals(1, api.refreshCalls)
         assertEquals(listOf(EXPIRED_TOKENS.refreshToken), api.presented)
