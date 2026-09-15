@@ -116,16 +116,16 @@ private val CSS_VARIABLE = Regex("""^var\(\s*(--[A-Za-z0-9_-]+)\s*\)$""")
  *
  * At the pin the Gateway sends variable names: `agent/context_breakdown.py:18-27`
  * @ `437116f9497c80d242ce034ff7f5d81dc277a337` maps all eight known ids to
- * `var(--context-usage-*)`, and an unknown id defaults to
- * `var(--ui-text-tertiary)` (`:155`). Desktop resolves those names against
+ * `var(--context-usage-*)`, and the producer emits only ids it knows. Desktop
+ * resolves those names against
  * `apps/desktop/src/styles.css:210-224`; Android resolves them against the
  * semantic [HermesTokens.contextUsage] group derived from the same expressions,
  * which is what makes the panel's eight colours the *only* thing it colour-codes
  * by rather than one flat wash.
  *
  * A literal hex still parses — a Gateway is free to send one — and anything
- * unrecognised falls back to `textTertiary`, the same ink Desktop's own default
- * variable resolves to.
+ * unrecognised falls back to `textTertiary`, which is the defensive default
+ * here: at the pin the producer emits no id outside its own table.
  */
 fun resolveCategoryColor(color: String?, tokens: HermesTokens): Color {
     val raw = color?.trim().orEmpty()
@@ -153,23 +153,23 @@ fun resolveCategoryColor(color: String?, tokens: HermesTokens): Color {
  * stay a client-side allowlist because the upstream panel has no source row.
  */
 object ContextUsageCopy {
-    /** Spoken accessibility label and status item title (`en.ts:3577`). */
+    /** Spoken accessibility label and status item title (`apps/desktop/src/i18n/en.ts:3577`). */
     const val CONTEXT_USAGE = "Context usage"
 
-    /** Panel heading (`en.ts:3601`). */
+    /** Panel heading (`apps/desktop/src/i18n/en.ts:3601`). */
     const val TITLE = "Context Usage"
 
-    /** Panel empty state (`en.ts:3598`). */
+    /** Panel empty state (`apps/desktop/src/i18n/en.ts:3598`). */
     const val EMPTY = "No context data yet"
 
-    /** Panel loading state (`en.ts:3599`). */
+    /** Panel loading state (`apps/desktop/src/i18n/en.ts:3599`). */
     const val LOADING = "Loading breakdown…"
 
-    /** Percent full subtitle (`en.ts:3600`). */
+    /** Percent full subtitle (`apps/desktop/src/i18n/en.ts:3600`). */
     fun percentFull(percent: Int, estimated: Boolean = false): String =
         "${if (estimated) "~" else ""}$percent% Full"
 
-    /** Token summary count in panel header (`en.ts:3602`). */
+    /** Token summary count in panel header (`apps/desktop/src/i18n/en.ts:3602`). */
     fun tokenSummary(used: String, max: String): String = "$used / $max Tokens"
 
     /** Human-readable provenance for context occupancy, based on the Gateway field. */
@@ -209,7 +209,7 @@ object ContextUsageCopy {
     fun spokenPercent(percent: Int, estimated: Boolean = false): String =
         "${if (estimated) "~" else ""}$percent%"
 
-    /** Standard breakdown category labels (`en.ts:2966-2973`). */
+    /** Standard breakdown category labels (`apps/desktop/src/i18n/en.ts:3589-3596`). */
     val CATEGORIES: Map<String, String> = mapOf(
         "conversation" to "Conversation",
         "mcp" to "MCP",

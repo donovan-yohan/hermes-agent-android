@@ -223,7 +223,7 @@ class ContextBreakdownRepositoryTest {
         repository.openSession("session-1")
         runCurrent()
 
-        // Streamed session.info with usage
+        // Streamed session.info with usage, including provenance
         rpc.emit(
             "session.info",
             "runtime-1",
@@ -234,7 +234,9 @@ class ContextBreakdownRepositoryTest {
                     "context_used": 45000,
                     "context_max": 200000,
                     "context_percent": 22.5,
-                    "total": 50000
+                    "total": 50000,
+                    "context_estimated": true,
+                    "context_source": "local_estimate"
                 }
             }"""
         )
@@ -246,8 +248,10 @@ class ContextBreakdownRepositoryTest {
         assertEquals(45000L, usage1?.contextUsed)
         assertEquals(200000L, usage1?.contextMax)
         assertEquals(23, usage1?.contextPercent)
+        assertEquals(true, usage1?.contextEstimated)
+        assertEquals("local_estimate", usage1?.contextSource)
 
-        // Streamed session.usage delta
+        // Streamed session.usage delta, absent provenance keys keeping the last value
         rpc.emit(
             "session.usage",
             "runtime-1",
@@ -269,6 +273,8 @@ class ContextBreakdownRepositoryTest {
         assertEquals(200000L, usage2?.contextMax) // Preserved
         assertEquals(30, usage2?.contextPercent)
         assertEquals(65000L, usage2?.total)
+        assertEquals(true, usage2?.contextEstimated) // Preserved
+        assertEquals("local_estimate", usage2?.contextSource) // Preserved
     }
 
 
@@ -427,19 +433,19 @@ class ContextBreakdownRepositoryTest {
         rpc.emit(
             "session.usage",
             "runtime-1",
-            """{"stored_session_id":"session-1","usage":{"context_used":10000,"context_max":200000,"context_percent":5,"total":11000}}""",
+            """{"stored_session_id":"session-1","usage":{"context_used":10000,"context_max":200000,"context_percent":5,"total":11000,"context_estimated":true,"context_source":"provider_usage_plus_estimate"}}""",
         )
         runCurrent()
         assertEquals(10000L, cache.session("session-1")?.usage?.contextUsed)
 
-        // `_start_usage_ticker` is stopped and joined before this event
-        // (`tui_gateway/server.py:2989-3009` @
-        // `437116f9497c80d242ce034ff7f5d81dc277a337`), so the figure it
-        // carries (`tui_gateway/prompt_turn.py:624`) is the one the turn ended on.
+        // `_start_usage_ticker`'s caller stops AND joins the ticker before
+        // anything emits (`tui_gateway/prompt_turn.py:561-568` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`), so the usage that caller
+        // builds (`:634-639`, emitted at `:848`) is the one the turn ended on.
         rpc.emit(
             "message.complete",
             "runtime-1",
-            """{"stored_session_id":"session-1","text":"done","status":"complete","usage":{"context_used":42000,"context_percent":21,"total":45000}}""",
+            """{"stored_session_id":"session-1","text":"done","status":"complete","usage":{"context_used":42000,"context_percent":21,"total":45000,"context_estimated":false,"context_source":"provider_usage"}}""",
         )
         runCurrent()
 
@@ -450,6 +456,9 @@ class ContextBreakdownRepositoryTest {
         assertEquals(45000L, usage?.total)
         // Absent keys keep the last value, exactly as Desktop's spread does.
         assertEquals(200000L, usage?.contextMax)
+        // Present provenance keys replace the streamed ones.
+        assertEquals(false, usage?.contextEstimated)
+        assertEquals("provider_usage", usage?.contextSource)
     }
 
     private class FakeRpc : GatewayRpcClient {

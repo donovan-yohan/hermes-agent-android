@@ -87,7 +87,8 @@ fun ContextMeter(
     // `clickable` merges this row's children into one semantics node. What that
     // node says used to be the figures themselves, because the row rendered
     // them; now the row draws them, so the figures are what the description
-    // carries. Desktop's own accessible name for the item (`en.ts:2963`) still
+    // carries. Desktop's own accessible name for the item
+    // (`apps/desktop/src/i18n/en.ts:3577`) still
     // rides on `onClickLabel`, which is where the action a tap performs belongs.
     // A percent with no `context_used` behind it is a real Gateway answer, and
     // defaulting the missing figure to zero would have TalkBack read "0 of
@@ -336,7 +337,7 @@ private fun ContextUsageBar(
             // shows a 1px sliver (`context-usage-panel.tsx:95` @
             // `437116f9497c80d242ce034ff7f5d81dc277a337`). `Modifier.weight`
             // has no such floor, and the producer already filters
-            // `if tokens > 0` (`agent/context_breakdown.py:169-171`), so this is
+            // `if tokens > 0` (`agent/context_breakdown.py:171`), so this is
             // unreachable at the pin and ledgered in `docs/parity/context-usage.md`.
             if (category.tokens > 0) {
                 val weight = (category.tokens.toFloat() / segmentTotal.toFloat()).coerceAtLeast(0.0001f)

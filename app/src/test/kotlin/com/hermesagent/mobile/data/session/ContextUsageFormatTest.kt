@@ -130,10 +130,10 @@ class ContextUsageFormatTest {
     }
 
     /**
-     * The eight strings the Gateway actually sends. `_CATEGORY_COLORS` in
+     * The eight strings the Gateway actually sends. `_CATEGORIES` in
      * `agent/context_breakdown.py:18-27` @
      * `437116f9497c80d242ce034ff7f5d81dc277a337` maps every known id to one of
-     * these, and `:155` defaults an unknown id to `var(--ui-text-tertiary)` —
+     * these, and the producer emits only entries with `tokens > 0` (`:167-172`) —
      * there is no hex value anywhere on this wire, which is why a test that fed
      * hand-written hex proved nothing about what ships.
      */
@@ -185,8 +185,11 @@ class ContextUsageFormatTest {
     @Test
     fun `an unknown category, a malformed value and a null all fall back to the tertiary ink`() {
         val tokens = tokens(dark = true)
-        // `context_breakdown.py:155` — the default for an id this build of the
-        // Gateway does not know.
+        // The client resolves `var(--ui-text-tertiary)` itself and falls back to
+        // that ink for anything the Gateway could send that this build does not
+        // know — the pin's producer only emits ids from its own table
+        // (`agent/context_breakdown.py:18-27,167-172` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`), so this is defence in depth.
         assertEquals(tokens.textTertiary, resolveCategoryColor("var(--ui-text-tertiary)", tokens))
         assertEquals(tokens.textTertiary, resolveCategoryColor("var(--context-usage-unheard-of)", tokens))
         assertEquals(tokens.textTertiary, resolveCategoryColor("chartreuse", tokens))

@@ -172,7 +172,8 @@ class ContextUsageJourneyTest {
         // The colours are the strings the Gateway actually sends
         // (`agent/context_breakdown.py:18-27` @
         // `437116f9497c80d242ce034ff7f5d81dc277a337`), and the ids are its own,
-        // so the eight `en.ts` labels are what has to render.
+        // so the eight `apps/desktop/src/i18n/en.ts:3589-3596` labels are what
+        // has to render.
         val breakdown = ContextBreakdown(
             contextUsed = 4_000,
             contextMax = 20_000,
@@ -197,7 +198,8 @@ class ContextUsageJourneyTest {
         compose.onNodeWithText("~20% Full").assertIsDisplayed()
         compose.onNodeWithText("Source: local estimate").assertIsDisplayed()
 
-        // Categories rendered with the pinned `en.ts:3589-3596` names and
+        // Categories rendered with the pinned
+        // `apps/desktop/src/i18n/en.ts:3589-3596` names and
         // local-estimate markers.
         compose.onNodeWithText("System prompt").assertIsDisplayed()
         compose.onNodeWithText("~2k").assertIsDisplayed()
