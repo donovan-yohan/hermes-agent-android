@@ -22,6 +22,13 @@ if ! grep -qx 'Success' <<<"$install_output"; then
   exit 1
 fi
 
+# A cold, memory-tight emulator can ANR its launcher while the fixture activity
+# starts, and the system dialog then covers the window this capture reads — the
+# retained tree came back as "Pixel Launcher isn't responding" instead of the
+# sheet. Those dialogs are an emulator artifact, not something this lane
+# measures, so the platform is told not to draw them.
+adb shell settings put global hide_error_dialogs 1
+
 activity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["android_activity"])' "$request_json")"
 fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixture_id"])' "$request_json")"
 tap_text="$(python3 -c 'import json,sys; values=json.load(open(sys.argv[1]))["state_spec"]["interaction"]; print(values[0][4:] if values else "")' "$request_json")"
