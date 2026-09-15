@@ -25,6 +25,11 @@ diff colour values: Desktop writes them as `color-mix` expressions and Android
 ports the expressions, so a value diff would be permanent noise. Values are
 covered by reading the diff and by `ColorMathTest`.
 
+It reads two upstream files: `apps/desktop/src/themes/presets.ts` for identity,
+registry and typography, and `apps/shared/src/theme-presets.ts` for the palette
+literals, which upstream extracted into the shared package in September 2026
+(each preset body is now a `...THEME_PRESET_PALETTES.<key>` spread).
+
 ## 2. Map the change
 
 | What changed upstream | What to do here |

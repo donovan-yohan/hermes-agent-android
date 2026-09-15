@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Diff the Hermes Desktop theme registry against this repo's Android port.
 
-Compares upstream ``apps/desktop/src/themes/presets.ts`` with
+Compares upstream ``apps/desktop/src/themes/presets.ts`` (identity, typography,
+registry) and ``apps/shared/src/theme-presets.ts`` (the palette literals, which
+upstream extracted into the shared package in September 2026) with
 ``app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt`` and the
 offline ledger at
 ``app/src/test/kotlin/com/hermesagent/mobile/ui/theme/DesktopThemeLedger.kt``.
@@ -32,8 +34,10 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from typing import NoReturn
 
 PRESETS_REL = "apps/desktop/src/themes/presets.ts"
+PALETTES_REL = "apps/shared/src/theme-presets.ts"
 ANDROID_REL = "app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt"
 LEDGER_REL = "app/src/test/kotlin/com/hermesagent/mobile/ui/theme/DesktopThemeLedger.kt"
 
@@ -55,14 +59,57 @@ class Report:
             self.problems.append(message)
 
 
-def die(message: str) -> None:
+def die(message: str) -> NoReturn:
     print(f"error: {message}", file=sys.stderr)
     sys.exit(2)
 
 
 # ── upstream ────────────────────────────────────────────────────────────────
 
-def parse_desktop(source: str) -> tuple[list[Preset], str]:
+def parse_shared_palettes(source: str) -> dict[str, bool]:
+    """`has darkColors` per preset key from apps/shared/src/theme-presets.ts.
+
+    Upstream moved the palette literals out of presets.ts into the shared
+    package (September 2026), leaving each preset a
+    `...THEME_PRESET_PALETTES.<key>` spread. Anchored scanning here too: a shape
+    change must fail loudly rather than quietly report every theme as
+    synthesised.
+    """
+    lines = source.split("\n")
+    try:
+        start = next(
+            i for i, line in enumerate(lines)
+            if line.startswith("export const THEME_PRESET_PALETTES")
+        )
+    except StopIteration:
+        die(f"could not find THEME_PRESET_PALETTES in {PALETTES_REL}")
+
+    out: dict[str, bool] = {}
+    pattern = re.compile(r"^  (?:'([\w-]+)'|(\w+)): \{\s*$")
+    index = start + 1
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("}"):
+            break
+        match = pattern.match(line)
+        if not match:
+            index += 1
+            continue
+        key = match.group(1) or match.group(2)
+        end = index
+        while end + 1 < len(lines) and lines[end + 1] not in ("  },", "  }"):
+            end += 1
+        out[key] = bool(
+            re.search(r"^\s{4}darkColors:", "\n".join(lines[index:end + 1]), re.MULTILINE)
+        )
+        index = end + 1
+
+    if not out:
+        die(f"could not parse any preset palette in {PALETTES_REL}")
+    return out
+
+
+def parse_desktop(source: str, palettes: dict[str, bool]) -> tuple[list[Preset], str]:
     """Pull the registry out of presets.ts without a TypeScript parser.
 
     The file is a flat list of object literals with one shape, so anchored
@@ -80,11 +127,22 @@ def parse_desktop(source: str) -> tuple[list[Preset], str]:
     by_symbol: dict[str, Preset] = {}
     for symbol, body in blocks:
         name = _field(body, "name", symbol)
+        spread = re.search(r"\.\.\.THEME_PRESET_PALETTES(?:\.(\w+)|\[\s*'([\w-]+)'\s*\])", body)
+        if spread:
+            key = spread.group(1) or spread.group(2)
+            if key not in palettes:
+                die(
+                    f"preset `{symbol}` spreads THEME_PRESET_PALETTES.{key}, "
+                    f"which {PALETTES_REL} does not define"
+                )
+            has_dark = palettes[key]
+        else:
+            has_dark = bool(re.search(r"^\s{2}darkColors:", body, re.MULTILINE))
         by_symbol[symbol] = Preset(
             name=name,
             label=_field(body, "label", symbol),
             description=_field(body, "description", symbol),
-            has_dark=bool(re.search(r"^\s{2}darkColors:", body, re.MULTILINE)),
+            has_dark=has_dark,
         )
 
     registry = re.search(
@@ -200,6 +258,9 @@ def main() -> int:
     presets_file = upstream / PRESETS_REL
     if not presets_file.is_file():
         die(f"no upstream registry at {presets_file}. Pass --upstream.")
+    palettes_file = upstream / PALETTES_REL
+    if not palettes_file.is_file():
+        die(f"no upstream palettes at {palettes_file}. Pass --upstream.")
 
     android_file = repo / ANDROID_REL
     ledger_file = repo / LEDGER_REL
@@ -207,7 +268,9 @@ def main() -> int:
         if not path.is_file():
             die(f"missing {path}. Pass --repo.")
 
-    desktop, desktop_default = parse_desktop(presets_file.read_text())
+    desktop, desktop_default = parse_desktop(
+        presets_file.read_text(), parse_shared_palettes(palettes_file.read_text())
+    )
     android, android_default = parse_android(android_file.read_text())
     ledger_sha, ledger = parse_ledger(ledger_file.read_text())
 

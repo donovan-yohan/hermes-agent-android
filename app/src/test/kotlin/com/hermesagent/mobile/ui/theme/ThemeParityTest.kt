@@ -49,9 +49,10 @@ class ThemeParityTest {
         for (entry in DesktopThemeLedger.ENTRIES) {
             val preset = BuiltinThemes.resolve(entry.name)
             assertEquals(
-                "${entry.name}: darkColors presence must match Desktop. A hand-tuned dark half " +
-                    "cannot be replaced by synthesis, and a dark-first preset must not gain an " +
-                    "invented light palette.",
+                "${entry.name}: darkColors presence must match Desktop " +
+                    "(${DesktopThemeLedger.PALETTE_SOURCE_PATH} @ ${DesktopThemeLedger.PINNED_SHA}). " +
+                    "A hand-tuned dark half cannot be replaced by synthesis, and a dark-first " +
+                    "preset must not gain an invented light palette.",
                 entry.hasHandTunedDark,
                 preset.darkColors != null,
             )

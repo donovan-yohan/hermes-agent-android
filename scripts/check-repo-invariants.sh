@@ -144,7 +144,7 @@ fi
 # destructive-action red) — a different semantic that merely happened to be
 # green and red, and that moves with the palette. Desktop derives every diff
 # surface from `--ui-green` / `--ui-red` instead (`styles.css:236-241` light,
-# `:564-565` dark, @ `564aef2946c436500a5e80ee117b66b789b3f99a`).
+# `:564-565` dark, @ `437116f9497c80d242ce034ff7f5d81dc277a337`).
 #
 # The panel keys on `DiffKind` rather than on the raw `+`/`-` marker since #71
 # S34: the marker is stripped before a line is painted (`diff-lines.tsx:83-89`

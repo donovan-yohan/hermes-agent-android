@@ -3,7 +3,7 @@ package com.hermesagent.mobile.data.voice
 /**
  * Speech-text sanitizer, a literal port of Hermes Desktop's
  * `apps/desktop/src/lib/speech-text.ts:1-167`
- * @ `564aef2946c436500a5e80ee117b66b789b3f99a`.
+ * @ `437116f9497c80d242ce034ff7f5d81dc277a337`.
  *
  * A reply is written to be read on screen; synthesis reads it aloud. Markdown
  * chrome, fenced code, tables, link targets, emoji and bare URLs are noise once

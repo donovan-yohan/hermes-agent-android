@@ -14,7 +14,7 @@ const val CONTRIBUTION_SOURCE_CORE: String = "core"
  *
  * Direct Kotlin/Compose port of Desktop's `Contribution`
  * (`apps/desktop/src/contrib/types.ts:25-45` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
  */
 data class Contribution(
     /** Stable id, unique within its area. Re-registering the same id replaces it. */

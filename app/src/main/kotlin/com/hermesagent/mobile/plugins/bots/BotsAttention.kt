@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.update
  *
  * Direct Kotlin port of Desktop's `BOT_ATTENTION_CLASSES` and
  * `attentionReasonFromError` (`apps/desktop/src/plugins/hermes-bots/data.ts:52-116`
- * @ `564aef2946c436500a5e80ee117b66b789b3f99a`). The four classes are the
+ * @ `437116f9497c80d242ce034ff7f5d81dc277a337`). The four classes are the
  * *attention-worthy* failures; everything transient classifies to null and
  * therefore **never badges**. That asymmetry is the whole point of the rule —
  * a retryable rate limit, an overloaded backend or a timeout is not something

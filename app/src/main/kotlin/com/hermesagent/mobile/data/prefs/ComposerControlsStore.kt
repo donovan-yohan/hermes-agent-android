@@ -51,7 +51,7 @@ interface ComposerControlsStore {
      * has never customised the list — in which case the curated default
      * applies. Desktop keeps the same nullable set in one `localStorage` entry
      * (`apps/desktop/src/store/model-visibility.ts:6,87-89` @
-     * `564aef2946c436500a5e80ee117b66b789b3f99a`); it is scoped per connection
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`); it is scoped per connection
      * here for the same reason a saved model pick is — two Gateways are two
      * catalogs, and a shortlist that crossed between them would name models the
      * other host does not have.

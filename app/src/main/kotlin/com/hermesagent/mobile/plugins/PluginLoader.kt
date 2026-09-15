@@ -11,7 +11,7 @@ import kotlinx.coroutines.cancel
  *
  * Direct Kotlin port of Desktop's bundled plugin loader
  * (`apps/desktop/src/contrib/plugins.ts:25-63` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
  */
 class PluginLoader(
     private val registry: ContributionRegistry,
