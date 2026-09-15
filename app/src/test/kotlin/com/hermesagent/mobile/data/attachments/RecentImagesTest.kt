@@ -3,10 +3,13 @@ package com.hermesagent.mobile.data.attachments
 import android.Manifest
 import android.database.MatrixCursor
 import android.provider.MediaStore
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -128,21 +131,83 @@ class RecentImagesTest {
     }
 
     @Test
-    fun `generation fence accepts a current result once`() {
+    fun `scoped fence accepts a current result once and refuses a moved world`() {
         var generation = 8L
-        val fence = PickerGenerationFence { generation }
+        var session: String? = "session-a"
+        val fence = PickerGenerationFence { AttachmentPickScope(generation, session) }
 
-        assertFalse(fence.accept())
+        assertNull(fence.accept())
         fence.begin()
-        assertTrue(fence.accept())
-        assertFalse(fence.accept())
+        assertEquals(AttachmentPickScope(8L, "session-a"), fence.accept())
+        assertNull(fence.accept())
 
         fence.begin()
         generation = 9L
-        assertFalse(fence.accept())
+        assertNull(fence.accept())
+
+        fence.begin()
+        session = "session-b"
+        assertNull(fence.accept())
 
         fence.begin()
         fence.invalidate()
-        assertFalse(fence.accept())
+        assertNull(fence.accept())
+    }
+
+    @Test
+    fun `a launched pick stops holding once its session changes`() {
+        var generation = 4L
+        var session: String? = "session-a"
+        val fence = PickerGenerationFence { AttachmentPickScope(generation, session) }
+        fence.begin()
+        val scope = checkNotNull(fence.accept())
+
+        assertTrue(fence.holds(scope))
+        session = "session-b"
+        assertFalse(fence.holds(scope))
+        assertEquals(scope, AttachmentPickScope(4L, "session-a"))
+    }
+
+    @Test
+    fun `a refused library read reports itself rather than an empty device`() = runTest {
+        val failing = FakeRecentImagesSource(failRows = true)
+
+        val read = failing.readRecentImages()
+
+        assertTrue(read.failed)
+        assertTrue(read.images.isEmpty())
+        assertTrue(read.thumbnails.isEmpty())
+    }
+
+    @Test
+    fun `a rail read bounds its rows and survives one undecodable preview`() = runTest {
+        val source = FakeRecentImagesSource(
+            rows = (1L..20L).map { RecentImage(it, "image-$it.png") },
+            failPreviews = true,
+        )
+
+        val read = source.readRecentImages()
+
+        assertFalse(read.failed)
+        assertEquals(RecentImagesPolicy.MAX_RAIL_IMAGES, read.images.size)
+        assertTrue(read.thumbnails.isEmpty())
+    }
+
+    private class FakeRecentImagesSource(
+        private val rows: List<RecentImage> = emptyList(),
+        private val failRows: Boolean = false,
+        private val failPreviews: Boolean = false,
+    ) : RecentImagesSource {
+        override fun recentImages(limit: Int): List<RecentImage> {
+            if (failRows) error("fixture library failure")
+            return rows.take(limit.coerceAtMost(RecentImagesPolicy.MAX_RAIL_IMAGES))
+        }
+
+        override fun thumbnail(imageId: Long, maxPx: Int): ImageBitmap? {
+            if (failPreviews) error("fixture preview failure")
+            return null
+        }
+
+        override fun sourceFor(image: RecentImage): String = "content://fixture/media/${image.id}"
     }
 }

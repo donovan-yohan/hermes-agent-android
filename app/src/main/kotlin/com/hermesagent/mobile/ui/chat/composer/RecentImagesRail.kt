@@ -45,6 +45,8 @@ data class RecentImagesUiState(
     val thumbnails: Map<Long, ImageBitmap> = emptyMap(),
     /** Image ids already added to this message, so a second tap is not a second copy. */
     val addedIds: Set<Long> = emptySet(),
+    /** The device was asked and refused: not the same statement as an empty library. */
+    val failed: Boolean = false,
     /** True once this message holds as many attachments as it can carry. */
     val full: Boolean = false,
 ) {
@@ -71,6 +73,12 @@ internal fun RecentImagesSection(
         when {
             state.loading -> RecentImagesLoading()
             state.showsRail -> RecentImagesRail(state, onAddImage)
+            state.failed -> Text(
+                "Recent images couldn't be read. Choose photos instead.",
+                style = HermesTheme.type.scaffoldMeta,
+                color = tokens.scaffoldMeta,
+                modifier = Modifier.testTag("Recent images unavailable"),
+            )
             state.access.readsLibrary -> {
                 Text(
                     "No recent images on this device.",

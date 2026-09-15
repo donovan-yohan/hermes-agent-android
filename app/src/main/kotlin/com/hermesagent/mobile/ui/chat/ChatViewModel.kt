@@ -46,6 +46,7 @@ import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.attachments.AttachmentEncoding
 import com.hermesagent.mobile.data.attachments.AttachmentKind
+import com.hermesagent.mobile.data.attachments.AttachmentPickScope
 import com.hermesagent.mobile.data.attachments.AttachmentPolicy
 import com.hermesagent.mobile.data.attachments.AttachmentReader
 import com.hermesagent.mobile.data.attachments.AttachmentReadResult
@@ -56,6 +57,7 @@ import com.hermesagent.mobile.data.attachments.RecentImage
 import com.hermesagent.mobile.data.attachments.RecentImageAccess
 import com.hermesagent.mobile.data.attachments.RecentImagesPolicy
 import com.hermesagent.mobile.data.attachments.RecentImagesSource
+import com.hermesagent.mobile.data.attachments.readRecentImages
 import com.hermesagent.mobile.ui.chat.composer.RecentImagesUiState
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.data.gateway.APPROVAL_MODE_REJECTED
@@ -520,7 +522,7 @@ internal class ChatViewModel(
     /** Whether the add sheet is on screen, which is the only reason to read the library. */
     private var recentImagesOpen = false
     /** Occurrence id to device image id, so removing a chip clears its rail mark. */
-    private val recentImageAdds = mutableMapOf<String, Long>()
+    private val recentImageAdds = MutableStateFlow<Map<String, Long>>(emptyMap())
     /** Activity-owned reader; it never persists a media grant. */
     var recentImagesSource: RecentImagesSource? = null
     private val activeSessionId = MutableStateFlow<String?>(null)
@@ -646,8 +648,8 @@ internal class ChatViewModel(
         historyRevision,
         queueScopeReady,
         repository.pendingInputs,
-        combine(attachments, attachmentThumbnails, recentImages) { drafts, thumbnails, rail ->
-            AttachmentBundle(drafts, thumbnails, rail)
+        combine(attachments, attachmentThumbnails, recentImages, recentImageAdds) { drafts, thumbnails, rail, marks ->
+            AttachmentBundle(drafts, thumbnails, rail, marks)
         },
     ) { queue, revision, scopeReady, pending, draftsWithThumbnails ->
         LocalComposerState(
@@ -658,6 +660,7 @@ internal class ChatViewModel(
             attachments = draftsWithThumbnails.attachments,
             attachmentThumbnails = draftsWithThumbnails.thumbnails,
             recentImages = draftsWithThumbnails.recentImages,
+            recentImageAdds = draftsWithThumbnails.recentImageAdds,
         )
     }
 
@@ -790,7 +793,7 @@ internal class ChatViewModel(
             recentImages = navigation.localComposer.recentImages.forDisplayedScope(
                 RecentImagesScope(connectionGeneration(), displayedActiveId),
                 navigation.localComposer.attachments,
-                recentImageAdds,
+                navigation.localComposer.recentImageAdds,
             ),
         )
         val backgroundPending = navigation.localComposer.pendingInputs.values
@@ -2605,8 +2608,8 @@ internal class ChatViewModel(
                         claimedIds.forEach { occurrenceId ->
                             attachmentPayloads.remove(occurrenceId)?.fill(0)
                             attachmentMimes.remove(occurrenceId)
-                            recentImageAdds.remove(occurrenceId)
                         }
+                        recentImageAdds.value = recentImageAdds.value - claimedIds.toSet()
                         attachmentThumbnails.value = attachmentThumbnails.value - claimedIds
                         attachments.value = attachments.value.filterNot { it.occurrenceId in claimedIds }
                         composerHistoryController.reset(sessionId)
@@ -2714,10 +2717,25 @@ internal class ChatViewModel(
     private val attachmentPayloads = mutableMapOf<String, ByteArray>()
     private val attachmentMimes = mutableMapOf<String, String?>()
 
-    /** Read one locally granted source into an in-memory draft. */
-    fun addAttachmentFromGrant(uriString: String, displayName: String, claimedMime: String?): String? {
+    /**
+     * Read one locally granted source into an in-memory draft. [expectedScope]
+     * is the world the pick was launched in: a grant that outlived a reconnect,
+     * an endpoint switch or a session change is refused rather than attached to
+     * whichever composer happens to be on screen when it lands. The rail's own
+     * tap passes its scope for the same reason.
+     */
+    fun addAttachmentFromGrant(
+        uriString: String,
+        displayName: String,
+        claimedMime: String?,
+        expectedScope: AttachmentPickScope? = null,
+    ): String? {
         if (refuseBotChatMutation() != null) return null
         val sessionId = activeSessionId.value ?: return null
+        if (expectedScope != null && expectedScope != attachmentPickScope()) {
+            reportExpiredAttachmentPick()
+            return null
+        }
         if (attachments.value.count { it.durableSessionId == sessionId } >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) {
             noticeLine = "That is more attachments than one message can carry."
             return null
@@ -2813,7 +2831,7 @@ internal class ChatViewModel(
         if (refuseBotChatMutation() != null) return
         attachmentPayloads.remove(occurrenceId)?.fill(0)
         attachmentMimes.remove(occurrenceId)
-        recentImageAdds.remove(occurrenceId)
+        recentImageAdds.value = recentImageAdds.value - occurrenceId
         attachmentThumbnails.value = attachmentThumbnails.value - occurrenceId
         attachments.value = attachments.value.filterNot { it.occurrenceId == occurrenceId }
     }
@@ -2831,24 +2849,17 @@ internal class ChatViewModel(
         }
         recentImages.value = ScopedRecentImages(scope = scope, access = access, loading = true)
         recentImagesLoad = viewModelScope.launch {
-            val (loaded, thumbnails) = withContext(attachmentReadDispatcher) {
-                val rows = runCatching { source.recentImages(RecentImagesPolicy.MAX_RAIL_IMAGES) }
-                    .getOrElse { emptyList() }
-                val previews = rows.mapNotNull { image ->
-                    runCatching { source.thumbnail(image.id, RecentImagesPolicy.THUMBNAIL_MAX_DIM) }
-                        .getOrNull()
-                        ?.let { image.id to it }
-                }.toMap()
-                rows to previews
-            }
-            if (recentImages.value.scope == scope && currentRecentImagesScope() == scope) {
-                recentImages.value = ScopedRecentImages(
-                    scope = scope,
-                    access = access,
-                    images = loaded,
-                    thumbnails = thumbnails,
-                )
-            }
+            val read = withContext(attachmentReadDispatcher) { source.readRecentImages() }
+            if (recentImages.value.scope != scope || currentRecentImagesScope() != scope) return@launch
+            recentImages.value = ScopedRecentImages(
+                scope = scope,
+                access = access,
+                images = read.images,
+                thumbnails = read.thumbnails,
+                // "This device has no images" and "this device could not be
+                // read" are different statements: the rail says which one it is.
+                failed = read.failed,
+            )
         }
     }
 
@@ -2871,16 +2882,16 @@ internal class ChatViewModel(
         val activeAttachments = attachments.value.filter { it.durableSessionId == scope.durableSessionId }
         if (activeAttachments.size >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) return
         val activeOccurrences = activeAttachments.mapTo(mutableSetOf()) { it.occurrenceId }
-        if (recentImageAdds.any { (occurrence, id) -> occurrence in activeOccurrences && id == imageId }) return
+        val marks = recentImageAdds.value
+        if (marks.any { (occurrence, id) -> occurrence in activeOccurrences && id == imageId }) return
         val source = recentImagesSource ?: return
         val sourceUri = runCatching { source.sourceFor(image) }.getOrNull() ?: return
-        addAttachmentFromGrant(sourceUri, image.displayName, image.mimeType)?.let { occurrence ->
-            // addAttachment reserves synchronously. The mark must follow the
-            // same scope, otherwise a reconnect could paint an old selection.
-            val current = recentImages.value
-            if (current.scope == scope && currentRecentImagesScope() == scope) {
-                recentImageAdds[occurrence] = imageId
-                recentImages.value = current.copy(addedIds = current.addedIds + imageId)
+        val expected = AttachmentPickScope(scope.connectionGeneration, scope.durableSessionId)
+        addAttachmentFromGrant(sourceUri, image.displayName, image.mimeType, expected)?.let { occurrence ->
+            // The mark must follow the same scope, otherwise a reconnect could
+            // paint an old selection onto a newer rail.
+            if (currentRecentImagesScope() == scope) {
+                recentImageAdds.value = recentImageAdds.value + (occurrence to imageId)
             }
         }
     }
@@ -2904,10 +2915,13 @@ internal class ChatViewModel(
         }
     }
 
-    /** A late picker result belongs to the connection that opened it. */
+    /** A late picker result belongs to the world that opened it, not to this one. */
     fun reportExpiredAttachmentPick() {
-        noticeLine = "Those photos arrived after the connection changed. Pick them again."
+        noticeLine = "Those attachments arrived after the session changed. Pick them again."
     }
+
+    /** The world a launched picker belongs to; the Activity fences its results to it. */
+    fun attachmentPickScope() = AttachmentPickScope(connectionGeneration(), activeSessionId.value)
 
     private fun currentRecentImagesScope() = RecentImagesScope(connectionGeneration(), activeSessionId.value)
 
@@ -2915,7 +2929,7 @@ internal class ChatViewModel(
         recentImagesLoad?.cancel()
         recentImagesLoad = null
         recentImagesOpen = false
-        recentImageAdds.clear()
+        recentImageAdds.value = emptyMap()
         recentImages.value = recentImages.value.cleared()
     }
 
@@ -4050,12 +4064,15 @@ internal class ChatViewModel(
         val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
         /** The device rail is read separately from attachment payload bytes. */
         val recentImages: ScopedRecentImages = ScopedRecentImages(),
+        /** Occurrence id to device image id for the rail marks the chips carry. */
+        val recentImageAdds: Map<String, Long> = emptyMap(),
     )
 
     private data class AttachmentBundle(
         val attachments: List<ComposerAttachmentDraft>,
         val thumbnails: Map<String, ImageBitmap>,
         val recentImages: ScopedRecentImages,
+        val recentImageAdds: Map<String, Long>,
     )
 
     private data class RecentImagesScope(
@@ -4074,7 +4091,8 @@ internal class ChatViewModel(
         val loading: Boolean = false,
         val images: List<RecentImage> = emptyList(),
         val thumbnails: Map<Long, ImageBitmap> = emptyMap(),
-        val addedIds: Set<Long> = emptySet(),
+        /** The read reached the device but the library refused it. */
+        val failed: Boolean = false,
     ) {
         /** The same grant with everything the library supplied taken away. */
         fun cleared() = ScopedRecentImages(access = access)
@@ -4089,7 +4107,7 @@ internal class ChatViewModel(
     private fun ScopedRecentImages.forDisplayedScope(
         displayedScope: RecentImagesScope,
         drafts: List<ComposerAttachmentDraft>,
-        added: Map<String, Long>,
+        marks: Map<String, Long>,
     ): RecentImagesUiState {
         val activeDrafts = drafts.filter { it.durableSessionId == displayedScope.durableSessionId }
         val full = activeDrafts.size >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE
@@ -4102,7 +4120,10 @@ internal class ChatViewModel(
             loading = loading,
             images = images,
             thumbnails = thumbnails,
-            addedIds = added.filterKeys(present::contains).values.toSet(),
+            // A mark outlives the chip that carried it only by a frame; the
+            // drafts on screen are what decide whether it still counts.
+            addedIds = marks.filterKeys(present::contains).values.toSet(),
+            failed = failed,
             full = full,
         )
     }

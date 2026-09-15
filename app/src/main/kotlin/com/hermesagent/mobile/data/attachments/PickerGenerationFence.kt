@@ -1,23 +1,37 @@
 package com.hermesagent.mobile.data.attachments
 
 /**
- * Fences one Activity result to the connection generation it was launched
- * under. A picker outlives a reconnect or endpoint switch; a result from the
- * old world must never attach into the new one.
+ * The composer world a picker was launched in: the connection generation plus
+ * the durable session that owned the composer. A picker outlives a reconnect,
+ * an endpoint switch or a session change, and a result from an old world must
+ * never attach into the new one.
  */
-class PickerGenerationFence(private val currentGeneration: () -> Long) {
-    private var pending: Long? = null
+data class AttachmentPickScope(val generation: Long, val sessionId: String?)
+
+/**
+ * Fences one Activity result to the scope that launched it, and keeps that
+ * scope available so the caller can re-check it after its own asynchronous
+ * work (reading a picker's metadata is a suspension point).
+ */
+class PickerGenerationFence(private val currentScope: () -> AttachmentPickScope) {
+    private var pending: AttachmentPickScope? = null
 
     fun begin() {
-        pending = currentGeneration()
+        pending = currentScope()
     }
 
-    /** True only for the first result after [begin] and only in the same generation. */
-    fun accept(): Boolean {
-        val launched = pending ?: return false
+    /**
+     * The scope this result belongs to, once, or null when nothing was launched
+     * or the world already moved before the result arrived.
+     */
+    fun accept(): AttachmentPickScope? {
+        val launched = pending ?: return null
         pending = null
-        return launched == currentGeneration()
+        return launched.takeIf { it == currentScope() }
     }
+
+    /** True only while [scope] is still the world the composer is in. */
+    fun holds(scope: AttachmentPickScope): Boolean = scope == currentScope()
 
     fun invalidate() {
         pending = null

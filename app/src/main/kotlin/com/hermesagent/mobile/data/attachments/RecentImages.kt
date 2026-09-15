@@ -10,6 +10,9 @@ import android.provider.MediaStore
 import android.util.Size
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** How much of this device's image library the rail may read right now. */
 enum class RecentImageAccess {
@@ -47,6 +50,40 @@ interface RecentImagesSource {
     fun thumbnail(imageId: Long, maxPx: Int): ImageBitmap?
     /** The in-memory source string for one row. Never stored, never sent as a path. */
     fun sourceFor(image: RecentImage): String
+}
+
+/** The bounded result of one rail read: the rows a device offered, or its refusal. */
+class RecentImageRead(
+    val images: List<RecentImage> = emptyList(),
+    val thumbnails: Map<Long, ImageBitmap> = emptyMap(),
+    val failed: Boolean = false,
+)
+
+/**
+ * Read the rail's rows and their previews in one bounded pass. Cancellation is
+ * never swallowed: a read the sheet no longer owns stops before its next
+ * provider call instead of decoding the rest of a library nobody is looking at,
+ * and one image that cannot be previewed never turns into a failed rail.
+ */
+suspend fun RecentImagesSource.readRecentImages(): RecentImageRead {
+    val images = try {
+        recentImages(RecentImagesPolicy.MAX_RAIL_IMAGES)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        return RecentImageRead(failed = true)
+    }
+    val thumbnails = images.mapNotNull { image ->
+        currentCoroutineContext().ensureActive()
+        try {
+            thumbnail(image.id, RecentImagesPolicy.THUMBNAIL_MAX_DIM)?.let { image.id to it }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+    }.toMap()
+    return RecentImageRead(images = images, thumbnails = thumbnails)
 }
 
 /** The platform MediaStore implementation for the add sheet's device-local rail. */

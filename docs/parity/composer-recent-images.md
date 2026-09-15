@@ -40,8 +40,8 @@ Every `path:line` below is against that SHA.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| `Attach → Images…` opens Desktop's own image dialog (`context-menu.tsx:77-79`, copy `en.ts:2927`) | mobile-adaptation | The sheet's `Choose photos` row opens the system photo picker (`ActivityResultContracts.PickMultipleVisualMedia`, `MainActivity.kt:229-230`) | Android has no file dialog to open; the system photo picker is the platform surface for images, and it can only return the images the person picked, so this route needs no library grant at all |
-| Desktop has no rail of recent media; its Files and Folder rows read a filesystem tree (`context-menu.tsx:71-76`) | mobile-adaptation | A labelled horizontal `Recent images` rail above Files lists the newest images a media grant covers, each tap adding one through the staged pipeline (`RecentImagesRail.kt:138-192`, `RecentImages.kt:50-60`) | A phone's screenshots live in a shared media library with no tree to browse, so the touch affordance for the same acquisition is a rail; it is bounded to 12 rows, re-read on every sheet open, and fenced to the session the sheet was opened for |
+| `Attach → Images…` opens Desktop's own image dialog (`context-menu.tsx:77-79`, copy `en.ts:2927`) | mobile-adaptation | The sheet's `Choose photos` row opens the system photo picker (`ActivityResultContracts.PickMultipleVisualMedia`, `MainActivity.kt:229-233`) | Android has no file dialog to open; the system photo picker is the platform surface for images, and it can only return the images the person picked, so this route needs no library grant at all. Its result is fenced to the connection generation *and* durable session that opened it, and re-checked after the picker's metadata read, so a pick that outlives a reconnect or a session switch is refused rather than attached to whatever composer is on screen |
+| Desktop has no rail of recent media; its Files and Folder rows read a filesystem tree (`context-menu.tsx:71-76`) | mobile-adaptation | A labelled horizontal `Recent images` rail above Files lists the newest images a media grant covers, each tap adding one through the staged pipeline (`RecentImagesRail.kt:140-196`, `RecentImages.kt:60-95`) | A phone's screenshots live in a shared media library with no tree to browse, so the touch affordance for the same acquisition is a rail; it is bounded to 12 rows, re-read on every sheet open, fenced to the session the sheet was opened for, and a read the device refuses says so instead of claiming the library is empty |
 | `Folder…` and `Paste image` rows (`context-menu.tsx:74-76`, `:80-86`, copy `en.ts:2926`, `:2928`) | omission | Neither row exists on Android; the sheet keeps its "Folders aren't available yet." notice | deferred: #278 |
 
 ## Visual report
@@ -65,7 +65,9 @@ that boundary, and the rail itself has no Desktop counterpart to render beside.
 |---|---|
 | The device read is bounded, newest-first, and fail-closed on a malformed or over-long row | `RecentImagesTest` |
 | Per-platform permission sets and what a granted/partial/denied answer means | `RecentImagesTest` |
-| An Activity result from a previous connection generation is refused | `RecentImagesTest` |
+| A picker result from a previous connection generation or session is refused, and a launched pick stops holding once its session changes | `RecentImagesTest` |
+| A refused library read reports the refusal instead of an empty device, and one undecodable preview does not fail the rail | `RecentImagesTest`, `ChatViewModelTest` |
 | A tap adds through the existing pipeline, a second tap is not a second copy, the count cap marks the rail full, removal clears the mark, and an endpoint switch wipes the rail | `ChatViewModelTest` |
-| Loading, permission, empty and populated states; horizontal scrolling; the 48dp target; multi-pick; accessibility descriptions | `RecentImagesRailTest` |
+| A grant that outlived its session is refused with a recovery notice rather than attached | `ChatViewModelTest` |
+| Loading, permission, empty, refused and populated states; horizontal scrolling; the 48dp target; multi-pick; accessibility descriptions | `RecentImagesRailTest` |
 | The rail sits above Files and the existing Files / URL / Prompt snippets rows survive | `RecentImagesRailTest` |

@@ -64,6 +64,16 @@ class RecentImagesRailTest {
     fun `granted empty state names the device result`() {
         setRail(RecentImagesUiState(access = RecentImageAccess.Granted))
         compose.onNodeWithTag("Recent images empty").assertIsDisplayed()
+        compose.onNodeWithTag("Recent images unavailable").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a refused read says so and still offers the picker`() {
+        setRail(RecentImagesUiState(access = RecentImageAccess.Granted, failed = true))
+        compose.onNodeWithTag("Recent images unavailable").assertIsDisplayed()
+        compose.onNodeWithText("Recent images couldn't be read. Choose photos instead.").assertIsDisplayed()
+        compose.onNodeWithTag("Recent images empty").assertDoesNotExist()
+        compose.onNodeWithTag("Choose photos action").assertHasClickAction()
     }
 
     @Test

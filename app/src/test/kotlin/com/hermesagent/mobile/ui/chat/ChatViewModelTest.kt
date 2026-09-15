@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.ImageBitmapConfig
 import androidx.compose.ui.graphics.colorspace.ColorSpace
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.data.attachments.AttachmentPickScope
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.AttachmentPolicy
 import com.hermesagent.mobile.data.attachments.RecentImage
@@ -3804,7 +3805,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `failed recent image read clears loading without throwing`() = runTest(dispatcher) {
+    fun `failed recent image read reports the refusal instead of an empty device`() = runTest(dispatcher) {
         collectState()
         runCurrent()
         viewModel.attachmentReadDispatcher = dispatcher
@@ -3816,6 +3817,28 @@ class ChatViewModelTest {
         val state = viewModel.uiState.value.composer.runtime.recentImages
         assertFalse(state.loading)
         assertTrue(state.images.isEmpty())
+        // "Nothing here" and "could not be read" are different sentences.
+        assertTrue(state.failed)
+    }
+
+    @Test
+    fun `a grant that outlived its session is refused rather than attached`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(1).inputStream() }
+
+        val stale = AttachmentPickScope(viewModel.attachmentPickScope().generation, "session-that-left")
+        assertNull(
+            viewModel.addAttachmentFromGrant("content://fixture/grant", "shot.png", "image/png", stale),
+        )
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+        assertEquals(
+            "Those attachments arrived after the session changed. Pick them again.",
+            viewModel.uiState.value.notice?.text,
+        )
     }
 
     @Test

@@ -26,9 +26,11 @@ import com.hermesagent.mobile.data.gateway.EXTRA_SIGN_IN_ORIGIN
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.SignInOrigin
 import com.hermesagent.mobile.data.gateway.signInOriginFrom
+import com.hermesagent.mobile.data.attachments.AttachmentPickScope
 import com.hermesagent.mobile.data.attachments.AttachmentPolicy
 import com.hermesagent.mobile.data.attachments.MediaStoreRecentImages
 import com.hermesagent.mobile.data.attachments.PickerGenerationFence
+import com.hermesagent.mobile.data.attachments.RecentImageAccess
 import com.hermesagent.mobile.data.attachments.RecentImagePermissions
 import com.hermesagent.mobile.data.notifications.ACTION_OPEN_SESSION
 import com.hermesagent.mobile.data.notifications.ANDROID_TIRAMISU
@@ -136,8 +138,11 @@ class MainActivity : ComponentActivity() {
     }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
-    /** A photo result is useful only for the Gateway connection that opened it. */
-    private val photoPickFence = PickerGenerationFence { app.gatewayConnection.currentGeneration }
+    /** A picker result belongs to the composer world that opened it: generation and session. */
+    private val photoPickFence = PickerGenerationFence { chatViewModel.attachmentPickScope() }
+    private val filePickFence = PickerGenerationFence { chatViewModel.attachmentPickScope() }
+    /** The last grant reported to the ViewModel, so an unchanged resume is not a re-read. */
+    private var reportedRecentImageAccess: RecentImageAccess? = null
 
     /**
      * Which surface the next sign-in would be starting from, reported by the
@@ -211,41 +216,47 @@ class MainActivity : ComponentActivity() {
 
     private val pickAttachments =
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-            addAttachmentsFromGrants(uris, fallbackName = "attachment")
+            attachPickedGrants(filePickFence, uris, fallbackName = "attachment")
         }
 
     /** The rail's grant is runtime-only; settings can change it while this Activity is away. */
     private val requestPhotoAccess =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            chatViewModel.onRecentImageAccessChanged(recentImageAccess())
+            reportRecentImageAccess(force = true)
         }
 
     /** Photo-picker sources are fenced before entering the existing one-read attachment pipeline. */
     private val pickPhotos = registerForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE),
     ) { uris ->
-        if (photoPickFence.accept()) {
-            addAttachmentsFromGrants(uris, fallbackName = "image")
-        } else {
-            chatViewModel.reportExpiredAttachmentPick()
-        }
+        attachPickedGrants(photoPickFence, uris, fallbackName = "image")
     }
 
     /**
-     * A picker hands back grants, not metadata: naming each row reads the
-     * provider, so that happens off the main thread, together, and the
-     * ViewModel is told on main once every row is known.
+     * Attach a picker's result only while the composer world that opened it
+     * still holds. The check runs again after the metadata read below, because
+     * that read suspends and a session change happens on the main thread.
      */
-    private fun addAttachmentsFromGrants(uris: List<Uri>, fallbackName: String) {
-        if (uris.isEmpty()) return
+    private fun attachPickedGrants(fence: PickerGenerationFence, uris: List<Uri>, fallbackName: String) {
+        val scope = fence.accept()
+        if (scope == null || uris.isEmpty()) {
+            if (scope == null) chatViewModel.reportExpiredAttachmentPick()
+            return
+        }
         lifecycleScope.launch {
+            if (!fence.holds(scope)) {
+                chatViewModel.reportExpiredAttachmentPick()
+                return@launch
+            }
             val rows = withContext(Dispatchers.IO) {
                 uris.map { uri ->
                     PickedAttachment(uri.toString(), queryDisplayName(uri) ?: fallbackName, contentResolver.getType(uri))
                 }
             }
             for (row in rows) {
-                chatViewModel.addAttachmentFromGrant(row.uriString, row.displayName, row.mimeType)
+                // The ViewModel refuses a row whose world moved during that
+                // read, so nothing lands in the wrong composer.
+                chatViewModel.addAttachmentFromGrant(row.uriString, row.displayName, row.mimeType, scope)
             }
         }
     }
@@ -272,7 +283,7 @@ class MainActivity : ComponentActivity() {
             runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
         }
         chatViewModel.recentImagesSource = MediaStoreRecentImages(contentResolver)
-        chatViewModel.onRecentImageAccessChanged(recentImageAccess())
+        reportRecentImageAccess(force = true)
         // Voice engine hooks: bounded capture and typed Gateway routes only.
         // Dictation requires an explicit runtime mic grant; denial surfaces a
         // recovery message instead of silently failing to capture.
@@ -470,7 +481,10 @@ class MainActivity : ComponentActivity() {
                     onEditorSelectionChange = chatViewModel::onEditorSelectionChange,
                     onCompletionSelected = chatViewModel::onCompletionSelected,
                     onInsertText = chatViewModel::onInsertText,
-                    onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
+                    onPickFiles = {
+                        filePickFence.begin()
+                        pickAttachments.launch(arrayOf("*/*"))
+                    },
                     onAddRecentImage = chatViewModel::addRecentImage,
                     onRequestRecentImageAccess = {
                         requestPhotoAccess.launch(RecentImagePermissions.requested(Build.VERSION.SDK_INT))
@@ -695,11 +709,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        chatViewModel.onRecentImageAccessChanged(recentImageAccess())
+        reportRecentImageAccess()
     }
 
-    private fun recentImageAccess() = RecentImagePermissions.access(Build.VERSION.SDK_INT) { permission ->
-        checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    /**
+     * The media grant is runtime-only, and settings can change it while this
+     * Activity is away. Report it to the ViewModel only when it differs from the
+     * last report: a resume on its own must not make an open sheet re-read a
+     * library somebody is already looking at.
+     */
+    private fun reportRecentImageAccess(force: Boolean = false) {
+        val access = RecentImagePermissions.access(Build.VERSION.SDK_INT) { permission ->
+            checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+        }
+        if (!force && access == reportedRecentImageAccess) return
+        reportedRecentImageAccess = access
+        chatViewModel.onRecentImageAccessChanged(access)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
