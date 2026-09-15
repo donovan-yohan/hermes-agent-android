@@ -72,6 +72,8 @@ import com.hermesagent.mobile.data.session.noSessionsMatch
 import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.isUnread
 import com.hermesagent.mobile.data.session.label
+import com.hermesagent.mobile.data.session.relativeAgeLabel
+import com.hermesagent.mobile.data.session.spokenRelativeAgeLabel
 import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.chat.ArchivedPoolState
 import com.hermesagent.mobile.ui.chat.ProjectProfileScope
@@ -156,6 +158,15 @@ fun SessionList(
     profileRailActions: ProfileRailActions = ProfileRailActions(),
     /** How the project catalog relates to the profile scope the sidebar is in. */
     projectScope: ProjectProfileScope = ProjectProfileScope.Own,
+    /**
+     * The clock every row's relative age is read against.
+     *
+     * Required, not defaulted: the rows arriving in [rows] were bucketed by a
+     * caller that already read a clock, and a second read here could straddle a
+     * midnight boundary and label a row `Today` while it says `1d`. Screens pass
+     * `ChatUiState.nowMillis`; a suite passes its fixture's own instant.
+     */
+    nowMillis: Long,
 ) {
     val tokens = HermesTheme.tokens
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project &&
@@ -324,6 +335,7 @@ fun SessionList(
                         ProjectRow(
                             project = project,
                             activeSessionId = activeSessionId,
+                            nowMillis = nowMillis,
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelect,
                         )
@@ -477,6 +489,7 @@ fun SessionList(
                                     session = row.session,
                                     active = row.session.id == activeSessionId,
                                     onClick = { onSelect(row.session.id) },
+                                    nowMillis = nowMillis,
                                     // A single-profile scope already says which
                                     // profile every row belongs to, so the tag only
                                     // earns its place in the unified view.
@@ -790,6 +803,7 @@ private fun ProjectCreateDialog(
 private fun ProjectRow(
     project: ProjectSummary,
     activeSessionId: String?,
+    nowMillis: Long,
     onOpen: () -> Unit,
     onSelectSession: (String) -> Unit,
 ) {
@@ -853,6 +867,7 @@ private fun ProjectRow(
                 session = session,
                 active = session.id == activeSessionId,
                 onClick = { onSelectSession(session.id) },
+                nowMillis = nowMillis,
             )
         }
     }
@@ -1085,6 +1100,11 @@ private fun SessionRow(
     session: SessionSummary,
     active: Boolean,
     onClick: () -> Unit,
+    /**
+     * The list's one clock read for this render, threaded down rather than
+     * re-read per row: two rows in one list must never disagree about "now".
+     */
+    nowMillis: Long,
     /** The owning profile's chip, or null when the scope already names it. */
     owner: HermesProfile? = null,
     onRename: (suspend (String) -> Unit)? = null,
@@ -1098,6 +1118,11 @@ private fun SessionRow(
     val tokens = HermesTheme.tokens
     val archived = session.archived == true
     val status = session.displayStatus()
+    // Desktop's default row metadata is `preview` plus `updated`: every row
+    // carries the compact age beside its content
+    // (`store/layout.ts:308`; rendered at `session-row.tsx:223-237` @
+    // `437116f9497c80d242ce034ff7f5d81dc277a337`).
+    val ageLabel = relativeAgeLabel(session.lastActiveAtMillis, nowMillis)
     val dot = status.dot(tokens)
     // The dot is the *resolved* state, where a louder one outranks unread; the
     // menu item reads the two raw sources instead, exactly as Desktop does
@@ -1115,7 +1140,7 @@ private fun SessionRow(
                 .fillMaxWidth()
                 .heightIn(min = HermesTheme.spacing.touchTarget)
                 .clickable(onClick = onClick)
-                .testTag("Session row ${session.id}")
+                .testTag(sessionRowTag(session.id))
                 .background(
                     // `--ui-row-active-background` at styles.css:308-312 @
                     // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd. This must be
@@ -1137,7 +1162,19 @@ private fun SessionRow(
                 )
                 .semantics {
                     selected = active
-                    contentDescription = "${session.title}. ${if (archived) ARCHIVED_ROW_STATE else dot.description}"
+                    contentDescription = buildString {
+                        append(session.title)
+                        append(". ")
+                        append(if (archived) ARCHIVED_ROW_STATE else dot.description)
+                        // Desktop's `<time>` carries the age in its accessible
+                        // name on top of the visible mark
+                        // (`session-row.tsx:229-237` @ `437116f9`). This row is
+                        // one merged node, so the age joins the sentence it
+                        // already speaks rather than becoming a second thing to
+                        // visit.
+                        append(". Updated ")
+                        append(spokenRelativeAgeLabel(session.lastActiveAtMillis, nowMillis))
+                    }
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1211,6 +1248,21 @@ private fun SessionRow(
                 )
             }
             if (owner != null) ProfileTag(profile = owner)
+
+            // Desktop's row meta closes with the age in its own trailing slot
+            // (`session-row.tsx:223-237` @ `437116f9`): the identity chips come
+            // first and the figures — of which the age is the last — follow.
+            // `--ui-text-tertiary` ink at 0.625rem, the same size as the
+            // preview line above it. The action overlay owns the final 48dp and
+            // the row's end padding reserves that space, so the label keeps its
+            // place without moving the kebab or stealing its touch target.
+            Text(
+                text = ageLabel,
+                style = HermesTheme.type.sessionPreview,
+                color = tokens.textTertiary,
+                maxLines = 1,
+                modifier = Modifier.testTag(SESSION_ROW_AGE_META),
+            )
         }
 
         if (status.showsRunningOutline()) {
@@ -1255,6 +1307,15 @@ private val SessionRowShape = RoundedCornerShape(6.dp)
 
 /** The archived row's lead mark, in place of the status dot. */
 internal const val ARCHIVED_ROW_MARK = "Archived session mark"
+
+/** Stable semantics hook for the row's default relative age metadata. */
+internal const val SESSION_ROW_AGE_META = "Session row age meta"
+
+/**
+ * The row's test tag, so a suite scopes a match to one row without pasting the
+ * literal (`inlineDiffLineTag` is the same shape for a painted diff line).
+ */
+internal fun sessionRowTag(sessionId: String): String = "Session row $sessionId"
 
 /** Restore action shown in the Archived view's row, outside the session menu. */
 internal const val ARCHIVED_RESTORE_ACTION = "Restore archived session"

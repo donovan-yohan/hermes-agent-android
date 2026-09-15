@@ -225,6 +225,9 @@ class KeyboardInsetLayoutTest {
                 ChatScreen(
                     state = ChatUiState(
                         query = query,
+                        // The row is stamped at NOW; age it against the same
+                        // instant so the fixture does not render decades old.
+                        nowMillis = NOW,
                         sessionRows = listOf(
                             SessionListRow.Row(
                                 SessionSummary(

@@ -348,6 +348,16 @@ data class ChatUiState(
     val voice: VoiceUiState = VoiceUiState.Idle,
     val readAloud: ReadAloudUiState = ReadAloudUiState.Idle,
     val sessionRows: List<SessionListRow> = emptyList(),
+    /**
+     * The one clock read this state's session list was built against.
+     *
+     * It ages every row's relative metadata *and* chooses the rows' date
+     * buckets, and it has to be the same number for both: two reads could
+     * straddle midnight, grouping a row under `Today` while it shows an age of
+     * `1d`. Carried on the state rather than re-read in the list so a
+     * screenshot, a journey and production all age the same rows the same way.
+     */
+    val nowMillis: Long = System.currentTimeMillis(),
     val projects: List<ProjectSummary> = emptyList(),
     val projectsAvailable: Boolean? = null,
     val sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
@@ -715,6 +725,9 @@ internal class ChatViewModel(
         ) { windowBundle, composerBundle, readAloud -> Triple(composerBundle, windowBundle, readAloud) },
     ) { cacheAndEndpoint, searchState, draftText, activeId, bundle ->
         val cacheState = cacheAndEndpoint.first
+        // One clock read for this whole state emission: it buckets the rows and
+        // ages their metadata, and both must describe the same instant.
+        val now = clock()
         val composerBundle = bundle.first
         val imageLoader = bundle.second.imageLoader
         val readAloud = bundle.third
@@ -846,9 +859,10 @@ internal class ChatViewModel(
         ChatUiState(
             voice = voiceState,
             readAloud = readAloud,
+            nowMillis = now,
             sessionRows = buildSessionRows(
                 sessions = scopedSessions,
-                nowMillis = clock(),
+                nowMillis = now,
                 query = searchState.query,
                 searchPending = searchState.pending,
                 serverMatches = searchState.results,

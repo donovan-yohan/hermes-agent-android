@@ -322,6 +322,10 @@ class EmptyStateJourneyTest {
                 ChatScreen(
                     state = ChatUiState(
                         sessionRows = rows,
+                        // The rows this suite builds are stamped at NOW; age
+                        // them against the same instant rather than the device
+                        // clock.
+                        nowMillis = NOW,
                         projectsAvailable = projectsAvailable,
                         sessionsLoading = sessionsLoading,
                         connection = GatewayConnectionState(
