@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -489,6 +490,7 @@ fun SessionList(
                                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(row.session.id, pinned) } },
                                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(row.session.id, unread) } },
                                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(row.session.id, archived) } },
+                                    archivedView = archivedVisible,
                                 )
                             }
                         }
@@ -1090,6 +1092,8 @@ private fun SessionRow(
     onSetPinned: ((Boolean) -> Unit)? = null,
     onSetUnread: ((Boolean) -> Unit)? = null,
     onSetArchived: ((Boolean) -> Unit)? = null,
+    /** Whether this row is rendered from the Archived view's own pool. */
+    archivedView: Boolean = false,
 ) {
     val tokens = HermesTheme.tokens
     val archived = session.archived == true
@@ -1189,6 +1193,23 @@ private fun SessionRow(
                 }
             }
 
+            // Desktop keeps restore in the Archived view's own row action
+            // (`apps/desktop/src/app/settings/sessions-settings.tsx:143-155`
+            // @ `437116f9`), rather than changing the per-session menu's
+            // unconditional `Archive` item. Keep that escape visible beside the
+            // archived row so the menu can match Desktop without stranding the
+            // reader.
+            val restoreArchived = onSetArchived
+            if (archivedView && archived && restoreArchived != null) {
+                TextButton(
+                    label = UNARCHIVE,
+                    onClick = { restoreArchived(false) },
+                    strong = true,
+                    modifier = Modifier
+                        .testTag(ARCHIVED_RESTORE_ACTION)
+                        .semantics { role = Role.Button },
+                )
+            }
             if (owner != null) ProfileTag(profile = owner)
         }
 
@@ -1208,7 +1229,6 @@ private fun SessionRow(
             modifier = Modifier.align(Alignment.CenterEnd),
             pinned = session.pinned == true,
             unread = unread,
-            archived = archived,
             onRename = onRename,
             onDelete = onDelete,
             onSetPinned = onSetPinned,
@@ -1235,6 +1255,9 @@ private val SessionRowShape = RoundedCornerShape(6.dp)
 
 /** The archived row's lead mark, in place of the status dot. */
 internal const val ARCHIVED_ROW_MARK = "Archived session mark"
+
+/** Restore action shown in the Archived view's row, outside the session menu. */
+internal const val ARCHIVED_RESTORE_ACTION = "Restore archived session"
 
 /** What an archived row says in place of a live status. */
 private const val ARCHIVED_ROW_STATE = "Archived"

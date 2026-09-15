@@ -39,8 +39,10 @@ import org.robolectric.annotation.Config
  * whole-list verbs the filter menu carries.
  *
  * Every expectation is Desktop's, at
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3` — the ledger is
+ * `437116f9497c80d242ce034ff7f5d81dc277a337` — the ledger is
  * `docs/parity/session-list-sections.md`.
+ * The archived action is compared against the per-session source at that pin;
+ * the list's existing pool contract remains recorded in its own ledger.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
@@ -180,14 +182,18 @@ class SessionListSectionsJourneyTest {
     /**
      * An archived session has no live status to paint, so the archive glyph
      * takes the lead slot the dot would occupy
-     * (`app/chat/sidebar/session-row.tsx:284-290` @ the pin), and the row's
-     * menu offers the restore.
+     * (`app/chat/sidebar/session-row.tsx:284-290` @ `437116f9`). The row's
+     * own Archived-view action keeps restore reachable while the per-session
+     * menu preserves Desktop's unconditional `Archive`
+     * (`app/chat/sidebar/session-actions-menu.tsx:431-440` @ `437116f9`).
      */
     @Test
-    fun `an archived row is marked as archived and offers the restore`() {
+    fun `an archived row keeps Archive in its menu and offers restore beside the row`() {
+        val writes = mutableListOf<Boolean>()
         launch(
             sessions = listOf(session("s-1", "Filed chat", archived = true)),
             archivedVisible = true,
+            onSetSessionArchived = { _, archived -> writes += archived },
         )
 
         // The row publishes one merged spoken label, so the lead mark is read
@@ -195,9 +201,19 @@ class SessionListSectionsJourneyTest {
         assertEquals(1, compose.nodesTagged(ARCHIVED_ROW_MARK, useUnmergedTree = true))
         compose.onNodeWithContentDescription("Filed chat. Archived").assertIsDisplayed()
 
+        compose.onNodeWithTag(ARCHIVED_RESTORE_ACTION)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .assertHeightIsAtLeast(HermesSpacing().touchTarget)
+        compose.onNodeWithText(UNARCHIVE).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Filed chat. Archived").assertIsDisplayed()
+        compose.onNodeWithTag(ARCHIVED_RESTORE_ACTION).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(false), writes)
+
         openFirstRowMenu()
-        compose.onNodeWithText("Unarchive").assertIsDisplayed()
-        assertEquals(0, compose.nodesWithText("Archive"))
+        compose.onNodeWithText(ARCHIVE).assertIsDisplayed()
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertIsDisplayed()
     }
 
     /**
