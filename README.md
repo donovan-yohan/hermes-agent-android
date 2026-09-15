@@ -97,7 +97,6 @@ are in [Status and roadmap](status/ROADMAP.md).
 | Profiles | Full profile management and the SOUL editor | **Partial** — a profile rail that scopes the session list, an all-profiles view, and a read-only roster; no creating, renaming, deleting or editing |
 | Notifications | Desktop notifications from a persistent process | **Partial** — approvals, questions, sudo/secret prompts and finished turns while a Gateway socket is live, answerable from the shade; nothing arrives once the socket is gone |
 | System panel and updates | Gateway status, restart, backend update, and logs | **Partial** — status, messaging-gateway restart and `hermes update` with a grouped changelog; `Recent logs` ships disabled, and none of it has run against a real host yet |
-| Relay channels | Full plugin surface | **Partial** — channel list, one channel's transcript and sending; no editing, threads or Harnesses inspector |
 | Appearance | Built-in and custom themes plus Desktop chrome | **Partial** — all eleven built-in themes at the pinned Desktop authority, system/light/dark mode, and mobile chat chrome; no custom themes |
 | Desktop workbench | Multi-pane files, terminal/PTY, review, and desktop window workflows | **Not yet** — the changed-file sheet is the only native workspace view |
 | Other management surfaces | Bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugins, Kanban, and messaging settings | **Not yet** — no dedicated mobile screens; agents can still use Gateway-exposed capabilities in chat |

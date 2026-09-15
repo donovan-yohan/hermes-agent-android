@@ -20,7 +20,7 @@ citation is worthless without saying which one it is against.
 |---|---|---|
 | UI structure, behaviour and copy — everything this checklist reviews | `564aef2946c436500a5e80ee117b66b789b3f99a` | `AGENTS.md` |
 | Theme values: presets, palettes, colour tokens | `564aef2946c436500a5e80ee117b66b789b3f99a` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
-| A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/relay-channels-surface.md` pins the Relay plugin at `563a8c8` |
+| A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/approval-mode.md` pins its Desktop source at `3ca096de` |
 
 Use the UI pin for this checklist, and the theme pin only when the question is
 a colour value. The divergence is tracked in

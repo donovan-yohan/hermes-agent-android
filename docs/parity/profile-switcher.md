@@ -242,6 +242,6 @@ as **missing**, not fabricated, and belongs to the device-QA slice (issue #43).
 
 What this slice ships instead: `@Preview` composables in phone light and dark for
 the rail (default, unified, collapsed) and the roster (populated, empty), the
-same in-source affordance `ChatScreen.kt` and `RelayScreen.kt` use. Every
+same in-source affordance `ChatScreen.kt` uses. Every
 profile, path and session in them is invented; nothing in this repo corresponds
 to a real host, profile or person.

@@ -234,30 +234,6 @@ lifecycle.
   does, and Copy still hands over the whole cleaned diff. Diff bodies are not
   syntax-highlighted.
 
-### Relay channels
-
-- Relay workspace behind a Settings entry point: the channel list in the
-  hub's own order with archived channels annotated in place, one channel's
-  transcript oldest-to-newest by the hub's `seq`, and a composer under the
-  transcript. Each draft is sent once under one client message id that a
-  retry reuses byte-for-byte; the encoded body is bounded before any request
-  goes out, and a conflict keeps the draft instead of claiming delivery.
-- Honest states for every answer the plugin can give — a Gateway with no Relay,
-  a lane that needs authorization on the host, an offline or errored lane, an
-  unreadable answer, a saved Gateway that is down, and a device with no Gateway
-  set up yet, which asks for one rather than offering a retry with no target.
-  Relay's own words render beside this app's sentence, never instead of it.
-- The pane on screen refreshes every three seconds while the surface is
-  resumed and the lane is ready. A failed refresh keeps the last good answer
-  under one quiet stale line instead of blanking the screen or raising an
-  error.
-- Editing and thread replies are absent. No pagination
-  beyond the frozen contract's bounded 50-message window, no Harnesses
-  inspector, and no `POST /connection/authorize` write — the banner that needs
-  it renders Desktop's `Authorize Relay` button disabled and marked rather than
-  hiding it. Selection is never
-  persisted. Physical-device capture and acceptance for this surface are open.
-
 ### Notifications
 
 - OS notifications while a Gateway connection is live, from the same events
@@ -423,7 +399,7 @@ lifecycle.
 | Notifications | Connected-only. Notifications arrive while the app holds a live Gateway socket; once that socket is gone, nothing arrives — there is no foreground service holding the connection and no push infrastructure upstream. Prompts parked while the app was disconnected are replayed on reconnect, deferred during the post-connect quiet window, and raised once the window expires (unless already announced pre-disconnect or answered in-app, preserved across multiple outstanding prompts replayed one event at a time). The in-app surfaces still show it. `POST_NOTIFICATIONS` is requested once, at the first live Gateway; a refusal is respected rather than re-prompted, and re-enabling is an OS settings action. No physical-device pass has answered a real approval from a real shade. | The background-lifecycle decision above, then a `dataSync` foreground service with Doze and battery honesty; and the emulator pass in [#99](https://github.com/donovan-yohan/hermes-agent-android/issues/99) driving real events through the Termux Local route. |
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
-| Desktop management breadth | The Relay plugin surface ships channels, transcripts, and sending only. Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
+| Desktop management breadth | Profiles have a read-only roster and no editing. There are still no dedicated mobile screens for bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugin management, Kanban, or messaging configuration. Agents may still use backend capabilities in chat when the Gateway exposes them. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
 | Backend updates and restart | The System panel's status read, gateway restart and backend update are covered by unit tests against the pinned HTTP contract and by Robolectric journeys, and by nothing else. No `hermes update` has been run through this app against a real host; the six-minute apply, the restart blackout, the receipt proof and the forced redial are all proven on virtual time only. Log fetching is not built, and the panel's `Recent logs` block ships disabled. | A device pass that applies a real backend update over the Remote route and watches the socket come back, plus the rendered Desktop side-by-side the parity page owes. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
 | Device evidence | An instrumented emulator lane runs on every CI build and covers what an emulator is green on: 48 dp touch targets at the real display density, the chat chrome arriving in the platform accessibility tree in the window under test, a real input method binding to the composer, a real orientation change, and the open destination surviving a real Activity destroy and rebuild. It is not physical acceptance and does not stand in for it: the PKCE browser hand-off (freezer-proofed and covered by JVM/Robolectric tests, never yet run screen-off on a physical device), real radio, network handoff, TalkBack, media, an enlarged font scale, the keyboard's own window under the composer, a system-initiated process kill, and the label and touch-size audit of what that accessibility tree publishes ([#91](https://github.com/donovan-yohan/hermes-agent-android/issues/91)) remain unproven, and exact-head physical Pixel acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |

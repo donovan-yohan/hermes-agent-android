@@ -35,8 +35,6 @@ RENDERED_DATA_SOURCES = (
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteGateway.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteLifecycle.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/notifications/NotificationCopy.kt",
-    "app/src/main/kotlin/com/hermesagent/mobile/plugins/relay/RelayAvailabilityController.kt",
-    "app/src/main/kotlin/com/hermesagent/mobile/plugins/relay/RelayPluginRepository.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/KeyImport.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshDestination.kt",
     "app/src/main/kotlin/com/hermesagent/mobile/data/ssh/SshjProbe.kt",

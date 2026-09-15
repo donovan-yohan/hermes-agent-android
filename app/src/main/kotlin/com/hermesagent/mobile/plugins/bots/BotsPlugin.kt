@@ -21,9 +21,8 @@ import kotlinx.coroutines.cancel
  * - a `routes` contribution rendering [BotsRosterScreen]
  * - a `sidebarNav` contribution rendering its Settings entry point
  *
- * Modelled on [com.hermesagent.mobile.plugins.relay.RelayPlugin], which is the
- * app's existing bundled-plugin shape: the plugin takes its own scope, reads
- * the Gateway through `ctx.host` rather than a module global, and disposes
+ * Modelled on the app's bundled-plugin shape: the plugin takes its own scope,
+ * reads the Gateway through `ctx.host` rather than a module global, and disposes
  * everything it registers. There is deliberately no mutable companion state —
  * a plugin that cannot be constructed twice is a plugin whose tests have to
  * share a singleton.

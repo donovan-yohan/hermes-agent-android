@@ -15,9 +15,9 @@ import com.hermesagent.mobile.data.gateway.GatewayUpdateStart
 /**
  * The System panel's six host calls, as the surfaces above them need them.
  *
- * Narrow on purpose, and for the reason `RelayChannelReader` is narrow: a seam
- * this small is what lets the whole six-minute update state machine run on
- * virtual time in a unit test, without a transport, a credential or a clock.
+ * Narrow on purpose: a seam this small is what lets the whole six-minute
+ * update state machine run on virtual time in a unit test, without a
+ * transport, a credential or a clock.
  * Only [GatewayRestResult] crosses it, so nothing above ever reads a status
  * code out of a transport.
  */
