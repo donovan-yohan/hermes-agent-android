@@ -32,7 +32,7 @@ Every `path:line` below is against that SHA.
 |---|---|
 | Every blocking prompt is one request frame, with `srq-` ids, one `request.cancel`, and `open_requests` re-delivery | `tui_gateway/server_requests.py:1-18` |
 | The three vault request methods, their params, and the one-string `{value}` result every one of them answers with | `tui_gateway/contracts/server_requests.py:20-28`, `:118-142` |
-| The withdrawing event and its payload | `tui_gateway/contracts/server_requests.py:225-233` |
+| The withdrawing event and its payload | `tui_gateway/contracts/server_requests.py:217-224` |
 | The three handlers: payload fields, the fallbacks, and that each parks the session | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/server-requests.ts:227-262` |
 | Which method → handler, and that an unhandled method is answered `-32601` by the channel | `.../gateway-event/server-requests.ts:371-397` |
 | That `request.cancel` is the one event in the family, and how it clears a card | `.../gateway-event/input-requests.ts:24-132` |

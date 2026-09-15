@@ -372,7 +372,7 @@ class GatewayRpcTest {
      * A blocking prompt is a server→client *request* frame — id `srq-…`, a
      * `method` that is never `event`, no `result` — and it must never appear on
      * the event stream; the one event the family still has is the backend
-     * withdrawing one (`tui_gateway/contracts/server_requests.py:225-233` @
+     * withdrawing one (`tui_gateway/contracts/server_requests.py:217-224` @
      * `437116f9497c80d242ce034ff7f5d81dc277a337`). The deleted `*.request`
      * pair stays refused, so a prompt cannot grow a second home.
      */

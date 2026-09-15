@@ -494,7 +494,7 @@ internal class CorrelatedGatewayRpc(
          * one of them is a server→client *request* frame, and the one event
          * left in the family is the backend withdrawing it —
          * `request.cancel {id, method, reason}`
-         * (`tui_gateway/contracts/server_requests.py:225-233` @ the pin). The
+         * (`tui_gateway/contracts/server_requests.py:217-224` @ the pin). The
          * deleted `clarify.request` / `approval.request` / `sudo.request` /
          * `secret.request` pair stays out deliberately: subscribing to it again
          * would give a prompt two homes, one of which a pinned Gateway never

@@ -3170,22 +3170,12 @@ internal class LiveGatewaySessionRepository(
                     }
 
                     is PendingInputAction.SudoPassword -> {
-                        val password = action.password.concatToString()
-                        try {
-                            answerWithValue(responder, request.key.requestId, password)
-                        } finally {
-                            action.password.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.password)
                         PendingInputResponse.Resolved
                     }
 
                     is PendingInputAction.SecretValue -> {
-                        val value = action.value.concatToString()
-                        try {
-                            answerWithValue(responder, request.key.requestId, value)
-                        } finally {
-                            action.value.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.value)
                         PendingInputResponse.Resolved
                     }
 
@@ -3197,12 +3187,7 @@ internal class LiveGatewaySessionRepository(
                     // and `\"\"` is a real answer (skip, keep it locked, decline
                     // to save) rather than a dismissal.
                     is PendingInputAction.VaultUnlockPassword -> {
-                        val password = action.password.concatToString()
-                        try {
-                            answerWithValue(responder, request.key.requestId, password)
-                        } finally {
-                            action.password.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.password)
                         PendingInputResponse.Resolved
                     }
 
@@ -3231,12 +3216,7 @@ internal class LiveGatewaySessionRepository(
                     }
 
                     is PendingInputAction.VaultCode -> {
-                        val code = action.code.concatToString()
-                        try {
-                            answerWithValue(responder, request.key.requestId, code)
-                        } finally {
-                            action.code.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.code)
                         PendingInputResponse.Resolved
                     }
                 }
@@ -3277,6 +3257,20 @@ internal class LiveGatewaySessionRepository(
             requestId,
             buildJsonObject { put("value", JsonPrimitive(value)) },
         )
+    }
+
+    /** Send one secret value and wipe its caller-owned buffer even when the wire fails. */
+    private suspend fun answerAndWipeValue(
+        responder: GatewayServerRequestResponder,
+        requestId: String,
+        value: CharArray,
+    ) {
+        val text = value.concatToString()
+        try {
+            answerWithValue(responder, requestId, text)
+        } finally {
+            value.fill(0.toChar())
+        }
     }
 
     /**
@@ -4438,7 +4432,7 @@ internal class LiveGatewaySessionRepository(
 
             // The one event the blocking-prompt family still has: the backend
             // withdrawing an open request — timeout, interrupt, session close
-            // (`tui_gateway/contracts/server_requests.py:225-233` @ the pin).
+            // (`tui_gateway/contracts/server_requests.py:217-224` @ the pin).
             // The prompts themselves are request frames, not events.
             "request.cancel" -> {
                 applyServerRequestCancel(durableId, runtimeId, payload)
@@ -4615,7 +4609,7 @@ internal class LiveGatewaySessionRepository(
                     origin = origin,
                     // Desktop's own fallback: `site` is what the card is
                     // titled after, and the origin is the honest stand-in
-                    // (`input-requests.ts:402` @ the pin).
+                    // (`gateway-event/server-requests.ts:237-245` @ the pin).
                     site = params.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
                         .ifBlank { origin },
                 )
@@ -4689,14 +4683,7 @@ internal class LiveGatewaySessionRepository(
                 ?: return null
             val question = obj.string("question").orEmpty().redactSafeBounded()
             if (question.isBlank()) return null
-            val choices = (obj["choices"] as? JsonArray)
-                ?.mapNotNull { it as? JsonPrimitive }
-                ?.mapNotNull { it.content }
-                ?.map { it.normalizeChoice() }
-                ?.filter(String::isNotEmpty)
-                .orEmpty()
-                .distinct()
-                .take(MAX_PENDING_CHOICES)
+            val choices = parsePendingChoices(obj)
             return ClarifyQuestion(qid, question, choices, obj.boolean("multi_select") == true)
         }
         val batch = (payload["questions"] as? JsonArray)
@@ -4710,14 +4697,7 @@ internal class LiveGatewaySessionRepository(
         }
         val question = payload.string("question").orEmpty().redactSafeBounded()
         if (question.isBlank()) return null
-        val choices = (payload["choices"] as? JsonArray)
-            ?.mapNotNull { it as? JsonPrimitive }
-            ?.mapNotNull { it.content }
-            ?.map { it.normalizeChoice() }
-            ?.filter(String::isNotEmpty)
-            .orEmpty()
-            .distinct()
-            .take(MAX_PENDING_CHOICES)
+        val choices = parsePendingChoices(payload)
         return ClarifyPending(
             key = key,
             durableSessionId = durableId,
@@ -4738,13 +4718,7 @@ internal class LiveGatewaySessionRepository(
             payload.string("command"),
             payload.jsonString("description"),
         ).firstOrNull { it.isNotBlank() }?.redactSafeBounded() ?: return null
-        val choices = (payload["choices"] as? JsonArray)
-            ?.mapNotNull { it as? JsonPrimitive }
-            ?.mapNotNull { it.content }
-            ?.map { it.normalizeChoice() }
-            ?.filter(String::isNotEmpty)
-            .orEmpty()
-            .distinct()
+        val choices = parsePendingChoices(payload)
         // Without an offered choice list we cannot respond safely; fail closed.
         if (choices.isEmpty()) return null
         return ApprovalPending(
@@ -4753,9 +4727,19 @@ internal class LiveGatewaySessionRepository(
             runtimeSessionId = runtimeId,
             command = command,
             description = payload.string("description").orEmpty().redactSafeBounded(),
-            choices = choices.take(MAX_PENDING_CHOICES),
+            choices = choices,
         )
     }
+
+    /** Parse the ordered, bounded choice list shared by clarify and approval. */
+    private fun parsePendingChoices(payload: JsonObject): List<String> =
+        (payload["choices"] as? JsonArray)
+            ?.mapNotNull { it as? JsonPrimitive }
+            ?.map { it.content.normalizeChoice() }
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
+            .distinct()
+            .take(MAX_PENDING_CHOICES)
 
     private fun projectComposerControls(
         durableId: String,
