@@ -3,9 +3,8 @@ package com.hermesagent.mobile.device
 import android.os.StrictMode
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.hermesagent.mobile.MainActivity
-import org.junit.After
-import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -17,30 +16,27 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MainActivityBootTest {
-    private lateinit var previousPolicy: StrictMode.ThreadPolicy
-
-    @Before
-    fun enableStrictNetworkPolicy() {
-        previousPolicy = StrictMode.getThreadPolicy()
-        StrictMode.setThreadPolicy(
-            StrictMode.ThreadPolicy.Builder(previousPolicy)
-                .detectNetwork()
-                .penaltyDeath()
-                .build(),
-        )
-    }
-
-    @After
-    fun restoreStrictNetworkPolicy() {
-        StrictMode.setThreadPolicy(previousPolicy)
-    }
-
     @Test
     fun coldLaunchDoesNotPerformNetworkWorkOnMainThread() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { activity ->
-                check(!activity.isFinishing) { "MainActivity finished during cold launch" }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        lateinit var previousPolicy: StrictMode.ThreadPolicy
+        instrumentation.runOnMainSync {
+            previousPolicy = StrictMode.getThreadPolicy()
+            StrictMode.setThreadPolicy(
+                StrictMode.ThreadPolicy.Builder(previousPolicy)
+                    .detectNetwork()
+                    .penaltyDeath()
+                    .build(),
+            )
+        }
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    check(!activity.isFinishing) { "MainActivity finished during cold launch" }
+                }
             }
+        } finally {
+            instrumentation.runOnMainSync { StrictMode.setThreadPolicy(previousPolicy) }
         }
     }
 }
