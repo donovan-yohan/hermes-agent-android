@@ -33,6 +33,26 @@
         "file-chip": { "interaction": [] },
         "folder-chip": { "interaction": [] }
       }
+    },
+    "composer-add-sheet": {
+      "desktop_sha": "437116f9497c80d242ce034ff7f5d81dc277a337",
+      "fixture_id": "composer-add-sheet-recent-images-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerAddSheetParityActivity",
+      "desktop_selector": "[data-slot=\"composer\"]",
+      "states": {
+        "recent-images-populated": {
+          "interaction": [],
+          "post_interaction_accessibility": "Add Synthetic shot 1 to the message"
+        },
+        "recent-images-added": {
+          "interaction": [],
+          "post_interaction_accessibility": "Synthetic shot 2 added to the message"
+        },
+        "recent-images-permission": {
+          "interaction": [],
+          "post_interaction_accessibility": "Turn on photo access. Show recent images in this sheet"
+        }
+      }
     }
   }
 }

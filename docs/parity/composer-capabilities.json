@@ -176,12 +176,13 @@
       "state_authority": "connection-scoped",
       "platform_dependency": "Android scoped URI grants, decode/resize, and Gateway upload/reference routes",
       "android_status": "partial",
-      "android_behavior": "Android uses SAF file/image acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, image-only sends, occurrence-keyed preview chips whose remove wipes payload bytes, and fetched transcript-image thumbnails with a full-size lightbox. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
-      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes, single in-flight ownership, definite-rejection retry, and ambiguous review state; GatewaySessionRepositoryTest proves attach-before-submit ordering, image-only fallback text, session_id on attach RPCs, partial-stage and prompt-rejection detach, and refusal fencing; ComposerControlsAccessibilityTest proves thumbnail/chip name/state/remove semantics; ChatJourneyTest proves fetched transcript thumbnails and full-size viewing. Generic uploaded-file cleanup, reconnect/reacquire behavior, and physical-device evidence remain open.",
+      "android_behavior": "Android uses SAF file/image acquisition with lifetime-scoped grants, memory-only bounded reads (magic-byte image classification, 8 MB per item, 16 MB aggregate, 8 per message), stage-then-submit through the Gateway image.attach_bytes / file.attach routes, prompt-safe @file:`name` references composed from server ref_text, image-only sends, occurrence-keyed preview chips whose remove wipes payload bytes, and fetched transcript-image thumbnails with a full-size lightbox. The add sheet also offers the newest device images in a labelled Recent images rail above Files: one bounded MediaStore read behind a runtime media grant (full, Android 14 partial, or denied), the system photo picker as the route that needs no permission, and a tap that adds through the same staged pipeline bound to the composer's connection generation, durable session and occurrence. Closing the sheet drops the rail's rows and previews. Folder and clipboard-image acquisition remain deferred; Android never serializes content:// URIs, local paths, or grants to the Gateway.",
+      "android_tests": "ChatViewModelTest proves grant read/bounds/submit-as-bytes, single in-flight ownership, definite-rejection retry, and ambiguous review state; GatewaySessionRepositoryTest proves attach-before-submit ordering, image-only fallback text, session_id on attach RPCs, partial-stage and prompt-rejection detach, and refusal fencing; ComposerControlsAccessibilityTest proves thumbnail/chip name/state/remove semantics; ChatJourneyTest proves fetched transcript thumbnails and full-size viewing. RecentImagesTest proves the bounded newest-first read, the per-platform permission model, and the picker generation fence; ChatViewModelTest proves the rail's scope fencing (a read that lands after the session or generation moved is dropped), duplicate refusal, the attachment cap, removal clearing a mark, and the endpoint-switch wipe; RecentImagesRailTest and ComposerAddSheetContentTest prove the rail's loading/permission/empty/populated states, horizontal scrolling, multi-pick, the 48dp target, the accessibility names, and its order above Files. Generic uploaded-file cleanup, reconnect/reacquire behavior, and physical-device evidence remain open.",
       "desktop_citations": {
         "source": [
           "apps/desktop/src/app/chat/composer/attachments.tsx:18-233",
-          "apps/desktop/src/app/chat/composer/hooks/use-composer-drop.ts:1"
+          "apps/desktop/src/app/chat/composer/hooks/use-composer-drop.ts:1",
+          "apps/desktop/src/app/chat/composer/context-menu.tsx:71-79"
         ],
         "tests": [
           "apps/desktop/src/app/chat/composer/attachments.test.tsx:1",
@@ -195,8 +196,8 @@
         "attachment-error-removal"
       ],
       "deviation": {
-        "reason": "Desktop drag-drop/paste acquisition is adapted to an Android SAF picker; bytes are staged before submit and only Gateway-returned reference text enters prompts. Folder, clipboard-image, and drag/drop acquisition remain unavailable rather than enabled no-ops.",
-        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt:44-52",
+        "reason": "Desktop's Attach menu reaches a filesystem through its own dialogs; Android acquires bytes through SAF, the system photo picker and one bounded, permission-gated media read, and stages them before submit so only Gateway-returned reference text enters prompts. Folder, clipboard-image, and drag/drop acquisition remain unavailable rather than enabled no-ops, and the recent-images rail has no Desktop counterpart (docs/parity/composer-recent-images.md).",
+        "evidence": "app/src/main/kotlin/com/hermesagent/mobile/data/attachments/RecentImages.kt:26-46",
         "approved_by": "Slice 3 attachment boundary"
       },
       "category": "attachments"
@@ -467,7 +468,8 @@
       "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
       "kind": "source",
       "capability_ids": [
-        "completions-context-contrib"
+        "completions-context-contrib",
+        "attachments"
       ]
     },
     {

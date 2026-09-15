@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
@@ -25,6 +26,10 @@ import com.hermesagent.mobile.data.gateway.EXTRA_SIGN_IN_ORIGIN
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.SignInOrigin
 import com.hermesagent.mobile.data.gateway.signInOriginFrom
+import com.hermesagent.mobile.data.attachments.AttachmentPolicy
+import com.hermesagent.mobile.data.attachments.MediaStoreRecentImages
+import com.hermesagent.mobile.data.attachments.PickerGenerationFence
+import com.hermesagent.mobile.data.attachments.RecentImagePermissions
 import com.hermesagent.mobile.data.notifications.ACTION_OPEN_SESSION
 import com.hermesagent.mobile.data.notifications.ANDROID_TIRAMISU
 import com.hermesagent.mobile.data.notifications.EXTRA_DURABLE_SESSION_ID
@@ -61,6 +66,7 @@ import com.hermesagent.mobile.ui.settings.NotificationsActions
 import com.hermesagent.mobile.ui.settings.NotificationsCopy
 import com.hermesagent.mobile.ui.settings.NotificationsUiState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
@@ -130,6 +136,8 @@ class MainActivity : ComponentActivity() {
     }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
+    /** A photo result is useful only for the Gateway connection that opened it. */
+    private val photoPickFence = PickerGenerationFence { app.gatewayConnection.currentGeneration }
 
     /**
      * Which surface the next sign-in would be starting from, reported by the
@@ -203,14 +211,46 @@ class MainActivity : ComponentActivity() {
 
     private val pickAttachments =
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-            for (uri in uris) {
-                chatViewModel.addAttachmentFromGrant(
-                    uriString = uri.toString(),
-                    displayName = queryDisplayName(uri) ?: "attachment",
-                    claimedMime = contentResolver.getType(uri),
-                )
+            addAttachmentsFromGrants(uris, fallbackName = "attachment")
+        }
+
+    /** The rail's grant is runtime-only; settings can change it while this Activity is away. */
+    private val requestPhotoAccess =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            chatViewModel.onRecentImageAccessChanged(recentImageAccess())
+        }
+
+    /** Photo-picker sources are fenced before entering the existing one-read attachment pipeline. */
+    private val pickPhotos = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE),
+    ) { uris ->
+        if (photoPickFence.accept()) {
+            addAttachmentsFromGrants(uris, fallbackName = "image")
+        } else {
+            chatViewModel.reportExpiredAttachmentPick()
+        }
+    }
+
+    /**
+     * A picker hands back grants, not metadata: naming each row reads the
+     * provider, so that happens off the main thread, together, and the
+     * ViewModel is told on main once every row is known.
+     */
+    private fun addAttachmentsFromGrants(uris: List<Uri>, fallbackName: String) {
+        if (uris.isEmpty()) return
+        lifecycleScope.launch {
+            val rows = withContext(Dispatchers.IO) {
+                uris.map { uri ->
+                    PickedAttachment(uri.toString(), queryDisplayName(uri) ?: fallbackName, contentResolver.getType(uri))
+                }
+            }
+            for (row in rows) {
+                chatViewModel.addAttachmentFromGrant(row.uriString, row.displayName, row.mimeType)
             }
         }
+    }
+
+    private data class PickedAttachment(val uriString: String, val displayName: String, val mimeType: String?)
 
     private fun queryDisplayName(uri: Uri): String? =
         runCatching {
@@ -231,6 +271,8 @@ class MainActivity : ComponentActivity() {
         chatViewModel.openAttachmentStream = { uriString ->
             runCatching { contentResolver.openInputStream(Uri.parse(uriString)) }.getOrNull()
         }
+        chatViewModel.recentImagesSource = MediaStoreRecentImages(contentResolver)
+        chatViewModel.onRecentImageAccessChanged(recentImageAccess())
         // Voice engine hooks: bounded capture and typed Gateway routes only.
         // Dictation requires an explicit runtime mic grant; denial surfaces a
         // recovery message instead of silently failing to capture.
@@ -429,6 +471,18 @@ class MainActivity : ComponentActivity() {
                     onCompletionSelected = chatViewModel::onCompletionSelected,
                     onInsertText = chatViewModel::onInsertText,
                     onPickFiles = { pickAttachments.launch(arrayOf("*/*")) },
+                    onAddRecentImage = chatViewModel::addRecentImage,
+                    onRequestRecentImageAccess = {
+                        requestPhotoAccess.launch(RecentImagePermissions.requested(Build.VERSION.SDK_INT))
+                    },
+                    onPickPhotos = {
+                        photoPickFence.begin()
+                        pickPhotos.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onRecentImagesSheetOpened = chatViewModel::requestRecentImages,
+                    onRecentImagesSheetClosed = chatViewModel::closeRecentImages,
                     onRemoveAttachment = chatViewModel::removeAttachment,
                     onShowEarlierMessages = chatViewModel::showEarlierMessages,
                     onToggleReadAloud = chatViewModel::toggleReadAloud,
@@ -639,6 +693,15 @@ class MainActivity : ComponentActivity() {
         Build.VERSION.SDK_INT < ANDROID_TIRAMISU ||
             checkSelfPermission(POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
+    override fun onResume() {
+        super.onResume()
+        chatViewModel.onRecentImageAccessChanged(recentImageAccess())
+    }
+
+    private fun recentImageAccess() = RecentImagePermissions.access(Build.VERSION.SDK_INT) { permission ->
+        checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_RATIONALE_DISMISSED, notificationRationaleDismissed)
@@ -728,11 +791,7 @@ class MainActivity : ComponentActivity() {
      * [com.hermesagent.mobile.data.ssh.sanitizeKeyDisplayName] — not this
      * method — decides what is safe to show.
      */
-    private fun displayNameOf(uri: Uri): String = runCatching {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
-    }.getOrNull() ?: uri.lastPathSegment.orEmpty()
+    private fun displayNameOf(uri: Uri): String = queryDisplayName(uri) ?: uri.lastPathSegment.orEmpty()
 
     private companion object {
         val KEY_MIME_TYPES = arrayOf("*/*")

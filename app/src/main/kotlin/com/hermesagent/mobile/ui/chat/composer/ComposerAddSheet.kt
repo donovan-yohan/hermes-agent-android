@@ -23,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,13 +49,21 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
  * Android's context menu. Files and images stage locally acquired bytes
  * through the Gateway before submit; URL and prompt snippets stay text
  * controls; folder acquisition remains deferred until a bounded archive
- * protocol exists.
+ * protocol exists. A thumbnail adds and keeps this sheet open so several
+ * images can join one message; the sheet otherwise closes as its actions do today.
+ * Attachment chips are the only removal surface; this sheet never removes one.
  */
 @Composable
 internal fun ComposerAddControl(
     onInsertText: (String) -> Unit,
     enabled: Boolean,
     onPickFiles: () -> Unit = {},
+    recentImages: RecentImagesUiState = RecentImagesUiState(),
+    onAddRecentImage: (Long) -> Unit = {},
+    onRequestRecentImageAccess: () -> Unit = {},
+    onPickPhotos: () -> Unit = {},
+    onSheetOpened: () -> Unit = {},
+    onSheetClosed: () -> Unit = {},
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -86,6 +96,12 @@ internal fun ComposerAddControl(
                     sheet = chosen
                 }
             },
+            recentImages = recentImages,
+            onAddRecentImage = onAddRecentImage,
+            onRequestRecentImageAccess = onRequestRecentImageAccess,
+            onPickPhotos = onPickPhotos,
+            onSheetOpened = onSheetOpened,
+            onSheetClosed = onSheetClosed,
         )
         AddSheet.Url -> UrlReferenceSheet(
             onDismiss = { sheet = AddSheet.Menu },
@@ -110,7 +126,16 @@ internal fun ComposerAddControl(
 private enum class AddSheet { Menu, Url, Snippets, Files, Done }
 
 @Composable
-private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit) {
+private fun ComposerAddSheet(
+    onDismiss: () -> Unit,
+    onChoose: (AddSheet) -> Unit,
+    recentImages: RecentImagesUiState,
+    onAddRecentImage: (Long) -> Unit,
+    onRequestRecentImageAccess: () -> Unit,
+    onPickPhotos: () -> Unit,
+    onSheetOpened: () -> Unit,
+    onSheetClosed: () -> Unit,
+) {
     val tokens = HermesTheme.tokens
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -119,47 +144,93 @@ private fun ComposerAddSheet(onDismiss: () -> Unit, onChoose: (AddSheet) -> Unit
         scrimColor = tokens.overlayScrim,
         modifier = Modifier.testTag("Composer add sheet"),
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text("Add to message", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
-            AddRow(
-                label = "Files",
-                description = "Attach a file from this device",
-                icon = HermesIcon.File,
-                onClick = { onChoose(AddSheet.Files) },
-            )
-            AddRow(
-                label = "URL",
-                description = "Add a remote URL reference",
-                icon = HermesIcon.Link,
-                onClick = { onChoose(AddSheet.Url) },
-            )
-            AddRow(
-                label = "Prompt snippets",
-                description = "Insert a reusable prompt",
-                icon = HermesIcon.SymbolMethod,
-                onClick = { onChoose(AddSheet.Snippets) },
-            )
-            Text(
-                "Files upload through the Gateway when you send. Folders aren't available yet.",
-                style = HermesTheme.type.scaffoldMeta,
-                color = tokens.scaffoldMeta.copy(alpha = 1f),
-                modifier = Modifier
-                    .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
-                    .padding(horizontal = HermesTheme.spacing.pageInset / 2),
-            )
-        }
+        LaunchedEffect(Unit) { onSheetOpened() }
+        // The rail's rows and thumbnails are device material held in memory for
+        // one look, like every other attachment read: closing the sheet is what
+        // takes them away, and nothing re-reads the library until it reopens.
+        DisposableEffect(Unit) { onDispose { onSheetClosed() } }
+        ComposerAddSheetContent(
+            recentImages = recentImages,
+            onAddRecentImage = onAddRecentImage,
+            onRequestRecentImageAccess = onRequestRecentImageAccess,
+            onPickPhotos = onPickPhotos,
+            onChooseFiles = { onChoose(AddSheet.Files) },
+            onChooseUrl = { onChoose(AddSheet.Url) },
+            onChooseSnippets = { onChoose(AddSheet.Snippets) },
+        )
+    }
+}
+
+/**
+ * The sheet's own body, without its dialog. The app's sheet, the Compose tests
+ * and the debug capture fixture all render this one composition, so a capture
+ * shows what a person sees rather than a reconstruction of it.
+ */
+@Composable
+internal fun ComposerAddSheetContent(
+    recentImages: RecentImagesUiState,
+    onAddRecentImage: (Long) -> Unit,
+    onRequestRecentImageAccess: () -> Unit,
+    onPickPhotos: () -> Unit,
+    onChooseFiles: () -> Unit,
+    onChooseUrl: () -> Unit,
+    onChooseSnippets: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    Column(
+        modifier
+            .fillMaxWidth()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .testTag("Composer add sheet content")
+            .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Add to message", style = HermesTheme.type.screenTitle, color = tokens.textPrimary)
+        RecentImagesSection(
+            state = recentImages,
+            onAddImage = onAddRecentImage,
+            onRequestAccess = onRequestRecentImageAccess,
+            onChoosePhotos = onPickPhotos,
+        )
+        AddRow(
+            label = "Files",
+            description = "Attach a file from this device",
+            icon = HermesIcon.File,
+            onClick = onChooseFiles,
+        )
+        AddRow(
+            label = "URL",
+            description = "Add a remote URL reference",
+            icon = HermesIcon.Link,
+            onClick = onChooseUrl,
+        )
+        AddRow(
+            label = "Prompt snippets",
+            description = "Insert a reusable prompt",
+            icon = HermesIcon.SymbolMethod,
+            onClick = onChooseSnippets,
+        )
+        Text(
+            "Files upload through the Gateway when you send. Folders aren't available yet.",
+            style = HermesTheme.type.scaffoldMeta,
+            color = tokens.scaffoldMeta.copy(alpha = 1f),
+            modifier = Modifier
+                .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
+                .padding(horizontal = HermesTheme.spacing.pageInset / 2),
+        )
     }
 }
 
 @Composable
-private fun AddRow(label: String, description: String, icon: HermesIcon, onClick: () -> Unit) {
+internal fun AddRow(
+    label: String,
+    description: String,
+    icon: HermesIcon,
+    testTag: String? = null,
+    onClick: () -> Unit,
+) {
     val tokens = HermesTheme.tokens
     Row(
         Modifier
@@ -167,6 +238,7 @@ private fun AddRow(label: String, description: String, icon: HermesIcon, onClick
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = "$label. $description" }
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

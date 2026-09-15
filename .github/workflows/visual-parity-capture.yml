@@ -11,7 +11,7 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [composer-status-stack, composer-url-chip]
+        options: [composer-status-stack, composer-url-chip, composer-add-sheet]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true
@@ -27,6 +27,9 @@ on:
           - url-chip
           - file-chip
           - folder-chip
+          - recent-images-populated
+          - recent-images-added
+          - recent-images-permission
       theme:
         description: Rendered theme
         required: true

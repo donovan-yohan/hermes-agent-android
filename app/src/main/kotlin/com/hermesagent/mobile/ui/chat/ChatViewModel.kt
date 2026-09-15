@@ -52,6 +52,11 @@ import com.hermesagent.mobile.data.attachments.AttachmentReadResult
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.ComposerAttachmentDraft
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.data.attachments.RecentImage
+import com.hermesagent.mobile.data.attachments.RecentImageAccess
+import com.hermesagent.mobile.data.attachments.RecentImagesPolicy
+import com.hermesagent.mobile.data.attachments.RecentImagesSource
+import com.hermesagent.mobile.ui.chat.composer.RecentImagesUiState
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.data.gateway.APPROVAL_MODE_REJECTED
 import com.hermesagent.mobile.data.gateway.isSessionNotOwned
@@ -133,6 +138,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Gateway catalog state, kept distinct from an empty-but-resolved catalog. */
 sealed interface ComposerCatalogUiState {
@@ -205,6 +211,8 @@ data class ComposerRuntimeUiState(
     val attachments: List<ComposerAttachmentDraft> = emptyList(),
     /** Occurrence-keyed preview bitmaps for image drafts; UI-only, never persisted. */
     val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
+    /** The add sheet's device-image rail, fenced to this composer scope. */
+    val recentImages: RecentImagesUiState = RecentImagesUiState(),
 ) {
     /** An attachment whose bytes are in hand, so a message can leave with no text. */
     val hasReadyAttachment: Boolean get() = attachments.any { it.stage is AttachmentStage.Ready }
@@ -501,6 +509,20 @@ internal class ChatViewModel(
     private val attachments = MutableStateFlow<List<ComposerAttachmentDraft>>(emptyList())
     /** Occurrence-keyed preview bitmaps for image drafts; UI-only, wiped with drafts. */
     private val attachmentThumbnails = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
+    /**
+     * Device images the add sheet may offer, published with the composer scope
+     * that owns them. Ownership travels inside the value rather than in a
+     * sibling field, so a stale `combine` delivery cannot borrow a newer
+     * scope's session.
+     */
+    private val recentImages = MutableStateFlow(ScopedRecentImages())
+    private var recentImagesLoad: Job? = null
+    /** Whether the add sheet is on screen, which is the only reason to read the library. */
+    private var recentImagesOpen = false
+    /** Occurrence id to device image id, so removing a chip clears its rail mark. */
+    private val recentImageAdds = mutableMapOf<String, Long>()
+    /** Activity-owned reader; it never persists a media grant. */
+    var recentImagesSource: RecentImagesSource? = null
     private val activeSessionId = MutableStateFlow<String?>(null)
     private val activeContextBreakdown = MutableStateFlow<ContextBreakdown?>(null)
     /** The saved model shortlist for the bound scope; null = never customised. */
@@ -608,6 +630,8 @@ internal class ChatViewModel(
     private var codingGeneration = 0L
     private var codingReviewGeneration = 0L
     private var observedConnectionStatus: GatewayConnectionStatus? = null
+    /** Connection callbacks are the observable seam for a reconnect generation. */
+    private var observedRecentImagesGeneration = connectionGeneration()
     private var queueScopeSwitch: Job? = null
     /** Activity-provided opener for content grants; set by MainActivity. */
     var openAttachmentStream: ((String) -> java.io.InputStream?)? = null
@@ -622,15 +646,18 @@ internal class ChatViewModel(
         historyRevision,
         queueScopeReady,
         repository.pendingInputs,
-        combine(attachments, attachmentThumbnails) { drafts, thumbnails -> drafts to thumbnails },
+        combine(attachments, attachmentThumbnails, recentImages) { drafts, thumbnails, rail ->
+            AttachmentBundle(drafts, thumbnails, rail)
+        },
     ) { queue, revision, scopeReady, pending, draftsWithThumbnails ->
         LocalComposerState(
             queue = queue,
             historyRevision = revision,
             scopeReady = scopeReady,
             pendingInputs = pending,
-            attachments = draftsWithThumbnails.first,
-            attachmentThumbnails = draftsWithThumbnails.second,
+            attachments = draftsWithThumbnails.attachments,
+            attachmentThumbnails = draftsWithThumbnails.thumbnails,
+            recentImages = draftsWithThumbnails.recentImages,
         )
     }
 
@@ -760,6 +787,11 @@ internal class ChatViewModel(
                 .firstOrNull { it.value.durableSessionId == displayedActiveId }?.value,
             attachments = navigation.localComposer.attachments.filter { it.durableSessionId == displayedActiveId },
             attachmentThumbnails = navigation.localComposer.attachmentThumbnails,
+            recentImages = navigation.localComposer.recentImages.forDisplayedScope(
+                RecentImagesScope(connectionGeneration(), displayedActiveId),
+                navigation.localComposer.attachments,
+                recentImageAdds,
+            ),
         )
         val backgroundPending = navigation.localComposer.pendingInputs.values
             .firstOrNull { it.durableSessionId != displayedActiveId }
@@ -1182,6 +1214,8 @@ internal class ChatViewModel(
                         // produced it. Drop the Bot Chat capability before any
                         // later cache/rehome event can reuse that id here.
                         clearBotChatCapability(rehomeActive = true)
+                        clearRecentImages()
+                        clearAttachmentDrafts()
                         invalidateArchivedPool()
                     } else {
                         reloadArchivedPoolWhenReady()
@@ -1202,6 +1236,10 @@ internal class ChatViewModel(
         }
         viewModelScope.launch {
             repository.connectionState.collect { connection ->
+                if (connectionGeneration() != observedRecentImagesGeneration) {
+                    observedRecentImagesGeneration = connectionGeneration()
+                    clearRecentImages()
+                }
                 if (connection.status == observedConnectionStatus) return@collect
                 observedConnectionStatus = connection.status
                 invalidateComposerRuntimeState()
@@ -2351,6 +2389,7 @@ internal class ChatViewModel(
     }
 
     private fun rehome(id: String?, applyOpenSideEffects: Boolean = true) {
+        invalidateRecentImagesScope()
         activeSessionId.value?.let(composerHistoryController::reset)
         id?.let(composerHistoryController::reset)
         invalidateHistory()
@@ -2566,6 +2605,7 @@ internal class ChatViewModel(
                         claimedIds.forEach { occurrenceId ->
                             attachmentPayloads.remove(occurrenceId)?.fill(0)
                             attachmentMimes.remove(occurrenceId)
+                            recentImageAdds.remove(occurrenceId)
                         }
                         attachmentThumbnails.value = attachmentThumbnails.value - claimedIds
                         attachments.value = attachments.value.filterNot { it.occurrenceId in claimedIds }
@@ -2675,12 +2715,12 @@ internal class ChatViewModel(
     private val attachmentMimes = mutableMapOf<String, String?>()
 
     /** Read one locally granted source into an in-memory draft. */
-    fun addAttachmentFromGrant(uriString: String, displayName: String, claimedMime: String?) {
-        if (refuseBotChatMutation() != null) return
-        val sessionId = activeSessionId.value ?: return
+    fun addAttachmentFromGrant(uriString: String, displayName: String, claimedMime: String?): String? {
+        if (refuseBotChatMutation() != null) return null
+        val sessionId = activeSessionId.value ?: return null
         if (attachments.value.count { it.durableSessionId == sessionId } >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) {
             noticeLine = "That is more attachments than one message can carry."
-            return
+            return null
         }
         // Reserve the per-item cap for every in-flight read so N simultaneous
         // picks cannot slip past the aggregate bound before their payloads land.
@@ -2697,6 +2737,7 @@ internal class ChatViewModel(
                 }
             }
         val occurrenceId = "attach-${java.util.UUID.randomUUID()}"
+        val attachmentGeneration = connectionGeneration()
         attachments.value = attachments.value + ComposerAttachmentDraft(
             occurrenceId = occurrenceId,
             durableSessionId = sessionId,
@@ -2704,17 +2745,37 @@ internal class ChatViewModel(
             kind = AttachmentKind.File,
             stage = AttachmentStage.Reading,
         )
-        viewModelScope.launch(attachmentReadDispatcher) {
-            val result = AttachmentReader.read(
-                openStream = openAttachmentStream?.let { opener -> { opener(uriString) } },
-                rawDisplayName = displayName,
-                claimedMime = claimedMime,
-            )
+        viewModelScope.launch {
+            val read = withContext(attachmentReadDispatcher) {
+                val result = AttachmentReader.read(
+                    openStream = openAttachmentStream?.let { opener -> { opener(uriString) } },
+                    rawDisplayName = displayName,
+                    claimedMime = claimedMime,
+                )
+                // Preview decoding is decorative. A decoder failure must not
+                // turn a valid, bounded attachment into a failed read.
+                val preview = (result as? AttachmentReadResult.Read)
+                    ?.takeIf { it.kind == AttachmentKind.Image }
+                    ?.let { runCatching { AttachmentThumbnails.decodeComposer(it.bytes) }.getOrNull() }
+                result to preview
+            }
+            val result = read.first
+            val preview = read.second
             when (result) {
                 is AttachmentReadResult.Read -> {
+                    // A grant read can finish after an endpoint switch or a
+                    // removal. Its bytes belong to neither later composer.
+                    if (
+                        attachmentGeneration != connectionGeneration() ||
+                        attachments.value.none { it.occurrenceId == occurrenceId && it.durableSessionId == sessionId }
+                    ) {
+                        result.bytes.fill(0)
+                        return@launch
+                    }
                     // The optimistic reservation bounds concurrent picks; the
                     // exact check keeps a single honest pick from refusing.
                     if (reservedBytes + result.bytes.size > AttachmentPolicy.MAX_TOTAL_BYTES) {
+                        result.bytes.fill(0)
                         noticeLine = "Attachments for one message can total at most 16 MB."
                         updateAttachment(occurrenceId) {
                             it.copy(stage = AttachmentStage.Refused(
@@ -2731,10 +2792,9 @@ internal class ChatViewModel(
                         // from the same bounded in-memory bytes; a refusal
                         // needs no bitmap and a non-image keeps its glyph.
                         if (result.kind == AttachmentKind.Image) {
-                            val decoded = AttachmentThumbnails.decodeComposer(result.bytes)
-                            if (decoded != null) {
+                            if (preview != null) {
                                 attachmentThumbnails.value =
-                                    attachmentThumbnails.value + (occurrenceId to decoded)
+                                    attachmentThumbnails.value + (occurrenceId to preview)
                             }
                         }
                     }
@@ -2746,14 +2806,131 @@ internal class ChatViewModel(
                 }
             }
         }
+        return occurrenceId
     }
 
     fun removeAttachment(occurrenceId: String) {
         if (refuseBotChatMutation() != null) return
         attachmentPayloads.remove(occurrenceId)?.fill(0)
         attachmentMimes.remove(occurrenceId)
+        recentImageAdds.remove(occurrenceId)
         attachmentThumbnails.value = attachmentThumbnails.value - occurrenceId
         attachments.value = attachments.value.filterNot { it.occurrenceId == occurrenceId }
+    }
+
+    /** Read the bounded device rail only while this session and endpoint still own it. */
+    fun requestRecentImages() {
+        recentImagesLoad?.cancel()
+        val scope = RecentImagesScope(connectionGeneration(), activeSessionId.value)
+        recentImagesOpen = true
+        val access = recentImages.value.access
+        val source = recentImagesSource
+        if (scope.durableSessionId == null || source == null || !access.readsLibrary) {
+            recentImages.value = recentImages.value.cleared()
+            return
+        }
+        recentImages.value = ScopedRecentImages(scope = scope, access = access, loading = true)
+        recentImagesLoad = viewModelScope.launch {
+            val (loaded, thumbnails) = withContext(attachmentReadDispatcher) {
+                val rows = runCatching { source.recentImages(RecentImagesPolicy.MAX_RAIL_IMAGES) }
+                    .getOrElse { emptyList() }
+                val previews = rows.mapNotNull { image ->
+                    runCatching { source.thumbnail(image.id, RecentImagesPolicy.THUMBNAIL_MAX_DIM) }
+                        .getOrNull()
+                        ?.let { image.id to it }
+                }.toMap()
+                rows to previews
+            }
+            if (recentImages.value.scope == scope && currentRecentImagesScope() == scope) {
+                recentImages.value = ScopedRecentImages(
+                    scope = scope,
+                    access = access,
+                    images = loaded,
+                    thumbnails = thumbnails,
+                )
+            }
+        }
+    }
+
+    /**
+     * The add sheet closed. Its rows and previews are device material held for
+     * one look, so they go with the sheet; the marks that say which images this
+     * message already holds stay, because the chips that carry them do.
+     */
+    fun closeRecentImages() {
+        recentImagesOpen = false
+        invalidateRecentImagesScope()
+    }
+
+    /** Add only an image that is still in this scope's published device rail. */
+    fun addRecentImage(imageId: Long) {
+        val scope = currentRecentImagesScope()
+        val published = recentImages.value
+        if (published.scope != scope) return
+        val image = published.images.firstOrNull { it.id == imageId } ?: return
+        val activeAttachments = attachments.value.filter { it.durableSessionId == scope.durableSessionId }
+        if (activeAttachments.size >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE) return
+        val activeOccurrences = activeAttachments.mapTo(mutableSetOf()) { it.occurrenceId }
+        if (recentImageAdds.any { (occurrence, id) -> occurrence in activeOccurrences && id == imageId }) return
+        val source = recentImagesSource ?: return
+        val sourceUri = runCatching { source.sourceFor(image) }.getOrNull() ?: return
+        addAttachmentFromGrant(sourceUri, image.displayName, image.mimeType)?.let { occurrence ->
+            // addAttachment reserves synchronously. The mark must follow the
+            // same scope, otherwise a reconnect could paint an old selection.
+            val current = recentImages.value
+            if (current.scope == scope && currentRecentImagesScope() == scope) {
+                recentImageAdds[occurrence] = imageId
+                recentImages.value = current.copy(addedIds = current.addedIds + imageId)
+            }
+        }
+    }
+
+    /** The Activity reports the current runtime grant; denied access revokes rail rows. */
+    fun onRecentImageAccessChanged(access: RecentImageAccess) {
+        if (access == RecentImageAccess.Denied) {
+            recentImagesLoad?.cancel()
+            recentImagesLoad = null
+            recentImages.value = ScopedRecentImages(access = access)
+        } else {
+            recentImages.value = recentImages.value.copy(access = access)
+            // Only a rail that is on screen follows the grant it was just given:
+            // a resume on its own must not read the library nobody is looking at.
+            if (
+                recentImagesOpen &&
+                access.readsLibrary &&
+                activeSessionId.value != null &&
+                recentImagesSource != null
+            ) requestRecentImages()
+        }
+    }
+
+    /** A late picker result belongs to the connection that opened it. */
+    fun reportExpiredAttachmentPick() {
+        noticeLine = "Those photos arrived after the connection changed. Pick them again."
+    }
+
+    private fun currentRecentImagesScope() = RecentImagesScope(connectionGeneration(), activeSessionId.value)
+
+    private fun clearRecentImages() {
+        recentImagesLoad?.cancel()
+        recentImagesLoad = null
+        recentImagesOpen = false
+        recentImageAdds.clear()
+        recentImages.value = recentImages.value.cleared()
+    }
+
+    private fun invalidateRecentImagesScope() {
+        recentImagesLoad?.cancel()
+        recentImagesLoad = null
+        recentImages.value = recentImages.value.cleared()
+    }
+
+    private fun clearAttachmentDrafts() {
+        attachmentPayloads.values.forEach { it.fill(0) }
+        attachmentPayloads.clear()
+        attachmentMimes.clear()
+        attachmentThumbnails.value = emptyMap()
+        attachments.value = emptyList()
     }
 
     private fun updateAttachment(occurrenceId: String, transform: (ComposerAttachmentDraft) -> ComposerAttachmentDraft) {
@@ -3545,11 +3722,8 @@ internal class ChatViewModel(
         // Attachment bytes are memory-only by contract: nothing survives the
         // ViewModel, and process recreation shows "unavailable" rather than a
         // stale grant.
-        for (payload in attachmentPayloads.values) java.util.Arrays.fill(payload, 0)
-        attachmentPayloads.clear()
-        attachmentMimes.clear()
-        attachmentThumbnails.value = emptyMap()
-        attachments.value = emptyList()
+        clearRecentImages()
+        clearAttachmentDrafts()
         val id = activeSessionId.value
         val text = draft.value
         if (id != null) applicationDraftScope?.launch { persistDraft(id, text) }
@@ -3874,7 +4048,64 @@ internal class ChatViewModel(
         val attachments: List<ComposerAttachmentDraft> = emptyList(),
         /** Occurrence-keyed preview bitmaps for image drafts; UI-only. */
         val attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
+        /** The device rail is read separately from attachment payload bytes. */
+        val recentImages: ScopedRecentImages = ScopedRecentImages(),
     )
+
+    private data class AttachmentBundle(
+        val attachments: List<ComposerAttachmentDraft>,
+        val thumbnails: Map<String, ImageBitmap>,
+        val recentImages: ScopedRecentImages,
+    )
+
+    private data class RecentImagesScope(
+        val connectionGeneration: Long,
+        val durableSessionId: String?,
+    )
+
+    /**
+     * The published device rail together with the scope that owns it. A null
+     * scope means nothing is published: the rows, previews and marks were
+     * cleared by a close, a navigation or a reconnect.
+     */
+    private data class ScopedRecentImages(
+        val scope: RecentImagesScope? = null,
+        val access: RecentImageAccess = RecentImageAccess.Unknown,
+        val loading: Boolean = false,
+        val images: List<RecentImage> = emptyList(),
+        val thumbnails: Map<Long, ImageBitmap> = emptyMap(),
+        val addedIds: Set<Long> = emptySet(),
+    ) {
+        /** The same grant with everything the library supplied taken away. */
+        fun cleared() = ScopedRecentImages(access = access)
+    }
+
+    /**
+     * What the composer may show for the scope it is displaying. A read that
+     * landed for another session, endpoint or sheet opening contributes its
+     * grant but none of its rows, and the attachment cap is judged against the
+     * drafts the displayed session actually holds.
+     */
+    private fun ScopedRecentImages.forDisplayedScope(
+        displayedScope: RecentImagesScope,
+        drafts: List<ComposerAttachmentDraft>,
+        added: Map<String, Long>,
+    ): RecentImagesUiState {
+        val activeDrafts = drafts.filter { it.durableSessionId == displayedScope.durableSessionId }
+        val full = activeDrafts.size >= AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE
+        if (scope != displayedScope) {
+            return RecentImagesUiState(access = access, full = full)
+        }
+        val present = activeDrafts.mapTo(mutableSetOf()) { it.occurrenceId }
+        return RecentImagesUiState(
+            access = access,
+            loading = loading,
+            images = images,
+            thumbnails = thumbnails,
+            addedIds = added.filterKeys(present::contains).values.toSet(),
+            full = full,
+        )
+    }
 
     /**
      * The only four things that make a breakdown worth re-reading. Everything
