@@ -1,6 +1,5 @@
 package com.hermesagent.mobile.ui
 
-import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -17,13 +16,9 @@ import androidx.compose.ui.test.performScrollTo
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.GatewayStatusSummary
-import com.hermesagent.mobile.plugins.Contribution
-import com.hermesagent.mobile.plugins.ContributionRegistry
-import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.WIP_PILL
 import com.hermesagent.mobile.ui.gateway.GatewaySettingsUiState
-import com.hermesagent.mobile.ui.settings.SettingsRow
 import com.hermesagent.mobile.ui.ssh.SshUiState
 import com.hermesagent.mobile.ui.system.SYSTEM_ACTION_TAG
 import com.hermesagent.mobile.ui.system.SYSTEM_ERROR_TAG
@@ -58,14 +53,14 @@ class SystemJourneyTest {
     val compose = createComposeRule()
 
     @Test
-    fun `the system row sits between Gateways and Relay and opens the panel`() {
+    fun `the system row sits between Gateways and Plugins and opens the panel`() {
         launch()
 
         compose.onNodeWithContentDescription("Open settings").performClick()
 
         // Desktop's palette has no phone form, so the panel becomes a Settings
         // destination — placed with the Gateway rows it is about, and before
-        // Plugins and Relay, which are a plugin inventory and a workspace.
+        // Plugins, which is a plugin inventory.
         compose.onNodeWithTag(GATEWAYS).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 1f),
         )
@@ -74,9 +69,6 @@ class SystemJourneyTest {
         )
         compose.onNodeWithTag(PLUGINS_ROW).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 3f),
-        )
-        compose.onNodeWithTag(RELAY_ROW).assert(
-            SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, 4f),
         )
         // Notifications keeps Desktop's own late placement in its settings nav
         // (`i18n/en.ts:442` @ `72a3277cd7`): a preference about this device,
@@ -222,29 +214,6 @@ class SystemJourneyTest {
         system: SystemUiState = SystemUiState(),
     ) {
         compose.setContent {
-            val registry = remember {
-                ContributionRegistry().apply {
-                    registerMany(
-                        listOf(
-                            Contribution(
-                                id = "hermes-plugin-relay:sidebar-nav",
-                                area = PluginAreas.SIDEBAR_NAV_AREA,
-                                source = "plugin:hermes-plugin-relay",
-                                title = "Relay channels",
-                                order = 300,
-                                render = {
-                                    SettingsRow(
-                                        label = "Relay channels",
-                                        description = "Channels, transcripts, and messaging live in their own workspace.",
-                                        traversalIndex = 4f,
-                                        onClick = {},
-                                    )
-                                },
-                            ),
-                        ),
-                    )
-                }
-            }
             HermesApp(
                 chatState = ChatUiState(),
                 gatewayState = GatewaySettingsUiState(
@@ -264,7 +233,6 @@ class SystemJourneyTest {
                 sshActions = SshActions(),
                 systemState = system,
                 systemActions = SystemActions(),
-                pluginRegistry = registry,
                 pluginStore = testPluginStore(),
             )
         }
@@ -275,7 +243,6 @@ class SystemJourneyTest {
         const val GATEWAYS = "settings-row-gateways"
         const val SYSTEM_ROW = "settings-row-system panel"
         const val PLUGINS_ROW = "settings-row-plugins"
-        const val RELAY_ROW = "settings-row-relay channels"
         const val NOTIFICATIONS_ROW = "settings-row-notifications"
     }
 }

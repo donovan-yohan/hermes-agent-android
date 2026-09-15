@@ -299,8 +299,6 @@ class MainActivity : ComponentActivity() {
             // it means holding the first frame until both reads land, which is
             // a decision about app launch, not about this preference.
             val introSplash by preferences.introSplash.collectAsStateWithLifecycle(true)
-            // Collected from the shell, not from the Relay screen: the Settings
-            // entry point has to be able to say Relay is unavailable on this
             val connectionsState by connectionsViewModel.uiState.collectAsStateWithLifecycle()
             val systemState by systemViewModel.uiState.collectAsStateWithLifecycle()
             val systemActions = remember {

@@ -62,8 +62,6 @@ import com.hermesagent.mobile.plugins.PluginRest
 import com.hermesagent.mobile.plugins.PluginSocket
 import com.hermesagent.mobile.plugins.PluginStore
 import com.hermesagent.mobile.plugins.ScopedPluginStorage
-import com.hermesagent.mobile.plugins.relay.RelayCredentialRefresher
-import com.hermesagent.mobile.plugins.relay.RelayPlugin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -361,15 +359,6 @@ class HermesApplication : Application() {
         )
         startSessionNotifier()
         startTurnProtection()
-        RelayPlugin.defaultConnection = gatewayConnection.state
-        RelayPlugin.defaultConfigured = com.hermesagent.mobile.data.gateway.gatewayConfigured(
-            profiles = preferences,
-            hosts = preferences,
-        )
-        RelayPlugin.defaultCredentials = object : RelayCredentialRefresher {
-            override suspend fun refreshOnce(): Boolean = gatewayConnection.refreshCredential()
-            override suspend fun signInAvailable(): Boolean = gatewayConnection.signInAvailable()
-        }
         pluginLoader.discover()
         appScope.launch {
             followActiveConnection(

@@ -123,8 +123,7 @@ class GatewayActions(
 /**
  * The saved-connections registry and the session-rail switcher.
  *
- * Navigation is deliberately absent for the same reason
- * [com.hermesagent.mobile.plugins.relay.RelayActions] omits it: the shell
+ * Navigation is deliberately absent from the rail's actions: the shell
  * decides where "Manage gateways…" goes, not the rail.
  */
 class ConnectionsActions(

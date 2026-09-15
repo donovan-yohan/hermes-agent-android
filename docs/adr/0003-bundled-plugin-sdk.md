@@ -2,7 +2,7 @@
 
 **Status:** implemented for issue #167, 2026-09-06; host and i18n doors added for issue #187, 2026-09-11  
 **Authority:** `NousResearch/hermes-agent` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`  
-**Related:** Issue #166 (Epic: Desktop-compatible plugin SDK), Issue #167 (SDK core), Issue #187 (gateway JSON-RPC, event and i18n doors), `docs/spikes/plugin-surface-relay.md`
+**Related:** Issue #166 (Epic: Desktop-compatible plugin SDK), Issue #167 (SDK core), Issue #187 (gateway JSON-RPC, event and i18n doors)
 
 ## Context
 

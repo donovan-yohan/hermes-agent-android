@@ -645,13 +645,13 @@ fun TextButton(
  * Plain-body empty state. Horizontally centred, no icon pile, no card.
  *
  * @param centered also centre **vertically** in the slot the caller gave. Off by
- *   default, and deliberately: nine of this primitive's callers already pass a
- *   height-filling modifier — the session list's `listSlot` and Relay's panes —
- *   and turning the centring on for all of them would move nine states this
+ *   default, and deliberately: most of this primitive's callers already pass a
+ *   height-filling modifier — the session list's `listSlot` among them —
+ *   and turning the centring on for all of them would move states this
  *   change has no Desktop render of. Desktop centres the two states this port
  *   is about (`section-states.tsx:31` and `styles.css:1618-1622` @
- *   `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`); whether its archived, project
- *   and Relay empties are centred too is a question for their own pages and
+ *   `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`); whether its archived and
+ *   project empties are centred too is a question for their own pages and
  *   their own renders. Passing `false` leaves every existing caller pixel-exact.
  * @param icon Desktop hangs a quiet glyph above the sentence where the empty
  *   state is a whole pane rather than a note inside one. Absent by default,

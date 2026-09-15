@@ -80,7 +80,8 @@ Android implementation:
 
 Android half only, owed its Desktop side by #227:
 `docs/parity/visual/settings-plugins/settings-plugins-light/android/reference.png` with its
-`contract.json` — Settings ▸ Plugins listing the bundled Relay plugin with its `bundled` pill and
+`contract.json` — Settings ▸ Plugins listing a bundled plugin with its `bundled` pill and
 enabled switch, light, on `emulator-5554` from this branch's debug build (head 7022e2b).
-That capture predates the naming change and the marked Agent row, so it no
-longer shows the surface: the pending report owes both halves at the new pin.
+That capture predates the naming change, the marked Agent row and the removal of
+the plugin it showed, so it no longer shows the surface: the pending report owes
+both halves at the new pin.

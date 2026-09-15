@@ -864,13 +864,14 @@ renderer** (ADR 0003 §3), so Bot Mode's primary surface — a docked "Bots" pan
 has nowhere to draw; and `PluginSocket.kt:27-46` returns a no-op disposer
 (deferred under issue #73), so a plugin cannot stream today.
 
-The Relay plugin (`plugins/relay/`) is a good template for the *shape* — a
-`ROUTES_AREA` full-screen destination plus a `SIDEBAR_NAV_AREA` entry row
-(`RelayPlugin.kt:78-113`) — but it speaks REST under
-`/api/plugins/hermes-plugin-relay/…` only (`RelayPluginRepository.kt`), never the
-gateway JSON-RPC layer. Its `RelayChannelRow` / `RelayTranscriptRow` /
-`RelaySenderKind` (Human, Agent, System) at `RelayViewState.kt:16-60` are
-nonetheless the closest existing multi-speaker transcript shape in the app.
+The first bundled plugin was the right *shape* — a `ROUTES_AREA` full-screen
+destination plus a `SIDEBAR_NAV_AREA` entry row — but spoke REST only (under
+`/api/plugins/<id>/…`), never the gateway JSON-RPC layer. That plugin has since
+been removed; the bundled examples today are `plugins/bots/` and
+`plugins/kanban/`, both built on the doors [#187](https://github.com/donovan-yohan/hermes-agent-android/pull/187)
+added. The multi-speaker transcript row model (`Human` / `Agent` / `System`
+sender kinds) left with it, so a group-chat timeline has no existing Android
+row shape to reuse.
 
 ### 5.2 The grep result: there is no bot concept here today
 
@@ -916,11 +917,11 @@ rather than additive, and it is worth doing once, properly, in its own slice.
 |---|---|---|
 | Bot roster list | **EXTEND** | `data/profiles/ProfileRosterCache.kt`, `ProfileModel.kt` — epoch-guarded single-authoritative-answer caching is already the right pattern; missing the bot presentation model and a rail |
 | Bot Chat (a chat bound to a bot) | **EXTEND** | `data/gateway/GatewaySessionRepository.kt` + `SessionCache`. Concurrent per-runtime turns and foreground isolation already exist. Missing: a bot identity discriminator on `SessionSummary` (`source` is a client tag, not a chat-type) |
-| Group chat timeline | **EXTEND (UI only)** | `plugins/relay/RelayViewState.kt:16-60` for the multi-speaker row shape. Reuse the rows, not the REST-polled transport |
+| Group chat timeline | **NEW (UI)** | No existing multi-speaker row model — the one this audit named was removed with the first bundled plugin. Build the row shape against `plugins/bots/`'s roster list rather than a REST-polled transport |
 | Avatars / identity colour | **REUSE + NEW** | `data/profiles/ProfileColor.kt` gives deterministic colour and initials today. An avatar *image* pipeline is NEW — `hasAvatar` is parsed and unconsumed, and `GatewayImageLoader.kt` is not wired to profiles |
 | Unread / attention badge | **REUSE** | `SessionStatus` / `displayStatus()` / `isUnread()` (`SessionModel.kt:17-70`) plus the `StatusDot` composable already resolve dot priority correctly |
 | Cron list | **NEW** | Nothing exists; product copy already admits the gap |
-| Plugin-contributed pane | **REUSE for a route, NEW for a pane** | `ROUTES_AREA` + `SIDEBAR_NAV_AREA` work end to end today (`RelayPlugin.kt:78-113`). `PANES_AREA` has no renderer |
+| Plugin-contributed pane | **REUSE for a route, NEW for a pane** | `ROUTES_AREA` + `SIDEBAR_NAV_AREA` work end to end today (`plugins/bots/BotsPlugin.kt`, `plugins/kanban/KanbanPlugin.kt`). `PANES_AREA` has no renderer |
 
 ---
 

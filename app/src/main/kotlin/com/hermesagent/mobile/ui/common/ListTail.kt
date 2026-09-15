@@ -6,17 +6,17 @@ import androidx.compose.foundation.lazy.LazyListState
 /**
  * Scroll to the *bottom* of a list, not merely to its last item.
  *
- * A single entry routinely outgrows the viewport — a streaming reply in chat, a
- * long Relay message — and `scrollToItem` only puts an item's top edge on
+ * A single entry routinely outgrows the viewport — a streaming reply, a long
+ * transcript entry — and `scrollToItem` only puts an item's top edge on
  * screen, which is precisely where the tail disappears. Walking forward until
  * the list reports it cannot scroll any further lands on the bottom edge
  * instead. A failed scroll is the terminating condition: it cannot spin if
  * layout cannot make progress, and it imposes no arbitrary cap on a
  * legitimately long entry.
  *
- * Shared because two transcripts now need the same landing, and a second copy
- * of this loop would be a second place for the cap-and-top-edge bug to come
- * back.
+ * Shared because two scroll surfaces now need the same landing, and a second
+ * copy of this loop would be a second place for the cap-and-top-edge bug to
+ * come back.
  */
 internal suspend fun LazyListState.scrollToTail() {
     val lastIndex = layoutInfo.totalItemsCount - 1

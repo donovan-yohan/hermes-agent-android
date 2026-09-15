@@ -115,7 +115,6 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             value == "Notifications" -> HermesDestination.Notifications
             value == "Plugins" -> HermesDestination.Plugins
             value == "Profiles" -> HermesDestination.Profiles
-            value == "Relay" -> HermesDestination.Route("hermes-plugin-relay:route")
             value.startsWith("Route:") -> HermesDestination.Route(value.removePrefix("Route:"))
             else -> HermesDestination.Chat
         }
@@ -206,8 +205,8 @@ fun HermesApp(
     LaunchedEffect(navigationAsk) { navigationAsk?.let { destination = it.destination } }
 
     val onBack = { destination = destination.backDestination() }
-    // Four surfaces name this one destination: the sidebar's "Manage gateways…",
-    // Settings, Relay, and the chat chrome's connection line. They divide by
+    // Three surfaces name this one destination: the sidebar's "Manage gateways…",
+    // Settings, and the chat chrome's connection line. They divide by
     // *journey*, not by destination: the two that leave from the sessions
     // surface are a person heading for a session, and a sign-in they lead to
     // finishes there rather than on the pane it passed through.
