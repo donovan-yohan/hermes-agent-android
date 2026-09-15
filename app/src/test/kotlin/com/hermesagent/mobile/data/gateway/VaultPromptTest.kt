@@ -3,13 +3,11 @@ package com.hermesagent.mobile.data.gateway
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -18,6 +16,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -26,15 +26,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The three vault prompts at the repository seam: parked, answered, expired.
+ * The three vault prompts at the repository seam: parked, answered, cancelled.
  *
  * Contract read at `NousResearch/hermes-agent` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`:
- * `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/
- * input-requests.ts:173-204,370-446` for the payloads and the expiry rule,
- * `tui_gateway/methods_prompt.py:1099-1103` for which parameter each
- * `*.respond` reads, and `tui_gateway/agent_callbacks.py:179-193` for what the
- * agent side does with the answer.
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`: every vault prompt is one
+ * server→client *request* — `vault.unlock_prompt`, `vault.save_login`,
+ * `vault.code` (`tui_gateway/contracts/server_requests.py:118-142`) — answered
+ * by the response frame carrying the same id with `{value}` (`:25-28`), which
+ * the agent side reads at `tui_gateway/agent_callbacks.py:179-193` and
+ * `apps/desktop/src/components/prompt-overlays.tsx`.
  *
  * Virtual time throughout; nothing here sleeps.
  */
@@ -47,18 +47,19 @@ class VaultPromptTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit("vault.unlock.request", "runtime-a", UNLOCK_REQUEST)
+        env.rpc.ask("srq-u1", "vault.unlock_prompt", VaultParams.UNLOCK)
         advanceUntilIdle()
 
         val pending = singlePending(env)
         // Not a SecretPending. Before #223 the kind mapper read anything that
-        // was not clarify/approval/sudo as a secret, which would have sent a
-        // master password to `secret.respond`.
+        // was not clarify/approval/sudo as a secret, which would have answered a
+        // master password as if it were a named env var.
         assertTrue(pending is VaultUnlockPending)
         pending as VaultUnlockPending
         assertEquals("1password", pending.backend)
         assertEquals("1Password", pending.displayName)
         assertEquals(PendingInputKind.VaultUnlock, pending.key.kind)
+        assertEquals("srq-u1", pending.key.requestId)
         assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
     }
 
@@ -69,7 +70,7 @@ class VaultPromptTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit("vault.unlock.request", "runtime-a", """{"request_id":"req-u2","backend":"bitwarden"}""")
+        env.rpc.ask("srq-u2", "vault.unlock_prompt", """{"backend":"bitwarden"}""")
         advanceUntilIdle()
 
         assertEquals("bitwarden", (singlePending(env) as VaultUnlockPending).displayName)
@@ -82,7 +83,7 @@ class VaultPromptTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit("vault.save_login.request", "runtime-a", """{"request_id":"req-s1","origin":"https://example.test"}""")
+        env.rpc.ask("srq-s1", "vault.save_login", """{"origin":"https://example.test"}""")
         advanceUntilIdle()
 
         val pending = singlePending(env) as VaultSaveLoginPending
@@ -98,7 +99,7 @@ class VaultPromptTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit("vault.code.request", "runtime-a", CODE_REQUEST)
+        env.rpc.ask("srq-c1", "vault.code", VaultParams.CODE)
         advanceUntilIdle()
 
         val pending = singlePending(env) as VaultCodePending
@@ -107,13 +108,15 @@ class VaultPromptTest {
     }
 
     @Test
-    fun `a vault request without a request id is discarded`() = runTest {
+    fun `a prompt for a session this app never bound is not adopted`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit("vault.code.request", "runtime-a", """{"site":"Example"}""")
+        // Same frame, a runtime nothing here has bound. The resume that binds
+        // it re-delivers the request through `open_requests`.
+        env.rpc.ask("srq-x1", "vault.code", VaultParams.CODE, runtimeId = "runtime-unknown")
         advanceUntilIdle()
 
         assertTrue(env.repository.pendingInputs.value.isEmpty())
@@ -121,77 +124,63 @@ class VaultPromptTest {
     }
 
     @Test
-    fun `the master password reaches vault unlock respond and the array is wiped`() = runTest {
+    fun `the master password reaches the unlock response frame and the array is wiped`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.unlock.request", "runtime-a", UNLOCK_REQUEST)
+        env.rpc.ask("srq-u1", "vault.unlock_prompt", VaultParams.UNLOCK)
         runCurrent()
         val key = singlePending(env).key
 
         val password = charArrayOf('h', 'u', 'n', 't', 'e', 'r')
-        val responses = launch {
-            env.repository.respondToPendingInput(key, PendingInputAction.VaultUnlockPassword(password))
-        }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        val response = env.repository.respondToPendingInput(key, PendingInputAction.VaultUnlockPassword(password))
 
+        assertEquals(PendingInputResponse.Resolved, response)
         assertTrue("master password must be zeroed after use", password.all { it.code == 0 })
-        val call = env.rpc.calls.last { it.method == "vault.unlock.respond" }
-        assertEquals("req-u1", call.params.string("request_id"))
-        assertEquals("hunter", call.params.string("password"))
+        // Exactly one frame, carrying the request's own id — the whole of what
+        // the backend correlates on.
+        val frame = env.rpc.answered.single()
+        assertEquals("srq-u1", frame.id)
+        assertEquals("hunter", frame.result.string("value"))
         assertTrue(env.repository.pendingInputs.value.isEmpty())
         assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
     }
 
     @Test
-    fun `keep locked is an empty password, not a dropped request`() = runTest {
+    fun `keep locked is an empty value, not a dropped request`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.unlock.request", "runtime-a", UNLOCK_REQUEST)
+        env.rpc.ask("srq-u1", "vault.unlock_prompt", VaultParams.UNLOCK)
         runCurrent()
         val key = singlePending(env).key
 
-        val responses = launch {
-            env.repository.respondToPendingInput(key, PendingInputAction.VaultUnlockPassword(CharArray(0)))
-        }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        env.repository.respondToPendingInput(key, PendingInputAction.VaultUnlockPassword(CharArray(0)))
 
         // The turn is blocked until *something* answers; "" is the answer that
-        // means keep it locked (`input-requests.ts:421-423` @ the pin).
-        assertEquals("", env.rpc.calls.last { it.method == "vault.unlock.respond" }.params.string("password"))
+        // means keep it locked (`prompt-overlays.tsx:283-290` @ the pin).
+        assertEquals("", env.rpc.answered.single().result.string("value"))
     }
 
     @Test
-    fun `a saved login travels as one JSON login field and both arrays are wiped`() = runTest {
+    fun `a saved login travels as one JSON value and both arrays are wiped`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.save_login.request", "runtime-a", SAVE_LOGIN_REQUEST)
+        env.rpc.ask("srq-s1", "vault.save_login", VaultParams.SAVE_LOGIN)
         runCurrent()
         val key = singlePending(env).key
 
         val identifier = "ada".toCharArray()
         val password = "s3cret".toCharArray()
-        val responses = launch {
-            env.repository.respondToPendingInput(key, PendingInputAction.VaultLogin(identifier, password))
-        }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        env.repository.respondToPendingInput(key, PendingInputAction.VaultLogin(identifier, password))
 
         assertTrue("identifier must be zeroed after use", identifier.all { it.code == 0 })
         assertTrue("password must be zeroed after use", password.all { it.code == 0 })
-        val call = env.rpc.calls.last { it.method == "vault.save_login.respond" }
-        assertEquals("req-s1", call.params.string("request_id"))
-        val login = Json.parseToJsonElement(call.params.string("login").orEmpty()) as JsonObject
+        val login = Json.parseToJsonElement(env.rpc.answered.single().result.string("value").orEmpty()) as JsonObject
         assertEquals("ada", login.string("identifier"))
         assertEquals("s3cret", login.string("password"))
     }
@@ -202,82 +191,67 @@ class VaultPromptTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.save_login.request", "runtime-a", SAVE_LOGIN_REQUEST)
+        env.rpc.ask("srq-s1", "vault.save_login", VaultParams.SAVE_LOGIN)
         runCurrent()
         val key = singlePending(env).key
 
-        val responses = launch {
-            env.repository.respondToPendingInput(
-                key,
-                PendingInputAction.VaultLogin(CharArray(0), CharArray(0)),
-            )
-        }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        env.repository.respondToPendingInput(key, PendingInputAction.VaultLogin(CharArray(0), CharArray(0)))
 
         // `save_login_cb` json-decodes a non-empty answer and refuses anything
         // without a password (`agent_callbacks.py:182-189` @ the pin), so the
         // decline has to be "" rather than a JSON object with empty fields.
-        assertEquals("", env.rpc.calls.last { it.method == "vault.save_login.respond" }.params.string("login"))
+        assertEquals("", env.rpc.answered.single().result.string("value"))
     }
 
     @Test
-    fun `the one-time code reaches vault code respond and the array is wiped`() = runTest {
+    fun `the one-time code reaches the response frame and the array is wiped`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.code.request", "runtime-a", CODE_REQUEST)
+        env.rpc.ask("srq-c1", "vault.code", VaultParams.CODE)
         runCurrent()
         val key = singlePending(env).key
 
         val code = "123456".toCharArray()
-        val responses = launch { env.repository.respondToPendingInput(key, PendingInputAction.VaultCode(code)) }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        val response = env.repository.respondToPendingInput(key, PendingInputAction.VaultCode(code))
 
+        assertEquals(PendingInputResponse.Resolved, response)
         assertTrue("code must be zeroed after use", code.all { it.code == 0 })
-        val call = env.rpc.calls.last { it.method == "vault.code.respond" }
-        assertEquals("req-c1", call.params.string("request_id"))
-        assertEquals("123456", call.params.string("code"))
+        val frame = env.rpc.answered.single()
+        assertEquals("srq-c1", frame.id)
+        assertEquals("123456", frame.result.string("value"))
     }
 
     @Test
-    fun `an expired status clears the prompt rather than keeping it answerable`() = runTest {
+    fun `a send that never left the leg keeps the request answerable`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.code.request", "runtime-a", CODE_REQUEST)
+        env.rpc.ask("srq-c1", "vault.code", VaultParams.CODE)
         runCurrent()
         val key = singlePending(env).key
 
-        val responses = launch {
-            env.repository.respondToPendingInput(key, PendingInputAction.VaultCode("999".toCharArray()))
-        }
-        runCurrent()
-        // `_respond` answers `expired` rather than raising 4009, because every
-        // vault respond is registered with `allow_expired=True`
-        // (`methods_prompt.py:1096-1103` @ the pin).
-        env.rpc.respondResponse?.complete(json("""{"status":"expired"}"""))
-        responses.join()
+        env.rpc.sendFailure = GatewayRpcException("The gateway connection could not send the response.")
+        val response = env.repository.respondToPendingInput(key, PendingInputAction.VaultCode("123456".toCharArray()))
 
-        assertTrue(env.repository.pendingInputs.value.isEmpty())
+        assertEquals(PendingInputResponse.Retryable, response)
+        assertNotNull("an ambiguous send must leave the card up", env.repository.pendingInputs.value[key])
+        assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
     }
 
     @Test
-    fun `an expire event tears the card down and settles the session`() = runTest {
+    fun `a cancel tears the card down and settles the session`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.unlock.request", "runtime-a", UNLOCK_REQUEST)
+        env.rpc.ask("srq-u1", "vault.unlock_prompt", VaultParams.UNLOCK)
         advanceUntilIdle()
         assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
 
-        env.rpc.emit("vault.unlock.expire", "runtime-a", """{"request_id":"req-u1"}""")
+        env.rpc.emit("request.cancel", "runtime-a", """{"id":"srq-u1","method":"vault.unlock_prompt","reason":"timeout"}""")
         advanceUntilIdle()
 
         assertTrue(env.repository.pendingInputs.value.isEmpty())
@@ -285,37 +259,58 @@ class VaultPromptTest {
     }
 
     @Test
-    fun `a late expire cannot erase the prompt that replaced it`() = runTest {
+    fun `nothing is answered after a cancel`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.code.request", "runtime-a", CODE_REQUEST)
+        env.rpc.ask("srq-c1", "vault.code", VaultParams.CODE)
         advanceUntilIdle()
-        env.rpc.emit("vault.code.request", "runtime-a", """{"request_id":"req-c2","site":"Example"}""")
-        advanceUntilIdle()
-
-        env.rpc.emit("vault.code.expire", "runtime-a", """{"request_id":"req-c1"}""")
+        val key = singlePending(env).key
+        env.rpc.emit("request.cancel", "runtime-a", """{"id":"srq-c1","method":"vault.code","reason":"interrupted"}""")
         advanceUntilIdle()
 
-        // Request-correlated, exactly as Desktop is (`input-requests.ts:173-182`).
-        assertEquals("req-c2", singlePending(env).key.requestId)
+        // The card is gone, so the only thing a stale tap can reach is the
+        // repository's memory of it — and that has to read as finished business
+        // rather than as a request this connection cannot answer.
+        val response = env.repository.respondToPendingInput(key, PendingInputAction.VaultCode("123456".toCharArray()))
+
+        assertEquals(PendingInputResponse.Resolved, response)
+        assertTrue("a cancelled request takes no frame", env.rpc.answered.isEmpty())
+    }
+
+    @Test
+    fun `a late cancel cannot erase the prompt that replaced it`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.ask("srq-c1", "vault.code", VaultParams.CODE)
+        advanceUntilIdle()
+        env.rpc.ask("srq-c2", "vault.code", """{"site":"Example"}""")
+        advanceUntilIdle()
+
+        env.rpc.emit("request.cancel", "runtime-a", """{"id":"srq-c1","method":"vault.code","reason":"timeout"}""")
+        advanceUntilIdle()
+
+        // Request-correlated, exactly as Desktop is (`input-requests.ts:79-96`).
+        assertEquals("srq-c2", singlePending(env).key.requestId)
         assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
     }
 
     @Test
-    fun `expiring one kind leaves another parked on the same session`() = runTest {
+    fun `cancelling one request leaves another parked on the same session`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.code.request", "runtime-a", CODE_REQUEST)
+        env.rpc.ask("srq-c1", "vault.code", VaultParams.CODE)
         advanceUntilIdle()
-        env.rpc.emit("vault.unlock.request", "runtime-a", UNLOCK_REQUEST)
+        env.rpc.ask("srq-u1", "vault.unlock_prompt", VaultParams.UNLOCK)
         advanceUntilIdle()
         assertEquals(2, env.repository.pendingInputs.value.size)
 
-        env.rpc.emit("vault.code.expire", "runtime-a", """{"request_id":"req-c1"}""")
+        env.rpc.emit("request.cancel", "runtime-a", """{"id":"srq-c1","method":"vault.code","reason":"timeout"}""")
         advanceUntilIdle()
 
         assertNotNull(env.repository.pendingInputs.value.values.single() as? VaultUnlockPending)
@@ -329,7 +324,7 @@ class VaultPromptTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("vault.save_login.request", "runtime-a", SAVE_LOGIN_REQUEST)
+        env.rpc.ask("srq-s1", "vault.save_login", VaultParams.SAVE_LOGIN)
         runCurrent()
 
         env.rpc.emit("message.complete", "runtime-a", """{"text":"done"}""")
@@ -373,11 +368,19 @@ class VaultPromptTest {
 
     private class RpcCall(val method: String, val params: JsonObject)
 
-    private class FakeRpc : GatewayRpcClient {
+    /** One response frame this client handed the wire. */
+    private class AnswerFrame(val id: String, val result: JsonObject)
+
+    private class FakeRpc : GatewayRpcClient, GatewayServerRequestResponder {
         private val eventFlow = MutableSharedFlow<GatewayEvent>(replay = 64, extraBufferCapacity = 64)
+        private val requestFlow = MutableSharedFlow<GatewayServerRequest>(replay = 64, extraBufferCapacity = 64)
         override val events = eventFlow
+        override val serverRequests = requestFlow
         val calls = mutableListOf<RpcCall>()
-        var respondResponse: CompletableDeferred<JsonElement>? = null
+        val answered = mutableListOf<AnswerFrame>()
+
+        /** When set, every answer fails the way a closed or broken leg does. */
+        var sendFailure: GatewayRpcException? = null
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
@@ -386,10 +389,13 @@ class VaultPromptTest {
                 "session.resume" -> json(RESUME_A)
                 "session.history" -> json("""{"messages":[],"count":0}""")
                 "session.activate" -> json("{}")
-                "vault.unlock.respond", "vault.save_login.respond", "vault.code.respond" ->
-                    respondResponse?.await() ?: json("""{"status":"ok"}""")
                 else -> json("{}")
             }
+        }
+
+        override suspend fun respondToServerRequest(id: String, result: JsonObject) {
+            sendFailure?.let { throw it }
+            answered += AnswerFrame(id, result)
         }
 
         fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull) {
@@ -398,21 +404,30 @@ class VaultPromptTest {
 
         fun emit(type: String, runtimeId: String?, payload: String) = emit(type, runtimeId, json(payload))
 
+        /** One server→client request, exactly as the socket hands it over. */
+        fun ask(id: String, method: String, body: String = "{}", runtimeId: String = "runtime-a") {
+            val params = buildJsonObject {
+                put("session_id", JsonPrimitive(runtimeId))
+                (json(body) as JsonObject).forEach { (key, value) -> put(key, value) }
+            }
+            check(requestFlow.tryEmit(GatewayServerRequest(id, method, runtimeId, params)))
+        }
+
         override fun close() = Unit
     }
 
-    companion object {
+    private companion object {
         const val CLOCK = 1_800_000_000_000L
         const val RESUME_A =
             """{"session_id":"runtime-a","resumed":"durable-a","message_count":0,"messages":[],""" +
                 """"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},""" +
                 """"inflight":null,"running":false,"session_key":"durable-a","started_at":1700001000.125,"status":"idle"}"""
-        const val UNLOCK_REQUEST =
-            """{"request_id":"req-u1","backend":"1password","display_name":"1Password"}"""
-        const val SAVE_LOGIN_REQUEST =
-            """{"request_id":"req-s1","origin":"https://example.test","site":"Example"}"""
-        const val CODE_REQUEST =
-            """{"request_id":"req-c1","site":"Example","hint":"sent to your phone"}"""
+    }
+
+    private object VaultParams {
+        const val UNLOCK = """{"backend":"1password","display_name":"1Password"}"""
+        const val SAVE_LOGIN = """{"origin":"https://example.test","site":"Example"}"""
+        const val CODE = """{"site":"Example","hint":"sent to your phone"}"""
     }
 }
 

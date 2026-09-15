@@ -3,9 +3,10 @@ package com.hermesagent.mobile.data.gateway
 /**
  * The Gateway's approval vocabulary, and what a person is shown for it.
  *
- * `approval.request` offers `once`, `session`, `always` and `deny`
- * (`gateway/platforms/api_server.py:107-108` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`) and
+ * The `approval` request frame offers `once`, `session`, `always` and `deny`
+ * (`tui_gateway/contracts/server_requests.py:72-78` and
+ * `gateway/platforms/api_server.py:107-108` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`) and
  * [ApprovalPending.choices] carries exactly what it offered, because the
  * response is validated against that list. Those are wire values, not words:
  * rendering them straight onto buttons — which is what the composer's approval

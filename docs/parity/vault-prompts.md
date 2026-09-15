@@ -1,22 +1,28 @@
 # Vault prompts: source and divergence ledger
 
-The three Passwords & Logins requests that park a turn — `vault.code.request`,
-`vault.save_login.request` and `vault.unlock.request` — ported per
+The three Passwords & Logins requests that park a turn — `vault.code`,
+`vault.save_login` and `vault.unlock_prompt` — ported per
 [`docs/workflows/port-desktop-surface.md`](../workflows/port-desktop-surface.md)
 for [#223](https://github.com/donovan-yohan/hermes-agent-android/issues/223):
 `data/gateway/PendingInput.kt`, `data/gateway/GatewaySessionRepository.kt`,
 `data/notifications/SessionNotifier.kt` and `ui/chat/PendingInputSurface.kt`.
 
-Before this, `PendingInputKind` was `{Clarify, Approval, Sudo, Secret}` and all
-three events were received and dropped: on a current backend a session could sit
-parked on a vault prompt with nothing on screen and nothing in the shade, until
-the Gateway's own 120 s or 180 s timeout gave up for it.
+The re-pin to `437116f9` moved this family onto a new wire, which
+[#279](https://github.com/donovan-yohan/hermes-agent-android/issues/279)
+shipped: every blocking prompt is a server→client JSON-RPC **request** frame
+(`srq-<12 hex>`) answered by exactly one response frame carrying the same id,
+the per-kind `*.expire` notification is gone, and an unanswered request is
+re-delivered after a reconnect inside `open_requests`. The cards, the copy and
+the secret handling are unchanged; the previous `vault.*.request` events no
+longer exist, so before #279 a session could sit parked on a vault prompt with
+nothing on screen and nothing in the shade until the backend's own 120 s or
+180 s wait gave up for it.
 
 ## Pin
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer, Gateway | `hermes-agent` @ `564aef2946c436500a5e80ee117b66b789b3f99a` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer, Gateway | `hermes-agent` @ `437116f9497c80d242ce034ff7f5d81dc277a337` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
 
 Every `path:line` below is against that SHA.
 
@@ -24,44 +30,44 @@ Every `path:line` below is against that SHA.
 
 | Question | Path |
 |---|---|
-| The three handlers: payload fields, the fallbacks, and that each parks the session | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/input-requests.ts:370-446` |
-| The three `.expire` handlers, and that expiry is request-correlated | `.../gateway-event/input-requests.ts:173-204` |
-| That all three raise the `input` notification kind, and what Desktop puts in the body | `.../gateway-event/input-requests.ts:384-389`, `:410-415`, `:436-441` |
-| The wire names the events are dispatched under | `apps/desktop/src/lib/gateway-events.ts:45-50` |
-| The three cards: fields, masking, buttons, and what each button sends | `apps/desktop/src/components/prompt-overlays.tsx:256-577` |
-| That a saved login is one JSON string in `login` | `apps/desktop/src/components/prompt-overlays.tsx:435` |
-| That a typed code is stripped of spaces and dashes first | `apps/desktop/src/components/prompt-overlays.tsx:535` |
-| Every visible string | `apps/desktop/src/i18n/en.ts:3898-3922` |
-| Which parameter each `*.respond` reads, and that all three tolerate a late answer | `tui_gateway/methods_prompt.py:1096-1103` |
-| `_respond` answering `{status: ok}` or `{status: expired}` | `tui_gateway/server.py:3035-3054` |
+| Every blocking prompt is one request frame, with `srq-` ids, one `request.cancel`, and `open_requests` re-delivery | `tui_gateway/server_requests.py:1-18` |
+| The three vault request methods, their params, and the one-string `{value}` result every one of them answers with | `tui_gateway/contracts/server_requests.py:20-28`, `:118-142` |
+| The withdrawing event and its payload | `tui_gateway/contracts/server_requests.py:225-233` |
+| The three handlers: payload fields, the fallbacks, and that each parks the session | `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/server-requests.ts:227-262` |
+| Which method → handler, and that an unhandled method is answered `-32601` by the channel | `.../gateway-event/server-requests.ts:371-397` |
+| That `request.cancel` is the one event in the family, and how it clears a card | `.../gateway-event/input-requests.ts:24-132` |
+| That the answer is routed back over the socket the request arrived on | `apps/desktop/src/store/server-requests.ts:1-45` |
+| The three cards: fields, masking, buttons, and what each button sends | `apps/desktop/src/components/prompt-overlays.tsx:252-560` |
+| That a saved login is one JSON string in `value` | `apps/desktop/src/components/prompt-overlays.tsx:378` |
+| Every visible string | `apps/desktop/src/i18n/en.ts:4069-4100` |
 | What blocks, with which timeout, and what the agent does with each answer | `tui_gateway/agent_callbacks.py:174-193` |
-| That `.expire` is emitted when the bounded wait runs out, carrying `request_id` | `tui_gateway/server.py:1249-1254,1282-1294` |
 | The Passwords & Logins settings surface this port does **not** take | `apps/desktop/src/app/settings/vault-settings.tsx`, `apps/desktop/src/i18n/en.ts:443,513-570` |
 
 ## The contract, in one table
 
-| | `vault.unlock` | `vault.save_login` | `vault.code` |
+| | `vault.unlock_prompt` | `vault.save_login` | `vault.code` |
 |---|---|---|---|
 | Raised when | a login lives in an external manager that is locked | the agent is on a sign-in page with nothing saved for it | the site asked for a second factor and no authenticator key is saved |
-| Payload | `backend`, `display_name` | `origin`, `site` | `site`, `hint` |
-| Answer | `vault.unlock.respond {request_id, password}` | `vault.save_login.respond {request_id, login}` | `vault.code.respond {request_id, code}` |
+| Params | `backend`, `display_name` | `origin`, `site` | `site`, `hint` |
+| Answer | response frame `{value: password}` | response frame `{value: login}` (one JSON string) | response frame `{value: code}` |
 | The quiet button sends | `""` — keep it locked | `""` — don't save | `""` — skip |
-| Gateway wait | 120 s | 180 s | 180 s |
+| Gateway wait | 120 s, then `request.cancel {reason:"timeout"}` | 180 s, same | 180 s, same |
 
 `""` is an answer in all three, not a cancellation: the turn resumes without the
 manager, without saving, or without the code. Nothing about the dialog is
 optional — the agent is blocked behind it until something replies or the
-Gateway's wait runs out and emits `.expire`.
+backend's wait runs out and withdraws the request.
 
 ## What was built
 
 | Piece | Android | Desktop counterpart |
 |---|---|---|
-| Three request types and three answer types | `data/gateway/PendingInput.kt` | `store/prompts.ts:109-140` |
-| Parsing, parking, superseding, expiry | `data/gateway/GatewaySessionRepository.kt` | `gateway-event/input-requests.ts:173-204,370-446` |
-| The three `*.respond` calls | `data/gateway/GatewaySessionRepository.kt` | `components/prompt-overlays.tsx:288-297`, `:388-396`, `:505-513` |
-| The cards, and the secure window they render in | `ui/chat/PendingInputSurface.kt` | `components/prompt-overlays.tsx:256-577` |
-| The `input` notification kind, with no vault text in it | `data/notifications/SessionNotifier.kt` | `gateway-event/input-requests.ts:384-389`, `:410-415`, `:436-441` |
+| Three request types and three answer types | `data/gateway/PendingInput.kt` | `store/prompts.ts:126-150` |
+| The request channel: parse, deliver, answer, withdraw, restore | `data/gateway/GatewayRpc.kt` | `store/server-requests.ts:1-45`, `gateway-event/server-requests.ts:227-262` |
+| Parsing, parking, superseding, cancel, `open_requests` restore | `data/gateway/GatewaySessionRepository.kt` | `gateway-event/input-requests.ts:24-132`, `:227-262` |
+| The three answers as one response frame each | `data/gateway/GatewaySessionRepository.kt` | `components/prompt-overlays.tsx:283`, `:378`, `:490` |
+| The cards, and the secure window they render in | `ui/chat/PendingInputSurface.kt` | `components/prompt-overlays.tsx:252-560` |
+| The `input` notification kind, with no vault text in it | `data/notifications/SessionNotifier.kt` | `gateway-event/server-requests.ts:227-262` |
 
 ## The secret path, unchanged
 
@@ -88,16 +94,16 @@ of them got a shortcut:
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| `vaultUnlockDesc`: 41 words, and it says the master password "goes straight to {name} on this machine" (`en.ts:3900-3901`) | mobile-adaptation | 24 words, and it says the password "unlocks it for this session and is never stored or shown to the agent" | Two reasons, both real. Viewport: this is a dialog on a phone with a keyboard up, and `scripts/check-product-copy.py` caps a primary string at 36 words. Truthfulness: "this machine" is the Electron app's own host, and here the manager runs on the Gateway's host rather than on the phone, so the sentence would be false as written |
-| `vaultSaveDesc`: the login "is encrypted on this machine" (`en.ts:3907-3908`) | mobile-adaptation | "your Gateway encrypts it and fills the page" | Same locative: the vault is the Gateway host's, and on a phone "this machine" reads as the phone. Everything else in the sentence is Desktop's, verbatim |
-| `vaultSaveFootnote` and `vaultCodeFootnote` both point at Settings → Passwords & Logins (`en.ts:3912`, `:3920`) | omission | Neither footnote is rendered | out-of-scope: #223 — #223 is the three prompts that park a turn; the settings surface both footnotes name is #238, and a footnote directing someone to a screen this app does not have is worse than no footnote |
+| `vaultUnlockDesc`: 41 words, and it says the master password "goes straight to {name} on this machine" (`en.ts:4070-4071`) | mobile-adaptation | 24 words, and it says the password "unlocks it for this session and is never stored or shown to the agent" | Two reasons, both real. Viewport: this is a dialog on a phone with a keyboard up, and `scripts/check-product-copy.py` caps a primary string at 36 words. Truthfulness: "this machine" is the Electron app's own host, and here the manager runs on the Gateway's host rather than on the phone, so the sentence would be false as written |
+| `vaultSaveDesc`: the login "is encrypted on this machine" (`en.ts:4077-4078`) | mobile-adaptation | "your Gateway encrypts it and fills the page" | Same locative: the vault is the Gateway host's, and on a phone "this machine" reads as the phone. Everything else in the sentence is Desktop's, verbatim |
+| `vaultSaveFootnote` and `vaultCodeFootnote` both point at Settings → Passwords & Logins (`en.ts:4082`, `:4089-4090`) | omission | Neither footnote is rendered | out-of-scope: #223 — #223 is the three prompts that park a turn; the settings surface both footnotes name is #238, and a footnote directing someone to a screen this app does not have is worse than no footnote |
 | Settings → Passwords & Logins manages saved logins, cards, addresses and authenticator keys (`app/settings/vault-settings.tsx`) | omission | Absent | out-of-scope: #223 — filed as #238. A login saved from the phone can only be removed from Desktop or the CLI until it ships |
-| Each card is its own dialog component, mounted per session by the chat and by every tile (`prompt-overlays.tsx:579-596`) | mobile-adaptation | One secure dialog renders whichever single kind the session on screen has parked; another session's prompt is the pinned "Waiting for your answer in …" banner plus an `input` notification | One conversation is on screen at a time. The banner and the shade are how this app has surfaced a background session's parked prompt since #99, and a vault prompt joins that rather than inventing a second route |
-| Both inputs disable and the confirm becomes a spinner while `*.respond` is in flight (`prompt-overlays.tsx:342-349`, `:461-468`, `:568-575`) | drift | The card has the state and the copy for it, but `ChatScreen` passes `isSubmitting = false`, so it never renders | #237. Pre-existing for sudo and secret, inherited here; wiring it touches `ChatViewModel` and `ChatScreen`, which #223 did not own |
-| All three cards are titled with a `ShieldLock` glyph (`prompt-overlays.tsx:322`, `:425`, `:541`) | omission | The title is words only | deferred: #237 — a title glyph, not a control; this app's secure card has never had one and `HermesIcons` has no shield yet |
-| The notification body is the prompt's own title: the site being signed into, or the manager being unlocked (`input-requests.ts:385`, `:411`, `:437`) | mobile-adaptation | The body is the session title, redacted and bounded, like every other kind | A phone renders that on a lock screen. #99's rule for this shade already forbids a command, tool output, a sudo prompt and a secret name; which site someone is signing into is the same class of thing. Also in `docs/parity/notifications.md` |
-| `hint` is parsed off `vault.code.request` and stored (`input-requests.ts:376`) | omission | Parsed and stored, rendered nowhere | non-goal: Desktop does not render it either — `VaultCodeDialog` titles itself from `site` alone — so rendering it here would be a divergence rather than parity. It is carried so the contract is complete |
-| `.expire` tears down clarify, sudo and secret cards too (`server.py:1249-1254`) | drift | Only the three vault `.expire` events are handled | #239. #223 shipped the vault half; the other three have never handled expiry, and changing when a sudo or clarify card disappears is a behaviour change this slice did not own |
+| Each card is its own dialog component, mounted per session by the chat and by every tile (`prompt-overlays.tsx:563-580`) | mobile-adaptation | One secure dialog renders whichever single kind the session on screen has parked; another session's prompt is the pinned "Waiting for your answer in …" banner plus an `input` notification | One conversation is on screen at a time. The banner and the shade are how this app has surfaced a background session's parked prompt since #99, and a vault prompt joins that rather than inventing a second route |
+| Both inputs disable and the confirm becomes a spinner while the answer frame is in flight (`prompt-overlays.tsx:300-307`, `:391-398`, `:505-512`) | drift | The card has the state and the copy for it, but `ChatScreen` passes `isSubmitting = false`, so it never renders | #237. Pre-existing for sudo and secret, inherited here; wiring it touches `ChatViewModel` and `ChatScreen`, which #223 did not own |
+| All three cards are titled with a `ShieldLock` glyph (`prompt-overlays.tsx:310`, `:408`, `:519`) | omission | The title is words only | deferred: #237 — a title glyph, not a control; this app's secure card has never had one and `HermesIcons` has no shield yet |
+| The notification body is the prompt's own title: the site being signed into, or the manager being unlocked (`gateway-event/server-requests.ts:227-262`) | mobile-adaptation | The body is the session title, redacted and bounded, like every other kind | A phone renders that on a lock screen. #99's rule for this shade already forbids a command, tool output, a sudo prompt and a secret name; which site someone is signing into is the same class of thing. Also in `docs/parity/notifications.md` |
+| `hint` is parsed off `vault.code` and stored (`gateway-event/server-requests.ts:227-236`) | omission | Parsed and stored, rendered nowhere | non-goal: Desktop does not render it either — `VaultCodeDialog` titles itself from `site` alone — so rendering it here would be a divergence rather than parity. It is carried so the contract is complete |
+| A bridge method this platform has no surface for (`terminal.read`, `preview.read`, `preview.act`, `window.read`, `tour`) is answered `-32601` by the channel so the tool fails fast (`gateway-event/server-requests.ts:371-397`) | omission | Not answered at all: the request is ignored and the backend's own timeout ends it | out-of-scope: #279 — these are desktop-only surfaces (an in-app terminal buffer, a browser preview pane, a native window below the app) with no Android equivalent to answer from and no card the person could act on. Answered as the residual on #279 rather than invented here; the timeout is the same behaviour this app had before the re-pin |
 
 ## Visual report
 
@@ -114,16 +120,19 @@ Robolectric — none of which is a picture of either.
 
 | Claim | Test |
 |---|---|
-| Each request parks its session as its own kind, with the payload parsed, and a vault event is never mistaken for a secret | `VaultPromptTest` |
+| Each request parks its session as its own kind, with the params parsed, and a request method is never mistaken for another kind | `VaultPromptTest` |
 | Desktop's two fallbacks: `site` defaults to `origin`, `display_name` defaults to `backend` | `VaultPromptTest` |
-| A request with no `request_id` is dropped rather than parked unanswerably | `VaultPromptTest` |
-| Each answer reaches its own method under its own parameter name — `password`, `login`, `code` | `VaultPromptTest` |
+| A request for a session this app has never bound is not shown, and neither is one with nothing to ask | `VaultPromptTest`, `PendingInputTest` |
+| Each answer is one response frame carrying the request's own id, with the value the method reads — the password, the login JSON, the code | `VaultPromptTest` |
 | A saved login travels as one JSON string, and declining sends `""` rather than an empty object | `VaultPromptTest` |
 | Every `CharArray` handed to the repository is zeroed after the call, including on the empty answers | `VaultPromptTest`, `VaultPromptDialogTest` |
-| A `status: expired` reply clears the prompt instead of leaving it answerable | `VaultPromptTest` |
-| An `.expire` event clears its own request, settles the session, and cannot erase the prompt that superseded it | `VaultPromptTest` |
-| Expiring one kind leaves another kind parked on the same session, and the session stays `NeedsInput` | `VaultPromptTest` |
+| A send that never left the leg keeps the prompt answerable rather than reporting it answered | `VaultPromptTest` |
+| A `request.cancel` clears its own request, settles the session, and cannot erase the prompt that superseded it | `VaultPromptTest` |
+| Nothing is answered after a cancel, and a cancelled request's stale tap sends no frame | `VaultPromptTest` |
+| Cancelling one request leaves another parked on the same session, and the session stays `NeedsInput` | `VaultPromptTest` |
 | A vault prompt dies with its turn, like every other parked request | `VaultPromptTest` |
+| Every blocking prompt arrives as a request frame on its own stream, is answered by one frame carrying the same id, and the deleted `*.request` event pair stays refused | `GatewayRpcTest` |
+| `open_requests` restores a live, answerable card on resume, over a snapshot that said the session was running | `PendingInputTest` |
 | All three raise the `input` kind, and the shade is told a conversation is waiting and never which site or manager | `VaultPromptNotificationTest` |
 | A vault prompt for the conversation on screen stays silent | `VaultPromptNotificationTest` |
 | Each card's title, its two buttons and its verbatim Desktop labels | `VaultPromptDialogTest` |

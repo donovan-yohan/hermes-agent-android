@@ -69,10 +69,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
      * sender: `RemoteInput` writes it into the intent's own clip data, which is
      * why that PendingIntent is mutable and the button-per-choice one is not.
      *
-     * A blank answer is dropped rather than sent. An empty `clarify.respond`
-     * with no question id is the Gateway's *batch-wide cancel*
-     * (`GatewaySessionRepository`), so a reply box someone opened, cleared and
-     * sent would cancel the question instead of answering it.
+     * A blank answer is dropped rather than sent. For a single-question clarify
+     * `""` is a real answer — the skip — and for a batch it addresses no
+     * question at all, so a reply box someone opened, cleared and sent must not
+     * turn into either.
      */
     private fun onAnswer(context: Context, intent: Intent) {
         val app = context.applicationContext as? HermesApplication ?: return
@@ -126,11 +126,14 @@ private val SHADE_CHOICES = setOf(APPROVAL_ONCE, APPROVAL_SESSION, APPROVAL_ALWA
 /**
  * Android-free so every outcome can be tested without a device.
  *
- * `approval.respond` answers `{resolved: N}` (`tui_gateway/methods_prompt.py:1513-1534`
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) and carries no `status`, so
- * `resolved == 0` — the request was answered somewhere else — arrives here as
- * [PendingInputResponse.Resolved]. That is the intended reading: withdraw the
- * notification without saying anything.
+ * Both shades now answer with the *response frame* the request is waiting for —
+ * `approval` carries `{choice}`, the string prompts `{value}`, a clarify
+ * `{answer}` or a `clarify.lock` — and a frame is one-way: the transport
+ * promises it was handed to the socket, and the backend silently drops a
+ * response whose request it already withdrew
+ * (`tui_gateway/server_requests.py:139-146` @ the pin). So
+ * [PendingInputResponse.Resolved] means "the answer left", and the backend's own
+ * `request.cancel` is what clears whatever it refused.
  *
  * The outcome that must never be confused with it is
  * [PendingInputResponse.Unanswerable]: the request was never sent, because the
@@ -171,7 +174,12 @@ internal suspend fun answerFromShade(
     when (response) {
         PendingInputResponse.Resolved, PendingInputResponse.Expired ->
             clearResolvedPrompt(surface, NotificationKind.Input, durableSessionId)
-        PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
+        // A batch lock that still owes questions leaves the notification alone:
+        // the request is still parked and still answerable from the shade.
+        PendingInputResponse.PartiallyAnswered,
+        PendingInputResponse.Retryable,
+        PendingInputResponse.Unanswerable,
+        ->
             surface.degrade(NotificationKind.Input, durableSessionId)
     }
 }
@@ -197,8 +205,14 @@ internal suspend fun respondFromShade(
         // Nothing was sent. Either the socket moved on, another answer is
         // already in flight, or this process never knew the request at all.
         // The request may still be parked, so the notification stays and says
-        // where it can still be answered.
-        PendingInputResponse.Retryable, PendingInputResponse.Unanswerable ->
+        // where it can still be answered. (`PartiallyAnswered` is a batch
+        // clarify's outcome and cannot come from an approval; it is here
+        // because keeping a still-parked prompt visible is the safe reading of
+        // any outcome this branch does not otherwise know.)
+        PendingInputResponse.PartiallyAnswered,
+        PendingInputResponse.Retryable,
+        PendingInputResponse.Unanswerable,
+        ->
             surface.degrade(NotificationKind.Approval, durableSessionId)
     }
 }
