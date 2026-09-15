@@ -12,6 +12,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Dp
@@ -70,6 +71,42 @@ class ChatTopBarAlignmentTest {
         assertTrue(
             "block centre $blockCentre should sit on the icon centre $buttonCentre",
             abs((blockCentre - buttonCentre).value) <= 2f,
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h891dp")
+    fun `connected status stays legible beside long meter and approval chip`() {
+        launch(status = GatewayConnectionStatus.Connected, meterLabel = "122.4k/272k")
+
+        compose.onNodeWithText("Online", useUnmergedTree = true).assertExists()
+        val status = compose.onNodeWithTag(CHAT_SUBTITLE_TAG).getUnclippedBoundsInRoot()
+        val subtitle = compose.onNodeWithTag(CHAT_SUBTITLE_ROW_TAG).getUnclippedBoundsInRoot()
+        val meter = compose.onNodeWithTag(CONTEXT_METER_TAG).getUnclippedBoundsInRoot()
+        assertTrue(
+            "the compact status keeps a readable width: status=${status.width}, row=${subtitle.width}, meter=${meter.width}",
+            status.width >= 30.dp,
+        )
+        val chip = compose.onNodeWithTag(APPROVAL_MODE_CHIP_TAG).getUnclippedBoundsInRoot()
+        assertTrue("the status row stays one line", subtitle.height < 48.dp)
+        assertTrue("the meter stays inside the row", meter.right.value <= subtitle.right.value + 0.5f)
+        assertTrue("the approval chip stays inside the row", chip.right.value <= subtitle.right.value + 0.5f)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h891dp")
+    fun `connected streaming and running statuses keep their marker when crowded`() {
+        assertEquals(
+            "Online",
+            compactChatSubtitle("Streaming · Connected", crowded = true),
+        )
+        assertEquals(
+            "Online",
+            compactChatSubtitle("2 running · Connected", crowded = true),
+        )
+        assertEquals(
+            "Streaming · Connected",
+            compactChatSubtitle("Streaming · Connected", crowded = false),
         )
     }
 
@@ -244,11 +281,15 @@ class ChatTopBarAlignmentTest {
         assertTrue("the prose gives way to the figures", subtitle.right.value <= meter.left.value + 0.5f)
     }
 
-    private fun launch(onOpenGateways: () -> Unit = {}) {
+    private fun launch(
+        onOpenGateways: () -> Unit = {},
+        status: GatewayConnectionStatus = GatewayConnectionStatus.NeedsAttention,
+        meterLabel: String = "36.4k/272k",
+    ) {
         compose.setContent {
             HermesTheme(AppearanceSelection(BuiltinThemes.DEFAULT_NAME, HermesThemeMode.Dark)) {
                 ChatScreen(
-                    state = chromeState(),
+                    state = chromeState(status = status, meterLabel = meterLabel),
                     actions = ChatActions(),
                     onOpenSettings = {},
                     onOpenGateways = onOpenGateways,
@@ -264,10 +305,11 @@ class ChatTopBarAlignmentTest {
      */
     private fun chromeState(
         status: GatewayConnectionStatus = GatewayConnectionStatus.NeedsAttention,
+        meterLabel: String = "36.4k/272k",
     ) = ChatUiState(
         connection = GatewayConnectionState(status),
         contextMeter = ContextMeterState(
-            label = "36.4k/272k",
+            label = meterLabel,
             detail = "[█░░░░░░░░░] 13%",
             usage = SessionUsage(
                 contextUsed = 36_400,

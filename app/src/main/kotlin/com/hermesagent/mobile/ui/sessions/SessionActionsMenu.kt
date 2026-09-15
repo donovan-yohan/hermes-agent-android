@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
  * The per-session actions menu, ported from Desktop's `SessionActionsMenu`
  * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx` and the
  * `ActionsMenu` kit at `apps/desktop/src/components/ui/actions-menu.tsx`)
- * @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
+ * @ `437116f9497c80d242ce034ff7f5d81dc277a337`.
  *
  * This slice ships the container, not the verbs: every session row and the
  * chat header get one 48dp control opening one menu, and the *group order* is
@@ -83,10 +83,11 @@ const val MARK_READ = "Mark as read"
 const val ARCHIVE = "Archive"
 
 /**
- * `Appearance` (`i18n/en.ts:2436` @ `72a3277cd7`) — Desktop's per-session colour
- * submenu, rendered disabled behind the `WIP` chip.
+ * `Appearance` (`apps/desktop/src/i18n/en.ts:2242 @ 437116f9`) — Desktop's per-session
+ * colour submenu, rendered disabled behind the `WIP` chip.
  *
- * Desktop opens a swatch grid from this trigger (`session-actions-menu.tsx:467-475`).
+ * Desktop opens a swatch grid from this trigger
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:467-475 @ 437116f9`).
  * Android persists no per-session colour, so there is nothing to open and
  * nothing to choose; the trigger still holds Desktop's slot, between the
  * identity verbs and Copy ID.
@@ -106,15 +107,12 @@ const val EXPORT = "Export"
 const val MOVE_TO_PROJECT = "Move to project"
 
 /**
- * `Unarchive` (`i18n/en.ts:1326` @ `72a3277cd7`).
- *
- * Desktop's row menu never says this word: its restore lives on the Archived
- * Chats settings page (`app/settings/sessions-settings.tsx:148-154`), which is
- * a non-goal here. With that page absent the row's own menu is the only place a
- * restore can live, so the verb moves — and it moves with Desktop's own word
- * rather than a new one.
+ * `Unarchive` (`apps/desktop/src/i18n/en.ts:1493` @ `437116f9`) is the Archived view's own
+ * restore affordance. Desktop keeps this verb on its Archived Chats settings
+ * page (`apps/desktop/src/app/settings/sessions-settings.tsx:148-154` @
+ * `437116f9`), not in the per-session row menu.
  */
-const val UNARCHIVE = "Unarchive"
+internal const val UNARCHIVE = "Unarchive"
 
 /**
  * The copy confirmation. Desktop's `CopyButton` swaps the item's own icon and
@@ -241,19 +239,21 @@ fun sessionActionsMenuPlan(items: List<SessionActionItem>): List<SessionMenuNode
  * The verbs this build can actually perform for [sessionId].
  *
  * Desktop disables its whole menu for a session with no id
- * (`disabled={!sessionId}`, `session-actions-menu.tsx:471,481`); with nothing
- * left to disable this returns nothing, and [SessionActionsControl] renders no
+ * (`disabled={!sessionId}`, `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:471,481 @
+ * `437116f9`); with nothing left to disable this returns nothing, and
+ * [SessionActionsControl] renders no
  * control at all rather than a bordered empty popup.
+ *
+ * The archive item is intentionally unconditional. Desktop uses the same
+ * `Archive` label for an archived row; the Archived view owns `Unarchive`.
  */
 fun sessionActionItems(
     sessionId: String,
     copyStatus: SessionIdCopyStatus = SessionIdCopyStatus.Idle,
     /** The backend's durable pin (`sessions.pinned`); it decides which word this row says. */
     pinned: Boolean = false,
-    /** Either unread source: the durable watermark or this client's finished-turn dot. */
+    /** Either unread source: the backend's durable watermark or this client's finished-turn dot. */
     unread: Boolean = false,
-    /** The backend's durable soft-archive; an archived row offers the way back. */
-    archived: Boolean = false,
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
@@ -261,7 +261,7 @@ fun sessionActionItems(
         if (pinned) Unpin else Pin,
         // One item, both unread sources, Desktop's own pairing: the label and
         // the glyph both name the *action*, so `Mark as read` carries the open
-        // envelope (`session-actions-menu.tsx:310-333` @ `72a3277cd7`).
+        // envelope (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:310-333 @ 437116f9`).
         if (unread) MarkRead else MarkUnread,
         Appearance,
         when (copyStatus) {
@@ -272,7 +272,7 @@ fun sessionActionItems(
         Branch,
         Export,
         MoveToProject,
-        if (archived) Unarchive else Archive,
+        Archive,
         Delete,
     )
 }
@@ -301,7 +301,7 @@ private val Pin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin
 private val Unpin = SessionActionItem(SessionActionsGroup.Identity, HermesIcon.Pin, UNPIN)
 
 /**
- * The read-state row (`session-actions-menu.tsx:310-333` @ `72a3277cd7`).
+ * The read-state row (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:310-333 @ 437116f9`).
  *
  * Codicon has no `mail-unread` glyph, which is why closed `mail` and open
  * `mail-read` are the pair upstream chose — and why inventing a third would
@@ -325,7 +325,7 @@ private val Appearance =
 
 /**
  * Desktop's two work verbs, in Desktop's order
- * (`session-actions-menu.tsx:337-359` @ `72a3277cd7`): `Branch` on `repo-forked`
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:337-359 @ 437116f9`): `Branch` on `repo-forked`
  * — the codicon this font has, since it ships no `git-fork` — then `Export` on
  * `cloud-download`.
  *
@@ -342,7 +342,7 @@ private val Export =
 
 /**
  * Desktop's second submenu, after the work verbs and before the tab group
- * (`session-actions-menu.tsx:488-496` @ `72a3277cd7`), flattened for the same
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:488-496 @ 437116f9`), flattened for the same
  * reason [Appearance] is. Android has no projects roster to move a session
  * into.
  */
@@ -351,16 +351,14 @@ private val MoveToProject =
 
 /**
  * `Archive` in the danger group *above* Delete and deliberately not
- * destructive-red (`session-actions-menu.tsx:431-440,441-459` @ `72a3277cd7`):
+ * destructive-red (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:431-440,441-459 @ 437116f9`):
  * putting a chat away and destroying it must not read alike.
  */
 private val Archive = SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Archive, ARCHIVE)
 
-private val Unarchive = SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Archive, UNARCHIVE)
-
 /**
- * `Delete` in the danger group, destructive-styled (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:441-459`
- * @ `72a3277cd7`).
+ * `Delete` in the danger group, destructive-styled
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:441-459 @ 437116f9`).
  */
 private val Delete =
     SessionActionItem(SessionActionsGroup.Danger, HermesIcon.Trash, DELETE, destructive = true)
@@ -404,8 +402,6 @@ internal fun SessionActionsControl(
     pinned: Boolean = false,
     /** Either unread source: the durable watermark or the finished-turn dot. */
     unread: Boolean = false,
-    /** The backend's durable soft-archive for this row. */
-    archived: Boolean = false,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
     /**
@@ -472,7 +468,7 @@ internal fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, copyStatus, pinned, unread, archived) },
+            items = { sessionActionItems(sessionId, copyStatus, pinned, unread) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
@@ -504,8 +500,6 @@ internal fun SessionActionsControl(
                     MarkUnread -> mutate(onSetUnread, true)
 
                     Archive -> mutate(onSetArchived, true)
-
-                    Unarchive -> mutate(onSetArchived, false)
 
                     Delete -> {
                         expanded = false

@@ -263,7 +263,6 @@ private fun CompactLayout(
                 onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
                 sessionPinned = state.activeSession?.pinned == true,
                 sessionUnread = state.activeSession.isUnread(),
-                sessionArchived = state.activeSession?.archived == true,
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
                 approvalMode = state.approvalMode,
@@ -334,7 +333,6 @@ private fun WideLayout(
                 onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
                 sessionPinned = state.activeSession?.pinned == true,
                 sessionUnread = state.activeSession.isUnread(),
-                sessionArchived = state.activeSession?.archived == true,
                 contextMeter = state.contextMeter,
                 onOpenContextUsage = onOpenContextUsage,
                 approvalMode = state.approvalMode,
@@ -946,7 +944,6 @@ private fun ChatTopBar(
     /** The open session's own durable flags, so the header menu says the same words its row does. */
     sessionPinned: Boolean = false,
     sessionUnread: Boolean = false,
-    sessionArchived: Boolean = false,
     contextMeter: ContextMeterState? = null,
     onOpenContextUsage: () -> Unit = {},
     approvalMode: ApprovalMode? = null,
@@ -989,19 +986,25 @@ private fun ChatTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    // The only flexible child, so the two figures keep their
-                    // full words on a 360dp phone and the prose is what gives
-                    // way: a truncated `Sm` names no approval posture at all.
+                    // The connection state is the primary status and must retain
+                    // a readable label when the meter and approval chip consume
+                    // the remaining width. The compact label is only used for
+                    // this crowded combination; the no-meter and single-item
+                    // cases keep their existing Desktop-derived copy.
+                    val visibleSubtitle = compactChatSubtitle(
+                        subtitle = subtitle,
+                        crowded = contextMeter != null && approvalMode != null,
+                    )
                     Text(
-                        text = subtitle,
+                        text = visibleSubtitle,
                         style = HermesTheme.type.scaffoldMeta,
                         color = tokens.scaffoldMeta,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
-                            .weight(1f, fill = false)
+                            .weight(1f)
                             .testTag(CHAT_SUBTITLE_TAG)
-                            .statusAction(subtitle, gatewayDoor),
+                            .statusAction(visibleSubtitle, gatewayDoor),
                     )
                     // Desktop's right-hand statusbar array is ordered
                     // `context-usage`, `session-timer`, then `approval-mode`
@@ -1035,7 +1038,6 @@ private fun ChatTopBar(
                     tint = tokens.textSecondary,
                     pinned = sessionPinned,
                     unread = sessionUnread,
-                    archived = sessionArchived,
                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(sessionId, newTitle) } },
                     onDelete = onDeleteSession?.let { delete -> { delete(sessionId) } },
                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(sessionId, pinned) } },
@@ -1071,6 +1073,19 @@ private fun ChatUiState.chromeSubtitle(): String = when {
     runningCount > 0 && connection.status == GatewayConnectionStatus.Connected ->
         "$runningCount running · Connected"
     else -> connection.status.label
+}
+
+/** Keep the connection state readable when both compact status controls are present. */
+internal fun compactChatSubtitle(subtitle: String, crowded: Boolean): String {
+    if (!crowded) return subtitle
+    return if (
+        subtitle == GatewayConnectionStatus.Connected.label ||
+        subtitle.endsWith(" · ${GatewayConnectionStatus.Connected.label}")
+    ) {
+        "Online"
+    } else {
+        subtitle
+    }
 }
 
 private fun ChatUiState.composerStatus(): String = notice?.text ?: when {

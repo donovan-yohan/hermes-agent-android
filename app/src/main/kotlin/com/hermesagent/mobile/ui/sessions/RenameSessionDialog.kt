@@ -41,14 +41,14 @@ import kotlinx.coroutines.launch
 
 /**
  * Rename session dialog, ported from Desktop's `RenameSessionDialog`
- * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:637-720` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
+ * (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:646-716` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`). The Desktop dialog renders the
+ * title, input and buttons without a helper line.
  *
- * Title: `Rename session` (`i18n/en.ts:2330`)
- * Helper: `Leave empty to clear.` (`i18n/en.ts:2331`)
- * Placeholder: `Untitled session` (`i18n/en.ts:2332`)
- * Save: `Save` (`i18n/en.ts:9`)
- * Cancel: `Cancel` (`i18n/en.ts:11`)
+ * Title: `Rename session` (`i18n/en.ts:2779` @ `437116f9`)
+ * Placeholder: `Untitled session` (`i18n/en.ts:2781` @ `437116f9`)
+ * Save: `Save` (`i18n/en.ts:76` @ `437116f9`)
+ * Cancel: `Cancel` (`i18n/en.ts:78` @ `437116f9`)
  *
  * The field's text is the one title on this surface that is **not** passed
  * through `redact()`, and deliberately: it is what the person is editing. A
@@ -62,7 +62,6 @@ internal const val RENAME_SESSION_DIALOG_TAG = "Rename session dialog"
 internal const val RENAME_SESSION_INPUT_TAG = "Rename session input"
 
 private const val RENAME_TITLE = "Rename session"
-private const val RENAME_DESC = "Leave empty to clear."
 private const val UNTITLED_PLACEHOLDER = "Untitled session"
 private const val SAVE_LABEL = "Save"
 private const val CANCEL_LABEL = "Cancel"
@@ -127,11 +126,6 @@ fun RenameSessionDialog(
                     text = RENAME_TITLE,
                     style = HermesTheme.type.bodyStrong,
                     color = tokens.textPrimary,
-                )
-                Text(
-                    text = RENAME_DESC,
-                    style = HermesTheme.type.caption,
-                    color = tokens.textTertiary,
                 )
                 BasicTextField(
                     value = value,
