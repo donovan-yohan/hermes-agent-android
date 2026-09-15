@@ -548,6 +548,8 @@ class ConnectionSwitchControllerTest {
             onSetActive?.invoke()
             registry.update { it.copy(activeId = id) }
         }
+
+        override suspend fun setConnectionTheme(themeName: String, expectedConnectionId: String?): Boolean = false
     }
 
     private companion object {

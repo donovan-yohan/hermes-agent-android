@@ -49,7 +49,7 @@ import java.security.SecureRandom
 
 internal val Context.hermesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "hermes",
-    produceMigrations = { listOf(DropImportedKeyName, AdoptConnectionRegistry) },
+    produceMigrations = { listOf(DropImportedKeyName, AdoptConnectionRegistry, AdoptPerConnectionTheme) },
 )
 
 /** The key an earlier build wrote the imported key's display name under. */
@@ -71,6 +71,8 @@ private val LEGACY_ACCEPTED_FINGERPRINT = stringPreferencesKey("host.single.acce
 private val LEGACY_CONNECTION_MODE = stringPreferencesKey("gateway.single.connectionMode")
 private val LEGACY_REMOTE_GATEWAY_URL = stringPreferencesKey("gateway.single.remote.url")
 private val LEGACY_REMOTE_GATEWAY_PROVIDER = stringPreferencesKey("gateway.single.remote.provider")
+/** The pre-registry appearance choice, moved into row one by [AdoptPerConnectionTheme]. */
+private val LEGACY_THEME_NAME = stringPreferencesKey("appearance.theme")
 
 internal val CONNECTIONS = stringPreferencesKey("connections.v1.saved")
 internal val ACTIVE_CONNECTION_ID = stringPreferencesKey("connections.v1.activeId")
@@ -171,11 +173,49 @@ internal object AdoptConnectionRegistry : DataMigration<Preferences> {
 }
 
 /**
+ * Moves the former install-wide appearance choice into the first saved row.
+ *
+ * This follows [AdoptConnectionRegistry] so the target row already exists on
+ * an upgrade. A malformed or newer registry is never rewritten; the obsolete
+ * global key is still removed so it cannot become a second source of truth.
+ */
+internal object AdoptPerConnectionTheme : DataMigration<Preferences> {
+
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        currentData.contains(LEGACY_THEME_NAME)
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        val requested = currentData[LEGACY_THEME_NAME]
+            ?.trim()
+            ?.takeIf(::isSafeLegacyThemeName)
+        val rows = currentData[CONNECTIONS]
+            ?.takeIf(ConnectionRegistryCodec::isWritable)
+            ?.let(ConnectionRegistryCodec::decode)
+            .orEmpty()
+        return currentData.toMutablePreferences().apply {
+            if (requested != null && rows.isNotEmpty()) {
+                this[CONNECTIONS] = ConnectionRegistryCodec.encode(
+                    rows.mapIndexed { index, row ->
+                        if (index == 0) row.copy(themeName = requested) else row
+                    },
+                )
+            }
+            remove(LEGACY_THEME_NAME)
+        }
+    }
+
+    override suspend fun cleanUp() = Unit
+}
+
+private fun isSafeLegacyThemeName(value: String): Boolean =
+    value.isNotBlank() && value.length <= 64 && value.none(Char::isISOControl)
+
+/**
  * Everything this connection/appearance preference store puts on disk.
  *
  * The list is short by design, and every entry is non-secret:
- * - the chosen theme and light/dark mode, and whether an empty chat draws the
- *   intro splash;
+ * - each connection row's chosen theme name, the global light/dark mode, and
+ *   whether an empty chat draws the intro splash;
  * - the session sidebar's grouping mode and its active Hermes-profile scope;
  * - the saved connections, each one a random local id, a label, a route, the
  *   Remote Gateway's non-secret URL/provider, and the SSH host, port, username,
@@ -200,7 +240,9 @@ internal object AdoptConnectionRegistry : DataMigration<Preferences> {
  * is `connections.v1.*`: one versioned document of saved rows plus the id of
  * the active one. The single-connection `host.single.*` / `gateway.single.*`
  * keys they replace were **migrated, not overloaded** — see
- * [AdoptConnectionRegistry] — and nothing reads them any more.
+ * [AdoptConnectionRegistry] — and nothing reads them any more. The former
+ * install-wide `appearance.theme` key is likewise migrated into row one by
+ * [AdoptPerConnectionTheme], then removed.
  *
  * A registry row holds only the same non-secret fields. A Remote row's sign-in
  * is not one of them: it lives in that row's own Keystore-encrypted slot,
@@ -219,7 +261,7 @@ class HermesPreferences(private val context: Context) :
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
         AppearanceSelection(
-            themeName = prefs[THEME_NAME] ?: BuiltinThemes.DEFAULT_NAME,
+            themeName = registryOf(prefs).active?.themeName ?: BuiltinThemes.DEFAULT_NAME,
             mode = prefs[THEME_MODE]?.toThemeMode() ?: HermesThemeMode.System,
         )
     }
@@ -314,7 +356,21 @@ class HermesPreferences(private val context: Context) :
      */
     override val activeScope: Flow<ComposerControlsScope> = context.hermesDataStore.data.map(::composerScope)
 
-    suspend fun setTheme(name: String) = context.hermesDataStore.edit { it[THEME_NAME] = name }
+    override suspend fun setConnectionTheme(
+        themeName: String,
+        expectedConnectionId: String?,
+    ): Boolean {
+        var written = false
+        editActiveConnection { active ->
+            if (expectedConnectionId != null && expectedConnectionId != active.id) {
+                active
+            } else {
+                written = true
+                active.copy(themeName = themeName)
+            }
+        }
+        return written
+    }
 
     suspend fun setMode(mode: HermesThemeMode) =
         context.hermesDataStore.edit { it[THEME_MODE] = mode.name }
@@ -585,7 +641,6 @@ class HermesPreferences(private val context: Context) :
         /** What an install with nothing saved yet gets. */
         val FRESH = HostProfile()
 
-        val THEME_NAME = stringPreferencesKey("appearance.theme")
         val THEME_MODE = stringPreferencesKey("appearance.mode")
         val INTRO_SPLASH = stringPreferencesKey("appearance.introSplash")
         val SIDEBAR_GROUPING = stringPreferencesKey("sidebar.grouping")

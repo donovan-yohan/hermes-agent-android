@@ -23,6 +23,29 @@ import org.junit.Test
  */
 class GatewayRestClientTest {
 
+    @Test
+    fun `gets dashboard themes and puts an exactly echoed selection`() = runTest {
+        val http = RecordingGatewayHttp(
+            success("""{"themes":[{"name":"custom","label":"Custom","description":"","definition":{"name":"custom","palette":{"background":"#112233","midground":"#445566","foreground":"#778899"}}}]}"""),
+            success("""{"ok":true,"theme":"custom"}"""),
+        )
+        val client = GatewayRestClient(http = { http })
+        assertEquals(1, client.dashboardThemes().valueOrFail().size)
+        assertEquals("custom", client.setDashboardTheme("custom").valueOrFail())
+        assertEquals("api/dashboard/themes", http.requests[0].path)
+        assertEquals("GET", http.requests[0].method)
+        assertEquals("api/dashboard/theme", http.requests[1].path)
+        assertEquals("PUT", http.requests[1].method)
+        assertEquals("{\"name\":\"custom\"}", http.bodies[1])
+    }
+
+    @Test
+    fun `refuses dashboard selection whose acknowledgement differs`() = runTest {
+        val failed = GatewayRestClient(http = { RecordingGatewayHttp(success("""{"ok":true,"theme":"other"}""")) })
+            .setDashboardTheme("custom") as GatewayRestResult.Failed
+        assertEquals(null, failed.statusCode)
+    }
+
     // -----------------------------------------------------------------------
     // Request shaping: profile scope, paging window, verbs, bounds.
     // -----------------------------------------------------------------------

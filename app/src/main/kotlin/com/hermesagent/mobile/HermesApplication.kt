@@ -48,6 +48,7 @@ import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.updates.GatewaySystemApi
 import com.hermesagent.mobile.data.updates.GatewayUpdateController
 import com.hermesagent.mobile.data.updates.RestGatewaySystemApi
+import com.hermesagent.mobile.data.themes.GatewayThemeRepository
 import com.hermesagent.mobile.data.voice.GatewayReplySpeaker
 import com.hermesagent.mobile.data.voice.GatewayVoiceRepository
 import com.hermesagent.mobile.data.voice.ReplySpeaker
@@ -75,6 +76,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
@@ -192,13 +194,26 @@ class HermesApplication : Application() {
             // The backend's version, its update receipt and any apply in flight
             // belong to the machine this device is leaving, exactly as its
             // session ids do. Same seam, one clear.
-            endpointScopedState = { updateController.reset() },
+            // One endpoint-scoped seam: host facts are cleared together rather
+            // than allowing a second reset path to drift from switching.
+            endpointScopedState = {
+                updateController.reset()
+                gatewayThemes.resetForEndpointSwitch()
+            },
             endpointDispatchFence = endpointDispatchFence,
         )
     }
 
     /** The System panel's six host calls, over the connection-owned transport. */
     internal val systemApi: GatewaySystemApi by lazy { RestGatewaySystemApi { gatewayHttp } }
+
+    /** Dashboard themes are host facts, scoped to the active endpoint. */
+    internal val gatewayThemes: GatewayThemeRepository by lazy {
+        GatewayThemeRepository(
+            http = { gatewayHttp },
+            endpointGeneration = { cache.endpointGeneration.value },
+        )
+    }
 
     /**
      * The backend-update engine, app-scoped for the reason its own KDoc gives:
@@ -388,6 +403,25 @@ class HermesApplication : Application() {
                 connection = gatewayConnection,
                 routeGeneration = connectionSwitch.routeGeneration,
             )
+        }
+        // This fetch is only issued through the authenticated, connection-owned
+        // transport: gatewayHttp is null until a leg has answered. No route
+        // branch is needed; like the System panel, each leg resolves its own
+        // credential before it provides that transport.
+        appScope.launch {
+            gatewayConnection.state
+                .map { it.status == GatewayConnectionStatus.Connected }
+                .distinctUntilChanged()
+                .collect { connected -> if (connected) gatewayThemes.refresh() }
+        }
+        appScope.launch {
+            connectionSwitch.routeGeneration
+                .drop(1)
+                .collect {
+                    if (gatewayConnection.state.value.status == GatewayConnectionStatus.Connected) {
+                        gatewayThemes.refresh()
+                    }
+                }
         }
     }
 
