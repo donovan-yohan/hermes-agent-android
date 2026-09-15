@@ -171,6 +171,19 @@ fun Composer(
      * surface it opens, is the caller's — see `ChatUiState.gatewayNeedsAttention`.
      */
     statusAction: StatusAction? = null,
+    /**
+     * The notice [statusLine] is reporting, when that is what it is reporting.
+     *
+     * [statusLine] is a whole line: a notice when there is one, the connection
+     * otherwise. Only its notice half has to survive a narrow composer, where
+     * the bottom row's slot belongs to the model control and the line would
+     * otherwise render nowhere at all (#242) — "Connected to Gateway" is the
+     * header's to say, and it has never needed a second phone row. So below
+     * `Full` the notice moves above the editor, unchanged in wording and in
+     * whatever door [statusAction] gives it; `Full` keeps the line exactly
+     * where it was.
+     */
+    notice: String? = null,
     editorIdentity: String? = null,
     codingHeader: (@Composable () -> Unit)? = null,
     fusedStatusAbove: Boolean = false,
@@ -262,6 +275,17 @@ fun Composer(
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 5.dp),
             ) {
+                // A notice's other home. It is the same one-line seam the
+                // `Full` status line is — `statusAction` is what makes it a
+                // door — so the two widths differ in where the sentence sits,
+                // never in whether it is there or what tapping it does.
+                if (layoutMode != ComposerLayoutMode.Full && !notice.isNullOrBlank()) {
+                    ComposerStatusLine(
+                        text = notice,
+                        action = statusAction,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
                 ComposerEditor(
                     draft,
                     onDraftChange,
@@ -316,13 +340,10 @@ fun Composer(
                         if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
                         if (action.showStopSecondary) ComposerSecondaryStopAction(onStop)
                         if (layoutMode == ComposerLayoutMode.Full) {
-                            Text(
+                            ComposerStatusLine(
                                 text = statusLine,
-                                style = HermesTheme.type.scaffoldMeta,
-                                color = tokens.scaffoldMeta,
-                                modifier = Modifier
-                                    .statusAction(statusLine, statusAction)
-                                    .padding(end = 6.dp),
+                                action = statusAction,
+                                modifier = Modifier.padding(end = 6.dp),
                             )
                         } else {
                             ComposerModelControl(
@@ -349,6 +370,31 @@ fun Composer(
             }
         }
     }
+}
+
+/**
+ * The one line both composer widths say: a notice when there is one, the
+ * connection otherwise.
+ *
+ * `Full` draws it on the bottom row; below that the notice takes the line
+ * above the editor and the bottom row's slot stays the model control's
+ * (#242). Two homes, one renderer: the words, the `scaffoldMeta` face and
+ * whatever door [action] makes of them are decided here, so the widths cannot
+ * drift apart in what the line is or what tapping it does.
+ */
+@Composable
+private fun ComposerStatusLine(
+    text: String,
+    action: StatusAction?,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = HermesTheme.tokens
+    Text(
+        text = text,
+        style = HermesTheme.type.scaffoldMeta,
+        color = tokens.scaffoldMeta,
+        modifier = modifier.statusAction(text, action),
+    )
 }
 
 @Composable

@@ -875,6 +875,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
             canSend = state.canSend,
             connected = state.connection.status == GatewayConnectionStatus.Connected,
             statusLine = state.composerStatus(),
+            notice = state.notice?.text,
             statusAction = state.composerStatusAction(actions, gatewayDoor),
             editorIdentity = state.activeSession?.id,
             codingHeader = {
@@ -1092,12 +1093,16 @@ private fun ChatUiState.composerStatus(): String = notice?.text ?: when {
  *   (`apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx:559-563`
  *   @ `564aef2946c436500a5e80ee117b66b789b3f99a`); here the line the refusal
  *   already writes is the control, which is the same seam the connection door
- *   below uses.
+ *   below uses. It is the notice's door wherever the notice renders — the
+ *   status line in `Full`, the line above the editor below it — because
+ *   [composerStatus] hands both the same sentence.
  * - Any other notice is reporting, not directing — a project or a profile
  *   failure — and [composerStatus] renders it *ahead* of the connection, so it
  *   must not inherit the connection's door and send someone to Gateways for a
  *   problem Gateways does not fix.
- * - Otherwise the line is the connection's, and so is the door.
+ * - Otherwise the line is the connection's, and so is the door. That line has
+ *   no narrow-width home: the header already reports the connection, and the
+ *   composer only carries the notices that answer something the person did.
  */
 private fun ChatUiState.composerStatusAction(
     actions: ChatActions,
@@ -1113,8 +1118,9 @@ private fun ChatUiState.composerStatusAction(
  * `564aef2946c436500a5e80ee117b66b789b3f99a`).
  *
  * Desktop draws it as a button and so has somewhere to print it; here it is
- * the spoken name of the door the status line already is, so the words stay
- * verbatim even though the affordance is the line itself.
+ * the spoken name of the line the refusal already writes — the status line on
+ * a wide composer, the line above the editor on a narrow one — so the words
+ * stay verbatim even though the affordance is the sentence itself.
  */
 private const val START_NEW_SESSION = "Start new session"
 
