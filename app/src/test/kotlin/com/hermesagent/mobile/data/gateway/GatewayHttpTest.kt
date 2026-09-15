@@ -16,6 +16,23 @@ import org.junit.Test
 
 class GatewayHttpTest {
     @Test
+    fun `does not block the caller while executing the HTTP exchange`() = runTest {
+        var exchangeThread: String? = null
+        val transport = OkHttpGatewayHttp(
+            clientResponding {
+                exchangeThread = Thread.currentThread().name
+                response(it, 200, "ok")
+            },
+            { "https://gateway.example" },
+            { "Authorization" to "x" },
+        )
+
+        transport.execute(GatewayHttpRequest("api/config", "GET", null, 100))
+
+        assertFalse(exchangeThread?.contains("Test worker") == true)
+    }
+
+    @Test
     fun `builds encoded query under endpoint path and applies connection authorization`() = runTest {
         var captured: Request? = null
         val client = clientResponding { request ->

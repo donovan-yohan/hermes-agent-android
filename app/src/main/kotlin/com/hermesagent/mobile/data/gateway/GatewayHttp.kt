@@ -2,6 +2,8 @@ package com.hermesagent.mobile.data.gateway
 
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okio.Buffer
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -148,7 +150,8 @@ internal class OkHttpGatewayHttp(
                 }
                 else -> return GatewayHttpResult.Rejected(0, UNSUPPORTED_MESSAGE)
             }
-            scoped.newCall(builder.build()).execute().use { response ->
+            withContext(Dispatchers.IO) {
+                scoped.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body
                     if (body == null) {
@@ -161,8 +164,11 @@ internal class OkHttpGatewayHttp(
                         GatewayHttpResult.Rejected(response.code, OVERSIZE_MESSAGE)
                     } else {
                         val bytes = body.readBounded(request.maxResponseBytes)
-                            ?: return GatewayHttpResult.Rejected(response.code, OVERSIZE_MESSAGE)
-                        GatewayHttpResult.Success(response.code, bytes)
+                        if (bytes == null) {
+                            GatewayHttpResult.Rejected(response.code, OVERSIZE_MESSAGE)
+                        } else {
+                            GatewayHttpResult.Success(response.code, bytes)
+                        }
                     }
                 } else {
                     GatewayHttpResult.Rejected(
@@ -183,6 +189,7 @@ internal class OkHttpGatewayHttp(
                             ByteArray(0)
                         },
                     )
+                }
                 }
             }
         } catch (_: IOException) {
