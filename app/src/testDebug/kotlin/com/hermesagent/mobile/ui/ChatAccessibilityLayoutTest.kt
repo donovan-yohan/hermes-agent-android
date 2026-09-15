@@ -142,11 +142,11 @@ class ChatAccessibilityLayoutTest {
         )
         launch(sessionRows = listOf(SessionListRow.Row(running)))
 
-        compose.onNodeWithContentDescription("Running outline. Running").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Running outline. Running. Updated just now").assertIsDisplayed()
         assertEquals(
             "the Canvas outline must not add a second readable node",
             1,
-            compose.nodesWithContentDescription("Running outline. Running").size,
+            compose.nodesWithContentDescription("Running outline. Running. Updated just now").size,
         )
     }
 
@@ -173,12 +173,12 @@ class ChatAccessibilityLayoutTest {
             sidebarGrouping = SidebarGrouping.Project,
         )
 
-        compose.onNodeWithContentDescription("Running project preview. Running, nothing arriving")
+        compose.onNodeWithContentDescription("Running project preview. Running, nothing arriving. Updated just now")
             .assertIsDisplayed()
         assertEquals(
             "project previews share the row and must not gain decorative semantics",
             1,
-            compose.nodesWithContentDescription("Running project preview. Running, nothing arriving").size,
+            compose.nodesWithContentDescription("Running project preview. Running, nothing arriving. Updated just now").size,
         )
     }
 
@@ -201,6 +201,10 @@ class ChatAccessibilityLayoutTest {
                         projects = projects,
                         projectsAvailable = projectsAvailable,
                         sidebarGrouping = sidebarGrouping,
+                        // The state carries the clock the rows are aged
+                        // against, and this suite's fixtures are all stamped
+                        // at NOW — a live read would render them decades old.
+                        nowMillis = NOW,
                     ),
                     actions = ChatActions(),
                     onOpenSettings = {},

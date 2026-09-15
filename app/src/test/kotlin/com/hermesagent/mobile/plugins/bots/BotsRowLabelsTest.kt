@@ -11,25 +11,13 @@ import org.junit.Test
  * `bot-row.tsx:79-88` (age), `lib/time.ts:194-215` (`coarseElapsed`),
  * `labels.ts:14-90` (name, preview), `data.ts:952-963` (@handle) and
  * `row-helpers.ts` (the bot-to-bot delivery prefix).
+ *
+ * The bucket rule lives in core and has its own suite
+ * (`data/session/RelativeAgeTest`); what is asserted here is that this plugin's
+ * label set renders off that one rule, exactly as Desktop's plugin imports core
+ * `coarseElapsed` rather than re-deriving it.
  */
 class BotsRowLabelsTest {
-
-    // ── coarseElapsed ─────────────────────────────────────────────────────────
-
-    @Test
-    fun `coarse elapsed floors to the coarsest unit`() {
-        assertEquals(Elapsed(ElapsedUnit.Second, 0L), coarseElapsed(0L))
-        assertEquals(Elapsed(ElapsedUnit.Second, 59L), coarseElapsed(59_999L))
-        assertEquals(Elapsed(ElapsedUnit.Minute, 1L), coarseElapsed(60_000L))
-        assertEquals(Elapsed(ElapsedUnit.Minute, 52L), coarseElapsed(52L * 60_000L))
-        assertEquals(Elapsed(ElapsedUnit.Hour, 1L), coarseElapsed(60L * 60_000L))
-        assertEquals(Elapsed(ElapsedUnit.Day, 18L), coarseElapsed(18L * 24L * 3_600_000L))
-    }
-
-    @Test
-    fun `a negative delta clamps to zero`() {
-        assertEquals(Elapsed(ElapsedUnit.Second, 0L), coarseElapsed(-5_000L))
-    }
 
     // ── age label ─────────────────────────────────────────────────────────────
 
@@ -41,6 +29,13 @@ class BotsRowLabelsTest {
         assertEquals("52m", rowAgeLabel(now - 52L * 60_000L, now))
         assertEquals("3h", rowAgeLabel(now - 3L * 3_600_000L, now))
         assertEquals("18d", rowAgeLabel(now - 18L * 86_400_000L, now))
+    }
+
+    @Test
+    fun `a negative delta clamps to now`() {
+        val now = 1_000_000_000_000L
+
+        assertEquals("now", rowAgeLabel(now + 5_000L, now))
     }
 
     @Test

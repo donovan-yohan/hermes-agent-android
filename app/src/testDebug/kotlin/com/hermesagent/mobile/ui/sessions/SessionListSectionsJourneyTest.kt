@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
@@ -50,6 +52,52 @@ class SessionListSectionsJourneyTest {
 
     @get:Rule
     val compose = createComposeRule()
+
+    /**
+     * Desktop's default row metadata is `['preview', 'updated']`
+     * (`store/layout.ts:308` @ `437116f9497c80d242ce034ff7f5d81dc277a337`), so
+     * the age is not opt-in: every row carries it unless a reader turns the
+     * field off. This pins that default-on behaviour to the rendered row, so a
+     * later WIP toggle cannot quietly drop the field on the way in.
+     */
+    @Test
+    fun `session rows show Desktop's default relative age metadata`() {
+        launch(
+            sessions = listOf(
+                session("s-1", "Fresh chat", lastActiveAtMillis = NOW - 12 * MINUTE),
+                session("s-2", "Older chat", lastActiveAtMillis = NOW - 9 * HOUR),
+            ),
+        )
+
+        // Every row, not just the first: the metadata is the list's default.
+        assertEquals(2, compose.nodesTagged(SESSION_ROW_AGE_META, useUnmergedTree = true))
+        // And each row carries its own age, read off the same bucket rule.
+        compose.ageIn("s-1").assertTextEquals("12m")
+        compose.ageIn("s-2").assertTextEquals("9h")
+        compose.onNodeWithContentDescription("Fresh chat. Idle. Updated 12 minutes ago")
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Older chat. Idle. Updated 9 hours ago")
+            .assertIsDisplayed()
+    }
+
+    /**
+     * Desktop renders the age in the row's trailing figures slot, right-aligned
+     * against the action control (`session-row.tsx:220-245` @ the pin). Anchored
+     * on the row's right edge rather than on the label's own centre, because the
+     * point of the assertion is which side of the row it sits on.
+     */
+    @Test
+    fun `the age sits in the row's trailing slot, right-aligned`() {
+        launch(
+            sessions = listOf(session("s-1", "Fresh chat", lastActiveAtMillis = NOW - 12 * MINUTE)),
+        )
+
+        val row = compose.onNodeWithTag(sessionRowTag("s-1")).fetchSemanticsNode().boundsInRoot
+        val age = compose.ageIn("s-1").fetchSemanticsNode().boundsInRoot
+
+        assertTrue("the age must sit in the row's trailing half", age.center.x > row.center.x)
+        assertTrue("the age must not overflow the row", age.right <= row.right)
+    }
 
     @Test
     fun `pinned rows render under their own section label above the buckets`() {
@@ -143,7 +191,7 @@ class SessionListSectionsJourneyTest {
     fun `a watermarked row speaks as finished and unread`() {
         launch(sessions = listOf(session("s-1", "Fresh chat", unread = true)))
 
-        compose.onNodeWithContentDescription("Fresh chat. Finished, unread").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Fresh chat. Finished, unread. Updated just now").assertIsDisplayed()
     }
 
     @Test
@@ -199,14 +247,14 @@ class SessionListSectionsJourneyTest {
         // The row publishes one merged spoken label, so the lead mark is read
         // out of the unmerged tree — it is paint, not a second thing to visit.
         assertEquals(1, compose.nodesTagged(ARCHIVED_ROW_MARK, useUnmergedTree = true))
-        compose.onNodeWithContentDescription("Filed chat. Archived").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Filed chat. Archived. Updated just now").assertIsDisplayed()
 
         compose.onNodeWithTag(ARCHIVED_RESTORE_ACTION)
             .assertIsDisplayed()
             .assertIsEnabled()
             .assertHeightIsAtLeast(HermesSpacing().touchTarget)
         compose.onNodeWithText(UNARCHIVE).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Filed chat. Archived").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Filed chat. Archived. Updated just now").assertIsDisplayed()
         compose.onNodeWithTag(ARCHIVED_RESTORE_ACTION).performClick()
         compose.waitForIdle()
         assertEquals(listOf(false), writes)
@@ -407,6 +455,7 @@ class SessionListSectionsJourneyTest {
         sessions: List<SessionSummary>,
         archivedVisible: Boolean = false,
         archivedPool: ArchivedPoolState = ArchivedPoolState.Loaded,
+        nowMillis: Long = NOW,
         unreadCount: Int = 0,
         onArchivedVisibleChange: (Boolean) -> Unit = {},
         onMarkAllRead: () -> Unit = {},
@@ -438,6 +487,7 @@ class SessionListSectionsJourneyTest {
                     onSetSessionPinned = onSetSessionPinned,
                     onSetSessionUnread = onSetSessionUnread,
                     onSetSessionArchived = onSetSessionArchived,
+                    nowMillis = nowMillis,
                     archivedVisible = archivedVisible,
                     archivedPool = archivedPool,
                     onArchivedVisibleChange = onArchivedVisibleChange,
@@ -456,11 +506,12 @@ class SessionListSectionsJourneyTest {
         archived: Boolean? = null,
         unread: Boolean? = null,
         status: SessionStatus = SessionStatus.Idle,
+        lastActiveAtMillis: Long = NOW,
     ) = SessionSummary(
         id = id,
         title = title,
         preview = "",
-        lastActiveAtMillis = NOW,
+        lastActiveAtMillis = lastActiveAtMillis,
         status = status,
         pinned = pinned,
         archived = archived,
@@ -470,11 +521,23 @@ class SessionListSectionsJourneyTest {
     private fun ComposeContentTestRule.nodesTagged(tag: String, useUnmergedTree: Boolean = false) =
         onAllNodes(hasTestTag(tag), useUnmergedTree).fetchSemanticsNodes().size
 
+    /**
+     * The age label inside one row. Every row carries the same tag, so the match
+     * has to be scoped by the row it belongs to rather than taken by tag alone.
+     */
+    private fun ComposeContentTestRule.ageIn(sessionId: String) =
+        onNode(
+            hasTestTag(SESSION_ROW_AGE_META) and hasAnyAncestor(hasTestTag(sessionRowTag(sessionId))),
+            useUnmergedTree = true,
+        )
+
     private fun ComposeContentTestRule.nodesWithText(text: String) =
         onAllNodes(hasContentDescription(text)).fetchSemanticsNodes().size +
             onAllNodes(androidx.compose.ui.test.hasText(text)).fetchSemanticsNodes().size
 
     private companion object {
         const val NOW = 1_700_000_000_000L
+        const val MINUTE = 60_000L
+        const val HOUR = 60 * MINUTE
     }
 }
