@@ -9,8 +9,8 @@ import java.util.Locale
  * through here. 999 → "999", 1000 → "1k", 1230 → "1.2k", 10000 → "10k",
  * 1_500_000 → "1.5M". Do not hand-roll `/ 1000` display math elsewhere.
  *
- * Pinned to upstream `apps/desktop/src/lib/format.ts:4-24` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * Pinned to upstream `apps/shared/src/format.ts:1-26` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`.
  */
 fun compactNumber(value: Number?): String {
     val num = value?.toDouble() ?: 0.0
@@ -40,7 +40,7 @@ fun compactNumber(value: Number?): String {
  * Text-based progress bar glyph string.
  *
  * Pinned to upstream `apps/desktop/src/lib/statusbar.tsx:37-42` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`.
  */
 fun contextBar(percent: Double?, width: Int = 10): String {
     val bounded = (percent ?: 0.0).coerceIn(0.0, 100.0)
@@ -49,30 +49,41 @@ fun contextBar(percent: Double?, width: Int = 10): String {
 }
 
 /**
- * Context meter status text label (e.g. "30k/200k" or "12k tok").
+ * Context meter status text label (e.g. "30k/200k", "~30k/200k", or "12k tok").
  *
  * Pinned to upstream `apps/desktop/src/lib/statusbar.tsx:44-50` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`.
  */
-fun usageContextLabel(contextUsed: Long?, contextMax: Long?, total: Long): String {
+fun usageContextLabel(
+    contextUsed: Long?,
+    contextMax: Long?,
+    total: Long,
+    contextEstimated: Boolean = false,
+): String {
     if (contextMax != null && contextMax > 0) {
-        return "${compactNumber(contextUsed ?: 0)}/${compactNumber(contextMax)}"
+        val mark = if (contextEstimated) "~" else ""
+        return "$mark${compactNumber(contextUsed ?: 0)}/${compactNumber(contextMax)}"
     }
     return if (total > 0) "${compactNumber(total)} tok" else ""
 }
 
 /**
- * Context meter detail label (e.g. "[████░░░░░░] 40%").
+ * Context meter detail label (e.g. "[████░░░░░░] 40%" or "[████░░░░░░] ~40%").
  *
  * Pinned to upstream `apps/desktop/src/lib/statusbar.tsx:52-60` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`.
  */
-fun contextBarLabel(contextPercent: Double?, contextMax: Long?): String {
+fun contextBarLabel(
+    contextPercent: Double?,
+    contextMax: Long?,
+    contextEstimated: Boolean = false,
+): String {
     if (contextMax == null || contextMax <= 0) {
         return ""
     }
     val pct = Math.round((contextPercent ?: 0.0).coerceIn(0.0, 100.0)).toInt()
-    return "[${contextBar(contextPercent)}] $pct%"
+    val mark = if (contextEstimated) "~" else ""
+    return "[${contextBar(contextPercent)}] $mark$pct%"
 }
 
 /**
@@ -103,18 +114,18 @@ private val CSS_VARIABLE = Regex("""^var\(\s*(--[A-Za-z0-9_-]+)\s*\)$""")
 /**
  * Resolve the `color` a Gateway category carries into the ink that paints it.
  *
- * At the pin the Gateway never sends a value: `agent/context_breakdown.py:19-28`
- * @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` maps all eight known ids to
- * `var(--context-usage-*)`, and an unknown id defaults to
- * `var(--ui-text-tertiary)` (`:155`). Desktop resolves those names against
- * `apps/desktop/src/styles.css:217-224`; Android resolves them against the
+ * At the pin the Gateway sends variable names: `agent/context_breakdown.py:18-27`
+ * @ `437116f9497c80d242ce034ff7f5d81dc277a337` maps all eight known ids to
+ * `var(--context-usage-*)`, and the producer emits only ids it knows. Desktop
+ * resolves those names against
+ * `apps/desktop/src/styles.css:210-224`; Android resolves them against the
  * semantic [HermesTokens.contextUsage] group derived from the same expressions,
  * which is what makes the panel's eight colours the *only* thing it colour-codes
  * by rather than one flat wash.
  *
  * A literal hex still parses — a Gateway is free to send one — and anything
- * unrecognised falls back to `textTertiary`, the same ink Desktop's own default
- * variable resolves to.
+ * unrecognised falls back to `textTertiary`, which is the defensive default
+ * here: at the pin the producer emits no id outside its own table.
  */
 fun resolveCategoryColor(color: String?, tokens: HermesTokens): Color {
     val raw = color?.trim().orEmpty()
@@ -137,41 +148,55 @@ fun resolveCategoryColor(color: String?, tokens: HermesTokens): Color {
 /**
  * Verbatim product copy for the Context Meter and Context Usage Panel.
  *
- * Pinned to upstream `apps/desktop/src/i18n/en.ts:2963-2980` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * Pinned to upstream `apps/desktop/src/i18n/en.ts:3577-3602` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`; source labels intentionally
+ * stay a client-side allowlist because the upstream panel has no source row.
  */
 object ContextUsageCopy {
-    /** Spoken accessibility label and status item title (`en.ts:2963`). */
+    /** Spoken accessibility label and status item title (`apps/desktop/src/i18n/en.ts:3577`). */
     const val CONTEXT_USAGE = "Context usage"
 
-    /** Panel heading (`en.ts:2978`). */
+    /** Panel heading (`apps/desktop/src/i18n/en.ts:3601`). */
     const val TITLE = "Context Usage"
 
-    /** Panel empty state (`en.ts:2975`). */
+    /** Panel empty state (`apps/desktop/src/i18n/en.ts:3598`). */
     const val EMPTY = "No context data yet"
 
-    /** Panel loading state (`en.ts:2976`). */
+    /** Panel loading state (`apps/desktop/src/i18n/en.ts:3599`). */
     const val LOADING = "Loading breakdown…"
 
-    /** Percent full subtitle (`en.ts:2977`). */
-    fun percentFull(percent: Int): String = "$percent% Full"
+    /** Percent full subtitle (`apps/desktop/src/i18n/en.ts:3600`). */
+    fun percentFull(percent: Int, estimated: Boolean = false): String =
+        "${if (estimated) "~" else ""}$percent% Full"
 
-    /** Token summary count in panel header (`en.ts:2979`). */
+    /** Token summary count in panel header (`apps/desktop/src/i18n/en.ts:3602`). */
     fun tokenSummary(used: String, max: String): String = "$used / $max Tokens"
+
+    /** Human-readable provenance for context occupancy, based on the Gateway field. */
+    fun sourceLabel(source: String?): String? = when (source?.trim()?.lowercase(Locale.ROOT)) {
+        "local_estimate" -> "Source: local estimate"
+        "provider_usage" -> "Source: provider usage"
+        "provider_usage_plus_estimate" -> "Source: provider usage + estimated new messages"
+        else -> null
+    }
 
     /**
      * The compact meter's own figure. Desktop trails the same number after its
      * glyph bar (`statusbar.tsx:52-60`); the phone draws the bar as a ring and
      * this is what is left to read.
      */
-    fun percent(percent: Int): String = "$percent%"
+    fun percent(percent: Int, estimated: Boolean = false): String =
+        "${if (estimated) "~" else ""}$percent%"
 
     /**
-     * What the compact meter speaks, because a ring and a percentage are what
-     * it draws: "30k of 200k, 40%". Desktop has room to spell the same figures
+     * What the compact meter speaks, because a ring and a percentage are what it
+     * draws: "30k of 200k, 40%". Desktop has room to spell the same figures
      * out beside the bar (`statusbar.tsx:44-60`).
      */
-    fun spokenUsage(used: String, max: String, percent: Int): String = "$used of $max, $percent%"
+    fun spokenUsage(used: String, max: String, percent: Int, estimated: Boolean = false): String {
+        val mark = if (estimated) "~" else ""
+        return "$mark$used of $max, $mark$percent%"
+    }
 
     /**
      * The same meter when the host reports a proportion and no token count.
@@ -181,9 +206,10 @@ object ContextUsageCopy {
      * place would name a figure the Gateway never sent and contradict the
      * percentage in the same breath, so only what is known is spoken.
      */
-    fun spokenPercent(percent: Int): String = "$percent%"
+    fun spokenPercent(percent: Int, estimated: Boolean = false): String =
+        "${if (estimated) "~" else ""}$percent%"
 
-    /** Standard breakdown category labels (`en.ts:2966-2973`). */
+    /** Standard breakdown category labels (`apps/desktop/src/i18n/en.ts:3589-3596`). */
     val CATEGORIES: Map<String, String> = mapOf(
         "conversation" to "Conversation",
         "mcp" to "MCP",
