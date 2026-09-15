@@ -4383,7 +4383,7 @@ internal class LiveGatewaySessionRepository(
                 false
             }
 
-            "tool.start", "tool.progress", "tool.complete" -> {
+            "tool.start", "tool.complete" -> {
                 // A live tool must not repaint a session that is parked on a
                 // required answer; NeedsInput survives tool progress.
                 if (hasPendingInput(runtimeId)) return false
@@ -6990,7 +6990,6 @@ private val LIVE_RUNTIME_EVENT_TYPES = setOf(
     "reasoning.available",
     "thinking.delta",
     "tool.start",
-    "tool.progress",
     "tool.complete",
     "error",
 )

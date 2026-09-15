@@ -499,6 +499,19 @@ internal class CorrelatedGatewayRpc(
          * `secret.request` pair stays out deliberately: subscribing to it again
          * would give a prompt two homes, one of which a pinned Gateway never
          * posts to.
+         *
+         * `tool.progress` is out for the same kind of reason: no JSON-RPC
+         * event table entry declares it (`tui_gateway/contracts/events.py:250,
+         * 268,277,290` @ `437116f9497c80d242ce034ff7f5d81dc277a337`), the
+         * channel's tool emitter writes the lifecycle pair plus
+         * `tool.output_risk` (`tui_gateway/tool_progress.py:252,286,300` @ the
+         * pin), and the one emitter that does exist serves the Session API's
+         * own SSE stream, a different transport from this socket
+         * (`POST /api/sessions/{session_id}/chat/stream`,
+         * `gateway/platforms/api_server.py:1549,3153,3168` @ the pin).
+         * Advertising it subscribed this client to a frame the channel cannot
+         * produce (#181); the `tool.start` / `tool.complete` pair carries the
+         * tool row.
          */
         val SUPPORTED_EVENTS = setOf(
             "session.info",
@@ -509,7 +522,6 @@ internal class CorrelatedGatewayRpc(
             "reasoning.available",
             "thinking.delta",
             "tool.start",
-            "tool.progress",
             "tool.complete",
             "status.update",
             "error",

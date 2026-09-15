@@ -56,7 +56,6 @@ class GatewayGlobalEventsTest {
             "reasoning.available",
             "thinking.delta",
             "tool.start",
-            "tool.progress",
             "tool.complete",
             "status.update",
             "error",
