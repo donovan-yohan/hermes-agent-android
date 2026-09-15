@@ -26,6 +26,7 @@ EMULATOR_PREPARATION = Path("scripts/prepare-ci-emulator.sh")
 # contract is which classes exist, and removing one is an edit here.
 LANE_CLAIMS = (
     "ActivityRecreateTest",
+    "MainActivityBootTest",
     "ComposerImeTest",
     "OrientationTest",
     "PlatformAccessibilityTest",
