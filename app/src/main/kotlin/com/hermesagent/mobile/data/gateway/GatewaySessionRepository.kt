@@ -1132,23 +1132,38 @@ internal class LiveGatewaySessionRepository(
                 }
                 if (next != null) {
                     eventJob = scope.launch {
-                        next.events.collect { event ->
-                            val refreshMetadata = synchronized(stateLock) {
-                                if (reset.generation != connectionGeneration || clientFlow.value !== next) {
-                                    false
-                                } else if (gatewayEventLane(event.type) == GatewayEventLane.Global) {
-                                    // No runtime to route by: the session lane's
-                                    // `applyEvent` can never see these.
-                                    applyGlobalEvent(event)
-                                } else {
-                                    // A `seq` is the resume point a replay would
-                                    // use; the epoch on `gateway.ready` is what
-                                    // invalidates it.
-                                    globalEvents.noteSessionSeq(event.runtimeSessionId, event.seq)
-                                    applyEvent(event)
+                        launch {
+                            next.events.collect { event ->
+                                val refreshMetadata = synchronized(stateLock) {
+                                    if (reset.generation != connectionGeneration || clientFlow.value !== next) {
+                                        false
+                                    } else if (gatewayEventLane(event.type) == GatewayEventLane.Global) {
+                                        // No runtime to route by: the session lane's
+                                        // `applyEvent` can never see these.
+                                        applyGlobalEvent(event)
+                                    } else {
+                                        // A `seq` is the resume point a replay would
+                                        // use; the epoch on `gateway.ready` is what
+                                        // invalidates it.
+                                        globalEvents.noteSessionSeq(event.runtimeSessionId, event.seq)
+                                        applyEvent(event)
+                                    }
+                                }
+                                if (refreshMetadata) scheduleMetadataRefresh()
+                            }
+                        }
+                        // The other direction of the same socket, fenced the same
+                        // way: a question that arrived on a connection this
+                        // repository has already left is not this connection's to
+                        // show or answer.
+                        launch {
+                            next.serverRequests.collect { request ->
+                                synchronized(stateLock) {
+                                    if (reset.generation == connectionGeneration && clientFlow.value === next) {
+                                        applyServerRequest(request)
+                                    }
                                 }
                             }
-                            if (refreshMetadata) scheduleMetadataRefresh()
                         }
                     }
                     bootstrapRefreshJob = scope.launch {
@@ -2207,6 +2222,9 @@ internal class LiveGatewaySessionRepository(
             if (canonicalId != durableId) {
                 rehomeEvents.tryEmit(SessionRehome(durableId, canonicalId))
             }
+            // Last, so a parked question is what the session says about itself
+            // even when the snapshot's own status said `running`.
+            restoreOpenRequests(liveSnapshot, canonicalId, runtimeId)
         }
         canonicalId
     }
@@ -3118,133 +3136,68 @@ internal class LiveGatewaySessionRepository(
         if (key.connectionGeneration != connectionGeneration) return PendingInputResponse.Unanswerable
         if (!respondingKeys.add(key)) return PendingInputResponse.Retryable
         try {
-            val binding = try {
-                ensureRuntime(request.durableSessionId)
+            val connection = try {
+                connectionSnapshot()
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
                 return PendingInputResponse.Retryable
             }
-            val connection = connectionSnapshot()
-            val result = try {
+            // The answer is a JSON-RPC *response*, not a new call: one frame
+            // carrying the question's own id, back over the socket that asked
+            // it, so nothing below resolves a session or a runtime. The id is
+            // the whole of the routing — Desktop keeps it for the same reason,
+            // "the answer cannot land on the wrong backend because it is a
+            // JSON-RPC response, not a new call"
+            // (`store/server-requests.ts:5-12` @ the pin) — and the generation
+            // fence above is what stops a request from a leg this app has left
+            // being answered on the replacement.
+            val responder = connection.client as? GatewayServerRequestResponder
+                ?: return PendingInputResponse.Unanswerable
+            val outcome = try {
                 when (action) {
-                    is PendingInputAction.ClarifyAnswer -> {
-                        if (action.cancelBatch) {
-                            // Batch-wide cancel is exactly the empty no-qid answer.
-                            connection.client.request(
-                                "clarify.respond",
-                                buildJsonObject {
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                    put("answer", JsonPrimitive(""))
-                                },
-                            )
-                        } else {
-                            var last: JsonElement = JsonNull
-                            for ((questionId, answer) in action.answers) {
-                                last = connection.client.request(
-                                    "clarify.respond",
-                                    buildJsonObject {
-                                        put("request_id", JsonPrimitive(key.requestId))
-                                        // Singles carry no question_id at all; an
-                                        // empty-key entry would read as a batch
-                                        // answer for an unknown qid.
-                                        if (questionId.isNotEmpty()) {
-                                            put("question_id", JsonPrimitive(questionId))
-                                        }
-                                        put("answer", JsonPrimitive(answer))
-                                    },
-                                )
-                            }
-                            last
-                        }
-                    }
+                    is PendingInputAction.ClarifyAnswer ->
+                        answerClarify(connection, responder, request, action)
 
                     is PendingInputAction.ApprovalChoice -> {
                         if (action.choice !in (request as? ApprovalPending)?.choices.orEmpty()) {
                             return PendingInputResponse.Retryable
                         }
-                        runCatching {
-                            connection.client.request(
-                                "approval.received",
-                                buildJsonObject {
-                                    put("session_id", JsonPrimitive(binding.runtimeId))
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                },
-                            )
-                        }
-                        connection.client.request(
-                            "approval.respond",
-                            buildJsonObject {
-                                put("session_id", JsonPrimitive(binding.runtimeId))
-                                put("request_id", JsonPrimitive(key.requestId))
-                                put("choice", JsonPrimitive(action.choice))
-                            },
+                        responder.respondToServerRequest(
+                            request.key.requestId,
+                            buildJsonObject { put("choice", JsonPrimitive(action.choice)) },
                         )
+                        PendingInputResponse.Resolved
                     }
 
                     is PendingInputAction.SudoPassword -> {
-                        val password = action.password.concatToString()
-                        try {
-                            connection.client.request(
-                                "sudo.respond",
-                                buildJsonObject {
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                    put("password", JsonPrimitive(password))
-                                },
-                            )
-                        } finally {
-                            action.password.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.password)
+                        PendingInputResponse.Resolved
                     }
 
                     is PendingInputAction.SecretValue -> {
-                        val value = action.value.concatToString()
-                        try {
-                            connection.client.request(
-                                "secret.respond",
-                                buildJsonObject {
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                    put("value", JsonPrimitive(value))
-                                },
-                            )
-                        } finally {
-                            action.value.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.value)
+                        PendingInputResponse.Resolved
                     }
 
                     // The three vault answers below are the sudo path with a
-                    // different parameter name each. The Gateway reads exactly
-                    // one key per method — `password`, `login`, `code`
-                    // (`tui_gateway/methods_prompt.py:1099-1101` @
-                    // `564aef2946c436500a5e80ee117b66b789b3f99a`) — and every
-                    // one of them tolerates a late answer, so a request that
-                    // expired while the dialog was open answers `expired`
-                    // rather than raising a bare 4009 (`:1096-1103`).
+                    // different display and the same wire shape: every
+                    // one-string prompt answers `{value}` — `password`, the
+                    // saved login, the code — as one string
+                    // (`contracts/server_requests.py:25-28,118-142` @ the pin),
+                    // and `\"\"` is a real answer (skip, keep it locked, decline
+                    // to save) rather than a dismissal.
                     is PendingInputAction.VaultUnlockPassword -> {
-                        val password = action.password.concatToString()
-                        try {
-                            connection.client.request(
-                                "vault.unlock.respond",
-                                buildJsonObject {
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                    // "" is not a refusal to answer: it is the
-                                    // answer "keep it locked", and the turn
-                                    // resumes without the manager
-                                    // (`input-requests.ts:421-423` @ the pin).
-                                    put("password", JsonPrimitive(password))
-                                },
-                            )
-                        } finally {
-                            action.password.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.password)
+                        PendingInputResponse.Resolved
                     }
 
                     is PendingInputAction.VaultLogin -> {
-                        // Desktop sends the pair as one JSON string in `login`
+                        // Desktop sends the pair as one JSON string in `value`
                         // and the backend refuses anything without a password
                         // (`prompt-overlays.tsx:435` and
                         // `tui_gateway/agent_callbacks.py:182-189` @ the pin).
                         // Declining is the empty string, not `{}`: an empty
-                        // `login` is what `save_login_cb` reads as "no login".
+                        // answer is what `save_login_cb` reads as "no login".
                         val login = if (action.password.isEmpty()) {
                             ""
                         } else {
@@ -3254,32 +3207,17 @@ internal class LiveGatewaySessionRepository(
                             }.toString()
                         }
                         try {
-                            connection.client.request(
-                                "vault.save_login.respond",
-                                buildJsonObject {
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                    put("login", JsonPrimitive(login))
-                                },
-                            )
+                            answerWithValue(responder, request.key.requestId, login)
                         } finally {
                             action.identifier.fill(0.toChar())
                             action.password.fill(0.toChar())
                         }
+                        PendingInputResponse.Resolved
                     }
 
                     is PendingInputAction.VaultCode -> {
-                        val code = action.code.concatToString()
-                        try {
-                            connection.client.request(
-                                "vault.code.respond",
-                                buildJsonObject {
-                                    put("request_id", JsonPrimitive(key.requestId))
-                                    put("code", JsonPrimitive(code))
-                                },
-                            )
-                        } finally {
-                            action.code.fill(0.toChar())
-                        }
+                        answerAndWipeValue(responder, request.key.requestId, action.code)
+                        PendingInputResponse.Resolved
                     }
                 }
             } catch (failure: Throwable) {
@@ -3288,22 +3226,114 @@ internal class LiveGatewaySessionRepository(
                 return PendingInputResponse.Retryable
             }
             synchronized(stateLock) { ensureCurrent(connection) }
-            val status = (result as? JsonObject)?.string("status")
-            return when (status) {
-                "expired" -> {
+            return when (outcome) {
+                PendingInputResponse.Expired -> {
                     removePendingInput(key)
                     PendingInputResponse.Expired
                 }
-                null, "ok", "resolved" -> {
+
+                PendingInputResponse.Resolved -> {
                     removePendingInput(key)
                     setStatus(request.durableSessionId, SessionStatus.Idle)
                     PendingInputResponse.Resolved
                 }
-                else -> PendingInputResponse.Retryable
+
+                // A batch lock that still owes questions leaves the card and
+                // the NeedsInput state exactly where they are.
+                else -> outcome
             }
         } finally {
             respondingKeys.remove(key)
         }
+    }
+
+    /** One string-valued answer: the result shape every non-clarify prompt reads. */
+    private suspend fun answerWithValue(
+        responder: GatewayServerRequestResponder,
+        requestId: String,
+        value: String,
+    ) {
+        responder.respondToServerRequest(
+            requestId,
+            buildJsonObject { put("value", JsonPrimitive(value)) },
+        )
+    }
+
+    /** Send one secret value and wipe its caller-owned buffer even when the wire fails. */
+    private suspend fun answerAndWipeValue(
+        responder: GatewayServerRequestResponder,
+        requestId: String,
+        value: CharArray,
+    ) {
+        val text = value.concatToString()
+        try {
+            answerWithValue(responder, requestId, text)
+        } finally {
+            value.fill(0.toChar())
+        }
+    }
+
+    /**
+     * A clarify answer, in the two shapes the backend distinguishes.
+     *
+     * A single question is one response frame carrying `answer`
+     * (`contracts/server_requests.py:52-56` @ the pin). A batch is answered one
+     * question at a time through `clarify.lock`, because the *last* lock is
+     * what resolves the request: answering one question with a whole-batch
+     * response frame would resolve the batch with the rest unanswered. Desktop
+     * locks them sequentially for the same reason
+     * (`clarify-tool.tsx:1024-1046` @ the pin), and cancel-all is the response
+     * frame that carries neither `answer` nor `answers` (`:1080-1088`).
+     */
+    private suspend fun answerClarify(
+        connection: ConnectionSnapshot,
+        responder: GatewayServerRequestResponder,
+        request: PendingInputRequest,
+        answer: PendingInputAction.ClarifyAnswer,
+    ): PendingInputResponse {
+        if (answer.cancelBatch) {
+            responder.respondToServerRequest(request.key.requestId, JsonObject(emptyMap()))
+            return PendingInputResponse.Resolved
+        }
+        val questions = (request as? ClarifyPending)?.questions.orEmpty()
+        if (questions.isEmpty()) {
+            // Single-question mode. The card keys its one answer by the empty
+            // question id, and the backend reads `answer`.
+            val single = answer.answers[CLARIFY_SINGLE_QUESTION_ID]
+                ?: answer.answers.values.firstOrNull().orEmpty()
+            responder.respondToServerRequest(
+                request.key.requestId,
+                buildJsonObject { put("answer", JsonPrimitive(single)) },
+            )
+            return PendingInputResponse.Resolved
+        }
+        // Batch: every question in the map, in order, one lock each. A key with
+        // no question id addresses nothing the backend would accept — an empty
+        // `question_id` is a bad request, not a batch answer — so it is skipped
+        // rather than sent.
+        var lockedAny = false
+        var remaining: List<String>? = null
+        for ((questionId, value) in answer.answers) {
+            if (questionId.isEmpty()) continue
+            val locked = connection.client.request(
+                "clarify.lock",
+                buildJsonObject {
+                    put("request_id", JsonPrimitive(request.key.requestId))
+                    put("question_id", JsonPrimitive(questionId))
+                    put("answer", JsonPrimitive(value))
+                },
+            ) as? JsonObject ?: continue
+            if (locked.string("status") == "expired") return PendingInputResponse.Expired
+            lockedAny = true
+            remaining = (locked["remaining"] as? JsonArray)
+                ?.mapNotNull { (it as? JsonPrimitive)?.content }
+        }
+        // Nothing addressed: the card itself is what has to change (a typed
+        // answer with no question selected), so this is a retry rather than a
+        // finished answer.
+        if (!lockedAny) return PendingInputResponse.Retryable
+        return if (remaining.isNullOrEmpty()) PendingInputResponse.Resolved
+        else PendingInputResponse.PartiallyAnswered
     }
 
     private fun removePendingInput(key: PendingInputKey) {
@@ -4400,21 +4430,12 @@ internal class LiveGatewaySessionRepository(
                 true
             }
 
-            "clarify.request", "approval.request", "sudo.request", "secret.request",
-            "vault.code.request", "vault.save_login.request", "vault.unlock.request",
-            -> {
-                applyPendingInputEvent(event.type, durableId, runtimeId, payload)
-                false
-            }
-
-            // Only the vault kinds take their expiry here. The Gateway emits
-            // `.expire` for every bounded prompt it parks
-            // (`tui_gateway/server.py:1249-1254,1282-1294` @
-            // `564aef2946c436500a5e80ee117b66b789b3f99a`), but clarify, sudo
-            // and secret shipped without it and changing when *those* cards
-            // disappear is a behaviour change #223 did not own; that is #239.
-            "vault.code.expire", "vault.save_login.expire", "vault.unlock.expire" -> {
-                applyPendingInputExpiry(event.type, durableId, runtimeId, payload)
+            // The one event the blocking-prompt family still has: the backend
+            // withdrawing an open request — timeout, interrupt, session close
+            // (`tui_gateway/contracts/server_requests.py:217-224` @ the pin).
+            // The prompts themselves are request frames, not events.
+            "request.cancel" -> {
+                applyServerRequestCancel(durableId, runtimeId, payload)
                 false
             }
 
@@ -4437,42 +4458,150 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    private fun applyPendingInputEvent(
-        type: String,
+    /**
+     * The questions a resumed session is still waiting on.
+     *
+     * `open_requests` is how the backend re-delivers an unanswered server→client
+     * request: `session.resume` / `session.activate` / `session.events.since`
+     * return them "as if they had just arrived"
+     * (`tui_gateway/server_requests.py:15-18` @ the pin), because a reconnect
+     * cannot replay a question whose answer is still outstanding — the replay
+     * ring carries notifications, and a request is not one. Without this a
+     * session would come back parked with no card and no way to answer it.
+     *
+     * Foreground isolation is the live path's, unchanged: the card lands on the
+     * session the snapshot belongs to, and a session that is not on screen
+     * parks with a NeedsInput marker rather than painting over another chat.
+     *
+     * Caller holds [stateLock] and has already published the canonical row.
+     */
+    private fun restoreOpenRequests(snapshot: JsonObject, durableId: String, runtimeId: String) {
+        val entries = snapshot["open_requests"] as? JsonArray ?: return
+        entries.forEach { entry ->
+            val open = entry as? JsonObject ?: return@forEach
+            val id = open.string("id")?.takeIf(String::isNotBlank) ?: return@forEach
+            val method = open.string("method")?.takeIf(String::isNotBlank) ?: return@forEach
+            // The entry is the request as it was sent, envelope aside: the same
+            // `method` and the same `params` a live frame carries
+            // (`server_requests.py:58-64` @ the pin), which is why both paths
+            // feed the same adoption call.
+            val params = open["params"] as? JsonObject ?: return@forEach
+            adoptServerRequest(
+                durableId = durableId,
+                runtimeId = runtimeId,
+                requestId = id,
+                method = method,
+                params = params,
+            )
+        }
+    }
+
+    /**
+     * One backend question, live off the socket.
+     *
+     * The wire carries the doubt the event path used to carry in its name:
+     * `session_id` is what says which session is parked, and both the session
+     * and its durable id must already be known here. A question for a session
+     * this app has never bound cannot be shown, and the resume that binds it
+     * re-delivers every unanswered request through `open_requests` — which is
+     * exactly why the backend has that door.
+     */
+    private fun applyServerRequest(request: GatewayServerRequest): Boolean {
+        val runtimeId = request.runtimeSessionId ?: return false
+        val durableId = identities.durableFor(runtimeId) ?: return false
+        return adoptServerRequest(
+            durableId = durableId,
+            runtimeId = runtimeId,
+            requestId = request.id,
+            method = request.method,
+            params = request.params,
+        )
+    }
+
+    /**
+     * The backend withdrew one request: `request.cancel {id, method, reason}`
+     * (`tui_gateway/server_requests.py:84-86` @ the pin). Its wait already
+     * returned, so the card has to go — a prompt left on screen would take a
+     * password for a request nothing is behind — and nothing may be answered
+     * afterwards.
+     *
+     * Correlated by id, not by kind: the payload's `method` is the backend's
+     * spelling of the family, and the request this app is holding is the thing
+     * that has to go. The reason is deliberately not read: timeout, interrupt
+     * and session close all mean the same thing here, and the backend may pass
+     * its own wording.
+     */
+    private fun applyServerRequestCancel(
         durableId: String,
         runtimeId: String,
         payload: JsonObject,
-) {
-        val kind = pendingInputKind(type) ?: return
-        val requestId = payload.string("request_id")?.takeIf(String::isNotBlank) ?: return
+    ) {
+        val requestId = payload.string("id")?.takeIf(String::isNotBlank) ?: return
+        val current = mutablePendingInputs.value
+        val cancelled = current.keys.filter {
+            it.runtimeSessionId == runtimeId && it.requestId == requestId
+        }
+        if (cancelled.isEmpty()) return
+        mutablePendingInputs.value = current - cancelled.toSet()
+        // Retired, not stranded: this connection finished with them, so a late
+        // answer — from a card that was already on its way out, or from a
+        // notification button — reads as resolved instead of reporting that an
+        // agent somewhere is still blocked behind it.
+        retire(cancelled)
+        // Same reading as an answered request, and scoped the same way: only
+        // when nothing else is parked on this runtime, so cancelling one prompt
+        // cannot paint a session idle while it still holds another.
+        if (!hasPendingInput(runtimeId)) setStatus(durableId, SessionStatus.Idle)
+    }
+
+    /**
+     * One backend question, however it arrived: a request frame off the socket,
+     * or the same frame re-delivered inside `open_requests` on session.resume /
+     * session.activate / session.events.since
+     * (`tui_gateway/server_requests.py:15-18` @ the pin).
+     *
+     * Returns true when a card is owed for it. A request this client has no
+     * family for is not adopted and not answered: it is a surface a phone does
+     * not have (the desktop bridges, `terminal.read` and friends), and inventing
+     * an answer for one would be worse than the timeout the backend already
+     * owns.
+     */
+    private fun adoptServerRequest(
+        durableId: String,
+        runtimeId: String,
+        requestId: String,
+        method: String,
+        params: JsonObject,
+    ): Boolean {
+        if (requestId.isBlank()) return false
+        val kind = pendingInputKind(method) ?: return false
         val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
         val request: PendingInputRequest = when (kind) {
-            PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, payload) ?: return
-            PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, payload) ?: return
+            PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, params) ?: return false
+            PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, params) ?: return false
             PendingInputKind.Sudo -> SudoPending(key, durableId, runtimeId)
             PendingInputKind.Secret -> SecretPending(
                 key = key,
                 durableSessionId = durableId,
                 runtimeSessionId = runtimeId,
-                envVarLabel = payload.string("env_var").orEmpty().redactSafeBounded(),
-                prompt = payload.string("prompt").orEmpty().redactSafeBounded(),
+                envVarLabel = params.string("env_var").orEmpty().redactSafeBounded(),
+                prompt = params.string("prompt").orEmpty().redactSafeBounded(),
             )
             // The vault payloads are display text and nothing else: the site,
             // where the code was sent, the origin, the manager's name
-            // (`input-requests.ts:370-446` @
-            // `564aef2946c436500a5e80ee117b66b789b3f99a`). None of them is
-            // required, and a request with an empty one still has to be
+            // (`contracts/server_requests.py:118-142` @ the pin). None of them
+            // is required, and a request with an empty one still has to be
             // answerable — a turn parked behind a prompt this client dropped
-            // for want of a label blocks until the Gateway's own timeout.
+            // for want of a label blocks until the backend's own timeout.
             PendingInputKind.VaultCode -> VaultCodePending(
                 key = key,
                 durableSessionId = durableId,
                 runtimeSessionId = runtimeId,
-                site = payload.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL),
-                hint = payload.string("hint").orEmpty().redactSafeBounded(MAX_PENDING_LABEL),
+                site = params.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL),
+                hint = params.string("hint").orEmpty().redactSafeBounded(MAX_PENDING_LABEL),
             )
             PendingInputKind.VaultSaveLogin -> {
-                val origin = payload.string("origin").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
+                val origin = params.string("origin").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
                 VaultSaveLoginPending(
                     key = key,
                     durableSessionId = durableId,
@@ -4480,20 +4609,20 @@ internal class LiveGatewaySessionRepository(
                     origin = origin,
                     // Desktop's own fallback: `site` is what the card is
                     // titled after, and the origin is the honest stand-in
-                    // (`input-requests.ts:402`).
-                    site = payload.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
+                    // (`gateway-event/server-requests.ts:237-245` @ the pin).
+                    site = params.string("site").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
                         .ifBlank { origin },
                 )
             }
             PendingInputKind.VaultUnlock -> {
-                val backend = payload.string("backend").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
+                val backend = params.string("backend").orEmpty().redactSafeBounded(MAX_PENDING_LABEL)
                 VaultUnlockPending(
                     key = key,
                     durableSessionId = durableId,
                     runtimeSessionId = runtimeId,
                     backend = backend,
                     // `display_name || backend`, Desktop's fallback at `:428`.
-                    displayName = payload.string("display_name").orEmpty()
+                    displayName = params.string("display_name").orEmpty()
                         .redactSafeBounded(MAX_PENDING_LABEL)
                         .ifBlank { backend },
                 )
@@ -4509,57 +4638,33 @@ internal class LiveGatewaySessionRepository(
         mutablePendingInputs.value = next
         retire(current.keys - next.keys)
         setStatus(durableId, SessionStatus.NeedsInput)
+        return true
     }
 
     /**
-     * The one place an event name becomes a [PendingInputKind], for both the
-     * `.request` and the `.expire` half of a family.
+     * The one place a request method becomes a [PendingInputKind].
      *
      * It returns null rather than falling through to a default. The version
      * before #223 read anything that was not clarify/approval/sudo as a secret,
      * which was safe only while those four were the whole list: the first vault
-     * event to reach it would have been parked as a `SecretPending` and
-     * answered with `secret.respond`, sending a master password to the wrong
-     * method.
-     */
-    private fun pendingInputKind(type: String): PendingInputKind? = when (type) {
-        "clarify.request" -> PendingInputKind.Clarify
-        "approval.request" -> PendingInputKind.Approval
-        "sudo.request" -> PendingInputKind.Sudo
-        "secret.request" -> PendingInputKind.Secret
-        "vault.code.request", "vault.code.expire" -> PendingInputKind.VaultCode
-        "vault.save_login.request", "vault.save_login.expire" -> PendingInputKind.VaultSaveLogin
-        "vault.unlock.request", "vault.unlock.expire" -> PendingInputKind.VaultUnlock
-        else -> null
-    }
-
-    /**
-     * The Gateway gave up waiting: `_block` pops its pending entry and emits
-     * `<family>.expire {request_id}` (`tui_gateway/server.py:1282-1294` @
-     * `564aef2946c436500a5e80ee117b66b789b3f99a`). The turn is already moving
-     * again, so the card has to go — a prompt left on screen would take a
-     * password for a request nothing is behind.
+     * request to reach it would have been parked as a `SecretPending` and
+     * answered with a password-shaped result for a code — the wrong answer to
+     * the wrong method.
      *
-     * Request-correlated, exactly as Desktop is (`input-requests.ts:173-204`):
-     * a late expiry for a prompt the Gateway has already replaced must not
-     * erase the newer one. And it clears one kind, not the session: a session
-     * can be parked on a vault prompt and something else at once.
+     * The names are the backend's, verbatim
+     * (`tui_gateway/contracts/server_requests.py:58-142` @ the pin), including
+     * `vault.unlock_prompt` — the one method in the family whose name does not
+     * match the card it raises.
      */
-    private fun applyPendingInputExpiry(
-        type: String,
-        durableId: String,
-        runtimeId: String,
-        payload: JsonObject,
-    ) {
-        val kind = pendingInputKind(type) ?: return
-        val requestId = payload.string("request_id")?.takeIf(String::isNotBlank) ?: return
-        val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
-        if (key !in mutablePendingInputs.value) return
-        removePendingInput(key)
-        // Same reading as an answered request: the session owes nothing now.
-        // Only when nothing else is parked on this runtime, so expiring one
-        // prompt cannot paint a session idle that is still holding another.
-        if (!hasPendingInput(runtimeId)) setStatus(durableId, SessionStatus.Idle)
+    private fun pendingInputKind(method: String): PendingInputKind? = when (method) {
+        "clarify" -> PendingInputKind.Clarify
+        "approval" -> PendingInputKind.Approval
+        "sudo" -> PendingInputKind.Sudo
+        "secret" -> PendingInputKind.Secret
+        "vault.code" -> PendingInputKind.VaultCode
+        "vault.save_login" -> PendingInputKind.VaultSaveLogin
+        "vault.unlock_prompt" -> PendingInputKind.VaultUnlock
+        else -> null
     }
 
     private fun parseClarify(
@@ -4578,14 +4683,7 @@ internal class LiveGatewaySessionRepository(
                 ?: return null
             val question = obj.string("question").orEmpty().redactSafeBounded()
             if (question.isBlank()) return null
-            val choices = (obj["choices"] as? JsonArray)
-                ?.mapNotNull { it as? JsonPrimitive }
-                ?.mapNotNull { it.content }
-                ?.map { it.normalizeChoice() }
-                ?.filter(String::isNotEmpty)
-                .orEmpty()
-                .distinct()
-                .take(MAX_PENDING_CHOICES)
+            val choices = parsePendingChoices(obj)
             return ClarifyQuestion(qid, question, choices, obj.boolean("multi_select") == true)
         }
         val batch = (payload["questions"] as? JsonArray)
@@ -4599,14 +4697,7 @@ internal class LiveGatewaySessionRepository(
         }
         val question = payload.string("question").orEmpty().redactSafeBounded()
         if (question.isBlank()) return null
-        val choices = (payload["choices"] as? JsonArray)
-            ?.mapNotNull { it as? JsonPrimitive }
-            ?.mapNotNull { it.content }
-            ?.map { it.normalizeChoice() }
-            ?.filter(String::isNotEmpty)
-            .orEmpty()
-            .distinct()
-            .take(MAX_PENDING_CHOICES)
+        val choices = parsePendingChoices(payload)
         return ClarifyPending(
             key = key,
             durableSessionId = durableId,
@@ -4627,13 +4718,7 @@ internal class LiveGatewaySessionRepository(
             payload.string("command"),
             payload.jsonString("description"),
         ).firstOrNull { it.isNotBlank() }?.redactSafeBounded() ?: return null
-        val choices = (payload["choices"] as? JsonArray)
-            ?.mapNotNull { it as? JsonPrimitive }
-            ?.mapNotNull { it.content }
-            ?.map { it.normalizeChoice() }
-            ?.filter(String::isNotEmpty)
-            .orEmpty()
-            .distinct()
+        val choices = parsePendingChoices(payload)
         // Without an offered choice list we cannot respond safely; fail closed.
         if (choices.isEmpty()) return null
         return ApprovalPending(
@@ -4642,9 +4727,19 @@ internal class LiveGatewaySessionRepository(
             runtimeSessionId = runtimeId,
             command = command,
             description = payload.string("description").orEmpty().redactSafeBounded(),
-            choices = choices.take(MAX_PENDING_CHOICES),
+            choices = choices,
         )
     }
+
+    /** Parse the ordered, bounded choice list shared by clarify and approval. */
+    private fun parsePendingChoices(payload: JsonObject): List<String> =
+        (payload["choices"] as? JsonArray)
+            ?.mapNotNull { it as? JsonPrimitive }
+            ?.map { it.content.normalizeChoice() }
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
+            .distinct()
+            .take(MAX_PENDING_CHOICES)
 
     private fun projectComposerControls(
         durableId: String,

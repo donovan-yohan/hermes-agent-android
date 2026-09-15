@@ -23,9 +23,26 @@ data class PendingInputKey(
 )
 
 /**
+ * The question id a single-question clarify answer carries.
+ *
+ * A batch answer is keyed by its `qid`; a single has no question at all, and
+ * both the card and the shade use the empty string as the key that says so
+ * (`ui/chat/PendingInputSurface.kt`, `NotificationActionReceiver.kt`).
+ */
+const val CLARIFY_SINGLE_QUESTION_ID: String = ""
+
+/**
  * The blocking-input family this client can answer, in Desktop's own handler
  * order (`apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/
- * input-requests.ts:37-448` @ `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * input-requests.ts` and `tui_gateway/contracts/server_requests.py:58-142` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
+ *
+ * Each kind is raised by one server→client request method — `clarify`,
+ * `approval`, `sudo`, `secret`, `vault.code`, `vault.save_login`,
+ * `vault.unlock_prompt` — and the mapping lives in one place
+ * (`GatewaySessionRepository.pendingInputKind`). Methods with no kind here are
+ * desktop surfaces this app does not have, and are left to the backend's own
+ * timeout rather than answered with an invented result.
  *
  * Never persisted and never serialized: a notification action intent carries
  * the *fields* of a [PendingInputKey] and rebuilds the kind from the constant
@@ -84,8 +101,8 @@ data class SecretPending(
 
 /**
  * A one-time code the site asked for, because no authenticator key is saved
- * with the login (`input-requests.ts:370-393` @ the pin). Answered with
- * `vault.code.respond {request_id, code}`; `""` skips.
+ * with the login (`gateway-event/server-requests.ts:227-236` @ the pin).
+ * Answered with one response frame `{value: code}`; `""` skips.
  *
  * [site] and [hint] are display text the Gateway sent, so they are redacted and
  * bounded on the way in like every other pending-input field. The code itself
@@ -102,14 +119,15 @@ data class VaultCodePending(
 ) : PendingInputRequest
 
 /**
- * A sign-in page with nothing saved for it (`input-requests.ts:395-419` @ the
- * pin). Answered with `vault.save_login.respond {request_id, login}` where
- * `login` is the JSON `{identifier, password}` Desktop sends
- * (`components/prompt-overlays.tsx:435` @ the pin); `""` declines.
+ * A sign-in page with nothing saved for it
+ * (`gateway-event/server-requests.ts:237-246` @ the pin). Answered with one
+ * response frame `{value: login}` where `login` is the JSON
+ * `{identifier, password}` Desktop sends (`prompt-overlays.tsx:418` @ the
+ * pin); `""` declines.
  *
  * The backend stores the pair in its encrypted vault and fills the page with
  * it; the model never sees the password
- * (`tui_gateway/agent_callbacks.py:182-191` @ the pin).
+ * (`tui_gateway/agent_callbacks.py:181-190` @ the pin).
  */
 data class VaultSaveLoginPending(
     override val key: PendingInputKey,
@@ -123,9 +141,9 @@ data class VaultSaveLoginPending(
 
 /**
  * An external password manager asking for its master password
- * (`input-requests.ts:421-446` @ the pin). Answered with
- * `vault.unlock.respond {request_id, password}`; `""` keeps it locked, which is
- * a real answer rather than a dismissal — the turn resumes locked.
+ * (`gateway-event/server-requests.ts:248-260` @ the pin). Answered with one
+ * response frame `{value: password}`; `""` keeps it locked, which is a real
+ * answer rather than a dismissal — the turn resumes locked.
  */
 data class VaultUnlockPending(
     override val key: PendingInputKey,
@@ -149,22 +167,22 @@ sealed interface PendingInputAction {
     data class SudoPassword(val password: CharArray) : PendingInputAction
     data class SecretValue(val value: CharArray) : PendingInputAction
 
-    /** An empty array is Desktop's "Skip" (`prompt-overlays.tsx:570`). */
+    /** An empty array is Desktop's "Skip" (`prompt-overlays.tsx:548`). */
     data class VaultCode(val code: CharArray) : PendingInputAction
 
     /**
-     * An empty array is Desktop's "Keep locked" (`prompt-overlays.tsx:344`):
+     * An empty array is Desktop's "Keep locked" (`prompt-overlays.tsx:332`):
      * the manager stays locked and the turn continues without it.
      */
     data class VaultUnlockPassword(val password: CharArray) : PendingInputAction
 
     /**
      * Both halves of one saved login. [identifier] is not itself a secret —
-     * Desktop renders it unmasked (`prompt-overlays.tsx:439-449`) — but it is
+     * Desktop renders it unmasked (`prompt-overlays.tsx:422-431`) — but it is
      * carried in the same shape as [password] because the two are zeroed
      * together and neither may outlive the one request they answer.
      *
-     * Both empty is Desktop's "Don't save" (`prompt-overlays.tsx:463`).
+     * Both empty is Desktop's "Don't save" (`prompt-overlays.tsx:446`).
      */
     data class VaultLogin(val identifier: CharArray, val password: CharArray) : PendingInputAction
 }
@@ -176,6 +194,20 @@ sealed interface PendingInputResponse {
     data object Expired : PendingInputResponse
     /** Transport failed/ambiguous; the request stays pending for an explicit retry. */
     data object Retryable : PendingInputResponse
+
+    /**
+     * One question of a batch clarify was locked and the backend still owes the
+     * rest: the request is still parked, its card stays, and the person answers
+     * the next question.
+     *
+     * Deliberately neither of its neighbours. Not [Resolved] — nothing was
+     * finished, and a caller that withdrew the prompt's notification would be
+     * telling someone their batch was answered while an agent still waits on
+     * it. Not [Retryable] — nothing failed, and this same call did exactly what
+     * it was asked. The distinction exists so those two callers cannot get it
+     * wrong by default.
+     */
+    data object PartiallyAnswered : PendingInputResponse
 
     /**
      * This client cannot answer this request and never will: the connection

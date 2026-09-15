@@ -3,9 +3,9 @@ package com.hermesagent.mobile.data.gateway
 /**
  * One clarify question, in the shape a notification can answer it.
  *
- * [questionId] is empty for single-question mode, which is exactly what
- * `clarify.respond` wants: a single carries no `question_id` at all, and an
- * empty-key entry would read as a batch answer for an unknown question.
+ * [questionId] is empty for single-question mode: a single is answered with one
+ * response frame carrying `answer`, and a batch answer is keyed by its `qid`
+ * through `clarify.lock` — an empty-key lock would address no question at all.
  */
 data class ShadeQuestion(
     val questionId: String,

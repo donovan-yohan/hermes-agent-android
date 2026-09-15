@@ -60,10 +60,7 @@ class GatewayGlobalEventsTest {
             "tool.complete",
             "status.update",
             "error",
-            "clarify.request",
-            "approval.request",
-            "sudo.request",
-            "secret.request",
+            "request.cancel",
         ).forEach { type ->
             assertEquals(type, GatewayEventLane.Session, gatewayEventLane(type))
         }

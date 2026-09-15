@@ -5,12 +5,10 @@ import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -21,30 +19,43 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * The clarify / approval / sudo / secret half of the prompt channel.
+ *
+ * A blocking prompt is a server→client *request* frame
+ * (`tui_gateway/server_requests.py:1-13` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`), answered by exactly one response
+ * frame carrying the same `srq-…` id, withdrawn by the one event the family
+ * still has (`request.cancel`), and re-delivered after a reconnect through
+ * `open_requests` (`:15-18` @ the pin).
+ *
+ * Virtual time throughout; nothing here sleeps.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingInputTest {
     @Test
-    fun `clarify request parks its session with parsed choices`() = runTest {
+    fun `a clarify request parks its session with parsed choices`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
-
-        env.rpc.emit("status.update", "runtime-a", """{"kind":"process","text":"x"}""")
         advanceUntilIdle()
-                env.rpc.emit("clarify.request", "runtime-a", CLARIFY_SINGLE)
+
+        env.rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
         advanceUntilIdle()
 
         val pending = singlePending(env)
         assertTrue(pending is ClarifyPending)
         assertEquals(listOf("Yes", "No"), (pending as ClarifyPending).choices)
+        assertEquals("srq-1", pending.key.requestId)
+        assertEquals(PendingInputKind.Clarify, pending.key.kind)
         assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
     }
 
@@ -55,10 +66,10 @@ class PendingInputTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit(
-            "clarify.request",
-            "runtime-a",
-            """{"request_id":"req-batch","questions":[{"qid":"q0","question":"Choose a route","choices":["Remote","Local"],"multi_select":false}]}""",
+        env.rpc.ask(
+            "srq-batch",
+            "clarify",
+            """{"questions":[{"qid":"q0","question":"Choose a route","choices":["Remote","Local"],"multi_select":false}]}""",
         )
         advanceUntilIdle()
 
@@ -76,10 +87,10 @@ class PendingInputTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit(
-            "clarify.request",
-            "runtime-a",
-            """{"request_id":"req-legacy","questions":[{"question_id":"legacy-id","question":"Choose a route"}]}""",
+        env.rpc.ask(
+            "srq-legacy",
+            "clarify",
+            """{"questions":[{"question_id":"legacy-id","question":"Choose a route"}]}""",
         )
         advanceUntilIdle()
 
@@ -93,10 +104,10 @@ class PendingInputTest {
         env.repository.openSession("durable-a")
         advanceUntilIdle()
 
-        env.rpc.emit(
-            "clarify.request",
-            "runtime-a",
-            """{"request_id":"req-blank-qid","questions":[{"qid":"","question_id":"legacy-id","question":"Choose a route"}]}""",
+        env.rpc.ask(
+            "srq-blank-qid",
+            "clarify",
+            """{"questions":[{"qid":"","question_id":"legacy-id","question":"Choose a route"}]}""",
         )
         advanceUntilIdle()
 
@@ -104,16 +115,53 @@ class PendingInputTest {
     }
 
     @Test
-    fun `malformed prompt without a request id is discarded`() = runTest {
+    fun `a clarify with no question is discarded`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
+        advanceUntilIdle()
 
-        env.rpc.emit("clarify.request", "runtime-a", """{"question":"no id here"}""")
+        env.rpc.ask("srq-empty", "clarify", """{"choices":["Yes"]}""")
         advanceUntilIdle()
 
         assertTrue(env.repository.pendingInputs.value.isEmpty())
         assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `a request method this app has no card for is neither parked nor answered`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        // A desktop bridge: `terminal.read` is a surface this platform does not
+        // have, and the honest answer is the backend's own timeout rather than
+        // inventing a result the person cannot see.
+        env.rpc.ask("srq-read", "terminal.read", """{"start":0,"count":10}""")
+        advanceUntilIdle()
+
+        assertTrue(env.repository.pendingInputs.value.isEmpty())
+        assertTrue("an unsupported family takes no frame", env.rpc.answered.isEmpty())
+        assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `a request for a background session parks there and never on the session on screen`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler), sessions = listOf("durable-a", "durable-b"))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        env.repository.openSession("durable-b")
+        advanceUntilIdle()
+
+        env.rpc.ask("srq-bg", "approval", APPROVAL_REQUEST, runtimeId = "runtime-a")
+        advanceUntilIdle()
+
+        val pending = singlePending(env)
+        assertEquals("durable-a", pending.durableSessionId)
+        assertEquals("runtime-a", pending.runtimeSessionId)
+        assertEquals("the parked session says so", SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
+        assertEquals("the session on screen keeps its own state", SessionStatus.Idle, env.cache.session("durable-b")?.status)
     }
 
     @Test
@@ -122,7 +170,7 @@ class PendingInputTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("clarify.request", "runtime-a", CLARIFY_SINGLE)
+        env.rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
         runCurrent()
 
         env.rpc.emit(
@@ -141,7 +189,7 @@ class PendingInputTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("clarify.request", "runtime-a", CLARIFY_SINGLE)
+        env.rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
         runCurrent()
 
         env.rpc.emit("message.complete", "runtime-a", """{"text":"done"}""")
@@ -151,26 +199,107 @@ class PendingInputTest {
     }
 
     @Test
-    fun `approval respond sends received then respond with the offered choice`() = runTest {
+    fun `a single clarify answer is exactly one response frame carrying the request id`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("approval.request", "runtime-a", APPROVAL_REQUEST)
+        env.rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
         runCurrent()
         val key = singlePending(env).key
 
-        val responses = launch { env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once")) }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        val response = env.repository.respondToPendingInput(
+            key,
+            PendingInputAction.ClarifyAnswer(mapOf(CLARIFY_SINGLE_QUESTION_ID to "Yes")),
+        )
 
-        val received = env.rpc.calls.last { it.method == "approval.received" }
-        assertEquals("runtime-a", received.params.string("session_id"))
-        val respond = env.rpc.calls.last { it.method == "approval.respond" }
-        assertEquals("runtime-a", respond.params.string("session_id"))
-        assertEquals("req-approve-1", respond.params.string("request_id"))
-        assertEquals("Run once", respond.params.string("choice"))
+        assertEquals(PendingInputResponse.Resolved, response)
+        val frame = env.rpc.answered.single()
+        assertEquals("srq-1", frame.id)
+        assertEquals("Yes", frame.result.string("answer"))
+        assertEquals("no second frame, and no `answers` on a single", 1, frame.result.keys.size)
+        assertTrue(env.repository.pendingInputs.value.isEmpty())
+        assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `a batch answer locks its question and keeps the card until the last lock`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.ask(
+            "srq-batch",
+            "clarify",
+            """{"questions":[{"qid":"q0","question":"Route?","choices":["Remote","Local"]},""" +
+                """{"qid":"q1","question":"Profile?","choices":["lab","home"]}]}""",
+        )
+        runCurrent()
+        val key = singlePending(env).key
+
+        env.rpc.lockRemaining = listOf("q1")
+        val first = env.repository.respondToPendingInput(key, PendingInputAction.ClarifyAnswer(mapOf("q0" to "Remote")))
+
+        assertEquals(PendingInputResponse.PartiallyAnswered, first)
+        assertNotNull("the batch still owes q1", env.repository.pendingInputs.value[key])
+        assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
+        val lock = env.rpc.calls.last { it.method == "clarify.lock" }
+        assertEquals("srq-batch", lock.params.string("request_id"))
+        assertEquals("q0", lock.params.string("question_id"))
+        assertEquals("Remote", lock.params.string("answer"))
+        assertTrue("a batch lock is not a response frame", env.rpc.answered.isEmpty())
+
+        env.rpc.lockRemaining = emptyList()
+        val second = env.repository.respondToPendingInput(key, PendingInputAction.ClarifyAnswer(mapOf("q1" to "home")))
+
+        assertEquals(PendingInputResponse.Resolved, second)
+        assertTrue("the last lock resolves the whole batch", env.repository.pendingInputs.value.isEmpty())
+        assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `cancelling a batch is the response frame carrying neither answer nor answers`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.ask(
+            "srq-batch",
+            "clarify",
+            """{"questions":[{"qid":"q0","question":"Route?","choices":["Remote","Local"]}]}""",
+        )
+        runCurrent()
+        val key = singlePending(env).key
+
+        val response = env.repository.respondToPendingInput(
+            key,
+            PendingInputAction.ClarifyAnswer(emptyMap(), cancelBatch = true),
+        )
+
+        assertEquals(PendingInputResponse.Resolved, response)
+        val frame = env.rpc.answered.single()
+        assertEquals("srq-batch", frame.id)
+        assertTrue("cancel-all carries no result members", frame.result.isEmpty())
+        assertTrue(env.repository.pendingInputs.value.isEmpty())
+    }
+
+    @Test
+    fun `an approval answer is one frame with the offered choice`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.ask("srq-approve-1", "approval", APPROVAL_REQUEST)
+        runCurrent()
+        val key = singlePending(env).key
+
+        val response = env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once"))
+
+        assertEquals(PendingInputResponse.Resolved, response)
+        val frame = env.rpc.answered.single()
+        assertEquals("srq-approve-1", frame.id)
+        assertEquals("Run once", frame.result.string("choice"))
+        assertTrue("the queue RPC is not the answer path any more", env.rpc.calls.none { it.method == "approval.respond" })
         assertTrue(env.repository.pendingInputs.value.isEmpty())
         assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
     }
@@ -181,14 +310,14 @@ class PendingInputTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("approval.request", "runtime-a", APPROVAL_REQUEST)
+        env.rpc.ask("srq-approve-1", "approval", APPROVAL_REQUEST)
         runCurrent()
         val key = singlePending(env).key
 
         val result = env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Not offered"))
 
         assertEquals(PendingInputResponse.Retryable, result)
-        assertTrue(env.rpc.calls.none { it.method == "approval.respond" })
+        assertTrue(env.rpc.answered.isEmpty())
         assertNotNull(env.repository.pendingInputs.value[key])
     }
 
@@ -198,20 +327,93 @@ class PendingInputTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("sudo.request", "runtime-a", SUDO_REQUEST)
+        env.rpc.ask("srq-sudo-1", "sudo", "{}")
         runCurrent()
         val key = singlePending(env).key
 
         val password = CharArray(3) { 'a' + it }
-        val responses = launch { env.repository.respondToPendingInput(key, PendingInputAction.SudoPassword(password)) }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("""{"status":"ok"}"""))
-        responses.join()
+        env.repository.respondToPendingInput(key, PendingInputAction.SudoPassword(password))
 
         assertTrue("password must be zeroed after use", password.all { it.code == 0 })
-        val call = env.rpc.calls.last { it.method == "sudo.respond" }
-        assertEquals("abc", call.params.string("password"))
+        val frame = env.rpc.answered.single()
+        assertEquals("srq-sudo-1", frame.id)
+        assertEquals("abc", frame.result.string("value"))
         assertTrue(env.repository.pendingInputs.value.isEmpty())
+    }
+
+    @Test
+    fun `a secret answer carries the value and never the request id alone`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.ask("srq-secret-1", "secret", """{"env_var":"API_KEY","prompt":"Paste it"}""")
+        runCurrent()
+        val request = singlePending(env)
+
+        assertEquals("API_KEY", (request as SecretPending).envVarLabel)
+        val value = "s3cret".toCharArray()
+        env.repository.respondToPendingInput(request.key, PendingInputAction.SecretValue(value))
+
+        assertTrue("secret must be zeroed after use", value.all { it.code == 0 })
+        assertEquals("s3cret", env.rpc.answered.single().result.string("value"))
+    }
+
+    @Test
+    fun `a resume re-delivers an unanswered request as a live card`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride =
+            """{"session_id":"runtime-a","resumed":"durable-a","message_count":0,"messages":[],""" +
+                """"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},""" +
+                """"inflight":null,"running":true,"session_key":"durable-a","started_at":1700001000.125,"status":"working",""" +
+                """"open_requests":[{"id":"srq-1","method":"clarify","params":{"session_id":"runtime-a",""" +
+                """"question":"Proceed?","choices":["Yes","No"]}}]}"""
+
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        val pending = singlePending(env)
+        assertTrue(pending is ClarifyPending)
+        assertEquals("srq-1", pending.key.requestId)
+        assertEquals(
+            "a restored prompt is what the session is waiting on, even when the snapshot said running",
+            SessionStatus.NeedsInput,
+            env.cache.session("durable-a")?.status,
+        )
+    }
+
+    @Test
+    fun `a re-delivered request can be answered like a live one`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride =
+            """{"session_id":"runtime-a","resumed":"durable-a","message_count":0,"messages":[],""" +
+                """"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},""" +
+                """"inflight":null,"running":false,"session_key":"durable-a","started_at":1700001000.125,"status":"idle",""" +
+                """"open_requests":[{"id":"srq-sudo","method":"sudo","params":{"session_id":"runtime-a"}}]}"""
+
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        val key = singlePending(env).key
+
+        env.repository.respondToPendingInput(key, PendingInputAction.SudoPassword("pw".toCharArray()))
+
+        assertEquals("srq-sudo", env.rpc.answered.single().id)
+    }
+
+    @Test
+    fun `a question for a session this app has never bound is not shown`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.ask("srq-orphan", "clarify", CLARIFY_SINGLE, runtimeId = "runtime-nowhere")
+        advanceUntilIdle()
+
+        assertTrue(env.repository.pendingInputs.value.isEmpty())
+        assertEquals(SessionStatus.Idle, env.cache.session("durable-a")?.status)
     }
 
     @Test
@@ -220,19 +422,17 @@ class PendingInputTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("clarify.request", "runtime-a", CLARIFY_SINGLE)
+        env.rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
         runCurrent()
         val key = singlePending(env).key
 
-        val failure = GatewayRpcException("socket closed")
-        env.rpc.respondResponse = CompletableDeferred()
-        val responses = launch {
-            env.repository.respondToPendingInput(key, PendingInputAction.ClarifyAnswer(mapOf("" to "yes")))
-        }
-        runCurrent()
-        env.rpc.respondResponse?.completeExceptionally(failure)
-        responses.join()
+        env.rpc.sendFailure = GatewayRpcException("The gateway connection could not send the response.")
+        val response = env.repository.respondToPendingInput(
+            key,
+            PendingInputAction.ClarifyAnswer(mapOf(CLARIFY_SINGLE_QUESTION_ID to "yes")),
+        )
 
+        assertEquals(PendingInputResponse.Retryable, response)
         assertNotNull(env.repository.pendingInputs.value[key])
     }
 
@@ -247,7 +447,7 @@ class PendingInputTest {
         runCurrent()
         repository.openSession("durable-a")
         runCurrent()
-        rpc.emit("clarify.request", "runtime-a", CLARIFY_SINGLE)
+        rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
         runCurrent()
         assertTrue(repository.pendingInputs.value.isNotEmpty())
 
@@ -264,14 +464,11 @@ class PendingInputTest {
         runCurrent()
         env.repository.openSession("durable-a")
         advanceUntilIdle()
-        env.rpc.emit("approval.request", "runtime-a", APPROVAL_REQUEST)
+        env.rpc.ask("srq-approve-1", "approval", APPROVAL_REQUEST)
         runCurrent()
         val key = singlePending(env).key
 
-        val first = launch { env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once")) }
-        runCurrent()
-        env.rpc.respondResponse?.complete(json("{\"status\":\"ok\"}"))
-        first.join()
+        env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once"))
 
         // Retired on this connection: finished business, and a second answer
         // owes the user nothing.
@@ -279,11 +476,12 @@ class PendingInputTest {
             PendingInputResponse.Resolved,
             env.repository.respondToPendingInput(key, PendingInputAction.ApprovalChoice("Run once")),
         )
+        assertEquals("a stale answer takes no frame", 1, env.rpc.answered.size)
         // Never seen here. Identical shape, opposite fact.
         assertEquals(
             PendingInputResponse.Unanswerable,
             env.repository.respondToPendingInput(
-                key.copy(requestId = "req-never-seen"),
+                key.copy(requestId = "srq-never-seen"),
                 PendingInputAction.ApprovalChoice("Run once"),
             ),
         )
@@ -300,7 +498,7 @@ class PendingInputTest {
         runCurrent()
         repository.openSession("durable-a")
         runCurrent()
-        rpc.emit("approval.request", "runtime-a", APPROVAL_REQUEST)
+        rpc.ask("srq-approve-1", "approval", APPROVAL_REQUEST)
         runCurrent()
         val key = repository.pendingInputs.value.keys.single()
 
@@ -315,9 +513,35 @@ class PendingInputTest {
         )
     }
 
+    @Test
+    fun `one response in flight per request, so a second tap sends nothing`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+        env.rpc.ask("srq-1", "clarify", CLARIFY_SINGLE)
+        runCurrent()
+        val key = singlePending(env).key
+
+        // The frame send is synchronous in the transport, but the guard is what
+        // keeps two surfaces — the card and a notification action — from both
+        // answering one question. Hold the first answer inside the send.
+        env.rpc.blockSend = true
+        val first = launch { env.repository.respondToPendingInput(key, PendingInputAction.ClarifyAnswer(mapOf("" to "Yes"))) }
+        runCurrent()
+
+        val second = env.repository.respondToPendingInput(key, PendingInputAction.ClarifyAnswer(mapOf("" to "No")))
+
+        assertEquals(PendingInputResponse.Retryable, second)
+        env.rpc.releaseSend()
+        first.join()
+        assertEquals("srq-1", env.rpc.answered.single().id)
+        assertEquals("Yes", env.rpc.answered.single().result.string("answer"))
+    }
+
     private fun singlePending(env: Environment): PendingInputRequest {
         val requests = env.repository.pendingInputs.value.values.toList()
-                assertEquals(1, requests.size)
+        assertEquals(1, requests.size)
         return requests.single()
     }
 
@@ -327,10 +551,13 @@ class PendingInputTest {
         val repository: LiveGatewaySessionRepository,
     )
 
-    private fun environment(scopeDispatcher: kotlinx.coroutines.CoroutineDispatcher): Environment {
+    private fun environment(
+        scopeDispatcher: kotlinx.coroutines.CoroutineDispatcher,
+        sessions: List<String> = listOf("durable-a"),
+    ): Environment {
         val scope = CoroutineScope(scopeDispatcher + Job())
         val cache = SessionCache()
-        cache.upsertSessions(listOf(summary("durable-a")))
+        cache.upsertSessions(sessions.map(::summary))
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
             cache,
@@ -350,44 +577,94 @@ class PendingInputTest {
 
     private class RpcCall(val method: String, val params: JsonObject)
 
-    private class FakeRpc : GatewayRpcClient {
+    /** One response frame this client handed the wire. */
+    private class AnswerFrame(val id: String, val result: JsonObject)
+
+    private class FakeRpc : GatewayRpcClient, GatewayServerRequestResponder {
         private val eventFlow = MutableSharedFlow<GatewayEvent>(replay = 64, extraBufferCapacity = 64)
+        private val requestFlow = MutableSharedFlow<GatewayServerRequest>(replay = 64, extraBufferCapacity = 64)
         override val events = eventFlow
+        override val serverRequests = requestFlow
         val calls = mutableListOf<RpcCall>()
-        var resumeA =
-            """{"session_id":"runtime-a","resumed":"durable-a","message_count":0,"messages":[],"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},"inflight":null,"running":false,"session_key":"durable-a","started_at":1700001000.125,"status":"idle"}"""
-        var historyResult = """{"messages":[],"count":0}"""
-        var respondResponse: CompletableDeferred<JsonElement>? = null
+        val answered = mutableListOf<AnswerFrame>()
+
+        /** What `clarify.lock` answers with; the last lock empties it. */
+        var lockRemaining: List<String>? = null
+
+        /** When set, every answer fails the way a closed or broken leg does. */
+        var sendFailure: GatewayRpcException? = null
+
+        /** Holds the answer inside the transport, for the one-at-a-time guard. */
+        var blockSend = false
+        private var sendGate: CompletableDeferred<Unit>? = null
+
+        fun releaseSend() {
+            sendGate?.complete(Unit)
+        }
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
             return when (method) {
                 "session.list" -> json("""{"sessions":[]}""")
-                "session.resume" -> json(resumeA)
-                "session.history" -> json(historyResult)
+                "session.resume" -> json(resumeOverride ?: resumeBody(params.string("session_id").orEmpty()))
+                "session.history" -> json("""{"messages":[],"count":0}""")
                 "session.activate" -> json("{}")
-                "clarify.respond", "approval.received", "approval.respond", "sudo.respond", "secret.respond" ->
-                    respondResponse?.await() ?: json("""{"status":"ok"}""")
+                "clarify.lock" -> {
+                    val remaining = lockRemaining
+                    json(
+                        if (remaining == null) """{"status":"expired"}"""
+                        else """{"status":"ok","remaining":[${remaining.joinToString(",") { "\"$it\"" }}]}""",
+                    )
+                }
+
                 else -> json("{}")
             }
         }
 
+        override suspend fun respondToServerRequest(id: String, result: JsonObject) {
+            sendFailure?.let { throw it }
+            if (blockSend) {
+                val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+                sendGate = gate
+                gate.await()
+            }
+            answered += AnswerFrame(id, result)
+        }
+
+        /** Overrides the canned resume snapshot for one test. */
+        var resumeOverride: String? = null
+
+        /** The resume snapshot for [durableId], one runtime per durable id. */
+        fun resumeBody(durableId: String): String {
+            val runtime = "runtime-" + durableId.removePrefix("durable-")
+            return """{"session_id":"$runtime","resumed":"$durableId","message_count":0,"messages":[],""" +
+                """"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},""" +
+                """"inflight":null,"running":false,"session_key":"$durableId","started_at":1700001000.125,"status":"idle"}"""
+        }
+
         fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull) {
-                        check(eventFlow.tryEmit(GatewayEvent(type, runtimeId, payload)))
+            check(eventFlow.tryEmit(GatewayEvent(type, runtimeId, payload)))
         }
 
         fun emit(type: String, runtimeId: String?, payload: String) = emit(type, runtimeId, json(payload))
 
+        /** One server→client request, exactly as the socket hands it over. */
+        fun ask(id: String, method: String, body: String = "{}", runtimeId: String = "runtime-a") {
+            val params = buildJsonObject {
+                put("session_id", JsonPrimitive(runtimeId))
+                (json(body) as JsonObject).forEach { (key, value) -> put(key, value) }
+            }
+            check(requestFlow.tryEmit(GatewayServerRequest(id, method, runtimeId, params)))
+        }
+
         override fun close() = Unit
     }
 
-    companion object {
+    private companion object {
         const val CLOCK = 1_800_000_000_000L
         const val CLARIFY_SINGLE =
-            """{"request_id":"req-1","question":"Proceed?","choices":["Yes","No"],"multi_select":false}"""
-        const val APPROVAL_REQUEST =
-            """{"request_id":"req-approve-1","command":"rm -rf build","choices":["Run once","Reject"]}"""
-        const val SUDO_REQUEST = """{"request_id":"req-sudo-1"}"""
+            """{"question":"Proceed?","choices":["Yes","No"],"multi_select":false}"""
+        const val APPROVAL_REQUEST = """{"request_id":"queue-1","command":"rm -rf build","choices":["Run once","Reject"]}"""
     }
 }
 

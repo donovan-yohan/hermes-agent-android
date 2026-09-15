@@ -44,7 +44,7 @@ data class ApprovalTarget(
 data class QuestionTarget(
     val key: PendingInputKey,
     val durableSessionId: String,
-    /** Empty for single-question mode; `clarify.respond` then sends no `question_id`. */
+    /** Empty for single-question mode; the response frame then carries `answer`. */
     val questionId: String,
     /** Empty means a reply box rather than buttons. */
     val choices: List<String>,

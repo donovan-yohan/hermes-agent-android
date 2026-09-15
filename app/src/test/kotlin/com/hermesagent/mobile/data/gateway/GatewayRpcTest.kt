@@ -12,6 +12,9 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -361,6 +364,105 @@ class GatewayRpcTest {
             GATEWAY_GLOBAL_EVENT_TYPES.all { gatewayEventLane(it) == GatewayEventLane.Global },
         )
         pump.cancel()
+    }
+
+    /**
+     * The prompt surface at the pin, pinned by shape.
+     *
+     * A blocking prompt is a server→client *request* frame — id `srq-…`, a
+     * `method` that is never `event`, no `result` — and it must never appear on
+     * the event stream; the one event the family still has is the backend
+     * withdrawing one (`tui_gateway/contracts/server_requests.py:217-224` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`). The deleted `*.request`
+     * pair stays refused, so a prompt cannot grow a second home.
+     */
+    @Test
+    fun `server requests arrive on their own stream while the deleted request events stay refused`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val requests = mutableListOf<GatewayServerRequest>()
+        val events = mutableListOf<String>()
+        val requestPump = launch { rpc.serverRequests.collect { requests += it } }
+        val eventPump = launch { rpc.events.collect { events += it.type } }
+        runCurrent()
+
+        rpc.receive(
+            """{"jsonrpc":"2.0","id":"srq-1","method":"clarify","params":{"session_id":"r1","question":"Proceed?"}}""",
+        )
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"clarify.request","session_id":"r1","payload":{}}}""",
+        )
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"request.cancel","session_id":"r1","payload":{"id":"srq-1","method":"clarify","reason":"timeout"}}}""",
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf("srq-1"), requests.map { it.id })
+        assertEquals("clarify", requests.single().method)
+        assertEquals("r1", requests.single().runtimeSessionId)
+        assertEquals("Proceed?", requests.single().params.string("question"))
+        assertEquals("the withdrawal is the only family event left", listOf("request.cancel"), events)
+        requestPump.cancel()
+        eventPump.cancel()
+    }
+
+    /** A question that arrives before the repository subscribes waits for it. */
+    @Test
+    fun `a request that arrives before anything subscribes is not lost`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+
+        rpc.receive("""{"jsonrpc":"2.0","id":"srq-early","method":"sudo","params":{"session_id":"r1"}}""")
+
+        val delivered = rpc.serverRequests.first()
+        assertEquals("srq-early", delivered.id)
+        assertEquals("sudo", delivered.method)
+    }
+
+    /** Both halves of a request are load-bearing; neither is invented. */
+    @Test
+    fun `a request frame missing its id or its method is dropped`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val requests = mutableListOf<GatewayServerRequest>()
+        val pump = launch { rpc.serverRequests.collect { requests += it } }
+        val events = mutableListOf<String>()
+        val eventPump = launch { rpc.events.collect { events += it.type } }
+        runCurrent()
+
+        rpc.receive("""{"jsonrpc":"2.0","method":"clarify","params":{"session_id":"r1","question":"Proceed?"}}""")
+        rpc.receive("""{"jsonrpc":"2.0","id":"srq-2","method":"clarify"}""")
+        advanceUntilIdle()
+
+        assertTrue("an unanswerable question is not delivered as one", requests.isEmpty())
+        assertTrue("and it is not an event either", events.isEmpty())
+        pump.cancel()
+        eventPump.cancel()
+    }
+
+    @Test
+    fun `an answer is exactly one response frame carrying the request's own id`() = runTest {
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+
+        rpc.respondToServerRequest("srq-9", buildJsonObject { put("answer", JsonPrimitive("yes")) })
+
+        val frame = Json.parseToJsonElement(wire.frames.single()).jsonObject
+        assertEquals("2.0", frame["jsonrpc"]?.jsonPrimitive?.content)
+        assertEquals("srq-9", frame["id"]?.jsonPrimitive?.content)
+        assertEquals("yes", frame["result"]?.jsonObject?.get("answer")?.jsonPrimitive?.content)
+        assertFalse("a response frame is not a method call", frame.containsKey("method"))
+    }
+
+    @Test
+    fun `a closed leg refuses a response frame`() = runTest {
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+        rpc.close()
+
+        val failure = runCatching {
+            rpc.respondToServerRequest("srq-9", JsonObject(emptyMap()))
+        }.exceptionOrNull()
+
+        assertTrue(failure is GatewayRpcException)
+        assertTrue("a closed leg takes no frame", wire.frames.isEmpty())
     }
 
     private fun requestId(frame: String): String =

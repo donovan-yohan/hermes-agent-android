@@ -90,6 +90,49 @@ internal class GatewayRpcError(
     val reason: String? = null,
 ) : Exception(message)
 
+/**
+ * One server→client JSON-RPC **request**: the backend asking this client a
+ * question and blocking until the response frame carrying the same [id]
+ * arrives (`tui_gateway/server_requests.py:1-13` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
+ *
+ * A request frame is neither an event frame nor a response to one of ours. It
+ * carries a `method` that is never `"event"` and an id nobody in this app
+ * minted (`srq-<12 hex>`, `server_requests.py:8-10`), which is what lets
+ * [CorrelatedGatewayRpc.receive] tell it apart from a late answer to our own
+ * call. [params] is the frame's `params` object as it arrived, `session_id`
+ * included: that field is how the question routes to the session that owns it.
+ */
+internal data class GatewayServerRequest(
+    val id: String,
+    val method: String,
+    val runtimeSessionId: String?,
+    val params: JsonObject,
+)
+
+/**
+ * The response half of the server→client request channel: one frame carrying
+ * the answered request's own id, sent back over the socket the request arrived
+ * on.
+ *
+ * Its own interface, and not a defaulted member of [GatewayRpcClient], because
+ * a client that can never be asked a question has nothing to answer: a
+ * `= Unit` body would let one that *is* asked drop every answer silently, and
+ * the backend would block until its own timeout with nothing on screen.
+ */
+internal interface GatewayServerRequestResponder {
+    /**
+     * Hands the transport exactly one response frame for [id].
+     *
+     * Throws [GatewayRpcException] when the leg is closed or the frame never
+     * reached it. There is no acknowledgement to wait for — a response frame is
+     * one-way by construction, so "sent" is the whole of what the transport can
+     * promise, and a backend that had already withdrawn the request simply
+     * drops it (`server_requests.py:139-146` @ the pin).
+     */
+    suspend fun respondToServerRequest(id: String, result: JsonObject)
+}
+
 /** The small wire seam needed to prove correlation and close behavior offline. */
 internal interface GatewayRpcWire {
     fun send(text: String): Boolean
@@ -133,19 +176,34 @@ internal interface GatewayRpcClient : Closeable {
      */
     val events: Flow<GatewayEvent>
     val closed: Flow<GatewayCloseCause> get() = emptyFlow()
+
+    /**
+     * Backend questions parked on this connection, in arrival order, to
+     * **every** collector — the same broadcast, buffering and overflow rules as
+     * [events], because dropping one is a turn parked with nothing on screen
+     * until the backend gives up.
+     *
+     * Defaulted to empty for the same reason [closed] is: a client that cannot
+     * receive a request never has one to report, and a test double that had to
+     * invent an empty stream would be describing a wire it does not speak.
+     */
+    val serverRequests: Flow<GatewayServerRequest> get() = emptyFlow()
+
     suspend fun request(method: String, params: JsonObject = JsonObject(emptyMap())): JsonElement
 }
 
 /**
- * JSON-RPC 2.0 request correlation and event parsing, independent of WebSocket
+ * JSON-RPC 2.0 correlation in both directions, independent of WebSocket
  * framing. Unknown notifications and malformed unsolicited frames are ignored;
- * a malformed response to one of our ids fails that request explicitly.
+ * a malformed response to one of our ids fails that request explicitly, and a
+ * server→client request is delivered with its id intact so the answer can carry
+ * it back.
  */
 internal class CorrelatedGatewayRpc(
     private val wire: GatewayRpcWire,
     private val timeoutMillisForMethod: (String) -> Long = ::gatewayRpcTimeoutMillis,
     eventPumpDispatcher: CoroutineDispatcher = Dispatchers.Default,
-) : EndpointDispatchingGatewayRpcClient {
+) : EndpointDispatchingGatewayRpcClient, GatewayServerRequestResponder {
     constructor(wire: GatewayRpcWire, timeoutMillis: Long) : this(wire, { timeoutMillis })
 
     private val nextId = AtomicLong(0)
@@ -165,6 +223,15 @@ internal class CorrelatedGatewayRpc(
     private val eventListeners = MutableSharedFlow<GatewayEvent>(
         extraBufferCapacity = EVENT_BUFFER_CAPACITY,
     )
+    // The same ingest-then-fan-out shape one family over. A backend question
+    // that arrives before the repository subscribes waits in this channel
+    // rather than being dropped, because a dropped question is a turned parked
+    // with nothing on screen; a subscriber that stops draining fails the
+    // connection instead of losing one.
+    private val serverRequestChannel = Channel<GatewayServerRequest>(SERVER_REQUEST_BUFFER_CAPACITY)
+    private val serverRequestListeners = MutableSharedFlow<GatewayServerRequest>(
+        extraBufferCapacity = SERVER_REQUEST_BUFFER_CAPACITY,
+    )
     // One drain for every subscriber, owned by the connection rather than by
     // whichever subscriber arrived first.
     private val eventPump = CoroutineScope(SupervisorJob() + eventPumpDispatcher)
@@ -177,6 +244,11 @@ internal class CorrelatedGatewayRpc(
         emitAll(eventListeners)
     }
     override val closed: Flow<GatewayCloseCause> = closedFlow
+
+    override val serverRequests: Flow<GatewayServerRequest> = flow {
+        startEventPump()
+        emitAll(serverRequestListeners)
+    }
 
     override suspend fun request(method: String, params: JsonObject): JsonElement =
         requestInternal(method, params) { send -> send() }
@@ -238,26 +310,53 @@ internal class CorrelatedGatewayRpc(
         val frame = runCatching { JSON.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         val id = frame.string("id")
         if (id != null) {
-            val request = synchronized(lock) { pending.remove(id) } ?: return
-            when {
-                "result" in frame -> request.complete(frame.getValue("result"))
-                frame["error"] is JsonObject -> {
-                    val error = frame.getValue("error").jsonObject
-                    request.completeExceptionally(
-                        GatewayRpcError(
-                            code = (error["code"] as? JsonPrimitive)?.content?.toIntOrNull(),
-                            message = error.string("message") ?: "The gateway rejected the request.",
-                            reason = (error["data"] as? JsonObject)?.string("reason"),
-                        ),
-                    )
-                }
+            // Our own id first, and deliberately before the shape test: a frame
+            // carrying one is an answer to a call this client made, even a
+            // malformed one, and the correlation is what makes it ours.
+            val request = synchronized(lock) { pending.remove(id) }
+            if (request != null) {
+                when {
+                    "result" in frame -> request.complete(frame.getValue("result"))
+                    frame["error"] is JsonObject -> {
+                        val error = frame.getValue("error").jsonObject
+                        request.completeExceptionally(
+                            GatewayRpcError(
+                                code = (error["code"] as? JsonPrimitive)?.content?.toIntOrNull(),
+                                message = error.string("message") ?: "The gateway rejected the request.",
+                                reason = (error["data"] as? JsonObject)?.string("reason"),
+                            ),
+                        )
+                    }
 
-                else -> request.completeExceptionally(GatewayRpcException("The gateway returned a malformed response."))
+                    else -> request.completeExceptionally(GatewayRpcException("The gateway returned a malformed response."))
+                }
+                return
             }
+        }
+
+        val method = frame.string("method")
+        if (method != null && method != "event") {
+            // The other direction: a server→client request, the backend asking
+            // this client a question and blocking on the response frame
+            // (`tui_gateway/server_requests.py:1-13` @ the pin). Both halves
+            // are required — the response the question is waiting for carries
+            // this id, and a request without one can never be answered — so a
+            // frame missing either is dropped rather than half-delivered.
+            if (id == null) return
+            val params = frame["params"] as? JsonObject ?: return
+            val accepted = serverRequestChannel.trySend(
+                GatewayServerRequest(
+                    id = id,
+                    method = method,
+                    runtimeSessionId = params.string("session_id")?.takeIf(String::isNotBlank),
+                    params = params,
+                ),
+            )
+            if (accepted.isFailure) connectionClosed(SERVER_REQUEST_OVERFLOW_MESSAGE)
             return
         }
 
-        if (frame.string("method") != "event") return
+        if (method != "event") return
         val params = frame["params"] as? JsonObject ?: return
         val type = params.string("type") ?: return
         if (type !in SUPPORTED_EVENTS) return
@@ -273,6 +372,33 @@ internal class CorrelatedGatewayRpc(
     }
 
     /**
+     * One response frame for a backend question, carrying the question's own id.
+     *
+     * Synchronized with the same lock that closes the leg, for the reason every
+     * other frame here is: a teardown that got there first must refuse this send
+     * rather than have it land on a socket the app has already left. Nothing is
+     * recorded on success — a response frame is one-way, and the backend drops
+     * it silently when the request was already withdrawn, which is the
+     * tolerated-late-answer case rather than an error
+     * (`tui_gateway/server_requests.py:139-146` @ the pin).
+     */
+    override suspend fun respondToServerRequest(id: String, result: JsonObject) {
+        require(id.isNotBlank()) { "A server request id is required to answer." }
+        val frame = buildJsonObject {
+            put("jsonrpc", JsonPrimitive("2.0"))
+            put("id", JsonPrimitive(id))
+            put("result", result)
+        }.toString()
+        val sent = synchronized(lock) {
+            if (isClosed) throw GatewayRpcException("The gateway connection is closed.")
+            runCatching { wire.send(frame) }.getOrElse {
+                throw GatewayRpcException("The gateway connection could not send the response.")
+            }
+        }
+        if (!sent) throw GatewayRpcException("The gateway connection could not send the response.")
+    }
+
+    /**
      * Drain the ingest channel into the listener fan-out, once per client.
      *
      * Nothing leaves the buffer until something is listening, and nothing is
@@ -283,14 +409,32 @@ internal class CorrelatedGatewayRpc(
      */
     private fun startEventPump() {
         if (!eventPumpStarted.compareAndSet(false, true)) return
+        eventPump.launch { drainInto(eventChannel, eventListeners, EVENT_OVERFLOW_MESSAGE) }
         eventPump.launch {
-            while (true) {
-                eventListeners.subscriptionCount.first { it > 0 }
-                val event = eventChannel.receiveCatching().getOrNull() ?: return@launch
-                if (!eventListeners.tryEmit(event)) {
-                    connectionClosed(EVENT_OVERFLOW_MESSAGE)
-                    return@launch
-                }
+            drainInto(serverRequestChannel, serverRequestListeners, SERVER_REQUEST_OVERFLOW_MESSAGE)
+        }
+    }
+
+    /**
+     * Drain one ingest channel into its listener fan-out, once per client.
+     *
+     * Nothing leaves the buffer until something is listening, and nothing is
+     * taken while every listener has gone — so a burst that arrives before the
+     * app's pump subscribes, the reason the ingest channel is buffered at all,
+     * is still delivered, and neither a plugin attaching or detaching nor the
+     * app's pump restarting can consume another subscriber's events.
+     */
+    private suspend fun <T> drainInto(
+        ingest: Channel<T>,
+        listeners: MutableSharedFlow<T>,
+        overflowMessage: String,
+    ) {
+        while (true) {
+            listeners.subscriptionCount.first { it > 0 }
+            val value = ingest.receiveCatching().getOrNull() ?: return
+            if (!listeners.tryEmit(value)) {
+                connectionClosed(overflowMessage)
+                return
             }
         }
     }
@@ -311,6 +455,7 @@ internal class CorrelatedGatewayRpc(
         val failure = GatewayRpcException(message, requestMayHaveBeenAccepted = true)
         abandoned.forEach { it.completeExceptionally(failure) }
         eventChannel.close()
+        serverRequestChannel.close()
         closedFlow.tryEmit(cause)
     }
 
@@ -322,6 +467,15 @@ internal class CorrelatedGatewayRpc(
     private companion object {
         const val EVENT_BUFFER_CAPACITY = 1_024
         const val EVENT_OVERFLOW_MESSAGE = "The gateway event stream exceeded its safe buffer."
+
+        /**
+         * Two orders of magnitude below the event buffer on purpose. Events are
+         * a stream of deltas; requests are a handful of questions a person has
+         * to answer, and anything past a few dozen parked on one connection is a
+         * backend that is not waiting for an answer in any useful sense.
+         */
+        const val SERVER_REQUEST_BUFFER_CAPACITY = 64
+        const val SERVER_REQUEST_OVERFLOW_MESSAGE = "The gateway prompt stream exceeded its safe buffer."
         val JSON = Json { ignoreUnknownKeys = true }
 
         /**
@@ -335,6 +489,16 @@ internal class CorrelatedGatewayRpc(
          * each one is a refetch trigger
          * (`tui_gateway/change_watcher.py:177-184` @
          * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+         *
+         * Blocking prompts are not here and cannot be: since the re-pin every
+         * one of them is a server→client *request* frame, and the one event
+         * left in the family is the backend withdrawing it —
+         * `request.cancel {id, method, reason}`
+         * (`tui_gateway/contracts/server_requests.py:217-224` @ the pin). The
+         * deleted `clarify.request` / `approval.request` / `sudo.request` /
+         * `secret.request` pair stays out deliberately: subscribing to it again
+         * would give a prompt two homes, one of which a pinned Gateway never
+         * posts to.
          */
         val SUPPORTED_EVENTS = setOf(
             "session.info",
@@ -349,10 +513,7 @@ internal class CorrelatedGatewayRpc(
             "tool.complete",
             "status.update",
             "error",
-            "clarify.request",
-            "approval.request",
-            "sudo.request",
-            "secret.request",
+            "request.cancel",
         ) + GATEWAY_GLOBAL_EVENT_TYPES
     }
 }
@@ -361,7 +522,7 @@ internal class CorrelatedGatewayRpc(
 internal class OkHttpGatewayRpcClient private constructor(
     private val socketWire: SocketWire,
     private val rpc: CorrelatedGatewayRpc,
-) : EndpointDispatchingGatewayRpcClient by rpc {
+) : EndpointDispatchingGatewayRpcClient by rpc, GatewayServerRequestResponder by rpc {
 
     companion object {
         suspend fun connect(
