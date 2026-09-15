@@ -78,7 +78,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
@@ -6230,6 +6229,8 @@ internal fun parseSessionUsage(
         ?.let { redact(it).take(40) }
         ?: previous?.model
         ?: ""
+    val contextEstimated = json.boolean("context_estimated") ?: previous?.contextEstimated
+    val contextSource = json.contextSource() ?: previous?.contextSource
     return SessionUsage(
         contextUsed = contextUsed?.takeIf { it >= 0 },
         contextMax = contextMax?.takeIf { it > 0 },
@@ -6239,6 +6240,8 @@ internal fun parseSessionUsage(
         output = maxOf(0L, output),
         calls = maxOf(0, calls),
         model = model,
+        contextEstimated = contextEstimated,
+        contextSource = contextSource,
     )
 }
 
@@ -6264,6 +6267,8 @@ internal fun parseContextBreakdown(json: JsonObject): ContextBreakdown? {
     val contextUsed = maxOf(0L, json.long("context_used") ?: json.int("context_used")?.toLong() ?: 0L)
     val estimatedTotal = maxOf(0L, json.long("estimated_total") ?: json.int("estimated_total")?.toLong() ?: 0L)
     val model = redact(json.string("model")?.trim() ?: "").take(40)
+    val contextEstimated = json.boolean("context_estimated")
+    val contextSource = json.contextSource()
     return ContextBreakdown(
         categories = categories,
         contextMax = contextMax,
@@ -6271,8 +6276,18 @@ internal fun parseContextBreakdown(json: JsonObject): ContextBreakdown? {
         contextUsed = contextUsed,
         estimatedTotal = estimatedTotal,
         model = model,
+        contextEstimated = contextEstimated,
+        contextSource = contextSource,
     )
 }
+
+/** A bounded source identifier; unknown values are preserved for diagnostics but never shown by the UI. */
+private fun JsonObject.contextSource(): String? =
+    jsonString("context_source")
+        ?.let(::redact)
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.take(40)
 
 internal fun JsonElement.asObject(method: String): JsonObject = this as? JsonObject
     ?: throw GatewayRpcException("Hermes returned malformed data for $method.")

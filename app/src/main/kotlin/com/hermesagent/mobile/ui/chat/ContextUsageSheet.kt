@@ -60,7 +60,7 @@ internal fun contextUsageSegmentTag(id: String): String = "context-usage-segment
  * Top-bar Context Meter component in the ChatTopBar.
  *
  * Pinned to upstream `apps/desktop/src/lib/statusbar.tsx:37-60` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, which spells the three facts out
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`, which spells the three facts out
  * as text — `30k/200k`, then `[████░░░░░░] 40%` — in a footer that runs the
  * width of a desktop window.
  *
@@ -87,20 +87,23 @@ fun ContextMeter(
     // `clickable` merges this row's children into one semantics node. What that
     // node says used to be the figures themselves, because the row rendered
     // them; now the row draws them, so the figures are what the description
-    // carries. Desktop's own accessible name for the item (`en.ts:2963`) still
+    // carries. Desktop's own accessible name for the item
+    // (`apps/desktop/src/i18n/en.ts:3577`) still
     // rides on `onClickLabel`, which is where the action a tap performs belongs.
     // A percent with no `context_used` behind it is a real Gateway answer, and
     // defaulting the missing figure to zero would have TalkBack read "0 of
     // 200k, 40%" — two numbers that contradict the third. The percent alone is
     // the whole of what is known.
     val used = state.usage.contextUsed
+    val estimated = state.usage.contextEstimated == true
     val spoken = when {
         percent == null -> state.label
-        used == null -> ContextUsageCopy.spokenPercent(percent)
+        used == null -> ContextUsageCopy.spokenPercent(percent, estimated = estimated)
         else -> ContextUsageCopy.spokenUsage(
             compactNumber(used),
             compactNumber(state.usage.contextMax ?: 0L),
             percent,
+            estimated = estimated,
         )
     }
     Row(
@@ -124,7 +127,11 @@ fun ContextMeter(
             ContextRing(percent = percent)
         }
         Text(
-            text = if (percent == null) state.label else ContextUsageCopy.percent(percent),
+            text = if (percent == null) {
+                state.label
+            } else {
+                ContextUsageCopy.percent(percent, estimated = estimated)
+            },
             style = HermesTheme.type.caption,
             color = tokens.textSecondary,
             maxLines = 1,
@@ -169,7 +176,7 @@ private val RingStroke = 2.dp
 /**
  * Context Usage popover analog from Hermes Desktop
  * (`apps/desktop/src/app/shell/context-usage-panel.tsx` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), as a bottom sheet.
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`), as a bottom sheet.
  */
 @Composable
 fun ContextUsageSheet(
@@ -217,6 +224,8 @@ fun ContextUsagePanelContent(
     val contextMax = usage.contextMax ?: 0L
     val contextUsed = usage.contextUsed ?: 0L
     val contextPercent = (usage.contextPercent ?: 0).coerceIn(0, 100)
+    val contextEstimated = usage.contextEstimated == true
+    val sourceLabel = ContextUsageCopy.sourceLabel(usage.contextSource)
 
     val categories = remember(breakdown?.categories) {
         (breakdown?.categories.orEmpty()).map { category ->
@@ -248,7 +257,7 @@ fun ContextUsagePanelContent(
             )
             Text(
                 text = ContextUsageCopy.tokenSummary(
-                    "~${compactNumber(contextUsed)}",
+                    "${if (contextEstimated) "~" else ""}${compactNumber(contextUsed)}",
                     compactNumber(contextMax),
                 ),
                 style = HermesTheme.type.caption,
@@ -258,10 +267,17 @@ fun ContextUsagePanelContent(
 
         // Percent Full
         Text(
-            text = ContextUsageCopy.percentFull(contextPercent),
+            text = ContextUsageCopy.percentFull(contextPercent, estimated = contextEstimated),
             style = HermesTheme.type.caption,
             color = tokens.textPrimary,
         )
+        sourceLabel?.let { source ->
+            Text(
+                text = source,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+            )
+        }
 
         // Segmented Bar (6dp height, rounded 3dp)
         ContextUsageBar(
@@ -318,10 +334,10 @@ private fun ContextUsageBar(
     ) {
         categories.forEach { category ->
             // Desktop gives every category `min-w-px` so a zero-token one still
-            // shows a 1px sliver (`context-usage-panel.tsx:89` @
-            // `3ca096de5f8183cb2e0ec23673f294d5978656a3`). `Modifier.weight`
+            // shows a 1px sliver (`context-usage-panel.tsx:95` @
+            // `437116f9497c80d242ce034ff7f5d81dc277a337`). `Modifier.weight`
             // has no such floor, and the producer already filters
-            // `if tokens > 0` (`agent/context_breakdown.py:161`), so this is
+            // `if tokens > 0` (`agent/context_breakdown.py:171`), so this is
             // unreachable at the pin and ledgered in `docs/parity/context-usage.md`.
             if (category.tokens > 0) {
                 val weight = (category.tokens.toFloat() / segmentTotal.toFloat()).coerceAtLeast(0.0001f)
@@ -369,8 +385,11 @@ private fun ContextUsageCategoryRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        // Category counts are local estimates even when the overall occupancy is
+        // provider-measured (`context_breakdown.py:309` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`).
         Text(
-            text = compactNumber(category.tokens),
+            text = "~${compactNumber(category.tokens)}",
             style = HermesTheme.type.caption,
             color = tokens.textPrimary,
         )

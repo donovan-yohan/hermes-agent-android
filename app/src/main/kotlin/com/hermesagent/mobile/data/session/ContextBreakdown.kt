@@ -3,8 +3,9 @@ package com.hermesagent.mobile.data.session
 /**
  * Session context window and usage statistics models.
  *
- * Pinned to upstream `apps/desktop/src/types/hermes.ts:718-727,770-784` @
- * `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+ * Pinned to upstream `apps/desktop/src/types/hermes.ts:728-743,793-802` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`; provenance fields are emitted by
+ * `agent/context_breakdown.py:114,176-177` at the same pin.
  */
 data class SessionUsage(
     val contextUsed: Long? = null,
@@ -15,6 +16,8 @@ data class SessionUsage(
     val output: Long = 0,
     val calls: Int = 0,
     val model: String = "",
+    val contextEstimated: Boolean? = null,
+    val contextSource: String? = null,
 )
 
 data class ContextUsageCategory(
@@ -31,6 +34,8 @@ data class ContextBreakdown(
     val contextUsed: Long = 0,
     val estimatedTotal: Long = 0,
     val model: String = "",
+    val contextEstimated: Boolean? = null,
+    val contextSource: String? = null,
 )
 
 /**

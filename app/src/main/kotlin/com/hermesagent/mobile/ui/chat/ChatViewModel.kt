@@ -822,14 +822,15 @@ internal class ChatViewModel(
         val breakdown = if (displayedActiveId != null) meterBundle.breakdown else null
         val breakdownLoading = meterBundle.loading
         val streamedUsage = active?.usage ?: SessionUsage()
-        // `gaugeUsage`: the breakdown overrides the three context fields and
-        // nothing else, so the meter and the panel can never disagree —
-        //   `contextBreakdown ? { ...currentUsage, context_max, context_percent,
-        //    context_used } : currentUsage`
-        // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:267-280` @
-        // `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). `total` and `model` stay
+        // `gaugeUsage`: the breakdown overrides its context fields and
+        // provenance, so the meter and the panel can never disagree —
+        //   `contextBreakdown ? { ...currentUsage, context_estimated,
+        //    context_source, context_max, context_percent, context_used } : currentUsage`
+        // (`apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx:281-294` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`). `total` and `model` stay
         // the streamed ones: a resumed session whose breakdown reports
-        // `context_max: 0` (no compressor, `agent/context_breakdown.py:130-131`)
+        // `context_max: 0` (no compressor, `agent/context_breakdown.py:144-145` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`)
         // has no measured usage either, and Desktop hides the item rather than
         // painting the estimate under it.
         val gaugeUsage = if (breakdown != null) {
@@ -837,13 +838,24 @@ internal class ChatViewModel(
                 contextUsed = breakdown.contextUsed,
                 contextMax = breakdown.contextMax.takeIf { it > 0 },
                 contextPercent = breakdown.contextPercent,
+                contextEstimated = breakdown.contextEstimated,
+                contextSource = breakdown.contextSource,
             )
         } else {
             streamedUsage
         }
 
-        val contextLabel = usageContextLabel(gaugeUsage.contextUsed, gaugeUsage.contextMax, gaugeUsage.total)
-        val contextDetail = contextBarLabel(gaugeUsage.contextPercent?.toDouble(), gaugeUsage.contextMax)
+        val contextLabel = usageContextLabel(
+            contextUsed = gaugeUsage.contextUsed,
+            contextMax = gaugeUsage.contextMax,
+            total = gaugeUsage.total,
+            contextEstimated = gaugeUsage.contextEstimated == true,
+        )
+        val contextDetail = contextBarLabel(
+            contextPercent = gaugeUsage.contextPercent?.toDouble(),
+            contextMax = gaugeUsage.contextMax,
+            contextEstimated = gaugeUsage.contextEstimated == true,
+        )
         val contextMeter = if (contextLabel.isNotEmpty()) {
             ContextMeterState(
                 label = contextLabel,
