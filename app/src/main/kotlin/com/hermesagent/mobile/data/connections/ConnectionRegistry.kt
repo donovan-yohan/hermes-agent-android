@@ -7,6 +7,7 @@ import com.hermesagent.mobile.data.gateway.RemoteGatewayProfile
 import com.hermesagent.mobile.data.gateway.normalizeLocalGatewayUrl
 import com.hermesagent.mobile.data.ssh.AuthMethod
 import com.hermesagent.mobile.data.ssh.HostProfile
+import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import java.text.Normalizer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -93,6 +94,12 @@ data class SavedConnection(
     val remote: RemoteGatewayProfile = RemoteGatewayProfile(),
     val host: HostProfile = HostProfile(),
     val local: LocalGatewayProfile = LocalGatewayProfile(),
+    /**
+     * This row's explicit appearance choice, either an Android built-in or a
+     * custom theme name supplied by this Gateway. It is a name only: a custom
+     * definition is endpoint-scoped and is never persisted with the row.
+     */
+    val themeName: String = BuiltinThemes.DEFAULT_NAME,
 ) {
     /**
      * The remote profile stamped with this row's secret slot, so the Keystore
@@ -231,6 +238,12 @@ interface ConnectionRegistryStore {
     suspend fun removeConnection(id: String)
 
     suspend fun setActiveConnection(id: String)
+
+    /**
+     * Stores an appearance choice on the row the caller observed. A write for
+     * a row that stopped being active is dropped inside the transaction.
+     */
+    suspend fun setConnectionTheme(themeName: String, expectedConnectionId: String?): Boolean
 }
 
 /** Desktop shows search once a registry gets long (`connection-display.ts:3` @ `72a3277cd7`). */

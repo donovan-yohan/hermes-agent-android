@@ -176,6 +176,8 @@ class ActiveConnectionFollowerTest {
             registry.value = registry.value.copy(activeId = id)
         }
 
+        override suspend fun setConnectionTheme(themeName: String, expectedConnectionId: String?): Boolean = false
+
         override suspend fun saveRemoteGatewayProfile(profile: RemoteGatewayProfile) = Unit
         override suspend fun saveGatewayConnectionMode(
             mode: GatewayConnectionMode,
