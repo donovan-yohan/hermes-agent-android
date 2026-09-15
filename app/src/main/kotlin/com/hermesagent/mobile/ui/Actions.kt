@@ -90,6 +90,12 @@ class ChatActions(
     val onCompletionSelected: (CompletionItem) -> Unit = {},
     val onInsertText: (String) -> Unit = {},
     val onPickFiles: () -> Unit = {},
+    val onAddRecentImage: (Long) -> Unit = {},
+    val onRequestRecentImageAccess: () -> Unit = {},
+    val onPickPhotos: () -> Unit = {},
+    /** The add sheet opened and closed; the rail's read is fenced to that window. */
+    val onRecentImagesSheetOpened: () -> Unit = {},
+    val onRecentImagesSheetClosed: () -> Unit = {},
     val onRemoveAttachment: (String) -> Unit = {},
     val onShowEarlierMessages: () -> Unit = {},
     val onToggleReadAloud: (String) -> Unit = {},

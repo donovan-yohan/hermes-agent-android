@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -80,11 +81,13 @@ class ComposerControlsAccessibilityTest {
         compose.onNodeWithContentDescription("Open model controls", substring = true).assertHeightIsAtLeast(floor)
         compose.onNodeWithContentDescription("GPT. from OpenAI", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Add to message").assertHeightIsAtLeast(floor).performClick()
-        compose.onNodeWithText("URL").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Files. Attach a file from this device").assertIsDisplayed()
+        // The recent-images rail and its fallback rows sit above Files, so the lower
+        // rows now start below the fold of a phone-height sheet: scroll, then assert.
+        compose.onNodeWithText("URL").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Files. Attach a file from this device").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(
             "Files upload through the Gateway when you send. Folders aren't available yet.",
-        ).assertExists()
+        ).performScrollTo().assertExists()
     }
 
     @Test
@@ -105,7 +108,10 @@ class ComposerControlsAccessibilityTest {
         }
 
         compose.onNodeWithContentDescription("Add to message").performClick()
-        compose.onNodeWithContentDescription("Prompt snippets. Insert a reusable prompt").performClick()
+        // The rail + fallback rows push the summary sheet's lower rows below the fold on a
+        // phone-height sheet; scroll the snippets row into view before tapping it. The
+        // snippets pane itself is a plain, fully-visible column — no scroll needed there.
+        compose.onNodeWithContentDescription("Prompt snippets. Insert a reusable prompt").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Code review. Review a change for correctness and risk.").performClick()
         compose.onNodeWithContentDescription("Message Hermes").assertIsFocused()
     }

@@ -1,8 +1,16 @@
 package com.hermesagent.mobile.ui.chat
 
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageBitmapConfig
+import androidx.compose.ui.graphics.colorspace.ColorSpace
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
+import com.hermesagent.mobile.data.attachments.AttachmentPickScope
 import com.hermesagent.mobile.data.attachments.AttachmentStage
 import com.hermesagent.mobile.data.attachments.AttachmentPolicy
+import com.hermesagent.mobile.data.attachments.RecentImage
+import com.hermesagent.mobile.data.attachments.RecentImageAccess
+import com.hermesagent.mobile.data.attachments.RecentImagesSource
 import com.hermesagent.mobile.data.draft.SessionDraftStore
 import com.hermesagent.mobile.data.draft.TransientSessionDraftStore
 import com.hermesagent.mobile.data.composer.CompletionItem
@@ -63,12 +71,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -76,6 +86,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.Base64
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelTest {
@@ -3639,7 +3650,46 @@ class ChatViewModelTest {
         fun summary(id: String, at: Long) = SessionSummary(id, "Session $id", "", at)
     }
 
-@Test
+    private class FakeRecentImages(
+        private val rows: List<RecentImage>,
+        private val throwsOnRead: Boolean = false,
+        private val preview: ImageBitmap? = null,
+        private val beforeReturn: (() -> Unit)? = null,
+    ) : RecentImagesSource {
+        /** How many times the device library was actually read. */
+        var reads = 0
+
+        override fun recentImages(limit: Int): List<RecentImage> {
+            reads += 1
+            if (throwsOnRead) error("fixture read failure")
+            beforeReturn?.invoke()
+            return rows.take(limit)
+        }
+
+        override fun thumbnail(imageId: Long, maxPx: Int): ImageBitmap? = preview
+
+        override fun sourceFor(image: RecentImage): String = "content://fixture/media/${image.id}"
+    }
+
+    private object FakeImageBitmap : ImageBitmap {
+        override val width: Int = 1
+        override val height: Int = 1
+        override val colorSpace: ColorSpace = ColorSpaces.Srgb
+        override val hasAlpha: Boolean = true
+        override val config: ImageBitmapConfig = ImageBitmapConfig.Argb8888
+        override fun readPixels(
+            buffer: IntArray,
+            startX: Int,
+            startY: Int,
+            width: Int,
+            height: Int,
+            bufferOffset: Int,
+            stride: Int,
+        ) = Unit
+        override fun prepareToDraw() = Unit
+    }
+
+    @Test
     fun `attachment grant is read bounded and submitted as bytes with the prompt`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -3663,6 +3713,301 @@ class ChatViewModelTest {
         assertTrue(attachment is OutgoingAttachment.GenericFile)
         assertEquals("notes.txt", attachment.displayName)
         assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+    }
+
+    @Test
+    fun `recent images load into the active composer scope`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val reader = StandardTestDispatcher(TestCoroutineScheduler())
+        viewModel.attachmentReadDispatcher = reader
+        viewModel.recentImagesSource = FakeRecentImages(
+            listOf(RecentImage(7, "latest.png", "image/png")),
+            preview = FakeImageBitmap,
+        )
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.recentImages.loading)
+        reader.scheduler.runCurrent()
+        runCurrent()
+
+        assertEquals(listOf(RecentImage(7, "latest.png", "image/png")),
+            viewModel.uiState.value.composer.runtime.recentImages.images)
+        assertTrue(viewModel.uiState.value.composer.runtime.recentImages.thumbnails.containsKey(7))
+        assertFalse(viewModel.uiState.value.composer.runtime.recentImages.loading)
+    }
+
+    @Test
+    fun `recent image tap uses the attachment pipeline without exposing its source`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        var opened: String? = null
+        val imageBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)
+        viewModel.openAttachmentStream = { source ->
+            opened = source
+            imageBytes.inputStream()
+        }
+        viewModel.recentImagesSource = FakeRecentImages(listOf(RecentImage(7, "latest.png", "image/png")))
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+
+        viewModel.addRecentImage(7)
+        viewModel.addRecentImage(7)
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
+        assertEquals(setOf(7L), viewModel.uiState.value.composer.runtime.recentImages.addedIds)
+
+        viewModel.submit()
+        runCurrent()
+        val sent = repository.submittedAttachments.single().second.single() as OutgoingAttachment.Image
+        assertEquals("latest.png", sent.displayName)
+        assertEquals("content://fixture/media/7", opened)
+        assertArrayEquals(imageBytes, Base64.getDecoder().decode(sent.contentBase64))
+        assertFalse(sent.contentBase64.contains("content://"))
+        assertTrue(viewModel.uiState.value.composer.runtime.recentImages.addedIds.isEmpty())
+    }
+
+    @Test
+    fun `recent image removal clears its rail mark`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47).inputStream() }
+        viewModel.recentImagesSource = FakeRecentImages(listOf(RecentImage(7, "latest.png")))
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        viewModel.addRecentImage(7)
+        runCurrent()
+
+        viewModel.removeAttachment(viewModel.uiState.value.composer.runtime.attachments.single().occurrenceId)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.recentImages.addedIds.isEmpty())
+    }
+
+    @Test
+    fun `recent image read is rejected after its session changes`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.recentImagesSource = FakeRecentImages(
+            listOf(RecentImage(7, "latest.png")),
+            beforeReturn = { viewModel.selectSession("session-b") },
+        )
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.composer.runtime.recentImages.images.isEmpty())
+    }
+
+    @Test
+    fun `failed recent image read reports the refusal instead of an empty device`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.recentImagesSource = FakeRecentImages(emptyList(), throwsOnRead = true)
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+
+        val state = viewModel.uiState.value.composer.runtime.recentImages
+        assertFalse(state.loading)
+        assertTrue(state.images.isEmpty())
+        // "Nothing here" and "could not be read" are different sentences.
+        assertTrue(state.failed)
+    }
+
+    @Test
+    fun `a grant that outlived its session is refused rather than attached`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(1).inputStream() }
+
+        val stale = AttachmentPickScope(viewModel.attachmentPickScope().generation, "session-that-left")
+        assertNull(
+            viewModel.addAttachmentFromGrant("content://fixture/grant", "shot.png", "image/png", stale),
+        )
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+        assertEquals(
+            "Those attachments arrived after the session changed. Pick them again.",
+            viewModel.uiState.value.notice?.text,
+        )
+    }
+
+    @Test
+    fun `recent image rail reports full and refuses another tap at the attachment cap`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(1).inputStream() }
+        viewModel.recentImagesSource = FakeRecentImages(
+            (1L..9L).map { RecentImage(it, "image-$it") },
+        )
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+
+        (1L..AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE.toLong()).forEach(viewModel::addRecentImage)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.recentImages.full)
+        viewModel.addRecentImage(9)
+        runCurrent()
+        assertEquals(
+            AttachmentPolicy.MAX_ATTACHMENTS_PER_MESSAGE,
+            viewModel.uiState.value.composer.runtime.attachments.size,
+        )
+    }
+
+    @Test
+    fun `endpoint generation clears recent images thumbnails and added marks`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47).inputStream() }
+        viewModel.recentImagesSource = FakeRecentImages(
+            listOf(RecentImage(7, "latest.png")), preview = FakeImageBitmap,
+        )
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        viewModel.addRecentImage(7)
+        runCurrent()
+
+        cache.resetForEndpointSwitch()
+        runCurrent()
+
+        val rail = viewModel.uiState.value.composer.runtime.recentImages
+        assertTrue(rail.images.isEmpty())
+        assertTrue(rail.thumbnails.isEmpty())
+        assertTrue(rail.addedIds.isEmpty())
+    }
+
+    @Test
+    fun `connection generation callback clears the recent rail without a cache reset`() = runTest(dispatcher) {
+        var generation = 1L
+        val vm = ChatViewModel(
+            cache,
+            repository,
+            clock = { CLOCK },
+            connectionGeneration = { generation },
+        )
+        collectState(vm)
+        runCurrent()
+        vm.attachmentReadDispatcher = dispatcher
+        vm.recentImagesSource = FakeRecentImages(listOf(RecentImage(7, "latest.png")))
+        vm.requestRecentImages()
+        vm.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        assertEquals(1, vm.uiState.value.composer.runtime.recentImages.images.size)
+
+        generation = 2L
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+
+        assertTrue(vm.uiState.value.composer.runtime.recentImages.images.isEmpty())
+    }
+
+    @Test
+    fun `revoked photo access rejects an in flight rail read`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.recentImagesSource = FakeRecentImages(
+            listOf(RecentImage(7, "latest.png")),
+            beforeReturn = { viewModel.onRecentImageAccessChanged(RecentImageAccess.Denied) },
+        )
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+
+        val rail = viewModel.uiState.value.composer.runtime.recentImages
+        assertEquals(RecentImageAccess.Denied, rail.access)
+        assertTrue(rail.images.isEmpty())
+        assertFalse(rail.loading)
+    }
+
+    @Test
+    fun `the same recent image can be added independently in another session`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(1).inputStream() }
+        viewModel.recentImagesSource = FakeRecentImages(listOf(RecentImage(7, "latest.png")))
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        viewModel.addRecentImage(7)
+        runCurrent()
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+        viewModel.requestRecentImages()
+        runCurrent()
+        viewModel.addRecentImage(7)
+        runCurrent()
+
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
+        assertEquals(setOf(7L), viewModel.uiState.value.composer.runtime.recentImages.addedIds)
+    }
+
+    @Test
+    fun `a grant on a closed sheet does not read the device library`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        val source = FakeRecentImages(listOf(RecentImage(7, "latest.png")))
+        viewModel.recentImagesSource = source
+
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+
+        assertEquals(0, source.reads)
+        val rail = viewModel.uiState.value.composer.runtime.recentImages
+        assertFalse(rail.loading)
+        assertTrue(rail.images.isEmpty())
+        assertEquals(RecentImageAccess.Granted, rail.access)
+    }
+
+    @Test
+    fun `closing the sheet wipes its rows and keeps the marks the chips carry`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47).inputStream() }
+        viewModel.recentImagesSource = FakeRecentImages(
+            listOf(RecentImage(7, "latest.png")),
+            preview = FakeImageBitmap,
+        )
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        viewModel.addRecentImage(7)
+        runCurrent()
+
+        viewModel.closeRecentImages()
+        runCurrent()
+
+        val closed = viewModel.uiState.value.composer.runtime.recentImages
+        assertTrue(closed.images.isEmpty())
+        assertTrue(closed.thumbnails.isEmpty())
+        assertFalse(closed.loading)
+
+        // Reopening re-reads the library and still knows this image is in the message,
+        // because the chip that carries it is still there.
+        viewModel.requestRecentImages()
+        viewModel.onRecentImageAccessChanged(RecentImageAccess.Granted)
+        runCurrent()
+        assertEquals(setOf(7L), viewModel.uiState.value.composer.runtime.recentImages.addedIds)
+        viewModel.addRecentImage(7)
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
     }
 
     @Test

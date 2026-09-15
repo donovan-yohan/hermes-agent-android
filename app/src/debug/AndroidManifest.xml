@@ -11,6 +11,11 @@
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".ComposerAddSheetParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
         <activity android:name=".StickyPromptParityActivity" android:exported="true" android:theme="@style/Theme.HermesMobile" />
     </application>
 </manifest>
