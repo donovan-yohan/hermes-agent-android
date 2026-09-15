@@ -40,6 +40,11 @@ if [[ -n "$expected_accessibility" ]]; then
   accessibility_args=(--expected-accessibility "$expected_accessibility")
 fi
 
+# DIAGNOSTIC ONLY (scratch branch): print the raw platform tree so a capture
+# failure names the nodes the fixture actually published.
+adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+adb shell cat /sdcard/window.xml || true
+
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
   --name "${CAPTURE_SURFACE}--${CAPTURE_STATE}" \
   --state "$CAPTURE_STATE" \
