@@ -144,6 +144,7 @@ class VaultPromptNotificationTest {
         val surface = RecordingNotificationSurface()
         val connected = MutableStateFlow(true)
         val activeTurns = MutableStateFlow<Set<String>>(emptySet())
+        val activity = MutableStateFlow(GatewayActivity.Empty)
 
         fun start() {
             SessionNotifier(
@@ -153,6 +154,7 @@ class VaultPromptNotificationTest {
                 socketOpens = MutableSharedFlow(),
                 connected = connected,
                 activeTurns = activeTurns,
+                activity = activity,
                 presence = presence,
                 settingsFlow = MutableStateFlow(NotificationSettings()),
                 surface = surface,

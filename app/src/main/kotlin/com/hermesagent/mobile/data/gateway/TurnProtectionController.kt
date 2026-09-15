@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.data.gateway
 
-import com.hermesagent.mobile.data.session.SessionCacheState
+import com.hermesagent.mobile.data.notifications.GatewayActivity
+import com.hermesagent.mobile.data.notifications.GatewayActivityCounts
+import com.hermesagent.mobile.data.notifications.counts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,7 +14,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 internal interface TurnProtectionServiceHost {
-    fun startService(): Boolean
+    fun startService(counts: GatewayActivityCounts): Boolean
+    fun updateService(counts: GatewayActivityCounts) = Unit
     fun stopService()
     fun onServiceRefused(callback: () -> Unit) = Unit
 }
@@ -20,8 +23,7 @@ internal interface TurnProtectionServiceHost {
 /**
  * Manages the lifecycle of the turn-scoped foreground service.
  *
- * Runs only while there is activity worth protecting (a live turn in any session
- * submitted from this client or a pending input/approval), keeping the process
+ * Runs only while there is activity worth protecting, keeping the process
  * unfrozen and the gateway socket alive across backgrounding.
  *
  * Initiates service start only while the app is in the foreground (Android 14+
@@ -31,8 +33,7 @@ internal interface TurnProtectionServiceHost {
  * or unrecoverable connection failure.
  */
 internal class TurnProtectionController(
-    private val activeTurns: StateFlow<Set<String>>,
-    private val sessions: StateFlow<SessionCacheState>,
+    private val activity: StateFlow<GatewayActivity>,
     private val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>,
     private val connectionState: StateFlow<GatewayConnectionState>,
     private val appForegrounded: StateFlow<Boolean>,
@@ -47,19 +48,20 @@ internal class TurnProtectionController(
     private var lingerJob: Job? = null
     private var holdCeilingJob: Job? = null
     private var needsAttentionGraceJob: Job? = null
+    private var lastServiceCounts: GatewayActivityCounts? = null
 
     fun start(scope: CoroutineScope): Job {
         armRefusalReporting(scope)
         return scope.launch {
             combine(
-                activeTurns,
-                sessions,
+                activity,
                 pendingInputs,
                 connectionState,
                 appForegrounded,
-            ) { currentActiveTurns, currentSessions, currentPending, currentConnection, isForeground ->
+            ) { currentActivity, currentPending, currentConnection, isForeground ->
                 StateSnapshot(
-                    hasActiveWork = hasActiveWork(currentActiveTurns, currentSessions, currentPending),
+                    activity = currentActivity,
+                    hasActiveWork = hasActiveWork(currentActivity, currentPending),
                     connectionStatus = currentConnection.status,
                     isForeground = isForeground,
                 )
@@ -80,6 +82,11 @@ internal class TurnProtectionController(
                 stopProtectionLocked()
             }
             return
+        }
+
+        if (isServiceActive && lastServiceCounts != state.activity.counts) {
+            serviceHost.updateService(state.activity.counts)
+            lastServiceCounts = state.activity.counts
         }
 
         if (state.hasActiveWork) {
@@ -143,6 +150,7 @@ internal class TurnProtectionController(
                 mutex.withLock {
                     if (isServiceActive) {
                         isServiceActive = false
+                        lastServiceCounts = null
                         cancelLingerLocked()
                         cancelHoldCeilingLocked()
                         cancelNeedsAttentionGraceLocked()
@@ -155,9 +163,11 @@ internal class TurnProtectionController(
 
     private fun startProtectionLocked(scope: CoroutineScope) {
         armRefusalReporting(scope)
-        val started = serviceHost.startService()
+        val counts = activity.value.counts
+        val started = serviceHost.startService(counts)
         if (started) {
             isServiceActive = true
+            lastServiceCounts = counts
             onProtectionActiveChanged(true)
             cancelHoldCeilingLocked()
             if (maxHoldMillis > 0) {
@@ -177,12 +187,14 @@ internal class TurnProtectionController(
             }
         } else {
             isServiceActive = false
+            lastServiceCounts = null
             onProtectionActiveChanged(false)
         }
     }
 
     private fun stopProtectionLocked() {
         isServiceActive = false
+        lastServiceCounts = null
         cancelHoldCeilingLocked()
         cancelLingerLocked()
         cancelNeedsAttentionGraceLocked()
@@ -208,23 +220,19 @@ internal class TurnProtectionController(
         job?.cancel()
     }
 
+    /**
+     * The activity projection already unions Gateway-reported work with this
+     * client's turns and pending requests. Its local union fails open while a
+     * just-started turn has not reached the Gateway registry, and lets another
+     * client's live work hold this connection open.
+     */
     private fun hasActiveWork(
-        activeTurnIds: Set<String>,
-        sessionState: SessionCacheState,
+        currentActivity: GatewayActivity,
         pending: Map<PendingInputKey, PendingInputRequest>,
-    ): Boolean {
-        if (pending.isNotEmpty()) return true
-        if (activeTurnIds.isEmpty()) return false
-        return activeTurnIds.any { id ->
-            val session = sessionState.sessions[id]
-            // Deliberate fail-open when session summary is not yet in cache:
-            // keeps protection active while session metadata is fetching,
-            // bounded by the maximum hold ceiling.
-            session == null || session.status in RESUMED_BUSY_STATUSES
-        }
-    }
+    ): Boolean = pending.isNotEmpty() || currentActivity.children.isNotEmpty()
 
     private data class StateSnapshot(
+        val activity: GatewayActivity,
         val hasActiveWork: Boolean,
         val connectionStatus: GatewayConnectionStatus,
         val isForeground: Boolean,

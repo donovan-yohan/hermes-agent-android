@@ -1126,6 +1126,7 @@ private class World(private val test: kotlinx.coroutines.test.TestScope) {
     // away is about a connection that is already up.
     val connected = MutableStateFlow(true)
     val activeTurns = MutableStateFlow<Set<String>>(emptySet())
+    val activity = MutableStateFlow(GatewayActivity.Empty)
 
     fun start() {
         SessionNotifier(
@@ -1135,6 +1136,7 @@ private class World(private val test: kotlinx.coroutines.test.TestScope) {
             socketOpens = socketOpens,
             connected = connected,
             activeTurns = activeTurns,
+            activity = activity,
             presence = presence,
             settingsFlow = settings,
             surface = surface,

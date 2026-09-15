@@ -53,6 +53,7 @@ class SessionNotifier(
     private val connected: StateFlow<Boolean>,
     /** Durable ids with a turn on the wire, for deciding what a drop interrupted. */
     private val activeTurns: StateFlow<Set<String>>,
+    private val activity: StateFlow<GatewayActivity>,
     private val presence: NotificationPresence,
     private val settingsFlow: Flow<NotificationSettings>,
     private val surface: NotificationSurface,
@@ -73,6 +74,7 @@ class SessionNotifier(
         data class Settings(val settings: NotificationSettings) : Signal
         data class QuietWindowExpired(val generation: Long) : Signal
         data class Connected(val connected: Boolean) : Signal
+        data class Activity(val activity: GatewayActivity) : Signal
         data object ReminderTick : Signal
     }
 
@@ -152,6 +154,7 @@ class SessionNotifier(
         // Process start is itself a baseline: whatever the socket replays in
         // the next few seconds is state that already existed.
         markBaseline()
+        applyActivity(activity.value)
         return scope.launch {
             merge(
                 socketOpens.map { Signal.SocketOpen },
@@ -161,6 +164,7 @@ class SessionNotifier(
                     .distinctUntilChanged(),
                 settingsFlow.map(Signal::Settings),
                 connected.map(Signal::Connected).distinctUntilChanged(),
+                activity.map(Signal::Activity),
                 reminderTicks(),
                 quietExpiries,
             ).collect { signal ->
@@ -179,8 +183,13 @@ class SessionNotifier(
                     is Signal.Settings -> {
                         settings = signal.settings
                         applyPending(latestPending, latestPending)
+                        applyActivity(activity.value)
                     }
-                    is Signal.Connected -> applyConnected(signal.connected)
+                    is Signal.Connected -> {
+                        applyConnected(signal.connected)
+                        if (!signal.connected) applyActivity(activity.value)
+                    }
+                    is Signal.Activity -> applyActivity(signal.activity)
                     Signal.ReminderTick -> applyReminderTick()
                     is Signal.QuietWindowExpired -> {
                         // Ignore stale expiry from a cancelled quiet window that was already buffered.
@@ -363,6 +372,33 @@ class SessionNotifier(
         for (durableSessionId in interrupted) {
             dispatch(NotificationKind.ConnectionLost, durableSessionId, approval = null)
         }
+    }
+
+    private var renderedActivity: List<NotificationActivityChild>? = null
+
+    private fun applyActivity(activity: GatewayActivity) {
+        val rendered = if (!settings.enabled) {
+            emptyList()
+        } else {
+            activity.children.map { child ->
+                NotificationActivityChild(
+                    durableSessionId = child.durableSessionId,
+                    title = child.title.notificationSafeTitle()
+                        .ifBlank { NotificationCopy.ACTIVITY_CHILD_TITLE },
+                    statusLine = NotificationCopy.activityStatus(child.status),
+                    projectLabel = child.projectLabel
+                        ?.notificationSafeTitle(MAX_NOTIFICATION_PROJECT)
+                        ?.takeIf(String::isNotBlank),
+                    preview = child.preview
+                        .takeIf { settings.preview }
+                        ?.notificationSafeTitle(MAX_NOTIFICATION_PREVIEW)
+                        ?.takeIf(String::isNotBlank),
+                )
+            }
+        }
+        if (renderedActivity == rendered) return
+        renderedActivity = rendered
+        surface.postActivity(rendered)
     }
 
     /**

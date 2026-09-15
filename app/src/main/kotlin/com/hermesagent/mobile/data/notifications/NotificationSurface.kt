@@ -71,12 +71,28 @@ data class NotificationPost(
     val preview: String? = null,
 )
 
+/** One passive activity child as the shade renders it: text already redacted and bounded. */
+data class NotificationActivityChild(
+    val durableSessionId: String,
+    val title: String,
+    val statusLine: String,
+    val projectLabel: String? = null,
+    val preview: String? = null,
+)
+
 /**
  * The OS side of notifying, behind an interface so the gating rules can be
  * tested on virtual time with no Android runtime in the way.
  */
 interface NotificationSurface {
     fun post(post: NotificationPost)
+
+    /**
+     * Reconcile the passive activity children: one per live chat, in the given order, and
+     * nothing else. An empty list withdraws every child. Idempotent; the summary belongs to
+     * the foreground service, not to this call.
+     */
+    fun postActivity(children: List<NotificationActivityChild>)
 
     /** Withdraw one (session, kind) notification — the prompt resolved, or the turn was read. */
     fun clear(kind: NotificationKind, durableSessionId: String)
