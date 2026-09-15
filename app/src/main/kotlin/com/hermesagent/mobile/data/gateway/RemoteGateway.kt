@@ -464,11 +464,12 @@ internal class NativeGatewayAuthenticator(
      * `3ca096de5f8183cb2e0ec23673f294d5978656a3`,
      * `hermes_cli/dashboard_auth/routes.py:1042-1094`; where the presented
      * token is actually retired is the session provider's business, which that
-     * route does not show). Two callers — the
-     * reconnect path's [ticket] and a REST leg's [refreshAccessToken] — that
-     * POST the same one-time token race each other into a rejection, and their
-     * two [GatewayTokenStore.save] calls race over which rotation survives.
-     * Interactive sign-in deliberately happens *outside* this lock, so a
+     * route does not show). Two rotations that POST the same one-time token
+     * race each other into a rejection, and their two [GatewayTokenStore.save]
+     * calls race over which rotation survives. The [ticket] path and the
+     * non-interactive [refreshAccessToken] seam are the two entry points into
+     * this class (#275 left the latter without a production caller);
+     * interactive sign-in deliberately happens *outside* this lock, so a
      * browser round trip can never park another caller behind it.
      */
     private val rotation = Mutex()
@@ -525,9 +526,14 @@ internal class NativeGatewayAuthenticator(
     /**
      * Rotate the stored access token once, without a browser — the same
      * rotation step [refreshOrSignIn] performs, minus its interactive
-     * fallback. A REST leg that was refused can spend exactly one of these
-     * before the app has to ask the person to sign in again; it deliberately
-     * cannot start a sign-in on its own.
+     * fallback.
+     *
+     * Kept deliberately without a production caller (#275): the only one was
+     * the Relay plugin's credential wiring, retired with the plugin. What
+     * makes it worth keeping is that it is the non-interactive entry point the
+     * rotation cases drive, and [rotate]'s sign-out and sign-in races are live
+     * behaviour on the ticket path — deleting this would take their only
+     * coverage with it. It stays as the seam those cases exercise.
      *
      * False means no rotation happened, for any reason. It is never a partial
      * success: the stored tokens are replaced only when a whole new set
@@ -1323,10 +1329,6 @@ internal class RemoteGatewayConnector(
     /** Bearer token for the connection-owned audio HTTP leg; null when absent. */
     suspend fun accessToken(profile: RemoteGatewayProfile): String? =
         authenticator.tokens(profile)?.accessToken
-
-    /** Rotate that bearer once, non-interactively, for a refused REST leg. */
-    suspend fun refreshAccessToken(profile: RemoteGatewayProfile): Boolean =
-        authenticator.refreshAccessToken(profile)
 
     suspend fun open(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): GatewayRpcClient {
         val baseUrl = profile.normalizedBaseUrl

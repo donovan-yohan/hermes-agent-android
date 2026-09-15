@@ -157,28 +157,6 @@ internal interface GatewayConnectionController {
     }
 
     /**
-     * Rotate the live leg's credential once, without user interaction, for a
-     * REST caller the Gateway just refused.
-     *
-     * False means this leg has nothing to rotate — the managed SSH leg's
-     * loopback session token lives for the lifetime of the forward that
-     * carries it — or the rotation was refused. The
-     * caller's next honest move is the app's ordinary sign-in, never a second
-     * rotation.
-     */
-    suspend fun refreshCredential(): Boolean = false
-
-    /**
-     * Whether a sign-in on this device could supply the live leg's credential.
-     *
-     * True only on the host-owned Remote Gateway leg, which has a sign-in.
-     * Managed SSH does not: its credential is created by the connection and
-     * dies with it, so copy that sends someone to sign in there points at a
-     * door that is not in the building. Reconnecting is.
-     */
-    suspend fun signInAvailable(): Boolean = false
-
-    /**
      * Retire the live Remote socket and redial it immediately, because the
      * backend it was talking to has just restarted itself.
      *
@@ -496,16 +474,6 @@ internal class GatewayConnectionManager(
     private var active: ActiveConnection? = null
 
     /**
-     * The live remote profile, mirrored out of [active] at every write.
-     *
-     * [refreshCredential] and [signInAvailable] must answer without waiting on
-     * [mutex]: even now that `openRemote` releases the lock across the browser
-     * round trip, a rotation that parks behind an in-flight connect is a hang
-     * rather than a rotation. Written only where [active] is.
-     */
-    private val liveRemoteProfile = AtomicReference<RemoteGatewayProfile?>(null)
-
-    /**
      * Whether the loopback route is live *or* being opened, readable without
      * [mutex].
      *
@@ -763,7 +731,6 @@ internal class GatewayConnectionManager(
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
 
             active = ActiveConnection.Local(rpc, profile)
-            liveRemoteProfile.set(null)
             localRouteActive.set(true)
             val authorized = leg
             // The loopback client, not the shared one: every hop that carries
@@ -984,7 +951,6 @@ internal class GatewayConnectionManager(
                             currentCoroutineContext().ensureActive()
                             requireRemoteOpenCurrentLocked(intent, profile, checkNotNull(admission), requireForeground, spansUserInteraction)
                             active = ActiveConnection.Remote(rpc, profile)
-                            liveRemoteProfile.set(profile)
                             localRouteActive.set(false)
                             _gatewayHttp.value = OkHttpGatewayHttp(
                                 http = http,
@@ -1118,23 +1084,6 @@ internal class GatewayConnectionManager(
         connector.remember(profile, token)
     }
 
-    override suspend fun refreshCredential(): Boolean {
-        // Only the remote leg carries a rotatable bearer. Read it from the
-        // mirror rather than under [mutex]: `openRemote` can hold that lock for
-        // the whole of an interactive browser sign-in, and a non-interactive
-        // rotation parked behind it would never answer at all. Aiming at a
-        // profile that has just been replaced is harmless — the authenticator
-        // rotates the stored pair under its own lock and hands back what is
-        // already current if someone else rotated first.
-        val profile = liveRemoteProfile.get() ?: return false
-        val connector = remoteConnector ?: return false
-        // A rotation that throws is a rotation that did not happen; the caller
-        // falls through to sign-in rather than treating it as an outage.
-        return runCatching { connector.refreshAccessToken(profile) }.getOrDefault(false)
-    }
-
-    override suspend fun signInAvailable(): Boolean = liveRemoteProfile.get() != null
-
     private suspend fun finishConnect(
         transport: SshTransport,
         config: RemoteHermesConfig,
@@ -1163,7 +1112,6 @@ internal class GatewayConnectionManager(
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
 
             active = ActiveConnection.Ssh(transport, backend, forward, rpc)
-            liveRemoteProfile.set(null)
             localRouteActive.set(false)
             // Capture the loopback session token eagerly — the same pattern
             // the RPC client uses — because the backend clears its buffer once
@@ -1311,7 +1259,6 @@ internal class GatewayConnectionManager(
         rpcMonitor = null
         val closing = active
         active = null
-        liveRemoteProfile.set(null)
         localRouteActive.set(false)
         // Retire the RPC before withdrawing it from the public slot. Endpoint-
         // bound dispatch first verifies that slot and then enters the RPC's
