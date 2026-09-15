@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-15T08:13:24.767200+00:00",
+  "surface": "composer-add-sheet",
+  "state": "recent-images-populated",
+  "fixture_id": "composer-add-sheet-recent-images-synthetic-v1",
+  "theme": "dark",
+  "android_git_sha": "48caddae3e3cc0cafdbe411e8c75e140ef21e568",
+  "apk_sha256": "eac2ac628ec5278044076e075665995d4fd334c6be0f66f5feadf4dfd36b5330",
+  "installed_apk_sha256": "eac2ac628ec5278044076e075665995d4fd334c6be0f66f5feadf4dfd36b5330",
+  "apk_kind": "debug",
+  "interactions": [],
+  "viewport": {
+    "size": "Physical size: 1080x2400",
+    "density": "Physical density: 420"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerAddSheetParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerAddSheetParityActivity",
+    "focused_window": "mCurrentFocus=Window{e12b5fd u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerAddSheetParityActivity}\nmFocusedApp=ActivityRecord{cba3fe6 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerAddSheetParityActivity t9}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "8595a8d6d32391cffcbf00673de468379702ea89a837b58f4909d405ebd9011d"
+  },
+  "accessibility": {
+    "expected_description": "Add Synthetic shot 1 to the message",
+    "nodes": [
+      {
+        "class": "android.widget.TextView",
+        "text": "Add to message",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Recent images",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Add Synthetic shot 1 to the message",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Add Synthetic shot 2 to the message",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Add Synthetic shot 3 to the message",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Add Synthetic shot 4 to the message",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Add Synthetic shot 5 to the message",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Add Synthetic shot 6 to the message",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Choose photos. Open Android's photo picker",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Choose photos",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Open Android's photo picker",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Files. Attach a file from this device",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Files",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Attach a file from this device",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "URL. Add a remote URL reference",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "URL",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Add a remote URL reference",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Prompt snippets. Insert a reusable prompt",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Prompt snippets",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Insert a reusable prompt",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Files upload through the Gateway when you send. Folders aren't available yet.",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      }
+    ]
+  },
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "manufacturer": "Google",
+    "android": "14",
+    "sdk": "34",
+    "font_scale": "null"
+  }
+}

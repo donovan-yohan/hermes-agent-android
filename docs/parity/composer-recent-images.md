@@ -49,9 +49,10 @@ Every `path:line` below is against that SHA.
 - pending: #277
 
 Android half only, owed its Desktop side by #277:
-`docs/parity/visual/composer-add-sheet/recent-images-populated/android/reference.png` and
-`docs/parity/visual/composer-add-sheet/recent-images-permission/android/reference.png`, each
-with its `contract.json`. Both are real emulator pixels from the debug-only
+`docs/parity/visual/composer-add-sheet/recent-images-populated-dark/android/reference.png`,
+`docs/parity/visual/composer-add-sheet/recent-images-added-dark/android/reference.png` and
+`docs/parity/visual/composer-add-sheet/recent-images-permission-dark/android/reference.png`, each
+with its `contract.json`. All three are real emulator pixels from the debug-only
 `ComposerAddSheetParityActivity`, captured through the `visual-parity-capture` lane at the
 branch head with synthetic fixture images; the receipts record the APK, git SHA and retained
 accessibility tree, and the populated receipt's tree carries the rail's own content
