@@ -8,7 +8,7 @@ import com.hermesagent.mobile.plugins.kanban.KanbanPlugin
  *
  * Mirror of Desktop's `import.meta.glob` over `plugins/<id>/plugin.{js,ts,tsx}`
  * (`apps/desktop/src/contrib/plugins.ts:18` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
  */
 object BundledPlugins {
     val ALL: List<HermesPlugin> = listOf(

@@ -24,7 +24,7 @@ data class PluginNotificationInput(
  *
  * Direct Kotlin port of Desktop's `PluginOs`
  * (`apps/desktop/src/contrib/plugin.ts:20-56` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
  * Every member resolves a result instead of throwing when the capability
  * cannot apply, so callers branch on the return value.
  */

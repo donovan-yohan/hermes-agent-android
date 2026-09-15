@@ -23,7 +23,9 @@ python3 .chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py \
 
 Exit codes: `0` parity, `1` drift (it prints exactly what), `2` the upstream
 checkout is missing or unreadable. It compares upstream
-`apps/desktop/src/themes/presets.ts` against
+`apps/desktop/src/themes/presets.ts` (identity, registry, typography) and
+`apps/shared/src/theme-presets.ts` (the palettes, extracted into the shared
+package upstream in September 2026) against
 `app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt` and
 `app/src/test/kotlin/.../DesktopThemeLedger.kt` on name, label, description,
 registry order, default skin, and which presets ship a hand-tuned dark palette.

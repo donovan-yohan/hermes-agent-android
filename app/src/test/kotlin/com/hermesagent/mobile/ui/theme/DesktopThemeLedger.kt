@@ -4,9 +4,12 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`, file
- * `apps/desktop/src/themes/presets.ts`, transcribed 2026-08-31 from the
- * read-only checkout at `~/.hermes/hermes-agent`.
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`. Identity, registry and typography
+ * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
+ * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
+ * extraction), so `hasHandTunedDark` is read from there. Transcribed
+ * 2026-08-31 and re-verified 2026-09-15 from the read-only checkout at
+ * `~/.hermes/hermes-agent`.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
  * upstream checkout, and a test that silently skips when a path is missing is
@@ -21,10 +24,13 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "564aef2946c436500a5e80ee117b66b789b3f99a"
+    const val PINNED_SHA = "437116f9497c80d242ce034ff7f5d81dc277a337"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
-    /** `presets.ts:864-865` — `DEFAULT_SKIN_NAME`. */
+    /** Where the palettes live since upstream's shared-package extraction. */
+    const val PALETTE_SOURCE_PATH = "apps/shared/src/theme-presets.ts"
+
+    /** `presets.ts:407` — `DEFAULT_SKIN_NAME`. */
     const val DEFAULT_SKIN = "nous"
 
     data class Entry(
@@ -37,19 +43,19 @@ object DesktopThemeLedger {
         val sourceLines: String,
     )
 
-    /** `presets.ts:848-860` — `BUILTIN_THEMES`, in declaration order. */
+    /** `presets.ts:390-402` — `BUILTIN_THEMES`, in declaration order. */
     val ENTRIES: List<Entry> = listOf(
-        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "174-277"),
-        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "56-159"),
-        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "280-382"),
-        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "385-485"),
-        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "488-588"),
-        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "601-664"),
-        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "670-704"),
-        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "706-740"),
-        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "743-773"),
-        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "813-846"),
-        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "776-810"),
+        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "121-169"),
+        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "58-106"),
+        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "172-219"),
+        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "222-267"),
+        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "270-315"),
+        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "321-331"),
+        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "337-346"),
+        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "348-357"),
+        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "360-365"),
+        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "380-388"),
+        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "368-377"),
     )
 
     /**

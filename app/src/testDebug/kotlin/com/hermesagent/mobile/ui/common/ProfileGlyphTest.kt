@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
  * Which face a profile wears.
  *
  * `apps/desktop/src/components/ui/profile-glyph.tsx:21-41` @
- * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`: the `home` icon is the default
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`: the `home` icon is the default
  * profile's alone. Every other profile carries its initial — including one that
  * resolves to no identity colour, which tints against `--ui-text-quaternary`
  * rather than borrowing the default's face.

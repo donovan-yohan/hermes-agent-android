@@ -23,7 +23,7 @@ enum class PluginStatus(val wire: String) {
  *
  * Direct Kotlin port of Desktop's `PluginRecord`
  * (`apps/desktop/src/contrib/plugins-store.ts:16-25` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
  */
 data class PluginRecord(
     val id: String,

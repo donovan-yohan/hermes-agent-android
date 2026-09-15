@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * The identity colour is Desktop's, hash and all
  * (`apps/desktop/src/lib/profile-color.ts:6-43` @
- * `564aef2946c436500a5e80ee117b66b789b3f99a`). If these drift, the same profile
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`). If these drift, the same profile
  * reads as two different colours on the two clients.
  */
 class ProfileColorTest {

@@ -9,7 +9,7 @@ interface ReplySpeaker {
 /**
  * Sanitises → caps → `POST api/audio/speak` → plays. This uses Desktop's POST
  * rung of the three-rung voice ladder (`apps/desktop/src/lib/voice-playback.ts:100-170`
- * @ `564aef2946c436500a5e80ee117b66b789b3f99a`).
+ * @ `437116f9497c80d242ce034ff7f5d81dc277a337`).
  */
 class GatewayReplySpeaker(
     private val repository: SpeechSynthesizer,
