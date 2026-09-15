@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.notifications
 
 import com.hermesagent.mobile.data.ssh.redact
+import com.hermesagent.mobile.data.gateway.LiveSessionStatus
 
 /**
  * Every string an OS notification can render, taken from Desktop's own
@@ -105,18 +106,33 @@ object NotificationCopy {
 
     const val SIGN_IN_BODY = "Keeping the connection open until your browser comes back."
 
-    /**
-     * Android-only turn-protection foreground service notification strings.
-     * Kept alive while a turn is running or waiting for input.
-     */
-    const val TURN_PROTECTION_CHANNEL_NAME = "Active turn"
+    /** Android-only: the passive group. Desktop has no shade, no group and no FGS. */
+    const val ACTIVITY_TITLE = "Hermes activity"
+    const val ACTIVITY_CHANNEL_NAME = "Gateway activity"
+    const val ACTIVITY_CHANNEL_DESCRIPTION =
+        "Shown while Hermes is connected to a Gateway with live chats."
+    const val ACTIVITY_PUBLIC_TITLE = "Hermes activity"
+    const val ACTIVITY_CHILD_TITLE = "Active chat"
+    const val ACTIVITY_WORKING = "Working…"
+    const val ACTIVITY_STARTING = "Starting…"
+    const val ACTIVITY_WAITING = "Waiting for your answer"
 
-    const val TURN_PROTECTION_CHANNEL_DESCRIPTION =
-        "Shown while Hermes is working on a turn or waiting for input."
+    fun activityStatus(status: LiveSessionStatus): String = when (status) {
+        LiveSessionStatus.Starting -> ACTIVITY_STARTING
+        LiveSessionStatus.Working -> ACTIVITY_WORKING
+        LiveSessionStatus.Waiting -> ACTIVITY_WAITING
+    }
 
-    const val TURN_PROTECTION_TITLE = "Hermes is working"
+    fun activitySummary(counts: GatewayActivityCounts): String = when {
+        counts.chats == 0 -> "Keeping the connection open."
+        counts.waiting == 0 -> countPhrase(counts.chats, "chat running", "chats running")
+        counts.waiting == counts.chats -> countPhrase(counts.waiting, "chat waiting for you", "chats waiting for you")
+        else -> "${countPhrase(counts.chats, "chat running", "chats running")} · " +
+            "${counts.waiting} waiting for you"
+    }
 
-    const val TURN_PROTECTION_BODY = "Keeping the connection open until your turn finishes."
+    private fun countPhrase(count: Int, singular: String, plural: String): String =
+        "$count ${if (count == 1) singular else plural}"
 
     /**
      * Android-only, shown before the system permission dialog. Desktop asks
@@ -168,6 +184,7 @@ internal fun String.notificationSafeTitle(limit: Int = MAX_NOTIFICATION_TITLE): 
     redact(this).replace(NOTIFICATION_WHITESPACE, " ").trim().take(limit)
 
 internal const val MAX_NOTIFICATION_TITLE = 120
+internal const val MAX_NOTIFICATION_PROJECT = 60
 
 /**
  * The preview line's own bound.

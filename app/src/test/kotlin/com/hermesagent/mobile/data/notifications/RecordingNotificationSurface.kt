@@ -8,9 +8,17 @@ internal class RecordingNotificationSurface : NotificationSurface {
     val degraded = mutableListOf<String>()
     val tests = mutableListOf<Pair<String, String>>()
     val degradedKinds = mutableListOf<Pair<NotificationKind, String>>()
+    val activity = mutableListOf<List<NotificationActivityChild>>()
+
+    val latestActivity: List<NotificationActivityChild>
+        get() = activity.lastOrNull().orEmpty()
 
     override fun post(post: NotificationPost) {
         posts += post
+    }
+
+    override fun postActivity(children: List<NotificationActivityChild>) {
+        activity += children
     }
 
     override fun clear(kind: NotificationKind, durableSessionId: String) {
