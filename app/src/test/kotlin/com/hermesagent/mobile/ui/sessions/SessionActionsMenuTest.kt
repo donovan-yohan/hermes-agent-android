@@ -250,52 +250,45 @@ class SessionActionsMenuTest {
     }
 
     /**
-     * Archive shares the danger group with Delete and is deliberately not
-     * destructive-red (`session-actions-menu.tsx:431-440,441-459`). `Unarchive`
-     * is Desktop's own word for the restore (`i18n/en.ts:1156`), moved here
-     * because the Archived Chats settings page it lives on is a non-goal.
+     * The row menu's Archive item is unconditional, including for an archived
+     * row (`session-actions-menu.tsx:431-440` @ `437116f9`). Restore belongs to
+     * the Archived view's own affordance, not this menu.
      */
     @Test
-    fun `an archived row offers the restore in the same slot`() {
+    fun `the archive item keeps Desktop's verb regardless of row state`() {
         val archive = sessionActionItems("s-1")[8]
-        val unarchive = sessionActionItems("s-1", archived = true)[8]
 
         assertEquals("Archive", archive.label)
-        assertEquals("Unarchive", unarchive.label)
         assertEquals(HermesIcon.Archive, archive.icon)
-        assertEquals(HermesIcon.Archive, unarchive.icon)
-        assertEquals(SessionActionsGroup.Danger, unarchive.group)
+        assertEquals(SessionActionsGroup.Danger, archive.group)
         assertFalse(archive.destructive)
-        assertFalse(unarchive.destructive)
     }
 
     /** Whatever the row's flags say, the menu keeps its shape and its slots. */
     @Test
-    fun `every flag combination keeps the menu structure`() {
+    fun `every menu flag combination keeps the menu structure`() {
         listOf(false, true).forEach { pinned ->
             listOf(false, true).forEach { unread ->
-                listOf(false, true).forEach { archived ->
-                    val label = "pinned=$pinned unread=$unread archived=$archived"
-                    val items = sessionActionItems("s-1", pinned = pinned, unread = unread, archived = archived)
-                    assertEquals(label, 10, items.size)
-                    assertEquals(label, listOf("Delete"), items.filter { it.destructive }.map { it.label })
-                    assertEquals(
-                        label,
-                        listOf(
-                            SessionActionsGroup.Identity,
-                            SessionActionsGroup.Identity,
-                            SessionActionsGroup.Identity,
-                            SessionActionsGroup.Identity,
-                            SessionActionsGroup.Identity,
-                            SessionActionsGroup.Work,
-                            SessionActionsGroup.Work,
-                            SessionActionsGroup.Work,
-                            SessionActionsGroup.Danger,
-                            SessionActionsGroup.Danger,
-                        ),
-                        items.map { it.group },
-                    )
-                }
+                val label = "pinned=$pinned unread=$unread"
+                val items = sessionActionItems("s-1", pinned = pinned, unread = unread)
+                assertEquals(label, 10, items.size)
+                assertEquals(label, listOf("Delete"), items.filter { it.destructive }.map { it.label })
+                assertEquals(
+                    label,
+                    listOf(
+                        SessionActionsGroup.Identity,
+                        SessionActionsGroup.Identity,
+                        SessionActionsGroup.Identity,
+                        SessionActionsGroup.Identity,
+                        SessionActionsGroup.Identity,
+                        SessionActionsGroup.Work,
+                        SessionActionsGroup.Work,
+                        SessionActionsGroup.Work,
+                        SessionActionsGroup.Danger,
+                        SessionActionsGroup.Danger,
+                    ),
+                    items.map { it.group },
+                )
             }
         }
     }

@@ -8,14 +8,15 @@ open session (`ui/chat/ChatScreen.kt`), ported per
 The menu shipped as a **container** first, deliberately: the group order below
 was fixed and tested before any verb landed, so no later slice could reorder it
 on its way in. Copy ID landed with the shell (S13), Rename and Delete with #65,
-and **Pin / Unpin, Mark as read / unread and Archive / Unarchive with #66**.
-Branch, Export and Move to project are still empty slots.
+and **Pin / Unpin, Mark as read / unread and Archive with #66**. The Archived
+view's separate `Unarchive` row action is covered by #138. Branch, Export and
+Move to project are still empty slots.
 
 ## Pin
 
 | Source | Pin | Read via |
 |---|---|---|
-| Desktop renderer and i18n | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; the working tree has drifted, so every citation below was taken with `git show <sha>:<path>` |
+| Desktop renderer and i18n | `hermes-agent` @ `437116f9497c80d242ce034ff7f5d81dc277a337` | read-only checkout; every citation below was verified against the pinned SHA |
 
 Every `path:line` below is against that SHA.
 
@@ -23,16 +24,16 @@ Every `path:line` below is against that SHA.
 
 | Question | Path |
 |---|---|
-| Group order and the separator rule | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:234,291,344,371,433,465-522` |
-| The menu kit both surfaces share | `apps/desktop/src/components/ui/actions-menu.tsx:37-98,119-146` |
-| Codicon vocabulary | `session-actions-menu.tsx:292,304,317,345,357,435,444`; trigger glyph at `session-row.tsx:326` |
-| Trigger placement and spoken name | `session-row.tsx:316-327`; `apps/desktop/src/i18n/en.ts:2319` |
-| Item labels | `apps/desktop/src/i18n/en.ts:2303-2336` |
-| Copy-ID behaviour inside a menu | `apps/desktop/src/components/ui/copy-button.tsx:92-140,166-181` |
-| The words the item swaps to | `copy-button.tsx:142,147-151,161-164`; `apps/desktop/src/i18n/en.ts:21,29,2318` |
-| How long the swap lasts | `copy-button.tsx:15` (`COPIED_RESET_MS`), `:115-123,128-136` |
-| What the Copy ID row is handed | `session-actions-menu.tsx:479-488` |
-| Modifier chords with no touch equivalent | `apps/desktop/src/app/chat/sidebar/session-row-gesture.ts:27-50` |
+| Group order and the separator rule | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:234,291,344,371,433,465-522 @ 437116f9` |
+| The menu kit both surfaces share | `apps/desktop/src/components/ui/actions-menu.tsx:37-98,119-146 @ 437116f9` |
+| Codicon vocabulary | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:292,304,317,345,357,435,444 @ 437116f9`; trigger glyph at `apps/desktop/src/app/chat/sidebar/session-row.tsx:326 @ 437116f9` |
+| Trigger placement and spoken name | `apps/desktop/src/app/chat/sidebar/session-row.tsx:316-327 @ 437116f9`; `apps/desktop/src/i18n/en.ts:2319 @ 437116f9` |
+| Item labels | `apps/desktop/src/i18n/en.ts:2303-2336 @ 437116f9` |
+| Copy-ID behaviour inside a menu | `apps/desktop/src/components/ui/copy-button.tsx:92-140,166-181 @ 437116f9` |
+| The words the item swaps to | `apps/desktop/src/components/ui/copy-button.tsx:142,147-151,161-164 @ 437116f9`; `apps/desktop/src/i18n/en.ts:21,29,2318 @ 437116f9` |
+| How long the swap lasts | `apps/desktop/src/components/ui/copy-button.tsx:15,115-123,128-136 @ 437116f9` |
+| What the Copy ID row is handed | `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:479-488 @ 437116f9` |
+| Modifier chords with no touch equivalent | `apps/desktop/src/app/chat/sidebar/session-row-gesture.ts:27-50 @ 437116f9` |
 
 ## Group order
 
@@ -46,7 +47,7 @@ literally, so reordering two constants fails the build.
 | 2 | `Identity` | `identityItems` (`:291`) + the Copy ID row (`:479-488`) | Rename, Pin, Mark as read/unread, Copy ID | **Copy ID** (S13), **Rename** (S14, #65) — proved by `GatewaySessionRepositoryTest.renameSession with live runtime id calls session_title RPC and updates cache`, `.renameSession without live runtime id calls REST PATCH and updates cache`, `.renameSession falls back to REST PATCH when the session_title RPC fails` and `SessionActionsMenuJourneyTest.renaming a session seeds the dialog with current title and saves on confirm`. **Pin / Unpin and Mark as read / unread** (#66) — proved by `SessionActionsMenuTest.the ported menu sits in Desktop's slots`, `.a pinned row offers the way back out of the section`, `.the read-state row is one slot naming the action it performs`, `GatewaySessionRepositoryTest.setSessionPinned writes the pin with the row's own profile and paints it first` and `.marking read clears the watermark and the finished-turn dot together`. |
 | 3 | `Work` | `workItems` (`:344`) + Move to project (`:491-499`) | Branch, Export, Move to project | Not yet |
 | 4 | `Tab` | `tabItems` (`:371`) | Reload, Close, Close others / to the right / all | **Never** — no tab strip on a phone |
-| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. **Archive / Unarchive** (#66), above Delete and not destructive-red — but see the drift row for `Unarchive`: Desktop's own menu never swaps that label ([#138](https://github.com/donovan-yohan/hermes-agent-android/issues/138)) — proved by `SessionActionsMenuTest.an archived row offers the restore in the same slot`, `.every flag combination keeps the menu structure` and `GatewaySessionRepositoryTest.setSessionArchived files the row in place and off the live list`. |
+| 5 | `Danger` | `dangerItems` (`:433`) | Archive, then Delete (last, destructive-red) | **Delete** (S15, #65) — proved by `GatewaySessionRepositoryTest.deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`, `.deleteSession refuses deletion of running session with 4023 safe error` and `SessionActionsMenuJourneyTest.deleting a session opens confirmation dialog with redacted title and deletes on confirm`. **Archive** (#66), above Delete and not destructive-red — the Archived view's separate `Unarchive` row action is covered by #138. Desktop's own menu never swaps the archive label, as asserted by `SessionActionsMenuTest.the archive item keeps Desktop's verb regardless of row state` and `SessionListSectionsJourneyTest.an archived row keeps Archive in its menu and offers restore beside the row`. |
 
 ### Does Desktop render a separator for an empty group?
 
@@ -102,10 +103,12 @@ nothing at all in a screenshot, so the inspection is a gate rather than a note.
 | `repo-forked` | `:345` | `RepoForked` | `U+EA63` | yes | later |
 | `cloud-download` | `:357` | `CloudDownload` | `U+EAC2` | yes | later |
 | `folder` | `:493` | `Folder` | `U+EA83` | yes | later |
-| `archive` | `:435` | `Archive` | `U+EA98` | yes | #66 (Archive / Unarchive) |
+| `archive` | `:435` | `Archive` | `U+EA98` | yes | #66 (Archive); #138 (Archived-view `Unarchive` affordance) |
 | `trash` | `:444` | `Trash` | `U+EA81` | yes | S15 (Delete) |
 
 Two notes the source settles rather than guesswork:
+
+- The Archived view's restore action uses the same Desktop word (`Unarchive` at `apps/desktop/src/i18n/en.ts:1493 @ 437116f9`) while remaining outside this per-session menu.
 
 - Codicon has **no `mail-unread` glyph**, which is why Desktop uses closed `mail`
   for unread and open `mail-read` for read (`:317-321`).
@@ -204,15 +207,15 @@ Everything else in the table above is absent, and its group slot is present.
 
 | Item | Group | Glyph | Label | Source |
 |---|---|---|---|---|
-| Pin | Identity | `Pin` | `Pin` | `en.ts:2303`; `session-actions-menu.tsx:297-305` |
-| …when the row is pinned | Identity | `Pin` | `Unpin` | `en.ts:2304`; `:300` |
-| Mark as unread | Identity | `Mail` | `Mark as unread` | `en.ts:2305`; `:310-333` |
-| …when the row is unread | Identity | `MailRead` | `Mark as read` | `en.ts:2306`; `:314-315` |
-| Archive | Danger | `Archive` | `Archive` | `en.ts:2312`; `:431-440` |
-| …when the row is archived | Danger | `Archive` | `Unarchive` | `en.ts:1156` — Desktop's **settings page**, not this menu. Desktop's row menu renders `Archive` in both directions (`session-actions-menu.tsx:431-435`), so this swap is drift: [#138](https://github.com/donovan-yohan/hermes-agent-android/issues/138) |
+| Pin | Identity | `Pin` | `Pin` | `apps/desktop/src/i18n/en.ts:2303`; `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:297-305 @ 437116f9` |
+| …when the row is pinned | Identity | `Pin` | `Unpin` | `apps/desktop/src/i18n/en.ts:2304`; `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:300 @ 437116f9` |
+| Mark as unread | Identity | `Mail` | `Mark as unread` | `apps/desktop/src/i18n/en.ts:2305`; `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:310-333 @ 437116f9` |
+| …when the row is unread | Identity | `MailRead` | `Mark as read` | `apps/desktop/src/i18n/en.ts:2306`; `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:314-315 @ 437116f9` |
+| Archive | Danger | `Archive` | `Archive` | `apps/desktop/src/i18n/en.ts:2761`; `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:431-440 @ 437116f9` |
+| …when the row is archived | Danger | `Archive` | `Archive` | `apps/desktop/src/i18n/en.ts:2761`; `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:431-440 @ 437116f9` — Desktop's row menu keeps the archive verb unconditional; Android's Archived view exposes `Unarchive` as its separate row affordance (`SessionList.kt:1197-1204 @ origin/main`) |
 
 Each is one PATCH on `PATCH /api/sessions/{id}` (`hermes_cli/web_routers/sessions.py:608-620`
-@ `72a3277cd7` — this one citation was re-resolved at the new pin; the flag-setter dispatch table `_RENAME_FLAG_SETTERS` the old inline
+@ `437116f9` — this one citation was re-resolved at the new pin; the flag-setter dispatch table `_RENAME_FLAG_SETTERS` the old inline
 if-chain was refactored into), written optimistically and repainted on refusal. The unread row
 drives off **both** unread sources exactly as Desktop's does (`:311,314-315`):
 this client's transient finished-turn dot and the backend's durable watermark,
@@ -297,7 +300,7 @@ carries the argument and the citations.
 | Unavailable verbs stay mounted and **disabled** | omission | The same: `available = false` dims the row, marks it with the `WIP` chip, and takes its click action away | coming soon — the pill ships in this change (#101). This page previously argued for omitting them; the standing rule is Desktop's shape, and `SessionActionsMenuJourneyTest` measures that each marked row keeps the 48 dp floor, announces once and refuses the tap |
 | `Branch` (`:337-349`, `en.ts:2310`), `Export` (`:350-358`, `en.ts:2309`), `Move to project` (`:488-496`, `en.ts:2247`) and `Appearance` (`:467-475`, `en.ts:2242`) | omission | All four render in Desktop's slots, disabled behind the chip | coming soon — the pill ships in this change (#101). None has a call behind it here: branching needs a session-fork RPC, exporting needs a platform file destination, and the two submenu triggers have no per-session colour and no projects roster to open onto. Pin, archive and read-state are no longer among them; they shipped in #66 |
 | Read-state item is `disabled` when neither `onToggleUnread` nor a live dot exists (`session-actions-menu.tsx:311`) | mobile-adaptation | Always enabled | The handler always exists on this surface, so the disabled branch is unreachable rather than dropped — the Gateway, not the client, decides whether a row can carry a watermark |
-| The row menu renders `Archive` on an **already-archived** row; the label never swaps (`session-actions-menu.tsx:431-435`, `label: r.archive` unconditional, against `pinned ? r.unpin : r.pin` at `:300` and the read-state swap at `:315`) | drift | The same slot reads `Unarchive`, using Desktop's settings-page word (`en.ts:1156`) | #138. The rendered pair `docs/parity/visual/session-actions-open-pinned-unread-archived/` shows Desktop's `Archive` beside Android's `Unarchive` in the same state. The reasoning below is real — Android has no Archived Chats settings page, so this menu is the only reversible path — but it was written before either side was rendered, and it does not make the two menus the same menu. #138 decides whether the swap stays with the reason recorded or goes |
+| The row menu renders `Archive` on an **already-archived** row; the label never swaps (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:431-440 @ 437116f9`, `label: r.archive` unconditional, against `pinned ? r.unpin : r.pin` at `:301` and the read-state swap at `:315`) | mobile-adaptation | The same slot reads `Archive`; `Unarchive` is the separate action on an Archived-view row | The menu now matches Desktop's unconditional archive verb. Android keeps restore reachable through the Archived view's own `Unarchive` action, which is the same surface Desktop uses for restore (`apps/desktop/src/app/settings/sessions-settings.tsx:143-155 @ 437116f9`). The stored pre-fix report remains the evidence that caught #138; a fresh capture is not claimed here. |
 | Archived Chats settings page, and auto-archive-after-N-days | omission | Absent | deferred: #73 — session maintenance; #66 declares both non-goals |
 | `Renamed` / `Session deleted` / pin and archive toasts (`en.ts:2328,2336`) | omission | Chat `notice` banner, or nothing on success | deferred: #73 (in-app-notification-stack) |
 | Nested `Appearance` and `Move to project` submenus (`:467-475,488-496`) | mobile-adaptation | Each trigger is one disabled row in its own slot; there is no second level | Touch mechanics: nested pointer submenus are brittle on a phone, and the port workflow's standing rule is to flatten them. Neither has content to hold here — no per-session colour is persisted, and there is no projects roster — so the level that is missing is empty by construction |
@@ -329,6 +332,8 @@ argued it would: Desktop paints three rules between four populated groups,
 Android two between three. Desktop's `Open` group shows one of its three items
 in the capture rather than all three — the renderer is browser-hosted and two of
 them are gated on `window.hermesDesktop`, so nothing about that group is
-evidenced here. What the render found that source reading had not is
-in the drift rows above — the `Unarchive` swap (#138), the rename dialog's extra
-helper line (#139), and the near-black label on both filled buttons (#140).
+evidenced here. The stored capture is pre-#138 and is retained as the evidence
+that found the original mismatch; the updated implementation is covered by
+`SessionActionsMenuTest.the archive item keeps Desktop's verb regardless of row state`
+and `SessionListSectionsJourneyTest.an archived row keeps Archive in its menu and offers restore beside the row`.
+A fresh capture is not claimed here.
