@@ -94,6 +94,23 @@ class ChatTopBarAlignmentTest {
     }
 
     @Test
+    @Config(qualifiers = "w320dp-h891dp")
+    fun `connected streaming and running statuses keep their marker when crowded`() {
+        assertEquals(
+            "Online",
+            compactChatSubtitle("Streaming · Connected", crowded = true),
+        )
+        assertEquals(
+            "Online",
+            compactChatSubtitle("2 running · Connected", crowded = true),
+        )
+        assertEquals(
+            "Streaming · Connected",
+            compactChatSubtitle("Streaming · Connected", crowded = false),
+        )
+    }
+
+    @Test
     fun `the status line follows the title by the one gap the column spaces them with`() {
         launch()
 

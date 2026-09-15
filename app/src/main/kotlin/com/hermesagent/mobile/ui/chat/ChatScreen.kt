@@ -1082,8 +1082,14 @@ private fun ChatUiState.chromeSubtitle(): String = when {
 /** Keep the connection state readable when both compact status controls are present. */
 internal fun compactChatSubtitle(subtitle: String, crowded: Boolean): String {
     if (!crowded) return subtitle
-    if (subtitle == GatewayConnectionStatus.Connected.label) return "Online"
-    return subtitle.removeSuffix(" · ${GatewayConnectionStatus.Connected.label}")
+    return if (
+        subtitle == GatewayConnectionStatus.Connected.label ||
+        subtitle.endsWith(" · ${GatewayConnectionStatus.Connected.label}")
+    ) {
+        "Online"
+    } else {
+        subtitle
+    }
 }
 
 private fun ChatUiState.composerStatus(): String = notice?.text ?: when {
