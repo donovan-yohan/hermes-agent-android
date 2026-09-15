@@ -1034,6 +1034,35 @@ class ChatViewModelTest {
         assertNull(viewModel.uiState.value.notice)
     }
 
+    /**
+     * Following the escape has to end the state that wrote it — #242's
+     * acceptance, at the seam that can show it. The composed test can prove the
+     * tap reaches `ChatActions.onCreateSession`; that the effect ends the
+     * refusal is the ViewModel's, and it would hold with the narrow-width line
+     * reverted, which is exactly its scope. `createSession` rehomes onto the
+     * new session, and `rehome` is where every notice is retired — the sentence
+     * and its door leave with the refusal they belong to, rather than waiting
+     * for the next send or the next switch.
+     */
+    @Test
+    fun `the escape creates the session that ends the refusal`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "refused", SESSION_NOT_OWNED_REASON)
+        viewModel.setDraft("send into a held session")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertEquals(ChatNoticeAction.StartNewSession, viewModel.uiState.value.notice?.action)
+
+        viewModel.createSession()
+        runCurrent()
+
+        assertEquals(1, repository.created)
+        assertEquals("created-1", viewModel.uiState.value.activeSession?.id)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
     /** The refusal belonged to one session; the composer is now homed on another. */
     @Test
     fun `switching sessions takes the escape with it`() = runTest(dispatcher) {
