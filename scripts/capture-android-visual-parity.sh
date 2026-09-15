@@ -40,6 +40,21 @@ if [[ -n "$expected_accessibility" ]]; then
   accessibility_args=(--expected-accessibility "$expected_accessibility")
 fi
 
+# A Compose semantics tree reaches the platform when an accessibility client
+# attaches, and a lazy rail's rows arrive one composition later than the rows in
+# a plain column. Wait, bounded, for this state's catalogued description so a
+# receipt never retains a half-published tree; the reference capture re-checks
+# the same description itself and still fails if it never appears.
+if [[ -n "$expected_accessibility" ]]; then
+  for _ in $(seq 1 20); do
+    if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 &&
+      adb shell cat /sdcard/window.xml 2>/dev/null | grep -qF "$expected_accessibility"; then
+      break
+    fi
+    sleep 0.5
+  done
+fi
+
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
   --name "${CAPTURE_SURFACE}--${CAPTURE_STATE}" \
   --state "$CAPTURE_STATE" \
