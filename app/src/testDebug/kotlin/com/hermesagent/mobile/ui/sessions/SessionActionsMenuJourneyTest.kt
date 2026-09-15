@@ -364,7 +364,7 @@ class SessionActionsMenuJourneyTest {
 
         compose.onNodeWithTag(RENAME_SESSION_DIALOG_TAG).assertIsDisplayed()
         compose.onNodeWithText("Rename session").assertIsDisplayed()
-        compose.onNodeWithText("Leave empty to clear.").assertIsDisplayed()
+        compose.onNodeWithText("Leave empty to clear.").assertDoesNotExist()
 
         compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextClearance()
         compose.onNodeWithTag(RENAME_SESSION_INPUT_TAG).performTextInput("Renamed session")
