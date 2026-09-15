@@ -5,13 +5,20 @@ slices S-N1, S-N3 and S-N4 of
 [#99](https://github.com/donovan-yohan/hermes-agent-android/issues/99), ported
 per [`docs/workflows/port-desktop-surface.md`](../workflows/port-desktop-surface.md).
 
+The passive half of the same surface — one silent ongoing activity group for the
+active connection, with one child per live chat, beside the actionable alerts —
+is [#274](https://github.com/donovan-yohan/hermes-agent-android/issues/274). Its
+sources, rules and honesty limits are in
+[the activity group](#the-passive-activity-group-274) below.
+
 ## Pin
 
 | Source | Pin | Read via |
 |---|---|---|
 | Desktop renderer, Gateway | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; every citation below was taken with `git show <sha>:<path>` |
+| The Gateway's live-session registry, and Desktop's own live-status poll | `hermes-agent` @ `437116f9497c80d242ce034ff7f5d81dc277a337` | read-only checkout; the citations marked *(registry)* below were taken at that SHA |
 
-Every `path:line` below is against that SHA.
+Every `path:line` below is against the SHA its row names.
 
 ## Paths that settled the port
 
@@ -36,6 +43,13 @@ Every `path:line` below is against that SHA.
 | The choices the Gateway actually offers | `gateway/platforms/api_server.py:74-77` |
 | `approval.respond` answering `{resolved: N}` | `tui_gateway/methods_prompt.py:1513-1534` |
 | The `approval.received` ack that precedes it | `tui_gateway/methods_prompt.py:1494-1510` |
+| The Gateway's live-session registry the group projects *(registry)* | `tui_gateway/methods_session.py:926-937` — "Live TUI sessions in this process (not a DB browser)" |
+| The three live states a registry row can carry *(registry)* | `tui_gateway/server.py:2653-2660` — `waiting`, `starting`, `working`, and `idle` for everything else |
+| The row shape: runtime id, durable `session_key`, title, preview, status *(registry)* | `tui_gateway/server.py:2670-2691` |
+| The typed contract, and the method's own registry entry *(registry)* | `tui_gateway/contracts/sessions.py:226-249` |
+| When the Gateway says the session rows moved *(registry)* | `tui_gateway/change_watcher.py:180` (0.5 s probe) and `:189` (2 s broadcast floor) |
+| Desktop's own poll of the same snapshot, and its two cadences *(registry)* | `apps/desktop/src/app/contrib/hooks/use-background-sync.ts:702`, `:303`, `:307`, `:723` |
+| Desktop treating the snapshot as authoritative about absence *(registry)* | `apps/desktop/src/app/contrib/hooks/use-background-sync.ts:371-380` |
 
 ## What was built
 
@@ -51,6 +65,9 @@ Every `path:line` below is against that SHA.
 | Status-bar mark | `scripts/build-notification-icon.py`, `res/drawable-*/ic_stat_hermes.png` | none — Electron files the app's own colour icon |
 | Where the user is | `data/notifications/NotificationPresence.kt` | `document.hidden`/`hasFocus`, `$activeSessionId` |
 | Runtime permission | `data/notifications/NotificationPermissionGate.kt`, `ui/common/NotificationPermissionPrompt.kt` | none — Electron needs no grant |
+| The passive activity group: one child per live chat | `data/notifications/GatewayActivity.kt`, `data/notifications/SessionNotifier.kt` (`applyActivity`), `data/notifications/AndroidNotificationSurface.kt` (`postActivity`) | the sidebar's live rows, and nothing in the OS — Electron files per-event notifications only |
+| The live set itself | `data/gateway/LiveSessions.kt`, `GatewaySessionRepository.liveSessions()` over `session.active_list` | `session.active_list` through `use-background-sync.ts:702` |
+| The group's summary and the socket that keeps it true | `data/gateway/TurnForegroundService.kt`, `data/gateway/TurnProtectionController.kt` | none — Electron is a window, not a foreground service |
 
 The notifier follows the session repository, not a transport, so Remote,
 Managed SSH and Local behave identically: all three deliver the same events
@@ -76,6 +93,79 @@ The four guards run in Desktop's order — preferences, quiet window,
 foreground/active-session, throttle — because the order is observable: a
 throttle entry recorded before the gating check would suppress the *next*,
 legitimate notification.
+
+## The passive activity group (#274)
+
+One ongoing, silent group per active connection. Its summary is the
+foreground-service notification (`TurnForegroundService`), and its children are
+posted and reconciled by `AndroidNotificationSurface.postActivity` — one child
+per live chat, each opening that conversation when tapped. The actionable kinds
+above are untouched by it: they keep their own channels, their own per-session
+group and their own gating, and nothing about the group can suppress or absorb
+them.
+
+**Where the live set comes from.** `session.active_list` — the Gateway's own
+in-memory registry, not a database browser *(registry)*:
+`tui_gateway/methods_session.py:926-937`. A row is live work when its status is
+`working`, `starting` or `waiting` (`tui_gateway/server.py:2653-2660`); `idle`
+rows are dropped, and a row without a durable `session_key` is dropped rather
+than guessed at. The projection unions three authoritative sources and nothing
+else:
+
+1. the registry rows, which include a chat Desktop, the TUI or another client
+   started on the same Gateway process;
+2. this app's own parked prompts — a question waiting for an answer is live work
+   even when the registry has moved on;
+3. this app's own turns on the wire, which is why a turn submitted a moment ago
+   is not briefly invisible before the registry catches up.
+
+One child per durable id, `waiting` over `working` for the same id, ordered by
+last activity then id.
+
+**Absence is authoritative.** When the registry stops listing a session, its
+child goes. The app never infers liveness from a cached row alone — a cache row
+carries whichever status the Gateway last said, and the registry is the contract
+that says what is live *now*. Desktop reaps on the same reading
+(`use-background-sync.ts:371-380`) *(registry)*.
+
+**What the group cannot show, and says so.** `session.active_list` enumerates
+the live sessions of the *one* gateway process this app is connected to. Two
+kinds of work therefore never appear as passive children, and neither is
+inferred:
+
+- a run owned by another process — a cron job, an inbound messaging-gateway
+  turn — is not in that registry at all;
+- work on a *different* Gateway (another profile leg served by another process,
+  or another saved connection) is out of scope while the app has one active
+  connection.
+
+This is #274's own non-goal, not an omission that could be fixed by polling
+harder, and the honest consequence is stated in `status/ROADMAP.md` rather than
+papered over.
+
+**How it stays true.** The snapshot is refetched on every connection edge, on
+every `sessions.changed` broadcast (probed at 0.5 s and floored to one every 2 s
+server-side: `change_watcher.py:180`, `:189`) *(registry)*, and on a 30 s
+backstop for the degraded-socket edge a broadcast cannot cover. One refresh is
+in flight at a time, and a burst of hints re-runs once on the trailing edge.
+Desktop polls the same snapshot at 1.5 s only while its window is visible
+(`use-background-sync.ts:303`, `:723`) *(registry)* — a cadence that exists for a
+window someone is looking at, and which a phone with a foreground service does
+not need.
+
+**Privacy.** A child carries the redacted session title, the project label only
+when the authoritative catalog knows one, and the same display-safe preview text
+the sidebar uses (through `redact()`, bounded to 400 characters, and gated by the
+existing preview preference). Never a command, tool output, approval text, sudo
+or secret name, hostname or path. Every child is `VISIBILITY_PRIVATE` with a
+public version that says only `Hermes activity`, so a locked screen learns that
+chats are live and nothing about which.
+
+**Cancellation.** A connection edge — a dropped socket, an endpoint switch, a
+sign-out — publishes "the Gateway did not answer", which withdraws every child
+and stops the summary with the service. Opening a conversation does **not**
+withdraw its child: the chat is still live, and the group is a view of the
+connection rather than an inbox.
 
 ## Divergences
 
@@ -105,6 +195,12 @@ given a class they do not deserve.
 | — | mobile-adaptation | `stillWaiting`: one reminder, five minutes after an announced prompt is still unanswered | A notification can be swiped into a shade and forgotten while an agent stays blocked behind it; a renderer on a screen someone is sitting at cannot be. Android has one reminder identity per session, so simultaneous prompts deterministically bind it to one live request; resolving that request clears or repoints the reminder to another due prompt. It uses the `Approvals` channel because a calmer channel would make the reminder quieter than the prompt it recalls. |
 | `backgroundDone`, `credits` and `plugin` kinds | omission | In the preference store, never dispatched | non-goal: none has a mobile source at all — no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so S-N2's settings screen is a pure UI slice and the disabled rows have something to bind to |
 | Completion-sound picker (`notifications-settings.tsx:65-108`) | omission | Absent | out-of-scope: #99 named it a non-goal of that issue, being Electron-only |
+| Live state lives per runtime in the renderer; the OS only ever gets per-event notifications | mobile-adaptation | One ongoing silent group for the connection: a summary that *is* the foreground-service notification, plus a silent child per live chat | A phone has no window to keep live state in, and the shade is the only surface that exists while the app is away; Android also requires the service holding the socket open to be foreground and to carry a notification, so the group's summary is that notification rather than a second one beside it |
+| The same snapshot polled at 1.5 s while the window is visible, 30 s as a backstop (`use-background-sync.ts:303`, `:307`, `:723`) | mobile-adaptation | Same RPC, pulled on every connection edge, on every `sessions.changed` broadcast and on a 30 s backstop — never on a visible-window cadence | Battery is the phone's constraint and a visible window is the desktop's: the broadcast already fires on every `state.db` write, and the foreground service is what keeps the socket able to receive it |
+| The snapshot is authoritative about absence, and a runtime that vanishes is reaped (`:371-380`) | mobile-adaptation | The same reading, with one carve-out: a turn this client has on the wire keeps its child until the turn ends | The app never sees the `running: false` edge for a session it is not streaming, so absence is the only honest signal for everything else; the carve-out covers the gap between a submit and the registry entry, which Desktop covers with its own `awaitingResponse` rule |
+| Electron files one notification per event and has no group summary | mobile-adaptation | A third channel, `hermes.activity` (`IMPORTANCE_LOW`), carries the summary and every child; the retired `Active turn` channel is never posted to again | Android importance belongs to a channel and can never be lowered once the OS has created it, so a silent group needs a channel of its own to stay silent and separately silenceable. An upgraded install keeps the retired channel as an empty OS row — deleting it while a notification may still be posted on it is the one thing that is not safe |
+| The sidebar paints the project and the last line beside a row, with a window's width | mobile-adaptation | A child spends its two lines on the project label, then the preview or a truthful status line | A shade has two lines and no scroll, so the facts are ordered by how much they say; a title alone would make every live chat look alike |
+| One preference per kind, and no notion of an ongoing group | mobile-adaptation | The group answers to the existing master switch and preview preference; it has no row of its own | A group is not an event kind. A per-kind row would promise a control over "every live chat" that Android does not offer, and the master switch is the honest switch for "may this app use the shade at all" |
 
 ### Verbatim from Desktop, and deliberately so
 
@@ -183,6 +279,13 @@ state: nothing renders from it and nothing persists it. It also makes S-N5's
 | The three vault prompts raise `input` rather than an eighth kind, and carry no vault text into the shade | `app/src/test/kotlin/.../notifications/VaultPromptNotificationTest.kt` (3 tests) |
 | When the permission is asked for | `app/src/test/kotlin/.../notifications/NotificationPermissionGateTest.kt` |
 | Channels, extras, public version, action intents, API-specific persistent-grant handling, group summary channel and alert behaviour, denied path | `app/src/testDebug/kotlin/.../notifications/AndroidNotificationSurfaceTest.kt` (Robolectric) |
+| The live-session parse: the three live states, `idle` and unknown statuses dropped, a row without a durable key dropped, both timestamp units, a malformed list refused | `app/src/test/kotlin/.../gateway/LiveSessionsTest.kt` |
+| The projection: the registry ∪ parked prompts ∪ this client's own turns, one child per id, waiting over working, deterministic order, project labels only from the catalog | `app/src/test/kotlin/.../notifications/GatewayActivityTest.kt` |
+| The follower: a fetch per connection edge, no fetch while disconnected, hint coalescing, the backstop interval, and a disconnect clearing the snapshot | `app/src/test/kotlin/.../notifications/GatewayActivityTest.kt` (virtual time) |
+| The group's notification rules: children posted and reconciled, the preview toggle, the master switch, an unchanged projection not reposting, and the alert kinds untouched by any of it | `app/src/test/kotlin/.../notifications/GatewayActivityNotificationTest.kt` |
+| The children's records: one tag per chat on the activity channel, silent and low, private with a chat-free public version, no actions, a child that left withdrawn, `clearSession` not touching them | `app/src/testDebug/kotlin/.../notifications/AndroidNotificationSurfaceTest.kt` (Robolectric) |
+| The summary: the activity channel, the group-summary and ongoing flags, the counts it renders, and a live update | `app/src/testDebug/kotlin/.../gateway/TurnForegroundServiceTest.kt` (Robolectric) |
+| Protection held for a chat the Gateway reports and this client never submitted | `app/src/test/kotlin/.../gateway/TurnProtectionControllerTest.kt` |
 
 Not proved off-device, and deliberately not claimed: that a real approval can
 be answered from a real shade. That is #99's acceptance gate and it needs the
@@ -193,6 +296,13 @@ server-mac emulator lane driving real events through the Termux Local route.
 - pending: #99 — the settings screen, and the shade at each kind: an approval
   with three choices, a question with its own choices, a question with a reply
   box, a preview on and off, and the status-bar mark at real density
+- pending: #274 — the activity group's own shade: the collapsed bundle, the
+  group expanded with one child per live chat, a child whose chat is parked on a
+  question, and the actionable alerts beside it. Owed because this change was
+  built and verified without an attached device or emulator; the renderer that
+  can produce it is `scripts/capture-android-visual-parity.sh` on
+  `.github/workflows/visual-parity-capture.yml`, which needs a
+  `notification-shade` surface and a debug-only way to post the fixtures
 
 The shade is not a Desktop surface, so half of this comparison is a phone
 screenshot beside Desktop's settings panel and nothing else. The owner has

@@ -55,6 +55,11 @@ class AndroidNotificationSurfaceTest {
         assertEquals(NotificationCopy.RESPONSES_CHANNEL_NAME, responses.name)
         assertEquals(NotificationCopy.RESPONSES_CHANNEL_DESCRIPTION, responses.description)
         assertEquals(NotificationManager.IMPORTANCE_DEFAULT, responses.importance)
+
+        val activity = manager.getNotificationChannel(AndroidNotificationSurface.ACTIVITY_CHANNEL_ID)
+        assertEquals(NotificationCopy.ACTIVITY_CHANNEL_NAME, activity.name)
+        assertEquals(NotificationCopy.ACTIVITY_CHANNEL_DESCRIPTION, activity.description)
+        assertEquals(NotificationManager.IMPORTANCE_LOW, activity.importance)
     }
 
     @Test
@@ -383,6 +388,67 @@ class AndroidNotificationSurfaceTest {
     }
 
     @Test
+    fun `activity children are silent private children with no actions`() {
+        AndroidNotificationSurface(context).postActivity(
+            listOf(
+                NotificationActivityChild(
+                    durableSessionId = SESSION,
+                    title = "Refactor the parser",
+                    statusLine = NotificationCopy.ACTIVITY_WORKING,
+                    projectLabel = "Mobile",
+                    preview = "Updating tests.",
+                ),
+            ),
+        )
+
+        val notification = shadowOf(manager).getNotification(activityTag(SESSION), NOTIFICATION_ID)
+        assertEquals(AndroidNotificationSurface.ACTIVITY_CHANNEL_ID, notification.channelId)
+        assertEquals(ACTIVITY_GROUP_KEY, notification.group)
+        assertEquals(Notification.GROUP_ALERT_CHILDREN, notification.groupAlertBehavior)
+        assertEquals(Notification.PRIORITY_LOW, notification.priority)
+        assertEquals(Notification.VISIBILITY_PRIVATE, notification.visibility)
+        assertEquals(0, notification.flags and Notification.FLAG_GROUP_SUMMARY)
+        assertEquals(0, notification.defaults and Notification.DEFAULT_SOUND)
+        assertEquals(0, notification.defaults and Notification.DEFAULT_VIBRATE)
+        assertNull(notification.sound)
+        assertNull(notification.vibrate)
+        assertTrue(notification.actions.isNullOrEmpty())
+        assertEquals("Mobile", notification.extras.getString(Notification.EXTRA_SUB_TEXT))
+        assertEquals("Updating tests.", notification.text())
+        assertEquals(NotificationCopy.ACTIVITY_PUBLIC_TITLE, notification.publicVersion.title())
+        assertNull(notification.publicVersion.text())
+        assertNull(notification.publicVersion.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+        assertNull(notification.publicVersion.extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+        val intent = shadowOf(notification.contentIntent).savedIntent
+        assertEquals(ACTION_OPEN_SESSION, intent.action)
+        assertEquals(SESSION, intent.getStringExtra(EXTRA_DURABLE_SESSION_ID))
+    }
+
+    @Test
+    fun `activity reconciliation withdraws only vanished children and clearSession keeps live activity`() {
+        val surface = AndroidNotificationSurface(context)
+        surface.post(approvalPost())
+        surface.postActivity(
+            listOf(
+                activityChild(SESSION),
+                activityChild("durable-2"),
+            ),
+        )
+        surface.postActivity(listOf(activityChild("durable-2")))
+
+        assertNull(shadowOf(manager).getNotification(activityTag(SESSION), NOTIFICATION_ID))
+        assertNotNull(shadowOf(manager).getNotification(activityTag("durable-2"), NOTIFICATION_ID))
+
+        surface.clearSession("durable-2")
+        assertNotNull(shadowOf(manager).getNotification(activityTag("durable-2"), NOTIFICATION_ID))
+
+        surface.postActivity(emptyList())
+        assertNull(shadowOf(manager).getNotification(activityTag("durable-2"), NOTIFICATION_ID))
+        assertNotNull(posted(NotificationKind.Approval, SESSION))
+        assertNotNull(shadowOf(manager).getNotification(summaryTag(SESSION), NOTIFICATION_ID))
+    }
+
+    @Test
     fun `a connection that moved on drops the buttons and says where to answer`() {
         val surface = AndroidNotificationSurface(context)
         surface.post(approvalPost())
@@ -454,6 +520,12 @@ class AndroidNotificationSurfaceTest {
                 questionId = "q1",
                 choices = choices,
             ),
+        )
+
+        fun activityChild(id: String) = NotificationActivityChild(
+            durableSessionId = id,
+            title = "Active chat",
+            statusLine = NotificationCopy.ACTIVITY_WORKING,
         )
     }
 }

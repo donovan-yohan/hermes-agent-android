@@ -162,11 +162,18 @@ The SSH client owns keepalive. A default-network handoff or loss cancels an
 in-progress connect or closes the active SSH/forward/RPC graph and exposes
 Needs attention with a reconnect action.
 
-There is no general foreground service for the Gateway connection. The
-user-started wake-word service is narrowly scoped to microphone listening and a
-persistent notification. Android may still suspend or stop the app, so
-uninterrupted background Gateway operation is not claimed. A process restart
-begins disconnected and reconnects explicitly.
+There is no general-purpose background service for the Gateway connection, and
+the one that exists is bounded. A `dataSync` foreground service
+(`TurnForegroundService`) is held only while the Gateway reports live work for
+this connection — its own live-session registry, which is also where the passive
+activity group's children come from — or while this app has a parked prompt or a
+turn on the wire. It stops after a five-second linger grace once none of that is
+left, and it can never be held past a thirty-minute ceiling. The user-started
+wake-word service is separately scoped to microphone listening and a persistent
+notification. Android may still suspend or stop the app — after an OS timeout, a
+force-stop, a reboot, a sign-out or a permission refusal nothing holds the
+socket — so uninterrupted background Gateway operation is not claimed. A process
+restart begins disconnected and reconnects explicitly.
 
 ## Offline evidence and physical-device gap
 

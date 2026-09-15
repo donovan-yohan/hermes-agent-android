@@ -38,6 +38,7 @@ import com.hermesagent.mobile.data.gateway.TurnProtectionController
 import com.hermesagent.mobile.data.gateway.TurnProtectionServiceHost
 import com.hermesagent.mobile.data.notifications.AndroidNotificationPreferences
 import com.hermesagent.mobile.data.notifications.AndroidNotificationSurface
+import com.hermesagent.mobile.data.notifications.GatewayActivityCounts
 import com.hermesagent.mobile.data.notifications.NotificationPreferenceStore
 import com.hermesagent.mobile.data.notifications.NotificationPresence
 import com.hermesagent.mobile.data.notifications.NotificationSurface
@@ -72,10 +73,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.GatewayChangeHintKind
+import com.hermesagent.mobile.data.notifications.GatewayActivityProjection
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
@@ -280,6 +284,22 @@ class HermesApplication : Application() {
         )
     }
 
+    /** Passive live-work projection for the active Gateway connection. */
+    internal val gatewayActivity: GatewayActivityProjection by lazy {
+        GatewayActivityProjection(
+            report = { sessionRepository.liveSessions() },
+            connected = gatewayConnection.state
+                .map { it.status == GatewayConnectionStatus.Connected }
+                .stateIn(appScope, SharingStarted.Eagerly, false),
+            hints = sessionRepository.globalChangeHints
+                .filter { it.kind == GatewayChangeHintKind.Sessions }
+                .map { },
+            sessions = cache.state,
+            pendingInputs = sessionRepository.pendingInputs,
+            activeTurns = sessionRepository.activeTurns,
+        )
+    }
+
     /**
      * Where the user is. Process-scoped because a notification decision has to
      * be answerable while no Activity exists, and because "the app is away" is
@@ -357,6 +377,7 @@ class HermesApplication : Application() {
                 }
             },
         )
+        gatewayActivity.start(appScope)
         startSessionNotifier()
         startTurnProtection()
         pluginLoader.discover()
@@ -375,9 +396,8 @@ class HermesApplication : Application() {
      * Managed SSH and Local behave identically — they deliver the same events
      * over the same socket.
      *
-     * Connected-only by construction: nothing here holds the connection open,
-     * so when the socket is gone nothing arrives. That is the honest T1 shape
-     * and it is stated in `status/ROADMAP.md` rather than hidden.
+     * Passive activity comes from the Gateway-owned projection; actionable
+     * alerts remain event notifications from this repository.
      */
     private fun startSessionNotifier() {
         SessionNotifier(
@@ -393,6 +413,7 @@ class HermesApplication : Application() {
                 .map { it.status == GatewayConnectionStatus.Connected }
                 .stateIn(appScope, SharingStarted.Eagerly, false),
             activeTurns = sessionRepository.activeTurns,
+            activity = gatewayActivity.activity,
             presence = notificationPresence,
             settingsFlow = notificationPreferences.notificationSettings,
             surface = notificationSurface,
@@ -400,15 +421,19 @@ class HermesApplication : Application() {
         ).start(appScope)
     }
 
+    /** Holds the socket for pending input or the Gateway's live-work projection. */
     private fun startTurnProtection() {
         TurnProtectionController(
-            activeTurns = sessionRepository.activeTurns,
-            sessions = cache.state,
+            activity = gatewayActivity.activity,
             pendingInputs = sessionRepository.pendingInputs,
             connectionState = gatewayConnection.state,
             appForegrounded = notificationPresence.appForegrounded,
             serviceHost = object : TurnProtectionServiceHost {
-                override fun startService(): Boolean = TurnForegroundService.start(this@HermesApplication)
+                override fun startService(counts: GatewayActivityCounts): Boolean =
+                    TurnForegroundService.start(this@HermesApplication, counts)
+                override fun updateService(counts: GatewayActivityCounts) {
+                    TurnForegroundService.update(this@HermesApplication, counts)
+                }
                 override fun stopService() = TurnForegroundService.stop(this@HermesApplication)
                 override fun onServiceRefused(callback: () -> Unit) {
                     TurnForegroundService.onServiceFailure = callback

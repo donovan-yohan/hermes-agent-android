@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.notifications
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -34,6 +35,8 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
 
     /** Live (session, kind) tags, so a group summary can be withdrawn with its last child. */
     private val live = ConcurrentHashMap<String, MutableSet<NotificationKind>>()
+    /** Activity children are a distinct group; opening a session must not withdraw one. */
+    private val liveActivity = ConcurrentHashMap.newKeySet<String>()
 
     init {
         registerChannels(this.context)
@@ -57,6 +60,42 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         }
 
         show(post.kind, post.durableSessionId, builder)
+    }
+
+    override fun postActivity(children: List<NotificationActivityChild>) {
+        if (!manager.areNotificationsEnabled()) return
+        val next = children.mapTo(mutableSetOf()) { it.durableSessionId }
+        for (durableSessionId in liveActivity - next) {
+            manager.cancel(activityTag(durableSessionId), NOTIFICATION_ID)
+        }
+        liveActivity.retainAll(next)
+        for (child in children) {
+            val builder = NotificationCompat.Builder(context, ACTIVITY_CHANNEL_ID)
+                .setSmallIcon(SMALL_ICON)
+                .setContentTitle(child.title)
+                .setSubText(child.projectLabel)
+                .setContentText(child.preview ?: child.statusLine)
+                .setStyle(child.preview?.let { NotificationCompat.BigTextStyle().bigText(it) })
+                .setGroup(ACTIVITY_GROUP_KEY)
+                .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setAutoCancel(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(activityPublicVersion())
+                .setContentIntent(openSessionIntent(child.durableSessionId))
+            val notification = builder.build()
+            // AndroidX 1.17 makes a silent non-summary notification alert its
+            // summary, overriding the requested CHILDREN behavior. Reapply it
+            // after compat has removed sound and vibration for this child.
+            val childNotification = Notification.Builder.recoverBuilder(context, notification)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .build()
+            manager.notify(activityTag(child.durableSessionId), NOTIFICATION_ID, childNotification)
+        }
+        liveActivity += next
     }
 
     override fun degrade(kind: NotificationKind, durableSessionId: String) {
@@ -209,6 +248,7 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         }
     }
 
+    /** Withdraw alert notifications for a session; live activity remains while its chat is live. */
     override fun clearSession(durableSessionId: String) {
         for (kind in NotificationKind.entries) {
             manager.cancel(childTag(kind, durableSessionId), NOTIFICATION_ID)
@@ -263,6 +303,14 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
 
+    /** Lock screen activity says only that Hermes has activity, never which chat. */
+    private fun activityPublicVersion() =
+        NotificationCompat.Builder(context, ACTIVITY_CHANNEL_ID)
+            .setSmallIcon(SMALL_ICON)
+            .setContentTitle(NotificationCopy.ACTIVITY_PUBLIC_TITLE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+
     private fun openSessionIntent(durableSessionId: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
             .setAction(ACTION_OPEN_SESSION)
@@ -300,7 +348,8 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         )
     }
 
-    private companion object {
+    companion object {
+        const val ACTIVITY_CHANNEL_ID = "hermes.activity"
         /**
          * The Hermes mark, reduced to the silhouette a 24 dp alpha-only glyph
          * can actually carry, by `scripts/build-notification-icon.py`. The
@@ -344,8 +393,12 @@ internal fun childTag(kind: NotificationKind, durableSessionId: String): String 
 
 internal fun summaryTag(durableSessionId: String): String = "hermes:group:$durableSessionId"
 
+const val ACTIVITY_GROUP_KEY = "hermes.activity"
+
+internal fun activityTag(durableSessionId: String): String = "hermes:activity:$durableSessionId"
+
 /**
- * Two channels, created once and never re-described: the OS keeps the first
+ * Three channels, created once and never re-described: the OS keeps the first
  * name and importance it is given, and a user's own change to either must
  * survive an app update.
  */
@@ -364,6 +417,14 @@ fun registerChannels(context: Context) {
             NotificationCopy.RESPONSES_CHANNEL_NAME,
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply { description = NotificationCopy.RESPONSES_CHANNEL_DESCRIPTION },
+    )
+    // Upgraded installs retain the legacy turn-protection channel, but no notification posts to it.
+    manager.createNotificationChannel(
+        NotificationChannel(
+            AndroidNotificationSurface.ACTIVITY_CHANNEL_ID,
+            NotificationCopy.ACTIVITY_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply { description = NotificationCopy.ACTIVITY_CHANNEL_DESCRIPTION },
     )
 }
 

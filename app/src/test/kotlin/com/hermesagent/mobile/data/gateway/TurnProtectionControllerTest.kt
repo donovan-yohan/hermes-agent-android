@@ -1,8 +1,8 @@
 package com.hermesagent.mobile.data.gateway
 
-import com.hermesagent.mobile.data.session.SessionCacheState
-import com.hermesagent.mobile.data.session.SessionStatus
-import com.hermesagent.mobile.data.session.SessionSummary
+import com.hermesagent.mobile.data.notifications.GatewayActivity
+import com.hermesagent.mobile.data.notifications.GatewayActivityChild
+import com.hermesagent.mobile.data.notifications.GatewayActivityCounts
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
@@ -16,8 +16,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class TurnProtectionControllerTest {
 
-    private val activeTurnsFlow = MutableStateFlow<Set<String>>(emptySet())
-    private val sessionsFlow = MutableStateFlow(SessionCacheState())
+    private val activityFlow = MutableStateFlow(GatewayActivity.Empty)
+    private val activeTurnsFlow = ActivityTurnsFlow(activityFlow)
     private val pendingInputsFlow = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
     private val connectionStateFlow = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
     private val appForegroundedFlow = MutableStateFlow(true)
@@ -31,8 +31,7 @@ class TurnProtectionControllerTest {
         scope: kotlinx.coroutines.CoroutineScope,
     ): TurnProtectionController {
         val controller = TurnProtectionController(
-            activeTurns = activeTurnsFlow,
-            sessions = sessionsFlow,
+            activity = activityFlow,
             pendingInputs = pendingInputsFlow,
             connectionState = connectionStateFlow,
             appForegrounded = appForegroundedFlow,
@@ -55,7 +54,6 @@ class TurnProtectionControllerTest {
         assertFalse(protectionActive)
 
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
 
         assertEquals(1, host.startCalls)
@@ -67,7 +65,6 @@ class TurnProtectionControllerTest {
     fun `turn ends stops service after linger grace, new turn within grace cancels stop`() = runTest {
         startController(lingerGraceMillis = 5_000L, scope = backgroundScope)
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
@@ -80,7 +77,6 @@ class TurnProtectionControllerTest {
 
         // Turn ends
         activeTurnsFlow.value = emptySet()
-        sessionsFlow.value = sessionState("s1", SessionStatus.Idle)
         runCurrent()
 
         // 2 seconds in: still lingering, service not stopped
@@ -91,7 +87,6 @@ class TurnProtectionControllerTest {
 
         // New turn begins within linger window
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
 
         // Advance past original 5s window: stop was cancelled
@@ -103,7 +98,6 @@ class TurnProtectionControllerTest {
 
         // Turn ends again
         activeTurnsFlow.value = emptySet()
-        sessionsFlow.value = sessionState("s1", SessionStatus.Idle)
         runCurrent()
 
         // Advance 4.9s: still not stopped
@@ -122,14 +116,12 @@ class TurnProtectionControllerTest {
     fun `linger vs new turn race cancels linger stop without stopping new turn`() = runTest {
         startController(lingerGraceMillis = 5_000L, scope = backgroundScope)
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
 
         // Turn completes -> linger starts
         activeTurnsFlow.value = emptySet()
-        sessionsFlow.value = sessionState("s1", SessionStatus.Idle)
         runCurrent()
 
         // Advance into the linger window
@@ -139,7 +131,6 @@ class TurnProtectionControllerTest {
 
         // New turn begins while linger job is in-flight
         activeTurnsFlow.value = setOf("s2")
-        sessionsFlow.value = sessionState("s2", SessionStatus.Working)
         runCurrent()
 
         // Advance past original 5000ms linger window
@@ -159,7 +150,6 @@ class TurnProtectionControllerTest {
 
         // Turn starts while foregrounded, but service start fails (e.g. refused by OS)
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
 
         assertEquals(1, host.startCalls)
@@ -181,7 +171,6 @@ class TurnProtectionControllerTest {
     fun `asynchronous service start refusal drops protection and retries on foreground`() = runTest {
         startController(scope = backgroundScope)
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
 
         assertEquals(1, host.startCalls)
@@ -213,13 +202,11 @@ class TurnProtectionControllerTest {
 
         // First protection cycle, released normally through the linger grace.
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
 
         activeTurnsFlow.value = emptySet()
-        sessionsFlow.value = sessionState("s1", SessionStatus.Idle)
         runCurrent()
         advanceTimeBy(5_000L)
         runCurrent()
@@ -228,7 +215,6 @@ class TurnProtectionControllerTest {
 
         // Second cycle: protection is taken again.
         activeTurnsFlow.value = setOf("s2")
-        sessionsFlow.value = sessionState("s2", SessionStatus.Working)
         runCurrent()
         assertEquals(2, host.startCalls)
         assertTrue(protectionActive)
@@ -255,7 +241,6 @@ class TurnProtectionControllerTest {
             scope = backgroundScope,
         )
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
 
         assertEquals(1, host.startCalls)
@@ -277,7 +262,6 @@ class TurnProtectionControllerTest {
     fun `pending approval outstanding keeps service alive after turn ends`() = runTest {
         startController(lingerGraceMillis = 5_000L, scope = backgroundScope)
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         val inputKey = PendingInputKey(
             connectionGeneration = 1L,
             runtimeSessionId = "r1",
@@ -300,7 +284,6 @@ class TurnProtectionControllerTest {
 
         // Turn settles to Idle in cache, but pending input is still outstanding
         activeTurnsFlow.value = emptySet()
-        sessionsFlow.value = sessionState("s1", SessionStatus.Idle)
         runCurrent()
 
         // Advance time well past linger grace
@@ -324,7 +307,6 @@ class TurnProtectionControllerTest {
     fun `endpoint switch or connection close triggers immediate stop`() = runTest {
         startController(lingerGraceMillis = 5_000L, scope = backgroundScope)
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
@@ -346,7 +328,6 @@ class TurnProtectionControllerTest {
             scope = backgroundScope,
         )
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
@@ -390,7 +371,6 @@ class TurnProtectionControllerTest {
             scope = backgroundScope,
         )
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
@@ -422,7 +402,6 @@ class TurnProtectionControllerTest {
             scope = backgroundScope,
         )
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
@@ -449,7 +428,6 @@ class TurnProtectionControllerTest {
         runCurrent()
 
         activeTurnsFlow.value = setOf("s1")
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
         runCurrent()
 
         // Cannot start from background
@@ -466,36 +444,77 @@ class TurnProtectionControllerTest {
     }
 
     @Test
-    fun `roster-only turn running on another client does not start service`() = runTest {
+    fun `Gateway reported child from another client holds protection`() = runTest {
         startController(scope = backgroundScope)
         runCurrent()
 
-        // Desktop is running turn s1: cache shows Working from roster, but s1 is not in activeTurnsFlow
-        sessionsFlow.value = sessionState("s1", SessionStatus.Working)
-        runCurrent()
-
-        assertEquals(0, host.startCalls)
-        assertFalse(protectionActive)
-
-        // Only when this app submits a turn (in activeTurnsFlow) does protection start
-        activeTurnsFlow.value = setOf("s1")
+        activityFlow.value = GatewayActivity(
+            listOf(
+                GatewayActivityChild(
+                    durableSessionId = "s1",
+                    title = "",
+                    preview = "",
+                    status = LiveSessionStatus.Working,
+                    projectLabel = null,
+                    lastActiveAtMillis = 0L,
+                ),
+            ),
+        )
         runCurrent()
 
         assertEquals(1, host.startCalls)
         assertTrue(protectionActive)
     }
 
-    private fun sessionState(id: String, status: SessionStatus) = SessionCacheState(
-        sessions = mapOf(
-            id to SessionSummary(
-                id = id,
-                title = "Test Session",
-                preview = "preview",
-                lastActiveAtMillis = 1000L,
-                status = status,
+    @Test
+    fun `service receives activity counts at start and after activity changes`() = runTest {
+        startController(scope = backgroundScope)
+        activityFlow.value = GatewayActivity(
+            listOf(
+                GatewayActivityChild(
+                    durableSessionId = "s1",
+                    title = "",
+                    preview = "",
+                    status = LiveSessionStatus.Working,
+                    projectLabel = null,
+                    lastActiveAtMillis = 0L,
+                ),
             ),
-        ),
-    )
+        )
+        runCurrent()
+
+        assertEquals(listOf(GatewayActivityCounts(chats = 1, waiting = 0)), host.startCounts)
+        assertTrue(host.updateCounts.isEmpty())
+
+        activityFlow.value = GatewayActivity(
+            listOf(
+                GatewayActivityChild("s1", "", "", LiveSessionStatus.Working, null, 0L),
+                GatewayActivityChild("s2", "", "", LiveSessionStatus.Waiting, null, 0L),
+            ),
+        )
+        runCurrent()
+
+        assertEquals(listOf(GatewayActivityCounts(chats = 2, waiting = 1)), host.updateCounts)
+    }
+
+    private class ActivityTurnsFlow(private val activity: MutableStateFlow<GatewayActivity>) {
+        var value: Set<String> = emptySet()
+            set(value) {
+                field = value
+                activity.value = GatewayActivity(
+                    value.sorted().map { durableSessionId ->
+                        GatewayActivityChild(
+                            durableSessionId = durableSessionId,
+                            title = "",
+                            preview = "",
+                            status = LiveSessionStatus.Working,
+                            projectLabel = null,
+                            lastActiveAtMillis = 0L,
+                        )
+                    },
+                )
+            }
+    }
 
     private class RecordingServiceHost : TurnProtectionServiceHost {
         var startCalls = 0
@@ -506,9 +525,17 @@ class TurnProtectionControllerTest {
         var forgetsRefusalCallbackOnStop = false
         private var refusalCallback: (() -> Unit)? = null
 
-        override fun startService(): Boolean {
+        val startCounts = mutableListOf<GatewayActivityCounts>()
+        val updateCounts = mutableListOf<GatewayActivityCounts>()
+
+        override fun startService(counts: GatewayActivityCounts): Boolean {
             startCalls += 1
+            startCounts += counts
             return startResult
+        }
+
+        override fun updateService(counts: GatewayActivityCounts) {
+            updateCounts += counts
         }
 
         override fun stopService() {

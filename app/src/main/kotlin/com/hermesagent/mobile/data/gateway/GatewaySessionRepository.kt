@@ -133,6 +133,9 @@ interface GatewaySessionRepository {
      */
     val globalChangeHints: Flow<GatewayChangeHint> get() = emptyFlow()
 
+    /** The Gateway's own live-session snapshot. Best effort: never invents rows. */
+    suspend fun liveSessions(): LiveSessionSnapshot = LiveSessionSnapshot.Unavailable
+
     /** Active turns submitted or live on this client, keyed by durable session ID. */
     val activeTurns: StateFlow<Set<String>> get() = NO_ACTIVE_TURNS
 
@@ -1200,6 +1203,13 @@ internal class LiveGatewaySessionRepository(
     }
 
     override suspend fun refreshSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.Refresh) }
+
+    override suspend fun liveSessions(): LiveSessionSnapshot {
+        val client = clientFlow.value ?: return LiveSessionSnapshot.Unavailable
+        return runCatching {
+            LiveSessionSnapshot.Reported(parseLiveSessionList(client.request("session.active_list", buildJsonObject { })))
+        }.getOrDefault(LiveSessionSnapshot.Unavailable)
+    }
 
     override suspend fun loadMoreSessions() = refreshMutex.withLock { readSessionPages(SessionPageRead.More) }
 
@@ -6169,7 +6179,7 @@ internal fun parseContextBreakdown(json: JsonObject): ContextBreakdown? {
     )
 }
 
-private fun JsonElement.asObject(method: String): JsonObject = this as? JsonObject
+internal fun JsonElement.asObject(method: String): JsonObject = this as? JsonObject
     ?: throw GatewayRpcException("Hermes returned malformed data for $method.")
 
 private fun Throwable.isMissingProjectsMethod(): Boolean =
@@ -6727,7 +6737,7 @@ private fun JsonObject.timestamp(fallback: Long): Long {
 private fun JsonObject.hasTimestamp(): Boolean =
     "last_active" in this || "started_at" in this || "created_at" in this || "timestamp" in this
 
-private fun String.epochMillisOrNull(): Long? {
+internal fun String.epochMillisOrNull(): Long? {
     val number = toBigDecimalOrNull() ?: return null
     val millis = if (number < EPOCH_SECONDS_CUTOFF) number.movePointRight(3) else number
     return runCatching {
