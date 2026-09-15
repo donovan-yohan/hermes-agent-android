@@ -96,6 +96,84 @@ class RestTranscriptProjectionTest {
         assertNull(projected.single().string("context"))
     }
 
+    /**
+     * The cron tool the pin runs registers as `cronjob_manage`
+     * (`model_tools.py:183` @ `437116f9497c80d242ce034ff7f5d81dc277a337`) and its
+     * preview is the action (`agent/display.py:357` @ the same SHA).
+     *
+     * The `prompt` on the call is the trap: without the table entry the generic
+     * fallback finds it and the row titles itself with the whole task text while
+     * the same turn over the RPC path and on Desktop reads `create`.
+     */
+    @Test
+    fun `a cron call previews its action and never the prompt it also carries`() {
+        val projected = project(
+            """{"id":23,"role":"assistant","content":"",
+                "tool_calls":[{"id":"call-cron","function":{"name":"cronjob_manage",
+                "arguments":"{\"action\":\"create\",\"prompt\":\"check the nightly build\"}"}}]}""",
+            """{"id":24,"role":"tool","tool_call_id":"call-cron","tool_name":"cronjob_manage","content":"ok"}""",
+        )
+
+        assertEquals("create", projected.single().string("context"))
+    }
+
+    /**
+     * An older Gateway persisted the pre-rename spelling. Both spellings reach
+     * the one table entry — one rendered preview — while the row keeps the name
+     * its transcript actually stored (`_LEGACY_TOOL_ALIASES`,
+     * `model_tools.py:601-604` @ the pin).
+     */
+    @Test
+    fun `a cron row an older gateway stored under the legacy spelling previews the same`() {
+        val projected = project(
+            """{"id":25,"role":"assistant","content":"",
+                "tool_calls":[{"id":"call-new","function":{"name":"cronjob_manage",
+                "arguments":"{\"action\":\"list\"}"}}]}""",
+            """{"id":26,"role":"tool","tool_call_id":"call-new","tool_name":"cronjob_manage","content":"ok"}""",
+            """{"id":27,"role":"assistant","content":"",
+                "tool_calls":[{"id":"call-old","function":{"name":"cronjob",
+                "arguments":"{\"action\":\"list\"}"}}]}""",
+            """{"id":28,"role":"tool","tool_call_id":"call-old","tool_name":"cronjob","content":"ok"}""",
+        )
+
+        val (current, legacy) = projected
+        assertEquals("cronjob_manage", current.string("name"))
+        assertEquals("cronjob", legacy.string("name"))
+        assertEquals("list", current.string("context"))
+        assertEquals(current.string("context"), legacy.string("context"))
+    }
+
+    /**
+     * One page as the pinned route ships it. `SessionDB.get_messages` builds each
+     * row as `dict(row)` (`hermes_state_messages.py:753-756` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`) over a `SELECT *` (`:806` on
+     * the `include_compacted` read this app always makes), so every column of
+     * `messages` rides the wire — the nulls below are what a row that made no
+     * call carries.
+     */
+    @Test
+    fun `a cron turn off the pinned wire projects its stored page`() {
+        val projected = project(
+            """{"id":77,"role":"user","content":"schedule the nightly build check",
+                "tool_calls":null,"tool_call_id":null,"tool_name":null,"reasoning":null,
+                "display_kind":null,"display_content":null,"timestamp":1789000000.0}""",
+            """{"id":78,"role":"assistant","content":"",
+                "tool_calls":[{"id":"call-cron-1","function":{"name":"cronjob_manage",
+                "arguments":"{\"action\":\"create\",\"prompt\":\"check the nightly build\"}"}}],
+                "tool_call_id":null,"tool_name":null,"reasoning":null,"display_kind":null,
+                "display_content":null,"timestamp":1789000001.0}""",
+            """{"id":79,"role":"tool","content":"scheduled","tool_call_id":"call-cron-1",
+                "tool_name":"cronjob_manage","tool_calls":null,"reasoning":null,
+                "display_kind":null,"display_content":null,"timestamp":1789000002.0}""",
+        )
+
+        assertEquals(listOf("user", "tool"), projected.map { it.string("role") })
+        val tool = projected.last()
+        assertEquals("cronjob_manage", tool.string("name"))
+        assertEquals("create", tool.string("context"))
+        assertEquals("79", tool.string("row_id"))
+    }
+
     @Test
     fun `an assistant turn with only reasoning survives`() {
         val projected = project("""{"id":13,"role":"assistant","content":"","reasoning":"weighing options"}""")
