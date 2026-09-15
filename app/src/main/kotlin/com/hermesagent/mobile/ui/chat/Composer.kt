@@ -63,6 +63,7 @@ import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.common.statusAction
 import com.hermesagent.mobile.ui.chat.composer.CompletionPopup
 import com.hermesagent.mobile.ui.chat.composer.ComposerAddControl
+import com.hermesagent.mobile.ui.chat.composer.RecentImagesUiState
 import com.hermesagent.mobile.ui.chat.composer.ModelControl
 import com.hermesagent.mobile.ui.chat.composer.canonicalizeComposerTextOnSpace
 import com.hermesagent.mobile.ui.chat.composer.replaceComposerRange
@@ -183,6 +184,12 @@ fun Composer(
     onCompletionSelected: (CompletionItem) -> Unit = {},
     onInsertText: (String) -> Unit = {},
     onPickFiles: () -> Unit = {},
+    recentImages: RecentImagesUiState = RecentImagesUiState(),
+    onAddRecentImage: (Long) -> Unit = {},
+    onRequestRecentImageAccess: () -> Unit = {},
+    onPickPhotos: () -> Unit = {},
+    onRecentImagesSheetOpened: () -> Unit = {},
+    onRecentImagesSheetClosed: () -> Unit = {},
     attachments: List<ComposerAttachmentDraft> = emptyList(),
     attachmentThumbnails: Map<String, ImageBitmap> = emptyMap(),
     onRemoveAttachment: (String) -> Unit = {},
@@ -294,6 +301,12 @@ fun Composer(
                         },
                         enabled = true,
                         onPickFiles = onPickFiles,
+                        recentImages = recentImages,
+                        onAddRecentImage = onAddRecentImage,
+                        onRequestRecentImageAccess = onRequestRecentImageAccess,
+                        onPickPhotos = onPickPhotos,
+                        onSheetOpened = onRecentImagesSheetOpened,
+                        onSheetClosed = onRecentImagesSheetClosed,
                         onDismiss = { restoreEditorFocus() },
                     )
                     Row(

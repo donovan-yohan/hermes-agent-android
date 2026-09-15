@@ -195,7 +195,10 @@ lifecycle.
   window loses its secure flag.
 - Android file and image picking with bounded in-memory reads, preview chips,
   byte staging through the Gateway, image-only sends, transcript thumbnails,
-  and payload wiping on removal.
+  and payload wiping on removal. The add sheet offers the device's newest
+  images in a labelled Recent images rail above Files, reading them behind one
+  runtime media grant (Android 14 partial access included) with the system
+  photo picker as the route that needs no permission at all.
 - Gateway-backed dictation, voice conversation, auto-speak, and a user-started
   wake-word foreground service. Barge-in, complete permission-recovery journeys,
   streaming-TTS fallback, and physical-device acceptance remain open.
