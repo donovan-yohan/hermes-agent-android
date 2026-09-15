@@ -41,18 +41,30 @@ if [[ -n "$expected_accessibility" ]]; then
 fi
 
 # A Compose semantics tree reaches the platform when an accessibility client
-# attaches, and a lazy rail's rows arrive one composition later than the rows in
-# a plain column. Wait, bounded, for this state's catalogued description so a
-# receipt never retains a half-published tree; the reference capture re-checks
-# the same description itself and still fails if it never appears.
+# attaches, and a lazy row's items arrive a beat after the rows around them.
+# Wait, bounded, for this state's catalogued description; the reference capture
+# re-checks the same description itself and still fails if it never appears.
 if [[ -n "$expected_accessibility" ]]; then
+  published=""
   for _ in $(seq 1 20); do
-    if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 &&
-      adb shell cat /sdcard/window.xml 2>/dev/null | grep -qF "$expected_accessibility"; then
-      break
+    if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1; then
+      published="$(adb shell cat /sdcard/window.xml 2>/dev/null || true)"
+      if grep -qF "$expected_accessibility" <<<"$published"; then
+        break
+      fi
     fi
     sleep 0.5
   done
+  if ! grep -qF "$expected_accessibility" <<<"$published"; then
+    # Retain what the platform did publish. A capture that fails without naming
+    # the tree it saw cannot be diagnosed from the log alone.
+    echo "::warning::the catalogued description never published; the tree held:"
+    grep -o 'content-desc="[^"]*"' <<<"$published" | sort -u
+    grep -o 'text="[^"]*"' <<<"$published" | grep -v 'text=""' | sort -u
+    mkdir -p "$out"
+    printf '%s\n' "$published" > "$out/unpublished-tree.xml"
+    adb exec-out screencap -p > "$out/unpublished-tree.png" || true
+  fi
 fi
 
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
