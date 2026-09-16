@@ -126,7 +126,7 @@ class SessionGroupingTest {
 
     /**
      * Desktop's relational copy is a claim about the rows *below* it: `Earlier
-     * today` is only true while something older sits above
+     * today` is only true while something newer sits above
      * (`lib/time.ts:118-124` @ the pin). A Pinned section forces the first
      * recents bucket to be labelled — and in that one slot the app's newest
      * session can sit directly below it, so the claim would be false. The plain
@@ -187,19 +187,22 @@ class SessionGroupingTest {
         // first recents group. Whatever renders, no divider in this list can
         // read `Earlier today`; the strings list keeps the word for Desktop's
         // pin, and `docs/parity/session-list-sections.md` records the difference.
-        listOf(
+        val dividerTexts = listOf(
             listOf(session("a", now), session("y", now - 24 * HOUR)),
             listOf(session("a", now), session("c", now - 2 * HOUR)),
             listOf(session("b", now - HOUR, pinned = true), session("c", now - 2 * HOUR)),
-        ).forEach { sessions ->
-            val texts = buildSessionRows(sessions, now, timeZone = zone, locale = locale)
+        ).flatMap { sessions ->
+            buildSessionRows(sessions, now, timeZone = zone, locale = locale)
                 .filterIsInstance<SessionListRow.Divider>()
                 .map { it.bucket.label(it.leadsLabelledList) }
-            assertTrue(
-                "Earlier today must not be renderable; got $texts",
-                texts.none { it == "Earlier today" },
-            )
         }
+        // Non-vacuity: the layouts must actually render a divider, else the
+        // "none reads Earlier today" claim below proves nothing.
+        assertTrue("expected at least one rendered divider; got none", dividerTexts.isNotEmpty())
+        assertTrue(
+            "Earlier today must not be renderable; got $dividerTexts",
+            dividerTexts.none { it == "Earlier today" },
+        )
     }
 
     /**

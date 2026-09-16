@@ -115,7 +115,9 @@ class SessionSearchJourneyTest {
         compose.onNodeWithText("RESULTS").assertIsDisplayed()
         assertEquals(0, compose.nodesTagged(PINNED_SECTION_TAG))
         assertEquals(0, compose.nodesWithText("PINNED"))
-        assertEquals(0, compose.nodesWithText("TODAY"))
+        // The Results view renders no date dividers; with Desktop's copy a
+        // Today divider would read `EARLIER TODAY`, so name that label.
+        assertEquals(0, compose.nodesWithText("EARLIER TODAY"))
         compose.onNodeWithTag("Session row s-1").assertIsDisplayed()
         assertEquals(0, compose.nodesTagged("Session row s-2"))
     }

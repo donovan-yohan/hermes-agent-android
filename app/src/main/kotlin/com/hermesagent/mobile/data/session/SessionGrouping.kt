@@ -46,7 +46,7 @@ fun SessionBucket.label(): String = when (this) {
  *
  * Desktop's five relative strings are relational: `Earlier today` means *earlier
  * than the head of this list* (`apps/desktop/src/lib/time.ts:118-124` @ the pin).
- * That is only true while something older sits above the group it labels.
+ * That is only true while something newer sits above the group it labels.
  *
  * `buildSessionRows` renders a Pinned section above the recents, and when it does
  * the first recents bucket is labelled on purpose — an unlabelled group under a
