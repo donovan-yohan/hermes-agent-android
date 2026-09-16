@@ -58,6 +58,7 @@ _tree_paths: dict[str, list[str]] = {}
 _ensured: set[str] = set()
 _READ: pathlib.Path | None = None
 _SCRATCH: tempfile.TemporaryDirectory | None = None
+_MISSING: set[str] = set()
 
 
 def blob(sha: str, path: str) -> list[str] | None:
@@ -73,12 +74,27 @@ def blob(sha: str, path: str) -> list[str] | None:
             errors="replace",
             check=True,
         )
-        _blobs[key] = done.stdout.split("\n")
+        body = done.stdout.split("\n")
+        # `split` on a newline-terminated file leaves a trailing empty element
+        # that is not a line of the file. Left in, it makes a citation one past
+        # the real last line (`:N+1` on an N-line file) read as in-bounds and
+        # byte-true against itself — a real citation that names nothing. Exactly
+        # one trailing element is dropped, so interior blank lines survive.
+        if body and body[-1] == "":
+            body.pop()
+        _blobs[key] = body
     return _blobs[key]
 
 
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
+        if not _has(sha):
+            # Not a revision of the read checkout, so it has no tree to list.
+            # Returning nothing is honest — "this SHA names no file here" — and it
+            # keeps a file that carries some *other* repository's SHA (a GitHub
+            # Action pin, say) from aborting the whole run.
+            _tree_paths[sha] = []
+            return []
         done = subprocess.run(
             ["git", "-C", str(read_root()), "ls-tree", "-r", "--name-only", sha],
             capture_output=True,
@@ -109,11 +125,19 @@ def _has(sha: str) -> bool:
 
 
 def _scratch_clone() -> pathlib.Path:
-    """A working clone of the read-only reference checkout, made once per run."""
+    """A working clone of the read-only reference checkout, made once per run.
+
+    State is published only after the clone succeeds: `_SCRATCH` assigned first
+    would leave a later call returning a target that was never built, and `_READ`
+    unset, so every subsequent read would silently fall back to the reference
+    checkout. The failed attempt is cleaned up rather than kept.
+    """
     global _SCRATCH, _READ
-    if _SCRATCH is None:
-        _SCRATCH = tempfile.TemporaryDirectory(prefix="pin-citations-")
-        target = pathlib.Path(_SCRATCH.name) / "upstream"
+    if _SCRATCH is not None:
+        return pathlib.Path(_SCRATCH.name) / "upstream"
+    scratch = tempfile.TemporaryDirectory(prefix="pin-citations-")
+    target = pathlib.Path(scratch.name) / "upstream"
+    try:
         origin = subprocess.run(
             ["git", "-C", str(UPSTREAM), "config", "--get", "remote.origin.url"],
             capture_output=True, text=True,
@@ -130,10 +154,14 @@ def _scratch_clone() -> pathlib.Path:
                 ["git", "-C", str(target), "remote", "set-url", "origin", origin],
                 capture_output=True, text=True, check=True,
             )
-        _READ = target
-        _tree_paths.clear()
-        _blobs.clear()
-    return pathlib.Path(_SCRATCH.name) / "upstream"
+    except BaseException:
+        scratch.cleanup()
+        raise
+    _SCRATCH = scratch
+    _READ = target
+    _tree_paths.clear()
+    _blobs.clear()
+    return target
 
 
 def ensure_sha(sha: str, fetch: bool) -> None:
@@ -142,8 +170,12 @@ def ensure_sha(sha: str, fetch: bool) -> None:
     `fetch=False` (the default, and what a workstation gets) refuses with a named
     error rather than reaching the network, so a local `check` cannot silently
     depend on a connection.
+
+    A pin that cannot be obtained is remembered as such: without that, every
+    restamped file citing it retries the same network fetch and reports the same
+    failure, which is both slow and a way to get a rate-limited gate disabled.
     """
-    if sha in _ensured:
+    if sha in _ensured or sha in _MISSING:
         return
     if _has(sha):
         _ensured.add(sha)
@@ -160,6 +192,7 @@ def ensure_sha(sha: str, fetch: bool) -> None:
         capture_output=True, text=True,
     )
     if fetched.returncode != 0:
+        _MISSING.add(sha)
         raise RuntimeError(f"cannot fetch {sha} into {target}: {fetched.stderr.strip()}")
     if not _has(sha):
         raise RuntimeError(f"{sha} was fetched into {target} but is still unreadable there")
@@ -283,7 +316,13 @@ def stamped_files(old_sha: str) -> list[str]:
 
 
 def text_at(repo: str, rev: str, path: str) -> str | None:
-    """Read a file at a revision, or from the working tree for WORKTREE."""
+    """Read a file at a revision, or from the working tree for WORKTREE.
+
+    `None` means the path is not in that revision. A `git show` that fails for
+    any other reason is raised rather than reported as absence: the range diff
+    lists only added/copied/modified/renamed paths, so a read that fails for an
+    unrelated reason must not be silently skipped as "no file here".
+    """
     if rev == WORKTREE:
         target = pathlib.Path(repo) / path
         return target.read_text(errors="replace") if target.is_file() else None
@@ -293,7 +332,21 @@ def text_at(repo: str, rev: str, path: str) -> str | None:
         text=True,
         errors="replace",
     )
-    return done.stdout if done.returncode == 0 else None
+    if done.returncode == 0:
+        return done.stdout
+    # Distinguish "this path is not in that revision" from "the read failed".
+    # The check must run against `repo`, not the upstream checkout `tree_paths`
+    # reads from: they are different repositories and different revisions.
+    present = subprocess.run(
+        ["git", "-C", repo, "cat-file", "-e", f"{rev}:{path}"],
+        capture_output=True, text=True,
+    )
+    if present.returncode != 0:
+        return None
+    raise RuntimeError(
+        f"cannot read {path} at {rev} in {repo} although it is in that tree: "
+        f"{done.stderr.strip() or 'git show failed'}"
+    )
 
 
 def changed_files(repo: str, base: str, head: str) -> list[str]:
@@ -339,15 +392,29 @@ def citation_pin(lines: list[str], number: int, introduced: list[str]) -> str | 
             return pin
     if own:
         return None
-    # No pin named here and none on the next line: the nearest pin declared above
-    # (a page's `## Pin` table) governs, and only if this change introduced it.
+    # No pin on this line and none on the next: the nearest pin *declaration*
+    # above governs. A line that carries a citation and a SHA of its own is
+    # another citation's pin, not this page's — let a row borrowed from another
+    # pin shadow the declaration and every row below it would be misattributed
+    # to that borrowed pin (and skipped, which is how a drift goes unreported).
+    skipped_borrowed = False
     for line in reversed(lines[:number - 1]):
         above = PIN_RE.findall(line)
-        if above:
-            for pin in introduced:
-                if any(pin.startswith(token) for token in above):
-                    return pin
-            return None
+        if not above:
+            continue
+        if PATH_RE.search(line):
+            skipped_borrowed = True
+            continue
+        for pin in introduced:
+            if any(pin.startswith(token) for token in above):
+                return pin
+        return None
+    if skipped_borrowed:
+        # A pin-bearing citation row sat above with no declaration to govern this
+        # one, so the file does not say which revision this citation is against.
+        # Guessing the single introduced pin here is how a borrowed row's
+        # neighbour gets checked against the wrong revision.
+        return None
     return introduced[0] if len(introduced) == 1 else None
 
 
@@ -398,16 +465,20 @@ def written_verdict(new_sha: str, cited: str, ranges: list[tuple[int, int]]) -> 
 
     Byte truth is not mechanically checkable for a re-derived span — only the
     author knows what it claims — but a span past the end of the file it names is
-    wrong whatever it claims.
+    wrong whatever it claims, and so is a citation to a path that is not there:
+    the change attributed it to the pin it moved to, and at that pin it names
+    nothing.
     """
     if not ranges:
         return None, None
     resolved = resolve_path(new_sha, cited)
     if resolved is None:
-        return None, None
+        # Attributed to this change's pin, so silence would be a false pass: the
+        # documented floor is that the path it names exists at that SHA.
+        return "path-missing", cited
     body = blob(new_sha, resolved)
     if body is None:
-        return None, resolved
+        return "path-missing", resolved
     if any(first < 1 or last > len(body) for first, last in ranges):
         return "span-out-of-bounds", resolved
     return None, resolved
@@ -483,17 +554,74 @@ def check_range_spec(
     return check_range(base, head, repo=repo, fetch=fetch)
 
 
+def citation_bindings(
+    text: str, pins: list[str]
+) -> tuple[dict[tuple[str, tuple[tuple[int, int], ...], str], int], int]:
+    """Map every citation in one revision to the pin it names, with its line.
+
+    The key is the whole binding — cited path, spans, *and* the pin it names —
+    because the same span can appear twice in one file under two different pins
+    (a page pin row and a row borrowed from another revision). Keyed by span
+    alone, the second would be masked by the first and a re-pointed citation
+    would go unexamined.
+
+    The pin is the one on the citation's line, a wrapped continuation, or the
+    nearest pin *declaration* above. A citation no pin can be tied to is counted
+    as ambiguous and left out rather than given an invented owner.
+    """
+    out: dict[tuple[str, tuple[tuple[int, int], ...], str], int] = {}
+    ambiguous = 0
+    if not pins:
+        return out, ambiguous
+    lines = text.splitlines()
+    for number, cited, ranges, _safe in located_citations(text, pins[0]):
+        if not ranges:
+            # A citation with no line span proves nothing about any revision, so it
+            # is not a claim this gate can check. Without this, the path heuristic
+            # makes tokens like `github.event.pull_request.head.sh` look like
+            # citations of a shell script and binds them to whichever SHA is
+            # nearby — a GitHub Action pin, whose commit the upstream checkout by
+            # definition does not have, so the whole file reports unprovable.
+            ambiguous += 1
+            continue
+        attributed = citation_pin(lines, number, pins)
+        if attributed is None:
+            ambiguous += 1
+            continue
+        if not PATH_RE.search(lines[number - 1]):
+            # No path on its own line: this is a bare continuation, attributed to
+            # the last path above by heuristic. Require the span to fit the file
+            # it would be read in at the pin it sits under. `:50000` in a JSON
+            # fixture and `:2222` in an IPv6 literal are not line citations, and
+            # reporting one is a finding nobody can act on.
+            resolved = resolve_path(attributed, cited)
+            body = blob(attributed, resolved) if resolved else None
+            if not ranges or body is None or any(last > len(body) for _, last in ranges):
+                ambiguous += 1
+                continue
+        out.setdefault((cited, tuple(ranges), attributed), number)
+    return out, ambiguous
+
+
 def check_range(
     base: str, head: str, repo: str = ".", fetch: bool = False
 ) -> tuple[list[Finding], dict[str, int], dict[str, list[str]]]:
     """Check every citation the range restamped is true at the pin it names.
+
+    Scope is which citation→pin *bindings* the range changed, not which whole-file
+    SHA values appeared and disappeared. Set subtraction over a file's pins misses
+    a partial restamp: re-pointing one citation from pin A to pin B while another
+    citation still names A retires and introduces nothing, and the file would pass
+    unexamined. Comparing bindings catches that, and it pins each citation to the
+    revision it actually named, so a citation is never accepted merely because
+    some other pin the change moved happens to be byte-true for it.
 
     Returns findings, counters, and the pins this checkout could not supply —
     kept apart from the findings so a caller can say "not provable here" instead
     of "wrong", which are different claims and must not be conflated.
     """
     findings: list[Finding] = []
-    counts = {"files": 0, "checked": 0, "skipped": 0, "ambiguous": 0}
+    counts = {"files": 0, "checked": 0, "skipped": 0, "unmoved": 0, "ambiguous": 0}
     unreachable: dict[str, list[str]] = {}
     for name in changed_files(repo, base, head):
         if is_provenance(name):
@@ -501,15 +629,32 @@ def check_range(
         base_text, head_text = text_at(repo, base, name), text_at(repo, head, name)
         if base_text is None or head_text is None:
             continue
-        retired = full_pins(base_text) - full_pins(head_text)
-        introduced = full_pins(head_text) - full_pins(base_text)
-        if not retired or not introduced:
+        # Every 40-character SHA in the file is a candidate pin, because a file may
+        # name several (26 do today) and attribution has to know all of them. Not
+        # every SHA is an upstream pin, though: a workflow YAML pins GitHub Actions
+        # by SHA. What makes a SHA this gate's business is that a *citation* is
+        # bound to it, so the binds below decide both scope and which revisions
+        # must be readable.
+        base_pins = sorted(full_pins(base_text))
+        head_pins = sorted(full_pins(head_text))
+        base_bound, base_ambiguous = citation_bindings(base_text, base_pins)
+        head_bound, head_ambiguous = citation_bindings(head_text, head_pins)
+        if not base_bound and not head_bound:
+            # Nothing in this file is a citation of an upstream revision.
+            continue
+        if base_bound == head_bound and base_pins == head_pins:
+            # The file changed, but neither a stamp nor a citation binding did:
+            # prose, a table, a test name. Not this gate's business.
             continue
         counts["files"] += 1
-        retired_list = sorted(retired)
-        introduced_list = sorted(introduced)
+        counts["ambiguous"] += base_ambiguous + head_ambiguous
+        # Only revisions a citation is actually judged against have to be
+        # readable. Ensuring every SHA in the file would demand a GitHub Action's
+        # commit from the upstream checkout, and a file that moves one would be
+        # reported unprovable forever.
+        used = {pin for _, _, pin in base_bound} | {pin for _, _, pin in head_bound}
         missing: list[str] = []
-        for pin in retired_list + introduced_list:
+        for pin in sorted(used):
             try:
                 ensure_sha(pin, fetch)
             except RuntimeError:
@@ -517,47 +662,31 @@ def check_range(
         if missing:
             unreachable[name] = missing
             continue
-        # Dispatch is by what the *base* revision cited, not by what it could
-        # attribute: a citation present in both revisions is a carried one, and
-        # `carried_verdict` is where attributability at the old pin is judged.
-        base_carried = {
-            (cited, tuple(ranges))
-            for old_sha in retired_list
-            for _, cited, ranges, _ in located_citations(base_text, old_sha)
-        }
-        lines = head_text.splitlines()
-        for number, cited, ranges, _safe in located_citations(head_text, introduced_list[0]):
-            pin = citation_pin(lines, number, introduced_list)
-            if pin is None:
-                counts["ambiguous"] += 1
+        for (cited, span_key, pin), number in sorted(head_bound.items()):
+            ranges = list(span_key)
+            old_pin = base_bound.get((cited, span_key, pin))
+            if old_pin is not None:
+                # The same citation named the same pin before this change: the
+                # restamp did not touch this one, so it is not re-judged.
+                counts["unmoved"] += 1
                 continue
-            key = (cited, tuple(ranges))
-            if key in base_carried:
-                considered = False
-                reasons: list[tuple[str | None, str | None]] = []
-                for old_sha in retired_list:
-                    reason, resolved = carried_verdict(old_sha, pin, cited, ranges)
-                    if reason is None and resolved is None:
-                        continue
-                    considered = True
-                    reasons.append((reason, resolved))
-                if not considered:
-                    counts["skipped"] += 1
-                    continue
-                if any(reason is None for reason, _ in reasons):
-                    counts["checked"] += 1
-                    continue
-                reason, resolved = reasons[0]
-                findings.append(Finding(name, number, cited, ranges, resolved, reason or "drifted"))
+            was_on = [
+                pin_before
+                for (cited_before, span_before, pin_before) in base_bound
+                if cited_before == cited and span_before == span_key
+            ]
+            if was_on:
+                # Re-pointed from a revision it named before: prove it there.
+                reason, resolved = carried_verdict(was_on[0], pin, cited, ranges)
             else:
                 reason, resolved = written_verdict(pin, cited, ranges)
-                if reason is None and resolved is None:
-                    counts["skipped"] += 1
-                    continue
-                if reason is None:
-                    counts["checked"] += 1
-                    continue
-                findings.append(Finding(name, number, cited, ranges, resolved, reason))
+            if reason is None and resolved is None:
+                counts["skipped"] += 1
+                continue
+            if reason is None:
+                counts["checked"] += 1
+                continue
+            findings.append(Finding(name, number, cited, ranges, resolved, reason))
     return findings, counts, unreachable
 
 
@@ -594,9 +723,12 @@ def self_test() -> None:
         def page(pin: str, borrowed: str) -> str:
             """A parity page: its own pin in the table, one citation under another.
 
-            The second row is the whole point of carrying `borrowed`: the repo has
-            26 files naming more than one pin, and a change that moves one stamp is
-            not answerable for a citation that still names a different one.
+            The borrowed row is the whole point of carrying `borrowed`: the repo
+            has 26 files naming more than one pin, and a change that moves one
+            stamp is not answerable for a citation that still names a different
+            one. The row *after* it names no pin, so it is governed by the page
+            declaration — and must stay that way even though a pin-bearing row
+            sits directly above it.
             """
             return (
                 "# Fixture surface\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
@@ -605,6 +737,7 @@ def self_test() -> None:
                 "| Question | Path |\n|---|---|\n"
                 "| entry point | `lib/util.ts:2-4` |\n"
                 f"| borrowed from another pin | `lib/util.ts:1-2` @ `{borrowed}` |\n"
+                "| governed by the page pin, below a borrowed row | `lib/util.ts:4-4` |\n"
             )
 
         write("lib/util.ts", "one\ntwo\nthree\nfour\n")
@@ -653,6 +786,26 @@ def self_test() -> None:
         write("docs/page.md", page(renamed, borrowed))
         path_missing = commit("fixture moves the stamp over a moved path")
 
+        # (5) A partial restamp: one citation in the file is re-pointed to a new
+        #     pin while another still names the old one. No whole-file pin is
+        #     retired or introduced, so a set-subtraction scan sees no move at all
+        #     and the file passes unexamined. The re-pointed span is drifted at the
+        #     pin it now names, so the gate must report it.
+        branch("partial", pinned)
+        write("lib/util.ts", "one\nelsewhere\nthree\nfour\n")
+        partial_revision = commit("fixture replaces the construct's first line")
+        partial_page = (
+            "# Fixture surface\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+            f"| fixture | `{pinned}` | `git show <sha>:<path>` |\n\n"
+            "Every `path:line` below is against that SHA.\n\n"
+            "| Question | Path |\n|---|---|\n"
+            "| entry point | `lib/util.ts:2-4` |\n"
+            f"| re-pointed to a newer pin | `lib/util.ts:2-4` @ `{partial_revision}` |\n"
+            "| borrowed from another pin | `lib/util.ts:1-2` @ `{borrowed}` |\n"
+        )
+        write("docs/page.md", partial_page)
+        partial = commit("fixture re-points one citation without retiring the page pin")
+
         UPSTREAM = repo
         _blobs.clear()
         _tree_paths.clear()
@@ -675,9 +828,16 @@ def self_test() -> None:
                 raise AssertionError(f"a byte-true move was rejected: {[str(one) for one in findings]}")
             if counts["checked"] < 1:
                 raise AssertionError("the byte-true fixture proved nothing; no citation was checked")
-            if counts["ambiguous"] < 1:
+            if counts["unmoved"] < 1:
                 raise AssertionError(
-                    "the citation borrowed from another pin should have been left alone, not checked"
+                    "the citation borrowed from another pin should have been left on that pin"
+                )
+            # The row below the borrowed one names no pin of its own, so the page
+            # declaration governs it. If a pin-bearing row above it were read as
+            # the page's, that citation would be misattributed and skipped.
+            if counts["ambiguous"] != 0:
+                raise AssertionError(
+                    f"a citation under the page pin was left unattributed: {counts}"
                 )
 
             findings, counts = gate(pinned, in_place, "in-place edit")
@@ -699,10 +859,31 @@ def self_test() -> None:
                     f"{[str(one) for one in findings]}"
                 )
 
+            # A restamp that re-points one citation while leaving another on the
+            # old pin retires and introduces no whole-file SHA: only a
+            # binding-level comparison sees it. This is the regression for that.
+            findings, counts = gate(pinned, partial, "partial restamp")
+            if not findings:
+                raise AssertionError(
+                    "a partial restamp that left a drifted citation was accepted: "
+                    f"{counts}"
+                )
+            if findings[0].reason != "construct-moved" or findings[0].carrier != "docs/page.md":
+                raise AssertionError(f"the partial restamp was mislabelled: {findings[0]}")
+
             findings, _ = gate(pinned, path_missing, "moved path")
             if not findings or findings[0].reason != "path-missing":
                 raise AssertionError(
                     f"a citation whose path is gone at the pin was accepted: {[str(one) for one in findings]}"
+                )
+
+            # A span one past the real last line is not a citation of anything.
+            # `blob()` must not hand back a phantom trailing element that makes it
+            # read as in-bounds.
+            lines_of_util = blob(byte_true, "lib/util.ts")
+            if lines_of_util is None or len(lines_of_util) != 5:
+                raise AssertionError(
+                    f"a 5-line file must read as 5 lines, not {lines_of_util and len(lines_of_util)}"
                 )
 
             # The gate must be quiet when a range moves no pin at all: the common
@@ -748,7 +929,7 @@ def main() -> None:
             findings, counts, unreachable = check_range_spec(
                 args.check_range, repo=args.repo, fetch=args.fetch
             )
-        except RuntimeError as error:
+        except (RuntimeError, OSError, subprocess.SubprocessError) as error:
             print(f"ERROR  the pin-citation range check could not run: {error}")
             print("  this is a tool or revision problem, not a verdict on any citation.")
             raise SystemExit(3)
@@ -776,7 +957,8 @@ def main() -> None:
             raise SystemExit(2)
         print(
             f"ok    {counts['files']} restamped file(s): {counts['checked']} citation(s) true at the SHA they name, "
-            f"{counts['skipped']} not provable, {counts['ambiguous']} under another pin"
+            f"{counts['unmoved']} left on their own pin, {counts['skipped']} not provable, "
+            f"{counts['ambiguous']} unattributable"
         )
         return
 

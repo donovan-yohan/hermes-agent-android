@@ -314,6 +314,18 @@ class CiWorkflowCheckerTest(unittest.TestCase):
             "the pin-citation job must check the pull request's own range",
         )
 
+    def test_rejects_pin_citation_job_without_a_merge_base_range(self) -> None:
+        # Two-dot against a pull request's base tip reads every pin `main` moved
+        # after the fork as this branch's reverse, so the gate would report the
+        # target branch's own history as the change's moves.
+        broken = self.valid_text.replace(
+            'range="${BASE_SHA}...${HEAD_SHA}"', 'range="${BASE_SHA}..${HEAD_SHA}"', 1
+        )
+        self._assert_reports(
+            broken,
+            "must resolve a pull request's range from its merge base",
+        )
+
     def test_rejects_pin_citation_job_without_range_history(self) -> None:
         broken = self.valid_text.replace("          fetch-depth: 0\n", "", 1)
         self._assert_reports(

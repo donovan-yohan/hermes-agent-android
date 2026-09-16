@@ -254,8 +254,12 @@ git diff --check
 python3 scripts/verify-pin-citations.py \
   --check-range "$(git merge-base origin/main HEAD)..HEAD" \
   --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" \
-  --repo . [--fetch]
+  --repo .
 ```
+
+Add `--fetch` to let it obtain pins the local checkout lacks. Do not write it as
+`[--fetch]` in a runnable command: argparse would take the literal brackets as the
+optional `old` positional and silently ignore them.
 
 It reads the citations out of the diff, so a file whose stamp you already
 rewrote is still checked, and it names the carrier `path:line` and the cited

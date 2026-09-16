@@ -273,6 +273,15 @@ def main() -> int:
                 "the pin-citation job must check the pull request's own range "
                 "(base..head), not a fixed branch"
             )
+        # A pull request's base is the target branch's tip, so against a branch
+        # that trails main a two-dot range reads main's own pin moves as this
+        # change's reverses. The merge-base form is the range a reviewer reads.
+        if "..." not in citations_job:
+            failures.append(
+                "the pin-citation job must resolve a pull request's range from its "
+                "merge base (base...head); two-dot would blame the branch for pins "
+                "the target branch moved after it forked"
+            )
         if "fetch-depth: 0" not in citations_job:
             failures.append(
                 "the pin-citation job must fetch the range's history; a shallow "

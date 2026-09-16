@@ -71,9 +71,42 @@ class CitationPinTest(unittest.TestCase):
         ]
         self.assertIsNone(gate.citation_pin(lines, 2, [self.moved]))
 
+    def test_a_page_declaration_governs_a_row_below_a_borrowed_one(self) -> None:
+        # The row above names another pin *and* a citation: it is that citation's
+        # pin, not the page's. Letting it shadow the `## Pin` declaration would
+        # leave every row below it unattributed and unchecked — a drift with no
+        # finding, which is the failure this gate exists to prevent.
+        lines = [
+            "## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            f"| borrowed | `path/to/x.ts:1-2` @ `{self.other}` |",
+            "| governed by the page pin | `path/to/y.ts:3` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 8, [self.moved]))
+
 
 class CitationExtractionTest(unittest.TestCase):
     """What counts as a citation at all."""
+
+    def test_a_spanless_token_is_not_a_citation(self) -> None:
+        # `github.event.pull_request.head.sha` in a workflow YAML matches the path
+        # heuristic (it ends in `.sh`). Bound to the GitHub Action SHA nearby, the
+        # whole file would report unprovable, because the upstream checkout by
+        # definition has no commit for somebody else's Action. A citation with no
+        # line span proves nothing about any revision, so it is not one.
+        text = (
+            "          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n"
+            "      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407\n"
+        )
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(gate, "resolve_path", return_value=None))
+            bound, ambiguous = gate.citation_bindings(text, ["9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407"])
+        self.assertEqual({}, bound)
+        self.assertGreater(ambiguous, 0)
 
     def test_a_fingerprint_fixture_is_not_a_citation_of_line_zero(self) -> None:
         text = 'const val FINGERPRINT = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01"'

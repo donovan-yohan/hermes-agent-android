@@ -131,11 +131,11 @@ fi
 python3 scripts/verify-pin-citations.py --self-test || fail=1
 upstream="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
 pin_range="${PIN_CITATION_RANGE:-origin/main...}"
-# `${pin_range%%...}` would cut at the first `..` of a two-dot spec and leave the
-# rest of the SHA behind, so the base is taken the way the tool takes it: up to
-# the first `..`, with `...` collapsing to the same base.
-pin_base="${pin_range%%.*}"
-pin_base="${pin_base%%..*}"
+# The base is taken the way the tool takes it: everything up to the first `..`,
+# so `a..b`, `a...b` and the default `origin/main...` all yield the same base, and
+# a dotted ref like `release/1.2..HEAD` is not truncated to a nonexistent
+# `release/1`.
+pin_base="${pin_range%%..*}"
 if [[ ! -d "$upstream/.git" ]]; then
   note "SKIP  pin-citation range check: no upstream checkout at $upstream"
   note "      run: HERMES_AGENT_UPSTREAM=<checkout> scripts/check-repo-invariants.sh"

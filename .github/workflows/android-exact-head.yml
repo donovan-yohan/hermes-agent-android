@@ -123,25 +123,38 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
         run: |
           test -n "$BASE_SHA" && test -n "$HEAD_SHA" || {
             echo '::error::the pin-citation gate needs both ends of the range.'
             exit 1
           }
+          # The fixture first, and before any decision to skip: it builds its own
+          # repository, so the gate proves it still catches a drifted span and
+          # still passes a byte-true move even when this range moves no pin at
+          # all — including when the base is missing and the range check cannot
+          # run.
+          python3 scripts/verify-pin-citations.py --self-test
           # A force-push to a rewritten root, or a branch's first push, leaves a
           # `before` this checkout does not have; there is no range to check.
           if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             echo "::notice::base ${BASE_SHA} is not in this checkout; no range to check."
             exit 0
           fi
+          # On a pull request the base is the tip of the target branch, which may
+          # have advanced past this branch's fork point. Two-dot against that tip
+          # would read every pin `main` moved as *this change's* reverses, so the
+          # range is the merge base — the same range a reviewer reads. A push's
+          # `before` is the commit it landed on, so two-dot is already right there.
+          if [[ "$IS_PULL_REQUEST" == "true" ]]; then
+            range="${BASE_SHA}...${HEAD_SHA}"
+          else
+            range="${BASE_SHA}..${HEAD_SHA}"
+          fi
           upstream="$RUNNER_TEMP/hermes-agent-upstream"
           git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream"
-          # The fixture first: it builds its own repository, so it proves the gate
-          # still catches a drifted span and still passes a byte-true move even
-          # when this range happens to move no pin at all.
-          python3 scripts/verify-pin-citations.py --self-test
           python3 scripts/verify-pin-citations.py \
-            --check-range "${BASE_SHA}..${HEAD_SHA}" \
+            --check-range "$range" \
             --upstream "$upstream" --fetch
 
   # The instrumented lane. Independent of the APK job on purpose: an emulator
