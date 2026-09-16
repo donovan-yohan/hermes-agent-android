@@ -942,7 +942,7 @@ def main() -> None:
             shown = ", ".join(pin[:10] for pin in pins)
             print(f"UNPROVABLE  {name}: this checkout cannot read {shown}")
         if findings:
-            print(f"  {len(findings)} citation(s) in {counts['files']} restamped file(s) are not true at the SHA they name.")
+            print(f"  {len(findings)} citation(s) in {counts['files']} changed file(s) are not true at the SHA they name.")
             print("  fix: re-derive each cited path and span at the new pin, or keep the citation at the pin it belongs to;")
             print("       docs/workflows/review-desktop-parity.md, `### Moving a pin`, says how to read upstream at a SHA.")
             raise SystemExit(1)
@@ -952,11 +952,12 @@ def main() -> None:
             # (the local read-only reference checkout) skips loudly on 2; CI
             # passes --fetch and treats 2 as a failure, because it should not
             # have happened there.
-            print(f"  {len(unreachable)} restamped file(s) were not checked: their pins are not in this checkout.")
+            print(f"  {len(unreachable)} changed file(s) were not checked: their pins are not in this checkout.")
             print("  fix: run with --fetch, or point --upstream at a checkout that has those revisions.")
             raise SystemExit(2)
         print(
-            f"ok    {counts['files']} restamped file(s): {counts['checked']} citation(s) true at the SHA they name, "
+            f"ok    {counts['files']} changed file(s) with citation activity: "
+            f"{counts['checked']} citation(s) true at the SHA they name, "
             f"{counts['unmoved']} left on their own pin, {counts['skipped']} not provable, "
             f"{counts['ambiguous']} unattributable"
         )
