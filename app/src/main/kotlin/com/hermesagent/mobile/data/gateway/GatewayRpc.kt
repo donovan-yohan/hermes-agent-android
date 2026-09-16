@@ -512,6 +512,55 @@ internal class CorrelatedGatewayRpc(
          * Advertising it subscribed this client to a frame the channel cannot
          * produce (#181); the `tool.start` / `tool.complete` pair carries the
          * tool row.
+         *
+         * `tool.generating` is refused for a *different* reason, and the
+         * difference has to be stated because this frame is not dead the way
+         * `tool.progress` was. It really is declared
+         * (`tui_gateway/contracts/events.py:271-277` @
+         * `437116f9497c80d242ce034ff7f5d81dc277a337`) and really is emitted on
+         * this socket: `agent_callbacks` wires `tool_gen_callback` straight to
+         * it (`tui_gateway/agent_callbacks.py:94` @ the pin) and that table is
+         * what this channel's agent is built with (`tui_gateway/server.py:2374`
+         * @ the pin). The gate in front of it (`_tool_progress_enabled`) is a
+         * session's `tool_progress_mode`, whose accessor defaults to `all`
+         * (`tui_gateway/server.py:1906-1907,1914-1915` @ the pin).
+         *
+         * What it is *not* is a row. The payload is `{name}` and nothing more —
+         * no `tool_id`, no args (`tui_gateway/contracts/events.py:271-274` @ the
+         * pin) — because it fires while the model is still writing the call's
+         * JSON. Both clients that consume it spend it on a transient *status*
+         * rather than a tool row, and Desktop says why in its own comment: a row
+         * materialized from it strands an argless placeholder whenever the
+         * bubble is sealed before the real `tool.start` arrives
+         * (`apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/tools.ts:30-44`
+         * @ the pin), so Desktop keeps it as a per-session drafting label
+         * (`apps/desktop/src/store/tool-drafting.ts:3-7` @ the pin) and the TUI
+         * spends it on one transient trail line, `drafting <name>…`
+         * (`ui-tui/src/app/createGatewayEventHandler.ts:1192-1197` @ the pin).
+         *
+         * This client has no surface for it. Tool frames reach exactly one
+         * consumer, `GatewaySessionRepository.applyEvent`, and the only branch
+         * that takes them is the `tool.start` / `tool.complete` pair feeding
+         * `applyTool`; there is no other handler, so adding the name here would
+         * subscribe to a frame nothing consumes — the same dead-socket shape
+         * #181 removed, arriving from the opposite direction. Reusing that
+         * branch is no better. `applyTool` keys a row by `tool_id` and falls
+         * back to the sole live id, so a name-only frame either adopts that row
+         * (rewriting its label, and flipping a finished one back to Running,
+         * since every non-`tool.complete` type re-puts the activity) or mints an
+         * argless `gateway-tool-N`: the placeholder Desktop refuses to create.
+         * The turn-progress line is not a home for it either: it renders
+         * `SessionProgress.text`, which `applyStatusUpdate` writes from
+         * backend-authored `status.update` sentences (kind-filtered by
+         * `KNOWN_STATUS_UPDATE_KINDS`) and from the `thinking.delta` projection.
+         * Desktop does not print the name there either — it renders a category
+         * verb from `toolPresentVerb` (`apps/desktop/src/components/assistant-ui/tool/run-summary.ts:80-86`
+         * @ the pin) behind a reveal delay in the status hint
+         * (`apps/desktop/src/components/assistant-ui/thread/status.tsx:187-219`
+         * @ the pin). So admitting the frame means building that pre-row
+         * surface — its verb map and precedence — first. It stays out until
+         * then, refused for its shape rather than its silence, and the
+         * `tool.start` / `tool.complete` pair keeps carrying the tool row.
          */
         val SUPPORTED_EVENTS = setOf(
             "session.info",
