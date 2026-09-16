@@ -37,6 +37,7 @@ import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.plugins.PluginStore
 import com.hermesagent.mobile.ui.appearance.AppearanceScreen
+import com.hermesagent.mobile.data.themes.GatewayThemesState
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -154,6 +155,7 @@ fun HermesApp(
     gatewayState: GatewaySettingsUiState,
     sshState: SshUiState,
     appearance: AppearanceSelection,
+    gatewayThemes: GatewayThemesState = GatewayThemesState(),
     chatActions: ChatActions,
     appearanceActions: AppearanceActions,
     gatewayActions: GatewayActions,
@@ -235,7 +237,7 @@ fun HermesApp(
         onBack()
     }
 
-    HermesTheme(appearance) {
+    HermesTheme(appearance, customThemes = gatewayThemes.themes.map { it.preset }) {
         CompositionLocalProvider(LocalPluginNavigation provides pluginNavigation) {
             when (destination) {
                 HermesDestination.Chat -> ChatScreen(
@@ -303,6 +305,7 @@ fun HermesApp(
                     AppearanceScreen(
                         selection = appearance,
                         actions = appearanceActions,
+                        gatewayThemes = gatewayThemes,
                         introSplash = introSplash,
                     )
                 }

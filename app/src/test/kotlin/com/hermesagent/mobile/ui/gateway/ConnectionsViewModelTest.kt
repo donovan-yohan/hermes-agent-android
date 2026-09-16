@@ -987,5 +987,7 @@ class ConnectionsViewModelTest {
         override suspend fun setActiveConnection(id: String) {
             registry.update { it.copy(activeId = id) }
         }
+
+        override suspend fun setConnectionTheme(themeName: String, expectedConnectionId: String?): Boolean = false
     }
 }

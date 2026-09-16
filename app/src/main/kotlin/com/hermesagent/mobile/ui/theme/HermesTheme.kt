@@ -64,10 +64,18 @@ object HermesTheme {
 @Composable
 fun HermesTheme(
     selection: AppearanceSelection = AppearanceSelection(),
+    customThemes: List<HermesThemePreset> = emptyList(),
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
-    val preset = remember(selection.themeName) { BuiltinThemes.resolve(selection.themeName) }
+    // The immutable built-in registry wins, as Desktop's resolver does. Gateway
+    // definitions are endpoint-scoped and have already been rejected on a name
+    // collision before they reach this composition.
+    val preset = remember(selection.themeName, customThemes) {
+        BuiltinThemes.ALL.firstOrNull { it.name == selection.themeName }
+            ?: customThemes.firstOrNull { it.name == selection.themeName }
+            ?: BuiltinThemes.resolve(selection.themeName)
+    }
     val requestedDark = remember(selection.mode, systemDark) { selection.mode.resolvesToDark(systemDark) }
     // The palette is picked by what the user asked for; everything painted from
     // it is picked by what that palette actually *renders* as (`rendersDark`),

@@ -11,6 +11,10 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import com.hermesagent.mobile.data.themes.GatewayTheme
+import com.hermesagent.mobile.data.themes.GatewayThemeParse
+import com.hermesagent.mobile.data.themes.isSafeCustomThemeName
+import com.hermesagent.mobile.data.themes.parseGatewayThemes
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -24,7 +28,7 @@ import kotlin.coroutines.CoroutineContext
  * caller can mistype. Nothing outside this file names a verb, so the set of
  * things this client can do to a Gateway is this declaration.
  */
-internal enum class GatewayRestVerb { GET, POST, PATCH, DELETE }
+internal enum class GatewayRestVerb { GET, POST, PUT, PATCH, DELETE }
 
 /**
  * The host actions this client is willing to name in a path.
@@ -336,7 +340,7 @@ data class GatewayUpdateReceipt(
 data class GatewayRestartStart(val name: String, val pid: Long?)
 
 /**
- * Authenticated REST client for the Gateway's session routes.
+ * Authenticated REST client for Gateway session, System-panel, and Dashboard-theme routes.
  *
  * It owns request shaping and fail-closed parsing; it owns no credential. The
  * transport it borrows through [http] is the connection-owned [GatewayHttp],
@@ -380,6 +384,36 @@ class GatewayRestClient(
     private val ioContext: CoroutineContext = Dispatchers.IO,
     private val http: () -> GatewayHttp?,
 ) {
+
+    /** Custom Dashboard themes only; server built-ins have no definition and are skipped. */
+    suspend fun dashboardThemes(): GatewayRestResult<List<GatewayTheme>> =
+        dashboardThemesEnvelope().map { it.themes }
+
+    /** Internal because [GatewayThemeEnvelope.active] belongs to the repository, not a surface. */
+    internal suspend fun dashboardThemesEnvelope(): GatewayRestResult<GatewayThemeEnvelope> = send(
+        path = DASHBOARD_THEMES_PATH,
+        verb = GatewayRestVerb.GET,
+        query = emptyMap(),
+        timeoutMillis = LIST_TIMEOUT_MILLIS,
+        maxResponseBytes = THEMES_MAX_RESPONSE_BYTES,
+        parse = ::parseGatewayThemesEnvelope,
+    )
+
+    /** Selects a validated name and accepts only the host's exact acknowledgement. */
+    suspend fun setDashboardTheme(name: String): GatewayRestResult<String> {
+        if (!isSafeCustomThemeName(name)) return malformed()
+        val encoded = buildJsonObject { put("name", name) }.toString().toByteArray(Charsets.UTF_8)
+        if (encoded.size > MAX_UPDATE_BODY_BYTES) return malformed()
+        return send(
+            path = DASHBOARD_THEME_PATH,
+            verb = GatewayRestVerb.PUT,
+            query = emptyMap(),
+            body = encoded.toRequestBody(JSON_MEDIA_TYPE),
+            timeoutMillis = WRITE_TIMEOUT_MILLIS,
+            maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
+            parse = { bytes -> parseDashboardThemeAck(bytes, name) },
+        )
+    }
 
     /**
      * One page of sessions from `GET /api/sessions` (`sessions.py:53` @ the
@@ -798,6 +832,11 @@ class GatewayRestClient(
 private fun <T> malformed(): GatewayRestResult<T> =
     GatewayRestResult.Failed(null, MALFORMED_REQUEST_MESSAGE)
 
+private inline fun <T, R> GatewayRestResult<T>.map(transform: (T) -> R): GatewayRestResult<R> = when (this) {
+    is GatewayRestResult.Success -> GatewayRestResult.Success(transform(value))
+    is GatewayRestResult.Failed -> this
+}
+
 /**
  * The `profile` query parameter, or nothing when the caller wants the
  * connection's current profile. Null return means the name was refused.
@@ -1009,6 +1048,18 @@ private fun parseRestartStart(bytes: ByteArray): GatewayRestartStart? {
     )
 }
 
+internal data class GatewayThemeEnvelope(val themes: List<GatewayTheme>, val active: String?)
+
+private fun parseGatewayThemesEnvelope(bytes: ByteArray): GatewayThemeEnvelope? = when (val parsed = parseGatewayThemes(bytes)) {
+    is GatewayThemeParse.Ok -> GatewayThemeEnvelope(parsed.themes, parsed.active)
+    is GatewayThemeParse.Rejected -> null
+}
+
+private fun parseDashboardThemeAck(bytes: ByteArray, requestedName: String): String? {
+    val root = parseObject(bytes) ?: return null
+    return root.jsonString("theme")?.takeIf { root.boolean("ok") == true && it == requestedName }
+}
+
 /** A named array of strings, or null if it is present and holds anything else. */
 private fun JsonObject.stringArray(name: String): List<String>? {
     val raw = this[name] ?: return null
@@ -1050,6 +1101,8 @@ private const val UPDATE_PATH = "api/hermes/update"
 private const val UPDATE_RECEIPT_PATH = "api/hermes/update/receipt"
 private const val ACTIONS_PATH = "api/actions"
 private const val GATEWAY_RESTART_PATH = "api/gateway/restart"
+private const val DASHBOARD_THEMES_PATH = "api/dashboard/themes"
+private const val DASHBOARD_THEME_PATH = "api/dashboard/theme"
 
 /** The route's own window; anything outside it is a query it would clamp (`:5822`). */
 internal const val MAX_ACTION_LINES = 2000
@@ -1112,6 +1165,7 @@ private const val ACTION_STATUS_TIMEOUT_MILLIS = 5_000L
  * bounds this client would rather fail on than hold.
  */
 private const val LIST_MAX_RESPONSE_BYTES = 1024L * 1024L
+private const val THEMES_MAX_RESPONSE_BYTES = 256L * 1024L
 private const val ACK_MAX_RESPONSE_BYTES = 64L * 1024L
 
 /**

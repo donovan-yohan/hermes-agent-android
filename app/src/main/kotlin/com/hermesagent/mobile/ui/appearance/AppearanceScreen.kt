@@ -32,6 +32,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.hermesagent.mobile.data.themes.GatewayThemesState
+import com.hermesagent.mobile.data.themes.GatewayThemesStatus
 import com.hermesagent.mobile.ui.AppearanceActions
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.SectionLabel
@@ -57,6 +59,7 @@ fun AppearanceScreen(
     selection: AppearanceSelection,
     actions: AppearanceActions,
     modifier: Modifier = Modifier,
+    gatewayThemes: GatewayThemesState = GatewayThemesState(),
     /** The saved `Intro Splash` preference; see [IntroSplashRow]. */
     introSplash: Boolean = true,
 ) {
@@ -116,6 +119,52 @@ fun AppearanceScreen(
                 )
             }
 
+            item {
+                SectionLabel(
+                    "Gateway themes",
+                    Modifier.padding(
+                        start = HermesTheme.spacing.pageInset,
+                        top = 22.dp,
+                        bottom = 6.dp,
+                    ),
+                )
+            }
+            item {
+                GatewayThemesCaption(
+                    text = "Themes supplied by the connected Gateway.",
+                )
+            }
+            when (gatewayThemes.status) {
+                GatewayThemesStatus.Ready -> if (gatewayThemes.themes.isEmpty()) {
+                    item { GatewayThemesCaption("This Gateway has no custom themes.") }
+                } else {
+                    items(gatewayThemes.themes, key = { it.name }) { theme ->
+                        ThemeRow(
+                            preset = theme.preset,
+                            isSelected = theme.name == selection.themeName,
+                            dark = HermesTheme.isDark,
+                            onClick = { actions.onSelectTheme(theme.name) },
+                        )
+                    }
+                }
+                GatewayThemesStatus.Idle -> Unit
+                GatewayThemesStatus.Loading -> item {
+                    GatewayThemesCaption(gatewayThemes.status.productCopy())
+                }
+                GatewayThemesStatus.SignInRequired -> item {
+                    GatewayThemesProblem(gatewayThemes.status.productCopy(), actions.onRetryThemes)
+                }
+                GatewayThemesStatus.Unsupported -> item {
+                    GatewayThemesCaption(gatewayThemes.status.productCopy())
+                }
+                GatewayThemesStatus.Unreachable -> item {
+                    GatewayThemesProblem(gatewayThemes.status.productCopy(), actions.onRetryThemes)
+                }
+                GatewayThemesStatus.Unusable -> item {
+                    GatewayThemesProblem(gatewayThemes.status.productCopy(), actions.onRetryThemes)
+                }
+            }
+
             // Desktop's Appearance list runs Language → Themes → UI scale →
             // Terminal font → Session density → Tab strip → Translucency →
             // Backdrop → **Intro Splash** → Composer pop-out → …
@@ -127,6 +176,38 @@ fun AppearanceScreen(
                 IntroSplashRow(on = introSplash, onChange = actions.onSetIntroSplash)
             }
         }
+    }
+}
+
+@Composable
+private fun GatewayThemesCaption(text: String) {
+    Text(
+        text = text,
+        style = HermesTheme.type.caption,
+        color = HermesTheme.tokens.textTertiary,
+        modifier = Modifier.padding(
+            horizontal = HermesTheme.spacing.pageInset,
+            vertical = 6.dp,
+        ),
+    )
+}
+
+@Composable
+private fun GatewayThemesProblem(text: String, retry: () -> Unit) {
+    Column {
+        GatewayThemesCaption(text)
+        Text(
+            text = "Try again",
+            style = HermesTheme.type.sessionTitle,
+            color = HermesTheme.tokens.textPrimary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .clickable(onClick = retry)
+                .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 12.dp)
+                .semantics { contentDescription = "Retry Gateway themes" },
+        )
+        Hairline(Modifier.padding(start = HermesTheme.spacing.pageInset))
     }
 }
 

@@ -336,8 +336,10 @@ lifecycle.
 - Phone drawer and wide persistent session rail, IME-aware composer layouts,
   48 dp semantic actions, and desktop-keyboard shortcuts guarded against IME
   composition.
-- Custom Desktop themes and the final physical TalkBack, large-font, reduced
-  motion, orientation, and keyboard matrix remain open.
+- Custom themes are read from the active Gateway's dashboard route and the
+  selected name is remembered per saved connection. Physical-device evidence
+  and the rendered Desktop-versus-Android report remain owed by #292, alongside
+  the final TalkBack, large-font, reduced-motion, orientation, and keyboard matrix.
 
 > **Upstream pin moved to `564aef2946` (2026-09-10).** 501 commits past
 > `72a3277cd7`. Nothing on the wire changed shape: all 32 JSON-RPC methods this

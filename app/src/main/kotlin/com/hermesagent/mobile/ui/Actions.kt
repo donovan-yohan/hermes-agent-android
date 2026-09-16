@@ -106,6 +106,7 @@ class ChatActions(
 
 class AppearanceActions(
     val onSelectTheme: (String) -> Unit = {},
+    val onRetryThemes: () -> Unit = {},
     val onSelectMode: (HermesThemeMode) -> Unit = {},
     /** Desktop's `setIntroSplash` (`store/intro-splash.ts:11-13` @ `72a3277cd7`). */
     val onSetIntroSplash: (Boolean) -> Unit = {},
