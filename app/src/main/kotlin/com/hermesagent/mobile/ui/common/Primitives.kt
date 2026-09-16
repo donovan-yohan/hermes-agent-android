@@ -449,6 +449,13 @@ fun <T> SegmentedControl(
  * caller so far was wide enough only by accident, through `fillMaxWidth()` or a
  * long label. Padding stays as the *visual* rhythm; the floors only ever make
  * the box bigger.
+ *
+ * @param variant which filled action this is. The fill and its label ink are
+ *   read from one token pair, never taken as independent arguments: a caller
+ *   that could supply a fill on its own could supply one whose label is
+ *   illegible, which is exactly #140. Desktop pairs them the same way —
+ *   `button.tsx:19,21` @ `437116f9497c80d242ce034ff7f5d81dc277a337` writes
+ *   `bg-primary text-primary-foreground` and `bg-destructive text-white`.
  */
 @Composable
 fun PrimaryButton(
@@ -456,10 +463,17 @@ fun PrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    /** The one filled action's colour. Destructive confirmations own the exception. */
-    container: Color = HermesTheme.tokens.accent,
+    variant: FilledActionVariant = FilledActionVariant.Accent,
 ) {
     val tokens = HermesTheme.tokens
+    val container = when (variant) {
+        FilledActionVariant.Accent -> tokens.accent
+        FilledActionVariant.Destructive -> tokens.destructive
+    }
+    val ink = when (variant) {
+        FilledActionVariant.Accent -> tokens.filledActionInk
+        FilledActionVariant.Destructive -> tokens.destructiveActionInk
+    }
     Box(
         modifier = modifier
             .heightIn(min = HermesTheme.spacing.touchTarget)
@@ -475,10 +489,18 @@ fun PrimaryButton(
         Text(
             text = label,
             style = HermesTheme.type.caption,
-            color = if (enabled) tokens.accentForeground else tokens.accentForeground.copy(alpha = 0.6f),
+            color = if (enabled) ink else ink.copy(alpha = 0.6f),
         )
     }
 }
+
+/**
+ * The filled actions this app has. Destructive confirmations are the one
+ * exception to the accent fill, and both are painted from a token pair that
+ * keeps the fill and its ink together.
+ */
+enum class FilledActionVariant { Accent, Destructive }
+
 
 /**
  * Desktop's `size="sm" variant="outline"` button: a bordered, transparent
@@ -1093,7 +1115,7 @@ fun ChoiceButton(
                 !enabled -> tokens.textQuaternary
                 // On a solid accent fill the label is Desktop's
                 // `text-primary-foreground`, not the ordinary ink.
-                selected -> tokens.accentForeground
+                selected -> tokens.filledActionInk
                 else -> tokens.textSecondary
             },
         )

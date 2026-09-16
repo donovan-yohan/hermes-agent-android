@@ -363,7 +363,7 @@ fun ConfirmSheet(
                 label = confirmLabel,
                 onClick = onConfirm,
                 modifier = Modifier.fillMaxWidth(),
-                container = if (destructive) tokens.destructive else tokens.accent,
+                variant = if (destructive) FilledActionVariant.Destructive else FilledActionVariant.Accent,
             )
             TextButton(cancelLabel, onDismiss, color = tokens.textTertiary)
         }

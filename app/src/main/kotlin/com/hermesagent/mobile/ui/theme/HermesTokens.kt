@@ -103,7 +103,46 @@ data class HermesTokens(
     // ── Accent ────────────────────────────────────────────────────────────
     /** `--ui-accent`: the brand stroke. Resolved midground, never null. */
     val accent: Color,
+
+    /**
+     * The ink for text on the **tinted** accent surface — a wash of the brand
+     * hue, not the hue itself (`--dt-accent-foreground`, `context.tsx:253`).
+     * A filled action does not use this; it uses [filledActionInk].
+     */
     val accentForeground: Color,
+
+    // ── Filled actions ────────────────────────────────────────────────────
+    /**
+     * The label ink for text painted on [accent]-strength fills — the one
+     * filled action (`PrimaryButton`) and the controls that share its
+     * full-strength fill.
+     *
+     * Desktop never chooses the fill and its ink independently: `button.tsx:19`
+     * pairs `bg-primary` with `text-primary-foreground`, and `:21` pairs
+     * `bg-destructive` with `text-white`. [accent] here is the same loud
+     * surface Desktop builds `--dt-primary-solid` for, and it carries the same
+     * fixed `#fcfcfc`-class ink — `PRIMARY_SOLID_FOREGROUND`
+     * (`context.tsx:197,268`). [destructive] carries the palette's own
+     * `destructiveForeground` (`--dt-destructive-foreground`,
+     * `context.tsx:271`), which is Desktop's `readableInk(destructive)`
+     * (`themes/skin.ts:102`).
+     *
+     * Both are resolved with one rule, and the rule is *measured*, not
+     * asserted: a palette pairing is honoured only while it clears the WCAG AA
+     * body-text floor of 4.5:1 on the fill it is painted on, and otherwise the
+     * legible candidate wins. Eleven of the twenty-two accent fills and eight
+     * of the twenty-two destructive fills in `BuiltinThemes.ALL` fail their
+     * palette pairing — Desktop's own ink on `catppuccin` dark destructive is
+     * 2.32:1 — so honouring the pairing unconditionally would ship the very
+     * defect this token exists to close. See
+     * `ThemeParityTest.filled action ink follows its fill and clears AA on every
+     * preset and mode` for the
+     * per-preset table, and #140 for the finding.
+     */
+    val filledActionInk: Color,
+
+    /** The destructive fill's own label ink — [filledActionInk] over [destructive]. */
+    val destructiveActionInk: Color,
 
     // ── Session status dots (`session-status-dot.tsx:29-77`) ──────────────
     /** Amber: a clarify/approval blocks the turn. The one "act now" colour. */
@@ -295,6 +334,17 @@ data class HermesTokens(
                 // it must not inherit the distinct midground foreground.
                 // context.tsx:249-256 @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd.
                 accentForeground = palette.accentForeground,
+                // Desktop decides a filled action's ink with the fill, never
+                // apart from it: `button.tsx:19` pairs `bg-primary` with
+                // `text-primary-foreground`, `:21` pairs `bg-destructive` with
+                // `text-white`. Its own pairing is honoured here while it stays
+                // legible, and the legible candidate wins where it does not —
+                // Desktop's destructiveForeground is `readableInk(destructive)`
+                // (`themes/skin.ts:102`), so this degrades toward Desktop's own
+                // rule rather than away from it. See the field docs for why
+                // both halves are load-bearing (#140).
+                filledActionInk = filledActionInk(accent, palette.midgroundForeground),
+                destructiveActionInk = filledActionInk(palette.destructive, palette.destructiveForeground),
                 statusNeedsInput = Amber500,
                 statusWorking = accent,
                 // `styles.css:1026-1055,1144-1159` @

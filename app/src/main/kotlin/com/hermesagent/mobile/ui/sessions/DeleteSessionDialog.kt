@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.hermesagent.mobile.data.ssh.redact
+import com.hermesagent.mobile.ui.common.FilledActionVariant
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -139,7 +140,7 @@ fun DeleteSessionDialog(
                         label = if (deleting) DELETING_LABEL else DELETE_LABEL,
                         onClick = { runDelete() },
                         enabled = !deleting,
-                        container = tokens.destructive,
+                        variant = FilledActionVariant.Destructive,
                     )
                 }
             }
