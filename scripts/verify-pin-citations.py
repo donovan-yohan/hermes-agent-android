@@ -447,12 +447,18 @@ def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | N
 
     A bare ``:NNN`` continues the path above it, so it continues that path's pin
     too: ``:189`` under a ``change_watcher.py:180`` names the same file at the
-    same revision. Only a line that does *not* name its own path inherits this
-    way — a citation that spells its path out is governed by the declarations
-    around it, and letting an earlier citation of the same file override them
-    binds it to a revision the surrounding prose has moved past (#301: a doc
-    comment re-pinned the file and the same path was still cited at the old pin
-    three paragraphs up).
+    same revision. A citation that spells its path out again is read at the
+    revision that path was last cited at in its own section, which is how a
+    wrapped continuation's pin reaches the citation below it (#297 round 2: the
+    `ChatViewModel.kt:927` true positive is bound this way, and restricting
+    inheritance to bare continuations loses it — measured, not assumed).
+
+    The pin found here is only offered as a candidate: `_match_pin` accepts it
+    only when this change introduced it, so a path cited at a pin the change did
+    not move leaves the citation on its own pin rather than re-binding it to a
+    revision the surrounding prose has moved past (#301: a doc comment
+    re-pinned the file while the same path was still cited at the old pin three
+    paragraphs up).
     """
     base = cited.rsplit("/", 1)[-1]
     for index in range(number - 2, -1, -1):
@@ -577,7 +583,7 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
     """The pin a page declares in its own `## Pin` section, marker-aware.
 
     This is where a page states what governs the citations below it. Its first
-    row without a marker is the page pin; a row naming a marker governs only the
+    pin-bearing row is the page pin; a row naming a marker governs only the
     citations carrying it. A section's own prose pin is checked first, so this is
     the fallback for the sections that name none.
     """
@@ -605,11 +611,11 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
             if named and general is None:
                 general = named[0]
             continue
-        pin, row_marker, _general = row
-        if row_marker is not None:
-            by_marker.setdefault(row_marker, pin)
-        elif general is None:
+        pin, row_marker, is_general = row
+        if is_general and general is None:
             general = pin
+        elif row_marker is not None:
+            by_marker.setdefault(row_marker, pin)
     if marker and marker in by_marker:
         return by_marker[marker]
     return general
