@@ -1,5 +1,8 @@
 package com.hermesagent.mobile.plugins.bots
 
+import com.hermesagent.mobile.data.session.RelativeAgeUnit
+import com.hermesagent.mobile.data.session.relativeAge
+
 /**
  * The presentation leaves a roster row is assembled from: the compact age
  * label, the display name, the @handle and the one-line preview.
@@ -10,34 +13,13 @@ package com.hermesagent.mobile.plugins.bots
  * `apps/desktop/src/plugins/hermes-bots/labels.ts:14-90` (name + preview),
  * `apps/desktop/src/plugins/hermes-bots/data.ts:957-963` (@handle) and
  * `apps/desktop/src/plugins/hermes-bots/row-helpers.ts` (A2A preview kind).
+ *
+ * The bucket rule itself lives in core
+ * ([com.hermesagent.mobile.data.session.relativeAge]), as `coarseElapsed` does
+ * on Desktop, where the plugin imports it from `lib/time.ts` rather than
+ * carrying its own copy — the two lists must not be able to disagree about how
+ * an age is bucketed. What stays here is the plugin's own label set.
  */
-
-private const val SECOND_MS = 1_000L
-private const val MINUTE_MS = 60L * SECOND_MS
-private const val HOUR_MS = 60L * MINUTE_MS
-private const val DAY_MS = 24L * HOUR_MS
-
-/** The coarsest elapsed bucket for a duration. */
-enum class ElapsedUnit { Second, Minute, Hour, Day }
-
-/** `coarseElapsed`'s answer: a unit and its floored value. */
-data class Elapsed(val unit: ElapsedUnit, val value: Long)
-
-/**
- * Coarsest elapsed bucket for a (clamped-nonnegative) duration, floored.
- * `time.ts:199-215` @ the pin. The caller owns rendering — no format is baked
- * in here — which is why the age label's suffix is a parameter and not a
- * constant.
- */
-fun coarseElapsed(deltaMillis: Long): Elapsed {
-    val ms = deltaMillis.coerceAtLeast(0L)
-    return when {
-        ms >= DAY_MS -> Elapsed(ElapsedUnit.Day, ms / DAY_MS)
-        ms >= HOUR_MS -> Elapsed(ElapsedUnit.Hour, ms / HOUR_MS)
-        ms >= MINUTE_MS -> Elapsed(ElapsedUnit.Minute, ms / MINUTE_MS)
-        else -> Elapsed(ElapsedUnit.Second, ms / SECOND_MS)
-    }
-}
 
 /**
  * The row age's suffix strings.
@@ -60,12 +42,12 @@ fun rowAgeLabel(
     nowMillis: Long,
     labels: BotRowAgeLabels = BotRowAgeLabels(),
 ): String {
-    val elapsed = coarseElapsed(nowMillis - atMillis)
+    val elapsed = relativeAge(nowMillis - atMillis)
     return when (elapsed.unit) {
-        ElapsedUnit.Second -> labels.now
-        ElapsedUnit.Day -> "${elapsed.value}${labels.day}"
-        ElapsedUnit.Hour -> "${elapsed.value}${labels.hour}"
-        ElapsedUnit.Minute -> "${elapsed.value}${labels.minute}"
+        RelativeAgeUnit.Second -> labels.now
+        RelativeAgeUnit.Day -> "${elapsed.value}${labels.day}"
+        RelativeAgeUnit.Hour -> "${elapsed.value}${labels.hour}"
+        RelativeAgeUnit.Minute -> "${elapsed.value}${labels.minute}"
     }
 }
 

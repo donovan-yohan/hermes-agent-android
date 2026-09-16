@@ -89,9 +89,11 @@ class SessionActionsMenuJourneyTest {
         launchSessionList()
 
         // The row still speaks as exactly one node, and the control's own name
-        // is a sibling rather than a fragment of it.
-        assertEquals(1, compose.nodesLabelled("$FIRST_TITLE. Idle"))
-        compose.onNodeWithContentDescription("$FIRST_TITLE. Idle").assertIsDisplayed()
+        // is a sibling rather than a fragment of it. The age joins that one
+        // sentence, as Desktop's `<time>` does inside its own row
+        // (`session-row.tsx:229-237` @ `437116f9`).
+        assertEquals(1, compose.nodesLabelled("$FIRST_TITLE. Idle. Updated just now"))
+        compose.onNodeWithContentDescription("$FIRST_TITLE. Idle. Updated just now").assertIsDisplayed()
         assertEquals(0, compose.nodesLabelled("$FIRST_TITLE. Idle. $SESSION_ACTIONS_LABEL"))
     }
 
@@ -619,6 +621,10 @@ class SessionActionsMenuJourneyTest {
                     onSelect = onSelect,
                     onCreate = {},
                     modifier = Modifier,
+                    // This suite's rows are all stamped at NOW; the list must
+                    // age them against the same instant rather than the device
+                    // clock, which would render them decades old.
+                    nowMillis = NOW,
                     onRenameSession = onRenameSession,
                     onDeleteSession = onDeleteSession,
                     profileRail = ProfileRailState(

@@ -86,8 +86,15 @@ class AutoDiscoveredProjectTest {
                     onSelect = {},
                     onCreate = {},
                     modifier = Modifier,
+                    // No rows here, so no age is rendered; the value only has
+                    // to be a fixed instant rather than a live read.
+                    nowMillis = NOW,
                 )
             }
         }
+    }
+
+    private companion object {
+        const val NOW = 1_700_000_000_000L
     }
 }
