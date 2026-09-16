@@ -3839,7 +3839,7 @@ internal class LiveGatewaySessionRepository(
      * (`data/session/SessionCache.kt:183-203`), none of which a reversible
      * verb may destroy and none of which a rollback could put back. The live
      * list stops showing an archived row because `buildSessionRows` filters
-     * the pool it draws from (`data/session/SessionGrouping.kt:112`), which is
+     * the pool it draws from (`data/session/SessionGrouping.kt:184`), which is
      * where Desktop draws the same line (`sidebar/index.tsx:511-518` @
      * `72a3277cd7`: "Archived is a view of its own set rather than a filter over
      * this one").
