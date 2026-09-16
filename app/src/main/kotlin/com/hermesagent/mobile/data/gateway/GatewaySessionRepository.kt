@@ -4197,15 +4197,19 @@ internal class LiveGatewaySessionRepository(
      *
      * These frames carry no runtime session id to route by, which is exactly
      * why they need their own path: [applyEvent]'s first act is to resolve one.
-     * Two of them are session *lifecycle* rather than change hints — a reclaim
-     * still has to settle and unbind the runtime it names — and the rest are
-     * hints the lane fans out.
+     * The owner in [GatewayGlobalEventType] says which side settles each one:
+     * a reclaim is session *lifecycle* and still has to settle and unbind the
+     * runtime it names, while every other admitted type is a hint (or the
+     * replay epoch) the lane fans out.
+     *
+     * The `when` is exhaustive over the table, so the entry is total: an
+     * admitted type always lands on one of the two paths below, and a new one
+     * does not compile until it names an owner.
      */
     private fun applyGlobalEvent(event: GatewayEvent): Boolean =
-        if (event.type == "session.reclaimed") {
-            applyReclaimedEvent(event)
-        } else {
-            globalEvents.accept(event)
+        when (GatewayGlobalEventType.fromWire(event.type)?.owner) {
+            GatewayGlobalEventOwner.Reclaim -> applyReclaimedEvent(event)
+            GatewayGlobalEventOwner.Lane, null -> globalEvents.accept(event)
         }
 
     /**

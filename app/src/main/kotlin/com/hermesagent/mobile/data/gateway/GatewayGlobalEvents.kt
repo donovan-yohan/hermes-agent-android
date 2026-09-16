@@ -48,32 +48,73 @@ internal enum class GatewayEventLane {
 }
 
 /**
- * The frames the gateway broadcasts as session-less globals.
+ * Which module settles one admitted global frame.
+ *
+ * Every entry in [GatewayGlobalEventType] names exactly one of these, and both
+ * the repository's dispatch and this lane's router read it — so a type cannot
+ * be admitted without a destination.
+ */
+internal enum class GatewayGlobalEventOwner {
+    /** Settled by [GatewayGlobalEventLane.accept]: the replay epoch, or a change hint. */
+    Lane,
+
+    /**
+     * Settled by the repository's reclaim path before the lane is reached: a
+     * reclaim has to settle and unbind the runtime it names, which needs the
+     * identity map the lane does not hold.
+     */
+    Reclaim,
+}
+
+/**
+ * The frames the gateway broadcasts as session-less globals, as one table.
+ *
+ * The subscription allow-list ([GATEWAY_GLOBAL_EVENT_TYPES]), the lane question
+ * ([gatewayEventLane]) and the routing on both sides all read this enum, so
+ * membership and handling cannot drift: `accept`'s `when` is exhaustive over
+ * these entries, and the next type added here fails compilation until a branch
+ * names its handler and an owner names who settles it.
  *
  * Two of them are lifecycle, not change hints: `gateway.ready` opens every
  * socket with `skin`, `change_events`, `heartbeat` and `replay_epoch`
- * (`tui_gateway/ws.py:272-277` @ the pin SHA), and `session.reclaimed` is
+ * (`tui_gateway/ws.py:296-303` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`), and `session.reclaimed` is
  * *broadcast* rather than session-targeted because the reap paths run on timer
- * threads with no live transport (`tui_gateway/session_lifecycle.py:275-286`).
- * Both bypass `write_json`, which is why neither carries a `seq`.
+ * threads with no live transport
+ * (`tui_gateway/session_lifecycle.py:286-298` @ the same SHA). Both bypass
+ * `write_json`, which is why neither carries a `seq`.
  *
  * The four change hints are polled and broadcast by the change watcher
- * (`tui_gateway/change_watcher.py:177-184` @ the pin SHA). The pin also
+ * (`tui_gateway/change_watcher.py:177-184` @ the same SHA). The pin also
  * broadcasts `skin.changed`, `platforms.changed` and `pairing.changed`; this
- * client has no surface for them yet, and they stay out of the allow-list
- * rather than being admitted unhandled.
+ * client has no surface for them yet, and they stay out of this table rather
+ * than being admitted unhandled.
  */
-internal val GATEWAY_GLOBAL_EVENT_TYPES: Set<String> = setOf(
-    "gateway.ready",
-    "session.reclaimed",
-    "cron.changed",
-    "pet.changed",
-    "sessions.changed",
-    "bot_relay.outbox.pending",
-)
+internal enum class GatewayGlobalEventType(val wire: String, val owner: GatewayGlobalEventOwner) {
+    GatewayReady("gateway.ready", GatewayGlobalEventOwner.Lane),
+    SessionReclaimed("session.reclaimed", GatewayGlobalEventOwner.Reclaim),
+    CronChanged("cron.changed", GatewayGlobalEventOwner.Lane),
+    PetChanged("pet.changed", GatewayGlobalEventOwner.Lane),
+    SessionsChanged("sessions.changed", GatewayGlobalEventOwner.Lane),
+    BotRelayOutbox("bot_relay.outbox.pending", GatewayGlobalEventOwner.Lane),
+    ;
+
+    companion object {
+        /** The table entry for one wire type, or null for a frame this client does not admit. */
+        fun fromWire(type: String): GatewayGlobalEventType? =
+            entries.firstOrNull { it.wire == type }
+    }
+}
+
+/**
+ * What the socket subscribes to: the wire types of [GatewayGlobalEventType],
+ * derived rather than restated so the allow-list cannot drift from the table.
+ */
+internal val GATEWAY_GLOBAL_EVENT_TYPES: Set<String> =
+    GatewayGlobalEventType.entries.map { it.wire }.toSet()
 
 internal fun gatewayEventLane(type: String): GatewayEventLane =
-    if (type in GATEWAY_GLOBAL_EVENT_TYPES) GatewayEventLane.Global else GatewayEventLane.Session
+    if (GatewayGlobalEventType.fromWire(type) != null) GatewayEventLane.Global else GatewayEventLane.Session
 
 /**
  * The session-less lane: the dispatch path parallel to `applyEvent`, for frames
@@ -147,40 +188,52 @@ internal class GatewayGlobalEventLane {
      * Handle one session-less frame. Returns true when the session list's rows
      * moved, which is the one global frame whose refetch this repository owns.
      *
-     * A type this lane does not know is dropped: the allow-list already refused
-     * it upstream of here, and a future broadcast must not throw on a client
-     * that cannot use it
-     * (`tui_gateway/change_watcher.py:177-184` @ the pin SHA — the pin's set is
-     * wider than this client's).
+     * The `when` is exhaustive over [GatewayGlobalEventType] with no `else`:
+     * adding a type to the table is a compile error until a branch here names
+     * how the lane settles it, so a subscribed type can never fall through
+     * unhandled. Only the entries the lane owns can arrive — the repository
+     * settles [GatewayGlobalEventOwner.Reclaim] before dispatching — and a
+     * type from a newer backend never reaches this method at all, because the
+     * allow-list refused it upstream
+     * (`tui_gateway/change_watcher.py:177-184` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337` — the pin's set is wider than
+     * this client's). Null cannot happen either, but naming it keeps the
+     * refusal explicit rather than silent.
      */
-    fun accept(event: GatewayEvent): Boolean = when (event.type) {
-        "gateway.ready" -> {
+    fun accept(event: GatewayEvent): Boolean = when (GatewayGlobalEventType.fromWire(event.type)) {
+        GatewayGlobalEventType.GatewayReady -> {
             adoptEpoch(event.payload as? JsonObject)
             false
         }
 
-        "cron.changed" -> {
+        GatewayGlobalEventType.CronChanged -> {
             publish(GatewayChangeHintKind.Cron, event.payload)
             false
         }
 
-        "pet.changed" -> {
+        GatewayGlobalEventType.PetChanged -> {
             publish(GatewayChangeHintKind.Pet, event.payload)
             false
         }
 
-        "bot_relay.outbox.pending" -> {
+        GatewayGlobalEventType.BotRelayOutbox -> {
             publish(GatewayChangeHintKind.BotRelayOutbox, event.payload)
             false
         }
 
         // The backend's session rows moved; the repository rescans its own list.
-        "sessions.changed" -> {
+        GatewayGlobalEventType.SessionsChanged -> {
             publish(GatewayChangeHintKind.Sessions, event.payload)
             true
         }
 
-        else -> false
+        // The repository's own reclaim path, never this lane's: it settles and
+        // unbinds the runtime, which is what the identity map is for. If one
+        // ever arrives here the routing above is wrong, and claiming to have
+        // handled it would be worse than dropping it.
+        GatewayGlobalEventType.SessionReclaimed,
+        null,
+        -> false
     }
 
     private fun publish(kind: GatewayChangeHintKind, payload: JsonElement) {
