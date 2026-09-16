@@ -107,6 +107,14 @@ sealed interface SessionListRow {
      * (`en.ts:2407`, chosen at `sidebar/index.tsx:1690-1692` @ `72a3277cd7`). It
      * is the honest explanation of an otherwise confusing empty list, so it
      * ships with the feature rather than after it.
+     *
+     * The live list renders Desktop's sentence verbatim. The archived view is a
+     * deliberate divergence: Desktop cannot reach `s.allPinned` there, because
+     * `$sidebarShowArchived` itself makes `$sidebarFiltersActive` true and
+     * `s.noFilterMatches` wins (`store/layout.ts:392-396`,
+     * `sidebar/index.tsx:1706-1712` @ `437116f9`) — and that sentence names a
+     * filter surface this rail does not have. Ledgered in
+     * `docs/parity/session-list-sections.md`.
      */
     data object AllPinnedNote : SessionListRow
 
@@ -202,17 +210,31 @@ fun calendarBucket(
  *   different facts and only one of them means "nothing matched".
  * @param archivedView Desktop's `Archived` toggle. Archived is a view of its
  *   own set rather than a filter over the live one
- *   (`apps/desktop/src/app/chat/sidebar/index.tsx:511-518` @ `72a3277cd7`), so it
- *   swaps the pool wholesale and renders it without date dividers (`:1716`,
- *   `grouping='none'` while archived). This returns a **flat** list, which goes
- *   further than upstream does and is a known divergence, not the port of that
- *   line: Desktop's `Pinned` section is its own section gated only on
- *   `!trimmedQuery` (`:1632-1653`), so a pinned + archived row still files
- *   under `PINNED` there. See
- *   [#146](https://github.com/donovan-yohan/hermes-agent-android/issues/146) and
- *   the drift row in `docs/parity/session-list-sections.md`. A query inside that
- *   view stays a local filter over the archived pool — see
- *   `docs/parity/session-search.md`.
+ *   (`apps/desktop/src/app/chat/sidebar/index.tsx:516-520` @
+ *   `437116f9497c80d242ce034ff7f5d81dc277a337`), so it swaps the pool
+ *   wholesale. What the toggle settles is the *divider* question only —
+ *   `grouping={showArchived || rankedGlobally ? 'none' : …}` (`:1736`) — the
+ *   `Pinned` section above the rows is gated on `!trimmedQuery` alone
+ *   (`:1652-1674`), never on `showArchived`. A pinned chat that is then
+ *   archived therefore still files under `PINNED`, above the archived rows it
+ *   is one of. Those rows take no date dividers.
+ *
+ *   An archived account whose every row is pinned draws [AllPinnedNote] here —
+ *   a deliberate adaptation, not Desktop's sentence. Desktop reaches
+ *   `s.allPinned` only after `filtersActive` (`:1706-1712`), and
+ *   `$sidebarFiltersActive` counts `$sidebarShowArchived` itself
+ *   (`apps/desktop/src/store/layout.ts:392-396` @ `437116f9`), so with the
+ *   toggle on Desktop takes `s.noFilterMatches` — `No sessions match these
+ *   filters` (`apps/desktop/src/i18n/en.ts:2666`) — and `allPinned` is
+ *   unreachable in that view. That sentence would point at a `Status` /
+ *   `Project` / `Profile` / `PR` filter surface this rail does not have (an
+ *   omission owed to
+ *   [#142](https://github.com/donovanyohan/hermes-agent-android/issues/142)),
+ *   so the note states the real reason the recents area is empty instead.
+ *   Ledgered as `mobile-adaptation` in `docs/parity/session-list-sections.md`.
+ *
+ *   A query inside that view stays a local filter over the archived pool, with
+ *   no Pinned section above it either — see `docs/parity/session-search.md`.
  */
 fun buildSessionRows(
     sessions: Collection<SessionSummary>,
@@ -235,14 +257,25 @@ fun buildSessionRows(
         .sortedByDescending { it.lastActiveAtMillis }
         .toList()
 
-    if (archivedView) return localMatches.map(SessionListRow::Row)
+    // Desktop hides the Pinned section while a query is live, and the archived
+    // view is no exception: the section's own gate is `!trimmedQuery`
+    // (`sidebar/index.tsx:1652` @ `437116f9`), with no `showArchived` term in
+    // it. The two views answer differently below that gate — the live list
+    // renders the one `Results` section (`:1623-1650`), while an archived query
+    // stays a local filter over its own pool, because that pool is its own
+    // capped read and the search contract carries no `archived` field (ledgered
+    // in `docs/parity/session-search.md`) — but neither draws a Pinned section.
+    if (needle.isNotEmpty()) {
+        return if (archivedView) {
+            localMatches.map(SessionListRow::Row)
+        } else {
+            searchRows(localMatches, query.trim(), searchPending, serverMatches)
+        }
+    }
 
-    if (needle.isNotEmpty()) return searchRows(localMatches, query.trim(), searchPending, serverMatches)
-
-    // Desktop hides the Pinned section while a query is live — search answers
-    // in one Results list (`sidebar/index.tsx:1640,1664`). The backend flag is
-    // the authority on membership (`session-index.ts:41-49`); ordering is the
-    // list's own, because Android has no drag reorder to hint with.
+    // Membership is the backend flag — Desktop's own authority note is
+    // `session-index.ts:41-49`; ordering is the list's own, because Android has
+    // no drag reorder to hint with.
     val pinned = localMatches.filter { it.pinned == true }
     val pinnedIds = pinned.mapTo(HashSet(pinned.size), SessionSummary::id)
     val recents = if (pinned.isEmpty()) localMatches else localMatches.filterNot { it.id in pinnedIds }
@@ -253,28 +286,38 @@ fun buildSessionRows(
         pinned.forEach { rows += SessionListRow.Row(it) }
     }
 
-    var currentBucket: SessionBucket? = null
-    var emittedRecent = false
-    for (session in recents) {
-        val bucket = calendarBucket(session.lastActiveAtMillis, nowMillis, timeZone, locale)
-        // The first-group rule: the top of the list is already "the newest", so
-        // labelling it says nothing. A Pinned section above it changes that —
-        // there is now something to separate the newest bucket *from*, and an
-        // unlabelled first bucket would read as more pinned rows.
-        //
-        // That forced label is also the one slot where Desktop's relational copy
-        // would be false — a newer session can sit below it — so the first
-        // recents bucket is marked as leading a labelled list and takes the plain
-        // word. See `SessionBucket.label(leadsLabelledList)`.
-        if (bucket != currentBucket) {
-            val forcedFirst = !emittedRecent && pinned.isNotEmpty()
-            if (emittedRecent || pinned.isNotEmpty()) {
-                rows += SessionListRow.Divider(bucket, leadsLabelledList = forcedFirst)
+    // The archived view keeps that Pinned section — it holds the rows of the
+    // archived pool like any other, which is the pin's only visible effect once
+    // a chat is filed — but takes no dividers, because `grouping='none'` while
+    // archived settles the divider question alone
+    // (`sidebar/index.tsx:1736` @ `437116f9`). Its all-pinned case is this
+    // app's own sentence rather than Desktop's: see [AllPinnedNote].
+    if (archivedView) {
+        recents.forEach { rows += SessionListRow.Row(it) }
+    } else {
+        var currentBucket: SessionBucket? = null
+        var emittedRecent = false
+        for (session in recents) {
+            val bucket = calendarBucket(session.lastActiveAtMillis, nowMillis, timeZone, locale)
+            // The first-group rule: the top of the list is already "the newest", so
+            // labelling it says nothing. A Pinned section above it changes that —
+            // there is now something to separate the newest bucket *from*, and an
+            // unlabelled first bucket would read as more pinned rows.
+            //
+            // That forced label is also the one slot where Desktop's relational copy
+            // would be false — a newer session can sit below it — so the first
+            // recents bucket is marked as leading a labelled list and takes the plain
+            // word. See `SessionBucket.label(leadsLabelledList)`.
+            if (bucket != currentBucket) {
+                val forcedFirst = !emittedRecent && pinned.isNotEmpty()
+                if (emittedRecent || pinned.isNotEmpty()) {
+                    rows += SessionListRow.Divider(bucket, leadsLabelledList = forcedFirst)
+                }
+                currentBucket = bucket
             }
-            currentBucket = bucket
+            rows += SessionListRow.Row(session)
+            emittedRecent = true
         }
-        rows += SessionListRow.Row(session)
-        emittedRecent = true
     }
     if (pinned.isNotEmpty() && recents.isEmpty()) rows += SessionListRow.AllPinnedNote
     return rows
