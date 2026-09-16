@@ -57,6 +57,18 @@ PIN_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{7,40}(?![0-9a-fA-F])")
 # below were taken at that SHA". The marker is the only thing that selects such
 # a row, so an added narrower row cannot capture the general row's citations.
 MARKER_RE = re.compile(r"\*\(([a-z0-9][a-z0-9_-]*)\)\*")
+# A revision a page declares is a full SHA. A shorter hex run in prose is how the
+# text names a commit it is talking *about* ("it landed as `3ec8042483`"), and
+# reading one as the declaration for the citations below it is how an honest
+# section ("pinned at `X` rather than at the authority above") got bound to the
+# authority it was written to exclude (#240).
+FULL_SHA_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{40}(?![0-9a-fA-F])")
+# Text that marks the token after it as a revision rather than a number: inside
+# backticks, or introduced by `@` — which is how a citation's own pin and a
+# wrapped continuation are both written.
+_SHA_CONTEXT_RE = re.compile(r"`{1,2}\s*$|@\s*$")
+HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
+PIN_SECTION_RE = re.compile(r"^\s{0,3}#{1,6}\s*[Pp]in\s*$")
 
 _blobs: dict[tuple[str, str], list[str] | None] = {}
 _tree_paths: dict[str, list[str]] = {}
@@ -213,13 +225,22 @@ def resolve_path(sha: str, cited: str) -> str | None:
 
 
 def spans(raw: str) -> list[tuple[int, int]]:
+    """Parsed line spans; a span that starts below line 1 is not a citation.
+
+    `:0` is not a line of any file. A JSON literal (`\"\"\"{"pending":0,…}\"\"\"`) or a
+    fixture string that happens to sit under a path-bearing line yields one, and
+    admitting it manufactures a citation nobody wrote — which a verdict then
+    reports as an out-of-bounds finding against a path that was never cited.
+    Refusing it here, where citations are extracted, keeps the whole class out;
+    a bounds check inside one verdict can only answer for that verdict.
+    """
     out: list[tuple[int, int]] = []
     for part in raw.lstrip(":").split(","):
         if "-" in part:
             first, last = part.split("-", 1)
-            if first.isdigit() and last.isdigit() and int(first) <= int(last):
+            if first.isdigit() and last.isdigit() and 1 <= int(first) <= int(last):
                 out.append((int(first), int(last)))
-        elif part.isdigit():
+        elif part.isdigit() and int(part) >= 1:
             out.append((int(part), int(part)))
     return out
 
@@ -368,87 +389,324 @@ def full_pins(text: str) -> set[str]:
     return set(re.findall(r"(?<![0-9a-fA-F])[0-9a-f]{40}(?![0-9a-fA-F])", text))
 
 
-def citation_pin(lines: list[str], number: int, introduced: list[str]) -> str | None:
-    """The pin a citation sits under, or None when it is not this change's business.
+def _sha_tokens(line: str) -> list[str]:
+    """Pin-shaped tokens on a line: a revision, not a decimal literal in code.
 
-    Three shapes carry a citation, and all three are in the tree today:
+    ``PIN_RE`` matches any hex run, and every digit is a hex digit, so a code
+    line like ``assertEquals("1M", compactNumber(1000000))`` reads as a pin.
+    A token is a revision when it is unambiguous on its own (a full 40-character
+    SHA, or an abbreviation carrying a hex letter — only (10/16)^7 ≈ 6% of 7-char
+    prefixes are all-digits) or when the text just before it marks it as one:
+    inside backticks, or introduced by ``@``, which is how a citation's own pin
+    and a wrapped continuation are both written.
+    """
+    out: list[str] = []
+    for match in PIN_RE.finditer(line):
+        token = match.group(0)
+        if len(token) == 40 or re.search(r"[a-f]", token):
+            out.append(token)
+            continue
+        if _SHA_CONTEXT_RE.search(line[: match.start()]):
+            out.append(token)
+    return out
 
-    * the revision on the citation's own line — `` `path:line` @ `sha` ``;
-    * the revision on the *next* line, when the line wrapped — `` `path:line` `` /
-      ``@ `sha` `` — which is only a continuation when that next line holds no
-      citation of its own, or a table row beside it would lend its pin here;
-    * the page-level pin, declared once in a parity page's `## Pin` table, with
-      the citations below it naming no SHA of their own.
+
+def _match_pin(tokens: list[str], introduced: list[str]) -> str | None:
+    return next(
+        (pin for pin in introduced if any(pin.startswith(token) for token in tokens)),
+        None,
+    )
+
+
+def _continuation_of_above(lines: list[str], number: int) -> bool:
+    """True when this 1-based line's revision is the tail of a wrapped citation.
+
+    A citation that wraps puts its revision on the next line — `` `path:line` @``
+    / `` `sha` `` — so that revision supplies the citation above it and declares
+    nothing for the lines below. Reading it as the nearest declaration is how
+    every later citation in the file got re-pointed at a neighbour's pin (#297
+    round 2: the `:0` and `construct-moved` false reds on honest history).
+    """
+    return number >= 2 and lines[number - 2].rstrip().endswith("@")
+
+
+def _supplied_by_at(line: str) -> bool:
+    """True when the line's revision is introduced by `@`: a citation's own pin.
+
+    The same revision written *without* the `@` — a section saying it is "pinned
+    at `sha`" — is a declaration. That one character is the whole difference.
+    """
+    for match in PIN_RE.finditer(line):
+        if line[: match.start()].rstrip("`").rstrip().endswith("@"):
+            return True
+    return False
+
+
+def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | None:
+    """Tokens of the earlier citation that names this same path, if there is one.
+
+    A bare ``:NNN`` continues the path above it, so it continues that path's pin
+    too: ``:189`` under a ``change_watcher.py:180`` names the same file at the
+    same revision. Only a line that does *not* name its own path inherits this
+    way — a citation that spells its path out is governed by the declarations
+    around it, and letting an earlier citation of the same file override them
+    binds it to a revision the surrounding prose has moved past (#301: a doc
+    comment re-pinned the file and the same path was still cited at the old pin
+    three paragraphs up).
+    """
+    base = cited.rsplit("/", 1)[-1]
+    for index in range(number - 2, -1, -1):
+        line = lines[index]
+        if HEADING_RE.match(line):
+            break
+        if not any(
+            match.group("path").rsplit("/", 1)[-1] == base
+            for match in PATH_RE.finditer(line)
+        ):
+            continue
+        tokens = _sha_tokens(line)
+        if not tokens and index + 1 < len(lines) and not PATH_RE.search(lines[index + 1]):
+            tokens = _sha_tokens(lines[index + 1])
+        return tokens
+    return None
+
+
+def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
+    """Pin-bearing table rows that are not citations, by 0-based line index.
+
+    Each entry is ``(pin, marker or None, is_general_row)``. A table's *first*
+    pin-bearing row is its general row — the page declares what it governs in
+    that row's own read-via column. A *later* row is narrower: it governs only
+    the citations carrying the marker it names ("the citations marked
+    *(registry)* below were taken at that SHA"), and an unmarked citation falls
+    back to the general row rather than to it. Reading the nearest row as the
+    general one is what let an added registry row re-point every unmarked
+    citation in a file, turning honest merged history red (#280, #264).
+    """
+    rows: dict[int, tuple[str, str | None, bool]] = {}
+    inside = False
+    seen = False
+    for index, line in enumerate(lines):
+        is_row = line.lstrip().startswith("|")
+        if is_row != inside:
+            inside = is_row
+            seen = False
+        if not is_row or PATH_RE.search(line):
+            continue
+        tokens = _sha_tokens(line)
+        if not tokens:
+            continue
+        marker = MARKER_RE.search(line)
+        rows[index] = (tokens[0], marker.group(1) if marker else None, not seen)
+        seen = True
+    return rows
+
+
+def _section_start(lines: list[str], number: int) -> int:
+    """1-based line of the heading that opens the citation's own section."""
+    for index in range(number - 1, 0, -1):
+        if HEADING_RE.match(lines[index - 1]):
+            return index
+    return 1
+
+
+def _borrowed_above(lines: list[str], number: int) -> bool:
+    """True when a table row above carries a pin of its own, in the same table.
+
+    A table of citations lists each one with its own pin (``| q | path:line @ sha
+    |``), so an unmarked row among marked ones really is unattributed: the table
+    is per-row about pins, and nothing above says which revision this row is
+    against. That is a table's shape, not prose's. A source file's comment that
+    names no revision is governed by the file's declarations, and withholding it
+    there would drop a carried citation the change re-pinned — a false pass on
+    the very class this gate exists to catch (#283's `agent/display.py:446`).
+    """
+    if not lines[number - 1].lstrip().startswith("|"):
+        return False
+    for index in range(number - 2, -1, -1):
+        line = lines[index]
+        if not line.lstrip().startswith("|"):
+            # The end of this table: the block above is a different one.
+            return False
+        if PATH_RE.search(line) and _sha_tokens(line):
+            return True
+    return False
+
+
+def _declaration(lines: list[str], number: int) -> str | None:
+    """The full-SHA declaration nearest above, within the citation's section.
+
+    A declaration is prose or a table row that assigns a revision — as opposed
+    to a citation's own pin, the ``@ `sha` `` tail of a wrapped one, or a row
+    borrowed from another pin. All three of those are skipped: each belongs to
+    one citation, and letting it shadow the page would bind every citation below
+    it to a neighbour's revision.
+    """
+    section = _section_start(lines, number)
+    rows = _table_rows(lines)
+    marker = MARKER_RE.search(lines[number - 1])
+    if not marker and number < len(lines):
+        following = lines[number]
+        if not PATH_RE.search(following):
+            marker = MARKER_RE.search(following)
+    marker_name = marker.group(1) if marker else None
+    for index in range(number - 2, section - 2, -1):
+        line = lines[index]
+        row = rows.get(index)
+        if row is not None:
+            pin, row_marker, general = row
+            if general:
+                return pin
+            if row_marker is not None and row_marker == marker_name:
+                return pin
+            # A narrower row governs only the marker it names.
+            continue
+        if (
+            PATH_RE.search(line)
+            or _supplied_by_at(line)
+            or _continuation_of_above(lines, index + 1)
+        ):
+            continue
+        named = FULL_SHA_RE.findall(line)
+        if named:
+            return named[0]
+    return None
+
+
+def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, bool]], marker: str | None) -> str | None:
+    """The pin a page declares in its own `## Pin` section, marker-aware.
+
+    This is where a page states what governs the citations below it. Its first
+    row without a marker is the page pin; a row naming a marker governs only the
+    citations carrying it. A section's own prose pin is checked first, so this is
+    the fallback for the sections that name none.
+    """
+    start = next(
+        (index for index, line in enumerate(lines, 1) if PIN_SECTION_RE.match(line)),
+        None,
+    )
+    if start is None:
+        return None
+    general: str | None = None
+    by_marker: dict[str, str] = {}
+    for index in range(start + 1, len(lines) + 1):
+        line = lines[index - 1]
+        if HEADING_RE.match(line):
+            break
+        row = rows.get(index - 1)
+        if row is None:
+            if (
+                PATH_RE.search(line)
+                or _supplied_by_at(line)
+                or _continuation_of_above(lines, index)
+            ):
+                continue
+            named = FULL_SHA_RE.findall(line)
+            if named and general is None:
+                general = named[0]
+            continue
+        pin, row_marker, _general = row
+        if row_marker is not None:
+            by_marker.setdefault(row_marker, pin)
+        elif general is None:
+            general = pin
+    if marker and marker in by_marker:
+        return by_marker[marker]
+    return general
+
+
+def _nearest_sha_above(lines: list[str], number: int) -> str | None:
+    """Last resort: the nearest revision-shaped token above, within the section.
+
+    Reached only when nothing else has bound the citation — no revision on its
+    own line, none inherited from an earlier citation of the same path, no
+    section declaration and no page pin. A source file's comment that names no
+    revision is still answerable to the revision the file is being read at, and
+    refusing to answer at all would let a carried citation the change re-pinned
+    go unchecked — a silent pass on the class this gate exists to catch (#283).
+
+    The token must be revision-shaped (see `_sha_tokens`), so a decimal literal
+    cannot stand in for the pin the way `1000000` did in the #297 round-2 false
+    pass. Only a full SHA is accepted here: a short run in prose names a commit
+    the text is talking *about*, not the revision the citation was taken at.
+    """
+    for index in range(number - 2, _section_start(lines, number) - 2, -1):
+        named = FULL_SHA_RE.findall(lines[index])
+        if named:
+            return named[0]
+    return None
+
+
+def citation_pin(
+    lines: list[str], number: int, introduced: list[str], cited: str | None = None
+) -> str | None:
+    """The pin a citation sits under, or None when nothing declares one.
+
+    Four things can bind a citation, and the order matters:
+
+    * the revision on its own line — `` `path:line` @ `sha` `` — or, for a
+      wrapped one, on the next line, when that next line holds no citation of
+      its own;
+    * the revision an earlier citation of the *same path* named, which is what a
+      bare ``:NNN`` continuation inherits;
+    * the nearest full-SHA declaration above it *within its own section*: a
+      section's prose pin wins by proximity for the section it governs, and a
+      `## Pin` table's general row covers the sections that declare nothing;
+    * that table's marker-named row, for the citations carrying its marker.
+
+    A declaration is a full SHA. A shorter run is how prose names a commit it is
+    talking *about* ("it landed as `3ec8042483`") and a decimal literal in code
+    is not a revision at all, so neither may stand in for the page's pin —
+    reading them as declarations is how `1000000` in a test body swallowed the
+    declaration 100 lines below it, and how a citation under a wrapped
+    continuation was bound to its neighbour's pin (#297 round 2).
 
     Anything else — a citation under a pin this change did not move, or one that
     cannot be tied to a pin at all — is left alone: a file may carry several pins
     (only 26 name a single one), and a change that moves one stamp is not
     answerable for the citations that still name another.
     """
-    own = PIN_RE.findall(lines[number - 1])
+    own = _sha_tokens(lines[number - 1])
     if not own:
         following = lines[number] if number < len(lines) else ""
         # A continuation line carries the pin and nothing else; a line that also
         # carries a citation is a citation of its own, not this one's tail.
         if not PATH_RE.search(following):
-            own = PIN_RE.findall(following)
-    for pin in introduced:
-        if any(pin.startswith(token) for token in own):
-            return pin
+            own = _sha_tokens(following)
     if own:
-        return None
-    # No pin on this line and none on the next: a page-level *declaration*
-    # governs. A line that carries a citation and a SHA of its own is another
-    # citation's pin, not this page's — let a row borrowed from another pin
-    # shadow the declaration and every row below it would be misattributed to
-    # that borrowed pin (and skipped, which is how a drift goes unreported).
-    #
-    # A `## Pin` table may declare several pins, and the page says which
-    # citations each governs in the row's own read-via column: the general row
-    # covers everything below, and a narrower row names the marker that selects
-    # it ("the citations marked *(registry)* below were taken at that SHA").
-    # Resolving this by "nearest declaration above" made the nearest the table's
-    # LAST row, so *adding* a narrower row silently re-pointed every unmarked
-    # citation in the file — with no citation line edited and the page still
-    # naming row one for them. That is how the gate went red on honest merged
-    # history (#280, #264), which is how a gate gets switched off.
+        return _match_pin(own, introduced)
+
+    if cited is not None:
+        # A bare `:NNN` continuation continues the path above it, so it continues
+        # that path's pin too; and a citation that spells the same path out again
+        # is read at the revision that path was last cited at in its own section.
+        inherited = _path_pin_tokens(lines, number, cited)
+        if inherited:
+            matched = _match_pin(inherited, introduced)
+            if matched is not None:
+                return matched
+
+    declaring = _declaration(lines, number)
+    if declaring is not None:
+        return _match_pin([declaring], introduced)
+
     marker = MARKER_RE.search(lines[number - 1])
     if not marker and number < len(lines):
         following = lines[number]
         if not PATH_RE.search(following):
             marker = MARKER_RE.search(following)
-    skipped_borrowed = False
-    general: str | None = None
-    by_marker: dict[str, str] = {}
-    for line in lines[: number - 1]:
-        above = PIN_RE.findall(line)
-        if not above:
-            continue
-        if PATH_RE.search(line):
-            skipped_borrowed = True
-            continue
-        named = MARKER_RE.findall(line)
-        if named:
-            # A narrower row: it governs only the citations carrying its marker.
-            by_marker.setdefault(named[0], above[0])
-        else:
-            # The general row: the first one wins, so an added row below it
-            # cannot re-point citations whose lines the change did not touch.
-            general = general or above[0]
-    governing = by_marker.get(marker.group(1)) if marker else None
-    if governing is None:
-        governing = general
-    if governing is not None:
-        for pin in introduced:
-            if pin.startswith(governing):
-                return pin
+    page = _page_declaration(lines, _table_rows(lines), marker.group(1) if marker else None)
+    if page is not None:
+        return _match_pin([page], introduced)
+    if _borrowed_above(lines, number):
+        # A table row above carries a pin of its own with nothing declaring what
+        # governs this one, so the table does not say which revision this row is
+        # against. Answering with the single pin the change introduced is how a
+        # borrowed row's neighbour gets judged against a revision it never named.
         return None
-    if skipped_borrowed:
-        # A pin-bearing citation row sat above with no declaration to govern this
-        # one, so the file does not say which revision this citation is against.
-        # Guessing the single introduced pin here is how a borrowed row's
-        # neighbour gets checked against the wrong revision.
-        return None
+    fallback = _nearest_sha_above(lines, number)
+    if fallback is not None:
+        return _match_pin([fallback], introduced)
     return introduced[0] if len(introduced) == 1 else None
 
 
@@ -618,7 +876,7 @@ def citation_bindings(
             # definition does not have, so the whole file reports unprovable.
             ambiguous += 1
             continue
-        attributed = citation_pin(lines, number, pins)
+        attributed = citation_pin(lines, number, pins, cited)
         if attributed is None:
             ambiguous += 1
             continue
@@ -861,6 +1119,81 @@ def self_test() -> None:
         write("docs/page.md", narrowed_page)
         inserted = commit("fixture adds a narrower pin row below the page pin")
 
+        # (7) Junk tokens above a real declaration, in the same file: decimal
+        #     literals, a timestamp and a hex blob sit between the page pin row
+        #     and the citation, and the declaration wraps onto a second line.
+        #     The predicate that decides which token is a revision must not latch
+        #     onto `1000000` and swallow the declaration — that is the #297
+        #     round-2 false pass, where the nearest "declaration" was a number in
+        #     a test body and the citation was then skipped as unattributable
+        #     instead of being checked. The span is drifted at the pin it names,
+        #     so a swallow shows up as a missing finding rather than a quiet pass.
+        branch("junk", pinned)
+        write("lib/util.ts", "one\nelsewhere\nthree\nfour\n")
+        junk_revision = commit("fixture moves the construct at a later revision")
+        junk_page = (
+            "# Fixture surface\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+            f"| fixture | `{pinned}` | `git show <sha>:<path>` |\n\n"
+            "Every `path:line` below is against that SHA.\n\n"
+            "assertEquals(\"1M\", compactNumber(1000000))\n"
+            "val stamp = 1700000000\n"
+            "val mask = 0x80123456\n\n"
+            "| Question | Path |\n|---|---|\n"
+            "| declared on the next line, under numeric literals | `lib/util.ts:2-4` @\n"
+            f"`{junk_revision}` |\n"
+        )
+        write("docs/page.md", junk_page)
+        junk = commit("fixture moves the stamp under numeric literals")
+
+        # (8) `:0` inside a string literal is not a line citation. A JSON blob
+        #     under a resolved path yields one by the bare-basename heuristic,
+        #     and admitting it manufactures a citation nobody wrote — reported
+        #     against a path that was never cited, on a range that moves no pin
+        #     at all (#270). The range below introduces a real pin, so the only
+        #     way this stays quiet is refusing the span where citations are
+        #     extracted.
+        branch("zero", pinned)
+        write(
+            "lib/state.py",
+            "def pending():\n    return {\"pending\": 0, \"title\": \"Bot Chat\"}\n",
+        )
+        zero_revision = commit("fixture writes a file with a zero literal")
+        write("lib/util.ts", "one\ntwo\nthree\nfour\n")
+        zero_page = (
+            "# Fixture surface\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+            f"| fixture | `{pinned}` | `git show <sha>:<path>` |\n\n"
+            "Every `path:line` below is against that SHA.\n\n"
+            f"| state reader | `lib/state.py:2` @ `{zero_revision}` |\n"
+            "    \"\"\"{\"pending\":0,\"title\":\"Bot Chat\"}\"\"\"\n"
+        )
+        write("docs/page.md", zero_page)
+        zero = commit("fixture writes a json literal with a zero under a citation")
+
+        # (9) A section-prose pin BELOW the page-level pin row governs its own
+        #     section and wins by proximity. This is #240's own shape: the page's
+        #     `## Pin` row names one revision, a later section says its half "is
+        #     pinned at <other> — the repo pin — rather than at the authority
+        #     above", and the citations below it name a span that fits the section
+        #     pin's file but not the page pin's. Binding them to the page row
+        #     reports `span-out-of-bounds` against a citation that is exactly
+        #     right where the page says it lives.
+        branch("section", pinned)
+        write("lib/other.ts", "\n".join(f"line {n}" for n in range(1, 61)) + "\n")
+        section_revision = commit("fixture grows the file the section cites")
+        section_page = (
+            "# Fixture surface\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+            f"| fixture | `{pinned}` | `git show <sha>:<path>` |\n\n"
+            "Every `path:line` below is against that SHA.\n\n"
+            "## The half that is pinned separately\n\n"
+            "That half is pinned at\n"
+            f"`{section_revision}` — the repo pin — rather than at the `{pinned[:8]}`\n"
+            "authority above.\n\n"
+            "| Question | Path |\n|---|---|\n"
+            "| governed by the section pin | `lib/other.ts:36-50` |\n"
+        )
+        write("docs/page.md", section_page)
+        section = commit("fixture adds a section-scoped prose pin")
+
         UPSTREAM = repo
         _blobs.clear()
         _tree_paths.clear()
@@ -963,6 +1296,46 @@ def self_test() -> None:
                 raise AssertionError(
                     f"a citation under a two-row Pin table was left unattributed: {counts}"
                 )
+
+            # Junk tokens above a real declaration must not shadow it. The
+            # citation's revision is on the next line under numeric literals, and
+            # the span is drifted at the pin it names: if the declaration
+            # predicate latches onto `1000000` the citation is skipped and this
+            # comes back empty — the #297 round-2 false pass on the card's own
+            # acceptance range, where 3 of 3 true positives went unreported.
+            findings, _ = gate(pinned, junk, "junk above a declaration")
+            if not findings:
+                raise AssertionError(
+                    "a declaration under decimal literals was swallowed: the citation was not checked"
+                )
+            if findings[0].carrier != "docs/page.md" or findings[0].reason != "construct-moved":
+                raise AssertionError(f"the junk-shadowed citation was mislabelled: {findings[0]}")
+
+            # `:0` inside a string literal never becomes a line citation. Both
+            # verdicts must stay silent: the written path reported it as a stale
+            # citation and the carried path swallowed the class entirely.
+            findings, counts = gate(pinned, zero, "json zero literal")
+            stray = [one for one in findings if any(first < 1 for first, _ in one.ranges)]
+            if stray:
+                raise AssertionError(
+                    f"a `:0` in a string literal became a line citation: {[str(one) for one in stray]}"
+                )
+
+            # A section's own prose pin governs the citations in that section,
+            # below the page's `## Pin` row. This is #240's shape: the page pin
+            # row names one revision, a later section pins its half elsewhere, and
+            # the citation's span fits that file only at the section's pin
+            # (60 lines there, four at the page pin). Binding the page row here
+            # reports `span-out-of-bounds` against a citation that is exactly
+            # right where the page says it lives.
+            findings, counts = gate(pinned, section, "section prose pin")
+            if findings:
+                raise AssertionError(
+                    "a section-scoped prose pin was overridden by the page pin: "
+                    f"{[str(one) for one in findings]}"
+                )
+            if counts["checked"] < 1:
+                raise AssertionError("the section fixture proved nothing; no citation was checked")
         finally:
             UPSTREAM = original
 

@@ -88,9 +88,91 @@ class CitationPinTest(unittest.TestCase):
         ]
         self.assertEqual(self.moved, gate.citation_pin(lines, 8, [self.moved]))
 
+    def test_a_decimal_literal_does_not_shadow_a_declaration(self) -> None:
+        # `PIN_RE` matches any 7-40 char hex run and every digit is a hex digit,
+        # so `compactNumber(1000000)` in a test body reads as a revision. Letting
+        # it stand as the nearest declaration stops the upward scan before the
+        # real one and the citation is skipped as unattributable — a silent false
+        # pass, measured on the card's own acceptance range (#297 round 2).
+        lines = [
+            f"# `{self.moved}` is the page pin",
+            "",
+            'assertEquals("1M", compactNumber(1000000))',
+            "val stamp = 1700000000",
+            "val mask = 0x80123456",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| entry point | `path/to/x.ts:2-4` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 9, [self.moved]))
+
+    def test_a_section_prose_pin_wins_over_the_page_pin(self) -> None:
+        # A page may pin one half of itself separately, in that section's own
+        # prose, *below* the page's `## Pin` row: "that half is pinned at <other>
+        # — the repo pin — rather than at the authority above". Binding the
+        # citations to the page row reports a false red where the spans are
+        # exactly right at the section's pin (#240).
+        lines = [
+            "## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "## The half that is pinned separately",
+            "",
+            "That half is pinned at",
+            f"`{self.other}` — the repo pin — rather than at the `{self.moved[:8]}`",
+            "authority above.",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| governed by the section pin | `path/to/x.ts:2-4` |",
+        ]
+        self.assertEqual(self.other, gate.citation_pin(lines, 13, [self.moved, self.other]))
+
+    def test_a_wrapped_continuation_declares_nothing_for_the_lines_below(self) -> None:
+        # `:NNN` citations carry `@ `sha`` on the next line when they wrap. That
+        # revision belongs to the citation above; letting the backward scan read
+        # it as a declaration re-points every citation under it at a neighbour's
+        # pin, which is how a `construct-moved` false red appeared on honest
+        # history in the same file (#270's `:0` was the other half of this).
+        lines = [
+            f"## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "| a | `path/to/x.ts:1-2` @",
+            f"`{self.other}` |",
+            "| b | `path/to/y.ts:3` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 7, [self.moved, self.other]))
+
+    def test_a_bare_continuation_inherits_the_paths_own_pin(self) -> None:
+        # `use-statusbar-items.tsx:569` under a
+        # `use-statusbar-items.tsx:281-294 @ <sha>` names the same file at the
+        # same pin. Checking it against the nearest declaration instead judges a
+        # citation at a revision it never named.
+        lines = [
+            f"// (`use-statusbar-items.tsx:281-294` @ `{self.other}`)",
+            "// and elsewhere",
+            "// (`use-statusbar-items.tsx:569`); this app hides it",
+        ]
+        self.assertIsNone(gate.citation_pin(lines, 3, [self.moved]))
+        self.assertEqual(self.other, gate.citation_pin(lines, 3, [self.moved, self.other]))
+
 
 class CitationExtractionTest(unittest.TestCase):
     """What counts as a citation at all."""
+
+    def test_a_zero_span_is_not_a_citation(self) -> None:
+        # `:0` is not a line of any file. A JSON literal under a path-bearing
+        # line yields one by the bare-basename heuristic, and admitting it
+        # manufactures a citation nobody wrote — which a verdict then reports as
+        # an out-of-bounds finding against a path that was never cited (#270).
+        self.assertEqual([], gate.spans(":0"))
+        self.assertEqual([(2, 2)], gate.spans(":2"))
+        self.assertEqual([], gate.spans("0-0"))
+        self.assertEqual([(1, 4)], gate.spans("1-4"))
 
     def test_a_spanless_token_is_not_a_citation(self) -> None:
         # `github.event.pull_request.head.sha` in a workflow YAML matches the path
