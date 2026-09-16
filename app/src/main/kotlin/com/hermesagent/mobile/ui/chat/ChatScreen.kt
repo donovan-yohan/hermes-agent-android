@@ -370,6 +370,9 @@ private fun SessionsPane(
         selectedProject = state.selectedProject,
         projectLoading = state.projectLoading,
         activeSessionId = state.activeSession?.id,
+        // The state's own clock read — the one the rows were bucketed against —
+        // rather than a second read here. See `ChatUiState.nowMillis`.
+        nowMillis = state.nowMillis,
         query = state.query,
         canCreate = state.canCreateSession,
         onQueryChange = actions.onQueryChange,
@@ -1153,6 +1156,7 @@ private fun previewState(): ChatUiState {
         lastActiveAtMillis = PREVIEW_NOW,
     )
     return ChatUiState(
+        nowMillis = PREVIEW_NOW,
         sessionRows = buildSessionRows(sessions = listOf(session), nowMillis = PREVIEW_NOW),
         activeSession = session,
         transcript = listOf(

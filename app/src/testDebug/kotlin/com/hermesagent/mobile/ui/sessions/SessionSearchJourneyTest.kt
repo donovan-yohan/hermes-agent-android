@@ -236,6 +236,9 @@ class SessionSearchJourneyTest {
                     onArchivedVisibleChange = {},
                     unreadCount = 0,
                     onMarkAllRead = {},
+                    // Fixed clock, matching the `buildSessionRows` call above:
+                    // the rows and their ages describe one instant.
+                    nowMillis = NOW,
                 )
             }
         }
