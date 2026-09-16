@@ -194,6 +194,88 @@ class SessionListSectionsJourneyTest {
         compose.onNodeWithContentDescription("Fresh chat. Finished, unread. Updated just now").assertIsDisplayed()
     }
 
+    /**
+     * The archived view keeps Desktop's `Pinned` section: its gate is
+     * `!trimmedQuery` with no `showArchived` term
+     * (`sidebar/index.tsx:1652-1674` @ `437116f9`), so a chat that is pinned and
+     * then archived keeps the pin's only visible effect. The section leads the
+     * archived rows, and the pinned row is rendered once — under the caption,
+     * not again among the rows below it. Both rows are reached by tag, and the
+     * count proves the single rendering.
+     */
+    @Test
+    fun `the archived view keeps the pinned section above its rows`() {
+        launch(
+            sessions = listOf(
+                session("s-1", "Filed chat", archived = true),
+                session("s-2", "Kept and filed", archived = true, pinned = true),
+            ),
+            archivedVisible = true,
+        )
+
+        compose.onNodeWithTag(PINNED_SECTION_TAG).assertIsDisplayed()
+        compose.onNodeWithText("PINNED").assertIsDisplayed()
+        compose.onNodeWithTag("Session row s-2").assertIsDisplayed()
+        compose.onNodeWithTag("Session row s-1").assertIsDisplayed()
+
+        // The pinned row is one row: no second copy under the section.
+        assertEquals(1, compose.nodesTagged(sessionRowTag("s-2")))
+        assertEquals(1, compose.nodesTagged(sessionRowTag("s-1")))
+
+        // And the section is above the archived rows, as Desktop orders it.
+        val pinned = compose.onNodeWithTag(PINNED_SECTION_TAG).fetchSemanticsNode().boundsInRoot
+        val pinnedRow = compose.onNodeWithTag(sessionRowTag("s-2")).fetchSemanticsNode().boundsInRoot
+        val otherRow = compose.onNodeWithTag(sessionRowTag("s-1")).fetchSemanticsNode().boundsInRoot
+        assertTrue("the caption must sit above the archived rows", pinned.top < pinnedRow.top)
+        assertTrue("the pinned row must sit above the archived rows", pinnedRow.top < otherRow.top)
+    }
+
+    /**
+     * The rows under that section stay flat: `grouping='none'` while archived
+     * (`sidebar/index.tsx:1736` @ `437116f9`) settles the dividers, and it still
+     * does so now that the section above them is back. The two archived rows
+     * here fall in different calendar buckets — a `LastWeek` divider would be
+     * the regression — and none may render.
+     */
+    @Test
+    fun `the archived view draws no date dividers under the pinned section`() {
+        launch(
+            sessions = listOf(
+                session("s-1", "Filed today", archived = true, lastActiveAtMillis = NOW - 12 * MINUTE),
+                session("s-2", "Filed last week", archived = true, lastActiveAtMillis = NOW - 9 * DAY),
+                session("s-3", "Kept and filed", archived = true, pinned = true, lastActiveAtMillis = NOW - HOUR),
+            ),
+            archivedVisible = true,
+        )
+
+        compose.onNodeWithTag(PINNED_SECTION_TAG).assertIsDisplayed()
+        assertEquals(0, compose.nodesWithText("LAST WEEK"))
+        assertEquals(0, compose.nodesWithText("TODAY"))
+        compose.onNodeWithTag(sessionRowTag("s-1")).assertIsDisplayed()
+        compose.onNodeWithTag(sessionRowTag("s-2")).assertIsDisplayed()
+    }
+
+    /**
+     * And with every archived row pinned, the section's `allPinned` sentence is
+     * the one Desktop picks for the recents slot it leaves empty
+     * (`sidebar/index.tsx:1710-1712` @ `437116f9`, no `showArchived` term) —
+     * the same string the live list shows, not a rewritten one.
+     */
+    @Test
+    fun `an archived view with everything pinned carries Desktop's own sentence`() {
+        launch(
+            sessions = listOf(session("s-1", "Kept and filed", archived = true, pinned = true)),
+            archivedVisible = true,
+        )
+
+        compose.onNodeWithTag(PINNED_SECTION_TAG).assertIsDisplayed()
+        compose.onNodeWithText(ALL_PINNED_NOTE).assertIsDisplayed()
+        assertEquals(
+            "Everything here is pinned. Unpin a chat to show it in recents.",
+            ALL_PINNED_NOTE,
+        )
+    }
+
     @Test
     fun `the filter menu carries the Archived toggle at a full touch target`() {
         launch(sessions = listOf(session("s-1", "Ordinary chat")))
@@ -539,5 +621,6 @@ class SessionListSectionsJourneyTest {
         const val NOW = 1_700_000_000_000L
         const val MINUTE = 60_000L
         const val HOUR = 60 * MINUTE
+        const val DAY = 24 * HOUR
     }
 }
