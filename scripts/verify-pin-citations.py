@@ -52,6 +52,11 @@ BARE_RE = re.compile(r"`?(?<![A-Za-z0-9_]):(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)`?")
 # citation carrying one is not this restamp's business unless it names the new
 # SHA. Seven is git's own abbreviation floor.
 PIN_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{7,40}(?![0-9a-fA-F])")
+# A parity page may narrow one pin row to a subset of its citations by naming a
+# marker in that row's read-via column — "the citations marked *(registry)*
+# below were taken at that SHA". The marker is the only thing that selects such
+# a row, so an added narrower row cannot capture the general row's citations.
+MARKER_RE = re.compile(r"\*\(([a-z0-9][a-z0-9_-]*)\)\*")
 
 _blobs: dict[tuple[str, str], list[str] | None] = {}
 _tree_paths: dict[str, list[str]] = {}
@@ -392,21 +397,50 @@ def citation_pin(lines: list[str], number: int, introduced: list[str]) -> str | 
             return pin
     if own:
         return None
-    # No pin on this line and none on the next: the nearest pin *declaration*
-    # above governs. A line that carries a citation and a SHA of its own is
-    # another citation's pin, not this page's — let a row borrowed from another
-    # pin shadow the declaration and every row below it would be misattributed
-    # to that borrowed pin (and skipped, which is how a drift goes unreported).
+    # No pin on this line and none on the next: a page-level *declaration*
+    # governs. A line that carries a citation and a SHA of its own is another
+    # citation's pin, not this page's — let a row borrowed from another pin
+    # shadow the declaration and every row below it would be misattributed to
+    # that borrowed pin (and skipped, which is how a drift goes unreported).
+    #
+    # A `## Pin` table may declare several pins, and the page says which
+    # citations each governs in the row's own read-via column: the general row
+    # covers everything below, and a narrower row names the marker that selects
+    # it ("the citations marked *(registry)* below were taken at that SHA").
+    # Resolving this by "nearest declaration above" made the nearest the table's
+    # LAST row, so *adding* a narrower row silently re-pointed every unmarked
+    # citation in the file — with no citation line edited and the page still
+    # naming row one for them. That is how the gate went red on honest merged
+    # history (#280, #264), which is how a gate gets switched off.
+    marker = MARKER_RE.search(lines[number - 1])
+    if not marker and number < len(lines):
+        following = lines[number]
+        if not PATH_RE.search(following):
+            marker = MARKER_RE.search(following)
     skipped_borrowed = False
-    for line in reversed(lines[:number - 1]):
+    general: str | None = None
+    by_marker: dict[str, str] = {}
+    for line in lines[: number - 1]:
         above = PIN_RE.findall(line)
         if not above:
             continue
         if PATH_RE.search(line):
             skipped_borrowed = True
             continue
+        named = MARKER_RE.findall(line)
+        if named:
+            # A narrower row: it governs only the citations carrying its marker.
+            by_marker.setdefault(named[0], above[0])
+        else:
+            # The general row: the first one wins, so an added row below it
+            # cannot re-point citations whose lines the change did not touch.
+            general = general or above[0]
+    governing = by_marker.get(marker.group(1)) if marker else None
+    if governing is None:
+        governing = general
+    if governing is not None:
         for pin in introduced:
-            if any(pin.startswith(token) for token in above):
+            if pin.startswith(governing):
                 return pin
         return None
     if skipped_borrowed:
@@ -806,6 +840,27 @@ def self_test() -> None:
         write("docs/page.md", partial_page)
         partial = commit("fixture re-points one citation without retiring the page pin")
 
+        # (6) A narrower pin row is ADDED below the page's existing declaration,
+        #     and the citation below names no SHA of its own. The page still
+        #     assigns it to row 1, so inserting row 2 must not re-point it —
+        #     that is the #280/#264 shape, where "nearest declaration above"
+        #     turned 23 honest citations into findings. `narrower` carries
+        #     different bytes at the cited span, so a misattribution to row 2
+        #     shows up as a finding instead of hiding behind identical content.
+        branch("narrow", pinned)
+        write("lib/util.ts", "one\nelsewhere\nthree\nfour\n")
+        narrower = commit("fixture moves the construct at a later revision")
+        narrowed_page = (
+            "# Fixture surface\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+            f"| fixture | `{pinned}` | `git show <sha>:<path>` |\n"
+            f"| narrower row | `{narrower}` | the citations marked *(narrow)* below were taken there |\n\n"
+            "Every `path:line` below is against the SHA its row names.\n\n"
+            "| Question | Path |\n|---|---|\n"
+            "| governed by row 1, unmarked | `lib/util.ts:2-4` |\n"
+        )
+        write("docs/page.md", narrowed_page)
+        inserted = commit("fixture adds a narrower pin row below the page pin")
+
         UPSTREAM = repo
         _blobs.clear()
         _tree_paths.clear()
@@ -891,6 +946,23 @@ def self_test() -> None:
             empty, counts = gate(pinned, pinned, "no move")
             if empty or counts["files"]:
                 raise AssertionError(f"a range that moves no pin was not skipped: {[str(one) for one in empty]}")
+
+            # Adding a narrower pin row below the page's declaration must not
+            # re-point the citations the page still assigns to row 1. Before the
+            # marker rule, "nearest declaration above" made the inserted row the
+            # governing pin for every unmarked citation, so this range reported
+            # findings against citations whose own lines it never touched — the
+            # #280/#264 shape, 42 of 61 measured findings on merged history.
+            findings, counts = gate(pinned, inserted, "inserted narrower row")
+            if findings:
+                raise AssertionError(
+                    "an inserted narrower pin row re-pointed citations the page assigns to row 1: "
+                    f"{[str(one) for one in findings]}"
+                )
+            if counts["ambiguous"] != 0:
+                raise AssertionError(
+                    f"a citation under a two-row Pin table was left unattributed: {counts}"
+                )
         finally:
             UPSTREAM = original
 
