@@ -122,6 +122,64 @@ class SessionGroupingTest {
     }
 
     /**
+     * Desktop's relational copy is a claim about the rows *below* it: `Earlier
+     * today` is only true while something newer sits above
+     * (`lib/time.ts:118-124` @ the pin). A Pinned section forces the first
+     * recents bucket to be labelled — and in that one slot the app's newest
+     * session can sit directly below it, so the claim would be false. The plain
+     * word is used there instead.
+     *
+     * Every other divider keeps Desktop's copy, which is what makes `Earlier
+     * today` still reachable exactly where it is truthful: a later bucket in the
+     * same day, below something newer.
+     */
+    @Test
+    fun `a Pinned section's forced first divider takes the plain word, not Desktop's relational copy`() {
+        // `b` is pinned and an hour old; `a` is the newest session in the app and
+        // sits below the divider the pinned section forced.
+        val pinnedRows = buildSessionRows(
+            listOf(
+                session("a", now),
+                session("b", now - HOUR, pinned = true),
+                session("c", now - 2 * HOUR),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+        assertEquals(
+            listOf("pinned", "row:b", "divider:Today", "row:a", "row:c"),
+            pinnedRows.map(::describe),
+        )
+        val forced = pinnedRows.filterIsInstance<SessionListRow.Divider>().single()
+        assertTrue("the forced first divider must be marked as such", forced.leadsLabelledList)
+        assertEquals("Today", forced.bucket.label(forced.leadsLabelledList))
+
+        // Without a pinned section the first group is unlabelled, and a *later*
+        // group is the one that carries the relational word — below something
+        // newer, so the claim holds. `a` is today and `y` is yesterday.
+        val splitDay = buildSessionRows(
+            listOf(
+                session("a", now),
+                session("y", now - 24 * HOUR),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+        assertEquals(listOf("row:a", "divider:Yesterday", "row:y"), splitDay.map(::describe))
+        val earned = splitDay.filterIsInstance<SessionListRow.Divider>().single()
+        assertTrue("a divider below a newer row is not a forced one", !earned.leadsLabelledList)
+        assertEquals("Yesterday", earned.bucket.label(earned.leadsLabelledList))
+
+        // `Earlier today` is still reachable where it is truthful: a second
+        // *Today* group cannot exist, so pin the reachable relational case — the
+        // same rule applied to a bucket that Desktop words relationally.
+        assertEquals("Earlier this week", SessionBucket.ThisWeek.label(leadsLabelledList = false))
+        assertEquals("This week", SessionBucket.ThisWeek.label(leadsLabelledList = true))
+    }
+
+    /**
      * Desktop's nominal day rolls over at 04:00 local, not midnight
      * (`lib/time.ts:87-95`, `DAY_ROLLOVER_HOUR`): the small hours belong to the
      * previous evening's run. 03:59 on Wednesday is still Tuesday's day; 04:00

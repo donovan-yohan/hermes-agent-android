@@ -36,14 +36,55 @@ fun SessionBucket.label(): String = when (this) {
     // from `Intl` with a month name or month + year
     // (`apps/desktop/src/lib/time.ts:155-165,30-31,169-190` @ the pin). Porting
     // that word here would be a false claim: one terminal bucket captions rows
-    // belonging to several different months. It needs per-month divider
-    // identity first, which is #299.
+    // belonging to several different months. It needs per-month divider identity
+    // first, which is #299.
     SessionBucket.Older -> "Older"
+}
+
+/**
+ * The label one divider renders, given whether a first-group rule applies to it.
+ *
+ * Desktop's five relative strings are relational: `Earlier today` means *earlier
+ * than the head of this list* (`apps/desktop/src/lib/time.ts:118-124` @ the pin).
+ * That is only true while nothing older sits above the group it labels.
+ *
+ * `buildSessionRows` renders a Pinned section above the recents, and when it does
+ * the first recents bucket is labelled on purpose — an unlabelled group under a
+ * pinned list would read as more pinned rows. But in that one slot the newest
+ * session in the app can sit directly *below* the divider, and then "Earlier
+ * today" is a claim about rows that are not earlier than anything above them.
+ * Desktop cannot reach that state: its Recents section leaves its own first group
+ * unlabelled even under `PINNED` (`session-date-groups.ts:136-140` @ the pin), so
+ * its first divider under a pinned section is normally `Yesterday` or older.
+ *
+ * So the first recents bucket falls back to the plain word when and only when a
+ * pinned section is what forced its label. Every other divider keeps Desktop's
+ * relational copy, and `Earlier today` is still reachable exactly where it is
+ * truthful — a later bucket in the same day, below something newer.
+ */
+fun SessionBucket.label(leadsLabelledList: Boolean): String = when {
+    leadsLabelledList && this == SessionBucket.Today -> "Today"
+    leadsLabelledList && this == SessionBucket.ThisWeek -> "This week"
+    leadsLabelledList && this == SessionBucket.ThisMonth -> "This month"
+    else -> label()
 }
 
 /** A divider, a section label, a note or a session row. One list renders them all. */
 sealed interface SessionListRow {
-    data class Divider(val bucket: SessionBucket) : SessionListRow
+    /**
+     * A date-bucket caption.
+     *
+     * [leadsLabelledList] marks the one divider whose label was forced by a
+     * Pinned section above it rather than earned by having something newer
+     * above it. Desktop's relational copy (`Earlier today`) is a claim about
+     * the rows below, and in that slot the claim can be false, so those
+     * dividers take the plain word instead. See
+     * [SessionBucket.label] for the full reason.
+     */
+    data class Divider(
+        val bucket: SessionBucket,
+        val leadsLabelledList: Boolean = false,
+    ) : SessionListRow
     data class Row(val session: SessionSummary) : SessionListRow
 
     /**
@@ -212,8 +253,16 @@ fun buildSessionRows(
         // labelling it says nothing. A Pinned section above it changes that —
         // there is now something to separate the newest bucket *from*, and an
         // unlabelled first bucket would read as more pinned rows.
+        //
+        // That forced label is also the one slot where Desktop's relational copy
+        // would be false — a newer session can sit below it — so the first
+        // recents bucket is marked as leading a labelled list and takes the plain
+        // word. See `SessionBucket.label(leadsLabelledList)`.
         if (bucket != currentBucket) {
-            if (emittedRecent || pinned.isNotEmpty()) rows += SessionListRow.Divider(bucket)
+            val forcedFirst = !emittedRecent && pinned.isNotEmpty()
+            if (emittedRecent || pinned.isNotEmpty()) {
+                rows += SessionListRow.Divider(bucket, leadsLabelledList = forcedFirst)
+            }
             currentBucket = bucket
         }
         rows += SessionListRow.Row(session)
