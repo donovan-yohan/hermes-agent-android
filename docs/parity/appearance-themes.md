@@ -9,7 +9,7 @@ connection row; a definition is never stored on the phone.
 | Source | Pin | Read via |
 |---|---|---|
 | Gateway dashboard-theme route and normaliser | `hermes-agent` @ `437116f9497c80d242ce034ff7f5d81dc277a337` | read-only checkout |
-| Android appearance surface | `hermes-mobile` @ `b23133b4fa53cd0e8c0c9ae2ff099dbfdc2a88b7` base | current worktree |
+| Android appearance surface | `hermes-mobile` @ `1d0f6d1` rebase base (head on the PR) | current worktree |
 
 Dashboard-contract citations below are against
 `437116f9497c80d242ce034ff7f5d81dc277a337`; Desktop structure and copy
@@ -24,10 +24,10 @@ citations name their UI pin beside the path.
 | Dashboard theme wire types | `web/src/themes/types.ts:22-208` |
 | Semantic colour derivation from the three palette layers | `web/src/index.css:157-181` |
 | Picker swatch fallback | `web/src/components/ThemeSwitcher.tsx:315-331` |
-| Built-in, backend, and user-theme ordering precedent | `apps/desktop/src/themes/user-themes.ts:161-175` |
+| Built-in, backend, and user-theme ordering precedent | `apps/desktop/src/themes/user-themes.ts:160-172` |
 | One-mode palette precedent | `apps/desktop/src/themes/skin.ts` |
-| Desktop appearance settings structure and theme-picker order | `apps/desktop/src/app/settings/appearance-settings.tsx:509-803` @ `564aef2946c436500a5e80ee117b66b789b3f99a` |
-| Desktop appearance copy | `apps/desktop/src/i18n/en.ts:588-629` @ `564aef2946c436500a5e80ee117b66b789b3f99a` |
+| Desktop appearance settings structure and theme-picker order | `apps/desktop/src/app/settings/appearance-settings.tsx:393-972` @ `564aef2946c436500a5e80ee117b66b789b3f99a` |
+| Desktop appearance copy | `apps/desktop/src/i18n/en.ts:656-789` @ `564aef2946c436500a5e80ee117b66b789b3f99a` |
 
 The Gateway-theme section has no Desktop appearance-settings counterpart at the
 UI pin. Its fixed status copy is Android-specific; the Dashboard endpoint's
@@ -47,9 +47,9 @@ Splash copy retain their cited Desktop wording and order.
 - pending: #292
 
 The report will be captured at the implementation commit produced on
-`wt/t_71f8c749`; `b23133b4fa53cd0e8c0c9ae2ff099dbfdc2a88b7` is only the base
-and contains none of this surface work. No `visual-capture-surfaces.json` entry
-was added because this change adds no capture activity.
+`wt/t_71f8c749`; the rebase base contains none of this surface work. No
+`visual-capture-surfaces.json` entry was added because this change adds no
+capture activity.
 
 ## Divergences
 
