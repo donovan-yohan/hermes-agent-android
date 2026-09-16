@@ -113,6 +113,58 @@ if ! python3 scripts/check-ci-workflow.py; then
   problem "Android exact-head GitHub Actions contract is invalid."
 fi
 
+# ── 8b. A pin restamp cannot land with a citation that is not true at its SHA ─
+# `verify-pin-citations.py` proves a cited span at both revisions, and the
+# reviewer who found this gap proved the hard way that nothing ran it: PR #291
+# restamped `docs/parity/context-usage.md` while spans in it were drifted, and no
+# gate objected. The range mode is what closes it — a citation is checked against
+# the SHA the change gave it, whether or not the file still names the old one.
+#
+# `--self-test` always runs: it builds its own fixture repository, so it proves
+# the gate still fails a drifted span without touching the network.
+#
+# The range check additionally needs (a) an upstream checkout to read cited
+# revisions from and (b) a base to diff against. Both are missing on plenty of
+# workstations, so each absence is a *loud* skip rather than a quiet pass: the
+# local `check` must not claim coverage it does not have. CI has both, in the
+# `pin citations` job, and there a failure is a failure.
+python3 scripts/verify-pin-citations.py --self-test || fail=1
+upstream="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
+pin_range="${PIN_CITATION_RANGE:-origin/main...}"
+# `${pin_range%%...}` would cut at the first `..` of a two-dot spec and leave the
+# rest of the SHA behind, so the base is taken the way the tool takes it: up to
+# the first `..`, with `...` collapsing to the same base.
+pin_base="${pin_range%%.*}"
+pin_base="${pin_base%%..*}"
+if [[ ! -d "$upstream/.git" ]]; then
+  note "SKIP  pin-citation range check: no upstream checkout at $upstream"
+  note "      run: HERMES_AGENT_UPSTREAM=<checkout> scripts/check-repo-invariants.sh"
+  note "      (CI runs it in the \`pin citations\` job; docs/workflows/review-desktop-parity.md, \`### Moving a pin\`)"
+elif ! git rev-parse --verify --quiet "${pin_base}" >/dev/null; then
+  note "SKIP  pin-citation range check: no base to diff against (${pin_base})"
+  note "      set PIN_CITATION_RANGE=<base>..<head> to check a range anyway"
+else
+  # No --fetch here: a local `check` must not reach the network. A pin this
+  # checkout cannot read exits 2 ("not provable here") and is skipped loudly; a
+  # citation that is untrue at the SHA it names exits 1 and fails the build. Exit
+  # 3 is the tool failing to run at all — a different claim, and one that must not
+  # be reported as a bad citation.
+  pin_citations_rc=0
+  python3 scripts/verify-pin-citations.py --check-range "$pin_range" \
+    --upstream "$upstream" --repo . || pin_citations_rc=$?
+  if [[ $pin_citations_rc -eq 1 ]]; then
+    problem "a pin move in this range left a citation that is not true at the SHA it names."
+  elif [[ $pin_citations_rc -eq 2 ]]; then
+    note "SKIP  pin-citation range check: this checkout cannot read every cited pin"
+    note "      run: scripts/verify-pin-citations.py --check-range \"$pin_range\" --upstream \"$upstream\" --fetch"
+  elif [[ $pin_citations_rc -eq 3 ]]; then
+    problem "the pin-citation range check could not run (see the ERROR above); its range is ${pin_range}."
+    note "      set PIN_CITATION_RANGE=<base>..<head> to check a range this checkout can resolve."
+  elif [[ $pin_citations_rc -ne 0 ]]; then
+    problem "the pin-citation gate exited $pin_citations_rc."
+  fi
+fi
+
 # ── 9. Kotlin sources must contain no NUL, so their diffs stay reviewable ────
 # A NUL byte is Git's own binary heuristic: one is enough for Git to classify a
 # source file as binary, and it then shows no diff on a pull request and
