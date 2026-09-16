@@ -105,13 +105,21 @@ class PrimaryButtonInkTest {
         return out
     }
 
-    /** How many sampled pixels are within [tolerance] of [ink] on every channel. */
-    private fun List<Color>.countNear(ink: Color, tolerance: Float = 0.16f): Int =
-        count { pixel ->
-            abs(pixel.red - ink.red) <= tolerance &&
-                abs(pixel.green - ink.green) <= tolerance &&
-                abs(pixel.blue - ink.blue) <= tolerance
-        }
+    /**
+     * How many sampled pixels are [ink] after the 8-bit quantisation the bitmap
+     * already applied — the same `<= 1` the ink tests in `ui/chat` use.
+     *
+     * A float tolerance is what let a mutated build pass this class: `#161616`
+     * and `#000A00` are 22/255 apart per channel, so any tolerance wide enough
+     * to count one counted the other too, and a button painting the wrong
+     * paired ink still looked like the right one.
+     */
+    private fun List<Color>.countNear(ink: Color): Int {
+        fun channels(color: Color) =
+            listOf(color.red, color.green, color.blue).map { (it * 255f + 0.5f).toInt() }
+        val want = channels(ink)
+        return count { pixel -> channels(pixel).zip(want).maxOf { (a, b) -> abs(a - b) } <= 1 }
+    }
 
     /**
      * The fill, read from the button's top padding — above the label and inside
