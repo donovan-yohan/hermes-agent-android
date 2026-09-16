@@ -539,16 +539,19 @@ internal class CorrelatedGatewayRpc(
          * (`ui-tui/src/app/createGatewayEventHandler.ts:1192-1197` @ the pin).
          *
          * This client has no surface for it. Tool frames reach exactly one
-         * consumer, `GatewaySessionRepository.applyEvent`, and the only branch
-         * that takes them is the `tool.start` / `tool.complete` pair feeding
-         * `applyTool`; there is no other handler, so adding the name here would
-         * subscribe to a frame nothing consumes — the same dead-socket shape
-         * #181 removed, arriving from the opposite direction. Reusing that
-         * branch is no better. `applyTool` keys a row by `tool_id` and falls
-         * back to the sole live id, so a name-only frame either adopts that row
-         * (rewriting its label, and flipping a finished one back to Running,
-         * since every non-`tool.complete` type re-puts the activity) or mints an
-         * argless `gateway-tool-N`: the placeholder Desktop refuses to create.
+         * consumer in the app's own dispatch —
+         * `GatewaySessionRepository.applyEvent`, whose only branch for them is
+         * the `tool.start` / `tool.complete` pair feeding `applyTool`. The
+         * plugin door (`PluginHost.onEvent`) taps this same broadcast, but no
+         * bundled plugin subscribes to a tool frame, so admitting the name here
+         * would subscribe to a frame nothing consumes — the same dead-socket
+         * shape #181 removed, arriving from the opposite direction. Reusing
+         * that branch is no better. `applyTool` keys a row by `tool_id` and
+         * falls back to the sole live id, so a name-only frame either adopts
+         * that row (rewriting its label, and flipping a finished one back to
+         * Running, since every non-`tool.complete` type re-puts the activity)
+         * or mints an argless `gateway-tool-N`: the placeholder Desktop refuses
+         * to create.
          * The turn-progress line is not a home for it either: it renders
          * `SessionProgress.text`, which `applyStatusUpdate` writes from
          * backend-authored `status.update` sentences (kind-filtered by
