@@ -46,7 +46,7 @@ fun SessionBucket.label(): String = when (this) {
  *
  * Desktop's five relative strings are relational: `Earlier today` means *earlier
  * than the head of this list* (`apps/desktop/src/lib/time.ts:118-124` @ the pin).
- * That is only true while nothing older sits above the group it labels.
+ * That is only true while something older sits above the group it labels.
  *
  * `buildSessionRows` renders a Pinned section above the recents, and when it does
  * the first recents bucket is labelled on purpose — an unlabelled group under a
@@ -57,10 +57,18 @@ fun SessionBucket.label(): String = when (this) {
  * unlabelled even under `PINNED` (`session-date-groups.ts:136-140` @ the pin), so
  * its first divider under a pinned section is normally `Yesterday` or older.
  *
- * So the first recents bucket falls back to the plain word when and only when a
- * pinned section is what forced its label. Every other divider keeps Desktop's
- * relational copy, and `Earlier today` is still reachable exactly where it is
- * truthful — a later bucket in the same day, below something newer.
+ * So the first recents bucket falls back to the plain word when a pinned section
+ * is what forced its label.
+ *
+ * **`Earlier today` is unreachable here, and that is deliberate.** This list
+ * sorts newest-first and its buckets are contiguous and monotonic, so `Today`
+ * can only ever be the *first* recents bucket — which is unlabelled without pins
+ * and is exactly the forced slot above, taking the plain word. Desktop reaches
+ * `Earlier today` only because it splits *within* a day at a head-run cutoff
+ * (`session-date-groups.ts`, `headRunCutoffMs`), and that heuristic is not ported
+ * (`SessionGrouping.kt:11-14`). The word is therefore kept out rather than
+ * rendered as a claim the list cannot support; the other four relative strings,
+ * `Yesterday` included, are reachable and are Desktop's byte-for-byte.
  */
 fun SessionBucket.label(leadsLabelledList: Boolean): String = when {
     leadsLabelledList && this == SessionBucket.Today -> "Today"

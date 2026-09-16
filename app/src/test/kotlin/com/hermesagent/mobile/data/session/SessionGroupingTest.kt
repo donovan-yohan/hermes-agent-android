@@ -113,6 +113,9 @@ class SessionGroupingTest {
      */
     @Test
     fun `divider copy is Desktop's, and the tail stays a documented divergence`() {
+        // The map keeps Desktop's own word for this bucket — it is the registry
+        // of the pin's strings. The render path provably cannot reach it; see
+        // `SessionBucket.label(leadsLabelledList)` and the test below.
         assertEquals("Earlier today", SessionBucket.Today.label())
         assertEquals("Yesterday", SessionBucket.Yesterday.label())
         assertEquals("Earlier this week", SessionBucket.ThisWeek.label())
@@ -123,15 +126,20 @@ class SessionGroupingTest {
 
     /**
      * Desktop's relational copy is a claim about the rows *below* it: `Earlier
-     * today` is only true while something newer sits above
+     * today` is only true while something older sits above
      * (`lib/time.ts:118-124` @ the pin). A Pinned section forces the first
      * recents bucket to be labelled — and in that one slot the app's newest
      * session can sit directly below it, so the claim would be false. The plain
      * word is used there instead.
      *
-     * Every other divider keeps Desktop's copy, which is what makes `Earlier
-     * today` still reachable exactly where it is truthful: a later bucket in the
-     * same day, below something newer.
+     * `Earlier today` is unreachable through `buildSessionRows` at all, and that
+     * is deliberate: the list sorts newest-first with contiguous monotonic
+     * buckets, so `Today` is only ever the first recents bucket, which is
+     * unlabelled without pins and the forced slot with them. Desktop reaches the
+     * word only by splitting *within* a day at a head-run cutoff
+     * (`session-date-groups.ts`, `headRunCutoffMs`), which this slice does not
+     * port. The reachable relative strings are `Yesterday` and the week/month
+     * ones, and those keep Desktop's copy.
      */
     @Test
     fun `a Pinned section's forced first divider takes the plain word, not Desktop's relational copy`() {
@@ -172,11 +180,26 @@ class SessionGroupingTest {
         assertTrue("a divider below a newer row is not a forced one", !earned.leadsLabelledList)
         assertEquals("Yesterday", earned.bucket.label(earned.leadsLabelledList))
 
-        // `Earlier today` is still reachable where it is truthful: a second
-        // *Today* group cannot exist, so pin the reachable relational case — the
-        // same rule applied to a bucket that Desktop words relationally.
-        assertEquals("Earlier this week", SessionBucket.ThisWeek.label(leadsLabelledList = false))
-        assertEquals("This week", SessionBucket.ThisWeek.label(leadsLabelledList = true))
+        // And the word that motivated all of this is unreachable — assert that
+        // rather than let a comment claim it is still rendered. `calendarBucket`
+        // says `Today` for dayDiff <= 0, the list is sorted newest-first, and
+        // buckets are contiguous and monotonic, so `Today` is only ever the
+        // first recents group. Whatever renders, no divider in this list can
+        // read `Earlier today`; the strings list keeps the word for Desktop's
+        // pin, and `docs/parity/session-list-sections.md` records the difference.
+        listOf(
+            listOf(session("a", now), session("y", now - 24 * HOUR)),
+            listOf(session("a", now), session("c", now - 2 * HOUR)),
+            listOf(session("b", now - HOUR, pinned = true), session("c", now - 2 * HOUR)),
+        ).forEach { sessions ->
+            val texts = buildSessionRows(sessions, now, timeZone = zone, locale = locale)
+                .filterIsInstance<SessionListRow.Divider>()
+                .map { it.bucket.label(it.leadsLabelledList) }
+            assertTrue(
+                "Earlier today must not be renderable; got $texts",
+                texts.none { it == "Earlier today" },
+            )
+        }
     }
 
     /**
