@@ -671,16 +671,23 @@ class SessionGroupingTest {
 
     /**
      * An archived pool whose every row is pinned leaves the section below it
-     * empty, and Desktop answers exactly that state with the same sentence it
-     * uses in the live list: the recents section's empty state reads
-     * `pinnedSessions.length > 0 ? s.allPinned : s.noSessions`
-     * (`sidebar/index.tsx:1710-1712` @ `437116f9`), with no `showArchived` term
-     * in it — `s.allPinned` is `Everything here is pinned…` (`en.ts:2660`).
-     * The sentence ships verbatim rather than being rewritten for this view:
-     * one string, both lists, which is what Desktop does.
+     * empty, and this app explains that with the same sentence the live list
+     * uses — `Everything here is pinned…` (`apps/desktop/src/i18n/en.ts:2407` @
+     * `72a3277c`).
+     *
+     * This is a documented adaptation, not Desktop parity. Desktop cannot
+     * reach `s.allPinned` while the Archived view is on: the recents empty
+     * state tests `filtersActive` first (`sidebar/index.tsx:1686-1692` @
+     * `72a3277c`), and `$sidebarFiltersActive` counts `$sidebarShowArchived`
+     * itself (`store/layout.ts:380-384` @ `72a3277c`), so Desktop renders
+     * `No sessions match these filters` (`apps/desktop/src/i18n/en.ts:2413` @
+     * `72a3277c`) there. That
+     * sentence names a Status/Project/Profile/PR filter surface this rail does
+     * not have (#142), so the note states the actual reason recents is empty.
+     * Ledgered in `docs/parity/session-list-sections.md`.
      */
     @Test
-    fun `an archived pool that is entirely pinned explains itself as the live one does`() {
+    fun `an archived pool that is entirely pinned explains its empty recents`() {
         val rows = buildSessionRows(
             listOf(session("filed", now, archived = true, pinned = true)),
             now,

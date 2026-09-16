@@ -256,13 +256,22 @@ class SessionListSectionsJourneyTest {
     }
 
     /**
-     * And with every archived row pinned, the section's `allPinned` sentence is
-     * the one Desktop picks for the recents slot it leaves empty
-     * (`sidebar/index.tsx:1710-1712` @ `437116f9`, no `showArchived` term) —
-     * the same string the live list shows, not a rewritten one.
+     * And with every archived row pinned, the section's note is this app's own
+     * sentence for that state — the same string the live list shows.
+     *
+     * It is a documented adaptation rather than Desktop parity: Desktop's
+     * recents empty state tests `filtersActive` before `allPinned`
+     * (`sidebar/index.tsx:1706-1712` @ `437116f9`) and
+     * `$sidebarFiltersActive` counts `$sidebarShowArchived`
+     * (`store/layout.ts:392-396` @ `437116f9`), so Desktop renders
+     * `No sessions match these filters` (`apps/desktop/src/i18n/en.ts:2666` @
+     * `437116f9`) in the archived
+     * view. That sentence names filter controls this rail does not have (#142);
+     * the note names the real reason recents is empty. Ledgered in
+     * `docs/parity/session-list-sections.md`.
      */
     @Test
-    fun `an archived view with everything pinned carries Desktop's own sentence`() {
+    fun `an archived view with everything pinned explains its empty recents`() {
         launch(
             sessions = listOf(session("s-1", "Kept and filed", archived = true, pinned = true)),
             archivedVisible = true,
