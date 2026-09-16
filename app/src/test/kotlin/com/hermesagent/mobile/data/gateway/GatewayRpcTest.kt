@@ -404,6 +404,42 @@ class GatewayRpcTest {
     }
 
     /**
+     * `tool.generating` is refused, and stays refused, while the pair is not.
+     *
+     * Not the same refusal as `tool.progress` above: this frame is live at the
+     * pin and this client could receive it right now. It is declared
+     * (`tui_gateway/contracts/events.py:271-277` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`) and emitted on this socket
+     * (`tui_gateway/agent_callbacks.py:94` @ the pin), so it is unsubscribed for
+     * its shape, not its silence: the payload is `{name}` with no `tool_id`, and
+     * a tool row here is keyed by one. `SUPPORTED_EVENTS` above carries the full
+     * reasoning, including what the frame would strand and the consumer that
+     * would otherwise never see it. This test makes the refusal enforced rather
+     * than merely documented: admitting the frame turns it red.
+     */
+    @Test
+    fun `tool generating is refused while the tool lifecycle pair is admitted`() = runTest {
+        val rpc = CorrelatedGatewayRpc(RecordingWire(), eventPumpDispatcher = StandardTestDispatcher(testScheduler))
+        val seen = mutableListOf<String>()
+        val pump = launch { rpc.events.collect { seen += it.type } }
+        runCurrent()
+
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"tool.generating","session_id":"r1","payload":{"name":"write_file"}}}""",
+        )
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"tool.start","session_id":"r1","payload":{"tool_id":"t1","name":"write_file"}}}""",
+        )
+        rpc.receive(
+            """{"jsonrpc":"2.0","method":"event","params":{"type":"tool.complete","session_id":"r1","payload":{"tool_id":"t1","name":"write_file"}}}""",
+        )
+        advanceUntilIdle()
+
+        assertEquals("the rowless draft is refused, the pair is not", listOf("tool.start", "tool.complete"), seen)
+        pump.cancel()
+    }
+
+    /**
      * The prompt surface at the pin, pinned by shape.
      *
      * A blocking prompt is a server→client *request* frame — id `srq-…`, a
