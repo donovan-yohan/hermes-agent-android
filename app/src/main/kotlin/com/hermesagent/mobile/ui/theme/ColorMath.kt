@@ -81,6 +81,42 @@ fun readableOn(color: Color): Color {
 }
 
 /**
+ * WCAG AA for body text on a solid fill: 4.5:1 (WCAG 2.1 §1.4.3, the normal
+ * text threshold; a button label is normal-size text, not large text).
+ */
+const val AA_BODY_TEXT_CONTRAST: Float = 4.5f
+
+/**
+ * The label ink for a filled action — the one place a fill and its ink are
+ * chosen *together*, because choosing them apart is what #140 was.
+ *
+ * Desktop pairs each filled variant with a foreground of its own and never
+ * consults one from the other: `button.tsx:19,21` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337` writes `bg-primary
+ * text-primary-foreground` and `bg-destructive text-white`. Where Desktop
+ * derives rather than pins that partner, it derives it by measurement —
+ * `destructiveForeground: readableInk(destructive)`
+ * (`apps/desktop/src/themes/skin.ts:102` @ the same SHA).
+ *
+ * [paired] is the palette's own partner for [fill] (`midgroundForeground`,
+ * `destructiveForeground`) when the preset declares one. It wins only while it
+ * actually clears [AA_BODY_TEXT_CONTRAST] against [fill]; otherwise the
+ * measured candidate from [readableOn] does. Both are tried on [fill], not on
+ * the raw palette field, so a caller that passes a translucent or otherwise
+ * unpremultiplied fill still gets an answer about what the screen shows.
+ *
+ * Unconditional honouring of the pairing is not an option: a palette partner
+ * exists for 37 of the 44 fill/mode pairs `BuiltinThemes.ALL` can produce in
+ * its two modes, and twelve of those 37 fall below AA (2.00:1 on `everforest`
+ * dark accent, 2.32:1 on `catppuccin` dark destructive). A palette edit to fix
+ * them would break theme parity.
+ */
+fun filledActionInk(fill: Color, paired: Color?): Color {
+    if (paired != null && contrastRatio(fill, paired) >= AA_BODY_TEXT_CONTRAST) return paired
+    return readableOn(fill)
+}
+
+/**
  * Desktop `renderedModeFor` (`themes/context.tsx:148-158`): a palette may keep
  * a bright background even when the user asked for dark, so the mode the app
  * *paints* is decided by the background, not by the request. This is what

@@ -505,7 +505,7 @@ private fun ReasoningChoices(
             Text(
                 text = labels[option] ?: option.wireValue.replaceFirstChar { it.uppercase() },
                 style = HermesTheme.type.caption,
-                color = if (chosen) tokens.accentForeground else tokens.textSecondary,
+                color = if (chosen) tokens.filledActionInk else tokens.textSecondary,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = HermesTheme.spacing.touchTarget)
