@@ -15,15 +15,29 @@ import java.util.TimeZone
  * that rule, which needs no heuristic: **whatever group renders first is never
  * labelled** (`session-date-groups.ts:136-140`). A divider separates two
  * groups; there is nothing above the first one to separate it from.
+ *
+ * That unlabelled head is also what makes Desktop's `Earlier …` wording true
+ * (`apps/desktop/src/lib/time.ts:118-124` @ `437116f9497c80d242ce034ff7f5d81dc277a337`):
+ * the newest run never reaches the divider path, so a bucket labelled "Earlier
+ * today" always sits *below* something newer. The five relative labels are
+ * Desktop's, byte for byte
+ * (`apps/desktop/src/i18n/en.ts:2794-2800` @ the same SHA).
  */
 enum class SessionBucket { Today, Yesterday, ThisWeek, LastWeek, ThisMonth, Older }
 
 fun SessionBucket.label(): String = when (this) {
-    SessionBucket.Today -> "Today"
+    SessionBucket.Today -> "Earlier today"
     SessionBucket.Yesterday -> "Yesterday"
-    SessionBucket.ThisWeek -> "This week"
+    SessionBucket.ThisWeek -> "Earlier this week"
     SessionBucket.LastWeek -> "Last week"
-    SessionBucket.ThisMonth -> "This month"
+    SessionBucket.ThisMonth -> "Earlier this month"
+    // Desktop's tail is not one bucket: past `thisMonth` it emits one per
+    // calendar month, keyed `m-<year>-<month>` / `my-<year>-<month>`, labelled
+    // from `Intl` with a month name or month + year
+    // (`apps/desktop/src/lib/time.ts:155-165,30-31,169-190` @ the pin). Porting
+    // that word here would be a false claim: one terminal bucket captions rows
+    // belonging to several different months. It needs per-month divider
+    // identity first, which is #299.
     SessionBucket.Older -> "Older"
 }
 

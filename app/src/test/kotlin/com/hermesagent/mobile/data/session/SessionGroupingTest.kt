@@ -96,6 +96,32 @@ class SessionGroupingTest {
     }
 
     /**
+     * The divider copy is Desktop's, byte for byte
+     * (`apps/desktop/src/i18n/en.ts:2794-2800` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`). Three of the five were once
+     * re-phrased here; this pins them so the words cannot drift back.
+     *
+     * The `Earlier …` prefix is not decoration: it is only true because the
+     * newest group is never labelled, so a bucket carrying it always sits below
+     * something newer (`lib/time.ts:118-124` @ the pin). That rule is pinned by
+     * `the first group is never labelled, later ones are` below.
+     *
+     * `Older` is deliberately *not* Desktop's month / month + year form. One
+     * terminal bucket captions rows from several different months, so porting
+     * that word here would be a false claim; it needs per-month divider identity
+     * first (#299).
+     */
+    @Test
+    fun `divider copy is Desktop's, and the tail stays a documented divergence`() {
+        assertEquals("Earlier today", SessionBucket.Today.label())
+        assertEquals("Yesterday", SessionBucket.Yesterday.label())
+        assertEquals("Earlier this week", SessionBucket.ThisWeek.label())
+        assertEquals("Last week", SessionBucket.LastWeek.label())
+        assertEquals("Earlier this month", SessionBucket.ThisMonth.label())
+        assertEquals("Older", SessionBucket.Older.label())
+    }
+
+    /**
      * Desktop's nominal day rolls over at 04:00 local, not midnight
      * (`lib/time.ts:87-95`, `DAY_ROLLOVER_HOUR`): the small hours belong to the
      * previous evening's run. 03:59 on Wednesday is still Tuesday's day; 04:00
