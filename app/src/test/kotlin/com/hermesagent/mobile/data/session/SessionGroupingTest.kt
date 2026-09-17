@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.session
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
@@ -10,6 +11,10 @@ import java.util.TimeZone
 /**
  * Fixed clock, fixed zone, fixed locale — the buckets are calendar arithmetic,
  * and a test that depends on the machine's timezone is not a test.
+ *
+ * The divider wording is injected ([stubLabel]) rather than read from ICU, so
+ * every expectation here is a plain JVM fact. `IcuSessionBucketLabelTest` is the
+ * Robolectric half, where the real formatter runs.
  */
 class SessionGroupingTest {
 
@@ -18,6 +23,16 @@ class SessionGroupingTest {
 
     /** Wednesday 2026-08-19, 12:00 UTC. */
     private val now: Long = at(2026, Calendar.AUGUST, 19, hour = 12)
+
+    /**
+     * Desktop's five relative strings as the algorithm sees them, and a
+     * deterministic synthetic word for a month bucket — the seam makes the
+     * month *form* testable without ICU, and the month *identity* is the
+     * bucket's own key.
+     */
+    private val stubLabel = SessionBucketLabel { bucket ->
+        bucket.relativeLabel() ?: "Month ${bucket.key}"
+    }
 
     private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0): Long =
         at(zone, year, month, day, hour, minute)
@@ -34,29 +49,54 @@ class SessionGroupingTest {
         set(year, month, day, hour, minute, 0)
     }.timeInMillis
 
-    private fun bucketOf(daysAgo: Int, hoursAgo: Int = 0): SessionBucket =
-        calendarBucket(now - daysAgo * DAY - hoursAgo * HOUR, now, zone, locale)
+    private fun kindOf(daysAgo: Int, hoursAgo: Int = 0): SessionBucketKind =
+        calendarBucket(now - daysAgo * DAY - hoursAgo * HOUR, now, zone, locale).kind
+
+    private fun rowsOf(
+        sessions: List<SessionSummary>,
+        at: Long = now,
+        query: String = "",
+        archivedView: Boolean = false,
+        searchPending: Boolean = false,
+        serverMatches: List<SessionSummary>? = null,
+    ): List<SessionListRow> = buildSessionRows(
+        sessions = sessions,
+        nowMillis = at,
+        query = query,
+        searchPending = searchPending,
+        serverMatches = serverMatches,
+        timeZone = zone,
+        locale = locale,
+        archivedView = archivedView,
+        bucketLabel = stubLabel,
+    )
+
+    // -----------------------------------------------------------------------
+    // Calendar arithmetic. Desktop's `calendarBucket`
+    // (`apps/desktop/src/lib/time.ts:125-165` @
+    // `437116f9497c80d242ce034ff7f5d81dc277a337`).
+    // -----------------------------------------------------------------------
 
     @Test
     fun `same day is today, even hours apart`() {
-        assertEquals(SessionBucket.Today, bucketOf(0))
-        assertEquals(SessionBucket.Today, bucketOf(0, hoursAgo = 7))
+        assertEquals(SessionBucketKind.Today, kindOf(0))
+        assertEquals(SessionBucketKind.Today, kindOf(0, hoursAgo = 7))
     }
 
     @Test
     fun `one calendar day back is yesterday`() {
-        assertEquals(SessionBucket.Yesterday, bucketOf(1))
+        assertEquals(SessionBucketKind.Yesterday, kindOf(1))
     }
 
     @Test
     fun `earlier in the same week groups as this week`() {
         // Monday of the same week (2026-08-17) is two days before Wednesday.
-        assertEquals(SessionBucket.ThisWeek, bucketOf(2))
+        assertEquals(SessionBucketKind.ThisWeek, kindOf(2))
     }
 
     @Test
     fun `the previous week groups as last week`() {
-        assertEquals(SessionBucket.LastWeek, bucketOf(8))
+        assertEquals(SessionBucketKind.LastWeek, kindOf(8))
     }
 
     @Test
@@ -69,8 +109,8 @@ class SessionGroupingTest {
         val previousMonday = at(newYork, 2025, Calendar.OCTOBER, 27, hour = 4)
 
         assertEquals(
-            SessionBucket.LastWeek,
-            calendarBucket(previousMonday, fallbackMonday, newYork, locale),
+            SessionBucketKind.LastWeek,
+            calendarBucket(previousMonday, fallbackMonday, newYork, locale).kind,
         )
 
         // UTC remains the same seven-day boundary; this protects the ordinary
@@ -78,131 +118,59 @@ class SessionGroupingTest {
         val utcFallbackMonday = at(zone, 2025, Calendar.NOVEMBER, 3, hour = 4)
         val utcPreviousMonday = at(zone, 2025, Calendar.OCTOBER, 27, hour = 4)
         assertEquals(
-            SessionBucket.LastWeek,
-            calendarBucket(utcPreviousMonday, utcFallbackMonday, zone, locale),
+            SessionBucketKind.LastWeek,
+            calendarBucket(utcPreviousMonday, utcFallbackMonday, zone, locale).kind,
         )
     }
 
     @Test
     fun `earlier in the same month groups as this month`() {
         // 2026-08-03 is in August but two weeks back.
-        assertEquals(SessionBucket.ThisMonth, bucketOf(16))
-    }
-
-    @Test
-    fun `anything older falls through to older`() {
-        assertEquals(SessionBucket.Older, bucketOf(60))
-        assertEquals(SessionBucket.Older, bucketOf(400))
+        assertEquals(SessionBucketKind.ThisMonth, kindOf(16))
     }
 
     /**
-     * The divider copy is Desktop's, byte for byte
-     * (`apps/desktop/src/i18n/en.ts:2794-2800` @
-     * `437116f9497c80d242ce034ff7f5d81dc277a337`). Three of the five were once
-     * re-phrased here; this pins them so the words cannot drift back.
-     *
-     * The `Earlier …` prefix is not decoration: it is only true because the
-     * newest group is never labelled, so a bucket carrying it always sits below
-     * something newer (`lib/time.ts:118-124` @ the pin). That rule is pinned by
-     * `the first group is never labelled, later ones are` below.
-     *
-     * `Older` is deliberately *not* Desktop's month / month + year form. One
-     * terminal bucket captions rows from several different months, so porting
-     * that word here would be a false claim; it needs per-month divider identity
-     * first (#299).
+     * The tail is **not** one terminal bucket. Desktop emits a bucket per
+     * calendar month past `this month`, keyed `m-<year>-<month>` inside the
+     * current year and `my-<year>-<month>` outside it
+     * (`apps/desktop/src/lib/time.ts:155-165` @ the pin, with the month taken
+     * from JavaScript's zero-based `getMonth()` at `:162`). The key is the
+     * bucket's identity, so it is compared verbatim — an off-by-one month would
+     * silently caption every July row as August.
      */
     @Test
-    fun `divider copy is Desktop's, and the tail stays a documented divergence`() {
-        // The map keeps Desktop's own word for this bucket — it is the registry
-        // of the pin's strings. The render path provably cannot reach it; see
-        // `SessionBucket.label(leadsLabelledList)` and the test below.
-        assertEquals("Earlier today", SessionBucket.Today.label())
-        assertEquals("Yesterday", SessionBucket.Yesterday.label())
-        assertEquals("Earlier this week", SessionBucket.ThisWeek.label())
-        assertEquals("Last week", SessionBucket.LastWeek.label())
-        assertEquals("Earlier this month", SessionBucket.ThisMonth.label())
-        assertEquals("Older", SessionBucket.Older.label())
-    }
+    fun `past this month each calendar month is its own bucket, keyed Desktop's way`() {
+        // 2026-07-10 — same year, a different month.
+        val july = now - 40 * DAY
+        assertEquals("m-2026-6", calendarBucket(july, now, zone, locale).key)
+        assertEquals(SessionBucketKind.Month, calendarBucket(july, now, zone, locale).kind)
 
-    /**
-     * Desktop's relational copy is a claim about the rows *below* it: `Earlier
-     * today` is only true while something newer sits above
-     * (`lib/time.ts:118-124` @ the pin). A Pinned section forces the first
-     * recents bucket to be labelled — and in that one slot the app's newest
-     * session can sit directly below it, so the claim would be false. The plain
-     * word is used there instead.
-     *
-     * `Earlier today` is unreachable through `buildSessionRows` at all, and that
-     * is deliberate: the list sorts newest-first with contiguous monotonic
-     * buckets, so `Today` is only ever the first recents bucket, which is
-     * unlabelled without pins and the forced slot with them. Desktop reaches the
-     * word only by splitting *within* a day at a head-run cutoff
-     * (`session-date-groups.ts`, `headRunCutoffMs`), which this slice does not
-     * port. The reachable relative strings are `Yesterday` and the week/month
-     * ones, and those keep Desktop's copy.
-     */
-    @Test
-    fun `a Pinned section's forced first divider takes the plain word, not Desktop's relational copy`() {
-        // `b` is pinned and an hour old; `a` is the newest session in the app and
-        // sits below the divider the pinned section forced.
-        val pinnedRows = buildSessionRows(
-            listOf(
-                session("a", now),
-                session("b", now - HOUR, pinned = true),
-                session("c", now - 2 * HOUR),
-            ),
-            now,
-            timeZone = zone,
-            locale = locale,
-        )
-        assertEquals(
-            listOf("pinned", "row:b", "divider:Today", "row:a", "row:c"),
-            pinnedRows.map(::describe),
-        )
-        val forced = pinnedRows.filterIsInstance<SessionListRow.Divider>().single()
-        assertTrue("the forced first divider must be marked as such", forced.leadsLabelledList)
-        assertEquals("Today", forced.bucket.label(forced.leadsLabelledList))
+        // 2025-07-15 — a different year, so the key is the `my-` form.
+        val lastYear = now - 400 * DAY
+        assertEquals("my-2025-6", calendarBucket(lastYear, now, zone, locale).key)
+        assertEquals(SessionBucketKind.MonthYear, calendarBucket(lastYear, now, zone, locale).kind)
 
-        // Without a pinned section the first group is unlabelled, and a *later*
-        // group is the one that carries the relational word — below something
-        // newer, so the claim holds. `a` is today and `y` is yesterday.
-        val splitDay = buildSessionRows(
-            listOf(
-                session("a", now),
-                session("y", now - 24 * HOUR),
-            ),
-            now,
-            timeZone = zone,
-            locale = locale,
-        )
-        assertEquals(listOf("row:a", "divider:Yesterday", "row:y"), splitDay.map(::describe))
-        val earned = splitDay.filterIsInstance<SessionListRow.Divider>().single()
-        assertTrue("a divider below a newer row is not a forced one", !earned.leadsLabelledList)
-        assertEquals("Yesterday", earned.bucket.label(earned.leadsLabelledList))
-
-        // And the word that motivated all of this is unreachable — assert that
-        // rather than let a comment claim it is still rendered. `calendarBucket`
-        // says `Today` for dayDiff <= 0, the list is sorted newest-first, and
-        // buckets are contiguous and monotonic, so `Today` is only ever the
-        // first recents group. Whatever renders, no divider in this list can
-        // read `Earlier today`; the strings list keeps the word for Desktop's
-        // pin, and `docs/parity/session-list-sections.md` records the difference.
-        val dividerTexts = listOf(
-            listOf(session("a", now), session("y", now - 24 * HOUR)),
-            listOf(session("a", now), session("c", now - 2 * HOUR)),
-            listOf(session("b", now - HOUR, pinned = true), session("c", now - 2 * HOUR)),
-        ).flatMap { sessions ->
-            buildSessionRows(sessions, now, timeZone = zone, locale = locale)
-                .filterIsInstance<SessionListRow.Divider>()
-                .map { it.bucket.label(it.leadsLabelledList) }
-        }
-        // Non-vacuity: the layouts must actually render a divider, else the
-        // "none reads Earlier today" claim below proves nothing.
-        assertTrue("expected at least one rendered divider; got none", dividerTexts.isNotEmpty())
+        // Two adjacent months are two distinct identities, which is the whole
+        // reason the tail could not be ported as one word.
+        assertEquals("m-2026-5", calendarBucket(now - 70 * DAY, now, zone, locale).key)
         assertTrue(
-            "Earlier today must not be renderable; got $dividerTexts",
-            dividerTexts.none { it == "Earlier today" },
+            calendarBucket(now - 70 * DAY, now, zone, locale).key !=
+                calendarBucket(now - 40 * DAY, now, zone, locale).key,
         )
+    }
+
+    /**
+     * The bucket's `atMillis` is the nominal day start the month formatter reads
+     * its name from (`time.ts:169-190` @ the pin), not the row's own instant —
+     * so a row at 23:50 on the 31st still formats as that month.
+     */
+    @Test
+    fun `a month bucket carries its nominal day start, not the row's instant`() {
+        val lateJuly = at(2026, Calendar.JULY, 31, hour = 23, minute = 50)
+        val bucket = calendarBucket(lateJuly, now, zone, locale)
+
+        assertEquals("m-2026-6", bucket.key)
+        assertEquals(at(2026, Calendar.JULY, 31, hour = 0), bucket.atMillis)
     }
 
     /**
@@ -216,15 +184,15 @@ class SessionGroupingTest {
         val lateNight = at(2026, Calendar.AUGUST, 19, hour = 3, minute = 59)
         val earlyMorning = at(2026, Calendar.AUGUST, 19, hour = 4, minute = 0)
 
-        assertEquals(SessionBucket.Yesterday, calendarBucket(lateNight, now, zone, locale))
-        assertEquals(SessionBucket.Today, calendarBucket(earlyMorning, now, zone, locale))
+        assertEquals(SessionBucketKind.Yesterday, calendarBucket(lateNight, now, zone, locale).kind)
+        assertEquals(SessionBucketKind.Today, calendarBucket(earlyMorning, now, zone, locale).kind)
 
         // The same boundary one day down: 03:59 on Wednesday and 23:50 on
         // Tuesday are the same nominal day, which is the whole point of the rule.
         val tuesdayEvening = at(2026, Calendar.AUGUST, 18, hour = 23, minute = 50)
         assertEquals(
-            calendarBucket(tuesdayEvening, now, zone, locale),
-            calendarBucket(lateNight, now, zone, locale),
+            calendarBucket(tuesdayEvening, now, zone, locale).kind,
+            calendarBucket(lateNight, now, zone, locale).kind,
         )
     }
 
@@ -235,50 +203,198 @@ class SessionGroupingTest {
         val smallHours = at(2026, Calendar.AUGUST, 19, hour = 2)
         val tuesdayAfternoon = at(2026, Calendar.AUGUST, 18, hour = 15)
 
-        assertEquals(SessionBucket.Today, calendarBucket(tuesdayAfternoon, smallHours, zone, locale))
+        assertEquals(SessionBucketKind.Today, calendarBucket(tuesdayAfternoon, smallHours, zone, locale).kind)
         assertEquals(
-            SessionBucket.Yesterday,
-            calendarBucket(at(2026, Calendar.AUGUST, 17, hour = 15), smallHours, zone, locale),
+            SessionBucketKind.Yesterday,
+            calendarBucket(at(2026, Calendar.AUGUST, 17, hour = 15), smallHours, zone, locale).kind,
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // The divider copy. Desktop's five relative strings, byte for byte
+    // (`apps/desktop/src/i18n/en.ts:2794-2800` @ the pin), and a month form that
+    // comes from a formatter rather than from a string table.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `the five relative labels are Desktop's, and a month bucket has no word of its own`() {
+        assertEquals("Earlier today", kindLabel(SessionBucketKind.Today))
+        assertEquals("Yesterday", kindLabel(SessionBucketKind.Yesterday))
+        assertEquals("Earlier this week", kindLabel(SessionBucketKind.ThisWeek))
+        assertEquals("Last week", kindLabel(SessionBucketKind.LastWeek))
+        assertEquals("Earlier this month", kindLabel(SessionBucketKind.ThisMonth))
+
+        // A month bucket's word is a locale fact, not a constant — Desktop reads
+        // it from `Intl` (`lib/time.ts:30-31,169-190` @ the pin). `Older` was a
+        // word this app invented and upstream does not have.
+        assertNull(kindLabel(SessionBucketKind.Month))
+        assertNull(kindLabel(SessionBucketKind.MonthYear))
+    }
+
+    private fun kindLabel(kind: SessionBucketKind): String? =
+        SessionBucket(kind, key = "k", atMillis = 0).relativeLabel()
+
+    /**
+     * The label seam is what words a divider, and it is asked once per divider
+     * with that divider's own bucket — so two month dividers cannot be given one
+     * word.
+     */
+    @Test
+    fun `every divider is worded from its own bucket through the injected seam`() {
+        val rows = rowsOf(
+            listOf(
+                session("recent", now - HOUR),
+                session("jul", now - 40 * DAY),
+                session("jun", now - 70 * DAY),
+            ),
+        )
+
+        assertEquals(
+            listOf("Month m-2026-6", "Month m-2026-5"),
+            rows.filterIsInstance<SessionListRow.Divider>().map { it.label },
+        )
+        assertEquals(
+            listOf("m-2026-6", "m-2026-5"),
+            rows.filterIsInstance<SessionListRow.Divider>().map { it.bucket.key },
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // The head run. Desktop's `headRunCutoffMs`
+    // (`apps/desktop/src/lib/session-date-groups.ts:44-88` @ the pin) is what
+    // makes `Earlier today` true rather than merely available: the newest run
+    // never reaches the divider path, so a bucket carrying the word always has
+    // something newer above it.
+    // -----------------------------------------------------------------------
+
+    /**
+     * The whole point of porting the cutoff. Five sessions in one burst, then a
+     * real pause: the head is the burst, and the divider below it reads
+     * `Earlier today` — a claim about rows that *are* earlier than the head.
+     */
+    @Test
+    fun `Earlier today is reachable, and true, because the head is cut at a real break`() {
+        val rows = rowsOf(
+            listOf(
+                session("r1", now - MINUTE),
+                session("r2", now - 2 * MINUTE),
+                session("r3", now - 3 * MINUTE),
+                session("r4", now - 4 * MINUTE),
+                session("r5", now - 5 * MINUTE),
+                session("h3", now - 3 * HOUR),
+                session("d1", now - DAY),
+                session("m40", now - 40 * DAY),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                "row:r1", "row:r2", "row:r3", "row:r4", "row:r5",
+                "divider:today", "row:h3",
+                "divider:yesterday", "row:d1",
+                "divider:m-2026-6", "row:m40",
+            ),
+            rows.map(::describe),
+        )
+        // The word is on the divider, and something newer sits above it.
+        val first = rows.filterIsInstance<SessionListRow.Divider>().first()
+        assertEquals("Earlier today", first.label)
+        assertTrue(
+            "the labelled bucket must sit below the unlabelled head",
+            rows.indexOf(SessionListRow.Row(session("r5", now - 5 * MINUTE))) <
+                rows.indexOf(first),
         )
     }
 
     /**
-     * `apps/desktop/src/lib/session-date-groups.ts:138-140`: a divider only ever separates two
-     * groups, so whatever group renders first is never labelled.
+     * `MIN_RUN_BREAK_MS = 30 min` (`session-date-groups.ts:24` @ the pin): a
+     * rapid-fire burst is never sliced, however many rows it has.
      */
     @Test
-    fun `the first group is never labelled, later ones are`() {
-        val sessions = listOf(
-            session("a", now - HOUR),
-            session("b", now - 2 * HOUR),
-            session("c", now - DAY),
-            session("d", now - 8 * DAY),
-        )
-
-        val rows = buildSessionRows(sessions, now, timeZone = zone, locale = locale)
+    fun `a burst under the minimum break is never cut mid-run`() {
+        val burst = (1..8).map { session("b$it", now - it * 5 * MINUTE) }
+        val rows = rowsOf(burst + session("s6", now - 6 * HOUR))
 
         assertEquals(
-            listOf(
-                "row:a", "row:b",
-                "divider:Yesterday", "row:c",
-                "divider:LastWeek", "row:d",
-            ),
+            (1..8).map { "row:b$it" } + listOf("divider:today", "row:s6"),
             rows.map(::describe),
         )
     }
 
+    /**
+     * `MAX_RUN_GAP_MS = 8 h` (`:25` @ the pin) always ends the run, so an
+     * isolated newest session stands alone above the bucket it belongs to.
+     */
     @Test
-    fun `the first-group rule follows the list, not the calendar`() {
-        // Nothing recent at all: the oldest bucket is now the head, and it is
-        // unlabelled for exactly the same reason.
-        val rows = buildSessionRows(
-            listOf(session("old", now - 40 * DAY), session("older", now - 400 * DAY)),
-            now,
-            timeZone = zone,
-            locale = locale,
+    fun `a silence longer than the maximum gap always ends the run`() {
+        val rows = rowsOf(
+            listOf(
+                session("n1", now - MINUTE),
+                // 03:00 Wednesday, which the 04:00 rollover makes Tuesday.
+                session("t9", now - 9 * HOUR),
+            ),
         )
 
-        assertEquals(listOf("row:old", "row:older"), rows.map(::describe))
+        assertEquals(listOf("row:n1", "divider:yesterday", "row:t9"), rows.map(::describe))
+    }
+
+    /**
+     * The fuzzy-merge rule (`:36-40` @ the pin): when the cut lands at the run's
+     * own end and the sessions below it share the head's bucket, the head adds
+     * nothing and dissolves — the first-group rule keeps the top unlabelled
+     * anyway, and the alternative is a divider labelling rows that are the same
+     * bucket as the ones above it.
+     */
+    @Test
+    fun `a head that ends inside its own bucket dissolves`() {
+        // 23:00 Wednesday: 22:00 and 05:00 are both inside Wednesday's nominal
+        // day (04:00 → 04:00), and 17 h apart, so the gap ends the run.
+        val lateNow = at(2026, Calendar.AUGUST, 19, hour = 23)
+        val rows = rowsOf(
+            listOf(
+                session("late", lateNow - HOUR),
+                session("early", lateNow - 18 * HOUR),
+            ),
+            at = lateNow,
+        )
+
+        assertEquals(listOf("row:late", "row:early"), rows.map(::describe))
+    }
+
+    /**
+     * The first-group rule is per *section*: whatever group renders first is
+     * never labelled (`session-date-groups.ts:138-140` @ the pin), and the
+     * unlabelled head is what the rule spends on the usual case.
+     */
+    @Test
+    fun `the first rendered group is never labelled`() {
+        // No recent activity at all: the newest row is itself the head, and the
+        // month below it is what gets named.
+        val rows = rowsOf(listOf(session("old", now - 40 * DAY), session("older", now - 400 * DAY)))
+
+        assertEquals(listOf("row:old", "divider:my-2025-6", "row:older"), rows.map(::describe))
+    }
+
+    /** Two buckets in a row need a divider between them; one bucket does not. */
+    @Test
+    fun `a divider only ever separates two groups`() {
+        val rows = rowsOf(
+            listOf(
+                session("a", now - HOUR),
+                session("b", now - 2 * HOUR),
+                session("c", now - DAY),
+                session("d", now - 8 * DAY),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                "row:a", "row:b",
+                "divider:yesterday", "row:c",
+                "divider:last-week", "row:d",
+            ),
+            rows.map(::describe),
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -294,14 +410,23 @@ class SessionGroupingTest {
             session("tunnel", now - HOUR, title = "SSH tunnel", preview = "probe ok"),
             session("theme", now - 2 * HOUR, title = "Themes", preview = "six presets"),
             session("old", now - 8 * DAY, title = "Old tunnel notes", preview = "n/a"),
+            // A row whose own bucket is a month one, so the absence of a month
+            // divider under a query is asserted rather than assumed.
+            session("jul", now - 40 * DAY, title = "July tunnel plan", preview = "n/a"),
         )
 
-        val rows = buildSessionRows(sessions, now, query = "TUNNEL", timeZone = zone, locale = locale)
+        val rows = rowsOf(sessions, query = "TUNNEL")
 
-        // `old` would carry a `Last week` divider in the ordinary list.
-        assertEquals(listOf("results-label", "row:tunnel", "row:old"), rows.map(::describe))
+        // `old` would carry a `Last week` divider, `jul` a month one.
+        assertEquals(listOf("results-label", "row:tunnel", "row:old", "row:jul"), rows.map(::describe))
+        assertEquals(
+            "a live query carries no date divider and no Sessions caption",
+            emptyList<SessionListRow>(),
+            rows.filterIsInstance<SessionListRow.Divider>() +
+                rows.filterIsInstance<SessionListRow.SessionsLabel>(),
+        )
 
-        val byPreview = buildSessionRows(sessions, now, query = "presets", timeZone = zone, locale = locale)
+        val byPreview = rowsOf(sessions, query = "presets")
         assertEquals(listOf("results-label", "row:theme"), byPreview.map(::describe))
     }
 
@@ -327,7 +452,7 @@ class SessionGroupingTest {
             assertEquals(
                 "matched on the field carried by $id",
                 listOf("results-label", "row:$id"),
-                buildSessionRows(only, now, query = "needle", timeZone = zone, locale = locale).map(::describe),
+                rowsOf(only, query = "needle").map(::describe),
             )
         }
     }
@@ -344,7 +469,7 @@ class SessionGroupingTest {
             assertEquals(
                 "matched on $needle",
                 listOf("results-label", "row:bb"),
-                buildSessionRows(bluebubbles, now, query = needle, timeZone = zone, locale = locale).map(::describe),
+                rowsOf(bluebubbles, query = needle).map(::describe),
             )
         }
 
@@ -353,7 +478,7 @@ class SessionGroupingTest {
         val unknown = listOf(session("x", now, title = "Untitled", source = "new_platform"))
         assertEquals(
             listOf("results-label", "row:x"),
-            buildSessionRows(unknown, now, query = "New Platform", timeZone = zone, locale = locale).map(::describe),
+            rowsOf(unknown, query = "New Platform").map(::describe),
         )
     }
 
@@ -379,14 +504,7 @@ class SessionGroupingTest {
             session("server-3", now, title = "Server, rootless"),
         )
 
-        val rows = buildSessionRows(
-            sessions = local,
-            nowMillis = now,
-            query = "matched",
-            serverMatches = server,
-            timeZone = zone,
-            locale = locale,
-        )
+        val rows = rowsOf(local, query = "matched", serverMatches = server)
 
         assertEquals(
             listOf("results-label", "row:local-1", "row:server-2", "row:server-3"),
@@ -407,14 +525,7 @@ class SessionGroupingTest {
             session("ranked-second", now, title = "Newest but ranked second"),
         )
 
-        val rows = buildSessionRows(
-            sessions = emptyList(),
-            nowMillis = now,
-            query = "ranked",
-            serverMatches = server,
-            timeZone = zone,
-            locale = locale,
-        )
+        val rows = rowsOf(emptyList(), query = "ranked", serverMatches = server)
 
         assertEquals(listOf("results-label", "row:ranked-first", "row:ranked-second"), rows.map(::describe))
     }
@@ -430,13 +541,11 @@ class SessionGroupingTest {
 
         assertEquals(
             listOf("results-label", "skeletons"),
-            buildSessionRows(matched, now, query = "zzz", searchPending = true, timeZone = zone, locale = locale)
-                .map(::describe),
+            rowsOf(matched, query = "zzz", searchPending = true).map(::describe),
         )
         assertEquals(
             listOf("results-label", "row:a"),
-            buildSessionRows(matched, now, query = "tunnel", searchPending = true, timeZone = zone, locale = locale)
-                .map(::describe),
+            rowsOf(matched, query = "tunnel", searchPending = true).map(::describe),
         )
     }
 
@@ -446,13 +555,7 @@ class SessionGroupingTest {
      */
     @Test
     fun `a settled query that matches nothing carries Desktop's sentence`() {
-        val rows = buildSessionRows(
-            listOf(session("a", now)),
-            now,
-            query = "  Nothing Here  ",
-            timeZone = zone,
-            locale = locale,
-        )
+        val rows = rowsOf(listOf(session("a", now)), query = "  Nothing Here  ")
 
         assertEquals(listOf("results-label", "no-results:Nothing Here"), rows.map(::describe))
         assertEquals(
@@ -461,35 +564,71 @@ class SessionGroupingTest {
         )
     }
 
-    /** `Results` (`en.ts:2204` @ the pin). */
+    /** `Results` (`en.ts:2650` @ the pin). */
     @Test
     fun `the section label is Desktop's word`() {
         assertEquals("Results", RESULTS_SECTION_LABEL)
     }
 
+    // -----------------------------------------------------------------------
+    // The two captions. Desktop has two distinct ones: `SidebarPanelLabel` for
+    // `Pinned` / `Sessions` and `SidebarDateDivider` for the buckets, and the
+    // `Sessions` caption heads the *unpinned pool* inside the list
+    // (`sidebar/index.tsx:1829`, label at `i18n/en.ts:2652` @ the pin).
+    // -----------------------------------------------------------------------
+
     /**
-     * The leading Pinned section, ported from Desktop's own
-     * (`apps/desktop/src/app/chat/sidebar/index.tsx:1632-1653` @ `72a3277cd7`).
-     * Membership is the backend's `pinned` flag alone; ordering is this list's,
-     * because a phone has no drag reorder to hint with.
+     * The boundary this issue is about: `PINNED`, then Desktop's `SESSIONS`
+     * caption, then the unpinned pool. The caption is what separates the two
+     * pools, so the first date divider no longer has to imply the boundary —
+     * which is what retired the forced-first label.
      */
     @Test
-    fun `pinned rows lead the list under their own section label`() {
-        val rows = buildSessionRows(
+    fun `the recents pool is captioned below the pinned section`() {
+        val rows = rowsOf(
             listOf(
                 session("a", now),
                 session("b", now - HOUR, pinned = true),
                 session("c", now - 2 * HOUR),
             ),
-            now,
-            timeZone = zone,
-            locale = locale,
         )
 
         assertEquals(
-            listOf("pinned", "row:b", "divider:Today", "row:a", "row:c"),
+            listOf("pinned", "row:b", "sessions", "row:a", "divider:today", "row:c"),
             rows.map(::describe),
         )
+        assertEquals("Sessions", SESSIONS_SECTION_LABEL)
+    }
+
+    /**
+     * With nothing pinned there is one pool, and the pane title above the list
+     * is already the word for it — a second copy immediately under it would name
+     * the same list twice. Ledgered in `docs/parity/session-list-sections.md`.
+     */
+    @Test
+    fun `the caption is absent when there is no pinned section above it`() {
+        val rows = rowsOf(listOf(session("a", now), session("c", now - 2 * HOUR)))
+
+        assertEquals(listOf("row:a", "divider:today", "row:c"), rows.map(::describe))
+    }
+
+    /**
+     * `Pinned` (`en.ts:2651` @ the pin). Membership is the backend's `pinned`
+     * flag alone; ordering is this list's, because a phone has no drag reorder
+     * to hint with.
+     */
+    @Test
+    fun `pinned rows lead the list under their own section label`() {
+        val rows = rowsOf(
+            listOf(
+                session("a", now),
+                session("b", now - HOUR, pinned = true),
+                session("c", now - 2 * HOUR),
+            ),
+        )
+
+        assertEquals("Pinned", PINNED_SECTION_LABEL)
+        assertEquals(SessionListRow.PinnedLabel, rows.first())
     }
 
     /**
@@ -498,49 +637,37 @@ class SessionGroupingTest {
      */
     @Test
     fun `only an explicit backend pin joins the section`() {
-        val rows = buildSessionRows(
-            listOf(session("a", now, pinned = false), session("b", now - HOUR)),
-            now,
-            timeZone = zone,
-            locale = locale,
-        )
+        val rows = rowsOf(listOf(session("a", now, pinned = false), session("b", now - HOUR)))
 
-        assertEquals(listOf("row:a", "row:b"), rows.map(::describe))
+        assertEquals(listOf("row:a", "divider:today", "row:b"), rows.map(::describe))
     }
 
     /** The pinned section is ordered by activity, newest first, like the rest. */
     @Test
     fun `the pinned section is ordered newest first`() {
-        val rows = buildSessionRows(
+        val rows = rowsOf(
             listOf(
                 session("old", now - 3 * HOUR, pinned = true),
                 session("new", now, pinned = true),
                 session("recent", now - HOUR),
             ),
-            now,
-            timeZone = zone,
-            locale = locale,
         )
 
         assertEquals(
-            listOf("pinned", "row:new", "row:old", "divider:Today", "row:recent"),
+            listOf("pinned", "row:new", "row:old", "sessions", "row:recent"),
             rows.map(::describe),
         )
     }
 
     /**
-     * Desktop's empty-recents line, verbatim (`i18n/en.ts:2407`, chosen at
-     * `sidebar/index.tsx:1690-1692` @ `72a3277cd7`). Without it an all-pinned
-     * account reads as a broken list rather than an explained one.
+     * Desktop's empty-recents line, verbatim (`i18n/en.ts:2492` @ the pin),
+     * chosen at `sidebar/index.tsx:1690-1692` @ `72a3277cd7`. Without it an
+     * all-pinned account reads as a broken list rather than an explained one —
+     * and with no recents pool there is no caption to head it.
      */
     @Test
     fun `everything pinned explains the empty recents rather than showing nothing`() {
-        val rows = buildSessionRows(
-            listOf(session("a", now, pinned = true)),
-            now,
-            timeZone = zone,
-            locale = locale,
-        )
+        val rows = rowsOf(listOf(session("a", now, pinned = true)))
 
         assertEquals(listOf("pinned", "row:a", "all-pinned"), rows.map(::describe))
         assertEquals(
@@ -552,26 +679,26 @@ class SessionGroupingTest {
     /** Nothing pinned, nothing to explain: the note belongs to that one state. */
     @Test
     fun `an empty list carries no all-pinned note`() {
-        assertTrue(buildSessionRows(emptyList(), now, timeZone = zone, locale = locale).isEmpty())
+        assertTrue(rowsOf(emptyList()).isEmpty())
     }
 
     /** Desktop answers a search in one Results list, with no Pinned section. */
     @Test
     fun `a search answers in one list`() {
-        val rows = buildSessionRows(
-            listOf(session("a", now, title = "alpha"), session("b", now - HOUR, title = "alpha two", pinned = true)),
-            now,
+        val rows = rowsOf(
+            listOf(
+                session("a", now, title = "alpha"),
+                session("b", now - HOUR, title = "alpha two", pinned = true),
+            ),
             query = "alpha",
-            timeZone = zone,
-            locale = locale,
         )
 
         assertEquals(listOf("results-label", "row:a", "row:b"), rows.map(::describe))
     }
 
     /**
-     * Archived is a view of its own set, flat: no pinned section and no
-     * dividers (`sidebar/index.tsx:511-518,1716` @ `72a3277cd7`).
+     * Archived is a view of its own set, flat: no pinned section, no `Sessions`
+     * caption and no dividers (`sidebar/index.tsx:511-518,1716` @ the pin).
      */
     @Test
     fun `the archived view swaps the pool rather than filtering it`() {
@@ -581,23 +708,20 @@ class SessionGroupingTest {
             session("filed-pinned", now - 2 * HOUR, archived = true, pinned = true),
         )
 
-        assertEquals(listOf("row:live"), buildSessionRows(sessions, now, timeZone = zone, locale = locale).map(::describe))
+        assertEquals(listOf("row:live"), rowsOf(sessions).map(::describe))
         assertEquals(
             listOf("row:filed", "row:filed-pinned"),
-            buildSessionRows(sessions, now, timeZone = zone, locale = locale, archivedView = true).map(::describe),
+            rowsOf(sessions, archivedView = true).map(::describe),
         )
     }
 
     /** A Gateway that never reported `archived` has not archived anything. */
     @Test
     fun `an unsaid archive flag keeps the row in the live list`() {
-        val rows = buildSessionRows(listOf(session("a", now)), now, timeZone = zone, locale = locale)
+        val rows = rowsOf(listOf(session("a", now)))
 
         assertEquals(listOf("row:a"), rows.map(::describe))
-        assertTrue(
-            buildSessionRows(listOf(session("a", now)), now, timeZone = zone, locale = locale, archivedView = true)
-                .isEmpty(),
-        )
+        assertTrue(rowsOf(listOf(session("a", now)), archivedView = true).isEmpty())
     }
 
     /**
@@ -619,15 +743,12 @@ class SessionGroupingTest {
         )
         val server = listOf(session("server-tunnel", now, title = "Server tunnel hit"))
 
-        val rows = buildSessionRows(
-            sessions = sessions,
-            nowMillis = now,
+        val rows = rowsOf(
+            sessions,
             query = "tunnel",
+            archivedView = true,
             searchPending = true,
             serverMatches = server,
-            timeZone = zone,
-            locale = locale,
-            archivedView = true,
         )
 
         assertEquals(listOf("row:filed-tunnel"), rows.map(::describe))
@@ -640,14 +761,11 @@ class SessionGroupingTest {
      */
     @Test
     fun `an archived query that matches nothing locally renders no rows at all`() {
-        val rows = buildSessionRows(
-            sessions = listOf(session("filed-other", now, title = "Themes", archived = true)),
-            nowMillis = now,
+        val rows = rowsOf(
+            listOf(session("filed-other", now, title = "Themes", archived = true)),
             query = "tunnel",
-            serverMatches = listOf(session("server-tunnel", now, title = "Server tunnel hit")),
-            timeZone = zone,
-            locale = locale,
             archivedView = true,
+            serverMatches = listOf(session("server-tunnel", now, title = "Server tunnel hit")),
         )
 
         assertTrue(rows.isEmpty())
@@ -677,9 +795,16 @@ class SessionGroupingTest {
         lineageRootId = lineageRoot,
     )
 
+    /**
+     * Structural, locale-free: a divider is described by its Desktop bucket key
+     * (`m-<year>-<month>` for a month), which is exactly the identity that lets
+     * two month dividers coexist. The copy is asserted through the seam in its
+     * own tests.
+     */
     private fun describe(row: SessionListRow): String = when (row) {
-        is SessionListRow.Divider -> "divider:${row.bucket.name}"
+        is SessionListRow.Divider -> "divider:${row.bucket.key}"
         is SessionListRow.PinnedLabel -> "pinned"
+        is SessionListRow.SessionsLabel -> "sessions"
         is SessionListRow.AllPinnedNote -> "all-pinned"
         is SessionListRow.Row -> "row:${row.session.id}"
         is SessionListRow.ResultsLabel -> "results-label"
@@ -688,7 +813,8 @@ class SessionGroupingTest {
     }
 
     private companion object {
-        const val HOUR = 60L * 60 * 1000
+        const val MINUTE = 60L * 1000
+        const val HOUR = 60L * MINUTE
         const val DAY = 24 * HOUR
     }
 }
