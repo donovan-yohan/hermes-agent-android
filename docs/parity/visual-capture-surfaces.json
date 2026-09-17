@@ -53,6 +53,34 @@
           "post_interaction_accessibility": "Turn on photo access. Show recent images in this sheet"
         }
       }
+    },
+    "session-list-sections": {
+      "desktop_sha": "437116f9497c80d242ce034ff7f5d81dc277a337",
+      "fixture_id": "session-list-sections-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
+      "desktop_selector": "[data-sessions-mode]",
+      "states": {
+        "pinned-sessions-month-dividers": {
+          "interaction": [],
+          "post_interaction_accessibility": "Head row alpha. Idle. Updated 12 minutes ago",
+          "fixture_note": "The seeded list from its head, on the same phone-sized pane every other state uses: PINNED, SESSIONS, the unlabelled head run, EARLIER TODAY. The fourteen-row seed is taller than the phone, so the month tail belongs to the months-scrolled state rather than to a claim this capture cannot show. The Desktop packet for #141/#299 was captured under this same state name from the same seed and clock."
+        },
+        "months-scrolled": {
+          "interaction": ["swipe:list-up"],
+          "post_interaction_accessibility": "November 2025 lima. Idle. Updated 309 days ago",
+          "fixture_note": "The same fourteen-row seed, dragged to its own end by the capture lane's bounded real adb swipes: the screen centre, 0.75H to 0.25H of the height `wm size` reports, at most 12 drags and then drags until the tree stops changing. One real render, one screencap, taken at the list's real end where the month dividers live — no grown pane, no shortened seed, no stitched pixels. The lane fails if the row never publishes."
+        },
+        "results": {
+          "interaction": [],
+          "post_interaction_accessibility": "Head row alpha. Idle. Updated 12 minutes ago",
+          "fixture_note": "The same seeded rows under a live query, so the list answers in one RESULTS section. Desktop has no rendered counterpart at this pin."
+        },
+        "all-pinned": {
+          "interaction": ["swipe:list-up"],
+          "post_interaction_accessibility": "Everything here is pinned. Unpin a chat to show it in recents.",
+          "fixture_note": "The same fourteen-row seed with every row pinned, which empties the recents pool and makes Desktop's all-pinned sentence the list's final row — below the phone's fold, so it is reached the way months-scrolled is, by the lane's bounded real swipes, and the catalogued evidence is that final note rather than the last row above it. Desktop has no rendered counterpart at this pin."
+        }
+      }
     }
   }
 }

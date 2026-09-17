@@ -31,6 +31,18 @@ DEFAULT_ACTIVITY = "com.hermesagent.mobile.MainActivity"
 PEM_CERTIFICATE = re.compile(r"-----BEGIN CERTIFICATE-----\s*(.*?)\s*-----END CERTIFICATE-----", re.DOTALL)
 VERSION_CODE = re.compile(r"\bversionCode=(\d+)")
 VERSION_NAME = re.compile(r"\bversionName=([^\s]+)")
+SCREEN_SIZE = re.compile(r"\b(\d+)x(\d+)\b")
+
+# A phone is shorter than any catalogued list, so a state whose subject sits at
+# the list's own end is reached by real drags, never by a grown pane or a
+# shortened seed. Both the drag count and the settle are bounded, so a lane that
+# cannot reach the state fails loudly instead of swiping forever.
+SWIPE_MAX_ATTEMPTS = 12
+SWIPE_SETTLE_ATTEMPTS = 4
+SWIPE_DURATION_MILLIS = 350
+SWIPE_SETTLE_SECONDS = 0.4
+SWIPE_RENDER_ATTEMPTS = 8
+SWIPE_RENDER_PAUSE_SECONDS = 0.5
 
 
 def adb(serial: str | None, *args: str, binary: bool = False):
@@ -81,6 +93,32 @@ def ui_hierarchy(serial: str | None) -> ET.Element:
     return ET.fromstring(shell(serial, "cat", "/sdcard/window.xml"))
 
 
+def published_accessibility(root: ET.Element) -> tuple[list[dict[str, object]], set[str]]:
+    """The platform's published accessibility text, node by node.
+
+    A Compose node's spoken name is its `text` or its `content-desc` depending on
+    which semantic it set: a session row merges its whole sentence into a
+    `contentDescription`, and a plain note is published as `text`. A capture that
+    read only one of the two would claim a state it cannot actually see.
+    """
+    nodes: list[dict[str, object]] = []
+    published: set[str] = set()
+    for node in root.iter("node"):
+        text = node.attrib.get("text", "")
+        description = node.attrib.get("content-desc", "")
+        published.update(value for value in (text, description) if value)
+        if text or description:
+            nodes.append({
+                "class": node.attrib.get("class", ""),
+                "text": text,
+                "content_description": description,
+                "clickable": node.attrib.get("clickable") == "true",
+                "enabled": node.attrib.get("enabled") == "true",
+                "selected": node.attrib.get("selected") == "true",
+            })
+    return nodes, published
+
+
 def accessibility_snapshot(
     serial: str | None,
     expected_description: str | None = None,
@@ -90,28 +128,96 @@ def accessibility_snapshot(
 ) -> dict[str, object]:
     """Retain a compact post-interaction snapshot after bounded platform publication retries."""
     for attempt in range(attempts):
-        root = ui_hierarchy(serial)
-        nodes = []
-        descriptions = set()
-        for node in root.iter("node"):
-            text = node.attrib.get("text", "")
-            description = node.attrib.get("content-desc", "")
-            if description:
-                descriptions.add(description)
-            if text or description:
-                nodes.append({
-                    "class": node.attrib.get("class", ""),
-                    "text": text,
-                    "content_description": description,
-                    "clickable": node.attrib.get("clickable") == "true",
-                    "enabled": node.attrib.get("enabled") == "true",
-                    "selected": node.attrib.get("selected") == "true",
-                })
-        if not expected_description or expected_description in descriptions:
+        nodes, published = published_accessibility(ui_hierarchy(serial))
+        if not expected_description or expected_description in published:
             return {"expected_description": expected_description, "nodes": nodes}
         if attempt + 1 < attempts:
             time.sleep(retry_seconds)
     raise SystemExit(f"post-interaction state did not expose {expected_description!r} in accessibility")
+
+
+def screen_size(serial: str | None) -> tuple[int, int]:
+    """The screen the capture is really on, as the platform reports it.
+
+    Derived from `wm size` on the device in front of us — an override included —
+    so a drag is never issued against a phone's pixel grid that this capture
+    merely assumed.
+    """
+    reported = shell(serial, "wm", "size")
+    matches = SCREEN_SIZE.findall(reported)
+    if not matches:
+        raise SystemExit(f"could not derive the screen size from `wm size`: {reported!r}")
+    width, height = (int(value) for value in matches[-1])
+    if width <= 0 or height <= 0:
+        raise SystemExit(f"the platform reported a degenerate screen size: {width}x{height}")
+    return width, height
+
+
+def swipe_list_up(
+    serial: str | None,
+    expected_description: str | None,
+    *,
+    attempts: int = SWIPE_MAX_ATTEMPTS,
+    settle_attempts: int = SWIPE_SETTLE_ATTEMPTS,
+    duration_millis: int = SWIPE_DURATION_MILLIS,
+    settle_seconds: float = SWIPE_SETTLE_SECONDS,
+    render_attempts: int = SWIPE_RENDER_ATTEMPTS,
+    render_pause_seconds: float = SWIPE_RENDER_PAUSE_SECONDS,
+) -> dict[str, object]:
+    """Drag the real list up with real adb swipes until the catalogued state publishes.
+
+    The catalogued seed is longer than the phone, so a state whose subject sits at
+    the list's own end is off screen as launched. The drag is a real input event
+    inside the screen the platform reports, bounded in swipe count and duration,
+    and the capture fails if the catalogued text never appears: nothing here grows
+    the pane, drops a row from the seed, or stitches pixels.
+    """
+    if not expected_description:
+        raise SystemExit("a bounded list swipe needs the catalogued post-interaction description to scroll to")
+    width, height = screen_size(serial)
+    centre = width // 2
+    from_y = int(height * 0.75)
+    to_y = int(height * 0.25)
+    drag = {"from": [centre, from_y], "to": [centre, to_y], "duration_millis": duration_millis}
+    swipes = 0
+
+    def drag_once() -> None:
+        nonlocal swipes
+        shell(serial, "input", "swipe", str(centre), str(from_y), str(centre), str(to_y), str(duration_millis))
+        swipes += 1
+        time.sleep(settle_seconds)
+
+    # A drag against a window that has not drawn yet scrolls nothing and proves
+    # nothing, so wait — bounded — for the fixture to publish some text at all.
+    for attempt in range(render_attempts):
+        _, rendered = published_accessibility(ui_hierarchy(serial))
+        if rendered:
+            break
+        if attempt + 1 < render_attempts:
+            time.sleep(render_pause_seconds)
+    else:
+        raise SystemExit("no accessibility text published before the bounded list swipe; the capture target never rendered")
+
+    for _ in range(attempts):
+        drag_once()
+        _, published = published_accessibility(ui_hierarchy(serial))
+        if expected_description in published:
+            break
+    else:
+        raise SystemExit(
+            f"the catalogued description {expected_description!r} never published in {attempts} bounded list swipes"
+        )
+
+    # Reachable is not the same as reached: a fling can publish the final note
+    # while it is still travelling. Keep dragging until the tree stops changing,
+    # so the screenshot records the list's own end and not a transient frame.
+    for _ in range(settle_attempts):
+        before = ET.tostring(ui_hierarchy(serial), encoding="unicode")
+        drag_once()
+        after = ET.tostring(ui_hierarchy(serial), encoding="unicode")
+        if after == before:
+            break
+    return {"swipes": swipes, "screen": f"{width}x{height}", "drag": drag}
 
 
 def resolve_apksigner() -> str:
@@ -168,6 +274,16 @@ def tap_visible_text(serial: str | None, text: str) -> None:
     time.sleep(0.2)
 
 
+def interaction_receipt(tap_text: str | None, swipe_list_up: bool) -> list[str]:
+    """The interactions actually performed, in the catalogued spelling."""
+    interactions: list[str] = []
+    if tap_text:
+        interactions.append(f"tap:{tap_text}")
+    if swipe_list_up:
+        interactions.append("swipe:list-up")
+    return interactions
+
+
 def installed_apk_provenance(serial: str | None, package: str, local_apk: Path) -> dict[str, str]:
     """Pull Android's installed base APK and prove it equals the local artifact."""
     paths = [line.removeprefix("package:") for line in shell(serial, "pm", "path", package).splitlines() if line.startswith("package:")]
@@ -216,7 +332,12 @@ def main() -> None:
     parser.add_argument("--state", required=True, help="catalogued synthetic state identifier")
     parser.add_argument("--theme", choices=("light", "dark"), required=True)
     parser.add_argument("--tap-text", help="synthetic visible control to open before capture")
-    parser.add_argument("--expected-accessibility", help="exact post-interaction accessibility description")
+    parser.add_argument(
+        "--swipe-list-up",
+        action="store_true",
+        help="drag the real list up with bounded adb swipes until --expected-accessibility publishes",
+    )
+    parser.add_argument("--expected-accessibility", help="exact post-interaction accessibility text or description")
     args = parser.parse_args()
 
     if adb(args.serial, "get-state").strip() != "device":
@@ -226,6 +347,11 @@ def main() -> None:
     provenance = installed_apk_provenance(args.serial, args.package, args.apk)
     if args.tap_text:
         tap_visible_text(args.serial, args.tap_text)
+    list_swipe: dict[str, object] = {}
+    if args.swipe_list_up:
+        list_swipe = swipe_list_up(args.serial, args.expected_accessibility)
+    # Identity is proved after the interactions, so the receipt also shows the
+    # fixture held the focused window through them.
     identity = verify_app_identity(args.serial, args.package, args.activity)
     accessibility = accessibility_snapshot(args.serial, args.expected_accessibility)
 
@@ -244,7 +370,7 @@ def main() -> None:
         "apk_sha256": provenance["apk_sha256"],
         "installed_apk_sha256": provenance["installed_apk_sha256"],
         "apk_kind": args.apk_kind,
-        "interactions": [f"tap:{args.tap_text}"] if args.tap_text else [],
+        "interactions": interaction_receipt(args.tap_text, args.swipe_list_up),
         "viewport": {"size": shell(args.serial, "wm", "size"), "density": shell(args.serial, "wm", "density")},
         "application": {"package_name": args.package, **identity, **{key: provenance[key] for key in ("version_code", "version_name", "signing_certificate_sha256")}},
         "accessibility": accessibility,
@@ -256,6 +382,10 @@ def main() -> None:
             "font_scale": shell(args.serial, "settings", "get", "system", "font_scale"),
         },
     }
+    if list_swipe:
+        # How the state above the fold was actually reached: real drags, on the
+        # screen the platform reported. No serial and no path ever lands here.
+        contract["list_swipe"] = list_swipe
     validate_receipt(contract, "android")
     (output / "contract.json").write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
     print(f"android reference: {output / 'reference.png'}")
