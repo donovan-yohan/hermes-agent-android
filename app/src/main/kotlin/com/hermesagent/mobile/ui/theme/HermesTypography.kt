@@ -50,6 +50,17 @@ data class HermesTypeScale(
     val sessionPreview: TextStyle,
     /** Quiet uppercase field label above a list group or a payload block. */
     val sectionLabel: TextStyle,
+    /**
+     * A chronology caption in the session list: Desktop's `SidebarDateDivider`
+     * span, 0.64rem semibold at tracking 0.12em
+     * (`apps/desktop/src/app/chat/sidebar/chrome.tsx:134-138` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`).
+     *
+     * Deliberately not [sectionLabel]: a date bucket and a panel caption are two
+     * levels of one hierarchy on Desktop, and they are told apart by tracking
+     * (0.12em against 0.16em) and by ink, not by the word alone.
+     */
+    val dateDivider: TextStyle,
     /** Accent sidebar panel heading: uppercase, wide tracking, semibold. */
     val panelLabel: TextStyle,
     val screenTitle: TextStyle,
@@ -113,6 +124,15 @@ fun hermesTypeScale(fonts: HermesFontChoice): HermesTypeScale {
             lineHeight = 16.sp,
             fontWeight = FontWeight.Medium,
             letterSpacing = 0.08.em,
+        ),
+        // `SidebarDateDivider`'s caption at the same one-sp readability bump as
+        // `panelLabel` below.
+        dateDivider = TextStyle(
+            fontFamily = sans,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.12.em,
         ),
         // SidebarPanelLabel at 72a3277cd7: 0.64rem, semibold, uppercase,
         // tracking 0.16em. The one-sp bump is the phone readability adaptation.

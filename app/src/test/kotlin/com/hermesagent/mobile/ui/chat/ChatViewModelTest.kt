@@ -44,7 +44,9 @@ import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
 import com.hermesagent.mobile.data.session.ComposerStatusState
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.session.SessionBucketLabel
 import com.hermesagent.mobile.data.session.SessionListRow
+import com.hermesagent.mobile.data.session.relativeLabel
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -96,6 +98,20 @@ class ChatViewModelTest {
     private lateinit var sidebarStore: FakeSidebarViewStore
     private lateinit var viewModel: ChatViewModel
 
+    /**
+     * The divider wording this suite drives, injected rather than read from ICU.
+     *
+     * The fixture rows sit at epoch milliseconds while the pinned clock is 2027,
+     * so they land in month buckets — and a plain JVM classpath has no
+     * `android.icu`. Without this every first emission would die on
+     * `ULocale.forLocale`, and the state machine under test would never run.
+     * `IcuSessionBucketLabelTest` is the Robolectric half, where the real
+     * formatter is pinned.
+     */
+    private val stubLabel = SessionBucketLabel { bucket ->
+        bucket.relativeLabel() ?: "Month ${bucket.key}"
+    }
+
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -104,7 +120,7 @@ class ChatViewModelTest {
         }
         repository = FakeRepository(cache)
         sidebarStore = FakeSidebarViewStore()
-        viewModel = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK })
+        viewModel = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, bucketLabel = stubLabel)
     }
 
     @After

@@ -11,7 +11,7 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [composer-status-stack, composer-url-chip, composer-add-sheet]
+        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true
@@ -30,6 +30,10 @@ on:
           - recent-images-populated
           - recent-images-added
           - recent-images-permission
+          - pinned-sessions-month-dividers
+          - months-scrolled
+          - results
+          - all-pinned
       theme:
         description: Rendered theme
         required: true

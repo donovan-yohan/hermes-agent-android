@@ -66,12 +66,12 @@ import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.ALL_PINNED_NOTE
+import com.hermesagent.mobile.data.session.SESSIONS_SECTION_LABEL
 import com.hermesagent.mobile.data.session.PINNED_SECTION_LABEL
 import com.hermesagent.mobile.data.session.RESULTS_SECTION_LABEL
 import com.hermesagent.mobile.data.session.noSessionsMatch
 import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.session.isUnread
-import com.hermesagent.mobile.data.session.label
 import com.hermesagent.mobile.data.session.relativeAgeLabel
 import com.hermesagent.mobile.data.session.spokenRelativeAgeLabel
 import com.hermesagent.mobile.data.profiles.HermesProfile
@@ -88,6 +88,8 @@ import com.hermesagent.mobile.ui.common.MenuSectionLabel
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.ProfileTag
 import com.hermesagent.mobile.ui.common.SearchField
+import com.hermesagent.mobile.ui.common.DateDividerLabel
+import com.hermesagent.mobile.ui.common.PanelLabel
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.StatusDot
 import com.hermesagent.mobile.ui.common.TextButton
@@ -439,16 +441,27 @@ fun SessionList(
                     ) {
                         items(items = rows, key = { it.key() }) { row ->
                             when (row) {
-                                is SessionListRow.Divider -> SectionLabel(
-                                    text = row.bucket.label(row.leadsLabelledList),
-                                    modifier = Modifier.padding(
-                                        start = HermesTheme.spacing.pageInset,
-                                        top = 14.dp,
-                                        bottom = 4.dp,
-                                    ),
+                                // Desktop's `SidebarDateDivider`, at this rail's
+                                // scale: the caption plus the rule that fills
+                                // the rest of the width. The word is already
+                                // resolved — a month bucket needs the reader's
+                                // locale to be worded at all.
+                                is SessionListRow.Divider -> DateDividerLabel(
+                                    text = row.label,
+                                    modifier = Modifier
+                                        .padding(
+                                            start = HermesTheme.spacing.pageInset,
+                                            end = HermesTheme.spacing.pageInset,
+                                            top = 14.dp,
+                                            bottom = 4.dp,
+                                        )
+                                        .testTag(DIVIDER_TAG),
                                 )
 
-                                is SessionListRow.PinnedLabel -> SectionLabel(
+                                // Desktop's `SidebarPanelLabel`: accent ink and
+                                // the leading dither square, one level above the
+                                // date dividers below it.
+                                is SessionListRow.PinnedLabel -> PanelLabel(
                                     text = PINNED_SECTION_LABEL,
                                     modifier = Modifier
                                         .padding(
@@ -457,6 +470,20 @@ fun SessionList(
                                             bottom = 4.dp,
                                         )
                                         .testTag(PINNED_SECTION_TAG),
+                                )
+
+                                // The same caption treatment, because it is the
+                                // same thing: Desktop's own `Sessions` heading
+                                // over the unpinned pool inside the list.
+                                is SessionListRow.SessionsLabel -> PanelLabel(
+                                    text = SESSIONS_SECTION_LABEL,
+                                    modifier = Modifier
+                                        .padding(
+                                            start = HermesTheme.spacing.pageInset,
+                                            top = 14.dp,
+                                            bottom = 4.dp,
+                                        )
+                                        .testTag(SESSIONS_SECTION_TAG),
                                 )
 
                                 is SessionListRow.AllPinnedNote -> Text(
@@ -469,7 +496,7 @@ fun SessionList(
                                     ),
                                 )
 
-                                is SessionListRow.ResultsLabel -> SectionLabel(
+                                is SessionListRow.ResultsLabel -> PanelLabel(
                                     text = RESULTS_SECTION_LABEL,
                                     modifier = Modifier
                                         .padding(
@@ -885,8 +912,13 @@ internal const val AUTO_DISCOVERED = "Auto-discovered"
 internal const val AUTO_PROJECT_GLYPH = "Auto-discovered project glyph"
 
 private fun SessionListRow.key(): String = when (this) {
-    is SessionListRow.Divider -> "divider-${bucket.name}"
+    // Desktop keys a divider by its own bucket key — `m-<year>-<month>` for a
+    // month — which is what keeps two month dividers distinct rows
+    // (`session-date-groups.ts:146` @ the pin). `bucket.name` would collide the
+    // moment the tail stops being one bucket.
+    is SessionListRow.Divider -> "divider-${bucket.key}"
     is SessionListRow.PinnedLabel -> "divider-pinned"
+    is SessionListRow.SessionsLabel -> "divider-sessions"
     is SessionListRow.AllPinnedNote -> "note-all-pinned"
     is SessionListRow.ResultsLabel -> "label-results"
     is SessionListRow.NoResultsNote -> "note-no-results-${query}"
@@ -896,6 +928,12 @@ private fun SessionListRow.key(): String = when (this) {
 
 /** The leading `Pinned` section label. */
 internal const val PINNED_SECTION_TAG = "Pinned section"
+
+/** Desktop's `Sessions` caption inside the list, over the unpinned pool. */
+internal const val SESSIONS_SECTION_TAG = "Sessions section"
+
+/** Every date divider; its own caption is the node's text. */
+internal const val DIVIDER_TAG = "Session date divider"
 
 /** The one section a live query renders, in place of Pinned and Recents. */
 internal const val RESULTS_SECTION_TAG = "Results section"

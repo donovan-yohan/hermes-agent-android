@@ -37,6 +37,16 @@ class VisualParityWorkflowTest(unittest.TestCase):
         ):
             self.assertIn(required, self.capture_script)
 
+    def test_swiping_states_swipe_and_do_not_wait_for_an_offscreen_row(self) -> None:
+        # The lane reads the catalogued interaction by kind, forwards the bounded
+        # swipe to the capture, and refuses an interaction it cannot perform.
+        for required in ("swipe:list-up", "--swipe-list-up", "unsupported catalogued interaction"):
+            self.assertIn(required, self.capture_script)
+        self.assertIn('"$swipe_list_up"', self.capture_script)
+        # The shell's pre-wait is gated on the state not being a swiping one:
+        # its subject is below the fold until the drag moves it into view.
+        self.assertIn('-n "$expected_accessibility" && -z "$swipe_list_up"', self.capture_script)
+
     def test_emulator_runner_enters_bash_explicitly(self) -> None:
         match = re.search(r"^\s+script: (.+)$", self.text, flags=re.MULTILINE)
         if match is None:

@@ -1,0 +1,638 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-17T05:06:46.672763+00:00",
+  "surface": "session-list-sections",
+  "state": "pinned-sessions-month-dividers",
+  "fixture_id": "session-list-sections-synthetic-v1",
+  "theme": "dark",
+  "android_git_sha": "808b882ec52a0ecf60b217587b2bed1a27ad3ebb",
+  "apk_sha256": "105b0f9ded02a2bcbe2014d2e71e4fd3588f981de9d3a711c93f10af723a0a05",
+  "installed_apk_sha256": "105b0f9ded02a2bcbe2014d2e71e4fd3588f981de9d3a711c93f10af723a0a05",
+  "apk_kind": "debug",
+  "interactions": [],
+  "viewport": {
+    "size": "Physical size: 1080x2400",
+    "density": "Physical density: 420"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
+    "focused_window": "mCurrentFocus=Window{7724d52 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}\nmFocusedApp=ActivityRecord{3ffd03f u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}\nmCurrentFocus=Window{626a008 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{b661372 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "d1f9ae6976cb4181ab450a505ecab1dfb569838341954fb9c340d2d1cfeebfbe"
+  },
+  "accessibility": {
+    "expected_description": "Head row alpha. Idle. Updated 12 minutes ago",
+    "nodes": [
+      {
+        "class": "android.widget.TextView",
+        "text": "SESSIONS",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "New session",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Filters",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "PINNED",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Pinned design review. Idle. Updated 20 minutes ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Pinned design review",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "20m",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Pinned release checklist. Idle. Updated 10 days ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Pinned release checklist",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "10d",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "SESSIONS",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Head row alpha. Idle. Updated 12 minutes ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Head row alpha",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "12m",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Head row bravo. Idle. Updated 1 hour ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Head row bravo",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "1h",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Head row charlie. Idle. Updated 2 hours ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Head row charlie",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "2h",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Head row delta. Idle. Updated 2 hours ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Head row delta",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "2h",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Head row echo. Idle. Updated 4 hours ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Head row echo",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "4h",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "EARLIER TODAY",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Earlier today foxtrot. Idle. Updated 6 hours ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Earlier today foxtrot",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "6h",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "YESTERDAY",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Yesterday golf. Idle. Updated 1 day ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Yesterday golf",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "1d",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "EARLIER THIS WEEK",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Earlier this week hotel. Idle. Updated 4 days ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Earlier this week hotel",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "4d",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "LAST WEEK",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Last week india. Idle. Updated 7 days ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Last week india",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "7d",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "EARLIER THIS MONTH",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Earlier this month juliett. Idle. Updated 14 days ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Earlier this month juliett",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real session text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "14d",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "JULY",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "July kilo. Idle. Updated 64 days ago",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "July kilo",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "64d",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Session actions",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      }
+    ]
+  },
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "manufacturer": "Google",
+    "android": "14",
+    "sdk": "34",
+    "font_scale": "null"
+  }
+}

@@ -16,6 +16,11 @@
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".SessionListSectionsParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
         <activity android:name=".StickyPromptParityActivity" android:exported="true" android:theme="@style/Theme.HermesMobile" />
     </application>
 </manifest>

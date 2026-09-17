@@ -96,6 +96,82 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Desktop's `SidebarPanelLabel`: the accent ink, the 0.16em tracking and the
+ * leading 8 px dither square
+ * (`apps/desktop/src/app/shell/sidebar-label.tsx:11-19` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
+ *
+ * One level above [DateDividerLabel]: this names a *section* (`Pinned`,
+ * `Sessions`), that one names a slice of time. Desktop draws them differently on
+ * purpose, and rendering both through one treatment is what flattened the
+ * hierarchy in #141.
+ *
+ * The dither takes the same accent as the words — Desktop's `dither` class
+ * inherits the label's `--theme-primary`, and nothing upstream overrides it.
+ */
+@Composable
+fun PanelLabel(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Tagged on a wrapper rather than on the glyph: `DitherMark` ends its
+        // modifier chain with `clearAndSetSemantics {}`, which would take the
+        // tag with everything else it clears.
+        Box(Modifier.testTag(SECTION_DITHER_TAG)) {
+            DitherMark(HermesTheme.tokens.accent)
+        }
+        Text(
+            text = text.uppercase(),
+            style = HermesTheme.type.panelLabel,
+            color = HermesTheme.tokens.accent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** The leading 8 px dither square a section caption carries and a divider does not. */
+const val SECTION_DITHER_TAG = "Section caption dither"
+
+/** The trailing hairline rule a date divider carries and a section caption does not. */
+const val DATE_DIVIDER_RULE_TAG = "Session date divider rule"
+
+/**
+ * Desktop's `SidebarDateDivider`: a `--ui-text-quaternary` caption at 0.12em
+ * tracking, trailed by a hairline rule that fills the remaining width
+ * (`apps/desktop/src/app/chat/sidebar/chrome.tsx:134-140` @ the pin).
+ *
+ * The rule is `--ui-stroke-tertiary`, Desktop's own in-panel divider, which is
+ * what [Hairline] already draws.
+ */
+@Composable
+fun DateDividerLabel(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = text.uppercase(),
+            style = HermesTheme.type.dateDivider,
+            color = HermesTheme.tokens.textQuaternary,
+            maxLines = 1,
+        )
+        // Desktop's `h-px min-w-4 flex-1`: the rule takes what the caption
+        // leaves, and never collapses below 16dp even when the caption is long.
+        Hairline(
+            modifier = Modifier
+                .weight(1f)
+                .widthIn(min = 16.dp)
+                .testTag(DATE_DIVIDER_RULE_TAG),
+            color = HermesTheme.tokens.strokeTertiary,
+        )
+    }
+}
+
+/**
  * The heading over one section of a menu or a popover.
  *
  * Desktop's `DropdownMenuLabel` is a quiet tertiary row above a separator

@@ -117,6 +117,55 @@ class VisualParityContractTest(unittest.TestCase):
             packet.write_text(json.dumps(receipt), encoding="utf-8")
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(1, contract.main(["check-receipt", "--platform", "desktop", "--receipt", str(packet)]))
+    def test_swipe_state_receipt_must_name_the_swipe_it_performed(self) -> None:
+        """A state reached by a real drag may not be receipted as if it came untouched."""
+        catalog = contract.load_catalog(Path(__file__).resolve().parents[2] / "docs/parity/visual-capture-surfaces.json")
+        expected = "November 2025 lima. Idle. Updated 309 days ago"
+        for state in ("months-scrolled", "all-pinned"):
+            with self.subTest(state=state):
+                spec = contract.request(catalog, "session-list-sections", state, "dark")
+                self.assertEqual(["swipe:list-up"], spec["state_spec"]["interaction"])
+                receipt = self.android_receipt()
+                receipt.update({
+                    "surface": "session-list-sections", "state": state,
+                    "fixture_id": "session-list-sections-synthetic-v1",
+                    "interactions": ["swipe:list-up"],
+                    "accessibility": {"expected_description": spec["state_spec"]["post_interaction_accessibility"], "nodes": []},
+                })
+                receipt["application"]["component"] = "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity"
+                contract.validate_receipt(receipt, "android")
+                # Both mis-spellings a capture could plausibly emit are rejected:
+                # the swipe silently dropped, and the swipe named as something else.
+                for wrong in ([], ["tap:list-up"], ["swipe:list-down"]):
+                    with self.subTest(interactions=wrong):
+                        receipt["interactions"] = wrong
+                        with self.assertRaises(ValueError):
+                            contract.validate_receipt(receipt, "android")
+        self.assertEqual(expected, contract.request(catalog, "session-list-sections", "months-scrolled", "dark")["state_spec"]["post_interaction_accessibility"])
+
+    def test_all_pinned_evidence_is_the_final_note_not_the_last_row_above_it(self) -> None:
+        """The note is the list's own last row and sits below the fold, so it is the evidence."""
+        catalog = contract.load_catalog(Path(__file__).resolve().parents[2] / "docs/parity/visual-capture-surfaces.json")
+        spec = contract.request(catalog, "session-list-sections", "all-pinned", "dark")["state_spec"]
+        self.assertEqual("Everything here is pinned. Unpin a chat to show it in recents.", spec["post_interaction_accessibility"])
+        receipt = self.android_receipt()
+        receipt.update({
+            "surface": "session-list-sections", "state": "all-pinned",
+            "fixture_id": "session-list-sections-synthetic-v1",
+            "interactions": ["swipe:list-up"],
+            "accessibility": {"expected_description": "November 2025 lima. Idle. Updated 309 days ago", "nodes": []},
+        })
+        receipt["application"]["component"] = "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity"
+        with self.assertRaises(ValueError):
+            contract.validate_receipt(receipt, "android")
+
+    def test_catalogued_list_states_carry_the_head_evidence_at_the_head(self) -> None:
+        catalog = contract.load_catalog(Path(__file__).resolve().parents[2] / "docs/parity/visual-capture-surfaces.json")
+        for state in ("pinned-sessions-month-dividers", "results"):
+            with self.subTest(state=state):
+                spec = contract.request(catalog, "session-list-sections", state, "dark")["state_spec"]
+                self.assertEqual([], spec["interaction"])
+                self.assertEqual("Head row alpha. Idle. Updated 12 minutes ago", spec["post_interaction_accessibility"])
 
 
 if __name__ == "__main__":
