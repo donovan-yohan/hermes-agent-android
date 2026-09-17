@@ -242,8 +242,34 @@ Commands:
 python3 scripts/check-composer-parity.py \
   --upstream "$HOME/.hermes/hermes-agent" # optional read-only pin/path/citation drift check
 python3 scripts/check-ci-workflow.py       # static exact-head workflow contract
+python3 scripts/verify-pin-citations.py --self-test   # the pin-move gate's own fixture
 git diff --check
 ```
+
+**Moving the pin itself.** A restamp of the pin under `AGENTS.md` (or a page's
+`## Pin`) is a claim about every citation that names it, and
+`scripts/verify-pin-citations.py --check-range` is what proves it:
+
+```bash
+python3 scripts/verify-pin-citations.py \
+  --check-range "$(git merge-base origin/main HEAD)..HEAD" \
+  --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" \
+  --repo .
+```
+
+Add `--fetch` to let it obtain pins the local checkout lacks. Do not write it as
+`[--fetch]` in a runnable command: argparse would take the literal brackets as the
+optional `old` positional and silently ignore them.
+
+It reads the citations out of the diff, so a file whose stamp you already
+rewrote is still checked, and it names the carrier `path:line` and the cited
+`path:ranges` for anything that is not true at the SHA it names. `--fetch` lets
+it obtain pins the local read-only checkout lacks, by fetching into a throwaway
+clone of it — the reference checkout is never written to. `./gradlew check` runs
+the fixture and, when an upstream checkout and a base are both present, this
+range check too; CI runs it in the `pin citations` job over the pull request's
+own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
+`### Moving a pin`, for what each finding means.
 
 ## 6. Capture what you learned
 
