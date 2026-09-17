@@ -31,6 +31,16 @@ import java.util.TimeZone
  * its own [SessionBucketLabel]. Robolectric supplies the real ICU, so genuine
  * locale formatting gets its own test there.
  *
+ * Constructing this label must not touch ICU either, and that is load-bearing:
+ * [buildSessionRows]'s default argument builds one on *every* call, including
+ * the plain JVM callpaths that never render a month divider. Resolving the
+ * locale and the two formatters up front made construction a `Stub!` call
+ * there (`ULocale.forLocale`), so a whole unit-test process died for a question
+ * it never asked. All ICU state is therefore resolved on first use. A label
+ * genuinely asked for a month *is* an ICU question, and on a plain JVM it still
+ * fails loudly rather than degrading to hand-written copy — that is the point
+ * of asking ICU at all, and the reason the seam exists.
+ *
  * @param locale the reader's locale — ICU resolves the skeleton against it.
  * @param timeZone the zone the buckets were cut in. The bucket instant is
  *   already a local nominal day start, so formatting it in any other zone would
@@ -41,10 +51,10 @@ class IcuSessionBucketLabel(
     timeZone: TimeZone = TimeZone.getDefault(),
 ) : SessionBucketLabel {
 
-    private val ulocale: ULocale = ULocale.forLocale(locale)
+    private val ulocale: ULocale by lazy { ULocale.forLocale(locale) }
 
-    private val month: DateFormat = formatter(MONTH_SKELETON, timeZone)
-    private val monthYear: DateFormat = formatter(MONTH_YEAR_SKELETON, timeZone)
+    private val month: DateFormat by lazy { formatter(MONTH_SKELETON, timeZone) }
+    private val monthYear: DateFormat by lazy { formatter(MONTH_YEAR_SKELETON, timeZone) }
 
     private fun formatter(skeleton: String, zone: TimeZone): DateFormat {
         return DateFormat.getInstanceForSkeleton(skeleton, ulocale).apply {
