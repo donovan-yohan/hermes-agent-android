@@ -1,7 +1,6 @@
 package com.hermesagent.mobile.data.session
 
 import android.icu.text.DateFormat
-import android.icu.text.DateTimePatternGenerator
 import android.icu.util.ULocale
 import java.util.Date
 import java.util.Locale
@@ -22,8 +21,7 @@ import java.util.TimeZone
  * different order and different separators elsewhere — is exactly what a
  * skeleton resolves and what a hand-written pattern string gets wrong for every
  * locale but one. So the pattern is asked for, never enumerated:
- * `DateFormat.getBestPattern` returns ICU's own layout for this locale and
- * `getInstanceForSkeleton` binds it. A locale whose month form ICU spells
+ * `DateFormat.getInstanceForSkeleton` resolves and binds ICU's layout. A locale whose month form ICU spells
  * differently is then correct without this file knowing which locales those
  * are.
  *
@@ -49,8 +47,7 @@ class IcuSessionBucketLabel(
     private val monthYear: DateFormat = formatter(MONTH_YEAR_SKELETON, timeZone)
 
     private fun formatter(skeleton: String, zone: TimeZone): DateFormat {
-        val pattern = DateTimePatternGenerator.getInstance(ulocale).getBestPattern(skeleton)
-        return DateFormat.getInstanceForSkeleton(pattern, ulocale).apply {
+        return DateFormat.getInstanceForSkeleton(skeleton, ulocale).apply {
             timeZone = android.icu.util.TimeZone.getTimeZone(zone.id)
         }
     }

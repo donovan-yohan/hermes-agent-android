@@ -188,7 +188,10 @@ class SessionListSectionsJourneyTest {
         )
 
         compose.onNodeWithTag(SESSIONS_SECTION_TAG).assertIsDisplayed()
-        compose.onNodeWithText("SESSIONS").assertIsDisplayed()
+        compose.onNode(
+            androidx.compose.ui.test.hasText("SESSIONS") and hasAnyAncestor(hasTestTag(SESSIONS_SECTION_TAG)),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
     }
 
     /** With no pinned section there is one pool, and the pane title already names it. */
@@ -211,8 +214,8 @@ class SessionListSectionsJourneyTest {
         launch(
             sessions = listOf(
                 session("s-1", "This month", lastActiveAtMillis = NOW - 2 * HOUR),
-                session("s-2", "September chat", lastActiveAtMillis = NOW - 40 * DAY),
-                session("s-3", "August chat", lastActiveAtMillis = NOW - 70 * DAY),
+                session("s-2", "September chat", lastActiveAtMillis = java.time.Instant.parse("2023-09-05T12:00:00Z").toEpochMilli()),
+                session("s-3", "August chat", lastActiveAtMillis = java.time.Instant.parse("2023-08-05T12:00:00Z").toEpochMilli()),
             ),
         )
 
