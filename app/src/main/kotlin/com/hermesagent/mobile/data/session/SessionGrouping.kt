@@ -15,21 +15,84 @@ import java.util.TimeZone
  * that rule, which needs no heuristic: **whatever group renders first is never
  * labelled** (`session-date-groups.ts:136-140`). A divider separates two
  * groups; there is nothing above the first one to separate it from.
+ *
+ * That unlabelled head is also what makes Desktop's `Earlier …` wording true
+ * (`apps/desktop/src/lib/time.ts:118-124` @ `437116f9497c80d242ce034ff7f5d81dc277a337`):
+ * the newest run never reaches the divider path, so a bucket labelled "Earlier
+ * today" always sits *below* something newer. The five relative labels are
+ * Desktop's, byte for byte
+ * (`apps/desktop/src/i18n/en.ts:2794-2800` @ the same SHA).
  */
 enum class SessionBucket { Today, Yesterday, ThisWeek, LastWeek, ThisMonth, Older }
 
 fun SessionBucket.label(): String = when (this) {
-    SessionBucket.Today -> "Today"
+    SessionBucket.Today -> "Earlier today"
     SessionBucket.Yesterday -> "Yesterday"
-    SessionBucket.ThisWeek -> "This week"
+    SessionBucket.ThisWeek -> "Earlier this week"
     SessionBucket.LastWeek -> "Last week"
-    SessionBucket.ThisMonth -> "This month"
+    SessionBucket.ThisMonth -> "Earlier this month"
+    // Desktop's tail is not one bucket: past `thisMonth` it emits one per
+    // calendar month, keyed `m-<year>-<month>` / `my-<year>-<month>`, labelled
+    // from `Intl` with a month name or month + year
+    // (`apps/desktop/src/lib/time.ts:155-165,30-31,169-190` @ the pin). Porting
+    // that word here would be a false claim: one terminal bucket captions rows
+    // belonging to several different months. It needs per-month divider identity
+    // first, which is #299.
     SessionBucket.Older -> "Older"
+}
+
+/**
+ * The label one divider renders, given whether a first-group rule applies to it.
+ *
+ * Desktop's five relative strings are relational: `Earlier today` means *earlier
+ * than the head of this list* (`apps/desktop/src/lib/time.ts:118-124` @ the pin).
+ * That is only true while something newer sits above the group it labels.
+ *
+ * `buildSessionRows` renders a Pinned section above the recents, and when it does
+ * the first recents bucket is labelled on purpose — an unlabelled group under a
+ * pinned list would read as more pinned rows. But in that one slot the newest
+ * session in the app can sit directly *below* the divider, and then "Earlier
+ * today" is a claim about rows that are not earlier than anything above them.
+ * Desktop cannot reach that state: its Recents section leaves its own first group
+ * unlabelled even under `PINNED` (`session-date-groups.ts:136-140` @ the pin), so
+ * its first divider under a pinned section is normally `Yesterday` or older.
+ *
+ * So the first recents bucket falls back to the plain word when a pinned section
+ * is what forced its label.
+ *
+ * **`Earlier today` is unreachable here, and that is deliberate.** This list
+ * sorts newest-first and its buckets are contiguous and monotonic, so `Today`
+ * can only ever be the *first* recents bucket — which is unlabelled without pins
+ * and is exactly the forced slot above, taking the plain word. Desktop reaches
+ * `Earlier today` only because it splits *within* a day at a head-run cutoff
+ * (`session-date-groups.ts`, `headRunCutoffMs`), and that heuristic is not ported
+ * (`SessionGrouping.kt:11-14`). The word is therefore kept out rather than
+ * rendered as a claim the list cannot support; the other four relative strings,
+ * `Yesterday` included, are reachable and are Desktop's byte-for-byte.
+ */
+fun SessionBucket.label(leadsLabelledList: Boolean): String = when {
+    leadsLabelledList && this == SessionBucket.Today -> "Today"
+    leadsLabelledList && this == SessionBucket.ThisWeek -> "This week"
+    leadsLabelledList && this == SessionBucket.ThisMonth -> "This month"
+    else -> label()
 }
 
 /** A divider, a section label, a note or a session row. One list renders them all. */
 sealed interface SessionListRow {
-    data class Divider(val bucket: SessionBucket) : SessionListRow
+    /**
+     * A date-bucket caption.
+     *
+     * [leadsLabelledList] marks the one divider whose label was forced by a
+     * Pinned section above it rather than earned by having something newer
+     * above it. Desktop's relational copy (`Earlier today`) is a claim about
+     * the rows below, and in that slot the claim can be false, so those
+     * dividers take the plain word instead. See
+     * [SessionBucket.label] for the full reason.
+     */
+    data class Divider(
+        val bucket: SessionBucket,
+        val leadsLabelledList: Boolean = false,
+    ) : SessionListRow
     data class Row(val session: SessionSummary) : SessionListRow
 
     /**
@@ -198,8 +261,16 @@ fun buildSessionRows(
         // labelling it says nothing. A Pinned section above it changes that —
         // there is now something to separate the newest bucket *from*, and an
         // unlabelled first bucket would read as more pinned rows.
+        //
+        // That forced label is also the one slot where Desktop's relational copy
+        // would be false — a newer session can sit below it — so the first
+        // recents bucket is marked as leading a labelled list and takes the plain
+        // word. See `SessionBucket.label(leadsLabelledList)`.
         if (bucket != currentBucket) {
-            if (emittedRecent || pinned.isNotEmpty()) rows += SessionListRow.Divider(bucket)
+            val forcedFirst = !emittedRecent && pinned.isNotEmpty()
+            if (emittedRecent || pinned.isNotEmpty()) {
+                rows += SessionListRow.Divider(bucket, leadsLabelledList = forcedFirst)
+            }
             currentBucket = bucket
         }
         rows += SessionListRow.Row(session)
@@ -369,7 +440,7 @@ private fun prettySourceName(id: String): String =
  * Desktop's `sessionSourceSearchTerms` (`session-source.ts:121-130` @
  * `72a3277cd7`): the normalised id, its label, and its aliases, with empties
  * dropped. Normalisation is Desktop's `normalize` — `trim().toLowerCase()`
- * (`lib/text.ts:11`) — which is root-locale by construction in JavaScript, so
+ * (`apps/desktop/src/lib/text.ts:11`) — which is root-locale by construction in JavaScript, so
  * it is root-locale here: these are wire ids, not the reader's prose.
  */
 private fun sessionSourceSearchTerms(source: String?): List<String> {

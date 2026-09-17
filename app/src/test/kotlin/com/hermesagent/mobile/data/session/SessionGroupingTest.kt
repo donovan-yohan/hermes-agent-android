@@ -96,6 +96,116 @@ class SessionGroupingTest {
     }
 
     /**
+     * The divider copy is Desktop's, byte for byte
+     * (`apps/desktop/src/i18n/en.ts:2794-2800` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`). Three of the five were once
+     * re-phrased here; this pins them so the words cannot drift back.
+     *
+     * The `Earlier …` prefix is not decoration: it is only true because the
+     * newest group is never labelled, so a bucket carrying it always sits below
+     * something newer (`lib/time.ts:118-124` @ the pin). That rule is pinned by
+     * `the first group is never labelled, later ones are` below.
+     *
+     * `Older` is deliberately *not* Desktop's month / month + year form. One
+     * terminal bucket captions rows from several different months, so porting
+     * that word here would be a false claim; it needs per-month divider identity
+     * first (#299).
+     */
+    @Test
+    fun `divider copy is Desktop's, and the tail stays a documented divergence`() {
+        // The map keeps Desktop's own word for this bucket — it is the registry
+        // of the pin's strings. The render path provably cannot reach it; see
+        // `SessionBucket.label(leadsLabelledList)` and the test below.
+        assertEquals("Earlier today", SessionBucket.Today.label())
+        assertEquals("Yesterday", SessionBucket.Yesterday.label())
+        assertEquals("Earlier this week", SessionBucket.ThisWeek.label())
+        assertEquals("Last week", SessionBucket.LastWeek.label())
+        assertEquals("Earlier this month", SessionBucket.ThisMonth.label())
+        assertEquals("Older", SessionBucket.Older.label())
+    }
+
+    /**
+     * Desktop's relational copy is a claim about the rows *below* it: `Earlier
+     * today` is only true while something newer sits above
+     * (`lib/time.ts:118-124` @ the pin). A Pinned section forces the first
+     * recents bucket to be labelled — and in that one slot the app's newest
+     * session can sit directly below it, so the claim would be false. The plain
+     * word is used there instead.
+     *
+     * `Earlier today` is unreachable through `buildSessionRows` at all, and that
+     * is deliberate: the list sorts newest-first with contiguous monotonic
+     * buckets, so `Today` is only ever the first recents bucket, which is
+     * unlabelled without pins and the forced slot with them. Desktop reaches the
+     * word only by splitting *within* a day at a head-run cutoff
+     * (`session-date-groups.ts`, `headRunCutoffMs`), which this slice does not
+     * port. The reachable relative strings are `Yesterday` and the week/month
+     * ones, and those keep Desktop's copy.
+     */
+    @Test
+    fun `a Pinned section's forced first divider takes the plain word, not Desktop's relational copy`() {
+        // `b` is pinned and an hour old; `a` is the newest session in the app and
+        // sits below the divider the pinned section forced.
+        val pinnedRows = buildSessionRows(
+            listOf(
+                session("a", now),
+                session("b", now - HOUR, pinned = true),
+                session("c", now - 2 * HOUR),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+        assertEquals(
+            listOf("pinned", "row:b", "divider:Today", "row:a", "row:c"),
+            pinnedRows.map(::describe),
+        )
+        val forced = pinnedRows.filterIsInstance<SessionListRow.Divider>().single()
+        assertTrue("the forced first divider must be marked as such", forced.leadsLabelledList)
+        assertEquals("Today", forced.bucket.label(forced.leadsLabelledList))
+
+        // Without a pinned section the first group is unlabelled, and a *later*
+        // group is the one that carries the relational word — below something
+        // newer, so the claim holds. `a` is today and `y` is yesterday.
+        val splitDay = buildSessionRows(
+            listOf(
+                session("a", now),
+                session("y", now - 24 * HOUR),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+        )
+        assertEquals(listOf("row:a", "divider:Yesterday", "row:y"), splitDay.map(::describe))
+        val earned = splitDay.filterIsInstance<SessionListRow.Divider>().single()
+        assertTrue("a divider below a newer row is not a forced one", !earned.leadsLabelledList)
+        assertEquals("Yesterday", earned.bucket.label(earned.leadsLabelledList))
+
+        // And the word that motivated all of this is unreachable — assert that
+        // rather than let a comment claim it is still rendered. `calendarBucket`
+        // says `Today` for dayDiff <= 0, the list is sorted newest-first, and
+        // buckets are contiguous and monotonic, so `Today` is only ever the
+        // first recents group. Whatever renders, no divider in this list can
+        // read `Earlier today`; the strings list keeps the word for Desktop's
+        // pin, and `docs/parity/session-list-sections.md` records the difference.
+        val dividerTexts = listOf(
+            listOf(session("a", now), session("y", now - 24 * HOUR)),
+            listOf(session("a", now), session("c", now - 2 * HOUR)),
+            listOf(session("b", now - HOUR, pinned = true), session("c", now - 2 * HOUR)),
+        ).flatMap { sessions ->
+            buildSessionRows(sessions, now, timeZone = zone, locale = locale)
+                .filterIsInstance<SessionListRow.Divider>()
+                .map { it.bucket.label(it.leadsLabelledList) }
+        }
+        // Non-vacuity: the layouts must actually render a divider, else the
+        // "none reads Earlier today" claim below proves nothing.
+        assertTrue("expected at least one rendered divider; got none", dividerTexts.isNotEmpty())
+        assertTrue(
+            "Earlier today must not be renderable; got $dividerTexts",
+            dividerTexts.none { it == "Earlier today" },
+        )
+    }
+
+    /**
      * Desktop's nominal day rolls over at 04:00 local, not midnight
      * (`lib/time.ts:87-95`, `DAY_ROLLOVER_HOUR`): the small hours belong to the
      * previous evening's run. 03:59 on Wednesday is still Tuesday's day; 04:00
@@ -133,7 +243,7 @@ class SessionGroupingTest {
     }
 
     /**
-     * `session-date-groups.ts:136-140`: a divider only ever separates two
+     * `apps/desktop/src/lib/session-date-groups.ts:138-140`: a divider only ever separates two
      * groups, so whatever group renders first is never labelled.
      */
     @Test
@@ -331,7 +441,7 @@ class SessionGroupingTest {
     }
 
     /**
-     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2203` @ the
+     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2649` @ the
      * pin), quoting the query as it was typed rather than as it was matched.
      */
     @Test

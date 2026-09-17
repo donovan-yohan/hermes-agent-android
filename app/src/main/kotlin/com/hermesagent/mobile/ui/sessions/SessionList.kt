@@ -440,7 +440,7 @@ fun SessionList(
                         items(items = rows, key = { it.key() }) { row ->
                             when (row) {
                                 is SessionListRow.Divider -> SectionLabel(
-                                    text = row.bucket.label(),
+                                    text = row.bucket.label(row.leadsLabelledList),
                                     modifier = Modifier.padding(
                                         start = HermesTheme.spacing.pageInset,
                                         top = 14.dp,
