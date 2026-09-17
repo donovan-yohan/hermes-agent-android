@@ -243,7 +243,7 @@ class SessionGroupingTest {
     }
 
     /**
-     * `session-date-groups.ts:136-140`: a divider only ever separates two
+     * `apps/desktop/src/lib/session-date-groups.ts:138-140`: a divider only ever separates two
      * groups, so whatever group renders first is never labelled.
      */
     @Test
@@ -441,7 +441,7 @@ class SessionGroupingTest {
     }
 
     /**
-     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2203` @ the
+     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2649` @ the
      * pin), quoting the query as it was typed rather than as it was matched.
      */
     @Test

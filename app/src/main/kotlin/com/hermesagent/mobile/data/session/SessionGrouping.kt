@@ -440,7 +440,7 @@ private fun prettySourceName(id: String): String =
  * Desktop's `sessionSourceSearchTerms` (`session-source.ts:121-130` @
  * `72a3277cd7`): the normalised id, its label, and its aliases, with empties
  * dropped. Normalisation is Desktop's `normalize` — `trim().toLowerCase()`
- * (`lib/text.ts:11`) — which is root-locale by construction in JavaScript, so
+ * (`apps/desktop/src/lib/text.ts:11`) — which is root-locale by construction in JavaScript, so
  * it is root-locale here: these are wire ids, not the reader's prose.
  */
 private fun sessionSourceSearchTerms(source: String?): List<String> {
