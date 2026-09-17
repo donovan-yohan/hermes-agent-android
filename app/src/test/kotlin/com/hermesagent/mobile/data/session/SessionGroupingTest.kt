@@ -730,7 +730,7 @@ class SessionGroupingTest {
      * `:514-518`), so a query there answers over the archived pool *and* the
      * server's hits. This app's archived pool is its own capped read and the
      * search contract carries no `archived` field
-     * (`types/hermes.ts:1193-1208`), so a query inside that view stays a local
+     * (`apps/desktop/src/types/hermes.ts:1211-1226` @ `437116f9497c80d242ce034ff7f5d81dc277a337`), so a query inside that view stays a local
      * filter: no `Results` label, and no live server row smuggled into the
      * archived set. Ledgered in `docs/parity/session-search.md`.
      */

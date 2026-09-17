@@ -347,7 +347,7 @@ fun buildSessionRows(
     }
 
     // Desktop's `Sessions` caption heads the unpinned pool below `PINNED`
-    // (`sidebar/index.tsx:1829`, label `Sessions` at `i18n/en.ts:2652` @ the
+    // (`sidebar/index.tsx:1829`, label `Sessions` at `apps/desktop/src/i18n/en.ts:2652` @ the
     // pin). It is what gives the pinned rows a boundary of their own instead of
     // leaving the first date divider to imply one — and because a divider only
     // ever separates two groups, its presence is also what makes the first
