@@ -96,8 +96,8 @@ sealed interface SessionListRow {
     /**
      * Desktop's `Sessions` caption, heading the **unpinned pool** below
      * `Pinned` *inside* the list (`apps/desktop/src/app/chat/sidebar/index.tsx:1829`
-     * over the recents section, label `Sessions` at `i18n/en.ts:2652` @ the
-     * pin). Desktop's own word for the pool, and its own place for it; the pane
+     * over the recents section, label `Sessions` at `apps/desktop/src/i18n/en.ts:2652` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`). Desktop's own word for the pool, and its own place for it; the pane
      * title above the list is this app's arrangement, not a substitute for it.
      */
     data object SessionsLabel : SessionListRow

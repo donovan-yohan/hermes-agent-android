@@ -4,8 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -158,7 +156,7 @@ class SessionListSectionsJourneyTest {
         assertEquals("both panel captions wear the same square", pinnedSquare, sessionsSquare)
 
         // The divider level: no square, one trailing rule in the stroke ink —
-        // `bg-(--ui-stroke-tertiary)` (`chrome.tsx:140` @ the pin).
+        // `bg-(--ui-stroke-tertiary)` (`apps/desktop/src/app/chat/sidebar/chrome.tsx:140` @ `437116f9497c80d242ce034ff7f5d81dc277a337`).
         assertEquals("the one date divider draws the rule", 1, compose.nodesTagged(DATE_DIVIDER_RULE_TAG))
         val rule = pixelOfTag(DATE_DIVIDER_RULE_TAG, index = 0)
 
@@ -174,7 +172,7 @@ class SessionListSectionsJourneyTest {
      * The second caption itself (#299): Desktop's `Sessions` heads the unpinned
      * pool below `PINNED`, inside the list
      * (`apps/desktop/src/app/chat/sidebar/index.tsx:1829`, label
-     * `i18n/en.ts:2652` @ the pin). With it standing there, the boundary between
+     * `apps/desktop/src/i18n/en.ts:2652` @ `437116f9497c80d242ce034ff7f5d81dc277a337`). With it standing there, the boundary between
      * the two pools is named rather than implied by a date divider — which is
      * what retired the old forced-first divider label.
      */

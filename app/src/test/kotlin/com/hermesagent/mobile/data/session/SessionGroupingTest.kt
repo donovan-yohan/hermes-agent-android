@@ -550,8 +550,8 @@ class SessionGroupingTest {
     }
 
     /**
-     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2649` @ the
-     * pin), quoting the query as it was typed rather than as it was matched.
+     * `No sessions match “{query}”.` (`apps/desktop/src/i18n/en.ts:2649` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`), quoting the query as typed rather than matched.
      */
     @Test
     fun `a settled query that matches nothing carries Desktop's sentence`() {
@@ -564,7 +564,7 @@ class SessionGroupingTest {
         )
     }
 
-    /** `Results` (`en.ts:2650` @ the pin). */
+    /** `Results` (`apps/desktop/src/i18n/en.ts:2650` @ `437116f9497c80d242ce034ff7f5d81dc277a337`). */
     @Test
     fun `the section label is Desktop's word`() {
         assertEquals("Results", RESULTS_SECTION_LABEL)
@@ -574,7 +574,7 @@ class SessionGroupingTest {
     // The two captions. Desktop has two distinct ones: `SidebarPanelLabel` for
     // `Pinned` / `Sessions` and `SidebarDateDivider` for the buckets, and the
     // `Sessions` caption heads the *unpinned pool* inside the list
-    // (`sidebar/index.tsx:1829`, label at `i18n/en.ts:2652` @ the pin).
+    // (`sidebar/index.tsx:1829`, label at `apps/desktop/src/i18n/en.ts:2652` @ `437116f9497c80d242ce034ff7f5d81dc277a337`).
     // -----------------------------------------------------------------------
 
     /**
@@ -613,7 +613,7 @@ class SessionGroupingTest {
     }
 
     /**
-     * `Pinned` (`en.ts:2651` @ the pin). Membership is the backend's `pinned`
+     * `Pinned` (`apps/desktop/src/i18n/en.ts:2651` @ `437116f9497c80d242ce034ff7f5d81dc277a337`). Membership is the backend's `pinned`
      * flag alone; ordering is this list's, because a phone has no drag reorder
      * to hint with.
      */
@@ -660,7 +660,7 @@ class SessionGroupingTest {
     }
 
     /**
-     * Desktop's empty-recents line, verbatim (`i18n/en.ts:2492` @ the pin),
+     * Desktop's empty-recents line, verbatim (`apps/desktop/src/i18n/en.ts:2660` @ `437116f9497c80d242ce034ff7f5d81dc277a337`),
      * chosen at `sidebar/index.tsx:1690-1692` @ `72a3277cd7`. Without it an
      * all-pinned account reads as a broken list rather than an explained one —
      * and with no recents pool there is no caption to head it.
