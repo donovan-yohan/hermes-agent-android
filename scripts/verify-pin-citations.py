@@ -68,7 +68,13 @@ FULL_SHA_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{40}(?![0-9a-fA-F])")
 # wrapped continuation are both written.
 _SHA_CONTEXT_RE = re.compile(r"`{1,2}\s*$|@\s*$")
 HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
-PIN_SECTION_RE = re.compile(r"^\s{0,3}#{1,6}\s*[Pp]in\s*$")
+# A page heads its pin section `## Pin` or `## Pin and source contract`, so the
+# heading is matched on the word `Pin` and not on the whole line: five parity
+# pages write the longer form, and reading one of them as declaring no pin left
+# the citations under it attributed to nothing, so a drift among them went
+# unreported (#297 review: the acceptance range reported 7 findings where 13 are
+# true). The word boundary is what keeps `## Pinning the surface` out.
+PIN_SECTION_RE = re.compile(r"^\s{0,3}#{1,6}\s*[Pp]in\b")
 
 _blobs: dict[tuple[str, str], list[str] | None] = {}
 _tree_paths: dict[str, list[str]] = {}
@@ -1200,6 +1206,29 @@ def self_test() -> None:
         write("docs/page.md", section_page)
         section = commit("fixture adds a section-scoped prose pin")
 
+        # (10) A page whose pin section is headed `## Pin and source contract`,
+        #      not `## Pin` — five parity pages in this repo write it that way.
+        #      The pin row is the page's declaration, and the citation sits in a
+        #      later section that declares nothing, so the page pin is the only
+        #      thing that can govern it. A heading match anchored on the whole
+        #      line reads the page as declaring no pin, the citation is
+        #      attributed to nothing, and the drift goes unreported — the #297
+        #      review shape. The second row carries another revision so the
+        #      single-pin fallback cannot quietly answer with the page pin.
+        branch("contract", pinned)
+        write("lib/util.ts", "one\nelsewhere\nthree\nfour\n")
+        contract_revision = commit("fixture moves the construct at a later revision")
+        contract_page = (
+            "# Fixture surface\n\n## Pin and source contract\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+            f"| fixture | `{contract_revision}` | `git show <sha>:<path>` |\n"
+            f"| borrowed from another pin | `{borrowed}` | `git show <sha>:<path>` |\n\n"
+            "## A later surface that declares nothing\n\n"
+            "| Question | Path |\n|---|---|\n"
+            "| governed by the page pin | `lib/util.ts:2-4` |\n"
+        )
+        write("docs/page.md", contract_page)
+        contract = commit("fixture pins a page under a qualified heading")
+
         UPSTREAM = repo
         _blobs.clear()
         _tree_paths.clear()
@@ -1342,6 +1371,20 @@ def self_test() -> None:
                 )
             if counts["checked"] < 1:
                 raise AssertionError("the section fixture proved nothing; no citation was checked")
+
+            # A page that heads its pin section `## Pin and source contract`
+            # declares its pin all the same. The citation below it sits in a later
+            # section that declares nothing, so that page pin is what governs it;
+            # matching the heading on the whole line leaves the citation
+            # unattributed and its drift unreported — the #297 review finding, and
+            # the reason five pages of this repo must be recognized here.
+            findings, _ = gate(pinned, contract, "qualified pin heading")
+            if not findings:
+                raise AssertionError(
+                    "a citation under a `## Pin and source contract` heading was skipped as unattributable"
+                )
+            if findings[0].carrier != "docs/page.md" or findings[0].reason != "construct-moved":
+                raise AssertionError(f"the qualified-heading citation was mislabelled: {findings[0]}")
         finally:
             UPSTREAM = original
 

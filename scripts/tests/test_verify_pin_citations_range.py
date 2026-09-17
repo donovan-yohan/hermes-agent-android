@@ -130,6 +130,30 @@ class CitationPinTest(unittest.TestCase):
         ]
         self.assertEqual(self.other, gate.citation_pin(lines, 13, [self.moved, self.other]))
 
+    def test_a_qualified_pin_heading_declares_the_page_pin(self) -> None:
+        # Pages head their pin section `## Pin and source contract` as well as
+        # `## Pin` (five in this repo do). A heading match anchored on the whole
+        # line reads the longer form as declaring no pin, so a citation in a later
+        # section — the one shape only the page pin governs — is attributed to
+        # nothing and left unchecked. The second row carries another revision, so
+        # the single-pin fallback cannot quietly answer with the page pin either.
+        lines = [
+            "## Pin and source contract",
+            "",
+            f"| fixture | `{self.moved}` |",
+            f"| borrowed from another pin | `{self.other}` |",
+            "",
+            "## A later surface that declares nothing",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| entry point | `path/to/x.ts:12-14` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 10, [self.moved, self.other]))
+        self.assertIsNotNone(gate.PIN_SECTION_RE.match("## Pin and source contract"))
+        self.assertIsNotNone(gate.PIN_SECTION_RE.match("## Pin"))
+        self.assertIsNone(gate.PIN_SECTION_RE.match("## Pinning the surface"))
+
     def test_a_wrapped_continuation_declares_nothing_for_the_lines_below(self) -> None:
         # `:NNN` citations carry `@ `sha`` on the next line when they wrap. That
         # revision belongs to the citation above; letting the backward scan read
