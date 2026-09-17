@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-17T04:17:13.804368+00:00",
+  "captured_at": "2026-09-17T05:07:23.895462+00:00",
   "surface": "session-list-sections",
   "state": "all-pinned",
   "fixture_id": "session-list-sections-synthetic-v1",
   "theme": "dark",
-  "android_git_sha": "1457d75eb8e7e8336efa45c68fd2da5f5c34da70",
-  "apk_sha256": "4f6425cac0a562ea7b0c7e7d7b8ea3af6b98617e949cee588732b8f2ba28fd61",
-  "installed_apk_sha256": "4f6425cac0a562ea7b0c7e7d7b8ea3af6b98617e949cee588732b8f2ba28fd61",
+  "android_git_sha": "808b882ec52a0ecf60b217587b2bed1a27ad3ebb",
+  "apk_sha256": "c870b26fa07fc34f557f582b19f5cdefece1623e574facfa1666e33fdefc7b7e",
+  "installed_apk_sha256": "c870b26fa07fc34f557f582b19f5cdefece1623e574facfa1666e33fdefc7b7e",
   "apk_kind": "debug",
   "interactions": [
     "swipe:list-up"
@@ -20,10 +20,10 @@
     "package_name": "com.hermesagent.mobile.debug",
     "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
     "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
-    "focused_window": "mCurrentFocus=Window{7cb1f66 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{a72eb40 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
+    "focused_window": "mCurrentFocus=Window{9dd15b2 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}\nmFocusedApp=ActivityRecord{a31d170 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}\nmCurrentFocus=Window{70c7fff u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{4de86c7 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
     "version_code": "2",
     "version_name": "0.2.0-phase2",
-    "signing_certificate_sha256": "9e3cdaca304215d0b1b803c404b42dcba453dd305baeddf0cdc98491c932d940"
+    "signing_certificate_sha256": "556ff09d953f0f134962c9ba53159f5b72a0c7ae5b7eaf3c546034652c6f2ceb"
   },
   "accessibility": {
     "expected_description": "Everything here is pinned. Unpin a chat to show it in recents.",

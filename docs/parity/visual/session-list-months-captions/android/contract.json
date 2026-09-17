@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-17T04:16:59.608509+00:00",
+  "captured_at": "2026-09-17T05:06:46.672763+00:00",
   "surface": "session-list-sections",
   "state": "pinned-sessions-month-dividers",
   "fixture_id": "session-list-sections-synthetic-v1",
   "theme": "dark",
-  "android_git_sha": "1457d75eb8e7e8336efa45c68fd2da5f5c34da70",
-  "apk_sha256": "3d6e624749b92aa60410944fe9ecc15803dd0c98be05abfa2b4817cfe9d4551f",
-  "installed_apk_sha256": "3d6e624749b92aa60410944fe9ecc15803dd0c98be05abfa2b4817cfe9d4551f",
+  "android_git_sha": "808b882ec52a0ecf60b217587b2bed1a27ad3ebb",
+  "apk_sha256": "105b0f9ded02a2bcbe2014d2e71e4fd3588f981de9d3a711c93f10af723a0a05",
+  "installed_apk_sha256": "105b0f9ded02a2bcbe2014d2e71e4fd3588f981de9d3a711c93f10af723a0a05",
   "apk_kind": "debug",
   "interactions": [],
   "viewport": {
@@ -18,10 +18,10 @@
     "package_name": "com.hermesagent.mobile.debug",
     "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
     "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
-    "focused_window": "mCurrentFocus=Window{f1616ca u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{cf6fa5a u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
+    "focused_window": "mCurrentFocus=Window{7724d52 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}\nmFocusedApp=ActivityRecord{3ffd03f u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}\nmCurrentFocus=Window{626a008 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{b661372 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
     "version_code": "2",
     "version_name": "0.2.0-phase2",
-    "signing_certificate_sha256": "d3f6d3fa28eaecb4c91c0db9c659c7e85aebe50a3e891556a1f13e7877170dcc"
+    "signing_certificate_sha256": "d1f9ae6976cb4181ab450a505ecab1dfb569838341954fb9c340d2d1cfeebfbe"
   },
   "accessibility": {
     "expected_description": "Head row alpha. Idle. Updated 12 minutes ago",

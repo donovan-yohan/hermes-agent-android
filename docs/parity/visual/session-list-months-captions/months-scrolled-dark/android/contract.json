@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-17T04:17:28.561019+00:00",
+  "captured_at": "2026-09-17T05:07:06.446947+00:00",
   "surface": "session-list-sections",
   "state": "months-scrolled",
   "fixture_id": "session-list-sections-synthetic-v1",
   "theme": "dark",
-  "android_git_sha": "1457d75eb8e7e8336efa45c68fd2da5f5c34da70",
-  "apk_sha256": "99b356601d18b32e3eca334bc34551c008fbdaa7a4cfb4c6b11173a6b6fdde91",
-  "installed_apk_sha256": "99b356601d18b32e3eca334bc34551c008fbdaa7a4cfb4c6b11173a6b6fdde91",
+  "android_git_sha": "808b882ec52a0ecf60b217587b2bed1a27ad3ebb",
+  "apk_sha256": "e6cd6dab18dfef66f0b01826bedc19c562abb01933516f3f2cce9ad219df1e4b",
+  "installed_apk_sha256": "e6cd6dab18dfef66f0b01826bedc19c562abb01933516f3f2cce9ad219df1e4b",
   "apk_kind": "debug",
   "interactions": [
     "swipe:list-up"
@@ -20,10 +20,10 @@
     "package_name": "com.hermesagent.mobile.debug",
     "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
     "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
-    "focused_window": "mCurrentFocus=Window{bbde0fd u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{7df5b00 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
+    "focused_window": "mCurrentFocus=Window{4e83bd6 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{a1a6c7b u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
     "version_code": "2",
     "version_name": "0.2.0-phase2",
-    "signing_certificate_sha256": "e9c6906d04ae87625bbfc32e53a549e440fd21de77901e0c99febc6994bd18aa"
+    "signing_certificate_sha256": "10f42b512a9385ee09ca3a4a91becc6059648a32594eabf5031c22553a82809f"
   },
   "accessibility": {
     "expected_description": "November 2025 lima. Idle. Updated 309 days ago",

@@ -16,12 +16,17 @@ driven through the app's own E2E mock backend and preload bridge, fixture
 `session-list-sections-synthetic-v1`, 14 synthetic rows, pinned clock
 `2026-09-17T14:20:00Z` UTC, locale `en-US`, dark theme. It is a whole-seed
 render in one 1121 px pane, so this one image serves both the top state and the
-tail state. Android is captured at
-`1457d75eb8e7e8336efa45c68fd2da5f5c34da70` — its code tree is
-`2c655a09b15debbfd5dfa5e45b9eef29cc30c6cd`, the tree committed HEAD `9aa0ae8`
-carries, which differs from that SHA only in `docs/parity`. Debug APK
-`99b356601d18b32e3eca334bc34551c008fbdaa7a4cfb4c6b11173a6b6fdde91`, local and
-installed hashes equal, on the pinned emulator shape.
+tail state. Every Android state is captured at the committed head
+`808b882ec52a0ecf60b217587b2bed1a27ad3ebb`, from a debug APK whose local and
+installed SHA-256 are equal, on the pinned emulator shape. Per-state APK
+receipts, as the contracts record them:
+
+| State | `android_git_sha` | APK SHA-256 (local = installed) |
+|---|---|---|
+| `pinned-sessions-month-dividers` | `808b882ec52a0ecf60b217587b2bed1a27ad3ebb` | `105b0f9ded02a2bcbe2014d2e71e4fd3588f981de9d3a711c93f10af723a0a05` |
+| `months-scrolled` | `808b882ec52a0ecf60b217587b2bed1a27ad3ebb` | `e6cd6dab18dfef66f0b01826bedc19c562abb01933516f3f2cce9ad219df1e4b` |
+| `results` | `808b882ec52a0ecf60b217587b2bed1a27ad3ebb` | `98d1d4c1ce0389c8b048804cf37d82da13fc48e45ddfd799a44cb4df8b6d82a4` |
+| `all-pinned` | `808b882ec52a0ecf60b217587b2bed1a27ad3ebb` | `c870b26fa07fc34f557f582b19f5cdefece1623e574facfa1666e33fdefc7b7e` |
 
 Disclosure. `months-scrolled`, `results` and `all-pinned` are Android
 regression captures. Desktop has no rendered counterpart for `results` or

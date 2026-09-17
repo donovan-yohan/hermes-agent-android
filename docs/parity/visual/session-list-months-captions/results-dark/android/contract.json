@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-17T04:17:51.369861+00:00",
+  "captured_at": "2026-09-17T05:06:56.713280+00:00",
   "surface": "session-list-sections",
   "state": "results",
   "fixture_id": "session-list-sections-synthetic-v1",
   "theme": "dark",
-  "android_git_sha": "1457d75eb8e7e8336efa45c68fd2da5f5c34da70",
-  "apk_sha256": "6132a71739cd1e488288cae78ed2d1afc8dd51d4bed9ece3993c36b942a3a2bc",
-  "installed_apk_sha256": "6132a71739cd1e488288cae78ed2d1afc8dd51d4bed9ece3993c36b942a3a2bc",
+  "android_git_sha": "808b882ec52a0ecf60b217587b2bed1a27ad3ebb",
+  "apk_sha256": "98d1d4c1ce0389c8b048804cf37d82da13fc48e45ddfd799a44cb4df8b6d82a4",
+  "installed_apk_sha256": "98d1d4c1ce0389c8b048804cf37d82da13fc48e45ddfd799a44cb4df8b6d82a4",
   "apk_kind": "debug",
   "interactions": [],
   "viewport": {
@@ -18,10 +18,10 @@
     "package_name": "com.hermesagent.mobile.debug",
     "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
     "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
-    "focused_window": "mCurrentFocus=Window{f5a98a3 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{6dc6d3c u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
+    "focused_window": "mCurrentFocus=Window{9c8bd30 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity}\nmFocusedApp=ActivityRecord{12ed7f5 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity t9}",
     "version_code": "2",
     "version_name": "0.2.0-phase2",
-    "signing_certificate_sha256": "f65e56db94a19a184cf2fa73bda6104e6f394a94b8a4d4bdff1cd530bfd41f3d"
+    "signing_certificate_sha256": "f1d876a79e3db1f41f99c999518c24e18cf59c97d46e12b5745b430a6017db7a"
   },
   "accessibility": {
     "expected_description": "Head row alpha. Idle. Updated 12 minutes ago",
