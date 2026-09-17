@@ -336,12 +336,12 @@ private fun ProviderCheckbox(
             when (state) {
                 ProviderVisibility.All -> HermesIconGlyph(
                     HermesIcon.Check,
-                    color = tokens.accentForeground,
+                    color = tokens.filledActionInk,
                     size = 10.sp,
                 )
 
                 ProviderVisibility.Some -> Box(
-                    Modifier.width(8.dp).height(2.dp).background(tokens.accentForeground),
+                    Modifier.width(8.dp).height(2.dp).background(tokens.filledActionInk),
                 )
 
                 ProviderVisibility.None -> Unit
