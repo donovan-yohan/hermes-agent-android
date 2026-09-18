@@ -22,6 +22,7 @@ import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
 import com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayEvent
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
+import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator
 import com.hermesagent.mobile.data.profiles.GatewayProfileRepository
 import com.hermesagent.mobile.data.profiles.ProfileAvatarRepository
@@ -43,6 +44,7 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
@@ -154,14 +156,27 @@ private class BotsFixtureStateHolder(
     }
 }
 
-private class AvatarFixtureRpc(private val state: ProfileAvatarsFixtureState) : EndpointDispatchingGatewayRpcClient {
+internal class AvatarFixtureRpc(private val state: ProfileAvatarsFixtureState) : EndpointDispatchingGatewayRpcClient {
+    internal val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
+    internal val loadingAssetStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+
     override val events: Flow<GatewayEvent> = emptyFlow()
     override suspend fun request(method: String, params: JsonObject): JsonElement = error("ordinary fixture path")
     override suspend fun requestAtEndpointDispatch(method: String, params: JsonObject, dispatch: (() -> Boolean) -> Boolean): JsonElement {
-        if (!dispatch { true }) return buildJsonObject { put("found", false) }
+        if (!dispatch { calls += method; true }) return buildJsonObject { put("found", false) }
         return when (method) {
             "profiles.list" -> roster(state)
-            "profiles.get_asset" -> if (state == ProfileAvatarsFixtureState.ProfileReady || state == ProfileAvatarsFixtureState.BotsReady) asset() else buildJsonObject { put("found", false) }
+            "profiles.get_asset" -> when (state) {
+                ProfileAvatarsFixtureState.ProfileReady,
+                ProfileAvatarsFixtureState.BotsReady -> asset()
+                ProfileAvatarsFixtureState.ProfileFallback -> buildJsonObject { put("found", false) }
+                ProfileAvatarsFixtureState.ProfileLoading -> {
+                    loadingAssetStarted.complete(Unit)
+                    kotlinx.coroutines.awaitCancellation()
+                }
+                ProfileAvatarsFixtureState.ProfileUnavailable -> throw GatewayRpcException("synthetic avatar refusal")
+                ProfileAvatarsFixtureState.BotsFallback -> buildJsonObject { put("found", false) }
+            }
             else -> buildJsonObject { put("found", false) }
         }
     }
@@ -173,7 +188,14 @@ private class AvatarFixtureRpc(private val state: ProfileAvatarsFixtureState) : 
                 put("name", "synthetic-avatar")
                 put("display_name", "Synthetic Avatar")
                 put("handle", "synthetic-avatar")
-                put("has_avatar", state == ProfileAvatarsFixtureState.ProfileReady || state == ProfileAvatarsFixtureState.BotsReady)
+                put("has_avatar", when (state) {
+                    ProfileAvatarsFixtureState.ProfileReady,
+                    ProfileAvatarsFixtureState.ProfileFallback,
+                    ProfileAvatarsFixtureState.ProfileLoading,
+                    ProfileAvatarsFixtureState.ProfileUnavailable,
+                    ProfileAvatarsFixtureState.BotsReady -> true
+                    ProfileAvatarsFixtureState.BotsFallback -> false
+                })
             })
         })
     }

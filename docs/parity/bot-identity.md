@@ -25,8 +25,14 @@ The debug-only `ProfileAvatarsParityActivity` mounts production `ProfileGlyph`,
 `BotsRosterScreen`, `AvatarRosterCoordinator`, `ProfileAvatarRepository`,
 `AndroidAvatarDecoder`, and captured fake transport over generated synthetic data.
 The catalog registers `profile-ready`, `profile-fallback`, `profile-loading`,
-`profile-unavailable`, `bots-ready`, and `bots-fallback`. It never contacts a
-Gateway or includes a host, credential, profile path, or private session text.
+`profile-unavailable`, `bots-ready`, and `bots-fallback`. The named profile
+states exercise distinct production transport outcomes: `profile-ready` returns
+an image, `profile-fallback` advertises an avatar then returns `found:false`,
+`profile-loading` advertises an avatar and holds `profiles.get_asset` pending,
+and `profile-unavailable` advertises an avatar then refuses that asset read.
+`bots-fallback` uses `has_avatar:false` and therefore makes no asset request.
+The fixture never contacts a Gateway or includes a host, credential, profile
+path, or private session text.
 
 ## Divergences
 
@@ -50,5 +56,6 @@ avatar-read fixture; a copied image or handwritten HTML would not be evidence.
 
 - Production Kotlin compile passed after provider, glyph, Bots row and fixture changes were introduced in incremental local milestones.
 - Focused coordinator/decoder/transport/ProfileGlyph tests passed.
+- `ProfileAvatarsParityFixtureTest` passed 4 tests / 0 failures, proving `found:false`, pending asset loading, refused asset, and absent/no-request outcomes reach production repository state mapping; the fixture records `profiles.list` followed by `profiles.get_asset` only for avatar-authorized profile states.
 - `ProfileAvatarDrawGuardTest` passed with 1 test / 0 failures using native Robolectric graphics, production `ProfileGlyph`, production coordinator/repository, captured transport and generated PNG; owner revocation happened after composition and before the synchronous draw without waiting for collectors.
 - Parent still owns mutation-red/restored-green draw-guard evidence, full lint/assemble/invariant/parity/copy gates, exact-head CI and visual capture inspection.
