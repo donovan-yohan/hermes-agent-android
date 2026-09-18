@@ -46,6 +46,8 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.MenuSectionLabel
+import com.hermesagent.mobile.ui.common.ProfileGlyph
+import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -366,6 +368,17 @@ private fun BotRowItem(
                     modifier = Modifier.padding(end = 6.dp),
                 )
             }
+            ProfileGlyph(
+                profile = HermesProfile(
+                    name = row.name,
+                    displayName = row.displayName,
+                    hasAvatar = row.hasAvatar,
+                    avatarRef = row.avatarRef,
+                ),
+                size = 36.dp,
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.padding(end = 10.dp),
+            )
             Text(
                 text = name,
                 style = HermesTheme.type.bodyStrong,

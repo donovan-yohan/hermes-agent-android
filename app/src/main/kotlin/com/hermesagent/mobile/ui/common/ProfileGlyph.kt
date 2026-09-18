@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,6 +52,7 @@ fun ProfileGlyph(
      */
     active: Boolean = false,
     contentDescription: String? = null,
+    shape: Shape = ProfileGlyphShape,
 ) {
     val tokens = HermesTheme.tokens
     val semantics = if (contentDescription == null) {
@@ -67,7 +69,7 @@ fun ProfileGlyph(
     ProfileAvatarImage(
         ref = profile.avatarRef,
         modifier = glyphModifier,
-        shape = ProfileGlyphShape,
+        shape = shape,
     ) {
         // The `home` face belongs to the default profile alone
         // (`profile-glyph.tsx:21-27`). Any other profile carries its initial, even
@@ -97,8 +99,8 @@ fun ProfileGlyph(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(fill, ProfileGlyphShape)
-                .then(if (active) Modifier.border(1.5.dp, hue, ProfileGlyphShape) else Modifier),
+                .background(fill, shape)
+                .then(if (active) Modifier.border(1.5.dp, hue, shape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             val initialSize = with(LocalDensity.current) { (size * 0.5f).toSp() }
