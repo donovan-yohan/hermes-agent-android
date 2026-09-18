@@ -11,7 +11,7 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections]
+        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true
@@ -35,6 +35,7 @@ on:
           - results
           - all-pinned
           - archived-pinned
+          - todo-name-aliases
       theme:
         description: Rendered theme
         required: true
