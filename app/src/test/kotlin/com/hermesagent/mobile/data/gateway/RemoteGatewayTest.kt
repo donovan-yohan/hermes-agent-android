@@ -519,7 +519,7 @@ class RemoteGatewayTest {
         runCurrent()
 
         assertEquals("the token exchange must happen while the app is away", "code-while-backgrounded", api.exchangedCode)
-        assertEquals(listOf("session.list"), rpc.calls)
+        assertEquals(listOf("session.list", "client.capabilities"), rpc.calls)
         assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
         manager.disconnect()
     }
@@ -1058,7 +1058,7 @@ class RemoteGatewayTest {
         runCurrent()
 
         assertEquals("the code must still be spent", "code-across-network-event", api.exchangedCode)
-        assertEquals(listOf("session.list"), rpc.calls)
+        assertEquals(listOf("session.list", "client.capabilities"), rpc.calls)
         assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
         assertEquals(
             "nothing may have invalidated or abandoned it on the way",
@@ -1753,7 +1753,7 @@ class RemoteGatewayTest {
         assertFalse(sshOpened)
         assertEquals("https://gateway.example/hermes", openedBaseUrl)
         assertEquals("ticket-1", openedTicket)
-        assertEquals(listOf("session.list"), rpc.calls)
+        assertEquals(listOf("session.list", "client.capabilities"), rpc.calls)
         manager.disconnect()
         assertTrue(rpc.closedByClient)
         assertEquals(GatewayConnectionStatus.Disconnected, manager.state.value.status)
@@ -1824,7 +1824,7 @@ class RemoteGatewayTest {
 
         assertEquals(listOf("access-fixture", "access-fixture"), api.ticketTokens)
         assertTrue(first.closedByClient)
-        assertEquals(listOf("session.list"), second.calls)
+        assertEquals(listOf("session.list", "client.capabilities"), second.calls)
         assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
         manager.disconnect()
     }
