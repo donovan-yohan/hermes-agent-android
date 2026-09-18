@@ -1,0 +1,106 @@
+{
+  "provenance": {
+    "upstream": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+    "scope": "Actual hosted_rooms store function outputs with synthetic inputs; not JSON-RPC or live-driver evidence"
+  },
+  "list_rooms": [
+    {
+      "room_id": "synthetic-room",
+      "name": "Release plan",
+      "members": [
+        {
+          "handle": "ops",
+          "member_id": "synthetic-member",
+          "profile": "ops",
+          "target": {
+            "kind": "local",
+            "profile": "ops"
+          }
+        }
+      ],
+      "authority_gateway_id": "synthetic-gateway",
+      "authority_epoch": 1,
+      "revision": 2,
+      "created_at": 1.0,
+      "updated_at": 4.0,
+      "idempotent": false,
+      "latest_seq": 3
+    }
+  ],
+  "read_events_pages": [
+    {
+      "events": [
+        {
+          "room_id": "synthetic-room",
+          "seq": 1,
+          "event_id": "synthetic-user-event",
+          "kind": "message.user",
+          "actor": {
+            "id": "synthetic-user",
+            "kind": "user"
+          },
+          "authority_epoch": 1,
+          "payload": {
+            "text": "Review the plan.",
+            "thread_id": "synthetic-thread"
+          },
+          "created_at": 2.0,
+          "idempotent": false
+        },
+        {
+          "room_id": "synthetic-room",
+          "seq": 2,
+          "event_id": "synthetic-activity-event",
+          "kind": "room.activity",
+          "actor": {
+            "id": "synthetic-gateway",
+            "kind": "gateway"
+          },
+          "authority_epoch": 1,
+          "payload": {
+            "discussion_event_id": "synthetic-user-event",
+            "reason_code": "complete",
+            "status": "settled",
+            "thread_id": "synthetic-thread"
+          },
+          "created_at": 3.0,
+          "idempotent": false
+        }
+      ],
+      "cursor": 2,
+      "latest_seq": 3,
+      "has_more": true,
+      "authority": {
+        "gateway_id": "synthetic-gateway",
+        "epoch": 1
+      }
+    },
+    {
+      "events": [
+        {
+          "room_id": "synthetic-room",
+          "seq": 3,
+          "event_id": "synthetic-rename",
+          "kind": "room.renamed",
+          "actor": {
+            "id": "room-control",
+            "kind": "system"
+          },
+          "authority_epoch": 1,
+          "payload": {
+            "name": "Release plan"
+          },
+          "created_at": 4.0,
+          "idempotent": false
+        }
+      ],
+      "cursor": 3,
+      "latest_seq": 3,
+      "has_more": false,
+      "authority": {
+        "gateway_id": "synthetic-gateway",
+        "epoch": 1
+      }
+    }
+  ]
+}

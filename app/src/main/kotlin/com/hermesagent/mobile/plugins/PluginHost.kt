@@ -36,6 +36,10 @@ import kotlinx.serialization.json.JsonObject
  * a companion `private` is not visible to a sibling top-level class.
  */
 private val ENDPOINT_NEVER_MOVES: StateFlow<Long> = MutableStateFlow(0L)
+private val NO_READY_LEG: StateFlow<PluginConnectionToken?> = MutableStateFlow(null)
+
+/** An opaque identity, with no transport, credentials, or operations attached. */
+class PluginConnectionToken internal constructor()
 
 /**
  * The plugin-facing gateway door: JSON-RPC to the live connection, plus a tap
@@ -92,6 +96,17 @@ interface PluginHost {
             PluginHostResult.Refused(0, RECONNECT_MESSAGE)
         }
     }
+
+    /** Ready-leg identity; a transport reconnect changes it without changing endpointGeneration. */
+    val connectionToken: StateFlow<PluginConnectionToken?> get() = NO_READY_LEG
+
+    /** Bind a read sequence to both an endpoint and a ready leg. Unsupported doors fail closed. */
+    suspend fun requestAtConnection(
+        expectedEndpoint: Long,
+        token: PluginConnectionToken,
+        method: String,
+        params: JsonObject = JsonObject(emptyMap()),
+    ): PluginHostResult = PluginHostResult.Refused(0, RECONNECT_MESSAGE)
 
     /**
      * Whether a live connection exists behind this door, right now.
@@ -319,6 +334,46 @@ internal class GatewayPluginHost(
     /** Shared with endpoint teardown; see [EndpointDispatchFence]. */
     private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
 ) : PluginHost {
+    private val tokenLock = Any()
+    private var tokenClient: GatewayRpcClient? = null
+    private var readyToken: PluginConnectionToken? = null
+
+    private fun snapshotToken(): PluginConnectionToken? = synchronized(tokenLock) {
+        val live = clients.value
+        if (live !== tokenClient) {
+            tokenClient = live
+            readyToken = live?.let { PluginConnectionToken() }
+        }
+        readyToken
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+    override val connectionToken: StateFlow<PluginConnectionToken?> by lazy {
+        val published = clients.map { snapshotToken() }
+            .stateIn(scope, SharingStarted.Eagerly, snapshotToken())
+        // Read-through value prevents a queued collector from advertising an old leg at dispatch.
+        object : StateFlow<PluginConnectionToken?> by published {
+            override val value: PluginConnectionToken? get() = snapshotToken()
+            override val replayCache: List<PluginConnectionToken?> get() = listOf(value)
+        }
+    }
+
+    override suspend fun requestAtConnection(
+        expectedEndpoint: Long,
+        token: PluginConnectionToken,
+        method: String,
+        params: JsonObject,
+    ): PluginHostResult {
+        val normalized = normalizePluginHostMethod(CALLER, method)
+        val rpc = endpointBoundClient(expectedEndpoint) as? EndpointDispatchingGatewayRpcClient
+            ?: return refusedWithoutRoute()
+        val stillOwns = {
+            endpointBoundClient(expectedEndpoint) === rpc && snapshotToken() === token && clients.value === rpc
+        }
+        val lease = endpointDispatchFence.leaseAt(expectedEndpoint, stillOwns) ?: return refusedWithoutRoute()
+        return requestAtEndpoint(rpc, normalized, params, lease, stillOwns)
+    }
+
     /**
      * The client slot as a readiness edge. `GatewayConnection` publishes the
      * client only after an authenticated round trip on the leg the app will
