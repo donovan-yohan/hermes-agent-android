@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -174,7 +175,7 @@ internal fun BotsRoutinesParityFixture(
         )
     }
     // The destination, selected the way the roster row's own control selects it.
-    remember(state) { viewModel.selectOwner(profile = "ops", label = "Ops") }
+    LaunchedEffect(viewModel) { viewModel.selectOwner(profile = "ops", label = "Ops") }
 
     val uiState by viewModel.uiState.collectAsState()
     val navigation = remember { PluginNavigation() }
