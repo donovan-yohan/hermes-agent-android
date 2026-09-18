@@ -4515,10 +4515,11 @@ internal class LiveGatewaySessionRepository(
      * verdict it will otherwise only get from its own deadline. Every other
      * client answers exactly one `-32601` for it, and the backend settles its
      * wait at once instead of parking the turn out
-     * (`apps/shared/src/json-rpc-channel.ts:388-389` @
-     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`, whose
+     * (`apps/shared/src/json-rpc-channel.ts:388-389` and
+     * `tui_gateway/server_requests.py:201-219` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`: that channel's
      * `server_requests.send` returns the same `None` an error response
-     * produces — `tui_gateway/server_requests.py:201-219` @ the same SHA).
+     * produces).
      *
      * A session with no durable binding yet is *not* that. Its question is
      * answerable and this client simply has not bound it: the question is
