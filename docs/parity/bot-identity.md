@@ -40,17 +40,25 @@ path, or private session text.
 |---|---|---|---|
 | Desktop `ProfileGlyph` is the fallback identity mark; its pinned source emits utility-class spans and no `.profile-glyph` hook | mobile-adaptation | Android keeps the same home/initial fallback and extends the accepted-row path with a read-only static PNG/JPEG/WebP avatar; fallback remains visible for missing, loading, refused, corrupt, stale, synthetic or unavailable rows | `profile-glyph.tsx:10-43` at `d177b119`; no profile-rail avatar equivalence is claimed |
 | Desktop BotFace renders an uploaded avatar in the Bots surface | mobile-adaptation | Android uses the shared profile glyph and fixed 36dp cover-cropped static image to keep one identity treatment across rail, picker, profile roster and Bots on a phone | Real pinned BotFace proof: `/tmp/hm-desktop-avatar-selector-proof/test.log`; executed CSS locator matched exactly one Alpha row, while `.profile-glyph` matched zero; 36dp touch/space budget and shared component contract |
+| Desktop BotFace uses 22% corner rounding | drift | Android's 22dp rounding on a 36dp glyph produces a circular image instead of the Desktop rounded square; this is not exact shape parity | Actual ready captures and source comparison in the [capture review](https://github.com/donovan-yohan/hermes-agent-android/pull/323#issuecomment-5734724739); follow-up: #194 |
 | Desktop has no phone lifecycle binding equivalent | mobile-adaptation | Avatar subscriptions are admitted only while the real Compose lifecycle is resumed, disposed on pause/row removal/plugin disposal, and invalidated once on foreground/explicit refresh | `ProfileAvatars.kt`, coordinator revision/current draw guard, lifecycle test |
-| Desktop/Android pixel comparison remains pending | omission | Android production fixture is catalogued, but the executed Desktop proof is Bots-only and does not establish profile-rail `ProfileGlyph` parity; parent owns the exact-head Android capture and side-by-side receipt | deferred: #318 — retain pending until the genuine Android capture is available |
+| Aligned Desktop/Android scene comparison remains pending | omission | Android's six dark states are rendered and inspected; the executed Desktop proof is Bots-only, with different scene inputs, and does not establish profile-rail avatar parity | deferred: #194 — [Android capture review](https://github.com/donovan-yohan/hermes-agent-android/pull/323#issuecomment-5734724739) |
 
 ## Visual report
 
-- pending: #318
+- report: https://github.com/donovan-yohan/hermes-agent-android/pull/323#issuecomment-5734724739
+- commit: 493fefc118a5f7344187ff7be85f1ee5a258d6a8
+- [Pinned Desktop evidence packet](visual/desktop-bot-render-evidence/README.md), delivered separately in PR #324.
+- Verdict: Android dark-state rendering verified; Concern for shape drift and unmatched Desktop scene inputs. No full side-by-side approval.
 
-No rendered Desktop/Android side-by-side is claimed here. The Android half is
-catalogued through `docs/parity/visual-capture-surfaces.json` and is dispatched
-by the parent-owned visual-parity workflow. The pinned Desktop export has no
-avatar-read fixture; a copied image or handwritten HTML would not be evidence.
+The Android capture receipts were downloaded and validated against their source,
+catalog, and matching built/installed APK hashes. Ready images visibly render
+the same synthetic blue PNG used by the real Desktop BotFace fixture. Missing,
+pending and refused states render the initial fallback; distinct transport
+semantics are established by regression tests, not inferred from equal pixels.
+No physical-device, live external-Gateway, light-theme or aligned side-by-side
+acceptance is claimed. A later documentation-only commit does not change the
+capture's recorded source SHA or turn it into a new-head receipt.
 
 ## Verification boundary
 
