@@ -151,10 +151,38 @@ class GroupSendStoreTest {
         val older = GroupSendEditorDraft(target, "older editor", "thread-1", 1L)
         val olderRecord = sampleRecord("old-send", "older editor", 1L)
         val newerRecord = sampleRecord("new-send", "newer editor", 2L)
+        assertEquals(GroupSendStoreMutation.Applied, store.persistDraftAndPrepare(older, olderRecord))
         assertEquals(GroupSendStoreMutation.Applied, store.persistDraftAndPrepare(newer, newerRecord))
         assertEquals(GroupSendStoreMutation.Applied, store.persistDraftAndPrepare(older, olderRecord))
         assertEquals("newer editor", store.snapshot().drafts[newer.draftKey]?.text)
         assertEquals(2L, store.snapshot().drafts[newer.draftKey]?.revision)
+    }
+
+    @Test
+    fun `new stale intent is rejected while accepted replay preserves newer draft in both stores`() = runTest {
+        val file = storeFile()
+        try {
+            for (store in listOf(TransientGroupSendStore(), AndroidGroupSendStore(context, file.name))) {
+                val accepted = sampleRecord("accepted", "Original", 1L)
+                val original = GroupSendEditorDraft(testTarget, "Original", "thread-1", 1L)
+                val newer = sampleRecord("newer", "Newer", 2L)
+                val current = GroupSendEditorDraft(testTarget, "Newer", "thread-1", 2L)
+                assertEquals(GroupSendStoreMutation.Applied, store.persistDraftAndPrepare(original, accepted))
+                assertEquals(GroupSendStoreMutation.Applied, store.persistDraftAndPrepare(current, newer))
+                val before = store.snapshot()
+                val stale = accepted.copy(operation = accepted.operation.copy(rawId = "fresh-stale-key"))
+                assertEquals(GroupSendStoreMutation.ConflictingRecord, store.persistDraftAndPrepare(original, stale))
+                assertEquals(before, store.snapshot())
+                assertEquals(GroupSendStoreMutation.Applied, store.persistDraftAndPrepare(original, accepted))
+                assertEquals(before, store.snapshot())
+            }
+            val restored = AndroidGroupSendStore(context, file.name).snapshot()
+            assertTrue(restored.valid)
+            assertEquals(2, restored.records.size)
+            assertEquals("Newer", restored.drafts.values.single().text)
+        } finally {
+            file.delete()
+        }
     }
 
     @Test

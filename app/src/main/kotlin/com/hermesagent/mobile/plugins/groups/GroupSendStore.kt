@@ -125,6 +125,10 @@ internal open class TransientGroupSendStore(
         if (existing != null && existing.operation.payload != record.operation.payload) return GroupSendStoreMutation.ConflictingRecord
         if (existing == null && flow.value.records.size >= MAX_STORE_RECORDS) return GroupSendStoreMutation.CapacityReached
         val existingDraft = flow.value.drafts[draft.draftKey]
+        // A replay keeps its accepted identity; a newly minted stale intent is not a replay.
+        if (existing == null && existingDraft != null && existingDraft.revision > draft.revision) {
+            return GroupSendStoreMutation.ConflictingRecord
+        }
         val retainedDraft = if (existingDraft != null && existingDraft.revision > draft.revision) existingDraft else draft
         flow.value = flow.value.copy(
             drafts = flow.value.drafts + (draft.draftKey to retainedDraft),
@@ -319,6 +323,9 @@ internal class AndroidGroupSendStore(
         }
         if (existing == null && current.records.size >= MAX_STORE_RECORDS) return@mutate GroupSendStoreMutation.CapacityReached to current
         val existingDraft = current.drafts[draft.draftKey]
+        if (existing == null && existingDraft != null && existingDraft.revision > draft.revision) {
+            return@mutate GroupSendStoreMutation.ConflictingRecord to current
+        }
         val retainedDraft = if (existingDraft != null && existingDraft.revision > draft.revision) existingDraft else draft
         GroupSendStoreMutation.Applied to current.copy(
             drafts = current.drafts + (draft.draftKey to retainedDraft),
