@@ -814,7 +814,12 @@ def written_verdict(new_sha: str, cited: str, ranges: list[tuple[int, int]]) -> 
         # The path form has candidates, but the span fits none of them. That is not
         # evidence that the file disappeared; the honest class is unattributable.
         return "unattributable", candidates[0] if len(candidates) == 1 else cited
-    return None, fitting[0] if len(fitting) == 1 else None
+    if len(fitting) > 1:
+        # A newly written shorthand has no old bytes from which to choose among
+        # fitting namesakes. Do not return `(None, None)`: check_range treats that
+        # pair as skipped, which would silently accept an ambiguous citation.
+        return "unattributable", cited
+    return None, fitting[0]
 
 
 class Finding:
@@ -1324,6 +1329,16 @@ def self_test() -> None:
         )
         written = commit("fixture writes two shorthand citations")
 
+        # (14) A newly written basename whose span fits every namesake is
+        #      genuinely ambiguous. It must be reported as unattributable rather
+        #      than returned as `(None, None)`, because check_range treats that
+        #      pair as skipped and would silently accept the citation.
+        branch("written-ambiguous", basename_source)
+        write("docs/ambiguous.md", citation_page(basename_source))
+        ambiguous_base = commit("fixture writes an empty ambiguous page")
+        write("docs/ambiguous.md", citation_page(ambiguous_base, "i18n/en.ts:2-4"))
+        ambiguous = commit("fixture writes an all-fitting basename citation")
+
         UPSTREAM = repo
         _blobs.clear()
         _tree_paths.clear()
@@ -1499,6 +1514,19 @@ def self_test() -> None:
             findings, counts = gate(written_base, written, "written shorthand")
             if findings or counts["checked"] < 1:
                 raise AssertionError(f"a written shorthand citation was rejected: {findings}, {counts}")
+
+            findings, counts = gate(ambiguous_base, ambiguous, "ambiguous written basename")
+            if not findings or findings[0].reason != "unattributable":
+                raise AssertionError(
+                    "an all-fitting ambiguous written basename was skipped or mislabelled: "
+                    f"{findings}, {counts}"
+                )
+            if findings[0].resolved != "i18n/en.ts":
+                raise AssertionError(
+                    f"the ambiguous written basename did not retain its cited form: {findings[0].resolved}"
+                )
+            if counts["skipped"] != 0:
+                raise AssertionError(f"an ambiguous written basename was silently skipped: {counts}")
 
         finally:
             UPSTREAM = original
