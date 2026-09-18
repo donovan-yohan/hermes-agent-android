@@ -73,6 +73,24 @@ class GroupSendStoreTest {
     }
 
     @Test
+    fun `codec rejects noncanonical immutable text rather than rewriting accepted payload`() {
+        val record = sampleRecord(text = "Immutable text")
+        val snapshot = GroupSendStoreSnapshot(records = mapOf(record.recordKey to record))
+        val encoded = requireNotNull(GroupSendStoreCodec.encodeOrNull(snapshot))
+        assertEquals(record, GroupSendStoreCodec.decode(encoded).records[record.recordKey])
+        for (text in listOf(" Immutable text", "Immutable text ", "\u001cImmutable text")) {
+            val tampered = encoded.replace(
+                "\"text\":\"Immutable text\"",
+                "\"text\":${kotlinx.serialization.json.JsonPrimitive(text)}",
+            )
+            assertNotEquals(encoded, tampered)
+            val decoded = GroupSendStoreCodec.decode(tampered)
+            assertFalse("Noncanonical persisted payload must fail closed", decoded.valid)
+            assertTrue(decoded.records.isEmpty())
+        }
+    }
+
+    @Test
     fun `prepare handles identical retry and rejects conflicting payload on same rawId`() = runTest {
         val store = TransientGroupSendStore()
         val r1 = sampleRecord("id-1", "Same text")

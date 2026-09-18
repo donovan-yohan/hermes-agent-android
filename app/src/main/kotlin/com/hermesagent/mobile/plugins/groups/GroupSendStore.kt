@@ -270,7 +270,7 @@ internal object GroupSendStoreCodec {
                     room = room
                 ),
                 rawId = rawId,
-                payload = GroupSendPayload.normalize(text, thread)
+                payload = GroupSendPayload(text, thread)
             ),
             draftRevision = draftRev,
             state = state,
