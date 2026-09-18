@@ -4518,7 +4518,7 @@ internal class LiveGatewaySessionRepository(
      * (`apps/shared/src/json-rpc-channel.ts:388-389` @
      * `d177b119e9c56c9ddc0b7379ffce52341ec06584`, whose
      * `server_requests.send` returns the same `None` an error response
-     * produces, `tui_gateway/server_requests.py:201-219`).
+     * produces — `tui_gateway/server_requests.py:201-219` @ the same SHA).
      *
      * A session with no durable binding yet is *not* that. Its question is
      * answerable and this client simply has not bound it: the question is

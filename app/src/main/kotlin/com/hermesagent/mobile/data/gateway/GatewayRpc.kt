@@ -439,7 +439,8 @@ internal class CorrelatedGatewayRpc(
      * recorded on success — a response frame is one-way, and the backend drops
      * it silently when the request was already withdrawn, which is the
      * tolerated-late-answer case rather than an error
-     * (`tui_gateway/server_requests.py:139-146` @ the pin).
+     * (`tui_gateway/server_requests.py:201-235` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
      */
     override suspend fun respondToServerRequest(id: String, result: JsonObject) {
         require(id.isNotBlank()) { "A server request id is required to answer." }
