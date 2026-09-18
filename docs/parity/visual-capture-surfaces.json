@@ -58,7 +58,8 @@
       "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
       "fixture_id": "bot-routines-synthetic-v1",
       "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
-      "desktop_selector": "[data-slot=\"bots-routines\"]",
+      "desktop_selector": ".flex.h-full.flex-col",
+      "desktop_selector_note": "The RoutinesPane root class at the pin (`cron.tsx:1250`, `<div className=\"flex h-full flex-col\">`). The pin carries no `data-slot` or other stable hook on this pane, so this class list is the only source-derived selector available — and it is NOT unique: the same utility classes are used by other full-height columns in Desktop. A Desktop capture must therefore scope it to the Routines pane's own subtree before trusting it, or wait for a stable hook upstream. No Desktop capture exists for this surface, and no selector is invented to imply one does.",
       "states": {
         "populated": {
           "interaction": [],
