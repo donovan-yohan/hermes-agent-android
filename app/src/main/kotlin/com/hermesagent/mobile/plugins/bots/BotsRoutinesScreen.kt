@@ -41,6 +41,7 @@ import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import java.util.Locale
 
 /**
  * The bot-scoped Routines destination — one bot's scheduled jobs, read-only.
@@ -177,7 +178,10 @@ private fun RoutinesOwnerHeader(state: BotsRoutinesUiState) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = BotsRoutinesCopy.TITLE.uppercase(),
+                // `Locale.ROOT`: the section label is product copy, and the
+                // default locale's rules would rewrite it (a Turkish device
+                // upper-cases the `i` in "Scheduled" to a dotted `İ`).
+                text = BotsRoutinesCopy.TITLE.uppercase(Locale.ROOT),
                 style = HermesTheme.type.sectionLabel,
                 color = tokens.textQuaternary,
                 maxLines = 1,

@@ -146,15 +146,13 @@ class BotsRoutinesJourneyTest {
     /** A leg answering a fixed routines list, the roster, and the bot's chat. */
     private fun rpc(routines: JsonElement): GatewayRpcClient = this.rpc({ routines })
 
-    private fun secondsAgo(seconds: Long): Long = (System.currentTimeMillis() / 1000L) - seconds
-
     private fun jobs(body: String): JsonElement = Json.parseToJsonElement(body)
 
-    /** A `cron.manage list` answer with one row per name. */
+    /** A `cron.manage list` answer with one row per name, at the pinned clock. */
     private fun listed(vararg names: String): JsonElement {
         val rows = names.mapIndexed { index, name ->
             """{"job_id":"j$index","name":"$name","schedule":"every 1h","enabled":true,
-                "state":"scheduled","next_run_at":"2026-09-18T09:00:00+00:00"}"""
+                "state":"scheduled","next_run_at":"$NEXT_RUN"}"""
         }
         return jobs("""{"success":true,"count":${rows.size},"jobs":[${rows.joinToString(",")}]}""")
     }
@@ -227,6 +225,13 @@ class BotsRoutinesJourneyTest {
         compose.onNodeWithText("Daily").assertIsDisplayed()
         compose.onNodeWithText("Once (30m)").assertIsDisplayed()
         compose.onNodeWithText(BotsRoutinesCopy.STATE_PAUSED).assertIsDisplayed()
+        // The next-run line is present. Its *arithmetic* is pinned against a
+        // fixed clock in `BotsRoutinesParseTest`, deliberately not here: this
+        // journey renders the production route, which reads the device clock,
+        // so only the clock-independent half of the line is asserted.
+        compose.onAllNodesWithText(BotsRoutinesCopy.NEXT_PREFIX, substring = true)
+            .fetchSemanticsNodes()
+            .let { assertTrue("no next-run line rendered", it.isNotEmpty()) }
     }
 
     @Test
@@ -541,6 +546,18 @@ class BotsRoutinesJourneyTest {
 
         /** The spoken form of the row's inactive dot. */
         const val INACTIVE_DOT_SPOKEN = "Not scheduled to run"
+
+        /**
+         * The next-run instant the fixtures carry, as the Gateway sends it:
+         * `2026-09-18T09:00:00Z`.
+         *
+         * Fixed rather than derived from the machine's clock, so the *parse*
+         * this fixture exercises is deterministic. The relative label built from
+         * it is not asserted here — that arithmetic is pinned against a fixed
+         * `nowMillis` in `BotsRoutinesParseTest`, because this journey renders
+         * the production route and that route reads the device clock.
+         */
+        const val NEXT_RUN = "2026-09-18T09:00:00+00:00"
 
         /**
          * Two bots, one of them called `Ops` by display name and `ops` by

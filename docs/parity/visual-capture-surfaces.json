@@ -54,6 +54,24 @@
         }
       }
     },
+    "bot-routines": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "bot-routines-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+      "desktop_selector": "[data-slot=\"bots-routines\"]",
+      "states": {
+        "populated": {
+          "interaction": [],
+          "post_interaction_accessibility": "Morning digest",
+          "fixture_note": "The production BotsRoutinesScreen over the production view model, one bot's store as cron.manage {action:list, include_disabled:true} sends it with the scoped echo the pinned Gateway returns: an active routine, a paused one, a schedule the label passes through, and a legacy delegated routine. Desktop's own counterpart is not captured at its pin, so no same-pin Desktop half exists for this surface yet — the Android packet stands alone and the parity page records Desktop as pending. No interaction: the destination is entered by the roster row's icon-only control, which publishes no text for this lane to tap."
+        },
+        "read-failure": {
+          "interaction": [],
+          "post_interaction_accessibility": "The list may still be there — this was a read failure, not a delete.",
+          "fixture_note": "The same production surface after a refused read with nothing held: the failure card and its Retry. Desktop's own counterpart is not captured at its pin; see the populated state's note."
+        }
+      }
+    },
     "session-list-sections": {
       "desktop_sha": "437116f9497c80d242ce034ff7f5d81dc277a337",
       "fixture_id": "session-list-sections-synthetic-v1",
