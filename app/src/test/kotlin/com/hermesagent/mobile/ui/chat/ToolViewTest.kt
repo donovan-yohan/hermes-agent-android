@@ -174,6 +174,43 @@ class ToolViewTest {
         assertNull(activity("something_else").toolView().icon)
     }
 
+    /**
+     * The task tool's two spellings are one tool: the pin dispatches it as
+     * `todo_list` (`model_tools.py:607,611-614` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`) while a transcript this app
+     * already holds spells it `todo`, and Desktop recognises both
+     * (`apps/desktop/src/lib/todos.ts:21-23` @ the same SHA). A row's own name
+     * is never rewritten — only the table lookup resolves — so both paint the
+     * same glyph and the same count noun.
+     */
+    @Test
+    fun `both todo spellings paint the same glyph and the same count noun`() {
+        // The noun table keys both spellings
+        // (`apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:350-358`
+        // @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`); `todos` is not a count
+        // key on either side (`COUNT_FIELD_KEYS` / `COUNT_ARRAY_KEYS`, `:280-308`
+        // in the same file), so the count comes off a field and the noun off the
+        // tool's table entry.
+        val result = """{"count":2,"todos":[{"id":"a"},{"id":"b"}]}"""
+        val legacy = activity("todo", result = result).toolView()
+        val current = activity("todo_list", result = result).toolView()
+
+        assertEquals(ToolIconName.Tools, current.icon)
+        assertEquals(legacy.icon, current.icon)
+        assertEquals("2 todos", current.countLabel)
+        assertEquals(legacy.countLabel, current.countLabel)
+    }
+
+    @Test
+    fun `a bare todos array is no count, under either spelling`() {
+        // `todos` is not a count key, so neither spelling invents a count from
+        // it — the two spellings agree, which is the whole assertion here.
+        val result = """{"todos":[{"id":"a"}]}"""
+
+        assertNull(activity("todo", result = result).toolView().countLabel)
+        assertNull(activity("todo_list", result = result).toolView().countLabel)
+    }
+
     @Test
     fun `state maps onto desktop's status vocabulary`() {
         assertEquals(ToolStatus.Running, activity("terminal", state = ToolState.Running).toolView().status)

@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -71,13 +73,14 @@ class ToolRowFidelityTest {
 
     private fun tool(
         toolName: String = "terminal",
+        label: String = toolName,
         state: ToolState = ToolState.Done,
         args: String? = null,
         result: String? = null,
         detail: String = "",
     ) = ToolActivity(
         id = "$SESSION-t1",
-        label = toolName,
+        label = label,
         detail = detail,
         state = state,
         elapsedSeconds = 1.0,
@@ -526,7 +529,59 @@ class ToolRowFidelityTest {
         compose.onNodeWithContentDescription("Tool Read a.kt, done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool Memory, recovered").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Tool List files, error").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Tool Todo, stopped").performScrollTo().assertIsDisplayed()
+        // The task tool's default title is Desktop's one entry for it (#284).
+        compose.onNodeWithContentDescription("Tool $TODO_TITLE, stopped").performScrollTo().assertIsDisplayed()
+    }
+
+    /**
+     * The task tool's two wire spellings must paint one row, title and
+     * accessibility description included. `displayTitle` falls through to the
+     * stored label, so raw `todo` and `todo_list` labels would otherwise read
+     * "Todo" and "Todo list" — the same acceptance #284 fixed for the glyph,
+     * the count noun and the composer correlation, one layer up.
+     */
+    @Test
+    fun `the two task-tool spellings paint one title and one spoken description`() {
+        launch(
+            tool(toolName = "todo", result = """{"count":2}"""),
+            tool(toolName = "todo_list", result = """{"count":2}""").copy(id = "$SESSION-t2"),
+        )
+
+        // Two rows carry it and nothing else does: a title mismatch would leave
+        // one row unmatched here rather than pass silently.
+        val descriptions = compose
+            .onAllNodes(hasContentDescription("Tool $TODO_TITLE, done"))
+            .fetchSemanticsNodes()
+            .map { node ->
+                node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().joinToString()
+            }
+
+        assertEquals(2, descriptions.size)
+        assertTrue(
+            "both rows must speak the same description: $descriptions",
+            descriptions.all { it == "Tool $TODO_TITLE, done" },
+        )
+        compose.onAllNodes(hasText(TODO_TITLE)).assertCountEquals(2)
+        compose.onAllNodes(hasText("Todo list", substring = true)).assertCountEquals(0)
+    }
+
+    /**
+     * A row's own label is its tool's default: the task tool's fallback is
+     * normalised (#284) and every other label — including a label a gateway
+     * wrote *for the task tool itself* — keeps the pre-existing behaviour, which
+     * is the same underscore/case transform every tool already went through.
+     */
+    @Test
+    fun `a custom tool label keeps its existing transform`() {
+        launch(
+            tool(toolName = "todo_list", label = "Review the plan").copy(id = "$SESSION-t1"),
+            tool(toolName = "memory", label = "Custom memory label").copy(id = "$SESSION-t2"),
+        )
+
+        // Not the task tool's title: a label that is not the tool's own fallback
+        // is untouched, on the pinned spelling as much as on any other tool.
+        compose.onNodeWithContentDescription("Tool Review the plan, done").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tool Custom memory label, done").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -545,6 +600,9 @@ class ToolRowFidelityTest {
     private companion object {
         const val SESSION = "s-tool"
         const val NOW = 1_756_000_000_000L
+
+        /** Desktop's one title entry for the task tool (`en.ts:4368` @ `d177b119`). */
+        const val TODO_TITLE = "Updated todos"
 
         /** The JSON escape for `ESC`, so no control byte sits in this source. */
         const val ESC = "\\u001B"

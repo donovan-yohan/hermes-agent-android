@@ -109,6 +109,7 @@ import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
+import com.hermesagent.mobile.data.session.isTodoToolName
 import com.hermesagent.mobile.plugins.Contribution
 import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.plugins.TranscriptDirectiveContribution
@@ -1726,8 +1727,28 @@ private fun ToolActivity.displayTitle(): String {
         normalized.contains("read_file") && path != null -> "Read $path"
         normalized.contains("write_file") && path != null -> "Wrote $path"
         normalized.contains("search") -> "Searched ${detail.take(72)}".trim()
+        // One tool, one title: `todo` and `todo_list` are the same tool under two
+        // spellings, so its default label must not read "Todo" for one and
+        // "Todo list" for the other. Only the tool's own fallback is replaced;
+        // every other label reaches the arms below unchanged. Desktop has one
+        // title entry for this tool (`assistant.tool.titles.todo.done`,
+        // `apps/desktop/src/i18n/en.ts:4368` @
+        // `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
+        isTodoToolName(normalized) && label.isTaskToolDefaultLabel(toolName) -> TODO_TOOL_TITLE
         else -> label.replace('_', ' ').replaceFirstChar { it.titlecase() }
     }
+}
+
+/** Desktop's single title for the task tool (`apps/desktop/src/i18n/en.ts:4368` @ `d177b119`). */
+private const val TODO_TOOL_TITLE = "Updated todos"
+
+/** Whether [label] is the row's own fallback for its tool rather than a gateway-side label. */
+private fun String.isTaskToolDefaultLabel(toolName: String): Boolean {
+    // The stored label is the wire name verbatim (`todo_list`) or the rendered
+    // default (`Todo list`), so both forms are compared — and only those.
+    val rendered = toolName.lowercase().replace('_', ' ')
+    return equals(toolName, ignoreCase = true) ||
+        equals(rendered.replaceFirstChar { it.titlecase() }, ignoreCase = true)
 }
 
 /**

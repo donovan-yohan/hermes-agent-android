@@ -42,6 +42,7 @@ import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.data.session.graftRefreshedTailOntoBackfill
+import com.hermesagent.mobile.data.session.isTodoToolName
 import com.hermesagent.mobile.data.session.mergeOlderTranscriptPage
 import com.hermesagent.mobile.data.session.preservingRowIdOf
 import com.hermesagent.mobile.data.session.retainingGatewayQueue
@@ -5116,13 +5117,13 @@ internal class LiveGatewaySessionRepository(
         val incomingToolName = payload.string("name")
         val knownTodoId = when {
             explicitId != null && explicitId in todoIds -> explicitId
-            explicitId == null && (incomingToolName == null || incomingToolName == "todo") -> todoIds.singleOrNull()
+            explicitId == null && (incomingToolName == null || isTodoToolName(incomingToolName)) -> todoIds.singleOrNull()
             else -> null
         }
         // A named, identifier-less non-todo tool must never inherit the sole
         // live todo id. Correlation fallback is safe only when the name is
-        // absent or explicitly `todo`.
-        val isTodo = incomingToolName == "todo" || knownTodoId != null
+        // absent or names the task tool, under either spelling.
+        val isTodo = isTodoToolName(incomingToolName) || knownTodoId != null
         if (isTodo) {
             val todoId = knownTodoId ?: explicitId ?: "gateway-todo-${sequence.incrementAndGet()}"
             if (type == "tool.complete") todoIds.remove(todoId) else todoIds += todoId
@@ -6151,13 +6152,13 @@ internal fun latestComposerTodosFromHistory(result: JsonElement): List<ComposerT
     var latest: List<ComposerTodoStatus>? = null
     messages.forEach messageLoop@ { element ->
         val message = element as? JsonObject ?: return@messageLoop
-        if (message.string("role") == "tool" && message.todoToolName() == "todo") {
+        if (message.string("role") == "tool" && isTodoToolName(message.todoToolName())) {
             parseComposerTodosFromTool(message)?.let { latest = it }
         }
         (message["content"] as? JsonArray).orEmpty().forEach partLoop@ { partElement ->
             val part = partElement as? JsonObject ?: return@partLoop
             val toolName = part.todoToolName()
-            if (toolName == "todo") parseComposerTodosFromTool(part)?.let { latest = it }
+            if (isTodoToolName(toolName)) parseComposerTodosFromTool(part)?.let { latest = it }
         }
     }
     return latest
@@ -6205,7 +6206,7 @@ private fun parseMessages(
             }
 
             "tool" -> {
-                if (message.todoToolName() == "todo") return@forEachIndexed
+                if (isTodoToolName(message.todoToolName())) return@forEachIndexed
                 val name = message.string("name").safeToolLabel("Tool")
                 add(
                     ToolActivity(

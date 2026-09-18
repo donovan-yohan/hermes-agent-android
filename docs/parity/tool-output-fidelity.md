@@ -30,7 +30,32 @@ Desktop authority is `NousResearch/hermes-agent` at
 | `apps/desktop/src/lib/ansi.ts` + `ansi.test.ts` | The ANSI rule set and its fixtures |
 | `apps/desktop/src/components/chat/terminal-output.tsx:14,23,45-58` | Tail only when already near the bottom |
 | `apps/desktop/src/styles.css:196-202,222-227`, `:root.dark:528-532` | The named colour set the ANSI ladder derives from |
+| `apps/desktop/src/lib/todos.ts:21-23` | One predicate for the task tool's two wire spellings: `todo_list` and the legacy `todo` (#284) |
 | `apps/desktop/src/i18n/en.ts:3182-3185` | The status glyph vocabulary: Running / Error / Recovered / Done |
+
+## The task tool's two wire spellings
+
+Matched behaviour, not a divergence. The pin dispatches the task tool as
+`todo_list` and keeps `todo` only as a legacy alias
+(`_LEGACY_TOOL_ALIASES`, `model_tools.py:611-614` @
+`d177b119e9c56c9ddc0b7379ffce52341ec06584`), so one tool arrives under two
+names. Desktop answers that with one predicate
+(`apps/desktop/src/lib/todos.ts:21-23` @ the same SHA) and one title string
+(`apps/desktop/src/i18n/en.ts:4368` @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
+
+Android resolves both spellings through `isTodoToolName` at every comparison
+seam, and the display-table lookup key resolves both to the `todo` entry
+`TOOL_META` carries (`fallback-model/index.ts:212` @ the same SHA), so both
+spellings paint and speak one row — same glyph, same count noun, same title.
+`ToolNamesTest`, `ComposerTodoParserTest`, `GatewaySessionRepositoryTest`,
+`ToolViewTest`, `ToolRowFidelityTest` and `ToolNameAliasesParityFixtureTest`
+cover both spellings.
+
+A row whose label is not the tool's own fallback — a label a gateway wrote for
+it, or any other tool's label — keeps the pre-existing underscore/case
+transform. The legacy row's title moves from the raw-label fallback to
+Desktop's `Updated todos`, which is the copy change this repair deliberately
+makes.
 
 ## ToolView field map
 
@@ -304,7 +329,7 @@ terminal emulation, and this slice does not emulate a terminal.
 | The ANSI rule set matches Desktop's, case for case | `AnsiTest` — every case in `lib/ansi.test.ts` ported, plus the background-selector, device-control-string and OSC-abort cases upstream has no fixtures for |
 | The parser is linear, not merely terminating | `AnsiTest.merging a long run stays linear rather than quadratic` — doubling a 1 MB same-style payload must not more than triple the time |
 | The parser is total and bounded against hostile bytes | `AnsiTest`: truncated escape, unterminated CSI, unterminated OSC, a 15-digit repeat count, a 200,000-character parameter run, lone surrogates, 1 MB of adversarial bytes under 5 s, 500,000 bare escapes, and a segment cap that drops no characters |
-| `ToolView` matches `buildToolView` field for field | `ToolViewTest` — streams, prompt line, exit code, the `TOOL_META` table entry for entry, the prefix rule, status mapping, count nouns and pluralisation, search-hit extraction and the six-hit cap, and every `toolCopyPayload` branch |
+| `ToolView` matches `buildToolView` field for field | `ToolViewTest` — streams, prompt line, exit code, the `TOOL_META` table entry for entry, the prefix rule, status mapping, count nouns and pluralisation, search-hit extraction and the six-hit cap, and every `toolCopyPayload` branch. The task tool's two wire spellings resolve to the one `todo` table entry (`fallback-model/index.ts:212` @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`), pinned by `ToolViewTest` and `ToolNamesTest` |
 | The display clamp truncates and Copy does not | `ToolViewTest` (character cap, line cap, message) and `ToolRowFidelityTest` (clipboard carries the tail the screen dropped) |
 | ANSI reaches the screen as colour, not as `[31m` | `ToolRowFidelityTest` |
 | stdout and stderr are two labelled sections, and a lone stdout has no label | `ToolRowFidelityTest` |
