@@ -41,8 +41,10 @@ const val CLARIFY_SINGLE_QUESTION_ID: String = ""
  * `approval`, `sudo`, `secret`, `vault.code`, `vault.save_login`,
  * `vault.unlock_prompt` — and the mapping lives in one place
  * (`GatewaySessionRepository.pendingInputKind`). Methods with no kind here are
- * desktop surfaces this app does not have, and are left to the backend's own
- * timeout rather than answered with an invented result.
+ * desktop surfaces this app does not have: they get no card, and exactly one
+ * `-32601` reply so the backend settles its wait instead of blocking out its
+ * own deadline (`GatewaySessionRepository.adoptOrRefuseServerRequest`). That is
+ * a refusal, never an invented result.
  *
  * Never persisted and never serialized: a notification action intent carries
  * the *fields* of a [PendingInputKey] and rebuilds the kind from the constant

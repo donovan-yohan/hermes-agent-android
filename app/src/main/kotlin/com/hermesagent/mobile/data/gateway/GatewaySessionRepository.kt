@@ -1157,11 +1157,17 @@ internal class LiveGatewaySessionRepository(
                         // show or answer.
                         launch {
                             next.serverRequests.collect { request ->
-                                synchronized(stateLock) {
+                                val unhandled = synchronized(stateLock) {
                                     if (reset.generation == connectionGeneration && clientFlow.value === next) {
-                                        applyServerRequest(request)
-                                    }
+                                        adoptOrRefuseServerRequest(
+                                            runtimeId = request.runtimeSessionId,
+                                            requestId = request.id,
+                                            method = request.method,
+                                            params = request.params,
+                                        )
+                                    } else null
                                 }
+                                if (unhandled != null) refuseServerRequest(next, unhandled)
                             }
                         }
                     }
@@ -4500,25 +4506,80 @@ internal class LiveGatewaySessionRepository(
     }
 
     /**
-     * One backend question, live off the socket.
+     * One live request, and the one thing this client owes a method it has no
+     * handler for: an answer saying so.
      *
-     * The wire carries the doubt the event path used to carry in its name:
-     * `session_id` is what says which session is parked, and both the session
-     * and its durable id must already be known here. A question for a session
-     * this app has never bound cannot be shown, and the resume that binds it
-     * re-delivers every unanswered request through `open_requests` — which is
-     * exactly why the backend has that door.
+     * Two different misses used to look alike and are not. A method outside
+     * [PendingInputKind] is a surface a phone does not have — Desktop's own
+     * bridges, `terminal.read` and friends — and the backend is waiting on a
+     * verdict it will otherwise only get from its own deadline. Every other
+     * client answers exactly one `-32601` for it, and the backend settles its
+     * wait at once instead of parking the turn out
+     * (`apps/shared/src/json-rpc-channel.ts:388-389` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`, whose
+     * `server_requests.send` returns the same `None` an error response
+     * produces, `tui_gateway/server_requests.py:201-219`).
+     *
+     * A session with no durable binding yet is *not* that. Its question is
+     * answerable and this client simply has not bound it: the question is
+     * re-delivered through `open_requests` by the resume that binds it
+     * (`tui_gateway/server_requests.py:15-18`), and refusing it here would
+     * discard a prompt that was about to have a card. So that case stays what
+     * it was — adopted by the resume, or nothing.
+     *
+     * Returns the request to refuse, or null when this client took it.
      */
-    private fun applyServerRequest(request: GatewayServerRequest): Boolean {
-        val runtimeId = request.runtimeSessionId ?: return false
-        val durableId = identities.durableFor(runtimeId) ?: return false
-        return adoptServerRequest(
+    private fun adoptOrRefuseServerRequest(
+        runtimeId: String?,
+        requestId: String,
+        method: String,
+        params: JsonObject,
+    ): GatewayServerRequest? {
+        val runtime = runtimeId?.takeIf(String::isNotBlank) ?: return null
+        val durableId = identities.durableFor(runtime) ?: return null
+        val adopted = adoptServerRequest(
             durableId = durableId,
-            runtimeId = runtimeId,
-            requestId = request.id,
-            method = request.method,
-            params = request.params,
+            runtimeId = runtime,
+            requestId = requestId,
+            method = method,
+            params = params,
         )
+        if (adopted) return null
+        // Only an unknown family reaches here: every kind [PendingInputKind]
+        // does have is adopted above, and the parsers for them either accept
+        // the request or (for a malformed one) leave it to the backend's own
+        // timeout rather than answer it with a verdict this client cannot give.
+        return if (pendingInputKind(method) == null) {
+            GatewayServerRequest(id = requestId, method = method, runtimeSessionId = runtime, params = params)
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Answer one question this client has no handler for, so the backend stops
+     * waiting on it.
+     *
+     * Fenced the same way every other answer is: the request's own id rides
+     * back on the socket it arrived on, and only while that socket is still
+     * the current one. Nothing is parked, so nothing here reads the pending
+     * map — there is no card to withdraw and no status to move.
+     *
+     * A failure to send is swallowed: the backend owns its own timeout, and
+     * there is no surface that could act on "the refusal did not go out".
+     */
+    private suspend fun refuseServerRequest(client: GatewayRpcClient, request: GatewayServerRequest) {
+        val responder = client as? GatewayServerRequestResponder ?: return
+        synchronized(stateLock) {
+            if (clientFlow.value !== client) return
+        }
+        runCatching {
+            responder.failServerRequest(
+                request.id,
+                JSON_RPC_METHOD_NOT_FOUND,
+                "no handler for server request: ${request.method}",
+            )
+        }
     }
 
     /**

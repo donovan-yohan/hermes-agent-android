@@ -32,6 +32,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -56,6 +57,16 @@ class GatewayConnectionManagerTest {
         assertEquals(43117, transport.forward.remotePort)
         assertEquals("08090a0b0c0d0e0f", verifier.expectedOwnerNonce)
         assertEquals(1, rpc.calls.count { it == "session.list" })
+        assertEquals(
+            "the advertisement is the readiness round trip's successor on the same socket",
+            listOf("session.list", "client.capabilities"),
+            rpc.calls,
+        )
+        assertEquals(
+            "explicitly true: the backend withholds interactive prompts without it",
+            "true",
+            rpc.callParams("client.capabilities").getValue("server_requests").jsonPrimitive.content,
+        )
         assertTrue(verifier.tokenCopy.any { it.toInt() != 0 })
         val remoteCommands = transport.commands.joinToString("\n")
         assertTrue(
@@ -322,6 +333,76 @@ class GatewayConnectionManagerTest {
         manager.disconnect()
     }
 
+    /**
+     * A reconnect is a new transport on the backend's side, which forgot the
+     * previous advertisement with the socket
+     * (`tui_gateway/server_requests.py:97-115` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`), so the second dial has to
+     * say it again — and the first dial's advertisement cannot stand in.
+     */
+    @Test
+    fun `every dial advertises again, because the backend forgets with the socket`() = runTest {
+        val legs = listOf(ReadinessRpc(), ReadinessRpc())
+
+        legs.forEachIndexed { index, rpc ->
+            val transport = LifecycleTransport()
+            val connection = manager(transport, RecordingVerifier(), rpc, managerScope = this)
+            assertTrue(
+                "dial ${index + 1} must connect, got ${connection.state.value.status}",
+                connection.connect(profile(), SshCredential.none()) is GatewayConnectResult.Connected,
+            )
+
+            assertEquals(
+                "dial ${index + 1} advertises on its own socket, exactly once",
+                listOf("session.list", "client.capabilities"),
+                rpc.calls,
+            )
+            assertEquals("exactly once per connection", 1, rpc.calls.count { it == CLIENT_CAPABILITIES_METHOD })
+            connection.disconnect()
+            runCurrent()
+        }
+    }
+
+    /**
+     * Fail closed. A backend that refuses the advertisement for any reason
+     * other than not knowing the method is a backend this app did not reach:
+     * the connect reports that rather than publishing a connection whose
+     * prompts would silently vanish.
+     */
+    @Test
+    fun `an advertisement refused for any other reason fails the connect`() = runTest {
+        val transport = LifecycleTransport()
+        val rpc = ReadinessRpc()
+        rpc.failWith = "client.capabilities" to GatewayRpcError(401, "unauthorized")
+        val manager = manager(transport, RecordingVerifier(), rpc)
+
+        val result = manager.connect(profile(), SshCredential.none())
+
+        assertTrue("expected Failed, got $result", result is GatewayConnectResult.Failed)
+        assertNull("nothing was published over a leg that refused the advertisement", manager.client.value)
+        assertTrue("and the leg was closed", rpc.rpcClosed)
+    }
+
+    /**
+     * A backend older than the method stays perfectly usable — it parks
+     * questions without any advertisement — so `-32601` must not fail the
+     * connect.
+     */
+    @Test
+    fun `a backend without the method still connects`() = runTest {
+        val transport = LifecycleTransport()
+        val rpc = ReadinessRpc()
+        rpc.failWith = "client.capabilities" to GatewayRpcError(-32601, "unknown method: client.capabilities")
+        val manager = manager(transport, RecordingVerifier(), rpc)
+
+        val result = manager.connect(profile(), SshCredential.none())
+
+        assertTrue("expected Connected, got $result", result is GatewayConnectResult.Connected)
+        assertEquals(listOf("session.list", "client.capabilities"), rpc.calls)
+        assertEquals(GatewayConnectionStatus.Connected, manager.state.value.status)
+        manager.disconnect()
+    }
+
     private fun kotlinx.coroutines.test.TestScope.manager(
         transport: LifecycleTransport,
         verifier: RecordingVerifier,
@@ -376,12 +457,22 @@ class GatewayConnectionManagerTest {
         override val closed = closure
         val closeSubscribers: Int get() = closure.subscriptionCount.value
         val calls = mutableListOf<String>()
+        /** Every call's params, so an advertisement can be read back verbatim. */
+        val paramsByMethod = mutableMapOf<String, JsonObject>()
+        /** When set, the named method answers with this instead of a result. */
+        var failWith: Pair<String, Throwable>? = null
         var rpcClosed = false
         var onClose: (() -> Unit)? = null
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += method
+            paramsByMethod[method] = params
+            failWith?.takeIf { it.first == method }?.let { throw it.second }
             return Json.parseToJsonElement("""{"sessions":[]}""")
+        }
+
+        fun callParams(method: String): JsonObject = requireNotNull(paramsByMethod[method]) {
+            "no call was made to $method"
         }
 
         override fun close() {

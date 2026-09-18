@@ -23,6 +23,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,6 +42,102 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingInputTest {
+    /**
+     * A method this client has no handler for gets exactly one refusal.
+     *
+     * Without it the backend waits out its own deadline — 300s for clarify —
+     * for a question no phone surface could ever answer. Desktop's own
+     * bridges (`terminal.read`, `preview.read`, `window.read`, `tour`) are the
+     * real population here: they are declared server requests this app has no
+     * card for, so a turn that needs one must fail fast rather than park.
+     */
+    @Test
+    fun `a request method with no handler is refused once, and parks nothing`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.ask("srq-bridge", "terminal.read", """{"range":"all"}""")
+        advanceUntilIdle()
+
+        val refusal = env.rpc.refused.single()
+        assertEquals("srq-bridge", refusal.id)
+        assertEquals(JSON_RPC_METHOD_NOT_FOUND, refusal.code)
+        assertTrue(
+            "the message names the method and claims no more",
+            refusal.message.contains("terminal.read"),
+        )
+        assertTrue("nothing is parked for a method this client cannot show", env.repository.pendingInputs.value.isEmpty())
+        assertTrue("and no answer frame was invented", env.rpc.answered.isEmpty())
+        assertEquals(
+            "a refused question is not a reason to park the session",
+            SessionStatus.Idle,
+            env.cache.session("durable-a")?.status,
+        )
+    }
+
+    /**
+     * The refusal is not a catch-all for every request this client drops.
+     *
+     * A question for a session that is not bound yet is still answerable — the
+     * resume that binds it re-delivers it through `open_requests` — so refusing
+     * it would throw away a prompt that was about to have a card. Only the
+     * unknown method is refused.
+     */
+    @Test
+    fun `a question for an unbound session is left for its resume, not refused`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.ask("srq-elsewhere", "clarify", CLARIFY_SINGLE, runtimeId = "runtime-not-open")
+        advanceUntilIdle()
+
+        assertTrue("an unbound session's question is not this connection's to refuse", env.rpc.refused.isEmpty())
+        assertTrue(env.repository.pendingInputs.value.isEmpty())
+    }
+
+    /**
+     * A request that arrives only after the advertisement.
+     *
+     * The fake Gateway here withholds a question from a connection that never
+     * advertised, exactly as a current backend does
+     * (`tui_gateway/server_requests.py:117-122` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`). Both halves matter and are
+     * asserted: asked before the advertisement the card never appears, and
+     * asked after it — through the same `advertiseServerRequests()` the
+     * connection route uses — it does. Drop the advertisement from production
+     * and the second half fails.
+     */
+    @Test
+    fun `a question is withheld until the connection advertises, then delivered`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler), requireAdvertisement = true)
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        assertFalse("an unadvertised connection never said it could answer", env.rpc.advertised)
+        env.rpc.ask("srq-too-early", "clarify", CLARIFY_SINGLE)
+        advanceUntilIdle()
+
+        assertTrue(
+            "a current backend writes no frame for a client that never advertised",
+            env.repository.pendingInputs.value.isEmpty(),
+        )
+
+        // The one call the connection makes on every dial, before any session
+        // is activated.
+        env.rpc.advertiseServerRequests()
+        assertTrue("the connection advertised before any session was activated", env.rpc.advertised)
+        env.rpc.ask("srq-after", "clarify", CLARIFY_SINGLE)
+        advanceUntilIdle()
+
+        assertEquals("the parked question is the delivered one", "srq-after", singlePending(env).key.requestId)
+        assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
+    }
+
     @Test
     fun `a clarify request parks its session with parsed choices`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
@@ -554,11 +651,19 @@ class PendingInputTest {
     private fun environment(
         scopeDispatcher: kotlinx.coroutines.CoroutineDispatcher,
         sessions: List<String> = listOf("durable-a"),
+        /**
+         * Make this fake Gateway behave like a current one, which hands a
+         * question to a connection only once that connection has advertised
+         * (`tui_gateway/server_requests.py:117-122` @
+         * `d177b119e9c56c9ddc0b7379ffce52341ec06584`). Off by default so every
+         * other test in this file can ask without advertising first.
+         */
+        requireAdvertisement: Boolean = false,
     ): Environment {
         val scope = CoroutineScope(scopeDispatcher + Job())
         val cache = SessionCache()
         cache.upsertSessions(sessions.map(::summary))
-        val rpc = FakeRpc()
+        val rpc = FakeRpc(requireAdvertisement)
         val repository = LiveGatewaySessionRepository(
             cache,
             MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
@@ -580,13 +685,20 @@ class PendingInputTest {
     /** One response frame this client handed the wire. */
     private class AnswerFrame(val id: String, val result: JsonObject)
 
-    private class FakeRpc : GatewayRpcClient, GatewayServerRequestResponder {
+    /** One error response frame, for a request method this client has no handler for. */
+    private class RefusalFrame(val id: String, val code: Int, val message: String)
+
+    private class FakeRpc(
+        /** When set, a question is withheld until this connection advertises. */
+        private val requireAdvertisement: Boolean = false,
+    ) : GatewayRpcClient, GatewayServerRequestResponder {
         private val eventFlow = MutableSharedFlow<GatewayEvent>(replay = 64, extraBufferCapacity = 64)
         private val requestFlow = MutableSharedFlow<GatewayServerRequest>(replay = 64, extraBufferCapacity = 64)
         override val events = eventFlow
         override val serverRequests = requestFlow
         val calls = mutableListOf<RpcCall>()
         val answered = mutableListOf<AnswerFrame>()
+        val refused = mutableListOf<RefusalFrame>()
 
         /** What `clarify.lock` answers with; the last lock empties it. */
         var lockRemaining: List<String>? = null
@@ -598,12 +710,17 @@ class PendingInputTest {
         var blockSend = false
         private var sendGate: CompletableDeferred<Unit>? = null
 
+        /** Whether this connection has said it answers server→client requests. */
+        var advertised = false
+            private set
+
         fun releaseSend() {
             sendGate?.complete(Unit)
         }
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
+            if (method == CLIENT_CAPABILITIES_METHOD) advertised = true
             return when (method) {
                 "session.list" -> json("""{"sessions":[]}""")
                 "session.resume" -> json(resumeOverride ?: resumeBody(params.string("session_id").orEmpty()))
@@ -631,6 +748,11 @@ class PendingInputTest {
             answered += AnswerFrame(id, result)
         }
 
+        override suspend fun failServerRequest(id: String, code: Int, message: String) {
+            sendFailure?.let { throw it }
+            refused += RefusalFrame(id, code, message)
+        }
+
         /** Overrides the canned resume snapshot for one test. */
         var resumeOverride: String? = null
 
@@ -650,6 +772,11 @@ class PendingInputTest {
 
         /** One server→client request, exactly as the socket hands it over. */
         fun ask(id: String, method: String, body: String = "{}", runtimeId: String = "runtime-a") {
+            // A current backend does not write the frame at all for a client
+            // that never advertised, so a fake that still delivered one would
+            // hand this suite a prompt the real Gateway withholds — and every
+            // regression test below would pass against the bug.
+            if (requireAdvertisement && !advertised) return
             val params = buildJsonObject {
                 put("session_id", JsonPrimitive(runtimeId))
                 (json(body) as JsonObject).forEach { (key, value) -> put(key, value) }
