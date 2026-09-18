@@ -11,8 +11,11 @@ import com.hermesagent.mobile.plugins.kanban.KanbanPlugin
  * `437116f9497c80d242ce034ff7f5d81dc277a337`).
  */
 object BundledPlugins {
-    val ALL: List<HermesPlugin> = listOf(
-        BotsPlugin(),
+    val ALL: List<HermesPlugin> = create()
+
+    /** App-owned dependencies enter through the Bots constructor, not a global host. */
+    fun create(bots: BotsPlugin = BotsPlugin()): List<HermesPlugin> = listOf(
+        bots,
         com.hermesagent.mobile.plugins.groups.GroupsPlugin(),
         KanbanPlugin(),
     )

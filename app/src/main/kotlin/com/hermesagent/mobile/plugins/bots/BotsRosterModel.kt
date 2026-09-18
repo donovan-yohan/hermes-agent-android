@@ -58,6 +58,8 @@ data class BotRosterRow(
      */
     val workerSession: BotSessionPreview? = null,
     val hasAvatar: Boolean = false,
+    /** In-memory permission from this accepted roster, not a reusable saved-row credential. */
+    val avatarRef: com.hermesagent.mobile.data.profiles.ProfileAvatarRef? = null,
 ) {
     /** Source-qualified identity — the list key and the meta key. */
     val rosterKey: String get() = botRosterKey(this)

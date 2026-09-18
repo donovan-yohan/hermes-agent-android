@@ -46,6 +46,7 @@ class BotsPlugin(
      * `ctx.host` is the live door.
      */
     private val hostOverride: PluginHost? = null,
+    private val avatarRoster: com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator? = null,
 ) : HermesPlugin {
 
     override val id: String = "bots"
@@ -57,9 +58,13 @@ class BotsPlugin(
         val pluginScope = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         ctx.onDispose { pluginScope.cancel() }
         val host = hostOverride ?: ctx.host
+        val avatarProducer = avatarRoster?.open(
+            com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator.Kind.Bots, host,
+        )
+        ctx.onDispose { avatarProducer?.close() }
 
         val viewModel = BotsViewModel(
-            repository = BotsPluginRepository(host),
+            repository = BotsPluginRepository(host, avatarProducer),
             scope = pluginScope,
             sections = sections,
             metaByKey = metaByKey,
@@ -73,6 +78,7 @@ class BotsPlugin(
             // a banner rather than a blank screen — belongs to a machine this
             // device has left, which a transport redial never means.
             endpointGeneration = host.endpointGeneration,
+            connectionToken = avatarRoster?.let { host.connectionToken },
         )
         val actions = BotsActions(
             onRefresh = viewModel::refresh,

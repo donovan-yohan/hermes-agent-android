@@ -53,6 +53,7 @@ enum class GatewayProfileConnectionState {
 internal class GatewayProfileRepository(
     private val rpc: () -> GatewayRpcClient?,
     private val cache: ProfileRosterCache = ProfileRosterCache(),
+    private val avatarProducer: AvatarRosterCoordinator.Producer? = null,
 ) : ProfileRepository {
 
     private val refreshMutex = Mutex()
@@ -67,6 +68,7 @@ internal class GatewayProfileRepository(
      * a scope they cannot leave.
      */
     override fun connectionChanged(state: GatewayProfileConnectionState) {
+        avatarProducer?.invalidate()
         when (state) {
             GatewayProfileConnectionState.Gone -> cache.clear()
             GatewayProfileConnectionState.Changed -> cache.invalidate()
@@ -74,6 +76,17 @@ internal class GatewayProfileRepository(
     }
 
     override suspend fun refreshProfiles(): Boolean = refreshMutex.withLock {
+        if (avatarProducer != null) {
+            val epoch = cache.currentEpoch()
+            val read = avatarProducer.begin() ?: return false
+            val response = read.request(includeSessions = false)
+            val result = (response as? com.hermesagent.mobile.plugins.PluginHostResult.Success)?.result ?: return false
+            if ((result as? JsonObject)?.get("profiles") !is JsonArray) return false
+            return cache.publishAccepted(epoch) {
+                val refs = avatarProducer.accept(read, result) ?: return@publishAccepted null
+                parseProfileList(result, refs)
+            }
+        }
         val client = rpc() ?: return false
         val epoch = cache.currentEpoch()
         val result = try {
@@ -94,7 +107,10 @@ internal class GatewayProfileRepository(
  * A row without a usable `name` is dropped rather than invented; a malformed
  * envelope answers null so the caller keeps its last good roster.
  */
-internal fun parseProfileList(result: JsonElement): List<HermesProfile>? {
+internal fun parseProfileList(
+    result: JsonElement,
+    avatars: Map<String, ProfileAvatarRef> = emptyMap(),
+): List<HermesProfile>? {
     val root = result as? JsonObject ?: return null
     val rows = root["profiles"] as? JsonArray ?: return null
     return rows.mapNotNull { element ->
@@ -112,6 +128,7 @@ internal fun parseProfileList(result: JsonElement): List<HermesProfile>? {
             hasEnv = row.flag("has_env"),
             uiMetaColor = (row["ui_meta"] as? JsonObject)?.text("color"),
             hasAvatar = row.flag("has_avatar"),
+            avatarRef = avatarWireName(row)?.let(avatars::get),
         )
     }
 }

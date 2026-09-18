@@ -54,6 +54,8 @@ data class HermesProfile(
      */
     val uiMetaColor: String? = null,
     val hasAvatar: Boolean = false,
+    /** Process-local accepted-row permission; never persisted or reconstructed from a name. */
+    val avatarRef: ProfileAvatarRef? = null,
 ) {
     val key: String get() = normalizeProfileKey(name)
 

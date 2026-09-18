@@ -73,6 +73,21 @@
         }
       }
     },
+    "profile-avatars": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "profile-avatars-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+      "desktop_selector": "button:has(img[src^=\"data:image/png;base64,\"]) filtered hasText Alpha",
+      "desktop_selector_note": "Observed executed CSS locator from the pinned BotFace E2E sandbox: page.locator('button:has(img[src^=\"data:image/png;base64,\"])').filter({ hasText: 'Alpha' }) matched exactly one visible synthetic Alpha row. The executed assertions also proved .profile-glyph and button:has(img[src*=\"avatar.png\"]) match zero. This is Bots-only evidence, not profile-rail ProfileGlyph parity; fallback-only states do not use this locator.",
+      "states": {
+        "profile-ready": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-fallback": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-loading": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-unavailable": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "bots-ready": { "interaction": [], "post_interaction_accessibility": "Bots" },
+        "bots-fallback": { "interaction": [], "post_interaction_accessibility": "Bots" }
+      }
+    },
     "bot-routines": {
       "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
       "fixture_id": "bot-routines-synthetic-v1",
