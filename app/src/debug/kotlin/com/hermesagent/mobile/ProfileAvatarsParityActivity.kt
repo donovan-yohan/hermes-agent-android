@@ -201,7 +201,8 @@ internal class AvatarFixtureRpc(private val state: ProfileAvatarsFixtureState) :
     }
 
     private fun asset() = buildJsonObject {
-        val bytes = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        // Same synthetic blue PNG as the pinned Desktop BotFace packet; visible in both themes.
+        val bytes = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR4nO3NQQEAAATAQCTUvwwl+N0C7DJ64rN6vQMAAAAAAAAAAIDDFmtiAY8TwohVAAAAAElFTkSuQmCC")
         put("found", true)
         put("mime", "image/png")
         put("size", bytes.size)
