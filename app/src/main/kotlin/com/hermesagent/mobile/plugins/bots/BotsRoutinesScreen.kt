@@ -2,6 +2,7 @@ package com.hermesagent.mobile.plugins.bots
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,27 +38,24 @@ import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.HermesIconButton
+import com.hermesagent.mobile.ui.common.TokenSwitch
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import java.util.Locale
 
 /**
- * The bot-scoped Routines destination — one bot's scheduled jobs, read-only.
+ * The bot-scoped Routines destination — one bot's existing scheduled jobs.
  *
  * Ported from Desktop's `RoutinesPane` (`cron.tsx:1197-1336`) and its row
  * (`cron.tsx:480-598`) at `d177b119e9c56c9ddc0b7379ffce52341ec06584`, rendered
  * for a phone. Every state it draws is the state [BotsRoutinesViewModel]
  * reaches; the surface makes no claim of its own.
  *
- * **This slice is read-only, and the surface says so.** Desktop's row carries a
- * pause/resume switch and a delete control, and its header an add control; this
- * port renders each of them where Desktop has one, disabled and marked `WIP`,
- * per the app's rule that an unbuilt Desktop control stays visible behind the
- * marker chip rather than being omitted. What is *not* copied is Desktop's
- * automatic pause of legacy delegated routines on load
- * (`cron.tsx:131-166`): this slice issues no mutation, so a routine it did not
- * pause is never labelled paused — those rows say they are legacy instead, and
- * the difference is ledgered in `docs/parity/bot-routines.md`.
+ * Pause/resume and direct delete keep Desktop's row order. Creation remains
+ * marked WIP, as do unsafe/unknown rows. Desktop's automatic legacy pause on
+ * load (`cron.tsx:131-166`) is not implemented: those rows are labelled legacy,
+ * never claimed paused by an operation this app did not perform.
  *
  * **No backend prose is rendered.** The row's status line is a closed enum
  * mapped to local copy, the schedule is Desktop's own label (or the Gateway's
@@ -70,6 +70,7 @@ class BotsRoutinesActions(
      * rather than left mounted, so entering it is the trigger.
      */
     val onResume: () -> Unit = {},
+    val onAction: (RoutineTarget, RoutineAction) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -103,6 +104,10 @@ fun BotsRoutinesScreen(
             }
 
             val now = nowMillis ?: System.currentTimeMillis()
+            if (state.actionFailed) {
+                StaleNotice(BotsRoutinesCopy.FAILED_UPDATE)
+                Spacer(Modifier.height(8.dp))
+            }
             when {
                 state.phase == BotsRoutinesPhase.Loading -> RoutinesMessage(
                     title = BotsRoutinesCopy.TITLE,
@@ -144,7 +149,7 @@ fun BotsRoutinesScreen(
                     icon = HermesIcon.Watch,
                 )
 
-                else -> RoutineList(state = state, nowMillis = now)
+                else -> RoutineList(state = state, nowMillis = now, actions = actions)
             }
         }
     }
@@ -188,10 +193,10 @@ private fun RoutinesOwnerHeader(state: BotsRoutinesUiState) {
 }
 
 @Composable
-private fun RoutineList(state: BotsRoutinesUiState, nowMillis: Long) {
+private fun RoutineList(state: BotsRoutinesUiState, nowMillis: Long, actions: BotsRoutinesActions) {
     LazyColumn(Modifier.fillMaxSize().testTag(ROUTINES_LIST_TAG)) {
         items(state.jobs, key = { it.id }) { job ->
-            RoutineRowItem(job = job, nowMillis = nowMillis)
+            RoutineRowItem(job = job, nowMillis = nowMillis, state = state, actions = actions)
         }
     }
 }
@@ -202,8 +207,8 @@ private fun RoutineList(state: BotsRoutinesUiState, nowMillis: Long) {
  * Desktop's row is a two-line card: an active dot, the title, a switch and a
  * delete control on the first line; a calendar-led schedule pill and the
  * next-run label on the second (`cron.tsx:526-597`). This keeps that order and
- * that pairing, with the switch and delete rendered where Desktop has them and
- * disabled behind the marker chip, because this slice issues no mutation.
+ * that pairing, with a switch followed by the Trash glyph. Pending operations
+ * disable only their own row; unsupported rows retain the marker chip.
  *
  * The next-run label follows Desktop's own rule (`cron.tsx:585-589`): an active
  * job with a parsed `next_run_at` shows the relative stamp, and anything else
@@ -212,7 +217,7 @@ private fun RoutineList(state: BotsRoutinesUiState, nowMillis: Long) {
  * word for it.
  */
 @Composable
-private fun RoutineRowItem(job: RoutineRow, nowMillis: Long) {
+private fun RoutineRowItem(job: RoutineRow, nowMillis: Long, state: BotsRoutinesUiState, actions: BotsRoutinesActions) {
     val tokens = HermesTheme.tokens
     Column(
         Modifier
@@ -242,14 +247,35 @@ private fun RoutineRowItem(job: RoutineRow, nowMillis: Long) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            // Desktop's own controls, in Desktop's order, each one a control
-            // this slice cannot honour. The marker chip is what stops a dimmed
-            // switch from reading as one that is merely unavailable this second.
-            ComingSoonIconAction(
-                icon = HermesIcon.StopCircle,
-                label = if (job.active) BotsRoutinesCopy.PAUSE_CRON else BotsRoutinesCopy.RESUME_CRON,
-            )
-            ComingSoonIconAction(icon = HermesIcon.Trash, label = BotsRoutinesCopy.DELETE)
+            val target = state.target(job)
+            val enabled = state.canMutate && job.id !in state.pendingJobs && target != null
+            val toggle = if (job.active) RoutineAction.Pause else RoutineAction.Resume
+            val label = if (job.active) BotsRoutinesCopy.PAUSE_CRON else BotsRoutinesCopy.RESUME_CRON
+            if (job.legacyDelegated || job.state == RoutineRunState.Unknown) {
+                ComingSoonIconAction(icon = HermesIcon.StopCircle, label = label)
+                ComingSoonIconAction(icon = HermesIcon.Trash, label = BotsRoutinesCopy.DELETE)
+            } else {
+                Box(
+                    Modifier.size(HermesTheme.spacing.touchTarget)
+                        .semantics { contentDescription = label }
+                        .toggleable(
+                            value = job.active,
+                            enabled = enabled && job.permits(toggle),
+                            role = Role.Switch,
+                            onValueChange = { target?.let { actions.onAction(it, toggle) } },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TokenSwitch(on = job.active, enabled = enabled && job.permits(toggle))
+                }
+                // Desktop's row deletes immediately; there is no confirmation dialog.
+                HermesIconButton(
+                    icon = HermesIcon.Trash,
+                    contentDescription = BotsRoutinesCopy.DELETE,
+                    enabled = enabled && job.permits(RoutineAction.Remove),
+                    onClick = { target?.let { actions.onAction(it, RoutineAction.Remove) } },
+                )
+            }
         }
 
         Spacer(Modifier.height(6.dp))
@@ -287,9 +313,8 @@ private fun RoutineRowItem(job: RoutineRow, nowMillis: Long) {
         if (job.legacyDelegated) {
             Spacer(Modifier.height(6.dp))
             // Desktop pauses one of these on load and says it was paused for
-            // security (`cron.tsx:591-595`). This slice issues no mutation, so
-            // it must not claim a pause it did not perform; the sentence states
-            // what is true here instead.
+            // security (`cron.tsx:591-595`). This app does not auto-pause,
+            // so it must not claim a pause it did not perform.
             Text(
                 text = BotsRoutinesCopy.LEGACY_NOTICE,
                 style = HermesTheme.type.scaffoldMeta,

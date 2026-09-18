@@ -102,6 +102,26 @@ class BotsRoutinesRepositoryTest {
         )
     }
 
+    @Test
+    fun `disabled terminal and unknown wire records preserve mutation authority through repository load`() = runTest {
+        for ((wire, state) in mapOf(
+            "completed" to RoutineRunState.Completed,
+            "error" to RoutineRunState.Failed,
+            "future-state" to RoutineRunState.Unknown,
+        )) {
+            val (result, host) = load(
+                """{"success":true,"scoped":"ops","jobs":[{"job_id":"retired","enabled":false,"state":"$wire","next_run_at":null}]}""",
+            )
+            val row = (result as BotsRoutinesLoad.Loaded).jobs.single()
+            assertEquals(state, row.state)
+            assertFalse(row.active)
+            assertFalse(row.permits(RoutineAction.Pause))
+            assertFalse(row.permits(RoutineAction.Resume))
+            assertEquals(state != RoutineRunState.Unknown, row.permits(RoutineAction.Remove))
+            assertEquals(JsonPrimitive(true), host.calls.single().second["include_disabled"])
+        }
+    }
+
     // ── parsing ───────────────────────────────────────────────────────────────
 
     @Test

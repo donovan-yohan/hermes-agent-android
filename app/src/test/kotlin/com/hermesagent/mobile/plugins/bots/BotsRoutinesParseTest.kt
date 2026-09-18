@@ -92,14 +92,19 @@ class BotsRoutinesParseTest {
     }
 
     @Test
-    fun `disabled beats every other state word`() {
-        // `enabled` is the authority the Gateway itself derives `state` from,
-        // so a disabled job is paused whatever else the row says — and a
-        // terminal job that was disabled still reads as paused here, which is
-        // what the row's own toggle did.
-        for (wire in listOf("scheduled", "running", "paused", "completed", "error", "", "weird")) {
+    fun `disabled preserves completed and unknown authority instead of making them resumable`() {
+        val cases = mapOf(
+            "scheduled" to RoutineRunState.Paused,
+            "running" to RoutineRunState.Paused,
+            "paused" to RoutineRunState.Paused,
+            "error" to RoutineRunState.Failed,
+            "" to RoutineRunState.Paused,
+            "completed" to RoutineRunState.Completed,
+            "weird" to RoutineRunState.Unknown,
+        )
+        for ((wire, expected) in cases) {
             val row = one("""{"job_id":"j","enabled":false,"state":"$wire"}""")
-            assertEquals(wire, RoutineRunState.Paused, row.state)
+            assertEquals(wire, expected, row.state)
             assertFalse(wire, row.active)
         }
     }

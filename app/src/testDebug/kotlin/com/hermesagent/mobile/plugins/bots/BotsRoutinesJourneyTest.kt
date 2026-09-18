@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -46,6 +47,7 @@ import com.hermesagent.mobile.data.gateway.GatewayEvent
 import com.hermesagent.mobile.data.gateway.GatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayRpcError
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -86,14 +88,20 @@ class BotsRoutinesJourneyTest {
 
     private val clients = MutableStateFlow<GatewayRpcClient?>(null)
     private var pluginScope: CoroutineScope? = null
+    private val previousLocale = java.util.Locale.getDefault()
+    private val previousZone = java.util.TimeZone.getDefault()
 
     @Before
     fun setUp() {
+        java.util.Locale.setDefault(java.util.Locale.US)
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
         pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
 
     @After
     fun tearDown() {
+        java.util.Locale.setDefault(previousLocale)
+        java.util.TimeZone.setDefault(previousZone)
         pluginScope?.cancel()
     }
 
@@ -106,7 +114,7 @@ class BotsRoutinesJourneyTest {
      * what a plain client does, and what every Routines read would otherwise hit.
      */
     private class FakeRpc(
-        private val answer: (String, JsonObject) -> JsonElement,
+        private val answer: suspend (String, JsonObject) -> JsonElement,
     ) : EndpointDispatchingGatewayRpcClient {
         override val events: Flow<GatewayEvent> = emptyFlow()
 
@@ -117,7 +125,10 @@ class BotsRoutinesJourneyTest {
             method: String,
             params: JsonObject,
             dispatch: (() -> Boolean) -> Boolean,
-        ): JsonElement = answer(method, params)
+        ): JsonElement {
+            check(dispatch { true })
+            return answer(method, params)
+        }
 
         override fun close() {}
     }
@@ -426,21 +437,130 @@ class BotsRoutinesJourneyTest {
     // ── what this slice does not do ───────────────────────────────────────────
 
     @Test
-    fun `the deferred Desktop controls are visible, disabled and marked`() {
+    fun `creation stays WIP and an unscoped list cannot authorize existing actions`() {
         clients.value = rpc(listed("[bot:ops] Morning"))
         launchRoutes()
         openRoutinesFor("Ops")
 
         awaitText("Morning")
-        // Desktop's header add, and its row's pause and delete, all ship here
-        // as marked placeholders rather than absent controls or live ones that
-        // would issue a mutation this slice does not have.
-        listOf(BotsRoutinesCopy.NEW_CRON, BotsRoutinesCopy.PAUSE_CRON, BotsRoutinesCopy.DELETE)
-            .forEach { label ->
-                compose.onNodeWithContentDescription("$label. $WIP_SPOKEN")
-                    .assertIsDisplayed()
-                    .assertIsNotEnabled()
+        compose.onNodeWithContentDescription("${BotsRoutinesCopy.NEW_CRON}. $WIP_SPOKEN")
+            .assertIsDisplayed().assertIsNotEnabled()
+        listOf(BotsRoutinesCopy.PAUSE_CRON, BotsRoutinesCopy.DELETE).forEach { label ->
+            compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsNotEnabled()
+        }
+    }
+
+    @Test
+    fun `real switch shows pending rollback and safe failure then resumes and deletes without confirmation`() {
+        val gate = CompletableDeferred<JsonElement>()
+        val mutations = mutableListOf<JsonObject>()
+        var active = true
+        var removed = false
+        var refuse = true
+        clients.value = FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> TWO_BOTS
+                "cron.manage" -> {
+                    when ((params["action"] as kotlinx.serialization.json.JsonPrimitive).content) {
+                        "list" -> jobs("""{"success":true,"scoped":"ops","jobs":[${if (removed) "" else """{"job_id":"j0","name":"Morning","enabled":$active,"state":"${if (active) "scheduled" else "paused"}"}"""}]}""")
+                        else -> {
+                            mutations += params
+                            if (refuse) gate.await() else {
+                                when ((params["action"] as kotlinx.serialization.json.JsonPrimitive).content) {
+                                    "pause" -> active = false
+                                    "resume" -> active = true
+                                    "remove" -> removed = true
+                                }
+                                jobs("""{"success":true}""")
+                            }
+                        }
+                    }
+                }
+                else -> error("unexpected method $method")
             }
+        }
+        launchRoutes()
+        openRoutinesFor("Ops")
+        awaitText("Morning")
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.PAUSE_CRON).assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertIsNotEnabled()
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.DELETE).assertIsNotEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(1, mutations.size)
+            gate.complete(jobs("""{"success":false,"error":"private backend prose"}"""))
+        }
+        awaitText(BotsRoutinesCopy.FAILED_UPDATE)
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.PAUSE_CRON).assertIsEnabled()
+        assertTrue(!compose.onRoot().printToString().contains("private backend prose"))
+        compose.runOnIdle { refuse = false }
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.PAUSE_CRON).performClick()
+        awaitText(BotsRoutinesCopy.STATE_PAUSED)
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertIsEnabled().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.PAUSE_CRON).assertIsEnabled()
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.DELETE).performClick()
+        awaitText(BotsRoutinesCopy.EMPTY_TITLE)
+        assertEquals(listOf("pause", "pause", "resume", "remove"), mutations.map { (it["action"] as kotlinx.serialization.json.JsonPrimitive).content })
+        mutations.forEach {
+            assertEquals(kotlinx.serialization.json.JsonPrimitive("ops"), it["profile"])
+            assertEquals(kotlinx.serialization.json.JsonPrimitive("j0"), it["name"])
+        }
+        compose.onAllNodesWithText("Confirm").assertCountEquals(0)
+    }
+
+    @Test
+    fun `disabled completed row renders completed refuses toggle and deletes through the real route`() {
+        val writes = mutableListOf<JsonObject>()
+        var removed = false
+        clients.value = FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> TWO_BOTS
+                "cron.manage" -> if ((params["action"] as kotlinx.serialization.json.JsonPrimitive).content == "list") {
+                    jobs(if (removed) """{"success":true,"scoped":"ops","jobs":[]}""" else
+                        """{"success":true,"scoped":"ops","jobs":[{"job_id":"done","name":"Finished job","enabled":false,"state":"completed"}]}""")
+                } else {
+                    writes += params
+                    removed = true
+                    jobs("""{"success":true}""")
+                }
+                else -> error("unexpected method $method")
+            }
+        }
+        launchRoutes()
+        openRoutinesFor("Ops")
+        awaitText("Finished job")
+        compose.onNodeWithText(BotsRoutinesCopy.STATE_COMPLETED).assertIsDisplayed()
+        compose.onAllNodesWithText(BotsRoutinesCopy.STATE_PAUSED).assertCountEquals(0)
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertTrue(writes.isEmpty()) }
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.DELETE).assertIsEnabled().performClick()
+        awaitText(BotsRoutinesCopy.EMPTY_TITLE)
+        assertEquals(listOf(jobs("""{"action":"remove","name":"done","profile":"ops"}""")), writes)
+    }
+
+    @Test
+    fun `disabled unknown row stays WIP and cannot dispatch any mutation`() {
+        val writes = mutableListOf<JsonObject>()
+        clients.value = FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> TWO_BOTS
+                "cron.manage" -> {
+                    if ((params["action"] as kotlinx.serialization.json.JsonPrimitive).content != "list") writes += params
+                    jobs("""{"success":true,"scoped":"ops","jobs":[{"job_id":"future","name":"Unfamiliar job","enabled":false,"state":"future-state"}]}""")
+                }
+                else -> error("unexpected method $method")
+            }
+        }
+        launchRoutes()
+        openRoutinesFor("Ops")
+        awaitText("Unfamiliar job")
+        for (label in listOf(BotsRoutinesCopy.RESUME_CRON, BotsRoutinesCopy.DELETE)) {
+            compose.onNodeWithContentDescription("$label. $WIP_SPOKEN")
+                .assertIsDisplayed().assertIsNotEnabled().performClick()
+        }
+        compose.onAllNodesWithText(BotsRoutinesCopy.STATE_PAUSED).assertCountEquals(0)
+        assertTrue(!compose.onRoot().printToString().contains("future-state"))
+        compose.runOnIdle { assertTrue(writes.isEmpty()) }
     }
 
     // ── harness ───────────────────────────────────────────────────────────────

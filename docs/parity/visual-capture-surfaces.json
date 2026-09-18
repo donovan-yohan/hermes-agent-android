@@ -70,6 +70,26 @@
           "interaction": [],
           "post_interaction_accessibility": "The list may still be there — this was a read failure, not a delete.",
           "fixture_note": "The same production surface after a refused read with nothing held: the failure card and its Retry. Desktop's own counterpart is not captured at its pin; see the populated state's note."
+        },
+        "pause-pending": {
+          "interaction": [],
+          "post_interaction_accessibility": "Resume cron",
+          "fixture_note": "Production act pauses Morning digest optimistically while the synthetic host holds its acknowledgement. Its switch and delete are disabled; unrelated rows remain actionable. No Desktop pixels claimed."
+        },
+        "action-rollback": {
+          "interaction": [],
+          "post_interaction_accessibility": "Failed to update cron job",
+          "fixture_note": "Production act receives success:false and rolls back Morning digest. The subsequent read fails, retaining the row with safe failure and stale notices. No backend prose or Desktop pixels."
+        },
+        "resumed": {
+          "interaction": [],
+          "post_interaction_accessibility": "Nightly sweep",
+          "fixture_note": "Production resume is acknowledged and reconciled; Nightly sweep is active. Fixed original fixture clock; no Desktop pixels claimed."
+        },
+        "deleted": {
+          "interaction": [],
+          "post_interaction_accessibility": "Nightly sweep",
+          "fixture_note": "Production direct row delete is acknowledged and reconciled; Morning digest is absent. Desktop has no confirmation for this row action. No Desktop pixels claimed."
         }
       }
     },
