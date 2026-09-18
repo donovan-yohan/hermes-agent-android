@@ -24,10 +24,12 @@ This proves **BotFace**, not profile-rail avatars. Desktop's separate `ProfileGl
 2. Honor the root Node/npm engine constraints. These runs used Node 24.16.0 and npm 11.17.0, installing the committed lockfile's Desktop, tests-js and root dependencies.
 3. Run `uv sync --frozen --no-dev`. The fixture also expects root `venv/bin/python`; this export used a root-local `venv -> .venv` compatibility symlink.
 4. Build with `npm run build --workspace apps/desktop`.
-5. Apply exactly one packet's `capture-only.patch` to a fresh exported fixture. The avatar patch already includes dark-mode configuration; do not stack the two patches.
+5. From the fresh export root, run `git apply --check -p0 /absolute/path/to/packet/capture-only.patch`, then `git apply -p0 /absolute/path/to/packet/capture-only.patch` for exactly one packet. The upstream-relative headers have no `a/` or `b/` prefix, so the explicit zero strip count is required. The avatar patch already includes dark-mode configuration; do not stack the two patches.
 6. Provide an isolated headless display. These runs used Xvfb with TCP disabled, verified with `xdpyinfo`.
 7. From `apps/desktop`, run `../../node_modules/.bin/playwright test e2e/bot-routines-pane-narrow.spec.ts --workers=1 --reporter=line` with that display. Logs are retained in each packet.
 
 ## Remaining acceptance
+
+The packet-local `.gitattributes` exempts only `capture-only.patch` payloads from blank-at-end-of-line/file warnings. Unified diff context encodes blank source lines as a single space, including the final context line; those bytes are retained for reproducibility. This exception does not apply to source files or other documentation. Both patches must still apply to the frozen source and reproduce the fixture SHA-256 recorded in their provenance files.
 
 The Android fixture inputs differ from these Desktop scenarios. Before a final parity verdict, align the relevant states, validate the repository capture receipts, bind Android APK/install evidence to its exact candidate and inspect both sides. Missing aligned evidence is not a missing Desktop renderer. No existing surface ledger is silently upgraded to approved by this packet.
