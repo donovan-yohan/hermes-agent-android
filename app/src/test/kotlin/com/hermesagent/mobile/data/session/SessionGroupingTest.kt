@@ -742,7 +742,7 @@ class SessionGroupingTest {
             archivedView = true,
         )
 
-        assertEquals(listOf("pinned", "row:filed-old-pinned", "row:filed-new"), rows.map(::describe))
+        assertEquals(listOf("pinned", "row:filed-old-pinned", "sessions", "row:filed-new"), rows.map(::describe))
     }
 
     /**
@@ -764,7 +764,7 @@ class SessionGroupingTest {
         )
 
         assertEquals(
-            listOf("pinned", "row:pinned-a", "row:pinned-b", "row:filed"),
+            listOf("pinned", "row:pinned-a", "row:pinned-b", "sessions", "row:filed"),
             rows.map(::describe),
         )
         assertEquals(3, rows.filterIsInstance<SessionListRow.Row>().size)
@@ -786,10 +786,13 @@ class SessionGroupingTest {
 
         val rows = buildSessionRows(sessions, now, timeZone = zone, locale = locale, archivedView = true)
 
-        assertEquals(listOf("pinned", "row:filed-pinned", "row:filed-today", "row:filed-last-week"), rows.map(::describe))
+        assertEquals(
+            listOf("pinned", "row:filed-pinned", "sessions", "row:filed-today", "row:filed-last-week"),
+            rows.map(::describe),
+        )
         assertEquals(0, rows.filterIsInstance<SessionListRow.Divider>().size)
         assertEquals(
-            listOf("pinned", "row:filed-pinned", "divider:Today", "row:filed-today", "divider:LastWeek", "row:filed-last-week"),
+            listOf("pinned", "row:filed-pinned", "sessions", "row:filed-today", "divider:last-week", "row:filed-last-week"),
             buildSessionRows(
                 sessions.map { it.copy(archived = false) },
                 now,
