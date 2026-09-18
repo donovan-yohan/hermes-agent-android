@@ -13,10 +13,16 @@ or uncatalogued or wrong-surface fixture identifiers.
 
 ```text
 ref: <lowercase 40-character commit SHA>
-surface: composer-status-stack | composer-url-chip
+surface: one key in docs/parity/visual-capture-surfaces.json
 state: one key in docs/parity/visual-capture-surfaces.json
 theme: dark | light
 ```
+
+`tool-name-aliases / todo-name-aliases` records a **source-only** Desktop half: no
+E2E fixture was identified at its pin that mounts Desktop's composer task panel
+or its tool block, so the packet names the pinned `Updated todos` title and the
+`todo` icon entry with no companion rendered Desktop pixels rather than inventing
+a same-pin comparison.
 
 No workflow job has a write permission, bot token, auto-commit step, or mutation
 of the existing `android-exact-head.yml` lane. Artifacts expire after 30 days.
