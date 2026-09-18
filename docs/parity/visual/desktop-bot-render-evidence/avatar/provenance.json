@@ -1,0 +1,32 @@
+{
+  "upstream_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+  "fixture": "apps/desktop/e2e/bot-routines-pane-narrow.spec.ts",
+  "fixture_sha256": "159ae5e5dbc97d5e7c2cb273cc67f0f3469775ebed9da24a4af9baef525db88e",
+  "production_source_modified": false,
+  "fixture_changes": "dark media + synthetic sandbox assets/avatar.png + real image src and naturalWidth assertions",
+  "tests_passed": 1,
+  "exit_code": 0,
+  "images": [
+    {
+      "file": "routines-closed.png",
+      "sha256": "3841f198b11e4a3a40122c719cac8242e676455b597d3ebba9098647c78b3298"
+    },
+    {
+      "file": "routines-pane-toggled.png",
+      "sha256": "8d4ba19492f0dbc3534dba608e964f8f784b8cc5d21d64b554b00c22631252f0"
+    },
+    {
+      "file": "routines-pane.png",
+      "sha256": "bfb0c9e24fc551ca29f79fde279927f85902be3235abf4e277e6b8dd749dc187"
+    },
+    {
+      "file": "routines-restored.png",
+      "sha256": "8d779f177e5bdf5b22cca0a031e4969dda6ac26b2a07f4656ad036552e80c0c3"
+    },
+    {
+      "file": "test-finished-1.png",
+      "sha256": "8dcdb1eefaea4236b41262e39008aeed2df74e1234aafad385bd288a14f0be7e"
+    }
+  ],
+  "boundary": "Real Desktop renderer and Gateway with synthetic sandbox profile and mock inference; not yet catalog receipt or Android side-by-side."
+}
