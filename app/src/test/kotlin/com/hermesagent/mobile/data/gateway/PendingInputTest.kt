@@ -129,6 +129,67 @@ class PendingInputTest {
     }
 
     /**
+     * Cancellation must escape a refusal, not be swallowed as a send failure.
+     *
+     * `refuseServerRequests` answers a replay's refusals one at a time. A
+     * cancelled open has to stop there: a `runCatching` around the send would
+     * eat the `CancellationException` and go on to answer the rest of the
+     * batch on a connection the app has already abandoned.
+     *
+     * Proven from both ends: the cancellation reaches the caller, and the
+     * second entry's refusal is never sent. The ordinary failure case beside it
+     * keeps its old behaviour — a broken send is still tolerated, because the
+     * backend owns its own timeout and nothing could act on the report.
+     */
+    @Test
+    fun `a cancelled refusal escapes instead of sending the rest of the replay`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-first","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
+            """{"id":"srq-second","method":"preview.read","params":{"session_id":"runtime-a"}}""",
+        )
+        // The first refusal is where this open is abandoned.
+        env.rpc.refusalFailure = kotlinx.coroutines.CancellationException("this open was abandoned")
+
+        val cancelled = runCatching { env.repository.openSession("durable-a") }.exceptionOrNull()
+        advanceUntilIdle()
+
+        assertTrue(
+            "cancellation must reach the caller, not be read as a send failure",
+            cancelled is kotlinx.coroutines.CancellationException,
+        )
+        assertTrue(
+            "and the first refusal did not go out as a normal answer",
+            env.rpc.refused.isEmpty(),
+        )
+    }
+
+    /**
+     * The behaviour the cancellation fix must not change: an ordinary send
+     * failure is tolerated, so the rest of the batch is still answered.
+     */
+    @Test
+    fun `an ordinary refusal send failure is still tolerated`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-first","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
+            """{"id":"srq-second","method":"preview.read","params":{"session_id":"runtime-a"}}""",
+        )
+        env.rpc.refusalFailure = GatewayRpcException("The gateway connection could not send the response.")
+
+        val outcome = runCatching { env.repository.openSession("durable-a") }
+        advanceUntilIdle()
+
+        assertTrue("a broken send is not the open failing", outcome.isSuccess)
+        assertEquals("and the replay is still worked through", 1, env.rpc.refused.size)
+        assertEquals("srq-second", env.rpc.refused.single().id)
+    }
+
+    /**
      * The same replay, with a *known* question in it: that one is the card's,
      * so it is adopted rather than refused, and the unknown beside it is still
      * refused exactly once. Interleaved in one snapshot on purpose — a fix that
@@ -760,6 +821,13 @@ class PendingInputTest {
         /** When set, every answer fails the way a closed or broken leg does. */
         var sendFailure: GatewayRpcException? = null
 
+        /**
+         * When set, the *first* refusal throws this. [failServerRequest] does
+         * not record the frame first, so a throw leaves `refused` untouched —
+         * which is what lets a test tell "the send happened" from "it did not".
+         */
+        var refusalFailure: Throwable? = null
+
         /** Holds the answer inside the transport, for the one-at-a-time guard. */
         var blockSend = false
         private var sendGate: CompletableDeferred<Unit>? = null
@@ -804,6 +872,10 @@ class PendingInputTest {
 
         override suspend fun failServerRequest(id: String, code: Int, message: String) {
             sendFailure?.let { throw it }
+            refusalFailure?.let { failure ->
+                refusalFailure = null
+                throw failure
+            }
             refused += RefusalFrame(id, code, message)
         }
 

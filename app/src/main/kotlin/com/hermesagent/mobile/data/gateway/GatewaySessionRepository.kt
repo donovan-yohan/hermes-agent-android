@@ -4596,12 +4596,18 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             if (clientFlow.value !== client) return
         }
-        runCatching {
+        // Not `runCatching`: it swallows CancellationException, and a cancelled
+        // open would keep sending the rest of a replay's refusals instead of
+        // unwinding. The send's own failure is the thing being tolerated —
+        // the backend owns its timeout and nothing could act on the report.
+        try {
             responder.failServerRequest(
                 request.id,
                 JSON_RPC_METHOD_NOT_FOUND,
                 "no handler for server request: ${request.method}",
             )
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
         }
     }
 
