@@ -59,6 +59,63 @@ import org.junit.Test
     InternalCoroutinesApi::class,
 )
 class PluginHostTest {
+    @Test fun readyLegTokenHasNoTransportAndCannotAuthorizeReplacementBeforeObserverRuns() = runTest {
+        val a = FakeRpc()
+        val b = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(a)
+        val host = GatewayPluginHost(backgroundScope, clients)
+        val token = checkNotNull(host.connectionToken.value)
+        assertTrue(PluginConnectionToken::class.java.declaredFields.all {
+            it.name == "\$stable" && it.type == Int::class.javaPrimitiveType && java.lang.reflect.Modifier.isStatic(it.modifiers)
+        })
+        assertTrue(host.requestAtConnection(0, token, "groups.capabilities") is PluginHostResult.Success)
+        // No runCurrent: the lifecycle collector has not observed this same-endpoint reconnect.
+        clients.value = null
+        clients.value = b
+        assertTrue(host.requestAtConnection(0, token, "groups.list") is PluginHostResult.Refused)
+        assertEquals(0, b.calls)
+        val replacement = checkNotNull(host.connectionToken.value)
+        assertTrue(token !== replacement)
+        assertTrue(host.requestAtConnection(0, replacement, "groups.capabilities") is PluginHostResult.Success)
+        assertEquals(1, b.calls)
+    }
+
+    @Test fun readyLegFenceRejectsReconnectAtWireDispatchAndAfterResponse() = runTest {
+        val beforeWire = CompletableDeferred<Unit>()
+        val clients = MutableStateFlow<GatewayRpcClient?>(null)
+        val old = FakeRpc(beforeEndpointWire = { beforeWire.await() })
+        clients.value = old
+        val host = GatewayPluginHost(backgroundScope, clients)
+        val token = checkNotNull(host.connectionToken.value)
+        val call = async { host.requestAtConnection(0, token, "groups.state") }
+        runCurrent()
+        val next = FakeRpc()
+        clients.value = next
+        beforeWire.complete(Unit)
+        assertTrue(call.await() is PluginHostResult.Refused)
+        assertEquals(0, old.calls)
+        assertEquals(0, next.calls)
+
+        val response = CompletableDeferred<JsonElement>()
+        val pending = FakeRpc(answer = { _, _ -> response.await() })
+        clients.value = pending
+        val pendingToken = checkNotNull(host.connectionToken.value)
+        val late = async { host.requestAtConnection(0, pendingToken, "groups.log") }
+        runCurrent()
+        clients.value = FakeRpc()
+        response.complete(JsonNull)
+        assertTrue(late.await() is PluginHostResult.Refused)
+        assertEquals(1, pending.calls)
+    }
+
+    @Test fun unavailableDoorAndForgedTokenFailClosed() = runTest {
+        assertTrue(UnavailablePluginHost.requestAtConnection(0, PluginConnectionToken(), "groups.log") is PluginHostResult.Refused)
+        val rpc = FakeRpc()
+        val host = GatewayPluginHost(backgroundScope, MutableStateFlow(rpc))
+        assertTrue(host.requestAtConnection(0, PluginConnectionToken(), "groups.log") is PluginHostResult.Refused)
+        assertEquals(0, rpc.calls)
+    }
+
 
     /**
      * Stands in for one connection leg's client. The real door is leg-agnostic
