@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1/1] e2e/bot-routines-pane-narrow.spec.ts:187:1 › a long routine title never pushes the Switch, delete control or next-run label out of the 250px pane
+  1 passed (27.0s)

@@ -1,0 +1,30 @@
+--- apps/desktop/e2e/bot-routines-pane-narrow.spec.ts
++++ apps/desktop/e2e/bot-routines-pane-narrow.spec.ts
+@@ -154,6 +154,12 @@
+   writeMockProviderConfig(sandbox.hermesHome, mock.url)
+   writeEnvFile(sandbox.hermesHome)
+   alphaHome = await seedBot(sandbox.hermesHome, mock.url, 'alpha')
++  // Synthetic static avatar in this test sandbox only, read by the real Gateway.
++  fs.mkdirSync(path.join(alphaHome, 'assets'), { recursive: true })
++  fs.writeFileSync(path.join(alphaHome, 'assets', 'avatar.png'), Buffer.from(
++    'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR4nO3NQQEAAATAQCTUvwwl+N0C7DJ64rN6vQMAAAAAAAAAAIDDFmtiAY8TwohVAAAAAElFTkSuQmCC',
++    'base64'
++  ))
+   seedRoutine(alphaHome, LONG_TITLE)
+ 
+   const { app, page } = await launchDesktop(buildAppEnv(sandbox))
+@@ -182,7 +188,14 @@
+   test.setTimeout(300_000)
+   const page = fixture!.page
+ 
++  // Capture-only environment override; production components remain unchanged.
++  await page.emulateMedia({ colorScheme: 'dark' })
++  await expect(page.locator('html')).toHaveAttribute('data-hermes-mode', 'dark')
+   await openAlphaChat(page)
++  const avatar = page.getByRole('button', { name: /^alpha\b/i }).filter({ visible: true }).first().locator('img')
++  await expect(avatar).toBeVisible({ timeout: 30_000 })
++  await expect(avatar).toHaveAttribute('src', /^data:image\/png;base64,/)
++  await expect.poll(() => avatar.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth === 32)).toBe(true)
+   const row = await expandRoutines(page)
+   await page.screenshot({ path: testInfo.outputPath('routines-pane.png') })
+ 
