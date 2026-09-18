@@ -50,10 +50,9 @@ sealed interface BotsRosterLoad {
  * why [parseRoutineJobs] reads a closed set of words and calls anything else
  * [RoutineRunState.Unknown] rather than rendering it.
  *
- * This slice is read-only: nothing here sends `add`, `remove`, `pause`,
- * `resume`, and no legacy job is ever auto-paused on load the way Desktop's
- * `loadRoutines` does (`cron.tsx:131-166`) — a surface that issues no mutation
- * must not claim a job is paused.
+ * Reads never mutate, including legacy jobs. Existing-row writes use the
+ * separate [BotsPluginRepository.mutateRoutine] door; creation and Desktop's
+ * legacy auto-pause sweep (`cron.tsx:131-166`) remain outside this slice.
  */
 sealed interface BotsRoutinesLoad {
     /** The Gateway answered with a list scoped to the requested bot. */
@@ -166,6 +165,25 @@ class BotsPluginRepository(private val host: PluginHost) {
         PluginHostResult.UnavailableOnGateway -> BotsRoutinesLoad.UnavailableOnGateway
 
         is PluginHostResult.Refused -> BotsRoutinesLoad.Refused(result.safeMessage)
+    }
+
+    /**
+     * Existing-row mutations, bound to the endpoint that served the owner.
+     * Wire: tui_gateway/methods_tools.py:1097-1098 at
+     * d177b119e9c56c9ddc0b7379ffce52341ec06584. No retry after uncertainty.
+     */
+    suspend fun mutateRoutine(target: RoutineTarget, action: RoutineAction): Boolean {
+        val response = host.requestAtEndpoint(
+            expectedGeneration = target.endpoint,
+            method = CRON_MANAGE,
+            params = buildJsonObject {
+                put("action", action.wire)
+                put("name", target.jobId)
+                put("profile", target.owner)
+            },
+        )
+        val result = (response as? PluginHostResult.Success)?.result as? JsonObject
+        return result?.literalBoolean("success") == true
     }
 
     /** Hidden canonical chats bypass SessionCache and are resolved by exact title. */
@@ -362,7 +380,8 @@ class BotsPluginRepository(private val host: PluginHost) {
  * malformed envelope answers null so the caller keeps its last good roster —
  * the same contract as `parseProfileList` in `data/profiles`.
  *
- * Row fields (`methods_profiles.py:245-250` @ the pin): `name`, `path`,
+ * Row fields (`methods_profiles.py:245-250` @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`): `name`, `path`,
  * `is_default`, `model`, `provider`, `description`, `display_name`,
  * `skill_count`, plus `last_session` / `worker_session` / `canonical_session` /
  * `ui_meta` / `has_avatar` when `include_sessions` is on.
@@ -405,7 +424,7 @@ private fun parseSessionPreview(element: JsonElement?): BotSessionPreview? {
  * An epoch-seconds stamp, read off the wire as the Gateway actually sends it.
  *
  * The Gateway hands these out straight from SQLite, where the columns are
- * `REAL` (`hermes_state_common.py:319` @ the pin: `last_activity_at REAL`,
+ * `REAL` (`hermes_state_common.py:319` @ `564aef2946c436500a5e80ee117b66b789b3f99a`: `last_activity_at REAL`,
  * `started_at REAL`), so the JSON content is `1700000900.5` or
  * `1700000900.0` — not a whole number `toLongOrNull()` can read. That parse
  * answered `0` for every row, which is the bug that would have left the worker

@@ -38,6 +38,10 @@ on:
           - todo-name-aliases
           - populated
           - read-failure
+          - pause-pending
+          - action-rollback
+          - resumed
+          - deleted
       theme:
         description: Rendered theme
         required: true

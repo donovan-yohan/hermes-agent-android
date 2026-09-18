@@ -95,6 +95,7 @@ class BotsPlugin(
         val routinesActions = BotsRoutinesActions(
             onRetry = routines::refresh,
             onResume = routines::surfaceResumed,
+            onAction = routines::act,
         )
 
         ctx.registerMany(
