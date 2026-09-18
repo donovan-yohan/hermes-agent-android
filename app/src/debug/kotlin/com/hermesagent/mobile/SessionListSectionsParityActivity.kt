@@ -70,6 +70,13 @@ internal enum class SessionListSectionsFixtureState(val wireValue: String) {
 
     /** The same rows, every one of them pinned, so Desktop's all-pinned sentence shows. */
     AllPinned("all-pinned"),
+
+    /**
+     * The archived view (#146): the archived seed under `PINNED`, its `SESSIONS`
+     * caption and no date dividers. The pinned archived row is the state's
+     * subject, because the pin's visibility in this view is the fix.
+     */
+    ArchivedPinned("archived-pinned"),
     ;
 
     companion object {
@@ -83,6 +90,8 @@ internal fun SessionListSectionsParityFixture(state: SessionListSectionsFixtureS
     val sessions = when (state) {
         SessionListSectionsFixtureState.AllPinned ->
             SessionListSectionsSeed.sessions.map { it.copy(pinned = true) }
+        SessionListSectionsFixtureState.ArchivedPinned ->
+            SessionListSectionsSeed.sessions.map { it.copy(archived = true) }
         else -> SessionListSectionsSeed.sessions
     }
     val query = if (state == SessionListSectionsFixtureState.Results) SessionListSectionsSeed.QUERY else ""
@@ -92,6 +101,7 @@ internal fun SessionListSectionsParityFixture(state: SessionListSectionsFixtureS
         query = query,
         timeZone = SessionListSectionsSeed.TIME_ZONE,
         locale = SessionListSectionsSeed.LOCALE,
+        archivedView = state == SessionListSectionsFixtureState.ArchivedPinned,
         // Bound to the same zone the buckets were cut in: `Intl` and ICU resolve
         // a month name in a zone, and a device in another zone would name the
         // wrong month near a boundary.
@@ -109,6 +119,7 @@ internal fun SessionListSectionsParityFixture(state: SessionListSectionsFixtureS
             activeSessionId = null,
             query = query,
             canCreate = true,
+            archivedVisible = state == SessionListSectionsFixtureState.ArchivedPinned,
             onQueryChange = {},
             onSidebarGroupingChange = {},
             onSelectProject = {},

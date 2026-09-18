@@ -79,6 +79,11 @@
           "interaction": ["swipe:list-up"],
           "post_interaction_accessibility": "Everything here is pinned. Unpin a chat to show it in recents.",
           "fixture_note": "The same fourteen-row seed with every row pinned, which empties the recents pool and makes Desktop's all-pinned sentence the list's final row — below the phone's fold, so it is reached the way months-scrolled is, by the lane's bounded real swipes, and the catalogued evidence is that final note rather than the last row above it. Desktop has no rendered counterpart at this pin."
+        },
+        "archived-pinned": {
+          "interaction": [],
+          "post_interaction_accessibility": "Pinned design review. Archived. Updated 20 minutes ago",
+          "fixture_note": "The same fourteen-row seed, every row archived, in the Archived view (#146). The two seeded pins file under PINNED above the rest of the pool, which is headed by SESSIONS and takes no date dividers; the evidence is the pinned archived row that leads the list, because the pin staying visible in this view is the fix. Desktop's committed counterpart is docs/parity/visual/session-list-archived-view/desktop/ — node text `PINNED Refactor auth middleware 26m SESSIONS Onboarding copy pass 2d` — but that packet is pinned at `3ca096de` and the Android half of it was captured pre-fix, so this state is the fresh render of the same shape."
         }
       }
     }

@@ -34,6 +34,7 @@ on:
           - months-scrolled
           - results
           - all-pinned
+          - archived-pinned
       theme:
         description: Rendered theme
         required: true

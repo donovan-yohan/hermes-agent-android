@@ -697,8 +697,14 @@ class SessionGroupingTest {
     }
 
     /**
-     * Archived is a view of its own set, flat: no pinned section, no `Sessions`
-     * caption and no dividers (`sidebar/index.tsx:511-518,1716` @ the pin).
+     * Archived is a view of its own set: the pool is swapped wholesale, and the
+     * `Pinned` section that leads the live list leads this one too. Its gate is
+     * `!trimmedQuery`, with no `showArchived` term in it
+     * (`sidebar/index.tsx:1652-1674` @ `437116f9`), so a pinned chat that is
+     * then archived keeps the pin's only visible effect — and the `Sessions`
+     * caption then heads the rest of the archived pool, exactly as it does live.
+     * The archived rows take no date dividers: `grouping='none'` while archived
+     * settles the divider question alone (`:1736` @ the pin).
      */
     @Test
     fun `the archived view swaps the pool rather than filtering it`() {
@@ -710,9 +716,138 @@ class SessionGroupingTest {
 
         assertEquals(listOf("row:live"), rowsOf(sessions).map(::describe))
         assertEquals(
-            listOf("row:filed", "row:filed-pinned"),
+            listOf("pinned", "row:filed-pinned", "sessions", "row:filed"),
             rowsOf(sessions, archivedView = true).map(::describe),
         )
+    }
+
+    /**
+     * A pinned archived row is one row, in the Pinned section: the archived rows
+     * below it are the pool minus the pins, exactly as the live list splits
+     * (`sidebar/index.tsx:595-635` @ `437116f9` — a pinned session "belongs to
+     * the Pinned section and nowhere else"). Ordering is activity, newest first,
+     * on both sides of the split — so the pinned row can be the oldest row in
+     * the list and still lead it.
+     */
+    @Test
+    fun `an archived pinned row appears once, in the pinned section`() {
+        val rows = buildSessionRows(
+            listOf(
+                session("filed-new", now, archived = true),
+                session("filed-old-pinned", now - 3 * DAY, archived = true, pinned = true),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertEquals(listOf("pinned", "row:filed-old-pinned", "sessions", "row:filed-new"), rows.map(::describe))
+    }
+
+    /**
+     * And that split is a *split*, not an addition: the row is emitted from the
+     * pinned list alone, so the archived run under it never repeats it.
+     */
+    @Test
+    fun `an archived pool with two pins lists each of them once`() {
+        val rows = buildSessionRows(
+            listOf(
+                session("pinned-b", now - HOUR, archived = true, pinned = true),
+                session("filed", now - 2 * HOUR, archived = true),
+                session("pinned-a", now, archived = true, pinned = true),
+            ),
+            now,
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertEquals(
+            listOf("pinned", "row:pinned-a", "row:pinned-b", "sessions", "row:filed"),
+            rows.map(::describe),
+        )
+        assertEquals(3, rows.filterIsInstance<SessionListRow.Row>().size)
+    }
+
+    /**
+     * The archived rows under the Pinned section take no dividers:
+     * `grouping={showArchived || rankedGlobally ? 'none' : …}`
+     * (`sidebar/index.tsx:1736` @ `437116f9`) settles the divider question
+     * alone, so the view stays flat *below* the section it does keep.
+     */
+    @Test
+    fun `the archived view keeps its rows flat under the pinned section`() {
+        val sessions = listOf(
+            session("filed-today", now, archived = true),
+            session("filed-last-week", now - 8 * DAY, archived = true),
+            session("filed-pinned", now - HOUR, archived = true, pinned = true),
+        )
+
+        val rows = buildSessionRows(sessions, now, timeZone = zone, locale = locale, archivedView = true)
+
+        assertEquals(
+            listOf("pinned", "row:filed-pinned", "sessions", "row:filed-today", "row:filed-last-week"),
+            rows.map(::describe),
+        )
+        assertEquals(0, rows.filterIsInstance<SessionListRow.Divider>().size)
+        assertEquals(
+            listOf("pinned", "row:filed-pinned", "sessions", "row:filed-today", "divider:last-week", "row:filed-last-week"),
+            buildSessionRows(
+                sessions.map { it.copy(archived = false) },
+                now,
+                timeZone = zone,
+                locale = locale,
+            ).map(::describe),
+        )
+    }
+
+    /**
+     * An archived pool whose every row is pinned leaves the section below it
+     * empty, and this app explains that with the same sentence the live list
+     * uses — `Everything here is pinned…` (`apps/desktop/src/i18n/en.ts:2407` @
+     * `72a3277c`).
+     *
+     * This is a documented adaptation, not Desktop parity. Desktop cannot
+     * reach `s.allPinned` while the Archived view is on: the recents empty
+     * state tests `filtersActive` first (`sidebar/index.tsx:1686-1692` @
+     * `72a3277c`), and `$sidebarFiltersActive` counts `$sidebarShowArchived`
+     * itself (`store/layout.ts:380-384` @ `72a3277c`), so Desktop renders
+     * `No sessions match these filters` (`apps/desktop/src/i18n/en.ts:2413` @
+     * `72a3277c`) there. That
+     * sentence names a Status/Project/Profile/PR filter surface this rail does
+     * not have (#142), so the note states the actual reason recents is empty.
+     * Ledgered in `docs/parity/session-list-sections.md`.
+     */
+    @Test
+    fun `an archived pool that is entirely pinned explains its empty recents`() {
+        val rows = buildSessionRows(
+            listOf(session("filed", now, archived = true, pinned = true)),
+            now,
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertEquals(listOf("pinned", "row:filed", "all-pinned"), rows.map(::describe))
+        assertEquals(
+            "Everything here is pinned. Unpin a chat to show it in recents.",
+            ALL_PINNED_NOTE,
+        )
+    }
+
+    /** Nothing pinned in the archived pool either: the same two rows, no note. */
+    @Test
+    fun `an archived pool with no pins carries no all-pinned note`() {
+        val rows = buildSessionRows(
+            listOf(session("filed", now, archived = true)),
+            now,
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertEquals(listOf("row:filed"), rows.map(::describe))
     }
 
     /** A Gateway that never reported `archived` has not archived anything. */
@@ -752,6 +887,33 @@ class SessionGroupingTest {
         )
 
         assertEquals(listOf("row:filed-tunnel"), rows.map(::describe))
+    }
+
+    /**
+     * And a query inside the archived view must not become an exception to
+     * that: Desktop hides Pinned whenever a query is live — the section's gate
+     * is `!trimmedQuery` with no `showArchived` term (`sidebar/index.tsx:1652`
+     * @ `437116f9`) — so a pinned row in a searched archived pool renders as an
+     * ordinary row, in activity order, with no section above it. The pool
+     * stays this view's own; only the Pinned split is suspended.
+     */
+    @Test
+    fun `an archived query renders no pinned section even when a match is pinned`() {
+        val rows = buildSessionRows(
+            sessions = listOf(
+                session("filed-tunnel-pinned", now, title = "Tunnel notes", archived = true, pinned = true),
+                session("filed-tunnel", now - HOUR, title = "Tunnel probe", archived = true),
+                session("filed-other", now - 2 * HOUR, title = "Themes", archived = true),
+            ),
+            nowMillis = now,
+            query = "tunnel",
+            timeZone = zone,
+            locale = locale,
+            archivedView = true,
+        )
+
+        assertEquals(listOf("row:filed-tunnel-pinned", "row:filed-tunnel"), rows.map(::describe))
+        assertEquals(0, rows.count { it is SessionListRow.PinnedLabel })
     }
 
     /**
