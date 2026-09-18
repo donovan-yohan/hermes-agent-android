@@ -106,6 +106,7 @@ class GatewayGlobalEventsTest {
 
                 // The one frame that carries the process's seq numbering.
                 GatewayGlobalEventType.GatewayReady -> {
+                    assertEquals("$type must reach the global lane", GatewayGlobalEventOwner.Lane, entry.owner)
                     lane.accept(ready("epoch-one"))
                     assertEquals("$type must adopt the advertised epoch", "epoch-one", lane.replayEpoch())
                     false
@@ -117,6 +118,7 @@ class GatewayGlobalEventsTest {
                 GatewayGlobalEventType.SessionsChanged,
                 GatewayGlobalEventType.BotRelayOutbox,
                 -> {
+                    assertEquals("$type must reach the global lane", GatewayGlobalEventOwner.Lane, entry.owner)
                     val refresh = lane.accept(sessionLess(type, JsonNull))
                     runCurrent()
                     assertEquals("$type reached no handler", hintsBefore + 1, hints.size)
