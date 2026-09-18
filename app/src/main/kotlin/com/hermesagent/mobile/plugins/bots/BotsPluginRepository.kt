@@ -32,6 +32,51 @@ sealed interface BotsRosterLoad {
     data class Refused(val safeMessage: String) : BotsRosterLoad
 }
 
+/**
+ * The bot-scoped Routines read.
+ *
+ * The handler is `cron.manage` (`tui_gateway/methods_tools.py:1075-1085` @
+ * `d177b119e9c56c9ddc0b7379ffce52341ec06584`), which forwards
+ * `{action:"list", include_disabled:<bool>}` to `cronjob()` and honours an
+ * optional `profile` by scoping the whole read to that profile's cron store,
+ * echoing it back as `scoped`. The profile has to exist in the Gateway's own
+ * registry — an unknown one answers JSON-RPC `4064 profile '<p>' not found`
+ * (`methods_tools.py:56-60`) — so the name is sent verbatim from the roster row
+ * that came off that same Gateway, never slugged or lower-cased on the way out.
+ *
+ * `enabled:true` is not something this app can ask for. It is a member of the
+ * job's own record, and the Gateway derives `state` from it and passes an
+ * unrecognised stored state through verbatim (`cron/jobs.py:525-538`), which is
+ * why [parseRoutineJobs] reads a closed set of words and calls anything else
+ * [RoutineRunState.Unknown] rather than rendering it.
+ *
+ * This slice is read-only: nothing here sends `add`, `remove`, `pause`,
+ * `resume`, and no legacy job is ever auto-paused on load the way Desktop's
+ * `loadRoutines` does (`cron.tsx:131-166`) — a surface that issues no mutation
+ * must not claim a job is paused.
+ */
+sealed interface BotsRoutinesLoad {
+    /** The Gateway answered with a list scoped to the requested bot. */
+    data class Loaded(val jobs: List<RoutineRow>, val scoped: String?) : BotsRoutinesLoad
+
+    /**
+     * The Gateway answered, and the answer is not this bot's store: its
+     * `scoped` echo names a different profile, so the rows belong to a bot the
+     * person did not ask for. Refused rather than filtered — see
+     * [selectRoutineJobs].
+     */
+    data class MismatchedScope(val requested: String) : BotsRoutinesLoad
+
+    /** The Gateway answered `success:false` inside a successful envelope. */
+    data object Rejected : BotsRoutinesLoad
+
+    /** This Gateway build does not serve `cron.manage` (`-32601`). */
+    data object UnavailableOnGateway : BotsRoutinesLoad
+
+    /** The call reached the Gateway and did not produce a readable list. */
+    data class Refused(val safeMessage: String) : BotsRoutinesLoad
+}
+
 /** The only conclusions a read-only canonical lookup is allowed to make. */
 sealed interface BotChatLookup {
     /** The registry named exactly one exact-title row; `resolved_id` wins over `id`. */
@@ -76,6 +121,51 @@ class BotsPluginRepository(private val host: PluginHost) {
         PluginHostResult.UnavailableOnGateway -> BotsRosterLoad.UnavailableOnGateway
 
         is PluginHostResult.Refused -> BotsRosterLoad.Refused(result.safeMessage)
+    }
+
+    /**
+     * Read the routines scoped to [profile].
+     *
+     * `include_disabled` is always `true` and is asserted in the request
+     * shape, not only in the parse: the Gateway hides paused jobs by default
+     * (`tools/cronjob_tools.py:_action_list`, forward via
+     * `methods_tools.py:1079-1083`), and a paused routine silently missing from
+     * a read-only list reads to a person as a routine that was deleted.
+     *
+     * [expectedEndpointGeneration] binds the read to the Gateway the bot was
+     * chosen on, exactly as the canonical-chat lookups do: the host re-validates
+     * the endpoint at the dispatch itself, so a switch that lands mid-read
+     * cannot render the replacement machine's jobs under this bot.
+     */
+    suspend fun loadRoutines(
+        profile: String,
+        expectedEndpointGeneration: Long,
+    ): BotsRoutinesLoad = when (
+        val result = host.requestAtEndpoint(
+            expectedGeneration = expectedEndpointGeneration,
+            method = CRON_MANAGE,
+            params = buildJsonObject {
+                put("action", JsonPrimitive(CRON_LIST))
+                put("include_disabled", JsonPrimitive(true))
+                put("profile", JsonPrimitive(profile))
+            },
+        )
+    ) {
+        is PluginHostResult.Success -> when (val parsed = parseRoutineJobs(result.result)) {
+            is RoutineJobsParse.Answered ->
+                if (routineScopeAgrees(parsed.scoped, profile)) {
+                    BotsRoutinesLoad.Loaded(parsed.jobs, parsed.scoped)
+                } else {
+                    BotsRoutinesLoad.MismatchedScope(profile)
+                }
+
+            RoutineJobsParse.Rejected -> BotsRoutinesLoad.Rejected
+            RoutineJobsParse.Unreadable -> BotsRoutinesLoad.Refused(UNREADABLE_ROUTINES)
+        }
+
+        PluginHostResult.UnavailableOnGateway -> BotsRoutinesLoad.UnavailableOnGateway
+
+        is PluginHostResult.Refused -> BotsRoutinesLoad.Refused(result.safeMessage)
     }
 
     /** Hidden canonical chats bypass SessionCache and are resolved by exact title. */
@@ -233,11 +323,16 @@ class BotsPluginRepository(private val host: PluginHost) {
         const val SESSION_LIST = "session.list"
         const val SESSION_CREATE = "session.create"
         const val SESSION_TITLE = "session.title"
+        const val CRON_MANAGE = "cron.manage"
+        const val CRON_LIST = "list"
         const val CANONICAL_CHAT_TITLE = "Bot Chat"
         const val CANONICAL_LOOKUP_LIMIT = 200
 
         /** This app's sentence; the backend's own text is never shown. */
         const val UNREADABLE_ROSTER = "The Gateway sent a roster this app could not read."
+
+        /** This app's sentence for a `cron.manage` answer it cannot read. */
+        const val UNREADABLE_ROUTINES = "The Gateway sent a routine list this app could not read."
     }
 }
 
