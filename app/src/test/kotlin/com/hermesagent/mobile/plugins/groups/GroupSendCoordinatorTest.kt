@@ -106,6 +106,36 @@ class GroupSendCoordinatorTest {
     }
 
     @Test
+    fun `expiry persistence failure stays uncertain and cannot reopen wire after storage recovery`() = runTest {
+        for (failTombstone in listOf(true, false)) {
+            var failing = true
+            val store = object : TransientGroupSendStore() {
+                override suspend fun tombstoneRoom(scopedRoomKey: String): GroupSendStoreMutation =
+                    if (failing && failTombstone) GroupSendStoreMutation.StorageUnavailable
+                    else super.tombstoneRoom(scopedRoomKey)
+
+                override suspend fun markBlocked(recordKey: String): GroupSendStoreMutation =
+                    if (failing && !failTombstone) GroupSendStoreMutation.StorageUnavailable
+                    else super.markBlocked(recordKey)
+            }
+            val connection = FakeConnection(testIdentity, sendHandler = {
+                throw GroupSendFailure(GroupSendProblem.Expired)
+            })
+            val coordinator = GroupSendCoordinator(store, connection)
+            assertTrue(coordinator.submit(testTarget, "expired", "Old room", "thread-1", 1L).isFailure)
+            assertEquals(GroupSendCoordinatorState.Uncertain, coordinator.executionState.first().status)
+            assertEquals(GroupSendProblem.Expired, coordinator.executionState.first().problem)
+            failing = false
+            assertTrue(coordinator.submit(testTarget, "new-key", "Do not send", "thread-1", 2L).isFailure)
+            assertEquals(1, connection.sendCalls.size)
+            assertEquals(GroupSendCoordinatorState.Blocked, coordinator.executionState.first().status)
+            val snapshot = store.snapshot()
+            assertTrue(GroupSendScope(testIdentity, testTarget.room).roomKey in snapshot.tombstones)
+            assertEquals(GroupSendRecordState.Blocked, snapshot.records.values.single().state)
+        }
+    }
+
+    @Test
     fun `write failure blocks wire dispatch entirely`() = runTest {
         val store = TransientGroupSendStore()
         store.failWrites = true

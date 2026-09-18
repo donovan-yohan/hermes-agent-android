@@ -32,6 +32,8 @@ internal class GroupSendCoordinator(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val mutex = Mutex()
+    // Retain observed expiry when disk is unavailable; recovery retries storage, never the send.
+    private val expiredRooms = mutableMapOf<String, String>()
     private val stateFlow = MutableStateFlow(GroupSendExecutionState())
     val executionState: Flow<GroupSendExecutionState> = stateFlow.asStateFlow()
 
@@ -52,6 +54,11 @@ internal class GroupSendCoordinator(
             return Result.failure(GroupSendFailure(GroupSendProblem.AuthorityBlocked))
         }
 
+        val scopedRoom = GroupSendScope(target.identity, target.room).roomKey
+        expiredRooms[scopedRoom]?.let { recordKey ->
+            persistExpiry(scopedRoom, recordKey)
+            return Result.failure(GroupSendFailure(GroupSendProblem.Expired))
+        }
         val payload = GroupSendPayload.normalize(text, thread)
         val operation = GroupSendOperation(target, rawId, payload)
         val editorDraft = GroupSendEditorDraft(target, payload.text, payload.thread, draftRevision)
@@ -103,14 +110,12 @@ internal class GroupSendCoordinator(
                     stateFlow.update { it.copy(status = GroupSendCoordinatorState.Uncertain, problem = failure.problem) }
                 }
                 GroupSendProblem.WorkerUnavailable, GroupSendProblem.AuthorityBlocked -> {
-                    store.markBlocked(record.recordKey)
-                    stateFlow.update { it.copy(status = GroupSendCoordinatorState.Blocked, problem = failure.problem) }
+                    val durable = store.markBlocked(record.recordKey) == GroupSendStoreMutation.Applied
+                    stateFlow.update { it.copy(status = if (durable) GroupSendCoordinatorState.Blocked else GroupSendCoordinatorState.Uncertain, problem = failure.problem) }
                 }
                 GroupSendProblem.Expired -> {
-                    val scopedRoom = GroupSendScope(target.identity, target.room).roomKey
-                    store.tombstoneRoom(scopedRoom)
-                    store.markBlocked(record.recordKey)
-                    stateFlow.update { it.copy(status = GroupSendCoordinatorState.Blocked, problem = failure.problem) }
+                    expiredRooms[scopedRoom] = record.recordKey
+                    persistExpiry(scopedRoom, record.recordKey)
                 }
                 else -> {
                     stateFlow.update { it.copy(status = GroupSendCoordinatorState.Failed, problem = failure.problem) }
@@ -132,6 +137,17 @@ internal class GroupSendCoordinator(
             store.markUncertain(record.recordKey)
             stateFlow.update { it.copy(status = GroupSendCoordinatorState.Uncertain, problem = GroupSendProblem.TransportUncertain) }
             Result.failure(GroupSendFailure(GroupSendProblem.TransportUncertain))
+        }
+    }
+
+    private suspend fun persistExpiry(scopedRoom: String, recordKey: String) {
+        val durable = store.tombstoneRoom(scopedRoom) == GroupSendStoreMutation.Applied &&
+            store.markBlocked(recordKey) == GroupSendStoreMutation.Applied
+        stateFlow.update {
+            it.copy(
+                status = if (durable) GroupSendCoordinatorState.Blocked else GroupSendCoordinatorState.Uncertain,
+                problem = GroupSendProblem.Expired,
+            )
         }
     }
 
