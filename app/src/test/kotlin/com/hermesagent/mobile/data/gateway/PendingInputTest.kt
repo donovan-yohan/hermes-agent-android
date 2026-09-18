@@ -113,7 +113,7 @@ class PendingInputTest {
     fun `an unknown method in open_requests is refused too`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
-        env.rpc.resumeOverride = resumeWithOpenRequests(
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
             "durable-a",
             """{"id":"srq-bridge","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
         )
@@ -135,10 +135,10 @@ class PendingInputTest {
      * refused the lot, or ignored the lot, fails on one half or the other.
      */
     @Test
-    fun `a replay is split: known questions become cards, unknown ones are refused once`() = runTest {
+    fun `a replay splits known questions into cards and unknown ones into refusals`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
         runCurrent()
-        env.rpc.resumeOverride = resumeWithOpenRequests(
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
             "durable-a",
             """{"id":"srq-known","method":"clarify","params":{"session_id":"runtime-a","question":"Proceed?"}}""",
             """{"id":"srq-unknown","method":"preview.read","params":{"session_id":"runtime-a"}}""",
