@@ -197,7 +197,7 @@ class BotsViewModel(
             // to the one this emission carries: a read that has already adopted
             // the new endpoint's rows bumps [rosterEndpoint] first, and a
             // collector waking late behind it must not clear them again.
-            combine(connected, endpointGeneration, connectionToken) { up, _, _ -> up }
+            combine(endpointGeneration, connectionToken) { _, token -> token != null }
                 .collect { up ->
                     dropRosterIfEndpointChanged()
                     _uiState.update { state ->
