@@ -219,8 +219,43 @@ sealed interface PluginHostResult {
      * not be completed at all — no live connection, a transport failure, or an
      * exchange the Gateway never answered before its deadline. [safeMessage]
      * is this app's own sentence — never text the backend wrote.
+     *
+     * [reason] is the one machine datum this door forwards: a
+     * [PluginRefusalReason], never a string the backend chose. `null` is "no
+     * reason this build knows", an unrecognized string included, and the wire
+     * value never reaches a plugin — not even through `toString`.
      */
-    data class Refused(val code: Int, val safeMessage: String) : PluginHostResult
+    data class Refused(
+        val code: Int,
+        val safeMessage: String,
+        val reason: PluginRefusalReason? = null,
+    ) : PluginHostResult
+}
+
+/**
+ * The two reasons the hosted-room handlers answer as `error.data.reason`
+ * (`tui_gateway/methods_groups.py:206-210` and `gateway/hosted_rooms.py:185-198`
+ * @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`). A closed set, and not every
+ * backend reason: `data.reason` also carries `prompt.submit`'s
+ * `SESSION_NOT_OWNED` (`data/gateway/GatewayRpc.kt`), which stays unnamed here.
+ * Anything else maps to `null` — [fromWire] is the only construction from wire
+ * data, and it matches exactly, so a reworded value is unknown, not misread.
+ */
+enum class PluginRefusalReason(val wireValue: String) {
+    /** The room was pruned; the id is retired forever. */
+    RoomHistoryExpired("room_history_expired"),
+
+    /** A stale authority tried to mutate the room's hosted state. */
+    AuthorityConflict("authority_conflict"),
+    ;
+
+    companion object {
+        private val byWireValue: Map<String, PluginRefusalReason> =
+            entries.associateBy { it.wireValue }
+
+        /** The reason [raw] names exactly, or null when it names none this build knows. */
+        fun fromWire(raw: String?): PluginRefusalReason? = raw?.let(byWireValue::get)
+    }
 }
 
 /**
@@ -420,7 +455,7 @@ internal class GatewayPluginHost(
         if (error.code == METHOD_NOT_FOUND) {
             PluginHostResult.UnavailableOnGateway
         } else {
-            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE)
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, PluginRefusalReason.fromWire(error.reason))
         }
     } catch (_: GatewayRpcException) {
         PluginHostResult.Refused(0, RECONNECT_MESSAGE)
@@ -438,7 +473,7 @@ internal class GatewayPluginHost(
         if (error.code == METHOD_NOT_FOUND) {
             PluginHostResult.UnavailableOnGateway
         } else {
-            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE)
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, PluginRefusalReason.fromWire(error.reason))
         }
     } catch (_: GatewayRpcException) {
         PluginHostResult.Refused(0, RECONNECT_MESSAGE)
