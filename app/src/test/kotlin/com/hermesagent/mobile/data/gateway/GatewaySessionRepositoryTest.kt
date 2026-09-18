@@ -1060,6 +1060,129 @@ class GatewaySessionRepositoryTest {
         assertEquals(listOf("terminal"), cache.transcript("durable-a").filterIsInstance<ToolActivity>().map { it.toolName })
     }
 
+    /**
+     * The pin registers the task tool as `todo_list` and names it that way in
+     * live events (`_AGENT_LOOP_TOOLS`, `model_tools.py:607`, and
+     * `agent/inline_tool_executors.py:177` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`; the alias is applied before
+     * the agent loop dispatches, `agent/tool_executor.py:364-368,432-433`). A
+     * pinned Gateway therefore correlates the task list under a name this
+     * repository has to recognise as the same tool.
+     */
+    @Test
+    fun `a pinned gateway's todo_list events own the composer task list`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit(
+            "tool.start",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo_list","arguments":{"todos":[
+                {"id":"plan","content":"Implement status row","status":"in_progress"},
+                {"id":"tests","content":"Add tests","status":"pending"}
+            ]}}""",
+        )
+        runCurrent()
+
+        val todos = cache.session("durable-a")?.composerStatus?.todos.orEmpty()
+        assertEquals(listOf("plan", "tests"), todos.map { it.id })
+        assertEquals(ComposerTodoState.InProgress, todos.first().state)
+        assertTrue(
+            "a hoisted task list is never a transcript row",
+            cache.transcript("durable-a").filterIsInstance<ToolActivity>().isEmpty(),
+        )
+
+        rpc.emit(
+            "tool.complete",
+            "runtime-a",
+            """{"tool_id":"todo-1","name":"todo_list","result":{"todos":[
+                {"id":"plan","content":"Implement status row","status":"completed"},
+                {"id":"tests","content":"Add tests","status":"completed"}
+            ]}}""",
+        )
+        runCurrent()
+
+        val completed = cache.session("durable-a")?.composerStatus?.todos.orEmpty()
+        assertEquals(listOf("plan", "tests"), completed.map { it.id })
+        assertEquals(ComposerTodoState.Completed, completed.first().state)
+        assertTrue(
+            "the completing event correlates to the task list, not to a new tool row",
+            cache.transcript("durable-a").filterIsInstance<ToolActivity>().isEmpty(),
+        )
+    }
+
+    @Test
+    fun `an identifierless todo_list event still correlates to the live task list`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+
+        rpc.emit(
+            "tool.start",
+            "runtime-a",
+            """{"name":"todo_list","arguments":{"todos":[
+                {"id":"plan","content":"Keep planning","status":"in_progress"}
+            ]}}""",
+        )
+        rpc.emit(
+            "tool.complete",
+            "runtime-a",
+            """{"name":"todo_list","result":{"todos":[
+                {"id":"plan","content":"Keep planning","status":"completed"}
+            ]}}""",
+        )
+        runCurrent()
+
+        val todos = cache.session("durable-a")?.composerStatus?.todos.orEmpty()
+        assertEquals(listOf("plan"), todos.map { it.id })
+        assertEquals(ComposerTodoState.Completed, todos.single().state)
+        assertTrue(cache.transcript("durable-a").filterIsInstance<ToolActivity>().isEmpty())
+    }
+
+    @Test
+    fun `a pinned gateway's stored todo_list history derives the composer list`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"messages":[
+                {"role":"assistant","content":[
+                    {"type":"tool-call","toolName":"todo_list","args":{"todos":[
+                        {"id":"older","content":"Older state","status":"pending"}
+                    ]}}
+                ]},
+                {"role":"tool","name":"todo_list","result":{"todos":[
+                    {"id":"latest","content":"Finished state","status":"completed"}
+                ]}}
+            ],"count":2}"""
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+
+        repository.openSession("durable-a")
+
+        assertEquals(listOf("latest"), cache.session("durable-a")?.composerStatus?.todos?.map { it.id })
+        assertTrue(cache.transcript("durable-a").filterIsInstance<ToolActivity>().isEmpty())
+    }
+
     @Test
     fun `finished todo list lingers for four seconds then clears`() = runTest {
         val cache = SessionCache()

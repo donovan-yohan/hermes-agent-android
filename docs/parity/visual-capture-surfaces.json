@@ -104,6 +104,19 @@
           "fixture_note": "The same fourteen-row seed, every row archived, in the Archived view (#146). The two seeded pins file under PINNED above the rest of the pool, which is headed by SESSIONS and takes no date dividers; the evidence is the pinned archived row that leads the list, because the pin staying visible in this view is the fix. Desktop's committed counterpart is docs/parity/visual/session-list-archived-view/desktop/ — node text `PINNED Refactor auth middleware 26m SESSIONS Onboarding copy pass 2d` — but that packet is pinned at `3ca096de` and the Android half of it was captured pre-fix, so this state is the fresh render of the same shape."
         }
       }
+    },
+    "tool-name-aliases": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "tool-name-aliases-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ToolNameAliasesParityActivity",
+      "desktop_selector": "[data-slot=\"tool-block\"]",
+      "states": {
+        "todo-name-aliases": {
+          "interaction": [],
+          "post_interaction_accessibility": "Tool Updated todos, done",
+          "fixture_note": "Both wire spellings of the task tool over one identical synthetic payload (an explicit count of 2), with the composer task panel beneath them derived from a stored `todo_list` history through the production parser `latestComposerTodosFromHistory` (#284). The evidence is that the legacy row and the pinned row are one row: same title, same glyph, same count, same spoken description — `Tool Updated todos, done` is published twice. The panel is a real `ComposerStatusStack` over real `ComposerTodoStatus` rows, not a stand-in. The rows are mounted deliberately because a real turn hoists a task tool out of the transcript entirely, so no live session can show this seam. `desktop_selector` names Desktop's tool-block container. Desktop's half of this capture is source-only: no E2E fixture was identified at `d177b119e9c56c9ddc0b7379ffce52341ec06584` that mounts Desktop's tool block or task panel over synthetic state, so the packet names the pinned `Updated todos` title (`apps/desktop/src/i18n/en.ts:4368`) and the `todo` icon entry (`apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:212`) with no companion rendered Desktop pixels rather than inventing a same-pin comparison. The Android row title therefore moves from the old `Todo` fallback to Desktop's `Updated todos` — a deliberate copy change ledgered in `docs/parity/tool-output-fidelity.md`."
+        }
+      }
     }
   }
 }

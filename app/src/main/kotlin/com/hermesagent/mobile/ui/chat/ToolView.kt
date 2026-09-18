@@ -2,6 +2,8 @@ package com.hermesagent.mobile.ui.chat
 
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
+import com.hermesagent.mobile.data.session.LEGACY_TODO_TOOL_NAME
+import com.hermesagent.mobile.data.session.isTodoToolName
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -208,7 +210,12 @@ internal fun ToolActivity.toolView(): ToolView {
     val args = argsText.asJsonObject()
     val result = resultText.asJsonObject()
     val name = toolName.lowercase(Locale.US)
-    val meta = toolMeta(name, inlineDiff != null)
+    // The lookup key, not the row's name: a `todo_list` row a pinned Gateway
+    // wrote lands on the `todo` entry this table has always carried, and both
+    // spellings paint one row (`isTodoToolName`,
+    // `app/src/main/kotlin/.../data/session/ToolNames.kt`).
+    val lookup = lookupToolName(name)
+    val meta = toolMeta(lookup, inlineDiff != null)
 
     val error = toolErrorText(name, result)
     val status = toolStatus(name, error)
@@ -251,7 +258,7 @@ internal fun ToolActivity.toolView(): ToolView {
     return ToolView(
         icon = meta.icon,
         status = status,
-        countLabel = resultCount(name, result, resultText, detail, status),
+        countLabel = resultCount(lookup, result, resultText, detail, status),
         durationLabel = durationLabel(status),
         detail = detail,
         detailLabel = if (error.isNotEmpty()) "Error details" else detailLabel(name),
@@ -271,6 +278,20 @@ internal fun ToolActivity.toolView(): ToolView {
 // ── Tone, icon and status ────────────────────────────────────────────────────
 
 private class ToolMeta(val icon: ToolIconName?)
+
+/**
+ * The name a display table is keyed by.
+ *
+ * Both spellings of the task tool are one tool, and the tables above carry the
+ * `todo` key Desktop's `TOOL_META` uses
+ * (`apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:212`
+ * @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`), so a `todo_list` row a pinned
+ * Gateway wrote resolves to it rather than losing its glyph and its count noun.
+ * Nothing else is renamed: the row's own name still reaches every rule that
+ * does not look a table up.
+ */
+private fun lookupToolName(name: String): String =
+    if (isTodoToolName(name)) LEGACY_TODO_TOOL_NAME else name
 
 /**
  * `index.ts:142-214` (`TOOL_META`) and `:233-236` (`PREFIX_META`).
