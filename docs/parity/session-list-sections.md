@@ -57,7 +57,7 @@ Every `path:line` below is against the first SHA unless the citation names the s
 
 | Element | Desktop | Android |
 |---|---|---|
-| Pinned section | Its own collapsible `SidebarSessionsSection`, label `Pinned` (`en.ts:2205`) | A leading `PanelLabel` reading `PINNED` — accent ink and a dither square, not a bare field label — above the buckets, and the pool's own `SESSIONS` panel caption below the pinned rows (`data/session/SessionGrouping.kt:345,355`; `ui/sessions/SessionList.kt:464,478`) |
+| Pinned section | Its own collapsible `SidebarSessionsSection`, label `Pinned` (`en.ts:2205`) | A leading `PanelLabel` reading `PINNED` — accent ink and a dither square, not a bare field label — above the buckets, and the pool's own `SESSIONS` panel caption below the pinned rows (`data/session/SessionGrouping.kt:379,391/403`; `ui/sessions/SessionList.kt:464,478`) |
 | Pinned membership | Local pin ids first, then any row the server flags `pinned` | Server `pinned` only |
 | Pinned ordering | The reader's hand-picked drag order, server rows appended | Activity, newest first |
 | Empty recents while everything is pinned | `Everything here is pinned. Unpin a chat to show it in recents.` (`apps/desktop/src/i18n/en.ts:2660` @ `437116f9`), chosen by `pinnedSessions.length > 0 ? s.allPinned : s.noSessions` (`sidebar/index.tsx:1710-1712` @ `437116f9`) — but only after `filtersActive`, which the `Archived` toggle itself sets (`store/layout.ts:392-396` @ `437116f9`), so this sentence is **unreachable** in the Archived view | **Same** in the live list, verbatim as one tertiary line below the section. The archived view keeps the same sentence as this app's own, ledgered below as a **mobile-adaptation** — Desktop renders `No sessions match these filters` (`apps/desktop/src/i18n/en.ts:2666` @ `437116f9`) there |
@@ -137,10 +137,12 @@ The exact-head side-by-side exists now, so this page's statements about the
 panel captions, the `Sessions` pool caption, the head-run cutoff and the
 per-month tail are readings of rendered pixels rather than implementation
 claims. Packet: `docs/parity/visual/session-list-months-captions/` — four
-Android states, each with a receipt that passes
+Android states at the head below, each with a receipt that passes
 `python3 scripts/visual_parity_contract.py check-receipt --platform android`,
 against one Desktop reference whose receipt passes the same check for
-`--platform desktop`.
+`--platform desktop`. The packet's `archived-pinned-dark/android/` state is a
+later Android capture, at `e85c69a2119b7c4067ba580d23c87e13b1dd88f2`, CI run
+[35311626235](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/35311626235).
 
 | Side | Provenance |
 |---|---|
@@ -210,10 +212,14 @@ without the trailing age and is not evidence for the field.
 
 **The #146 archived-view packet is likewise pre-fix.**
 `docs/parity/visual/session-list-archived-view/` is the capture that *caught* the
-drift — Desktop’s `PINNED … SESSIONS …` beside Android’s flat list — so it is
-evidence for the finding, not for the current render. A post-fix archived capture
-is dispatched from `docs/parity/visual-capture-surfaces.json` under the
-`session-list-sections` surface; until that run’s artifact is committed, the layout,
+drift — Desktop's `PINNED … SESSIONS …` beside Android's flat list — so it is
+evidence for the finding, not for the current render, and its Desktop half stays
+pinned at `3ca096de` as history. The post-fix Android render is committed:
+`docs/parity/visual/session-list-months-captions/archived-pinned-dark/android/`,
+the `archived-pinned` state of the `session-list-sections` surface, captured at
+`e85c69a2119b7c4067ba580d23c87e13b1dd88f2` (CI run `35311626235`) and passing
+`check-receipt --platform android`. It carries the archived view's `PINNED`
+section above the `SESSIONS` pool with no date dividers, and the layout,
 ordering, single-rendering and no-divider assertions in
 `SessionListSectionsJourneyTest` and the row-order assertions in
-`SessionGroupingTest` stand in for it.
+`SessionGroupingTest` still stand with it.
