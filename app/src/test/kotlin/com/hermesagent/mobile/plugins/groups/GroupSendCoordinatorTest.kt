@@ -1,6 +1,13 @@
 package com.hermesagent.mobile.plugins.groups
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -62,6 +69,40 @@ class GroupSendCoordinatorTest {
         val rec = snapshot.records.values.single()
         assertEquals(GroupSendRecordState.Confirmed, rec.state)
         assertEquals(1L, rec.receiptSeq)
+    }
+
+    @Test
+    fun `cancelled send completes contended uncertainty persistence before rethrowing original`() = runTest {
+        val gate = Mutex(locked = true)
+        val store = object : TransientGroupSendStore() {
+            override suspend fun markUncertain(recordKey: String): GroupSendStoreMutation =
+                gate.withLock { super.markUncertain(recordKey) }
+        }
+        val original = CancellationException("Synthetic send cancellation")
+        lateinit var job: Job
+        var observed: CancellationException? = null
+        val connection = FakeConnection(testIdentity, sendHandler = {
+            job.cancel(original)
+            throw original
+        })
+        val coordinator = GroupSendCoordinator(store, connection)
+        job = launch(start = CoroutineStart.LAZY) {
+            try {
+                coordinator.submit(testTarget, "cancelled", "Retain me", "thread-1", 1L)
+            } catch (failure: CancellationException) {
+                observed = failure
+            }
+        }
+        job.start()
+        runCurrent()
+        gate.unlock()
+        runCurrent()
+        job.join()
+        assertEquals(GroupSendRecordState.Uncertain, store.snapshot().records.values.single().state)
+        assertEquals(GroupSendCoordinatorState.Uncertain, coordinator.executionState.first().status)
+        // Coroutine stacktrace recovery may copy the exception while retaining its cause.
+        assertTrue(generateSequence(observed as Throwable?) { it.cause }.any { it === original })
+        assertEquals(1, connection.sendCalls.size)
     }
 
     @Test

@@ -118,8 +118,15 @@ internal class GroupSendCoordinator(
             }
             Result.failure(failure)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            store.markUncertain(record.recordKey)
-            stateFlow.update { it.copy(status = GroupSendCoordinatorState.Uncertain, problem = GroupSendProblem.TransportUncertain) }
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    store.markUncertain(record.recordKey)
+                }
+            } catch (_: Exception) {
+                // Prepared remains recoverable if local uncertainty persistence fails.
+            } finally {
+                stateFlow.update { it.copy(status = GroupSendCoordinatorState.Uncertain, problem = GroupSendProblem.TransportUncertain) }
+            }
             throw cancelled
         } catch (other: Throwable) {
             store.markUncertain(record.recordKey)
