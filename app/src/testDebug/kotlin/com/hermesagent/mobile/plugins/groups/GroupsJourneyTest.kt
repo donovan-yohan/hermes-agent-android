@@ -132,6 +132,15 @@ class GroupsJourneyTest {
             compose.onNodeWithText("Planning").performClick()
             compose.waitUntil { model.uiState.value.transcript != null }
             compose.onNodeWithText("Hello").assertIsDisplayed()
+            compose.onNodeWithText("Loading Group Chat…").assertDoesNotExist()
+            compose.runOnIdle {
+                val settled = model.uiState.value
+                val reads = calls.size
+                model.open("room")
+                assertEquals(settled, model.uiState.value)
+                assertEquals(reads, calls.size)
+            }
+            compose.onNodeWithText("Loading Group Chat…").assertDoesNotExist()
             compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
             compose.runOnIdle { model.closeRoom() }
             compose.waitUntil { model.uiState.value.selected == null }

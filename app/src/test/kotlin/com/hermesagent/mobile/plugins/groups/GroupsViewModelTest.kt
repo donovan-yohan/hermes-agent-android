@@ -46,6 +46,27 @@ class GroupsViewModelTest {
         }
     }
 
+    @Test fun repeatedOpenPreservesSettledRoomAndCloseThenReentryStillLoads() = runTest {
+        val wire = Wire()
+        val vm = GroupsViewModel(backgroundScope, MutableStateFlow(wire.connection()), MutableStateFlow(0L))
+        vm.setForeground(true); runCurrent(); vm.open("room"); runCurrent()
+        val settled = vm.uiState.value
+        assertNotNull(settled.transcript)
+        assertFalse(settled.roomLoading)
+        val reads = wire.calls.size
+        repeat(2) { vm.open("room"); runCurrent() }
+        assertEquals(settled, vm.uiState.value)
+        assertEquals(reads, wire.calls.size)
+        vm.closeRoom(); runCurrent()
+        vm.open("room")
+        assertTrue(vm.uiState.value.roomLoading)
+        // A duplicate while the read is pending must not reset or cancel it.
+        vm.open("room"); runCurrent()
+        assertNotNull(vm.uiState.value.transcript)
+        assertFalse(vm.uiState.value.roomLoading)
+        assertEquals(2, wire.calls.count { it.first == "groups.state" })
+    }
+
     @Test fun reconnectRetainsCursorAndChecksCapabilityEvenWithoutBooleanEdge() = runTest {
         val wire = Wire()
         val legs = MutableStateFlow<GroupReadConnection?>(wire.connection())

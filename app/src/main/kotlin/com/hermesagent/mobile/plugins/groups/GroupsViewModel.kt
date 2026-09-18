@@ -116,10 +116,11 @@ class GroupsViewModel(
     fun refresh() { clearIfMoved(); retry.value += 1 }
     fun open(id: String) {
         clearIfMoved()
-        if (id in retired || mutable.value.rooms.none { it.id == id }) return
-        selected.value = id
+        if (id == selected.value || id in retired || mutable.value.rooms.none { it.id == id }) return
+        // Publish loading before selection can synchronously complete a read on Main.immediate.
         mutable.update { it.copy(selected = id, transcript = cache[id], roomLoading = true,
             expired = false, authorityConflict = false, stale = false) }
+        selected.value = id
     }
     fun closeRoom() {
         selected.value = null
