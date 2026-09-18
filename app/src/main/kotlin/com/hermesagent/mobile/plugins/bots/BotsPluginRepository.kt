@@ -2,6 +2,9 @@ package com.hermesagent.mobile.plugins.bots
 
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostResult
+import com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator
+import com.hermesagent.mobile.data.profiles.ProfileAvatarRef
+import com.hermesagent.mobile.data.profiles.avatarWireName
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -104,9 +107,31 @@ sealed interface BotChatOpen {
     data object Unsafe : BotChatOpen
 }
 
-class BotsPluginRepository(private val host: PluginHost) {
+class BotsPluginRepository(
+    private val host: PluginHost,
+    private val avatarProducer: AvatarRosterCoordinator.Producer? = null,
+) {
 
-    suspend fun loadRoster(): BotsRosterLoad = when (
+    internal fun invalidateAvatarRoster() { avatarProducer?.invalidate() }
+
+    suspend fun loadRoster(): BotsRosterLoad {
+        if (avatarProducer == null) return loadRosterWithoutAvatars()
+        val read = avatarProducer.begin() ?: return BotsRosterLoad.Refused(UNREADABLE_ROSTER)
+        return when (val result = read.request(includeSessions = true)) {
+            is PluginHostResult.Success -> {
+                if ((result.result as? JsonObject)?.get("profiles") !is JsonArray) return BotsRosterLoad.Refused(UNREADABLE_ROSTER)
+                val refs = avatarProducer.accept(read, result.result) ?: return BotsRosterLoad.Refused(UNREADABLE_ROSTER)
+                BotsRosterLoad.Loaded(checkNotNull(parseBotsRoster(result.result, refs)))
+            }
+            PluginHostResult.UnavailableOnGateway -> {
+                avatarProducer.invalidate()
+                BotsRosterLoad.UnavailableOnGateway
+            }
+            is PluginHostResult.Refused -> BotsRosterLoad.Refused(result.safeMessage)
+        }
+    }
+
+    private suspend fun loadRosterWithoutAvatars(): BotsRosterLoad = when (
         val result = host.request(
             method = PROFILES_LIST,
             params = buildJsonObject { put("include_sessions", JsonPrimitive(true)) },
@@ -386,7 +411,10 @@ class BotsPluginRepository(private val host: PluginHost) {
  * `skill_count`, plus `last_session` / `worker_session` / `canonical_session` /
  * `ui_meta` / `has_avatar` when `include_sessions` is on.
  */
-fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
+fun parseBotsRoster(
+    result: JsonElement,
+    avatars: Map<String, ProfileAvatarRef> = emptyMap(),
+): List<BotRosterRow>? {
     val root = result as? JsonObject ?: return null
     val rows = root["profiles"] as? JsonArray ?: return null
     return rows.mapNotNull { element ->
@@ -402,6 +430,7 @@ fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
             lastSession = parseSessionPreview(row["last_session"]),
             workerSession = parseSessionPreview(row["worker_session"]),
             hasAvatar = row.flag("has_avatar"),
+            avatarRef = avatarWireName(row)?.let(avatars::get),
         )
     }
 }

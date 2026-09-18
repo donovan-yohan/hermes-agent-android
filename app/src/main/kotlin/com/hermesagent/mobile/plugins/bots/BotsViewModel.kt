@@ -136,6 +136,7 @@ class BotsViewModel(
      * exactly what the cache survives.
      */
     private val endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
+    private val connectionToken: StateFlow<com.hermesagent.mobile.plugins.PluginConnectionToken?> = MutableStateFlow(null),
 ) {
     private val _uiState = MutableStateFlow(BotsRosterUiState())
     val uiState: StateFlow<BotsRosterUiState> = _uiState.asStateFlow()
@@ -196,7 +197,7 @@ class BotsViewModel(
             // to the one this emission carries: a read that has already adopted
             // the new endpoint's rows bumps [rosterEndpoint] first, and a
             // collector waking late behind it must not clear them again.
-            combine(connected, endpointGeneration) { up, _ -> up }
+            combine(connected, endpointGeneration, connectionToken) { up, _, _ -> up }
                 .collect { up ->
                     dropRosterIfEndpointChanged()
                     _uiState.update { state ->
@@ -518,6 +519,7 @@ class BotsViewModel(
      * what asks — see the collector in `init`.
      */
     private fun dropRosterForEndpointSwitch() {
+        repository.invalidateAvatarRoster()
         roster = emptyList()
         rosterEndpoint = endpointGeneration.value
         answeredEndpoint = null

@@ -854,6 +854,8 @@ internal fun gatewayRpcTimeoutMillis(method: String, defaultTimeoutMillis: Long 
         // and opens each profile's state.db, which is seconds-scale on a cold
         // disk. Desktop gives the same call its own 60s boot budget rather
         // than the generic one (apps/desktop/src/hermes.ts:77-88).
-        "profiles.list" -> 60_000L
+        // Asset reads also use the slow lane: tui_gateway/server.py:167-168 at
+        // d177b119e9c56c9ddc0b7379ffce52341ec06584. No upload support is added.
+        "profiles.list", "profiles.get_asset" -> 60_000L
         else -> defaultTimeoutMillis
     }
