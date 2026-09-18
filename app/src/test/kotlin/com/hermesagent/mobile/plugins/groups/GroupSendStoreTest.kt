@@ -3,6 +3,7 @@ package com.hermesagent.mobile.plugins.groups
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import org.junit.Before
@@ -232,6 +233,32 @@ class GroupSendStoreTest {
             assertEquals(draft, restored.drafts[draft.draftKey])
             assertEquals(record, restored.records[record.recordKey])
             assertEquals(GroupSendRecordState.Prepared, restored.records[record.recordKey]?.state)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `silent atomic commit failure preserves prior snapshot and refuses applied result`() = runTest {
+        val file = storeFile()
+        try {
+            var discardCommit = false
+            val store = AndroidGroupSendStore(context, file.name) { destination ->
+                object : android.util.AtomicFile(destination) {
+                    override fun finishWrite(stream: java.io.FileOutputStream?) {
+                        if (discardCommit) failWrite(stream) else super.finishWrite(stream)
+                    }
+                }
+            }
+            val original = sampleRecord("original", "Keep this")
+            assertEquals(GroupSendStoreMutation.Applied, store.prepare(original))
+            val before = store.snapshot()
+            val beforeBytes = file.readBytes()
+            discardCommit = true
+            assertEquals(GroupSendStoreMutation.StorageUnavailable, store.prepare(sampleRecord("lost", "Must not publish")))
+            assertEquals(before, store.snapshotFlow.first())
+            assertArrayEquals(beforeBytes, file.readBytes())
+            assertEquals(before, AndroidGroupSendStore(context, file.name).snapshot())
         } finally {
             file.delete()
         }

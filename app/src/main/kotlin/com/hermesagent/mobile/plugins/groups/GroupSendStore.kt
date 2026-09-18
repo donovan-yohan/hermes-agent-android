@@ -303,9 +303,10 @@ internal object GroupSendStoreCodec {
 internal class AndroidGroupSendStore(
     context: Context,
     storageFileName: String = "group_send_store.json",
+    atomicFileFactory: (File) -> AtomicFile = ::AtomicFile,
 ) : GroupSendStore {
     private val file = File(context.noBackupFilesDir, storageFileName)
-    private val atomicFile = AtomicFile(file)
+    private val atomicFile = atomicFileFactory(file)
     private val mutationMutex = Mutex()
     private val state = MutableStateFlow(readSnapshot())
 
@@ -391,6 +392,9 @@ internal class AndroidGroupSendStore(
                 atomicFile.failWrite(output)
                 throw failure
             }
+            // AtomicFile can report commit failures only through platform logging.
+            // Never authorize a wire send using a snapshot that did not survive readback.
+            if (readSnapshot() != next) return GroupSendStoreMutation.StorageUnavailable
             state.value = next
             GroupSendStoreMutation.Applied
         } catch (cancelled: CancellationException) {
