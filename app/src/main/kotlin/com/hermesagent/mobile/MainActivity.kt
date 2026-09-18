@@ -428,6 +428,7 @@ class MainActivity : ComponentActivity() {
                 gatewayState = gatewayState,
                 sshState = sshState,
                 appearance = appearance,
+                avatarRoster = app.avatarRoster,
                 gatewayThemes = gatewayThemes,
                 chatActions = ChatActions(
                     onQueryChange = chatViewModel::setQuery,

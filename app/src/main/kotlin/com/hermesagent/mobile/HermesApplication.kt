@@ -393,6 +393,8 @@ class HermesApplication : Application() {
                 override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                     gatewayConnection.applicationForegroundChanged(true)
                     notificationPresence.applicationForegroundChanged(true)
+                    avatarRoster.syncOwner()
+                    avatarRoster.refreshAvatars()
                 }
 
                 override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {

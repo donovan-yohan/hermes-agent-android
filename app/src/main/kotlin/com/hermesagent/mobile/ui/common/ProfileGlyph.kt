@@ -3,6 +3,7 @@ package com.hermesagent.mobile.ui.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
@@ -57,50 +58,61 @@ fun ProfileGlyph(
     } else {
         Modifier.semantics { this.contentDescription = contentDescription }
     }
-    // The `home` face belongs to the default profile alone
-    // (`profile-glyph.tsx:21-27`). Any other profile carries its initial, even
-    // when it resolves to no identity colour — that case tints against
-    // `--ui-text-quaternary` rather than falling back to the default's face
-    // (`profile-glyph.tsx:37`).
-    if (profile.isDefault) {
-        Box(modifier.then(semantics).size(size), contentAlignment = Alignment.Center) {
-            HermesIconGlyph(
-                icon = HermesIcon.Home,
-                color = tokens.textQuaternary,
-                // Through density, so a raised font scale cannot push the mark
-                // out of a square that is fixed in dp.
-                size = with(LocalDensity.current) { (size * 0.75f).toSp() },
+    val glyphModifier = modifier
+        .then(semantics)
+        .size(size)
+    // The captured binding owns admission and the draw-phase fence. Its fallback
+    // is still the complete existing identity glyph, so unavailable/stale rows
+    // look exactly as they did before avatar support.
+    ProfileAvatarImage(
+        ref = profile.avatarRef,
+        modifier = glyphModifier,
+        shape = ProfileGlyphShape,
+    ) {
+        // The `home` face belongs to the default profile alone
+        // (`profile-glyph.tsx:21-27`). Any other profile carries its initial, even
+        // when it resolves to no identity colour — that case tints against
+        // `--ui-text-quaternary` rather than falling back to the default's face
+        // (`profile-glyph.tsx:37`).
+        if (profile.isDefault) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                HermesIconGlyph(
+                    icon = HermesIcon.Home,
+                    color = tokens.textQuaternary,
+                    // Through density, so a raised font scale cannot push the mark
+                    // out of a square that is fixed in dp.
+                    size = with(LocalDensity.current) { (size * 0.75f).toSp() },
+                )
+            }
+            return@ProfileAvatarImage
+        }
+        val argb = resolveProfileColorArgb(profile)
+        val hue = argb?.let(::Color) ?: tokens.textQuaternary
+        // `color: color ?? undefined` (`profile-glyph.tsx:37`,
+        // `profile-switcher.tsx:704`): a profile with an identity colour writes
+        // its initial in it, and a colourless one leaves the initial to inherit
+        // its container's ink. `LocalContentColor` is that inheritance here.
+        val ink = argb?.let(::Color) ?: LocalContentColor.current
+        val fill = mixPremultiplied(hue, if (active) 30f else 22f, Color.Transparent)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(fill, ProfileGlyphShape)
+                .then(if (active) Modifier.border(1.5.dp, hue, ProfileGlyphShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            val initialSize = with(LocalDensity.current) { (size * 0.5f).toSp() }
+            // Full-strength ink. Desktop dims the whole rail square, not its
+            // initial (`profile-switcher.tsx:696-697`), and the shared glyph on
+            // a row or a roster line is never dimmed at all.
+            Text(
+                text = profileInitial(profile.name),
+                color = ink,
+                fontSize = initialSize,
+                lineHeight = initialSize,
+                fontWeight = FontWeight.SemiBold,
             )
         }
-        return
-    }
-    val argb = resolveProfileColorArgb(profile)
-    val hue = argb?.let(::Color) ?: tokens.textQuaternary
-    // `color: color ?? undefined` (`profile-glyph.tsx:37`,
-    // `profile-switcher.tsx:704`): a profile with an identity colour writes its
-    // initial in it, and a colourless one leaves the initial to inherit its
-    // container's ink. `LocalContentColor` is that inheritance here.
-    val ink = argb?.let(::Color) ?: LocalContentColor.current
-    val fill = mixPremultiplied(hue, if (active) 30f else 22f, Color.Transparent)
-    Box(
-        modifier
-            .then(semantics)
-            .size(size)
-            .background(fill, ProfileGlyphShape)
-            .then(if (active) Modifier.border(1.5.dp, hue, ProfileGlyphShape) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) {
-        val initialSize = with(LocalDensity.current) { (size * 0.5f).toSp() }
-        // Full-strength ink. Desktop dims the whole rail square, not its
-        // initial (`profile-switcher.tsx:696-697`), and the shared glyph on a
-        // row or a roster line is never dimmed at all.
-        Text(
-            text = profileInitial(profile.name),
-            color = ink,
-            fontSize = initialSize,
-            lineHeight = initialSize,
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 

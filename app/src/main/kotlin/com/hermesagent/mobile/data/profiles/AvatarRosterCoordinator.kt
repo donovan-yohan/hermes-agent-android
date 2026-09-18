@@ -110,6 +110,32 @@ class AvatarRosterCoordinator internal constructor(
     /** Synchronous endpoint leave hook; subsequent admission must recapture a ready owner. */
     internal fun reset() = synchronized(lock) { resetOwner() }
 
+    /**
+     * Revalidate unchanged image and miss entries on foreground or explicit refresh.
+     * The caller owns roster refresh separately; this does not start work for rows that
+     * are not currently subscribed.
+     */
+    internal fun refreshAvatars() = synchronized(lock) {
+        val current = source ?: return@synchronized
+        if (!current.isCurrent()) {
+            resetOwner()
+            return@synchronized
+        }
+        avatars.refresh(current)
+        _revision.value++
+    }
+
+    /** Current captured owner, for read-only UI bridges that need to reconcile lag. */
+    internal fun currentOwner(): GatewayAvatarAssetSource? = synchronized(lock) {
+        source?.takeIf { it.isCurrent() }
+    }
+
+    /** Shared cache access; callers must dispose the returned binding with the row. */
+    internal fun bind(ref: ProfileAvatarRef?): Binding? = subscribe(ref)
+
+    /** Revision signal for Compose invalidation; never performs I/O. */
+    internal val revisions get() = revision
+
     private fun resetOwner() {
         bindings.toList().forEach { it.close() }
         producers.filterNotNull().forEach { it.pending = null; it.receipt = null }
