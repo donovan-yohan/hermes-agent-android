@@ -124,13 +124,15 @@ internal fun gatewayEventLane(type: String): GatewayEventLane =
  *
  * **Replay watermarks.** A session event is stamped with a per-session
  * monotonic `seq` and kept in a bounded ring; `session.events.since` resumes
- * from a client's last seen `seq` (`tui_gateway/event_replay.py:39-60,74-79` @
- * the pin SHA). Those counters are in-process, so a restart resets them to 1
+ * from a client's last seen `seq` (`tui_gateway/event_replay.py:65-89` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`). Those counters are in-process,
+ * so a restart resets them to 1
  * while this client still holds high watermarks — replay would answer "nothing
  * newer" forever. `replay_epoch` is the token that makes the restart visible:
  * it is regenerated per process and carried both on `gateway.ready` and on
  * every `session.events.since` answer
- * (`tui_gateway/methods_session.py:2131-2144` @ the pin SHA). A new epoch
+ * (`tui_gateway/methods_session.py:2187-2201` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`). A new epoch
  * therefore drops the cached watermarks; a backend that advertises none drops
  * them too, since undetectable is not the same as unchanged.
  *
