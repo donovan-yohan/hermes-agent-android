@@ -394,15 +394,21 @@ internal class AndroidGroupSendStore(
     }
 
     private fun readSnapshot(): GroupSendStoreSnapshot {
-        if (!file.exists()) return GroupSendStoreSnapshot()
         return try {
+            // AtomicFile must recover a legacy backup before testing for an absent store.
             atomicFile.openRead().use { input ->
-                val bytes = input.readBytes()
-                if (bytes.size > MAX_STORE_SERIALIZED_BYTES) GroupSendStoreSnapshot(valid = false)
-                else GroupSendStoreCodec.decode(bytes.toString(Charsets.UTF_8))
+                val bytes = ByteArray(MAX_STORE_SERIALIZED_BYTES + 1)
+                var count = 0
+                while (count < bytes.size) {
+                    val read = input.read(bytes, count, bytes.size - count)
+                    if (read < 0) break
+                    count += read
+                }
+                if (count > MAX_STORE_SERIALIZED_BYTES) GroupSendStoreSnapshot(valid = false)
+                else GroupSendStoreCodec.decode(String(bytes, 0, count, Charsets.UTF_8))
             }
         } catch (_: FileNotFoundException) {
-            GroupSendStoreSnapshot()
+            GroupSendStoreSnapshot(valid = !file.exists() && !File(file.path + ".bak").exists())
         } catch (_: IOException) {
             GroupSendStoreSnapshot(valid = false)
         }
