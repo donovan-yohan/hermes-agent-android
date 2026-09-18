@@ -13,8 +13,11 @@ class GroupReadConnection(val repository: GroupsRepository, val isCurrent: () ->
 enum class GroupsPhase { Loading, Ready, Unsupported, Failure }
 data class GroupTranscript(
     val state: GroupState, val events: List<GroupEvent> = emptyList(), val cursor: Long = 0,
-    val authorityLost: Boolean = false,
-)
+    val connectedGatewayId: String? = null,
+) {
+    /** Ownership is relative to this connection, never inferred from a historical event kind. */
+    val authorityLost: Boolean get() = connectedGatewayId != null && state.room.authority != connectedGatewayId
+}
 data class GroupsUiState(
     val phase: GroupsPhase = GroupsPhase.Loading,
     val rooms: List<HostedGroup> = emptyList(),
@@ -66,6 +69,12 @@ class GroupsViewModel(
                         requireCurrent(target)
                         capabilities = answer
                         capabilityConnection = connection
+                        // Cached ownership remains useful on a failed catch-up, but its comparison
+                        // must use this newly authenticated leg's Gateway identity.
+                        if (answer.version == 2L) {
+                            cache.replaceAll { _, transcript -> transcript.copy(connectedGatewayId = answer.authorityGatewayId) }
+                            mutable.update { it.copy(transcript = it.transcript?.copy(connectedGatewayId = answer.authorityGatewayId)) }
+                        }
                     }
                     if (capabilities?.version != 2L) {
                         mutable.update { it.copy(phase = GroupsPhase.Unsupported, stale = it.rooms.isNotEmpty()) }
@@ -147,7 +156,9 @@ class GroupsViewModel(
         val held = cache[id]
         // Only fresh state.latest_seq proves cursor-ahead; a reasonless 4112 never does.
         val reset = held != null && state.room.latest < held.cursor
-        var next = if (reset || held == null) GroupTranscript(state) else held.copy(state = state)
+        val connectedGatewayId = capabilities!!.authorityGatewayId
+        var next = if (reset || held == null) GroupTranscript(state, connectedGatewayId = connectedGatewayId)
+            else held.copy(state = state, connectedGatewayId = connectedGatewayId)
         repository.log(id, next.cursor, capabilities!!.limit) { page ->
             // No suspension between this check and apply. A cancelled non-cooperative answer cannot paint.
             if (endpoint.value != target.endpoint || connections.value !== target.connection ||
@@ -155,14 +166,12 @@ class GroupsViewModel(
             next = next.copy(
                 state = next.state.copy(room = next.state.room.copy(
                     disbanded = next.state.room.disbanded || page.events.any { it.kind == "room.disbanded" },
+                    // Page authority is the store's current owner, including on empty pages;
+                    // a historical claim in this page may already have been superseded.
+                    authority = page.authority,
                 )),
                 events = next.events + page.events,
                 cursor = page.cursor,
-                authorityLost = when (page.events.lastOrNull { it.kind in setOf("authority.lost", "authority.claimed") }?.kind) {
-                    "authority.lost" -> true
-                    "authority.claimed" -> false
-                    else -> next.authorityLost
-                },
             )
         }
         requireCurrent(target)
@@ -172,7 +181,7 @@ class GroupsViewModel(
         mutable.update { it.copy(phase = GroupsPhase.Ready, transcript = next, roomLoading = false,
             stale = false, authorityConflict = false,
             rooms = if (next.state.room.disbanded) it.rooms.filterNot { room -> room.id == id }
-                else it.rooms.map { room -> if (room.id == id) state.room else room }) }
+                else it.rooms.map { room -> if (room.id == id) next.state.room else room }) }
     }
 
     private data class ReadTarget(val connection: GroupReadConnection?, val endpoint: Long, val foreground: Boolean, val id: String?)

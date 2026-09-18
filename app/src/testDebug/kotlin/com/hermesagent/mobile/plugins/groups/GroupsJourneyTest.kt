@@ -89,6 +89,24 @@ class GroupsJourneyTest {
         compose.onNodeWithText("This Group Chat’s history is no longer available.").assertIsDisplayed()
     }
 
+    @Test fun authorityBannerComparesOwnerIdentityWithoutEnablingWrites() {
+        val transcript = GroupTranscript(GroupState(room.copy(authority = "gateway-b")), connectedGatewayId = "gateway-a")
+        val state = mutableStateOf(GroupsUiState(phase = GroupsPhase.Ready, selected = room.id, transcript = transcript))
+        mount(state)
+        compose.onNodeWithText("Managed by another Gateway. Read only.").assertIsDisplayed()
+        compose.runOnIdle {
+            state.value = state.value.copy(transcript = transcript.copy(
+                state = GroupState(room.copy(authority = "gateway-c")),
+                events = listOf(GroupEvent(1, "authority.claimed", null, "Group Chat authority changed")),
+            ))
+        }
+        compose.onNodeWithText("Managed by another Gateway. Read only.").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(transcript = transcript.copy(state = GroupState(room.copy(authority = "gateway-a")))) }
+        compose.onNodeWithText("Managed by another Gateway. Read only.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("New Thread. $WIP_SPOKEN").assertIsNotEnabled()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+    }
+
     @Test fun productionReadJourneyOpensRoomAndBackReturnsToList() {
         val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
         val calls = mutableListOf<String>()

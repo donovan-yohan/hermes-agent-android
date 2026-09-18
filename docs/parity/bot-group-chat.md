@@ -52,7 +52,15 @@ last known-good transcript stale. A fresh state cursor lower than the held
 cursor is the only reset evidence; reasonless 4112 never resets. Recovery is
 bounded by a page budget, and failures stop automatic polling until Retry,
 resume, navigation or reconnect. Typed expired-history refusals tombstone the
-room for the endpoint. Authority conflicts/lost events remain read-only.
+room for the endpoint. Authority conflicts remain read-only.
+
+Authority status compares the connected Gateway ID from capabilities with the
+room owner's ID, not the polarity of `authority.lost`/`authority.claimed` events.
+Each log page's current owner supersedes state and historical event payloads
+(`gateway/hosted_rooms.py:1147-1176`); the final validated page owns the committed
+projection, including empty pages. Reconnect rebinds retained ownership to the
+fresh capability identity even if state then fails. Endpoint changes clear both.
+A remotely owned room still supports reads; no authority change enables writes.
 
 Foreground is the production `LifecycleResumeEffect` on this destination, not
 an invented PluginContext API. Working/blocked polling is 1.5 seconds and idle

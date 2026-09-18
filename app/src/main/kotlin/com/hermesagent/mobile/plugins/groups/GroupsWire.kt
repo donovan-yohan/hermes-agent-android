@@ -15,8 +15,10 @@ data class GroupState(
     val room: HostedGroup, val working: Boolean = false, val blocked: Boolean = false,
     val peerRoutes: List<String> = emptyList(), val pending: List<String> = emptyList(),
 )
-data class GroupLog(val events: List<GroupEvent>, val cursor: Long, val more: Boolean)
-data class GroupCapabilities(val version: Long, val driver: Boolean, val limit: Int)
+data class GroupLog(val events: List<GroupEvent>, val cursor: Long, val more: Boolean, val authority: String)
+data class GroupCapabilities(
+    val version: Long, val driver: Boolean, val limit: Int, val authorityGatewayId: String? = null,
+)
 data class GroupList(val rooms: List<HostedGroup>, val next: Long?)
 
 internal class InvalidGroupWire : IllegalArgumentException()
@@ -43,7 +45,7 @@ internal fun parseGroupCapabilities(value: JsonElement): GroupCapabilities {
     if (version != 2L) return GroupCapabilities(version, false, 1)
     val driver = o.bool("driver")
     o.bool("persistent_process")
-    o.str("authority_gateway_id")
+    val gatewayId = o.str("authority_gateway_id")
     o.getValue("room_link").obj().bool("enabled")
     for (key in listOf("features", "methods")) o.array(key).forEach {
         if (it !is JsonPrimitive || !it.isString) invalid()
@@ -51,7 +53,7 @@ internal fun parseGroupCapabilities(value: JsonElement): GroupCapabilities {
     val methods = o.array("methods").map { it.jsonPrimitive.content }.toSet()
     if (!methods.containsAll(listOf("groups.capabilities", "groups.list", "groups.state", "groups.log"))) invalid()
     val limit = o.num("max_log_limit").takeIf { it > 0 } ?: invalid()
-    return GroupCapabilities(version, driver, minOf(limit, 500).toInt())
+    return GroupCapabilities(version, driver, minOf(limit, 500).toInt(), gatewayId)
 }
 
 internal fun parseHostedGroup(value: JsonElement): HostedGroup {
@@ -136,7 +138,8 @@ internal fun parseGroupState(value: JsonElement, id: String): GroupState {
 internal fun parseGroupLog(value: JsonElement, id: String, since: Long): GroupLog {
     val o = value.obj()
     val authority = o.getValue("authority").obj()
-    authority.str("gateway_id"); authority.num("epoch")
+    val owner = authority.str("gateway_id")
+    authority.num("epoch")
     val cursor = o.num("cursor")
     val latest = o.num("latest_seq")
     val more = o.bool("has_more")
@@ -194,5 +197,5 @@ internal fun parseGroupLog(value: JsonElement, id: String, since: Long): GroupLo
         else GroupEvent(seq, "unknown", null, "Group Chat updated")
     }
     if (cursor != previous || latest < cursor || more != (cursor < latest) || (more && cursor <= since)) invalid()
-    return GroupLog(events, cursor, more)
+    return GroupLog(events, cursor, more, owner)
 }
