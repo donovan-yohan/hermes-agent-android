@@ -3,78 +3,72 @@ package com.hermesagent.mobile.data.session
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.abs
+import kotlin.math.ln
 
 /**
- * Calendar buckets for the session list, ported from Desktop's `calendarBucket`
- * (`apps/desktop/src/lib/time.ts:125-165` @ `72a3277cd7`).
+ * Which calendar bucket a row falls in, and — through [SessionBucket.key] — the
+ * divider's own identity.
  *
- * Desktop additionally leaves the newest *run* of sessions unlabelled above the
- * first divider (`session-date-groups.ts`, `headRunCutoffMs`) — a gap-scoring
- * heuristic that needs a long list to mean anything. This slice does not ship
- * it; the workflow doc records the gap. What the app does ship is the other half of
- * that rule, which needs no heuristic: **whatever group renders first is never
- * labelled** (`session-date-groups.ts:136-140`). A divider separates two
- * groups; there is nothing above the first one to separate it from.
- *
- * That unlabelled head is also what makes Desktop's `Earlier …` wording true
- * (`apps/desktop/src/lib/time.ts:118-124` @ `437116f9497c80d242ce034ff7f5d81dc277a337`):
- * the newest run never reaches the divider path, so a bucket labelled "Earlier
- * today" always sits *below* something newer. The five relative labels are
- * Desktop's, byte for byte
- * (`apps/desktop/src/i18n/en.ts:2794-2800` @ the same SHA).
+ * Desktop's `calendarBucket` does not stop at one terminal bucket: past
+ * `earlier this month` it emits **one bucket per calendar month**, keyed
+ * `m-<year>-<month>` (same year) / `my-<year>-<month>` (other year), and labels
+ * them from `Intl` — a month name, then month + year
+ * (`apps/desktop/src/lib/time.ts:155-165`, `:30-31`, `:169-190` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`). That per-month identity is what
+ * lets two month dividers coexist without either captioning the other's rows,
+ * which is why the tail could not be ported as a word on one terminal bucket.
  */
-enum class SessionBucket { Today, Yesterday, ThisWeek, LastWeek, ThisMonth, Older }
+enum class SessionBucketKind { Today, Yesterday, ThisWeek, LastWeek, ThisMonth, Month, MonthYear }
 
-fun SessionBucket.label(): String = when (this) {
-    SessionBucket.Today -> "Earlier today"
-    SessionBucket.Yesterday -> "Yesterday"
-    SessionBucket.ThisWeek -> "Earlier this week"
-    SessionBucket.LastWeek -> "Last week"
-    SessionBucket.ThisMonth -> "Earlier this month"
-    // Desktop's tail is not one bucket: past `thisMonth` it emits one per
-    // calendar month, keyed `m-<year>-<month>` / `my-<year>-<month>`, labelled
-    // from `Intl` with a month name or month + year
-    // (`apps/desktop/src/lib/time.ts:155-165,30-31,169-190` @ the pin). Porting
-    // that word here would be a false claim: one terminal bucket captions rows
-    // belonging to several different months. It needs per-month divider identity
-    // first, which is #299.
-    SessionBucket.Older -> "Older"
+/**
+ * One divider's identity: [kind] selects the copy, [key] is Desktop's own
+ * bucket key — `today` … `this-month`, then `m-`/`my-<year>-<month>` — and
+ * [atMillis] is the bucket's nominal day start, the instant a month formatter
+ * reads its month name from (`time.ts:169-190` @ the pin).
+ *
+ * [key] is Desktop's and is load-bearing: a divider that has already been
+ * emitted never labels another run of rows, and a non-monotonic list cannot
+ * re-open a bucket it has already passed
+ * (`apps/desktop/src/lib/session-date-groups.ts:130-147` @ the pin).
+ */
+data class SessionBucket(
+    val kind: SessionBucketKind,
+    val key: String,
+    val atMillis: Long,
+)
+
+/**
+ * Desktop's five relative divider strings, byte for byte
+ * (`apps/desktop/src/i18n/en.ts:2794-2800` @ the pin), or null for a bucket
+ * whose label comes from a month formatter.
+ *
+ * The `Earlier …` wording is relational: it means *earlier than the head of
+ * this list* (`apps/desktop/src/lib/time.ts:118-124` @ the pin), and it is true
+ * because the newest *run* of sessions is never labelled at all — the head-run
+ * cutoff below (`time.ts:30-31`, `:155-165` @ the pin) leaves it out of the
+ * divider path, so a bucket carrying the word always sits under something newer.
+ */
+fun SessionBucket.relativeLabel(): String? = when (kind) {
+    SessionBucketKind.Today -> "Earlier today"
+    SessionBucketKind.Yesterday -> "Yesterday"
+    SessionBucketKind.ThisWeek -> "Earlier this week"
+    SessionBucketKind.LastWeek -> "Last week"
+    SessionBucketKind.ThisMonth -> "Earlier this month"
+    SessionBucketKind.Month, SessionBucketKind.MonthYear -> null
 }
 
 /**
- * The label one divider renders, given whether a first-group rule applies to it.
+ * How one divider's caption is worded.
  *
- * Desktop's five relative strings are relational: `Earlier today` means *earlier
- * than the head of this list* (`apps/desktop/src/lib/time.ts:118-124` @ the pin).
- * That is only true while something newer sits above the group it labels.
- *
- * `buildSessionRows` renders a Pinned section above the recents, and when it does
- * the first recents bucket is labelled on purpose — an unlabelled group under a
- * pinned list would read as more pinned rows. But in that one slot the newest
- * session in the app can sit directly *below* the divider, and then "Earlier
- * today" is a claim about rows that are not earlier than anything above them.
- * Desktop cannot reach that state: its Recents section leaves its own first group
- * unlabelled even under `PINNED` (`session-date-groups.ts:136-140` @ the pin), so
- * its first divider under a pinned section is normally `Yesterday` or older.
- *
- * So the first recents bucket falls back to the plain word when a pinned section
- * is what forced its label.
- *
- * **`Earlier today` is unreachable here, and that is deliberate.** This list
- * sorts newest-first and its buckets are contiguous and monotonic, so `Today`
- * can only ever be the *first* recents bucket — which is unlabelled without pins
- * and is exactly the forced slot above, taking the plain word. Desktop reaches
- * `Earlier today` only because it splits *within* a day at a head-run cutoff
- * (`session-date-groups.ts`, `headRunCutoffMs`), and that heuristic is not ported
- * (`SessionGrouping.kt:11-14`). The word is therefore kept out rather than
- * rendered as a claim the list cannot support; the other four relative strings,
- * `Yesterday` included, are reachable and are Desktop's byte-for-byte.
+ * Desktop formats a month bucket through `Intl.DateTimeFormat` at the reader's
+ * locale (`apps/desktop/src/lib/time.ts:30-31` @ the pin). Android's equivalent
+ * is ICU, which exists only on a device — so the wording is a seam
+ * ([IcuSessionBucketLabel] is the shipped implementation) and the grouping
+ * algorithm stays a pure function a plain JVM test can drive with a stub.
  */
-fun SessionBucket.label(leadsLabelledList: Boolean): String = when {
-    leadsLabelledList && this == SessionBucket.Today -> "Today"
-    leadsLabelledList && this == SessionBucket.ThisWeek -> "This week"
-    leadsLabelledList && this == SessionBucket.ThisMonth -> "This month"
-    else -> label()
+fun interface SessionBucketLabel {
+    fun label(bucket: SessionBucket): String
 }
 
 /** A divider, a section label, a note or a session row. One list renders them all. */
@@ -82,16 +76,13 @@ sealed interface SessionListRow {
     /**
      * A date-bucket caption.
      *
-     * [leadsLabelledList] marks the one divider whose label was forced by a
-     * Pinned section above it rather than earned by having something newer
-     * above it. Desktop's relational copy (`Earlier today`) is a claim about
-     * the rows below, and in that slot the claim can be false, so those
-     * dividers take the plain word instead. See
-     * [SessionBucket.label] for the full reason.
+     * [label] is resolved here rather than at the render site because a
+     * month bucket needs the reader's locale to be worded at all; the grouping
+     * stays pure and the render site stays a `Text`.
      */
     data class Divider(
         val bucket: SessionBucket,
-        val leadsLabelledList: Boolean = false,
+        val label: String,
     ) : SessionListRow
     data class Row(val session: SessionSummary) : SessionListRow
 
@@ -101,6 +92,15 @@ sealed interface SessionListRow {
      * `apps/desktop/src/app/chat/sidebar/index.tsx:1632-1653` @ `72a3277cd7`).
      */
     data object PinnedLabel : SessionListRow
+
+    /**
+     * Desktop's `Sessions` caption, heading the **unpinned pool** below
+     * `Pinned` *inside* the list (`apps/desktop/src/app/chat/sidebar/index.tsx:1829`
+     * over the recents section, label `Sessions` at `apps/desktop/src/i18n/en.ts:2652` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`). Desktop's own word for the pool, and its own place for it; the pane
+     * title above the list is this app's arrangement, not a substitute for it.
+     */
+    data object SessionsLabel : SessionListRow
 
     /**
      * Desktop's empty-recents line when everything loaded is pinned
@@ -151,6 +151,9 @@ const val ALL_PINNED_NOTE = "Everything here is pinned. Unpin a chat to show it 
 /** `Pinned` (`apps/desktop/src/i18n/en.ts:2398` @ `72a3277cd7`). */
 const val PINNED_SECTION_LABEL = "Pinned"
 
+/** `Sessions` (`apps/desktop/src/i18n/en.ts:2652` @ the pin). */
+const val SESSIONS_SECTION_LABEL = "Sessions"
+
 /** `Results` (`apps/desktop/src/i18n/en.ts:2397` @ `72a3277cd7`). */
 const val RESULTS_SECTION_LABEL = "Results"
 
@@ -170,11 +173,13 @@ fun calendarBucket(
     val today = nominalDayStart(nowMillis, timeZone, locale)
     val dayDiff = Math.round((today.timeInMillis - at.timeInMillis).toDouble() / DAY_MILLIS)
 
-    if (dayDiff <= 0L) return SessionBucket.Today
-    if (dayDiff == 1L) return SessionBucket.Yesterday
+    if (dayDiff <= 0L) return SessionBucket(SessionBucketKind.Today, "today", at.timeInMillis)
+    if (dayDiff == 1L) return SessionBucket(SessionBucketKind.Yesterday, "yesterday", at.timeInMillis)
 
     val weekStart = startOfWeek(today)
-    if (at.timeInMillis >= weekStart.timeInMillis) return SessionBucket.ThisWeek
+    if (at.timeInMillis >= weekStart.timeInMillis) {
+        return SessionBucket(SessionBucketKind.ThisWeek, "this-week", at.timeInMillis)
+    }
 
     // A week is seven local calendar dates, not always 7 * 24 hours. The
     // fall-back week has an extra hour, so subtracting milliseconds makes the
@@ -182,13 +187,97 @@ fun calendarBucket(
     val previousWeekStart = (weekStart.clone() as Calendar).apply {
         add(Calendar.WEEK_OF_YEAR, -1)
     }
-    if (at.timeInMillis >= previousWeekStart.timeInMillis) return SessionBucket.LastWeek
+    if (at.timeInMillis >= previousWeekStart.timeInMillis) {
+        return SessionBucket(SessionBucketKind.LastWeek, "last-week", at.timeInMillis)
+    }
 
     val sameYear = at.get(Calendar.YEAR) == today.get(Calendar.YEAR)
-    if (sameYear && at.get(Calendar.MONTH) == today.get(Calendar.MONTH)) return SessionBucket.ThisMonth
+    if (sameYear && at.get(Calendar.MONTH) == today.get(Calendar.MONTH)) {
+        return SessionBucket(SessionBucketKind.ThisMonth, "this-month", at.timeInMillis)
+    }
 
-    return SessionBucket.Older
+    // Past `this month` Desktop does not collapse: it emits one bucket per
+    // calendar month, keyed `m-<year>-<month>` inside the current year and
+    // `my-<year>-<month>` outside it, so two month dividers can coexist and
+    // neither captions the other's rows (`apps/desktop/src/lib/time.ts:155-165`
+    // @ `437116f9497c80d242ce034ff7f5d81dc277a337`). Desktop's month
+    // numbering is JavaScript's zero-based `getMonth()`, and the key is what a
+    // later read of the same bucket compares — so it is kept verbatim rather
+    // than normalised to a one-based month.
+    val yearMonth = "${at.get(Calendar.YEAR)}-${at.get(Calendar.MONTH)}"
+    return if (sameYear) {
+        SessionBucket(SessionBucketKind.Month, "m-$yearMonth", at.timeInMillis)
+    } else {
+        SessionBucket(SessionBucketKind.MonthYear, "my-$yearMonth", at.timeInMillis)
+    }
 }
+
+/**
+ * The unlabelled head: the newest *run* of sessions, cut at a real break in
+ * activity. Ported from Desktop's `headRunCutoffMs`
+ * (`apps/desktop/src/lib/session-date-groups.ts:44-88` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
+ *
+ * This is what makes `Earlier today` truthful rather than merely available: the
+ * newest run never reaches the divider path at all, so a bucket carrying the
+ * word always has something newer above it. Without it the app's own top bucket
+ * would be the one labelled, and the label would be a claim about rows that are
+ * not earlier than anything.
+ *
+ * `-Infinity` (here [Long.MIN_VALUE]) means the whole list is one run, so
+ * nothing is cut and the first-group rule owns the head; `+Infinity`
+ * ([Long.MAX_VALUE]) means there is no head and the calendar groups own it all —
+ * the fuzzy-merge case, where a cut would separate two rows in the same bucket.
+ *
+ * @param timesMillis session activity instants, in any order.
+ */
+private fun headRunCutoff(
+    timesMillis: List<Long>,
+    nowMillis: Long,
+    timeZone: TimeZone,
+    locale: Locale,
+): Long {
+    val times = timesMillis.sortedDescending()
+
+    var bestIdx = -1
+    var bestScore = Double.POSITIVE_INFINITY
+    var runEnded = false
+
+    for (i in 1 until times.size) {
+        val gap = times[i - 1] - times[i]
+        val endsRun = gap > MAX_RUN_GAP_MILLIS
+
+        if (gap >= MIN_RUN_BREAK_MILLIS || endsRun) {
+            // `i` sessions would sit above a cut at this gap.
+            val score = abs(ln(i.toDouble() / TARGET_HEAD_SESSIONS))
+            if (score < bestScore) {
+                bestScore = score
+                bestIdx = i
+                runEnded = endsRun
+            }
+        }
+        if (endsRun) break
+    }
+
+    if (bestIdx == -1) return Long.MIN_VALUE
+
+    if (runEnded) {
+        val headBucket = calendarBucket(times[0], nowMillis, timeZone, locale)
+        val belowBucket = calendarBucket(times[bestIdx], nowMillis, timeZone, locale)
+        if (headBucket.key == belowBucket.key) return Long.MAX_VALUE
+    }
+
+    return times[bestIdx - 1]
+}
+
+/** Aim the head at "the most recent handful" (`session-date-groups.ts:23`). */
+private const val TARGET_HEAD_SESSIONS = 5
+
+/** A break shorter than this never counts as one (`session-date-groups.ts:24`). */
+private const val MIN_RUN_BREAK_MILLIS = 30L * 60 * 1000
+
+/** A silence longer than this always ends the run (`session-date-groups.ts:25`). */
+private const val MAX_RUN_GAP_MILLIS = 8L * 60 * 60 * 1000
 
 /**
  * Newest first, grouped by calendar bucket with a divider *between* groups —
@@ -208,16 +297,17 @@ fun calendarBucket(
  * @param serverMatches what the Gateway's own index answered, or null when it
  *   was not asked, could not be asked, or refused. Null and empty are
  *   different facts and only one of them means "nothing matched".
- * @param archivedView Desktop's `Archived` toggle. Archived is a view of its
- *   own set rather than a filter over the live one
- *   (`apps/desktop/src/app/chat/sidebar/index.tsx:516-520` @
+ * @param archivedView Desktop's `Archived` toggle. Archived is a view of its own
+ *   set rather than a filter over the live one
+ *   (`apps/desktop/src/app/chat/sidebar/index.tsx:513-520` @
  *   `437116f9497c80d242ce034ff7f5d81dc277a337`), so it swaps the pool
  *   wholesale. What the toggle settles is the *divider* question only —
  *   `grouping={showArchived || rankedGlobally ? 'none' : …}` (`:1736`) — the
  *   `Pinned` section above the rows is gated on `!trimmedQuery` alone
  *   (`:1652-1674`), never on `showArchived`. A pinned chat that is then
  *   archived therefore still files under `PINNED`, above the archived rows it
- *   is one of. Those rows take no date dividers.
+ *   is one of, and the `Sessions` caption heads what is left of the pool. Those
+ *   rows take no date dividers.
  *
  *   An archived account whose every row is pinned draws [AllPinnedNote] here —
  *   a deliberate adaptation, not Desktop's sentence. Desktop reaches
@@ -235,6 +325,9 @@ fun calendarBucket(
  *
  *   A query inside that view stays a local filter over the archived pool, with
  *   no Pinned section above it either — see `docs/parity/session-search.md`.
+ * @param bucketLabel how a divider is worded. Defaulted, because the shipped
+ *   wording needs ICU, which a plain JVM test has not got — a suite injects its
+ *   own and the grouping stays deterministic.
  */
 fun buildSessionRows(
     sessions: Collection<SessionSummary>,
@@ -245,6 +338,7 @@ fun buildSessionRows(
     timeZone: TimeZone = TimeZone.getDefault(),
     locale: Locale = Locale.getDefault(),
     archivedView: Boolean = false,
+    bucketLabel: SessionBucketLabel = IcuSessionBucketLabel(locale),
 ): List<SessionListRow> {
     val needle = query.trim().lowercase(locale)
     val localMatches = sessions
@@ -280,7 +374,7 @@ fun buildSessionRows(
     val pinnedIds = pinned.mapTo(HashSet(pinned.size), SessionSummary::id)
     val recents = if (pinned.isEmpty()) localMatches else localMatches.filterNot { it.id in pinnedIds }
 
-    val rows = ArrayList<SessionListRow>(localMatches.size + SessionBucket.entries.size + 2)
+    val rows = ArrayList<SessionListRow>(localMatches.size + SessionBucketKind.entries.size + 2)
     if (pinned.isNotEmpty()) {
         rows += SessionListRow.PinnedLabel
         pinned.forEach { rows += SessionListRow.Row(it) }
@@ -288,36 +382,60 @@ fun buildSessionRows(
 
     // The archived view keeps that Pinned section — it holds the rows of the
     // archived pool like any other, which is the pin's only visible effect once
-    // a chat is filed — but takes no dividers, because `grouping='none'` while
-    // archived settles the divider question alone
-    // (`sidebar/index.tsx:1736` @ `437116f9`). Its all-pinned case is this
-    // app's own sentence rather than Desktop's: see [AllPinnedNote].
+    // a chat is filed — and the `Sessions` caption under it, but takes no
+    // dividers, because `grouping='none'` while archived settles the divider
+    // question alone (`apps/desktop/src/app/chat/sidebar/index.tsx:1736` @
+    // `437116f9`). Its all-pinned case is this app's own sentence rather than
+    // Desktop's: see [AllPinnedNote].
     if (archivedView) {
+        if (recents.isNotEmpty() && pinned.isNotEmpty()) rows += SessionListRow.SessionsLabel
         recents.forEach { rows += SessionListRow.Row(it) }
-    } else {
-        var currentBucket: SessionBucket? = null
-        var emittedRecent = false
-        for (session in recents) {
-            val bucket = calendarBucket(session.lastActiveAtMillis, nowMillis, timeZone, locale)
-            // The first-group rule: the top of the list is already "the newest", so
-            // labelling it says nothing. A Pinned section above it changes that —
-            // there is now something to separate the newest bucket *from*, and an
-            // unlabelled first bucket would read as more pinned rows.
-            //
-            // That forced label is also the one slot where Desktop's relational copy
-            // would be false — a newer session can sit below it — so the first
-            // recents bucket is marked as leading a labelled list and takes the plain
-            // word. See `SessionBucket.label(leadsLabelledList)`.
-            if (bucket != currentBucket) {
-                val forcedFirst = !emittedRecent && pinned.isNotEmpty()
-                if (emittedRecent || pinned.isNotEmpty()) {
-                    rows += SessionListRow.Divider(bucket, leadsLabelledList = forcedFirst)
-                }
-                currentBucket = bucket
-            }
+        if (pinned.isNotEmpty() && recents.isEmpty()) rows += SessionListRow.AllPinnedNote
+        return rows
+    }
+
+    // Desktop's `Sessions` caption heads the unpinned pool below `PINNED`
+    // (`sidebar/index.tsx:1829`, label `Sessions` at `apps/desktop/src/i18n/en.ts:2652` @ the
+    // pin). It is what gives the pinned rows a boundary of their own instead of
+    // leaving the first date divider to imply one — and because a divider only
+    // ever separates two groups, its presence is also what makes the first
+    // recents bucket labelable when pins are above it.
+    if (recents.isNotEmpty() && pinned.isNotEmpty()) rows += SessionListRow.SessionsLabel
+
+    // The head is the newest *run*, cut at a real break; everything above the
+    // cutoff is unlabelled and the calendar buckets own what is left
+    // (`session-date-groups.ts:97-153` @ the pin).
+    val cutoff = headRunCutoff(recents.map(SessionSummary::lastActiveAtMillis), nowMillis, timeZone, locale)
+    val emitted = HashSet<String>(SessionBucketKind.entries.size)
+    var lastKey: String? = null
+    // The first-group rule is per *section*, not per screen: Desktop runs
+    // `groupEntriesByRecency` over the recents section's own entries, so a
+    // pinned row above the pool is not "something newer" for this purpose
+    // (`session-date-groups.ts:97-153` @ the pin). The `Sessions` caption added
+    // above is the boundary between the two pools, and it is what the divider
+    // no longer has to imply — which is why the old forced-first label is gone.
+    var emittedRecent = false
+
+    for (session in recents) {
+        if (session.lastActiveAtMillis >= cutoff) {
             rows += SessionListRow.Row(session)
+            lastKey = "recent"
             emittedRecent = true
+            continue
         }
+
+        val bucket = calendarBucket(session.lastActiveAtMillis, nowMillis, timeZone, locale)
+        if (bucket.key != lastKey) {
+            lastKey = bucket.key
+            val alreadyEmitted = !emitted.add(bucket.key)
+            // A divider only ever separates two groups — never label the very
+            // first rendered row, whatever group it belongs to.
+            if (emittedRecent && !alreadyEmitted) {
+                rows += SessionListRow.Divider(bucket, bucketLabel.label(bucket))
+            }
+        }
+        rows += SessionListRow.Row(session)
+        emittedRecent = true
     }
     if (pinned.isNotEmpty() && recents.isEmpty()) rows += SessionListRow.AllPinnedNote
     return rows

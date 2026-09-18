@@ -33,7 +33,25 @@ adb shell am force-stop com.google.android.apps.nexuslauncher
 
 activity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["android_activity"])' "$request_json")"
 fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixture_id"])' "$request_json")"
-tap_text="$(python3 -c 'import json,sys; values=json.load(open(sys.argv[1]))["state_spec"]["interaction"]; print(values[0][4:] if values else "")' "$request_json")"
+
+# The catalogued interaction list is read by kind, never by position: a state
+# whose subject is at the list's own end scrolls for it, and one that opens a
+# sheet taps for it. An interaction this lane cannot perform is a hard failure —
+# running the capture without it would publish pixels of a state that never
+# happened.
+interaction_kinds="$(python3 -c '
+import json,sys
+values = json.load(open(sys.argv[1]))["state_spec"].get("interaction", [])
+unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
+if unsupported:
+    sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
+    raise SystemExit(1)
+taps = [value[len("tap:"):] for value in values if value.startswith("tap:")]
+print(taps[0] if taps else "")
+print("1" if "swipe:list-up" in values else "")
+' "$request_json")"
+tap_text="$(sed -n 1p <<<"$interaction_kinds")"
+swipe_list_up="$(sed -n 2p <<<"$interaction_kinds")"
 expected_accessibility="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state_spec"].get("post_interaction_accessibility", ""))' "$request_json")"
 
 adb shell am start -W -n "$activity" \
@@ -41,9 +59,13 @@ adb shell am start -W -n "$activity" \
   --es visual_parity_theme "$CAPTURE_THEME"
 
 tap_args=()
+swipe_args=()
 accessibility_args=()
 if [[ -n "$tap_text" ]]; then
   tap_args=(--tap-text "$tap_text")
+fi
+if [[ -n "$swipe_list_up" ]]; then
+  swipe_args=(--swipe-list-up)
 fi
 if [[ -n "$expected_accessibility" ]]; then
   accessibility_args=(--expected-accessibility "$expected_accessibility")
@@ -72,7 +94,12 @@ dismiss_system_dialog() {
 # the setting above when it was drawn before the lane started). The reference
 # capture re-checks the same description itself and still fails if it never
 # appears.
-if [[ -n "$expected_accessibility" ]]; then
+#
+# A swiping state is deliberately excluded: its subject is below the phone's
+# fold until the real drag moves it into view, so waiting here would spend the
+# whole budget on a row that cannot be published yet. The reference capture owns
+# that wait, bounded, on the far side of the swipe.
+if [[ -n "$expected_accessibility" && -z "$swipe_list_up" ]]; then
   published=""
   for _ in $(seq 1 20); do
     if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1; then
@@ -107,6 +134,7 @@ python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-refere
   --activity "${activity#*/}" \
   --out "$out" \
   "${tap_args[@]}" \
+  "${swipe_args[@]}" \
   "${accessibility_args[@]}"
 
 python3 scripts/visual_parity_contract.py check-receipt \

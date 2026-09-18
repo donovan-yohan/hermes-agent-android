@@ -1,6 +1,9 @@
 package com.hermesagent.mobile.ui.sessions
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -10,7 +13,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -18,12 +21,15 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hermesagent.mobile.data.prefs.SidebarGrouping
 import com.hermesagent.mobile.data.session.ALL_PINNED_NOTE
+import com.hermesagent.mobile.data.session.SESSIONS_SECTION_LABEL
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.ui.chat.ArchivedPoolState
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
+import com.hermesagent.mobile.ui.common.DATE_DIVIDER_RULE_TAG
+import com.hermesagent.mobile.ui.common.SECTION_DITHER_TAG
 import com.hermesagent.mobile.ui.theme.HermesSpacing
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -33,6 +39,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
 
 /**
@@ -48,10 +55,11 @@ import org.robolectric.annotation.Config
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SessionListSectionsJourneyTest {
 
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
     /**
      * Desktop's default row metadata is `['preview', 'updated']`
@@ -109,11 +117,111 @@ class SessionListSectionsJourneyTest {
         )
 
         compose.onNodeWithTag(PINNED_SECTION_TAG).assertIsDisplayed()
-        // `SectionLabel` renders its text uppercased, as every other group
-        // label in this rail does.
+        // `PanelLabel` renders its text uppercased, as every section caption in
+        // this rail does.
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithTag("Session row s-1").assertIsDisplayed()
         compose.onNodeWithTag("Session row s-2").assertIsDisplayed()
+    }
+
+    /**
+     * Desktop's two-level caption hierarchy (#141): `Pinned` and the date
+     * buckets are *not* one treatment. `SidebarPanelLabel` carries the accent ink
+     * and the leading 8 px dither square
+     * (`apps/desktop/src/app/shell/sidebar-label.tsx:11-19` @
+     * `437116f9497c80d242ce034ff7f5d81dc277a337`); `SidebarDateDivider` carries
+     * `--ui-text-quaternary` and a trailing hairline rule
+     * (`apps/desktop/src/app/chat/sidebar/chrome.tsx:134-140` @ the pin).
+     *
+     * Both are asserted from the pixels the reader meets, not from the token
+     * names: the two captions must have different ink, and the date divider must
+     * paint the rule the panel caption does not.
+     */
+    @Test
+    fun `the two caption levels are distinguishable by treatment, not only by word`() {
+        launch(
+            sessions = listOf(
+                session("s-1", "Kept chat", pinned = true),
+                session("s-2", "Ordinary chat", lastActiveAtMillis = NOW - 30 * HOUR),
+                session("s-3", "Oldest chat", lastActiveAtMillis = NOW - 9 * DAY),
+            ),
+        )
+
+        // The panel level: one leading dither square per caption, painted in the
+        // accent — Desktop's `dither … text-(--theme-primary)`
+        // (`sidebar-label.tsx:13,18` @ the pin).
+        assertEquals("one dither square per panel caption", 2, compose.nodesTagged(SECTION_DITHER_TAG))
+        val pinnedSquare = pixelOfTag(SECTION_DITHER_TAG, index = 0)
+        val sessionsSquare = pixelOfTag(SECTION_DITHER_TAG, index = 1)
+        assertEquals("both panel captions wear the same square", pinnedSquare, sessionsSquare)
+
+        // The divider level: no square, one trailing rule in the stroke ink —
+        // `bg-(--ui-stroke-tertiary)` (`apps/desktop/src/app/chat/sidebar/chrome.tsx:140` @ `437116f9497c80d242ce034ff7f5d81dc277a337`).
+        assertEquals("the one date divider draws the rule", 1, compose.nodesTagged(DATE_DIVIDER_RULE_TAG))
+        val rule = pixelOfTag(DATE_DIVIDER_RULE_TAG, index = 0)
+
+        // Two levels, two marks, two inks — which is the whole finding.
+        assertTrue(
+            "a panel caption's square and a date divider's rule must not be one painted colour; " +
+                "both were $pinnedSquare",
+            pinnedSquare != rule,
+        )
+    }
+
+    /**
+     * The second caption itself (#299): Desktop's `Sessions` heads the unpinned
+     * pool below `PINNED`, inside the list
+     * (`apps/desktop/src/app/chat/sidebar/index.tsx:1829`, label
+     * `apps/desktop/src/i18n/en.ts:2652` @ `437116f9497c80d242ce034ff7f5d81dc277a337`). With it standing there, the boundary between
+     * the two pools is named rather than implied by a date divider — which is
+     * what retired the old forced-first divider label.
+     */
+    @Test
+    fun `the recents pool renders under Desktop's Sessions caption`() {
+        launch(
+            sessions = listOf(
+                session("s-1", "Kept chat", pinned = true),
+                session("s-2", "Ordinary chat"),
+            ),
+        )
+
+        compose.onNodeWithTag(SESSIONS_SECTION_TAG).assertIsDisplayed()
+        compose.onNode(
+            androidx.compose.ui.test.hasText("SESSIONS") and hasAnyAncestor(hasTestTag(SESSIONS_SECTION_TAG)),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+    }
+
+    /** With no pinned section there is one pool, and the pane title already names it. */
+    @Test
+    fun `no Sessions caption when nothing is pinned`() {
+        launch(sessions = listOf(session("s-1", "Ordinary chat")))
+
+        assertEquals(0, compose.nodesTagged(SESSIONS_SECTION_TAG))
+    }
+
+    /**
+     * The tail renders **one divider per calendar month**, worded by ICU, so two
+     * month dividers coexist and neither captions the other's rows (#299). The
+     * words come from the real formatter here — `IcuSessionBucketLabelTest` pins
+     * the format itself, and `SessionGroupingTest` pins the identity.
+     */
+    @Test
+    fun `the tail renders one divider per month with the locale's month names`() {
+        // `NOW` is 2023-11-14T22:13:20Z.
+        launch(
+            sessions = listOf(
+                session("s-1", "This month", lastActiveAtMillis = NOW - 2 * HOUR),
+                session("s-2", "September chat", lastActiveAtMillis = java.time.Instant.parse("2023-09-05T12:00:00Z").toEpochMilli()),
+                session("s-3", "August chat", lastActiveAtMillis = java.time.Instant.parse("2023-08-05T12:00:00Z").toEpochMilli()),
+            ),
+        )
+
+        assertEquals(2, compose.nodesTagged(DIVIDER_TAG))
+        compose.onNodeWithText("SEPTEMBER").assertIsDisplayed()
+        compose.onNodeWithText("AUGUST").assertIsDisplayed()
+        // The invented terminal word is gone, and no divider ever renders it.
+        assertEquals(0, compose.nodesWithText("OLDER"))
     }
 
     /**
@@ -215,6 +323,15 @@ class SessionListSectionsJourneyTest {
 
         compose.onNodeWithTag(PINNED_SECTION_TAG).assertIsDisplayed()
         compose.onNodeWithText("PINNED").assertIsDisplayed()
+        // Desktop's own `Sessions` caption heads what is left of the pool below
+        // the pins, in this view too: `sessionsLabel` is computed from the view
+        // the list is in, never gated on it
+        // (`apps/desktop/src/app/chat/sidebar/index.tsx:1176-1181,1829`).
+        compose.onNodeWithTag(SESSIONS_SECTION_TAG).assertIsDisplayed()
+        compose.onNode(
+            androidx.compose.ui.test.hasText("SESSIONS") and hasAnyAncestor(hasTestTag(SESSIONS_SECTION_TAG)),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
         compose.onNodeWithTag("Session row s-2").assertIsDisplayed()
         compose.onNodeWithTag("Session row s-1").assertIsDisplayed()
 
@@ -625,6 +742,22 @@ class SessionListSectionsJourneyTest {
     private fun ComposeContentTestRule.nodesWithText(text: String) =
         onAllNodes(hasContentDescription(text)).fetchSemanticsNodes().size +
             onAllNodes(androidx.compose.ui.test.hasText(text)).fetchSemanticsNodes().size
+
+    /**
+     * A pixel of the tagged node, read off a synchronous draw of the window
+     * rather than `captureToImage`: Robolectric never delivers the redraw
+     * callback that waits on. The same seam `InlineDiffPanelInkTest` uses.
+     */
+    private fun pixelOfTag(tag: String, index: Int = 0, offsetX: Int = 0): Color {
+        val decor = compose.activity.window.decorView
+        val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
+        decor.draw(Canvas(bitmap))
+        val bounds = compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true)
+            .fetchSemanticsNodes()[index]
+            .boundsInWindow
+
+        return Color(bitmap.getPixel(bounds.left.toInt() + offsetX, bounds.center.y.toInt()))
+    }
 
     private companion object {
         const val NOW = 1_700_000_000_000L
