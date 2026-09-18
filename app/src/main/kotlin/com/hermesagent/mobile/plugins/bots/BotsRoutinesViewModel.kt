@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.plugins.bots
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 /**
  * Which of the Routines surface's honest states it is in.
@@ -191,7 +193,21 @@ class BotsRoutinesViewModel(
     private var pending = false
     private var selection = 0L
     private var revision = 0L
-    private val mutations = mutableSetOf<String>()
+    private data class MutationKey(val owner: String, val endpoint: Long, val jobId: String)
+    private class PendingMutation(val target: RoutineTarget)
+    private val mutations = mutableMapOf<MutationKey, PendingMutation>()
+
+    private fun RoutineTarget.mutationKey() = MutationKey(owner, endpoint, jobId)
+
+    private fun ownsVisibleScope(target: RoutineTarget): Boolean =
+        target.owner == ownerProfile && target.endpoint == jobsEndpoint && target.endpoint == endpointGeneration.value
+
+    private fun pendingJobs(): Set<String> = mutations.values
+        .filter { ownsVisibleScope(it.target) }.mapTo(mutableSetOf()) { it.target.jobId }
+
+    // Only this selection has optimistic edits to protect. A returning owner's
+    // list may load while an older selection's operation still protects its row.
+    private fun hasCurrentOverlay(): Boolean = mutations.values.any { isCurrent(it.target) }
 
     /**
      * A stale callback cannot borrow the current owner's authority. After an
@@ -201,10 +217,12 @@ class BotsRoutinesViewModel(
      */
     fun act(target: RoutineTarget, action: RoutineAction) {
         dropIfEndpointChanged()
-        if (!isCurrent(target) || !_uiState.value.canMutate || target.jobId in mutations) return
+        val key = target.mutationKey()
+        if (!isCurrent(target) || !_uiState.value.canMutate || key in mutations) return
         val original = jobs.singleOrNull { it.id == target.jobId } ?: return
         if (!original.permits(action)) return
-        mutations += target.jobId
+        val operation = PendingMutation(target)
+        mutations[key] = operation
         revision++
         if (action != RoutineAction.Remove) {
             jobs = jobs.map {
@@ -216,28 +234,42 @@ class BotsRoutinesViewModel(
         }
         _uiState.update { it.copy(actionFailed = false) }
         recompute(jobsScoped, null, null)
-        scope.launch {
-            // A queued action is fenced before dispatch as well as on completion.
-            if (!isCurrent(target)) return@launch
-            val accepted = repository.mutateRoutine(target, action)
-            if (!isCurrent(target)) return@launch
-            revision++
-            mutations -= target.jobId
-            jobs = if (accepted && action == RoutineAction.Remove) {
-                jobs.filterNot { it.id == target.jobId }
-            } else if (!accepted) {
-                jobs.map { if (it.id == target.jobId) original else it }
-            } else jobs
-            _uiState.update { it.copy(actionFailed = !accepted) }
-            recompute(jobsScoped, null, null)
-            // Read after every outcome, including transport uncertainty; never retry the write.
-            refresh()
+        // Install finally synchronously, even if the scope is already cancelled;
+        // yield retains the pre-dispatch selection check for queued actions.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var accepted: Boolean? = null
+            try {
+                yield()
+                if (!isCurrent(target)) return@launch
+                accepted = repository.mutateRoutine(target, action)
+            } finally {
+                // Operation identity, not just its reusable key, owns cleanup.
+                if (mutations[key] === operation) {
+                    mutations.remove(key)
+                    if (ownsVisibleScope(target)) {
+                        revision++
+                        if (isCurrent(target)) {
+                            jobs = if (accepted == true && action == RoutineAction.Remove) {
+                                jobs.filterNot { it.id == target.jobId }
+                            } else if (accepted != true) {
+                                jobs.map { if (it.id == target.jobId) original else it }
+                            } else jobs
+                            _uiState.update { it.copy(actionFailed = accepted == false) }
+                            recompute(jobsScoped, null, null)
+                        } else {
+                            // An ABA return owns a new list: never apply the old
+                            // optimistic snapshot/rollback to it, only reconcile.
+                            _uiState.update { it.copy(pendingJobs = pendingJobs()) }
+                        }
+                        refresh()
+                    }
+                }
+            }
         }
     }
 
     private fun isCurrent(target: RoutineTarget): Boolean =
-        target.owner == ownerProfile && target.endpoint == jobsEndpoint &&
-            target.endpoint == endpointGeneration.value && target.selection == selection
+        ownsVisibleScope(target) && target.selection == selection
 
     init {
         _uiState.update { it.copy(connectionUp = connected.value, endpointGeneration = endpointGeneration.value) }
@@ -298,7 +330,6 @@ class BotsRoutinesViewModel(
         }
         ownerProfile = selected
         selection++
-        mutations.clear()
         jobs = emptyList()
         jobsScoped = null
         jobsEndpoint = endpointGeneration.value
@@ -313,7 +344,7 @@ class BotsRoutinesViewModel(
                 filterHint = null,
                 safeMessage = null,
                 selection = selection,
-                pendingJobs = emptySet(),
+                pendingJobs = pendingJobs(),
                 actionFailed = false,
                 endpointGeneration = jobsEndpoint,
             )
@@ -375,7 +406,7 @@ class BotsRoutinesViewModel(
         val endpoint = jobsEndpoint
         val readSelection = selection
         val readRevision = revision
-        val beganDuringMutation = mutations.isNotEmpty()
+        val beganDuringMutation = hasCurrentOverlay()
         if (jobs.isEmpty()) {
             _uiState.update { it.copy(phase = BotsRoutinesPhase.Loading) }
         }
@@ -389,7 +420,7 @@ class BotsRoutinesViewModel(
         if (dropIfEndpointChanged()) return
         if (profile != ownerProfile) return
         // Neither an old list nor a read overlapping a mutation may undo its overlay/tombstone.
-        if (readSelection != selection || readRevision != revision || beganDuringMutation || mutations.isNotEmpty()) return
+        if (readSelection != selection || readRevision != revision || beganDuringMutation || hasCurrentOverlay()) return
         when (load) {
             is BotsRoutinesLoad.Loaded -> {
                 jobs = load.jobs
@@ -472,7 +503,7 @@ class BotsRoutinesViewModel(
                 filterHint = routineFilterHint(jobs, selected),
                 safeMessage = safeMessage,
                 selection = selection,
-                pendingJobs = mutations.toSet(),
+                pendingJobs = pendingJobs(),
             )
         }
     }
@@ -500,7 +531,6 @@ class BotsRoutinesViewModel(
      */
     private fun dropForEndpointSwitch() {
         selection++
-        mutations.clear()
         jobs = emptyList()
         jobsScoped = null
         jobsEndpoint = endpointGeneration.value

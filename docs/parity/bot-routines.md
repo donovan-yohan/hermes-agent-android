@@ -57,6 +57,18 @@ late replies. Replacement state is unchanged throughout; an old callback invoked
 after navigation adds no second write. This contract needs no PluginHost
 selection seam and does not change the shared transport.
 
+Accepted operations retain a separate owner + endpoint + job lock across navigation
+(PR #317 comment 4046807311). Selection epochs fence UI publication, not the
+operation's lifetime. Returning A after A → B → A can load A's new list, but the
+still-pending row remains protected against a second mutation. B's pending state,
+reads and actions are independent even when its job has the same id. Completion
+or cancellation releases only its own operation token in `finally`; an older
+selection never rolls its optimistic snapshot back onto a newly selected list.
+A completion for the visible owner clears pending and reconciles by reading;
+a completion for another owner does not invalidate the visible owner's read.
+`BotsRoutinePendingIdentityTest` gates actual before-wire and reply handoffs,
+returned-owner reconciliation, cancellation and queued selection rejection.
+
 ## Copy and navigation
 
 The roster row's tap opens the bot's chat, exactly as before; Routines is a
