@@ -25,7 +25,7 @@ import java.time.OffsetDateTime
  * - The row's identity member is `job_id`, and it is the *only* member the
  *   contract requires (`types.ts:264-283`). A row without a usable one is
  *   dropped rather than rendered from a guess.
- * - "Paused" is claimed on evidence, not on a single member: `enabled == false`
+ * - For nonterminal, known states, "paused" is claimed on `enabled == false`
  *   *or* `state == "paused"` (Desktop's own `serverActive`,
  *   `cron.tsx:489`/`cron-detail.test.tsx:74-78`). The pinned Gateway derives
  *   `state` from `enabled` and so never emits `{enabled:true, state:"paused"}`
@@ -68,7 +68,7 @@ enum class RoutineRunState {
     /** It has a next run. */
     Scheduled,
 
-    /** `enabled: false`, or the Gateway's own `paused`. */
+    /** A known nonterminal job disabled by the Gateway, or its explicit `paused`. */
     Paused,
 
     /** Terminal: a `repeat`-limited job that ran out, or a one-shot that fired. */
@@ -116,8 +116,8 @@ data class RoutineRow(
      * Whether this routine will fire again — the one derived flag the row's
      * status dot paints from.
      *
-     * True for [RoutineRunState.Scheduled] and [RoutineRunState.Failed] (a
-     * failed recurring job still has its next occurrence), false for
+     * True for enabled [RoutineRunState.Scheduled] and [RoutineRunState.Failed]
+     * (an enabled failed recurring job still has its next occurrence), false for
      * [RoutineRunState.Paused], [RoutineRunState.Completed], and
      * [RoutineRunState.Unknown]. Unknown is deliberately *not* active: an
      * unrecognised state word is not evidence that the routine runs again, and
@@ -188,15 +188,18 @@ private fun parseRoutineJob(row: JsonObject): RoutineRow? {
     val name = row.routineJsonString("name").orEmpty()
     val rawState = row.routineJsonString("state").orEmpty().trim().lowercase()
     val enabled = row.routineLiteralBoolean("enabled")
-    val paused = enabled == false || rawState == PAUSED_STATE
-    val state = when {
-        paused -> RoutineRunState.Paused
-        rawState == COMPLETED_STATE -> RoutineRunState.Completed
-        rawState == ERROR_STATE -> RoutineRunState.Failed
-        rawState == SCHEDULED_STATE || rawState == RUNNING_STATE || rawState.isEmpty() ->
-            RoutineRunState.Scheduled
+    // Terminal states survive enabled:false (cron/jobs.py:525-534,1537-1539 at
+    // d177b119e9c56c9ddc0b7379ffce52341ec06584). Unknown never licenses resume.
+    val reportedState = when (rawState) {
+        COMPLETED_STATE -> RoutineRunState.Completed
+        PAUSED_STATE -> RoutineRunState.Paused
+        ERROR_STATE -> RoutineRunState.Failed
+        SCHEDULED_STATE, RUNNING_STATE, "" -> RoutineRunState.Scheduled
         else -> RoutineRunState.Unknown
     }
+    val state = if (reportedState == RoutineRunState.Scheduled && enabled == false) {
+        RoutineRunState.Paused
+    } else reportedState
     val preview = row.routineJsonString("prompt_preview") ?: row.routineJsonString("prompt")
 
     return RoutineRow(
@@ -208,7 +211,7 @@ private fun parseRoutineJob(row: JsonObject): RoutineRow? {
         // `serverActive` is `enabled !== false && state !== 'paused'`
         // (`cron.tsx:489`, pinned by `cron-detail.test.tsx:74-78`). A completed
         // routine does not fire again; a failed but still-enabled one does.
-        active = state != RoutineRunState.Paused &&
+        active = enabled != false && state != RoutineRunState.Paused &&
             state != RoutineRunState.Completed &&
             state != RoutineRunState.Unknown,
         state = state,

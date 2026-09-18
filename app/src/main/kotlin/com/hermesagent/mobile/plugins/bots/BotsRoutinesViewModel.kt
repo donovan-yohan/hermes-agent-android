@@ -193,7 +193,12 @@ class BotsRoutinesViewModel(
     private var revision = 0L
     private val mutations = mutableSetOf<String>()
 
-    /** A stale callback cannot borrow the current owner's authority. */
+    /**
+     * A stale callback cannot borrow the current owner's authority. After an
+     * accepted intent enters the repository, navigation does not cancel it:
+     * it may finish only on the captured owner/endpoint, never retargeting or
+     * repainting a replacement selection. Endpoint changes still fence the wire.
+     */
     fun act(target: RoutineTarget, action: RoutineAction) {
         dropIfEndpointChanged()
         if (!isCurrent(target) || !_uiState.value.canMutate || target.jobId in mutations) return

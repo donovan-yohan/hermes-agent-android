@@ -220,6 +220,97 @@ class BotsRoutineActionsTest {
         assertEquals(2, f.host.calls.size)
     }
 
+    @Test fun `disabled completed row refuses both toggles but permits exact remove`() = runTest {
+        val f = loaded(rows(active = false, state = "completed"))
+        val target = f.target()
+        f.model.act(target, RoutineAction.Resume)
+        f.model.act(target, RoutineAction.Pause)
+        runCurrent()
+        assertEquals(listOf("list"), f.host.calls.map { it.action })
+        assertEquals(RoutineRunState.Completed, f.model.uiState.value.jobs.first().state)
+        f.model.act(target, RoutineAction.Remove)
+        runCurrent()
+        assertEquals(
+            Json.parseToJsonElement("""{"action":"remove","name":"one","profile":"Ops-Team"}"""),
+            f.host.calls.last().params,
+        )
+        f.host.calls.last().reply("""{"success":true}""")
+        runCurrent()
+        f.host.calls.last().reply(rows(includeOne = false))
+        runCurrent()
+        assertEquals(listOf("two"), f.model.uiState.value.jobs.map { it.id })
+    }
+
+    @Test fun `disabled unknown row cannot issue any mutation`() = runTest {
+        val f = loaded(rows(active = false, state = "future-state"))
+        RoutineAction.entries.forEach { f.model.act(f.target(), it) }
+        runCurrent()
+        assertEquals(listOf("list"), f.host.calls.map { it.action })
+        assertEquals(RoutineRunState.Unknown, f.model.uiState.value.jobs.first().state)
+    }
+
+    @Test fun `accepted intent at wire handoff finishes on original owner without repainting replacement`() = runTest {
+        // Both success and refusal must leave the replacement owner untouched.
+        for (accepted in listOf(true, false)) {
+            val endpoint = MutableStateFlow(0L)
+            val beforeWire = CompletableDeferred<Unit>()
+            val reply = CompletableDeferred<Unit>()
+            val writes = mutableListOf<JsonObject>()
+            val reads = mutableListOf<String>()
+            val client = object : com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient {
+                override val events = kotlinx.coroutines.flow.emptyFlow<com.hermesagent.mobile.data.gateway.GatewayEvent>()
+                override fun close() {}
+                override suspend fun request(method: String, params: JsonObject): kotlinx.serialization.json.JsonElement =
+                    error("unfenced request")
+                override suspend fun requestAtEndpointDispatch(
+                    method: String, params: JsonObject, dispatch: (() -> Boolean) -> Boolean,
+                ): kotlinx.serialization.json.JsonElement {
+                    val write = (params["action"] as JsonPrimitive).content != "list"
+                    if (write) beforeWire.await()
+                    check(dispatch {
+                        if (write) writes += params else reads += (params["profile"] as JsonPrimitive).content
+                        true
+                    })
+                    if (write) {
+                        reply.await()
+                        return Json.parseToJsonElement("""{"success":$accepted}""")
+                    }
+                    val profile = (params["profile"] as JsonPrimitive).content
+                    return Json.parseToJsonElement(rows(active = profile == "Ops-Team").replace("Ops-Team", profile))
+                }
+            }
+            val host = com.hermesagent.mobile.plugins.GatewayPluginHost(
+                backgroundScope, MutableStateFlow<com.hermesagent.mobile.data.gateway.GatewayRpcClient?>(client), endpoint,
+            )
+            val model = BotsRoutinesViewModel(BotsPluginRepository(host), backgroundScope, MutableStateFlow(true), endpoint)
+            model.selectOwner("Ops-Team")
+            runCurrent()
+            val original = model.uiState.value
+            val target = original.target(original.jobs.first())!!
+            model.act(target, RoutineAction.Pause)
+            runCurrent() // Accepted request is now suspended immediately before actual wire dispatch.
+            model.selectOwner("research")
+            runCurrent()
+            val replacement = model.uiState.value
+            assertEquals("research", replacement.owner)
+            assertFalse(replacement.jobs.first().active)
+            assertTrue(writes.isEmpty())
+            model.act(target, RoutineAction.Remove) // A stale callback is not a previously accepted intent.
+            runCurrent()
+            beforeWire.complete(Unit)
+            runCurrent()
+            assertEquals(
+                listOf(Json.parseToJsonElement("""{"action":"pause","name":"one","profile":"Ops-Team"}""")),
+                writes,
+            )
+            assertEquals(replacement, model.uiState.value)
+            reply.complete(Unit)
+            runCurrent()
+            assertEquals("late completion repainted the replacement owner", replacement, model.uiState.value)
+            assertEquals(listOf("Ops-Team", "research"), reads)
+        }
+    }
+
     @Test fun `production host fences mutation at actual wire handoff`() = runTest {
         val endpoint = MutableStateFlow(0L)
         val beforeWire = CompletableDeferred<Unit>()

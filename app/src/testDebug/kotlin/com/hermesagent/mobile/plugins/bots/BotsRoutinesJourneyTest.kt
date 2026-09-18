@@ -508,6 +508,61 @@ class BotsRoutinesJourneyTest {
         compose.onAllNodesWithText("Confirm").assertCountEquals(0)
     }
 
+    @Test
+    fun `disabled completed row renders completed refuses toggle and deletes through the real route`() {
+        val writes = mutableListOf<JsonObject>()
+        var removed = false
+        clients.value = FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> TWO_BOTS
+                "cron.manage" -> if ((params["action"] as kotlinx.serialization.json.JsonPrimitive).content == "list") {
+                    jobs(if (removed) """{"success":true,"scoped":"ops","jobs":[]}""" else
+                        """{"success":true,"scoped":"ops","jobs":[{"job_id":"done","name":"Finished job","enabled":false,"state":"completed"}]}""")
+                } else {
+                    writes += params
+                    removed = true
+                    jobs("""{"success":true}""")
+                }
+                else -> error("unexpected method $method")
+            }
+        }
+        launchRoutes()
+        openRoutinesFor("Ops")
+        awaitText("Finished job")
+        compose.onNodeWithText(BotsRoutinesCopy.STATE_COMPLETED).assertIsDisplayed()
+        compose.onAllNodesWithText(BotsRoutinesCopy.STATE_PAUSED).assertCountEquals(0)
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertTrue(writes.isEmpty()) }
+        compose.onNodeWithContentDescription(BotsRoutinesCopy.DELETE).assertIsEnabled().performClick()
+        awaitText(BotsRoutinesCopy.EMPTY_TITLE)
+        assertEquals(listOf(jobs("""{"action":"remove","name":"done","profile":"ops"}""")), writes)
+    }
+
+    @Test
+    fun `disabled unknown row stays WIP and cannot dispatch any mutation`() {
+        val writes = mutableListOf<JsonObject>()
+        clients.value = FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> TWO_BOTS
+                "cron.manage" -> {
+                    if ((params["action"] as kotlinx.serialization.json.JsonPrimitive).content != "list") writes += params
+                    jobs("""{"success":true,"scoped":"ops","jobs":[{"job_id":"future","name":"Unfamiliar job","enabled":false,"state":"future-state"}]}""")
+                }
+                else -> error("unexpected method $method")
+            }
+        }
+        launchRoutes()
+        openRoutinesFor("Ops")
+        awaitText("Unfamiliar job")
+        for (label in listOf(BotsRoutinesCopy.RESUME_CRON, BotsRoutinesCopy.DELETE)) {
+            compose.onNodeWithContentDescription("$label. $WIP_SPOKEN")
+                .assertIsDisplayed().assertIsNotEnabled().performClick()
+        }
+        compose.onAllNodesWithText(BotsRoutinesCopy.STATE_PAUSED).assertCountEquals(0)
+        assertTrue(!compose.onRoot().printToString().contains("future-state"))
+        compose.runOnIdle { assertTrue(writes.isEmpty()) }
+    }
+
     // ── harness ───────────────────────────────────────────────────────────────
 
     private fun awaitText(text: String) {
