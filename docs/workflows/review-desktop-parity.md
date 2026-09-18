@@ -263,6 +263,7 @@ true at the SHA it now names, reporting the carrier `path:line` and the cited
 | `path-missing` | the cited path is absent from the new SHA (it moved or was deleted) |
 | `span-out-of-bounds` | the cited lines are past the end of the file at the new SHA |
 | `construct-moved` | the span's first and last lines now hold something else — the construct moved |
+| `unattributable` | the written shorthand has no candidate that uniquely owns the cited span (none fit, or several fit) |
 
 An edit *inside* a cited span is accepted: the first and last cited lines are
 what identify the construct, and #291's own correction moved the pin over

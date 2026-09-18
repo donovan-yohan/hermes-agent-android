@@ -1,0 +1,32 @@
+{
+  "upstream_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+  "fixture": "apps/desktop/e2e/bot-routines-pane-narrow.spec.ts",
+  "fixture_sha256": "ce2c060f4051ad60bb695065e684ec632a18ed1ec663409a40120719ebe3913c",
+  "production_source_modified": false,
+  "fixture_changes": "media colorScheme dark plus assertion of html data-hermes-mode dark; patch included",
+  "tests_passed": 1,
+  "exit_code": 0,
+  "images": [
+    {
+      "file": "routines-closed.png",
+      "sha256": "1f10d1cbf4eb6665ec9841f64a9ff5ccc0be3ae7f6b59c49c9b402bdb6e56340"
+    },
+    {
+      "file": "routines-pane-toggled.png",
+      "sha256": "48e9d096b338f8a0ce0092af202d839034b6bcc0b91ec31cd2b8bc8ab74c4679"
+    },
+    {
+      "file": "routines-pane.png",
+      "sha256": "6cf07629735dfd77baa1a074a6993626f554d3a378d2897e566a775eadf3f4fe"
+    },
+    {
+      "file": "routines-restored.png",
+      "sha256": "413a2d20437cdf7de14c856a6fd93bd0161b774b3e1ccc8bed590445ca78ec55"
+    },
+    {
+      "file": "test-finished-1.png",
+      "sha256": "ac2baf87371659f6b671f1f4115c6cbada81ce1dab7c5a922f21c10113eaeda2"
+    }
+  ],
+  "boundary": "Real sandbox E2E Desktop rendering; not yet catalog-validated or input-aligned Android side-by-side."
+}

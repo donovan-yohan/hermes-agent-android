@@ -222,12 +222,26 @@ def ensure_sha(sha: str, fetch: bool) -> None:
     _ensured.add(sha)
 
 
-def resolve_path(sha: str, cited: str) -> str | None:
-    """Return an exact path or a uniquely matching upstream suffix; never guess."""
+def resolve_candidates(sha: str, cited: str) -> list[str]:
+    """Every upstream path the cited string can denote, exact matches first.
+
+    Two shorthand forms are in live use and neither is a typo. An elided
+    citation (`.../dir/file.ts`) drops its leading `.../` and nothing else: the
+    elision carries no path information, so what remains is an ordinary suffix.
+    A bare basename (`en.ts`) can legitimately denote several files, and a
+    verdict must judge every candidate its span could have meant rather than
+    taking whichever tree entry happens to come first.
+    """
     if blob(sha, cited) is not None:
-        return cited
-    matches = [path for path in tree_paths(sha) if path.endswith(f"/{cited}")]
-    return matches[0] if len(matches) == 1 else None
+        return [cited]
+    tail = cited[4:] if cited.startswith(".../") else cited
+    return [path for path in tree_paths(sha) if path == tail or path.endswith(f"/{tail}")]
+
+
+def resolve_path(sha: str, cited: str) -> str | None:
+    """The one path a citation names, or None when its form is ambiguous."""
+    candidates = resolve_candidates(sha, cited)
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def spans(raw: str) -> list[tuple[int, int]]:
@@ -737,31 +751,41 @@ def carried_verdict(
     """
     if not ranges:
         return None, None
-    resolved = resolve_path(old_sha, cited)
-    if resolved is None:
+    candidates = resolve_candidates(old_sha, cited)
+    if not candidates:
         return None, None
-    old = blob(old_sha, resolved)
-    # A span that does not fit the old pin's own file was never a citation — a
-    # `:0` lifted out of a fixture string, a `:NNN` tail the extractor re-pointed
-    # at a neighbouring path — and blaming the restamp for it would be noise.
-    if old is None or any(first < 1 or last > len(old) for first, last in ranges):
+    fitting: list[tuple[str, list[str]]] = []
+    for candidate in candidates:
+        old = blob(old_sha, candidate)
+        # A span that does not fit the old pin's own file was never a citation — a
+        # `:0` lifted out of a fixture string, a `:NNN` tail the extractor re-pointed
+        # at a neighbouring path — and blaming the restamp for it would be noise.
+        if old is None or any(first < 1 or last > len(old) for first, last in ranges):
+            continue
+        fitting.append((candidate, old))
+    if not fitting:
         return None, None
-    moved_to = resolve_path(new_sha, cited)
-    if moved_to is None:
-        return "path-missing", resolved
-    new = blob(new_sha, moved_to)
-    if new is None:
-        return "path-missing", resolved
-    if any(first < 1 or last > len(new) for first, last in ranges):
-        return "span-out-of-bounds", resolved
-    if all(old[first - 1:last] == new[first - 1:last] for first, last in ranges):
-        return None, resolved
-    # An in-place edit — the construct's first and last lines survive — is still
-    # the construct the citation names (#291's own accepted shape). A span whose
-    # edges moved is a different construct wearing the same line numbers.
-    if all(old[first - 1] == new[first - 1] and old[last - 1] == new[last - 1] for first, last in ranges):
-        return None, resolved
-    return "construct-moved", resolved
+    resolved = fitting[0][0] if len(fitting) == 1 else None
+    for candidate, old in fitting:
+        moved_to = resolve_candidates(new_sha, candidate)
+        if not moved_to:
+            return "path-missing", resolved or candidate
+        new = blob(new_sha, moved_to[0])
+        if new is None:
+            return "path-missing", resolved or candidate
+        if any(first < 1 or last > len(new) for first, last in ranges):
+            return "span-out-of-bounds", resolved or candidate
+        if all(old[first - 1:last] == new[first - 1:last] for first, last in ranges):
+            continue
+        # An in-place edit — the construct's first and last lines survive — is still
+        # the construct the citation names (#291's own accepted shape). A span whose
+        # edges moved is a different construct wearing the same line numbers.
+        if all(old[first - 1] == new[first - 1] and old[last - 1] == new[last - 1] for first, last in ranges):
+            continue
+        return "construct-moved", resolved or candidate
+    # A proven shorthand must count as checked, not skipped: `(None, None)` means
+    # the tool could not read the citation, which is not what happened here.
+    return None, resolved or fitting[0][0]
 
 
 def written_verdict(new_sha: str, cited: str, ranges: list[tuple[int, int]]) -> tuple[str | None, str | None]:
@@ -775,17 +799,27 @@ def written_verdict(new_sha: str, cited: str, ranges: list[tuple[int, int]]) -> 
     """
     if not ranges:
         return None, None
-    resolved = resolve_path(new_sha, cited)
-    if resolved is None:
+    candidates = resolve_candidates(new_sha, cited)
+    if not candidates:
         # Attributed to this change's pin, so silence would be a false pass: the
         # documented floor is that the path it names exists at that SHA.
         return "path-missing", cited
-    body = blob(new_sha, resolved)
-    if body is None:
-        return "path-missing", resolved
-    if any(first < 1 or last > len(body) for first, last in ranges):
-        return "span-out-of-bounds", resolved
-    return None, resolved
+    fitting = [
+        candidate
+        for candidate in candidates
+        if (body := blob(new_sha, candidate)) is not None
+        and all(1 <= first and last <= len(body) for first, last in ranges)
+    ]
+    if not fitting:
+        # The path form has candidates, but the span fits none of them. That is not
+        # evidence that the file disappeared; the honest class is unattributable.
+        return "unattributable", candidates[0] if len(candidates) == 1 else cited
+    if len(fitting) > 1:
+        # A newly written shorthand has no old bytes from which to choose among
+        # fitting namesakes. Do not return `(None, None)`: check_range treats that
+        # pair as skipped, which would silently accept an ambiguous citation.
+        return "unattributable", cited
+    return None, fitting[0]
 
 
 class Finding:
@@ -1229,6 +1263,82 @@ def self_test() -> None:
         write("docs/page.md", contract_page)
         contract = commit("fixture pins a page under a qualified heading")
 
+        def citation_page(pin: str, citation: str | tuple[str, ...] = "") -> str:
+            if not citation:
+                citations: tuple[str, ...] = ()
+            elif isinstance(citation, str):
+                citations = (citation,)
+            else:
+                citations = citation
+            rows = "".join(f"| cited construct | `{value}` |\n" for value in citations)
+            return (
+                "# Shorthand fixture\n\n## Pin\n\n| Source | Pin | Read via |\n|---|---|---|\n"
+                f"| fixture | `{pin}` | `git show <sha>:<path>` |\n\n"
+                "## Claims\n\n| Question | Path |\n|---|---|---|\n"
+                f"{rows}"
+            )
+
+        # (11) An elided `.../util.ts` path carries its tail as a suffix, not a
+        # literal directory named `...`. Exercise both outcomes against real
+        # revisions: an appended line stays true; replacing the first cited line
+        # must name the carrier as a construct move rather than be skipped.
+        branch("elided-base", pinned)
+        write("docs/elided.md", citation_page(pinned, ".../util.ts:2-4"))
+        elided_base = commit("fixture writes an elided citation at the old pin")
+        branch("elided-true", elided_base)
+        write("lib/util.ts", "one\ntwo\nthree\nfour\nfive\n")
+        elided_true_pin = commit("fixture appends below an elided span")
+        write("docs/elided.md", citation_page(elided_true_pin, ".../util.ts:2-4"))
+        elided_true = commit("fixture restamps a byte-true elided citation")
+        branch("elided-drift", elided_base)
+        write("lib/util.ts", "one\nelsewhere\nthree\nfour\n")
+        elided_drift_pin = commit("fixture moves an elided cited construct")
+        write("docs/elided.md", citation_page(elided_drift_pin, ".../util.ts:2-4"))
+        elided_drift = commit("fixture restamps a drifted elided citation")
+
+        # (12) Two files share `i18n/en.ts`. The cited 2-6 span excludes the
+        # short namesake, as a real large translation span does, while retaining
+        # the ambiguity that made the old single-path resolver skip the citation.
+        branch("basename-source", pinned)
+        write("apps/desktop/src/i18n/en.ts", "one\ntwo\nthree\nfour\nfive\nsix\n")
+        write("web/src/i18n/en.ts", "one\ntwo\nthree\nfour\n")
+        basename_source = commit("fixture adds two i18n basenames")
+        write("docs/basename.md", citation_page(basename_source, "i18n/en.ts:2-6"))
+        basename_base = commit("fixture writes a basename citation at the old pin")
+        branch("basename-true", basename_base)
+        write("apps/desktop/src/i18n/en.ts", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n")
+        basename_true_pin = commit("fixture appends below the basename span")
+        write("docs/basename.md", citation_page(basename_true_pin, "i18n/en.ts:2-6"))
+        basename_true = commit("fixture restamps a byte-true basename citation")
+        branch("basename-drift", basename_base)
+        write("apps/desktop/src/i18n/en.ts", "one\nelsewhere\nthree\nfour\nfive\nsix\n")
+        basename_drift_pin = commit("fixture moves a basename cited construct")
+        write("docs/basename.md", citation_page(basename_drift_pin, "i18n/en.ts:2-6"))
+        basename_drift = commit("fixture restamps a drifted basename citation")
+
+        # (13) A newly written shorthand citation must not claim its target path
+        # is missing just because only candidate resolution can identify it.
+        branch("written-shorthand", basename_source)
+        write("docs/written.md", citation_page(basename_source))
+        written_base = commit("fixture writes an empty shorthand page")
+        write("lib/util.ts", "one\ntwo\nthree\nfour\nfive\n")
+        written_pin = commit("fixture moves the written citation target")
+        write(
+            "docs/written.md",
+            citation_page(written_pin, (".../util.ts:2-4", "i18n/en.ts:2-6")),
+        )
+        written = commit("fixture writes two shorthand citations")
+
+        # (14) A newly written basename whose span fits every namesake is
+        #      genuinely ambiguous. It must be reported as unattributable rather
+        #      than returned as `(None, None)`, because check_range treats that
+        #      pair as skipped and would silently accept the citation.
+        branch("written-ambiguous", basename_source)
+        write("docs/ambiguous.md", citation_page(basename_source))
+        ambiguous_base = commit("fixture writes an empty ambiguous page")
+        write("docs/ambiguous.md", citation_page(ambiguous_base, "i18n/en.ts:2-4"))
+        ambiguous = commit("fixture writes an all-fitting basename citation")
+
         UPSTREAM = repo
         _blobs.clear()
         _tree_paths.clear()
@@ -1385,6 +1495,39 @@ def self_test() -> None:
                 )
             if findings[0].carrier != "docs/page.md" or findings[0].reason != "construct-moved":
                 raise AssertionError(f"the qualified-heading citation was mislabelled: {findings[0]}")
+
+            # Shorthand paths are judged by candidate sets rather than guessed
+            # tree order. The byte-true controls must be checked, not skipped;
+            # the moved constructs must fail and identify their carrier.
+            findings, counts = gate(elided_base, elided_true, "elided byte-true")
+            if findings or counts["checked"] < 1:
+                raise AssertionError(f"a byte-true elided citation was not checked: {findings}, {counts}")
+            findings, _ = gate(elided_base, elided_drift, "elided moved")
+            if not findings or findings[0].reason != "construct-moved":
+                raise AssertionError(f"a moved elided citation was skipped or mislabelled: {findings}")
+            findings, counts = gate(basename_base, basename_true, "basename byte-true")
+            if findings or counts["checked"] < 1:
+                raise AssertionError(f"a byte-true basename citation was not checked: {findings}, {counts}")
+            findings, _ = gate(basename_base, basename_drift, "basename moved")
+            if not findings or findings[0].reason != "construct-moved":
+                raise AssertionError(f"a moved basename citation was skipped or mislabelled: {findings}")
+            findings, counts = gate(written_base, written, "written shorthand")
+            if findings or counts["checked"] < 1:
+                raise AssertionError(f"a written shorthand citation was rejected: {findings}, {counts}")
+
+            findings, counts = gate(ambiguous_base, ambiguous, "ambiguous written basename")
+            if not findings or findings[0].reason != "unattributable":
+                raise AssertionError(
+                    "an all-fitting ambiguous written basename was skipped or mislabelled: "
+                    f"{findings}, {counts}"
+                )
+            if findings[0].resolved != "i18n/en.ts":
+                raise AssertionError(
+                    f"the ambiguous written basename did not retain its cited form: {findings[0].resolved}"
+                )
+            if counts["skipped"] != 0:
+                raise AssertionError(f"an ambiguous written basename was silently skipped: {counts}")
+
         finally:
             UPSTREAM = original
 
@@ -1410,7 +1553,7 @@ def main() -> None:
 
     if args.self_test:
         self_test()
-        print("ok    pin-citation gate fails a drifted span and a moved path, passes a byte-true move")
+        print("ok    pin-citation gate fails a drifted span, resolves elided and basename shorthand, and passes byte-true moves")
         return
 
     if args.check_range:
