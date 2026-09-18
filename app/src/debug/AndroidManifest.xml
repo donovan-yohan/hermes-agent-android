@@ -27,5 +27,10 @@
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".BotsRoutinesParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
     </application>
 </manifest>

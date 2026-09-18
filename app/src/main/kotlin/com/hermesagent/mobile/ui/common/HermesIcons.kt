@@ -94,6 +94,19 @@ enum class HermesIcon(val glyph: String) {
     Files("\uEAF0"),
     Question("\uEB32"),
     Tools("\uEB6D"),
+    /**
+     * Desktop's schedule-pill glyph. Its routines row draws the schedule in a
+     * pill led by Codicon `calendar` (`cron.tsx:581-584`); this is that glyph in
+     * the shipped Codicons 0.0.45 font, verified against the bundled
+     * `codicon.ttf` cmap by [com.hermesagent.mobile.ui.common.HermesIconFontTest].
+     */
+    Calendar("\uEAB0"),
+
+    /**
+     * Desktop's idle next-run glyph. `watch` is the icon Desktop's own empty
+     * state for this pane uses (`cron.tsx:1307`, `icon="watch"`), which is what
+     * this app draws on the empty card.
+     */
     Watch("\uEB7C"),
     Database("\uEACE"),
     SymbolMethod("\uEA8C"),
