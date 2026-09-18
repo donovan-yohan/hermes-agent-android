@@ -478,13 +478,14 @@ object BotsRoutinesCopy {
 
     /**
      * The row's control names. Desktop's row carries a Switch and a delete
-     * button (`cron.tsx:559-575`); this slice issues no mutation, so both ship
-     * visible and disabled behind a `WIP` chip, and each keeps Desktop's own
-     * core label for the verb it will eventually perform.
+     * button (`cron.tsx:559-575`); supported rows expose both in that order.
+     * Unsupported legacy/unknown rows remain marked WIP.
      */
     const val PAUSE_CRON: String = "Pause cron"
     const val RESUME_CRON: String = "Resume cron"
     const val DELETE: String = "Delete"
+    /** Core `apps/desktop/src/i18n/en.ts:2646` at the file's Desktop pin. */
+    const val FAILED_UPDATE: String = "Failed to update cron job"
 
     /** `common.retry` (`en.ts:143`). */
     const val RETRY: String = "Retry"
@@ -503,7 +504,7 @@ object BotsRoutinesCopy {
      *
      * Desktop pauses a legacy delegated job on load and says so — "Paused for
      * security: delete and recreate this legacy job before running it again."
-     * (`cron.tsx:591-595`). This slice performs no mutation at all, so a
+     * (`cron.tsx:591-595`). This slice never mutates legacy rows, so a
      * routine it did not pause must not be labelled paused: the notice says
      * what is true here — the job is one this app cannot manage yet — and the
      * divergence is ledgered in `docs/parity/bot-routines.md`.

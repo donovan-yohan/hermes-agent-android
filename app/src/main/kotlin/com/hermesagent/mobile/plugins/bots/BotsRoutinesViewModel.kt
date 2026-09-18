@@ -77,7 +77,16 @@ data class BotsRoutinesUiState(
     val connectionUp: Boolean = false,
     /** Which Gateway the rows belong to. */
     val endpointGeneration: Long = 0L,
+    val selection: Long = 0L,
+    val pendingJobs: Set<String> = emptySet(),
+    val actionFailed: Boolean = false,
 ) {
+    fun target(job: RoutineRow): RoutineTarget? = owner?.let {
+        RoutineTarget(it, endpointGeneration, selection, job.id)
+    }
+
+    val canMutate: Boolean get() = connectionUp && phase == BotsRoutinesPhase.Ready &&
+        !stale && scoped != null && normalizedProfileName(scoped) == normalizedProfileName(owner)
     /**
      * A list is held and the last refresh failed: Desktop keeps the last good
      * list and says so (`cron.tsx:1246`, `:1277-1281`) rather than blanking a
@@ -98,8 +107,9 @@ data class BotsRoutinesUiState(
  *
  * It owns no Gateway knowledge — [BotsPluginRepository] makes the call and
  * [selectRoutineJobs] decides what is this bot's — and, like the roster's, it
- * keeps exactly one piece of backend truth: the last list the Gateway actually
- * served, with its own endpoint generation beside it.
+ * keeps the last served list plus optimistic row edits, with the selected
+ * endpoint and an ordering revision beside them. Overlapping reads cannot
+ * replace those edits; only a post-operation read reconciles them.
  *
  * **The owner is plugin state, not a singleton.** Desktop routes this pane
  * through module-global atoms (`$focusedBotOwner`, `$selectedBot`,
@@ -179,6 +189,50 @@ class BotsRoutinesViewModel(
 
     /** Set when a read arrives while one is already on the wire. */
     private var pending = false
+    private var selection = 0L
+    private var revision = 0L
+    private val mutations = mutableSetOf<String>()
+
+    /** A stale callback cannot borrow the current owner's authority. */
+    fun act(target: RoutineTarget, action: RoutineAction) {
+        dropIfEndpointChanged()
+        if (!isCurrent(target) || !_uiState.value.canMutate || target.jobId in mutations) return
+        val original = jobs.singleOrNull { it.id == target.jobId } ?: return
+        if (!original.permits(action)) return
+        mutations += target.jobId
+        revision++
+        if (action != RoutineAction.Remove) {
+            jobs = jobs.map {
+                if (it.id == target.jobId) it.copy(
+                    active = action == RoutineAction.Resume,
+                    state = if (action == RoutineAction.Resume) RoutineRunState.Scheduled else RoutineRunState.Paused,
+                ) else it
+            }
+        }
+        _uiState.update { it.copy(actionFailed = false) }
+        recompute(jobsScoped, null, null)
+        scope.launch {
+            // A queued action is fenced before dispatch as well as on completion.
+            if (!isCurrent(target)) return@launch
+            val accepted = repository.mutateRoutine(target, action)
+            if (!isCurrent(target)) return@launch
+            revision++
+            mutations -= target.jobId
+            jobs = if (accepted && action == RoutineAction.Remove) {
+                jobs.filterNot { it.id == target.jobId }
+            } else if (!accepted) {
+                jobs.map { if (it.id == target.jobId) original else it }
+            } else jobs
+            _uiState.update { it.copy(actionFailed = !accepted) }
+            recompute(jobsScoped, null, null)
+            // Read after every outcome, including transport uncertainty; never retry the write.
+            refresh()
+        }
+    }
+
+    private fun isCurrent(target: RoutineTarget): Boolean =
+        target.owner == ownerProfile && target.endpoint == jobsEndpoint &&
+            target.endpoint == endpointGeneration.value && target.selection == selection
 
     init {
         _uiState.update { it.copy(connectionUp = connected.value, endpointGeneration = endpointGeneration.value) }
@@ -225,8 +279,8 @@ class BotsRoutinesViewModel(
      * would flash an empty screen over rows that are about to be replaced.
      */
     fun selectOwner(profile: String, label: String? = null) {
-        val selected = profile.trim()
-        if (selected.isEmpty()) return
+        val selected = profile
+        if (selected.isBlank()) return
         // The same boundary the read takes, taken synchronously first: a
         // selection that arrives after the endpoint moved must not be compared
         // against — or reuse the rows of — a bot selected on the machine this
@@ -238,6 +292,8 @@ class BotsRoutinesViewModel(
             return
         }
         ownerProfile = selected
+        selection++
+        mutations.clear()
         jobs = emptyList()
         jobsScoped = null
         jobsEndpoint = endpointGeneration.value
@@ -251,6 +307,10 @@ class BotsRoutinesViewModel(
                 scoped = null,
                 filterHint = null,
                 safeMessage = null,
+                selection = selection,
+                pendingJobs = emptySet(),
+                actionFailed = false,
+                endpointGeneration = jobsEndpoint,
             )
         }
         refresh()
@@ -308,6 +368,9 @@ class BotsRoutinesViewModel(
         // the generation it is handed against the generation it is on, so a
         // mispaired capture defeats it by satisfying it.
         val endpoint = jobsEndpoint
+        val readSelection = selection
+        val readRevision = revision
+        val beganDuringMutation = mutations.isNotEmpty()
         if (jobs.isEmpty()) {
             _uiState.update { it.copy(phase = BotsRoutinesPhase.Loading) }
         }
@@ -320,6 +383,8 @@ class BotsRoutinesViewModel(
         if (endpoint != endpointGeneration.value) return
         if (dropIfEndpointChanged()) return
         if (profile != ownerProfile) return
+        // Neither an old list nor a read overlapping a mutation may undo its overlay/tombstone.
+        if (readSelection != selection || readRevision != revision || beganDuringMutation || mutations.isNotEmpty()) return
         when (load) {
             is BotsRoutinesLoad.Loaded -> {
                 jobs = load.jobs
@@ -401,6 +466,8 @@ class BotsRoutinesViewModel(
                 scoped = scoped,
                 filterHint = routineFilterHint(jobs, selected),
                 safeMessage = safeMessage,
+                selection = selection,
+                pendingJobs = mutations.toSet(),
             )
         }
     }
@@ -427,6 +494,8 @@ class BotsRoutinesViewModel(
      * asks — see [collectConnectionState].
      */
     private fun dropForEndpointSwitch() {
+        selection++
+        mutations.clear()
         jobs = emptyList()
         jobsScoped = null
         jobsEndpoint = endpointGeneration.value
@@ -445,6 +514,9 @@ class BotsRoutinesViewModel(
                 // after a drop that is nothing: the field states the reset
                 // rather than the generation this model happens to be reading.
                 endpointGeneration = 0L,
+                selection = selection,
+                pendingJobs = emptySet(),
+                actionFailed = false,
             )
         }
     }
