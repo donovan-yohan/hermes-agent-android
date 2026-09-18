@@ -1160,6 +1160,7 @@ internal class LiveGatewaySessionRepository(
                                 val unhandled = synchronized(stateLock) {
                                     if (reset.generation == connectionGeneration && clientFlow.value === next) {
                                         adoptOrRefuseServerRequest(
+                                            durableId = null,
                                             runtimeId = request.runtimeSessionId,
                                             requestId = request.id,
                                             method = request.method,
@@ -2179,6 +2180,9 @@ internal class LiveGatewaySessionRepository(
         val hydration = hydrateTranscript(connection, durableId, canonicalId, runtimeId)
         val history = hydration.entries
         val hydratedTodos = hydration.todos
+        // Collected under the lock below, answered after it: the send suspends
+        // and the lock must not be held across it.
+        val replayedRefusals = mutableListOf<GatewayServerRequest>()
         synchronized(stateLock) {
             ensureCurrent(connection)
             val currentRevision = runtimeEventRevision(runtimeId)
@@ -2229,8 +2233,9 @@ internal class LiveGatewaySessionRepository(
             }
             // Last, so a parked question is what the session says about itself
             // even when the snapshot's own status said `running`.
-            restoreOpenRequests(liveSnapshot, canonicalId, runtimeId)
+            restoreOpenRequests(liveSnapshot, canonicalId, runtimeId, replayedRefusals)
         }
+        refuseServerRequests(connection.client, replayedRefusals)
         canonicalId
     }
 
@@ -4483,8 +4488,17 @@ internal class LiveGatewaySessionRepository(
      * parks with a NeedsInput marker rather than painting over another chat.
      *
      * Caller holds [stateLock] and has already published the canonical row.
+     *
+     * [replayedRefusals] collects the questions this client must refuse. The
+     * send is suspending and this runs under the state lock, so the caller
+     * answers them once it has released the lock — same answer, same order.
      */
-    private fun restoreOpenRequests(snapshot: JsonObject, durableId: String, runtimeId: String) {
+    private fun restoreOpenRequests(
+        snapshot: JsonObject,
+        durableId: String,
+        runtimeId: String,
+        replayedRefusals: MutableList<GatewayServerRequest>,
+    ) {
         val entries = snapshot["open_requests"] as? JsonArray ?: return
         entries.forEach { entry ->
             val open = entry as? JsonObject ?: return@forEach
@@ -4495,13 +4509,18 @@ internal class LiveGatewaySessionRepository(
             // (`server_requests.py:58-64` @ the pin), which is why both paths
             // feed the same adoption call.
             val params = open["params"] as? JsonObject ?: return@forEach
-            adoptServerRequest(
+            // Same decision the live path makes, through the same one place: a
+            // method this client has no handler for is refused here too. Replay
+            // is the only delivery a reconnecting client gets, so a question
+            // dropped here would never be answered — and would come back on
+            // every later resume, unanswered, forever.
+            adoptOrRefuseServerRequest(
                 durableId = durableId,
                 runtimeId = runtimeId,
                 requestId = id,
                 method = method,
                 params = params,
-            )
+            )?.let(replayedRefusals::add)
         }
     }
 
@@ -4521,36 +4540,48 @@ internal class LiveGatewaySessionRepository(
      * `server_requests.send` returns the same `None` an error response
      * produces).
      *
-     * A session with no durable binding yet is *not* that. Its question is
-     * answerable and this client simply has not bound it: the question is
-     * re-delivered through `open_requests` by the resume that binds it
-     * (`tui_gateway/server_requests.py:15-18`), and refusing it here would
-     * discard a prompt that was about to have a card. So that case stays what
-     * it was — adopted by the resume, or nothing.
+     * A *known* method for a session with no durable binding yet is the other
+     * case. Its question is answerable and this client simply has not bound it:
+     * the resume that binds it re-delivers the question through `open_requests`
+     * (`tui_gateway/server_requests.py:15-18`), so refusing it here would
+     * discard a prompt that was about to have a card. Those are left alone.
+     *
+     * An unknown method owes no such deference, and needs no card: it is
+     * refused whatever the binding says, which is also the only way the
+     * question ever settles — the replay that would re-deliver a known one
+     * drops an unknown one again.
      *
      * Returns the request to refuse, or null when this client took it.
      */
     private fun adoptOrRefuseServerRequest(
+        durableId: String?,
         runtimeId: String?,
         requestId: String,
         method: String,
         params: JsonObject,
     ): GatewayServerRequest? {
-        val runtime = runtimeId?.takeIf(String::isNotBlank) ?: return null
-        val durableId = identities.durableFor(runtime) ?: return null
-        val adopted = adoptServerRequest(
-            durableId = durableId,
-            runtimeId = runtime,
-            requestId = requestId,
-            method = method,
-            params = params,
-        )
-        if (adopted) return null
-        // Only an unknown family reaches here: every kind [PendingInputKind]
-        // does have is adopted above, and the parsers for them either accept
-        // the request or (for a malformed one) leave it to the backend's own
-        // timeout rather than answer it with a verdict this client cannot give.
-        return if (pendingInputKind(method) == null) {
+        val runtime = runtimeId?.takeIf(String::isNotBlank)
+        val known = pendingInputKind(method) != null
+        // Resolved here rather than by the caller: a live frame routes by its
+        // runtime, a replay entry routes by the session its snapshot belongs to.
+        val bound = durableId ?: runtime?.let(identities::durableFor)
+        if (known && bound != null && runtime != null) {
+            // Every kind [PendingInputKind] has is adopted here. A parser that
+            // refuses a malformed one leaves it to the backend's own timeout
+            // rather than answering it with a verdict this client cannot give.
+            if (
+                adoptServerRequest(
+                    durableId = bound,
+                    runtimeId = runtime,
+                    requestId = requestId,
+                    method = method,
+                    params = params,
+                )
+            ) {
+                return null
+            }
+        }
+        return if (!known) {
             GatewayServerRequest(id = requestId, method = method, runtimeSessionId = runtime, params = params)
         } else {
             null
@@ -4581,6 +4612,22 @@ internal class LiveGatewaySessionRepository(
                 "no handler for server request: ${request.method}",
             )
         }
+    }
+
+    /**
+     * Answer every question this client could not take, after the lock that
+     * collected them has been released.
+     *
+     * One send per entry, so a replay carrying the same id twice still answers
+     * exactly once per delivery — and the backend drops the second frame
+     * anyway, because the request it named is already settled
+     * (`tui_gateway/server_requests.py:201-235` @ the snapshot).
+     */
+    private suspend fun refuseServerRequests(
+        client: GatewayRpcClient,
+        requests: List<GatewayServerRequest>,
+    ) {
+        requests.forEach { refuseServerRequest(client, it) }
     }
 
     /**

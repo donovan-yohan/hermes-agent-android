@@ -80,10 +80,10 @@ class PendingInputTest {
     /**
      * The refusal is not a catch-all for every request this client drops.
      *
-     * A question for a session that is not bound yet is still answerable — the
-     * resume that binds it re-delivers it through `open_requests` — so refusing
-     * it would throw away a prompt that was about to have a card. Only the
-     * unknown method is refused.
+     * A *known* question for a session that is not bound yet is still
+     * answerable — the resume that binds it re-delivers it through
+     * `open_requests` — so refusing it would throw away a prompt that was about
+     * to have a card.
      */
     @Test
     fun `a question for an unbound session is left for its resume, not refused`() = runTest {
@@ -97,6 +97,60 @@ class PendingInputTest {
 
         assertTrue("an unbound session's question is not this connection's to refuse", env.rpc.refused.isEmpty())
         assertTrue(env.repository.pendingInputs.value.isEmpty())
+    }
+
+    /**
+     * A reconnect's replay is the only delivery an unanswered question gets, so
+     * a method with no handler has to be refused there too.
+     *
+     * `open_requests` is re-delivered by every resume; a client that drops an
+     * unknown one here answers nothing, every time, and the backend's wait
+     * settles only on its own deadline. This is the same class as the live
+     * frame — and unlike a *known* replayed question, it needs no card, so an
+     * unbound session is no reason to withhold the refusal.
+     */
+    @Test
+    fun `an unknown method in open_requests is refused too`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-bridge","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
+        )
+
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        val refusal = env.rpc.refused.single()
+        assertEquals("srq-bridge", refusal.id)
+        assertEquals(JSON_RPC_METHOD_NOT_FOUND, refusal.code)
+        assertTrue("the replayed unknown method is named", refusal.message.contains("terminal.read"))
+        assertTrue("and nothing is parked for it", env.repository.pendingInputs.value.isEmpty())
+    }
+
+    /**
+     * The same replay, with a *known* question in it: that one is the card's,
+     * so it is adopted rather than refused, and the unknown beside it is still
+     * refused exactly once. Interleaved in one snapshot on purpose — a fix that
+     * refused the lot, or ignored the lot, fails on one half or the other.
+     */
+    @Test
+    fun `a replay is split: known questions become cards, unknown ones are refused once`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-known","method":"clarify","params":{"session_id":"runtime-a","question":"Proceed?"}}""",
+            """{"id":"srq-unknown","method":"preview.read","params":{"session_id":"runtime-a"}}""",
+        )
+
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        assertEquals("the known question is the one card", "srq-known", singlePending(env).key.requestId)
+        assertEquals("and the unknown one is answered once", 1, env.rpc.refused.size)
+        assertEquals("srq-unknown", env.rpc.refused.single().id)
+        assertEquals(JSON_RPC_METHOD_NOT_FOUND, env.rpc.refused.single().code)
     }
 
     /**
@@ -763,6 +817,14 @@ class PendingInputTest {
                 """"info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true},""" +
                 """"inflight":null,"running":false,"session_key":"$durableId","started_at":1700001000.125,"status":"idle"}"""
         }
+
+        /**
+         * The same resume snapshot, plus the `open_requests` a reconnect
+         * re-delivers — each entry exactly as `snapshot()` writes it
+         * (`tui_gateway/server_requests.py:66-71` @ the snapshot).
+         */
+        fun resumeWithOpenRequests(durableId: String, vararg entries: String): String =
+            resumeBody(durableId).dropLast(1) + ""","open_requests":[${entries.joinToString(",")}]}"""
 
         fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull) {
             check(eventFlow.tryEmit(GatewayEvent(type, runtimeId, payload)))
