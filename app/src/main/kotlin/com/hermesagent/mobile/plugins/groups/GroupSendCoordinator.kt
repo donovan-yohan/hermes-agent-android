@@ -157,7 +157,7 @@ internal class GroupSendCoordinator(
                 val receipt = GroupSendReceipt(
                     storedId = storedUserEventId(record.operation.rawId),
                     sequence = matchingSeq,
-                    driverStarted = refresh.worker
+                    driverStarted = null
                 )
                 if (store.markConfirmed(record.recordKey, receipt) == GroupSendStoreMutation.Applied) {
                     resolved += record.copy(

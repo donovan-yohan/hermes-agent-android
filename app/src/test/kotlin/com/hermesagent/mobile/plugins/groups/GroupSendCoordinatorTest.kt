@@ -55,7 +55,7 @@ class GroupSendCoordinatorTest {
         val receipt = res.getOrThrow()
         assertEquals(storedUserEventId("raw-1"), receipt.storedId)
         assertEquals(1L, receipt.sequence)
-        assertTrue(receipt.driverStarted)
+        assertEquals(true, receipt.driverStarted)
 
         // Check store record is Confirmed
         val snapshot = store.snapshot()
@@ -148,6 +148,7 @@ class GroupSendCoordinatorTest {
         val stored = store.snapshot().records[record.recordKey]
         assertEquals(GroupSendRecordState.Confirmed, stored?.state)
         assertEquals(77L, stored?.receiptSeq)
+        assertNull("Worker availability cannot prove historical driver startup", stored?.receiptDriver)
     }
 
     @Test

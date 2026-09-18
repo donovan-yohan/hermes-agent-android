@@ -51,7 +51,8 @@ internal fun sendResult(result: PluginHostResult): JsonElement = when (result) {
     })
 }
 
-internal data class GroupSendReceipt(val storedId: String, val sequence: Long, val driverStarted: Boolean)
+/** Only a direct send acknowledgment establishes driver startup; log recovery leaves it unknown. */
+internal data class GroupSendReceipt(val storedId: String, val sequence: Long, val driverStarted: Boolean?)
 
 // Target coordinates for send
 internal data class GroupSendTarget(val identity: GroupSendIdentity, val room: String) {

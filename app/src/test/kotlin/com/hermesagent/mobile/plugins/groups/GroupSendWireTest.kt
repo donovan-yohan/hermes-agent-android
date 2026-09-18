@@ -107,7 +107,7 @@ class GroupSendWireTest {
         val receipt = parseSendReceipt(response, op)
         assertEquals(storedUserEventId("client-1"), receipt.storedId)
         assertEquals(1L, receipt.sequence)
-        assertTrue(receipt.driverStarted)
+        assertEquals(true, receipt.driverStarted)
     }
 
     @Test
