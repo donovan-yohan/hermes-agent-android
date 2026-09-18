@@ -27,7 +27,6 @@ The session token is never written to stdout, stderr, or any file.
 from __future__ import annotations
 
 import argparse
-import atexit
 import json
 import os
 import socket
@@ -151,6 +150,22 @@ def _install_stderr_redaction(secrets: list[str]) -> None:
             text = text.replace(secret, REDACTED)
         os.write(real_stderr, text.encode("utf-8", errors="replace"))
 
+    def drain(final: bool = False) -> None:
+        """Release the safe prefix of the buffer; on a *final* drain drop the tail.
+
+        The tail is whatever is left once no further bytes can complete a secret:
+        a partial prefix of one. It is dropped, never emitted — a truncated log
+        line is recoverable, a leaked token is not. This is the whole reason
+        shutdown is not a `flush`: flushing would write that prefix, and a pump
+        still running would then write the rest of the secret after it.
+        """
+        cut = safe_cut()
+        if cut:
+            emit(pending[:cut])
+            del pending[:cut]
+        if final:
+            del pending[:]
+
     def pump() -> None:
         try:
             while True:
@@ -158,27 +173,15 @@ def _install_stderr_redaction(secrets: list[str]) -> None:
                 if not chunk:
                     break
                 pending.extend(chunk)
-                cut = safe_cut()
-                if cut:
-                    emit(pending[:cut])
-                    del pending[:cut]
-        except Exception:  # noqa: BLE001 - a dead pump must not release raw bytes
-            # Fail closed: an error here would otherwise leave the rest of the
-            # buffer to be written unredacted by the flush below.
-            for index in range(len(pending)):
-                pending[index] = ord("?")
-        emit(pending)
-        del pending[:]
+                drain()
+        except Exception:  # noqa: BLE001 - a failed pump must not release raw bytes
+            del pending[:]
+        drain(final=True)
         os.close(read_fd)
 
-    def flush_pending(*_: object) -> None:
-        if pending:
-            emit(pending)
-            del pending[:]
-
-    # The pump must never hold up interpreter exit, so it stays a daemon and the
-    # tail is flushed on the way out instead.
-    atexit.register(flush_pending)
+    # No exit flush: the daemon pump owns the buffer, and at interpreter exit it
+    # is raced by the remaining writes it exists to scrub. Its last act is a
+    # final drain, so anything it did not get to is dropped rather than printed.
     threading.Thread(target=pump, name="hm307-stderr-redaction", daemon=True).start()
 
 

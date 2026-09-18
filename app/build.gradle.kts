@@ -144,6 +144,30 @@ tasks.named("check") {
     dependsOn("assembleDebugAndroidTest")
 }
 
+/**
+ * The opt-in live-Gateway lane must never be served from Gradle's up-to-date or
+ * build-cache machinery.
+ *
+ * That lane's real inputs are an external Python interpreter, a read-only
+ * upstream snapshot and a server process — none of which is a declared input of
+ * a JVM test task, and any of which can change under a green result. Gradle
+ * would happily report `UP-TO-DATE` (or replay a cached result) for a run that
+ * never happened, which is false evidence of exactly the kind this slice exists
+ * to remove, so when — and only when — the lane is opted into, the test task is
+ * forced to execute and is barred from the build cache.
+ *
+ * Non-opted runs are untouched: `check` and CI keep their normal caching.
+ */
+val liveGatewayOptIn: String? = System.getProperty("hermes.liveGateway")
+    ?: (project.findProperty("hermes.liveGateway") as String?)
+
+tasks.withType<Test>().configureEach {
+    if (!liveGatewayOptIn.isNullOrBlank()) {
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
