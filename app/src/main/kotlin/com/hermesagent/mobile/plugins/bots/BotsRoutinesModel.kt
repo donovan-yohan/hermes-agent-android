@@ -428,6 +428,34 @@ object BotsRoutinesCopy {
     /** `cron.failedLoad` (core `en.ts:2645`). */
     const val FAILED_LOAD: String = "Failed to load cron jobs"
 
+    /**
+     * This Gateway does not serve `cron.manage` at all.
+     *
+     * Desktop has no analogue — every Desktop talks to a Gateway that has this
+     * method — so this follows the app's existing Gateway-predates sentence
+     * shape on the roster rather than inventing a new one.
+     */
+    const val UNAVAILABLE: String =
+        "Scheduled jobs unavailable: this Gateway does not serve cron.manage. " +
+            "Update Hermes and restart the gateway."
+
+    /**
+     * The answer named a different profile.
+     *
+     * This state is this app's own, not Desktop's: Desktop falls back to tag
+     * filtering a mismatched `scoped` echo (`cron.tsx:221-229`), while this app
+     * refuses it outright. Ledgered as drift in `docs/parity/bot-routines.md`.
+     * The words say what happened and what to do, and name no profile.
+     */
+    const val MISMATCHED_TITLE: String = "Not this bot's scheduled jobs"
+    const val MISMATCHED_DESC: String =
+        "The Gateway answered about a different profile. Nothing from that store is shown here."
+
+    /** The Gateway answered `success:false` inside a good envelope. */
+    const val REJECTED_TITLE: String = "The Gateway refused this list"
+    const val REJECTED_DESC: String =
+        "It would not hand over this bot's scheduled jobs. Try again in a moment."
+
     /** `cron.emptyTitleNew` (core `en.ts:2619`). */
     const val EMPTY_TITLE: String = "No scheduled jobs yet"
 

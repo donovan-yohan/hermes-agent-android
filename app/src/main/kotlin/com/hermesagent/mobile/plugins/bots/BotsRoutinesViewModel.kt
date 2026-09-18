@@ -53,6 +53,15 @@ enum class BotsRoutinesPhase {
 data class BotsRoutinesUiState(
     /** The bot whose store this is, or null before one has been chosen. */
     val owner: String? = null,
+    /**
+     * What to call that bot on screen.
+     *
+     * The roster row's own display name, handed over by the entry that opened
+     * this surface, falling back to the profile. Desktop does the same: its pane
+     * header reads the resolved roster row's `display_name` and `@handle`
+     * (`cron.tsx:1252-1268`), not the profile id it scopes reads by.
+     */
+    val ownerLabel: String? = null,
     val phase: BotsRoutinesPhase = BotsRoutinesPhase.Loading,
     /** The rows the Gateway served for this bot, as it sent them, unfiltered. */
     val all: List<RoutineRow> = emptyList(),
@@ -203,7 +212,7 @@ class BotsRoutinesViewModel(
      * destination is entered and left, and blanking the list on the way back in
      * would flash an empty screen over rows that are about to be replaced.
      */
-    fun selectOwner(profile: String) {
+    fun selectOwner(profile: String, label: String? = null) {
         val selected = profile.trim()
         if (selected.isEmpty()) return
         // The same boundary the read takes, taken synchronously first: a
@@ -212,6 +221,7 @@ class BotsRoutinesViewModel(
         // device has left.
         dropIfEndpointChanged()
         if (selected == ownerProfile) {
+            _uiState.update { it.copy(ownerLabel = label ?: it.ownerLabel) }
             refresh()
             return
         }
@@ -222,6 +232,7 @@ class BotsRoutinesViewModel(
         _uiState.update { state ->
             state.copy(
                 owner = selected,
+                ownerLabel = label ?: selected,
                 phase = BotsRoutinesPhase.Loading,
                 all = emptyList(),
                 jobs = emptyList(),
@@ -399,6 +410,7 @@ class BotsRoutinesViewModel(
         _uiState.update { state ->
             state.copy(
                 owner = null,
+                ownerLabel = null,
                 phase = BotsRoutinesPhase.Loading,
                 all = emptyList(),
                 jobs = emptyList(),

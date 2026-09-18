@@ -86,13 +86,23 @@ class BotsPluginTest {
         plugin.register(ctx)
 
         val routes = registry.getArea(PluginAreas.ROUTES_AREA)
-        assertEquals(1, routes.size)
-        val route = routes.single()
+        assertEquals(2, routes.size)
+        val route = routes.first()
         assertEquals("bots:route", route.id)
         assertEquals(PluginAreas.ROUTES_AREA, route.area)
         assertEquals("plugin:bots", route.source)
         assertEquals("Bots roster", route.title)
         assertNotNull(route.render)
+
+        // The bot-scoped Routines destination is its own route rather than a
+        // mode of the roster's, so the roster's contribution keeps its id and
+        // its title and the two surfaces cannot shadow each other.
+        val routines = routes[1]
+        assertEquals("bots:routines", routines.id)
+        assertEquals(PluginAreas.ROUTES_AREA, routines.area)
+        assertEquals("plugin:bots", routines.source)
+        assertEquals(BotsRoutinesCopy.TITLE, routines.title)
+        assertNotNull(routines.render)
 
         val sidebarNav = registry.getArea(PluginAreas.SIDEBAR_NAV_AREA)
         assertEquals(1, sidebarNav.size)
