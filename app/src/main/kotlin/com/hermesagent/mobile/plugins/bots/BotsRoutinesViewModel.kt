@@ -149,7 +149,19 @@ class BotsRoutinesViewModel(
      */
     private var jobsScoped: String? = null
 
-    /** The endpoint [jobs] belongs to. */
+    /**
+     * The endpoint [jobs] belongs to — and the generation every read of this
+     * owner is dispatched under.
+     *
+     * It is written in exactly two places, both of which are the moment a
+     * selection's identity is established: [selectOwner], where the bot the
+     * person just chose belongs to the endpoint that is live *now*, and
+     * [dropForEndpointSwitch], which forgets everything. [refreshNow] reads it
+     * rather than the live flow, so the generation a read is bound to is always
+     * the one stored with the owner it is reading — a bump cannot slip between
+     * the boundary check and the dispatch and pair the previous bot with the
+     * replacement Gateway.
+     */
     private var jobsEndpoint: Long = endpointGeneration.value
 
     /** The bot [jobs] belongs to, or null when no bot has been chosen. */
@@ -288,7 +300,14 @@ class BotsRoutinesViewModel(
         // send it to the replacement Gateway.
         dropIfEndpointChanged()
         val profile = ownerProfile ?: return
-        val endpoint = endpointGeneration.value
+        // The generation the selected owner was stored under — `jobsEndpoint` —
+        // and never a fresh read of the live flow. A bump landing between the
+        // boundary check above and a fresh read would pair this *old* owner with
+        // the *new* generation, and a request whose generation agrees with the
+        // live one has nothing for the host's fence to refuse: the fence compares
+        // the generation it is handed against the generation it is on, so a
+        // mispaired capture defeats it by satisfying it.
+        val endpoint = jobsEndpoint
         if (jobs.isEmpty()) {
             _uiState.update { it.copy(phase = BotsRoutinesPhase.Loading) }
         }
@@ -370,7 +389,12 @@ class BotsRoutinesViewModel(
         _uiState.update { state ->
             state.copy(
                 owner = profile,
-                endpointGeneration = endpointGeneration.value,
+                // The generation these rows were *read* at, not the live one:
+                // the field records the provenance of [all] and [jobs] beside
+                // it, and on a failed refresh that is still the endpoint the
+                // rows came from. A fresh read here would relabel the previous
+                // machine's rows with the replacement Gateway's identity.
+                endpointGeneration = jobsEndpoint,
                 phase = phase ?: if (selected.isEmpty()) BotsRoutinesPhase.Empty else BotsRoutinesPhase.Ready,
                 all = jobs,
                 jobs = selected,

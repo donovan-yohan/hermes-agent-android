@@ -79,6 +79,54 @@ class BotsRoutinesViewModelTest {
     private fun TestScope.drivenScope(): CoroutineScope =
         CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
 
+    /**
+     * A generation flow that bumps the endpoint on its *armed* read, returning
+     * the pre-bump value. The armed read is therefore the read a boundary check
+     * passes with, while the backing value has already moved — exactly the window
+     * between that check and the capture that follows it.
+     */
+    private class ArmingGeneration(initial: Long) : MutableStateFlow<Long> {
+        private val backing = MutableStateFlow(initial)
+        var reads = 0
+
+        /** The read ordinal that bumps the endpoint, or 0 while disarmed. */
+        var armOnRead = 0
+        var advancedOnRead = 0
+
+        override var value: Long
+            get() {
+                reads += 1
+                val current = backing.value
+                if (armOnRead != 0 && reads == armOnRead) {
+                    armOnRead = 0
+                    backing.value = current + 1L
+                    advancedOnRead = reads
+                }
+                return current
+            }
+            set(newValue) {
+                backing.value = newValue
+            }
+
+        override val subscriptionCount: kotlinx.coroutines.flow.StateFlow<Int>
+            get() = backing.subscriptionCount
+
+        override val replayCache: List<Long> get() = backing.replayCache
+
+        override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<Long>): Nothing =
+            backing.collect(collector)
+
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+        override fun compareAndSet(expect: Long, update: Long): Boolean = backing.compareAndSet(expect, update)
+
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+        override fun resetReplayCache() = backing.resetReplayCache()
+
+        override fun tryEmit(value: Long): Boolean = backing.tryEmit(value)
+
+        override suspend fun emit(value: Long) = backing.emit(value)
+    }
+
     private fun profileOf(params: JsonObject): String? =
         (params["profile"] as? kotlinx.serialization.json.JsonPrimitive)?.content
 
@@ -674,6 +722,78 @@ class BotsRoutinesViewModelTest {
         advanceUntilIdle()
         assertEquals(2, host.calls.size)
         assertEquals(listOf("Beta Morning"), model.uiState.value.jobs.map { it.title })
+    }
+
+    @Test
+    fun `the generation bump between the boundary check and the capture cannot be escaped`() = runTest {
+        // The defect this pins: `refreshNow` checks the endpoint boundary, then
+        // captured a *fresh* generation. A bump landing in that window paired the
+        // previous bot with the replacement Gateway's generation — and a request
+        // whose generation is current has nothing for the host's fence to refuse,
+        // because the fence compares what it is handed against what it is on.
+        //
+        // The bump is placed by the generation flow itself, at the capture: no
+        // sleep, and no production test-only hook.
+        val endpoint = ArmingGeneration(initial = 0L)
+        val host = ScriptedHost(endpoint).apply {
+            // A second answer is scripted deliberately: if the mispaired read ever
+            // reaches the wire the test then fails on the call-count assertion
+            // rather than on a missing fixture, which is the difference between a
+            // diagnostic and a puzzle.
+            answer(
+                "cron.manage",
+                success(jobs("[bot:ops] Alpha Morning")),
+                success(jobs("[bot:ops] Beta Morning")),
+            )
+        }
+        val model = viewModel(drivenScope(), host, endpoint = endpoint)
+
+        // Establish the selection at generation 0, reading successfully. This is
+        // what the calibration below counts.
+        model.selectOwner("ops")
+        advanceUntilIdle()
+        assertEquals(listOf("Alpha Morning"), model.uiState.value.jobs.map { it.title })
+        assertEquals(1, host.calls.size)
+
+        // Arm the *next* flow read, which is `refreshNow`'s own boundary check,
+        // and drive that method directly so no other check can consume the arm.
+        val readsBefore = endpoint.reads
+        endpoint.armOnRead = readsBefore + 1
+        model.refreshNow()
+        advanceUntilIdle()
+
+        // The endpoint moved between that check and the capture. The capture is
+        // bound to the generation stored with the owner, so the host's fence
+        // refuses before the wire. The pre-fix capture read the live generation
+        // instead, which satisfied the fence and sent the previous bot's read to
+        // the replacement Gateway.
+        assertTrue("the boundary check was never armed", endpoint.advancedOnRead > 0)
+        assertEquals("a mispaired read reached the replacement Gateway", 1, host.calls.size)
+        assertEquals("ops", profileOf(host.calls.single().second))
+        assertNull("the old bot was relabelled to the new endpoint", model.uiState.value.owner)
+    }
+
+    @Test
+    fun `a read is dispatched under the generation stored with its owner`() = runTest {
+        // The direct statement of the binding: after a selection at generation N,
+        // every read of that owner is dispatched under N, whatever the live flow
+        // says later and without any request having to fail first.
+        val endpoint = MutableStateFlow(0L)
+        val host = ScriptedHost(endpoint).apply {
+            answer("cron.manage", success(jobs("[bot:ops] Alpha")), success(jobs("[bot:ops] Beta")))
+        }
+        val model = viewModel(drivenScope(), host, endpoint = endpoint)
+
+        model.selectOwner("ops")
+        advanceUntilIdle()
+        assertEquals(0L, model.uiState.value.endpointGeneration)
+
+        // A transport redial of the same endpoint does not move the generation,
+        // and the read is issued under the stored one.
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(2, host.calls.size)
+        assertEquals(0L, model.uiState.value.endpointGeneration)
     }
 
     @Test

@@ -201,25 +201,34 @@ class BotsPluginRepository(private val host: PluginHost) {
      * Phase B: the bot's one forever-chat, created only from a registry that
      * twice confirmed none exists.
      *
-     * The pinned Desktop path is `openBotCanonicalChat` / `createCanonicalChat`
-     * (`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:485-519`,
-     * `:290-475` @ the pin) and this mirrors its order:
+     * The Desktop path this mirrors is `openBotCanonicalChat`
+     * (`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:485-519` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`), which is a composition of
+     * `createCanonicalChat` (`canonical-chat.ts:290-475` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`). Its order is kept:
      *
      * 1. Consult the registry. A row opens as-is; an unreadable answer fails
      *    closed without touching `session.create`.
-     * 2. Adopt before minting (`:335-346`): the lookup runs a second time, so a
-     *    chat created by another surface between the tap and the create is
-     *    opened rather than forked.
+     * 2. Adopt before minting (`canonical-chat.ts:335-346` @
+     *    `564aef2946c436500a5e80ee117b66b789b3f99a`): the lookup runs a second
+     *    time, so a chat created by another surface between the tap and the
+     *    create is opened rather than forked.
      * 3. Create it titled, hidden and profile-following, then write the title
      *    eagerly so the row exists before anything is opened or sent.
      * 4. If that title write did not land, re-read the registry and adopt the
-     *    exact-title row a concurrent writer won (`:387-410`). No winner means
-     *    the attempt is abandoned — the stray lazy session holds no messages and
-     *    the gateway prunes it — never a second titled chat.
+     *    exact-title row a concurrent writer won (`canonical-chat.ts:387-410` @
+     *    `564aef2946c436500a5e80ee117b66b789b3f99a`). No winner means the attempt
+     *    is abandoned — the stray lazy session holds no messages and the gateway
+     *    prunes it — never a second titled chat.
+     *
+     * Those citations name the revision the file was ported from, which is
+     * **not** this app's theme/theme-adjacent pin: the canonical-chat construct
+     * was read at `564aef2946c436500a5e80ee117b66b789b3f99a`, and re-pointing
+     * them at a newer revision would claim a provenance the spans do not have.
      *
      * Deliberately absent, and ledgered in `docs/parity/bot-chat.md`: Desktop's
      * kickoff intro. `createCanonicalChat` submits it only on New Agent
-     * creation (`kickoff`) or as a legacy-gateway persistence fallback; the pin's
+     * creation (`kickoff`) or as a legacy-gateway persistence fallback; the
      * gateway materializes the row through the eager title write instead, so
      * opening a chat stays inert and the person's first message is the one that
      * arms live delivery.
@@ -251,17 +260,27 @@ class BotsPluginRepository(private val host: PluginHost) {
      * Create the bot's canonical chat, then make its identity durable.
      *
      * `session.create` is lazy on the pinned gateway — its row appears on the
-     * first prompt or on this title write (`tui_gateway/methods_session.py:325-390`
-     * @ the pin) — so the eager `session.title` is what closes the untitled
-     * window a second tap could mint through (`canonical-chat.ts:368-412`).
+     * first prompt or on this title write
+     * (`tui_gateway/methods_session.py:325-390` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`) — so the eager `session.title`
+     * is what closes the untitled window a second tap could mint through
+     * (`canonical-chat.ts:368-412` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`).
      *
      * The request is Desktop's exactly, `source` included in its absence: the
-     * bot-chat create does not send one (`canonical-chat.ts:348-363`), so the
-     * gateway resolves it from its own environment. This app's own
-     * `createSession` sends `"desktop"`, and that difference is deliberate —
-     * `source` decides `track_liveness` and the desktop-only cleanup lifecycle
-     * (`tui_gateway/session_lifecycle.py:37` @ the pin), and a canonical chat
-     * is not this app's ordinary session.
+     * bot-chat create does not send one (`canonical-chat.ts:348-363` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`), so the gateway resolves it
+     * from its own environment. This app's own `createSession` sends `"desktop"`,
+     * and that difference is deliberate — `source` decides `track_liveness` and
+     * the desktop-only cleanup lifecycle
+     * (`tui_gateway/session_lifecycle.py:37` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`), and a canonical chat is not
+     * this app's ordinary session.
+     *
+     * Every citation above names `564aef2946c436500a5e80ee117b66b789b3f99a`,
+     * the revision they were read at, rather than the pin this app's own
+     * comment header names: a span is a claim about one revision, and moving
+     * one stamp does not move the others.
      *
      * Returns the durable id to resume, or null when the chat's identity could
      * not be confirmed.
