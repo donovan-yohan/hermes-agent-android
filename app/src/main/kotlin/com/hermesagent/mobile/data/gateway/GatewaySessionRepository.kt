@@ -4528,28 +4528,19 @@ internal class LiveGatewaySessionRepository(
      * One live request, and the one thing this client owes a method it has no
      * handler for: an answer saying so.
      *
-     * Two different misses used to look alike and are not. A method outside
-     * [PendingInputKind] is a surface a phone does not have — Desktop's own
-     * bridges, `terminal.read` and friends — and the backend is waiting on a
-     * verdict it will otherwise only get from its own deadline. Every other
-     * client answers exactly one `-32601` for it, and the backend settles its
-     * wait at once instead of parking the turn out
-     * (`apps/shared/src/json-rpc-channel.ts:388-389` and
-     * `tui_gateway/server_requests.py:201-219` @
-     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`: that channel's
-     * `server_requests.send` returns the same `None` an error response
-     * produces).
+     * A method outside [PendingInputKind] is a surface a phone does not have —
+     * Desktop's own bridges — and every other client answers it exactly one
+     * `-32601` so the backend settles at once rather than parking the turn out
+     * (`apps/shared/src/json-rpc-channel.ts:388-389` @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`;
+     * `tui_gateway/server_requests.py:201-219` @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
      *
-     * A *known* method for a session with no durable binding yet is the other
-     * case. Its question is answerable and this client simply has not bound it:
+     * A *known* method for a session with no durable binding yet is not that:
      * the resume that binds it re-delivers the question through `open_requests`
-     * (`tui_gateway/server_requests.py:15-18`), so refusing it here would
-     * discard a prompt that was about to have a card. Those are left alone.
-     *
-     * An unknown method owes no such deference, and needs no card: it is
-     * refused whatever the binding says, which is also the only way the
-     * question ever settles — the replay that would re-deliver a known one
-     * drops an unknown one again.
+     * (`tui_gateway/server_requests.py:15-18` @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`),
+     * so refusing it would discard a prompt that was about to have a card. An
+     * unknown method is refused whatever the binding says: it needs no card,
+     * and no other delivery can settle it — the replay that would re-deliver a
+     * known one drops an unknown one again.
      *
      * Returns the request to refuse, or null when this client took it.
      */
@@ -4616,12 +4607,10 @@ internal class LiveGatewaySessionRepository(
 
     /**
      * Answer every question this client could not take, after the lock that
-     * collected them has been released.
-     *
-     * One send per entry, so a replay carrying the same id twice still answers
-     * exactly once per delivery — and the backend drops the second frame
-     * anyway, because the request it named is already settled
-     * (`tui_gateway/server_requests.py:201-235` @ the snapshot).
+     * collected them has been released. One send per entry: a replay carrying
+     * the same id twice answers once per delivery, and the backend drops the
+     * repeat because the request it names is already settled
+     * (`tui_gateway/server_requests.py:201-235` @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
      */
     private suspend fun refuseServerRequests(
         client: GatewayRpcClient,

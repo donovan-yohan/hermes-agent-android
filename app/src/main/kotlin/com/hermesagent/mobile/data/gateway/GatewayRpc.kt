@@ -447,11 +447,7 @@ internal class CorrelatedGatewayRpc(
         // A response frame carries `result` or `error`, never both and never
         // neither: the backend reads the presence of `error` as "no answer"
         // (`tui_gateway/server_requests.py:216-222` @ the snapshot).
-        respondToServerRequestFrame(
-            id,
-            buildJsonObject { put("result", result) },
-            "The gateway connection could not send the response.",
-        )
+        respondToServerRequestFrame(id, buildJsonObject { put("result", result) })
     }
 
     /**
@@ -477,7 +473,6 @@ internal class CorrelatedGatewayRpc(
                     },
                 )
             },
-            "The gateway connection could not send the response.",
         )
     }
 
@@ -489,7 +484,6 @@ internal class CorrelatedGatewayRpc(
     private suspend fun respondToServerRequestFrame(
         id: String,
         body: JsonObject,
-        failureMessage: String,
     ) {
         val frame = buildJsonObject {
             put("jsonrpc", JsonPrimitive("2.0"))
@@ -499,10 +493,10 @@ internal class CorrelatedGatewayRpc(
         val sent = synchronized(lock) {
             if (isClosed) throw GatewayRpcException("The gateway connection is closed.")
             runCatching { wire.send(frame) }.getOrElse {
-                throw GatewayRpcException(failureMessage)
+                throw GatewayRpcException("The gateway connection could not send the response.")
             }
         }
-        if (!sent) throw GatewayRpcException(failureMessage)
+        if (!sent) throw GatewayRpcException("The gateway connection could not send the response.")
     }
 
     /**
