@@ -15,15 +15,56 @@ internal fun roomWire(id: String = "room", latest: Long = 0) = wire("""{
     "room_id":"$id","name":"Planning","members":[{"member_id":"member","profile":"ops","handle":"ops",
     "target":{"kind":"local","profile":"ops"}}],"latest_seq":$latest,"authority_gateway_id":"fixture",
     "authority_epoch":1,"revision":1,"created_at":1.0,"updated_at":1.0,"idempotent":false}""")
-internal fun eventWire(seq: Long = 1, kind: String = "message.user", payload: String = """{"text":"Hello","thread_id":"thread"}""") = wire("""{
-    "room_id":"room","seq":$seq,"event_id":"event-$seq","kind":"$kind","actor":{"kind":"user","id":"user"},
+internal fun eventWire(seq: Long = 1, kind: String = "message.user", payload: String = """{"text":"Hello","thread_id":"thread"}"""): JsonElement {
+    val actorKind = when {
+        kind == "message.user" -> "user"
+        kind == "message.member" -> "member"
+        kind.startsWith("turn.") || kind in setOf("room.activity", "room.stop_requested") -> "gateway"
+        else -> "system"
+    }
+    return wire("""{
+    "room_id":"room","seq":$seq,"event_id":"event-$seq","kind":"$kind","actor":{"kind":"$actorKind","id":"actor"},
     "authority_epoch":1,"payload":$payload,"created_at":1.0,"idempotent":false}""")
+}
 internal fun logWire(events: List<JsonElement>, cursor: Long, latest: Long = cursor) = buildJsonObject {
     put("events", JsonArray(events)); put("cursor", cursor); put("latest_seq", latest); put("has_more", cursor < latest)
     put("authority", wire("""{"gateway_id":"fixture","epoch":1}"""))
 }
 
 class GroupsRepositoryTest {
+    @Test fun nullableApprovalIdentitiesAndPeerRoutesHaveSafeProjection() {
+        val room = roomWire().jsonObject
+        val member = room.getValue("members").jsonArray.single().jsonObject
+        val peer = JsonObject(member + mapOf("display_name" to JsonPrimitive(""), "target" to wire("""{
+            "kind":"peer","profile":"ops","peer_id":"peer","installation_id":"installation","capability_digest":"digest"}""")))
+        val peerRoom = JsonObject(room + ("members" to JsonArray(listOf(peer))))
+        val state = parseGroupState(wire("""{"room":$peerRoom,"driver_status":{"running":true,"working":false,
+            "blocked":true,"counts":{"indeterminate":1},"pending_actions":[{"kind":"approval","task_id":"task",
+            "member_id":"member","session_id":"session","run_id":null,"request_id":null,"execution_generation":1,
+            "approval":{"choices":["once","deny"],"secret":"not rendered"}}],
+            "peer_routes":[{"room_id":"room","member_id":"member","status":"needs_reauthorization"}]}}"""), "room")
+        assertTrue(state.blocked)
+        assertEquals(listOf("Approval required"), state.pending)
+        assertEquals(listOf("@ops: Needs authorization"), state.peerRoutes)
+        val noDriver = parseGroupState(wire("""{"room":${roomWire()},"driver_status":null}"""), "room")
+        assertFalse(noDriver.working)
+    }
+
+    @Test fun parsesActualFrozenStoreOutputs() {
+        val raw = javaClass.getResource("/groups/hosted-store-d177.json")!!.readText()
+        val store = wire(raw).jsonObject
+        assertEquals("Release plan", parseHostedGroup(store.getValue("list_rooms").jsonArray.single()).name)
+        var cursor = 0L
+        val lines = mutableListOf<String>()
+        store.getValue("read_events_pages").jsonArray.forEach { rawPage ->
+            val page = parseGroupLog(rawPage, "synthetic-room", cursor)
+            cursor = page.cursor
+            lines += page.events.map { it.text }
+        }
+        assertEquals(3L, cursor)
+        assertEquals(listOf("Review the plan.", "Discussion complete", "Renamed to Release plan"), lines)
+    }
+
     @Test fun exactReadRequestsAndByteShortPages() = runTest {
         val requests = mutableListOf<Pair<String, JsonObject>>()
         val answers = ArrayDeque(listOf(capabilityWire,

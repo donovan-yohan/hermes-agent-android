@@ -11,7 +11,7 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines]
+        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-group-chat]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true

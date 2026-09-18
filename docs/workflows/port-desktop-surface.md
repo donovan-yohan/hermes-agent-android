@@ -273,6 +273,16 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+Hosted read surfaces need two identities: endpoint generation for cache ownership,
+and an opaque ready-leg token for capability-check/use fencing. A Boolean flow
+can conflate a fast reconnect; observing a new token is not enough unless each
+request validates the same leg at wire dispatch and on return. Test the reconnect
+between capability and list/state/log without yielding to the lifecycle observer.
+Wire fixtures should include serializer outputs: the hosted store emits nullable
+historical epochs and gateway actors, which strict-looking hand-authored fixtures
+can accidentally omit. See `docs/parity/bot-group-chat.md`.
+
+
 Before you call it done, edit **this file**: add the upstream paths that
 mattered, the pitfalls you hit, and delete steps that turned out to be noise.
 A workflow that only grows is a diary, and nobody reads a diary.

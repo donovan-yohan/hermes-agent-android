@@ -22,8 +22,9 @@ data class GroupList(val rooms: List<HostedGroup>, val next: Long?)
 internal class InvalidGroupWire : IllegalArgumentException()
 internal fun invalid(): Nothing = throw InvalidGroupWire()
 internal fun JsonElement.obj(): JsonObject = this as? JsonObject ?: invalid()
-internal fun JsonObject.str(key: String): String = (get(key) as? JsonPrimitive)
-    ?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() } ?: invalid()
+internal fun JsonObject.text(key: String): String = (get(key) as? JsonPrimitive)
+    ?.takeIf { it.isString }?.content ?: invalid()
+internal fun JsonObject.str(key: String): String = text(key).takeIf { it.isNotBlank() } ?: invalid()
 internal fun JsonObject.num(key: String): Long = (get(key) as? JsonPrimitive)
     ?.takeUnless { it.isString }?.longOrNull?.takeIf { it >= 0 } ?: invalid()
 internal fun JsonObject.bool(key: String): Boolean = (get(key) as? JsonPrimitive)
@@ -61,7 +62,7 @@ internal fun parseHostedGroup(value: JsonElement): HostedGroup {
     if (disbanded) o.timestamp("disbanded_at")
     val members = o.array("members").map {
         val m = it.obj()
-        val target = m["target"]?.obj()
+        val target = m["target"]?.takeUnless { it == JsonNull }?.obj()
         val kind = target?.str("kind") ?: "local"
         if (kind !in setOf("local", "peer")) invalid()
         val profile = m.str("profile")
@@ -69,8 +70,9 @@ internal fun parseHostedGroup(value: JsonElement): HostedGroup {
             if (target.str("profile") != profile) invalid()
             if (kind == "peer") listOf("peer_id", "installation_id", "capability_digest").forEach(target::str)
         }
-        val display = m["display_name"]?.takeUnless { it == JsonNull }?.let { m.str("display_name") }
-        GroupMember(m.str("member_id"), profile, safe(display ?: "@${m.str("handle")}"), kind == "peer")
+        val handle = m.str("handle")
+        val display = m["display_name"]?.takeUnless { it == JsonNull }?.let { m.text("display_name").takeIf(String::isNotBlank) }
+        GroupMember(m.str("member_id"), profile, safe(display ?: "@$handle"), kind == "peer")
     }
     if (members.map { it.id }.distinct().size != members.size) invalid()
     return HostedGroup(o.str("room_id"), safe(o.str("name")), members, o.num("latest_seq"),
@@ -93,14 +95,20 @@ internal fun parseGroupState(value: JsonElement, id: String): GroupState {
     if (room.id != id) invalid()
     val driver = o["driver_status"]?.takeUnless { it == JsonNull }?.obj() ?: return GroupState(room)
     driver.bool("running")
-    driver.getValue("counts").obj().keys.forEach { driver.getValue("counts").obj().num(it) }
+    val counts = driver.getValue("counts").obj()
+    counts.keys.forEach(counts::num)
     val pending = driver.array("pending_actions").map {
         val action = it.obj()
         action.str("task_id")
         when (action.str("kind")) {
             "retry" -> "Retry"
             "approval" -> {
-                listOf("member_id", "run_id", "session_id", "request_id").forEach(action::str)
+                listOf("member_id", "session_id").forEach(action::str)
+                // Driver emits these keys via .get(), so absent runtime identities serialize as null.
+                listOf("run_id", "request_id").forEach { key ->
+                    if (!action.containsKey(key)) invalid()
+                    if (action[key] != JsonNull) action.text(key)
+                }
                 action.num("execution_generation")
                 action.getValue("approval").obj().array("choices").forEach { choice ->
                     if (choice !is JsonPrimitive || !choice.isString || choice.content !in setOf("once", "deny")) invalid()
@@ -160,10 +168,11 @@ internal fun parseGroupLog(value: JsonElement, id: String, since: Long): GroupLo
             "message.user" -> { p.str("thread_id"); safe(p.str("text")) }
             "message.member" -> safe(p.str("text"))
             "turn.settled" -> {
-                p.num("seen_through_seq")
                 if (!p.containsKey("message_event_id")) invalid()
-                if (p["message_event_id"] != JsonNull) p.str("message_event_id")
-                if (p.bool("passed")) "Passed" else "Finished"
+                val passed = p.bool("passed")
+                if (passed && p["message_event_id"] != JsonNull) invalid()
+                if (!passed) p.str("message_event_id")
+                if (passed) "Passed" else "Finished"
             }
             "turn.failed" -> { p.str("error"); "Turn failed" }
             "turn.cancelled" -> { p.str("reason"); "Stopped" }
@@ -181,7 +190,8 @@ internal fun parseGroupLog(value: JsonElement, id: String, since: Long): GroupLo
             }
             else -> "Group Chat updated"
         }
-        GroupEvent(seq, kind, member, if (actorKind in setOf("user", "member", "system")) text else "Group Chat updated")
+        if (actorKind in setOf("user", "member", "gateway", "system")) GroupEvent(seq, kind, member, text)
+        else GroupEvent(seq, "unknown", null, "Group Chat updated")
     }
     if (cursor != previous || latest < cursor || more != (cursor < latest) || (more && cursor <= since)) invalid()
     return GroupLog(events, cursor, more)

@@ -70,6 +70,9 @@ enum class HermesIcon(val glyph: String) {
     Cloud("\uEBAA"),
     Trash("\uEA81"),
     SettingsGear("\uEB51"),
+    Organization("\uEA7E"),
+    ChevronUp("\uEAB7"),
+    Attach("\uEC34"),
     /**
      * The search field's leading glyph. Desktop's is Tabler `IconSearch`
      * (`components/ui/search-field.tsx:69` renders `Search` from

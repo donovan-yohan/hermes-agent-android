@@ -32,5 +32,10 @@
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".GroupsParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
     </application>
 </manifest>
