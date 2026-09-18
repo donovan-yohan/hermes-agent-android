@@ -438,7 +438,11 @@ class BotsRosterJourneyTest {
             ),
         )
         val area = if (renderSidebarEntry) PluginAreas.SIDEBAR_NAV_AREA else PluginAreas.ROUTES_AREA
-        val render = requireNotNull(registry.getArea(area).single().render)
+        // This contribution, selected by its own id: the plugin also contributes
+        // the Routines destination to the routes area, and this journey is about
+        // the roster.
+        val id = if (renderSidebarEntry) "bots:sidebar-nav" else "bots:route"
+        val render = requireNotNull(registry.getArea(area).firstOrNull { it.id == id }?.render)
 
         compose.setContent {
             val screen: @Composable () -> Unit = {

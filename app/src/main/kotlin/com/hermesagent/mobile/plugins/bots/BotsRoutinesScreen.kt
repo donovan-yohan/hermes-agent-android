@@ -2,7 +2,6 @@ package com.hermesagent.mobile.plugins.bots
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,10 +34,8 @@ import com.hermesagent.mobile.ui.common.ComingSoonIconAction
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
-import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.PrimaryButton
-import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import java.util.Locale
 

@@ -464,7 +464,13 @@ object BotsRoutinesCopy {
         "Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the " +
             "destination you pick."
 
-    /** `cron.newCron` (core `en.ts:2615`) — the pane header's add control. */
+    /**
+     * Desktop's own copy for the create action, kept for the record rather than
+     * for a renderer: this app's empty card offers no create action in the
+     * read-only slice, so the sentence has no slot yet. It is what the create
+     * slice will render, and its absence from a surface is what the parity
+     * ledger's "coming soon" row records.
+     */
     const val NEW_CRON: String = "New cron"
 
     /** `cron.manage` (core `en.ts:2624`) — the row's own button, which opens the inspector. */
@@ -479,12 +485,6 @@ object BotsRoutinesCopy {
     const val PAUSE_CRON: String = "Pause cron"
     const val RESUME_CRON: String = "Resume cron"
     const val DELETE: String = "Delete"
-
-    /**
-     * `cron.manage`'s tip on the title button (`cron.tsx:546`), which is also
-     * what the surface's own inspector will be called when it lands.
-     */
-    const val ROW_MANAGE: String = "Manage"
 
     /** `common.retry` (`en.ts:143`). */
     const val RETRY: String = "Retry"
