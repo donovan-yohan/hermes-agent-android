@@ -106,13 +106,15 @@ internal data class RoutineCreationDraft(
         val name = title.trim()
         val task = instruction.trim()
         val composed = schedule.compose().trim()
-        if (name.isEmpty() || task.isEmpty() || composed.isEmpty() || '\u0000' in name || '\u0000' in task) return null
+        if (rawOwnerProfile.isBlank() || name.isEmpty() || task.isEmpty() || composed.isEmpty() ||
+            '\u0000' in name || '\u0000' in task
+        ) return null
         return buildJsonObject {
             put("action", "add")
             put("name", "[bot:$rawOwnerProfile] $name")
             put("schedule", composed)
             put("prompt", creationPrompt(rawOwnerProfile, name, task, activeProfile))
-            if (rawOwnerProfile.isNotEmpty()) put("profile", rawOwnerProfile)
+            put("profile", rawOwnerProfile)
             if (schedule.frequency.showsRepeat && schedule.repeatN.isNotBlank()) put("repeat", positiveAmount(schedule.repeatN))
             if (continuity) put("continuity", true)
             if (delivery == RoutineDelivery.BotChat) put("deliver", "bot-chat")

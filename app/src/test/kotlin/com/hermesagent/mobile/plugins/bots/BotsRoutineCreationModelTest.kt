@@ -125,8 +125,13 @@ class BotsRoutineCreationModelTest {
     @Test fun `payload has exact default keys trims inputs and preserves raw profile`() {
         val actual = draft.payload(" Ops-Team ", "ops-TEAM")!!
         assertEquals(Json.parseToJsonElement("""{"action":"add","name":"[bot: Ops-Team ] Morning","schedule":"0 9 * * *","prompt":"Do work","profile":" Ops-Team "}"""), actual)
-        assertEquals(setOf("action", "name", "schedule", "prompt"), draft.payload("", "")!!.keys)
-        assertTrue((draft.payload("", "")!!["prompt"] as JsonPrimitive).content.startsWith("[bot-mode:routine:v2]"))
+    }
+
+    @Test fun `blank owner refuses payload without falling back to active profile`() {
+        for (owner in listOf("", " ", "\n\t")) {
+            assertNull(draft.payload(owner, ""))
+            assertNull(draft.payload(owner, "active"))
+        }
     }
 
     @Test fun `empty and NUL inputs refuse payload`() {
