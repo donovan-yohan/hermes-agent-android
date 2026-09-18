@@ -78,7 +78,7 @@ class BotsPlugin(
             // a banner rather than a blank screen — belongs to a machine this
             // device has left, which a transport redial never means.
             endpointGeneration = host.endpointGeneration,
-            connectionToken = host.connectionToken,
+            connectionToken = avatarRoster?.let { host.connectionToken },
         )
         val actions = BotsActions(
             onRefresh = viewModel::refresh,

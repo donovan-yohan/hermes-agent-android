@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.plugins.bots
 
+import com.hermesagent.mobile.plugins.PluginConnectionToken
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostEvent
 import com.hermesagent.mobile.plugins.PluginHostResult
@@ -261,6 +262,59 @@ class BotsViewModelTest {
         assertEquals(BotsRosterPhase.Loading, viewModel.uiState.value.phase)
         assertNull(viewModel.uiState.value.safeMessage)
         assertFalse(viewModel.uiState.value.connectionUp)
+    }
+
+    @Test
+    fun `a same-endpoint reconnect token refreshes the roster`() = runTest {
+        val connected = MutableStateFlow(true)
+        val endpoint = MutableStateFlow(0L)
+        val token = MutableStateFlow<PluginConnectionToken?>(PluginConnectionToken())
+        val host = loadedHost()
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+            endpointGeneration = endpoint,
+            connectionToken = token,
+        )
+
+        runCurrent()
+        assertEquals(1, host.reads)
+
+        // A same-endpoint reconnect can leave `connected` true while the host
+        // replaces its ready-leg token. That identity change must still rerun
+        // the authoritative roster read.
+        token.value = PluginConnectionToken()
+        advanceUntilIdle()
+
+        assertEquals(2, host.reads)
+        assertEquals(BotsRosterPhase.Ready, viewModel.uiState.value.phase)
+    }
+
+    @Test
+    fun `connected before token readiness retries once the token arrives`() = runTest {
+        val connected = MutableStateFlow(true)
+        val endpoint = MutableStateFlow(0L)
+        val token = MutableStateFlow<PluginConnectionToken?>(null)
+        val host = loadedHost()
+        val viewModel = BotsViewModel(
+            repository = BotsPluginRepository(host),
+            scope = drivenScope(),
+            clock = { now },
+            connected = connected,
+            endpointGeneration = endpoint,
+            connectionToken = token,
+        )
+
+        runCurrent()
+        assertEquals(1, host.reads)
+
+        token.value = PluginConnectionToken()
+        advanceUntilIdle()
+
+        assertEquals(2, host.reads)
+        assertEquals(BotsRosterPhase.Ready, viewModel.uiState.value.phase)
     }
 
     @Test

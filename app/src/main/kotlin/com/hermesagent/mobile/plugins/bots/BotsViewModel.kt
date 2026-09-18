@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -136,7 +137,8 @@ class BotsViewModel(
      * exactly what the cache survives.
      */
     private val endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
-    private val connectionToken: StateFlow<com.hermesagent.mobile.plugins.PluginConnectionToken?> = MutableStateFlow(null),
+    /** Ready-leg identity is observed only by the avatar-enabled production path. */
+    private val connectionToken: StateFlow<com.hermesagent.mobile.plugins.PluginConnectionToken?>? = null,
 ) {
     private val _uiState = MutableStateFlow(BotsRosterUiState())
     val uiState: StateFlow<BotsRosterUiState> = _uiState.asStateFlow()
@@ -197,8 +199,18 @@ class BotsViewModel(
             // to the one this emission carries: a read that has already adopted
             // the new endpoint's rows bumps [rosterEndpoint] first, and a
             // collector waking late behind it must not clear them again.
-            combine(endpointGeneration, connectionToken) { _, token -> token != null }
-                .collect { up ->
+            val readiness = connectionToken?.let { token ->
+                combine(connected, endpointGeneration, token) { up, generation, readyToken ->
+                    Triple(up, generation, readyToken)
+                }
+                    .distinctUntilChanged { old, new ->
+                        old.first == new.first && old.second == new.second &&
+                            (old.third == null && new.third == null || old.third === new.third)
+                    }
+            } ?: combine(connected, endpointGeneration) { up, generation ->
+                Triple(up, generation, null)
+            }
+            readiness.collect { (up, _, _) ->
                     dropRosterIfEndpointChanged()
                     _uiState.update { state ->
                         val rosterlessFailure =
