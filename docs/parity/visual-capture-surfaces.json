@@ -73,6 +73,21 @@
         }
       }
     },
+    "profile-avatars": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "profile-avatars-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+      "desktop_selector": ".profile-glyph",
+      "desktop_selector_note": "Source-only boundary: the pinned Desktop profile glyph has no avatar-read fixture at this revision. Android uses the production glyph/coordinator over synthetic captured transport; no Desktop pixels are claimed.",
+      "states": {
+        "profile-ready": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-fallback": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-loading": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-unavailable": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "bots-ready": { "interaction": [], "post_interaction_accessibility": "Bots" },
+        "bots-fallback": { "interaction": [], "post_interaction_accessibility": "Bots" }
+      }
+    },
     "bot-routines": {
       "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
       "fixture_id": "bot-routines-synthetic-v1",
