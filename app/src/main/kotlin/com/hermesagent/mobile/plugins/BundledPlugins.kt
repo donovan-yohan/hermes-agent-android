@@ -13,6 +13,7 @@ import com.hermesagent.mobile.plugins.kanban.KanbanPlugin
 object BundledPlugins {
     val ALL: List<HermesPlugin> = listOf(
         BotsPlugin(),
+        com.hermesagent.mobile.plugins.groups.GroupsPlugin(),
         KanbanPlugin(),
     )
 }

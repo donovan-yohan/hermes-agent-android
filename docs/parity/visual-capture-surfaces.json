@@ -54,6 +54,25 @@
         }
       }
     },
+    "bot-group-chat": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "bot-group-chat-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.GroupsParityActivity",
+      "desktop_selector": ".flex.items-center.gap-2",
+      "desktop_selector_note": "Source-only boundary: group-chat-view.tsx:672 has these header classes, which are not unique. A Desktop renderer must scope to the group workspace before capture. No Desktop pixels are claimed.",
+      "states": {
+        "populated": {
+          "interaction": ["tap:Planning"],
+          "post_interaction_accessibility": "Review the release plan.",
+          "fixture_note": "Production GroupsRepository, GroupsViewModel and GroupsScreen over synthetic hosted-room wire data. Tap the real list row to open the room. Desktop still uses a different store; no rendered Desktop half exists."
+        },
+        "read-failure": {
+          "interaction": [],
+          "post_interaction_accessibility": "Could not load Group Chats. Try again.",
+          "fixture_note": "Production list after a refused read, with its real Retry. Android capture is owed to CI; Desktop evidence is source-only."
+        }
+      }
+    },
     "bot-routines": {
       "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
       "fixture_id": "bot-routines-synthetic-v1",
@@ -70,6 +89,26 @@
           "interaction": [],
           "post_interaction_accessibility": "The list may still be there — this was a read failure, not a delete.",
           "fixture_note": "The same production surface after a refused read with nothing held: the failure card and its Retry. Desktop's own counterpart is not captured at its pin; see the populated state's note."
+        },
+        "pause-pending": {
+          "interaction": [],
+          "post_interaction_accessibility": "Resume cron",
+          "fixture_note": "Production act pauses Morning digest optimistically while the synthetic host holds its acknowledgement. Its switch and delete are disabled; unrelated rows remain actionable. No Desktop pixels claimed."
+        },
+        "action-rollback": {
+          "interaction": [],
+          "post_interaction_accessibility": "Failed to update cron job",
+          "fixture_note": "Production act receives success:false and rolls back Morning digest. The subsequent read fails, retaining the row with safe failure and stale notices. No backend prose or Desktop pixels."
+        },
+        "resumed": {
+          "interaction": [],
+          "post_interaction_accessibility": "Nightly sweep",
+          "fixture_note": "Production resume is acknowledged and reconciled; Nightly sweep is active. Fixed original fixture clock; no Desktop pixels claimed."
+        },
+        "deleted": {
+          "interaction": [],
+          "post_interaction_accessibility": "Nightly sweep",
+          "fixture_note": "Production direct row delete is acknowledged and reconciled; Morning digest is absent. Desktop has no confirmation for this row action. No Desktop pixels claimed."
         }
       }
     },

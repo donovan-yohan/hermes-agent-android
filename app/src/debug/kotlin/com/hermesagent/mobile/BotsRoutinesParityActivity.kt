@@ -19,6 +19,9 @@ import com.hermesagent.mobile.plugins.PluginHostResult
 import com.hermesagent.mobile.plugins.bots.BotsPluginRepository
 import com.hermesagent.mobile.plugins.bots.BotsRoutinesScreen
 import com.hermesagent.mobile.plugins.bots.BotsRoutinesViewModel
+import com.hermesagent.mobile.plugins.bots.BotsRoutinesActions
+import com.hermesagent.mobile.plugins.bots.BotsRoutinesPhase
+import com.hermesagent.mobile.plugins.bots.RoutineAction
 import com.hermesagent.mobile.ui.LocalPluginNavigation
 import com.hermesagent.mobile.ui.PluginNavigation
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
@@ -28,7 +31,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -97,6 +102,10 @@ internal enum class BotsRoutinesFixtureState(val wireValue: String) {
 
     /** The Gateway answered, and the read failed while the connection was up. */
     ReadFailure("read-failure"),
+    PausePending("pause-pending"),
+    ActionRollback("action-rollback"),
+    Resumed("resumed"),
+    Deleted("deleted"),
     ;
 
     companion object {
@@ -109,30 +118,45 @@ internal enum class BotsRoutinesFixtureState(val wireValue: String) {
 private class FixtureHost(
     private val state: BotsRoutinesFixtureState,
 ) : PluginHost {
-    override suspend fun request(method: String, params: JsonObject): PluginHostResult = answer(method)
+    private var mutation: String? = null
+    override suspend fun request(method: String, params: JsonObject): PluginHostResult = answer(method, params)
 
     override suspend fun requestAtEndpoint(
         expectedGeneration: Long,
         method: String,
         params: JsonObject,
-    ): PluginHostResult = answer(method)
+    ): PluginHostResult = answer(method, params)
 
     override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
 
-    private fun answer(method: String): PluginHostResult = when (method) {
-        // The bot's own store. A `scoped` echo is present because the pinned
-        // Gateway echoes the profile it was asked for, and the surface compares
-        // it: a fixture that omitted it would capture the legacy tag filter
-        // instead of the scoped read.
-        "cron.manage" -> when (state) {
-            BotsRoutinesFixtureState.Populated ->
-                PluginHostResult.Success(Json.parseToJsonElement(POPULATED))
-
-            BotsRoutinesFixtureState.ReadFailure ->
-                PluginHostResult.Refused(5023, "Hermes refused that Gateway request.")
+    private suspend fun answer(method: String, params: JsonObject): PluginHostResult {
+        check(method == "cron.manage")
+        val action = (params["action"] as kotlinx.serialization.json.JsonPrimitive).content
+        if (action != "list") {
+            mutation = action
+            if (state == BotsRoutinesFixtureState.PausePending) awaitCancellation()
+            return PluginHostResult.Success(Json.parseToJsonElement(
+                if (state == BotsRoutinesFixtureState.ActionRollback) """{"success":false}""" else """{"success":true}""",
+            ))
         }
-
-        else -> error("unexpected method $method")
+        if (state == BotsRoutinesFixtureState.ReadFailure ||
+            (state == BotsRoutinesFixtureState.ActionRollback && mutation != null)
+        ) return PluginHostResult.Refused(5023, "Hermes refused that Gateway request.")
+        val root = Json.parseToJsonElement(POPULATED) as JsonObject
+        val jobs = root["jobs"] as kotlinx.serialization.json.JsonArray
+        val updated = jobs.mapNotNull { element ->
+            val row = element as JsonObject
+            val id = (row["job_id"] as kotlinx.serialization.json.JsonPrimitive).content
+            when {
+                mutation == "remove" && id == "syn-1" -> null
+                mutation == "resume" && id == "syn-2" -> JsonObject(row + mapOf(
+                    "enabled" to kotlinx.serialization.json.JsonPrimitive(true),
+                    "state" to kotlinx.serialization.json.JsonPrimitive("scheduled"),
+                ))
+                else -> row
+            }
+        }
+        return PluginHostResult.Success(JsonObject(root + ("jobs" to kotlinx.serialization.json.JsonArray(updated))))
     }
 
     private companion object {
@@ -175,7 +199,20 @@ internal fun BotsRoutinesParityFixture(
         )
     }
     // The destination, selected the way the roster row's own control selects it.
-    LaunchedEffect(viewModel) { viewModel.selectOwner(profile = "ops", label = "Ops") }
+    LaunchedEffect(viewModel) {
+        viewModel.selectOwner(profile = "ops", label = "Ops")
+        val action = when (state) {
+            BotsRoutinesFixtureState.PausePending, BotsRoutinesFixtureState.ActionRollback -> RoutineAction.Pause
+            BotsRoutinesFixtureState.Resumed -> RoutineAction.Resume
+            BotsRoutinesFixtureState.Deleted -> RoutineAction.Remove
+            else -> null
+        }
+        if (action != null) {
+            val ready = viewModel.uiState.first { it.phase == BotsRoutinesPhase.Ready }
+            val id = if (action == RoutineAction.Resume) "syn-2" else "syn-1"
+            viewModel.act(requireNotNull(ready.target(ready.jobs.single { it.id == id })), action)
+        }
+    }
 
     val uiState by viewModel.uiState.collectAsState()
     val navigation = remember { PluginNavigation() }
@@ -185,6 +222,7 @@ internal fun BotsRoutinesParityFixture(
             BotsRoutinesScreen(
                 state = uiState,
                 onBack = {},
+                actions = BotsRoutinesActions(onAction = viewModel::act),
                 // The fixture's own immutable clock, so the captured next-run
                 // line reads the same on every device on every day: the pixels
                 // must be the fixture's, not the day the capture ran.
@@ -196,7 +234,7 @@ internal fun BotsRoutinesParityFixture(
 }
 
 /**
- * `2026-09-18T08:00:00Z`, one hour before the fixtures' `next_run_at`: the
- * captured next-run line reads "in 1 hr" whatever the date of the capture.
+ * `2026-09-17T16:00:00Z`, seventeen hours before the first fixture's next run:
+ * the captured next-run line reads "in 17 hr" whatever the date of the capture.
  */
 internal const val CAPTURE_CLOCK_MILLIS: Long = 1_789_660_800_000L
