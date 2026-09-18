@@ -475,6 +475,39 @@ class PluginHostTest {
         val blankHost = GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(blank))
         assertNull(blankHost.request("groups.send").let { (it as PluginHostResult.Refused).reason })
 
+        // The same three shapes on the endpoint-bound door, so neither path's
+        // mapping can drift from the other's.
+        val boundUnknown = FakeRpc(answer = { _, _ ->
+            throw GatewayRpcError(4112, "backend said something secret", "room_history_expired_v2")
+        })
+        val boundUnknownHost =
+            GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(boundUnknown), MutableStateFlow(0L))
+        val boundUnknownResult = boundUnknownHost.requestAtEndpoint(0L, "groups.log")
+        assertEquals(PluginHostResult.Refused(4112, "Hermes refused that Gateway request."), boundUnknownResult)
+        assertNull((boundUnknownResult as PluginHostResult.Refused).reason)
+        assertFalse(
+            "a backend string must not ride out on the result's own text",
+            boundUnknownResult.toString().contains("room_history_expired_v2") ||
+                boundUnknownResult.toString().contains("secret"),
+        )
+        assertEquals("the frame really left through the fence", 1, boundUnknown.calls)
+
+        val boundReasonless = FakeRpc(answer = { _, _ ->
+            throw GatewayRpcError(4112, "This Group Chat reached its history limit.")
+        })
+        val boundReasonlessHost =
+            GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(boundReasonless), MutableStateFlow(0L))
+        assertNull(
+            (boundReasonlessHost.requestAtEndpoint(0L, "groups.log") as PluginHostResult.Refused).reason,
+        )
+
+        val boundBlank = FakeRpc(answer = { _, _ -> throw GatewayRpcError(4111, "refused", "") })
+        val boundBlankHost =
+            GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(boundBlank), MutableStateFlow(0L))
+        assertNull(
+            (boundBlankHost.requestAtEndpoint(0L, "groups.send") as PluginHostResult.Refused).reason,
+        )
+
         scope.cancel()
     }
 
@@ -489,6 +522,14 @@ class PluginHostTest {
         val host = GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(rpc))
 
         assertEquals(PluginHostResult.UnavailableOnGateway, host.request("groups.log"))
+
+        // The precedence holds at the endpoint-bound door too: `-32601` still
+        // wins over the reason riding on the same error.
+        val bound = FakeRpc(answer = { _, _ ->
+            throw GatewayRpcError(-32601, "unknown method: groups.log", "room_history_expired")
+        })
+        val endpointHost = GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(bound), MutableStateFlow(0L))
+        assertEquals(PluginHostResult.UnavailableOnGateway, endpointHost.requestAtEndpoint(0L, "groups.log"))
 
         scope.cancel()
     }
@@ -538,6 +579,28 @@ class PluginHostTest {
         assertNull(refused.reason)
         assertFalse("no raw reason substring in the result text", refused.toString().contains("Bearer"))
         assertFalse("no backend prose in the result text", refused.toString().contains("nobody paints"))
+
+        // Only a JSON string can name a reason, so a malformed shape is dropped
+        // whole rather than read as one. The id comes off the frame the client
+        // actually sent, so this answers that call and no other.
+        for (shape in listOf("4112", "null", """["room_history_expired"]""")) {
+            val framesBefore = wire.frames.size
+            var shaped: PluginHostResult? = null
+            val shapedCall = launch { shaped = host.request("groups.log") }
+            runCurrent()
+            assertEquals("the shaped call reached the wire", framesBefore + 1, wire.frames.size)
+            val id = wire.frames.last().substringAfter("\"id\":\"").substringBefore('"')
+            rpc.receive(
+                """{"jsonrpc":"2.0","id":"$id","error":{"code":4112,""" +
+                    """"message":"backend prose nobody paints","data":{"reason":$shape}}}""",
+            )
+            runCurrent()
+            val shapedResult = shaped as PluginHostResult.Refused
+            assertNull("a $shape reason is not a reason", shapedResult.reason)
+            assertEquals(PluginHostResult.Refused(4112, "Hermes refused that Gateway request."), shapedResult)
+            assertFalse("a $shape reason never reaches the result text", shapedResult.toString().contains("room_history_expired"))
+            shapedCall.join()
+        }
 
         call.join()
         second.join()

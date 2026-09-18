@@ -220,13 +220,10 @@ sealed interface PluginHostResult {
      * exchange the Gateway never answered before its deadline. [safeMessage]
      * is this app's own sentence — never text the backend wrote.
      *
-     * [reason] is the one piece of machine meaning this door forwards, and it
-     * is typed for that reason: a plugin branches on a
-     * [PluginRefusalReason], never on a string the backend chose. `null` means
-     * this build recognized no reason — including a refusal that carried a
-     * string this app does not know, which is deliberately indistinguishable
-     * from one that carried none. The raw wire string never reaches a plugin,
-     * not here and not through this class's `toString`.
+     * [reason] is the one machine datum this door forwards: a
+     * [PluginRefusalReason], never a string the backend chose. `null` is "no
+     * reason this build knows", an unrecognized string included, and the wire
+     * value never reaches a plugin — not even through `toString`.
      */
     data class Refused(
         val code: Int,
@@ -236,17 +233,13 @@ sealed interface PluginHostResult {
 }
 
 /**
- * The hosted-room refusals whose machine meaning this app acts on.
- *
- * The Gateway sends `error.data.reason` only for a `HostedRoomError` subclass
- * that declares a `reason` and is mapped through a method's `room_code`
- * (`tui_gateway/methods_groups.py:206-210`), and exactly two do
- * (`gateway/hosted_rooms.py:185-198` @
- * `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
- *
- * A closed set: a reason this build does not know maps to `null`, not to a new
- * value. [fromWire] is the only construction from wire data and it matches
- * exactly, so a reworded or mistyped string is unknown rather than misread.
+ * The two reasons the hosted-room handlers answer as `error.data.reason`
+ * (`tui_gateway/methods_groups.py:206-210` and `gateway/hosted_rooms.py:185-198`
+ * @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`). A closed set, and not every
+ * backend reason: `data.reason` also carries `prompt.submit`'s
+ * `SESSION_NOT_OWNED` (`data/gateway/GatewayRpc.kt`), which stays unnamed here.
+ * Anything else maps to `null` — [fromWire] is the only construction from wire
+ * data, and it matches exactly, so a reworded value is unknown, not misread.
  */
 enum class PluginRefusalReason(val wireValue: String) {
     /** The room was pruned; the id is retired forever. */
@@ -462,7 +455,7 @@ internal class GatewayPluginHost(
         if (error.code == METHOD_NOT_FOUND) {
             PluginHostResult.UnavailableOnGateway
         } else {
-            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, recognizedReason(error))
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, PluginRefusalReason.fromWire(error.reason))
         }
     } catch (_: GatewayRpcException) {
         PluginHostResult.Refused(0, RECONNECT_MESSAGE)
@@ -480,24 +473,11 @@ internal class GatewayPluginHost(
         if (error.code == METHOD_NOT_FOUND) {
             PluginHostResult.UnavailableOnGateway
         } else {
-            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, recognizedReason(error))
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, PluginRefusalReason.fromWire(error.reason))
         }
     } catch (_: GatewayRpcException) {
         PluginHostResult.Refused(0, RECONNECT_MESSAGE)
     }
-
-    /**
-     * The typed reason for [error], or null.
-     *
-     * The mapping lives in [PluginRefusalReason.fromWire] rather than here, so
-     * an unrecognized string cannot become a value by accident: what the
-     * backend wrote dies at this call, and [PluginHostResult.Refused.reason] is
-     * only ever one of two constants or null. Nothing here reads
-     * `error.message`, and no branch keys off `error.code` — a 4112 with no
-     * reason is not a pruned room, it is a refusal this build cannot name.
-     */
-    private fun recognizedReason(error: GatewayRpcError): PluginRefusalReason? =
-        PluginRefusalReason.fromWire(error.reason)
 
     override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit {
         val job = scope.launch {
