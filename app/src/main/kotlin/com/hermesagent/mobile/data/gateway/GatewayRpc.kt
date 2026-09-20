@@ -747,6 +747,7 @@ internal fun JsonObject.string(name: String): String? =
  */
 internal fun gatewayRpcTimeoutMillis(method: String, defaultTimeoutMillis: Long = 15_000L): Long =
     when (method) {
+        "diagnostics.share_nous" -> 120_000L
         "prompt.submit" -> 1_800_000L
         // profiles.list rides the Gateway's slow-method lane
         // (tui_gateway/server.py:297-305): it walks each profile's skill tree

@@ -28,6 +28,8 @@ class GatewayHttpRequest(
      * it never wipes.
      */
     val captureEnvelope: Boolean = false,
+    /** Optional ephemeral consent/identity fence, rechecked after credential resolution and before IO. */
+    val isCurrent: () -> Boolean = { true },
 )
 
 sealed interface GatewayHttpResult {
@@ -109,10 +111,12 @@ internal class OkHttpGatewayHttp(
     private val resolveAuthorization: suspend () -> Pair<String, String>?,
 ) : GatewayHttp {
     override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+        if (!request.isCurrent()) return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
         val endpoint = resolveEndpoint()
             ?: return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
         val authorization = resolveAuthorization()
             ?: return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
+        if (!request.isCurrent()) return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
         val url = (endpoint.trimEnd('/') + "/" + request.path.trimStart('/'))
             .toHttpUrlOrNull()
             ?.newBuilder()
@@ -151,6 +155,7 @@ internal class OkHttpGatewayHttp(
                 else -> return GatewayHttpResult.Rejected(0, UNSUPPORTED_MESSAGE)
             }
             withContext(Dispatchers.IO) {
+                if (!request.isCurrent()) return@withContext GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
                 scoped.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body

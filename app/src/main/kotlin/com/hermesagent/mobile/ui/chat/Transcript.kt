@@ -115,7 +115,6 @@ import com.hermesagent.mobile.plugins.TranscriptDirectiveContribution
 import com.hermesagent.mobile.HermesApplication
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
 import com.hermesagent.mobile.ui.common.EmptyState
-import com.hermesagent.mobile.ui.common.ErrorState
 import com.hermesagent.mobile.ui.common.DitherMark
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
@@ -169,6 +168,8 @@ fun Transcript(
     onShowEarlier: (() -> Unit)? = null,
     onBranchFromReply: ((entryId: String) -> Unit)? = null,
     onRegenerateReply: ((entryId: String) -> Unit)? = null,
+    onSendDiagnostics: ((entryId: String) -> Unit)? = null,
+    onViewGatewayLogs: ((entryId: String) -> Unit)? = null,
     readAloud: ReadAloudUiState = ReadAloudUiState.Idle,
     onToggleReadAloud: ((entryId: String) -> Unit)? = null,
     /**
@@ -307,6 +308,8 @@ fun Transcript(
                     isWorking = isWorking,
                     onBranchFromReply = onBranchFromReply,
                     onRegenerateReply = if (entry.id == newestAssistantEntryId) onRegenerateReply else null,
+                    onSendDiagnostics = onSendDiagnostics,
+                    onViewGatewayLogs = onViewGatewayLogs,
                     readAloudControl = when (val state = readAloud) {
                         ReadAloudUiState.Idle -> ReadAloudControl.Idle
                         is ReadAloudUiState.Preparing -> if (state.entryId == entry.id) {
@@ -704,6 +707,8 @@ private fun AssistantProse(
     isWorking: Boolean,
     onBranchFromReply: ((entryId: String) -> Unit)?,
     onRegenerateReply: ((entryId: String) -> Unit)?,
+    onSendDiagnostics: ((entryId: String) -> Unit)? = null,
+    onViewGatewayLogs: ((entryId: String) -> Unit)? = null,
     readAloudControl: ReadAloudControl = ReadAloudControl.Idle,
     onToggleReadAloud: ((entryId: String) -> Unit)? = null,
 ) {
@@ -772,8 +777,14 @@ private fun AssistantProse(
         // failure banner is chrome about the turn, not the reply's words.
         turn.termination?.let { termination -> ScaffoldRow(label = terminationNotice(termination)) }
 
-        turn.error?.let { message ->
-            ErrorState(title = "That turn failed", description = message)
+        if (turn.error != null) {
+            TurnErrorPanel(
+                turn = turn,
+                retryEnabled = !isWorking && !turn.streaming,
+                onRetry = onRegenerateReply?.let { retry -> { retry(turn.id) } },
+                onSendDiagnostics = onSendDiagnostics?.let { send -> { send(turn.id) } },
+                onViewGatewayLogs = onViewGatewayLogs?.let { view -> { view(turn.id) } },
+            )
         }
 
         // Gated on what is *drawn*, not on what the projection yields. A reply

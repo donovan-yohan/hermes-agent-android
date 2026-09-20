@@ -27,6 +27,10 @@ import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
+import com.hermesagent.mobile.data.gateway.GatewayHttp
+import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
+import com.hermesagent.mobile.data.gateway.GatewayHttpResult
+import com.hermesagent.mobile.data.gateway.GatewayLogsResult
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
 import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
@@ -109,6 +113,126 @@ class ChatViewModelTest {
 
     @After
     fun tearDown() = Dispatchers.resetMain()
+
+    private class LogsHttp(private val text: String) : GatewayHttp {
+        val requests = mutableListOf<GatewayHttpRequest>()
+        var release: CompletableDeferred<Unit>? = null
+        var transferred: ByteArray? = null
+        override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+            assertTrue(request.isCurrent())
+            requests += request
+            release?.await()
+            return GatewayHttpResult.Success(200,
+                """{"file":"errors","lines":["$text"]}""".encodeToByteArray().also { transferred = it })
+        }
+    }
+
+    @Test
+    fun `gateway logs missing live transport reports failure instead of ignoring action`() = runTest(dispatcher) {
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK }, gatewayHttp = { null })
+        cache.setTranscript("session-a", listOf(AssistantTurn("failed", "", CLOCK, error = "failed")))
+        collectState(vm)
+        runCurrent()
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        assertEquals(GatewayLogsState.Phase.Consent, vm.uiState.value.gatewayLogs?.phase)
+        vm.confirmGatewayLogs(vm.uiState.value.gatewayLogs!!.generation)
+        runCurrent()
+        assertEquals(GatewayLogsResult.Failed, vm.uiState.value.gatewayLogs?.result)
+    }
+
+    @Test
+    fun `gateway logs resolves live transport after disconnected VM creation`() = runTest(dispatcher) {
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        var transport: GatewayHttp? = null
+        var generation = 1L
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK },
+            connectionGeneration = { generation }, gatewayHttp = { transport })
+        cache.setTranscript("session-a", listOf(AssistantTurn("failed", "", CLOCK, error = "failed")))
+        collectState(vm)
+        runCurrent()
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        assertEquals("Connect to a Gateway before viewing logs.", vm.uiState.value.notice?.text)
+        val connectedHttp = LogsHttp("connected logs")
+        transport = connectedHttp
+        generation++
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        assertEquals(GatewayLogsState.Phase.Consent, vm.uiState.value.gatewayLogs?.phase)
+        assertTrue(connectedHttp.requests.isEmpty())
+        vm.confirmGatewayLogs(vm.uiState.value.gatewayLogs!!.generation)
+        runCurrent()
+        assertEquals(1, connectedHttp.requests.size)
+        assertEquals(GatewayLogsResult.Content("connected logs", false), vm.uiState.value.gatewayLogs?.result)
+    }
+
+    @Test
+    fun `gateway logs new connection consent invokes only B not VM creation transport A`() = runTest(dispatcher) {
+        val a = LogsHttp("A private logs")
+        val b = LogsHttp("B logs")
+        var transport: GatewayHttp? = a
+        var generation = 1L
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK },
+            connectionGeneration = { generation }, gatewayHttp = { transport })
+        cache.setTranscript("session-a", listOf(AssistantTurn("failed", "", CLOCK, error = "failed")))
+        collectState(vm)
+        runCurrent()
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        val oldConsent = vm.uiState.value.gatewayLogs!!.generation
+        transport = b
+        generation++
+        vm.confirmGatewayLogs(oldConsent)
+        runCurrent()
+        assertNull(vm.uiState.value.gatewayLogs)
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        vm.confirmGatewayLogs(vm.uiState.value.gatewayLogs!!.generation)
+        runCurrent()
+        assertTrue(a.requests.isEmpty())
+        assertEquals(1, b.requests.size)
+        assertEquals(GatewayLogsResult.Content("B logs", false), vm.uiState.value.gatewayLogs?.result)
+    }
+
+    @Test
+    fun `gateway logs late A response cannot overwrite B consent or retain A bytes`() = runTest(dispatcher) {
+        val a = LogsHttp("A private logs").apply { release = CompletableDeferred() }
+        val b = LogsHttp("B logs")
+        var transport: GatewayHttp? = a
+        var generation = 1L
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK },
+            connectionGeneration = { generation }, gatewayHttp = { transport })
+        cache.setTranscript("session-a", listOf(AssistantTurn("failed", "", CLOCK, error = "failed")))
+        collectState(vm)
+        runCurrent()
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        vm.confirmGatewayLogs(vm.uiState.value.gatewayLogs!!.generation)
+        runCurrent()
+        assertEquals(1, a.requests.size)
+        transport = b
+        generation++
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        assertNull(vm.uiState.value.gatewayLogs)
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        vm.requestGatewayLogs("failed", cache.endpointGeneration.value)
+        runCurrent()
+        val consentB = vm.uiState.value.gatewayLogs!!
+        assertFalse(a.requests.single().isCurrent())
+        a.release!!.complete(Unit)
+        runCurrent()
+        assertEquals(consentB, vm.uiState.value.gatewayLogs)
+        assertTrue(a.transferred!!.all { it == 0.toByte() })
+        vm.confirmGatewayLogs(consentB.generation)
+        runCurrent()
+        assertEquals(1, b.requests.size)
+        assertEquals(GatewayLogsResult.Content("B logs", false), vm.uiState.value.gatewayLogs?.result)
+    }
 
     @Test
     fun `backend cache starts without demo seed and selects newest live session`() = runTest(dispatcher) {
@@ -2815,6 +2939,12 @@ class ChatViewModelTest {
     }
 
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
+        var retainedRetryConfirmed = false
+        val retainedRetryCalls = mutableListOf<Triple<String, String, Long>>()
+        override suspend fun retryRetainedFailure(durableId: String, text: String, expectedEndpointGeneration: Long): Boolean {
+            retainedRetryCalls += Triple(durableId, text, expectedEndpointGeneration)
+            return retainedRetryConfirmed
+        }
         val regenerateCalls = mutableListOf<Triple<String, String, TranscriptRowId>>()
         val regenerateEntryIds = mutableListOf<String>()
         val regenerateFailures = ArrayDeque<GatewayRpcException>()
@@ -2824,6 +2954,7 @@ class ChatViewModelTest {
             text: String,
             truncateBeforeRowId: TranscriptRowId,
             truncateBeforeEntryId: String,
+            expectedEndpointGeneration: Long?,
         ): GatewaySubmitOutcome {
             if (regenerateFailsWithOther) throw GatewayRpcException("Regenerate failed")
             regenerateFailures.removeFirstOrNull()?.let { throw it }
@@ -3396,6 +3527,69 @@ class ChatViewModelTest {
 
         assertEquals(1, repository.regenerateCalls.size)
         assertEquals(Triple("a", "first", TranscriptRowId(10L)), repository.regenerateCalls.first())
+    }
+
+    @Test
+    fun `regenerateReply drops history result after endpoint switch even with recycled session id`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache)
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        val session = SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK)
+        cache.upsertSession(session)
+        cache.setTranscript("a", listOf(UserTurn("1", "first", CLOCK), AssistantTurn("2", "", CLOCK, error = "failed")))
+        vm.selectSession("a")
+        runCurrent()
+        val gate = CompletableDeferred<List<TranscriptEntry>>()
+        repository.historyGate = gate
+        vm.regenerateReply("2")
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(session)
+        vm.selectSession("a")
+        runCurrent()
+        gate.complete(listOf(UserTurn("3", "first", CLOCK, rowId = TranscriptRowId(10L))))
+        runCurrent()
+        assertTrue(repository.regenerateCalls.isEmpty())
+    }
+
+    @Test
+    fun `regenerateReply uses confirmed retained retry without destructive fallback`() = runTest(dispatcher) {
+        for (confirmed in listOf(false, true)) {
+            val cache = SessionCache()
+            val repository = FakeRepository(cache).apply { retainedRetryConfirmed = confirmed }
+            val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+            collectState(vm)
+            cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
+            cache.setTranscript("a", listOf(UserTurn("1", "first", CLOCK), AssistantTurn("2", "", CLOCK, error = "failed")))
+            vm.selectSession("a")
+            runCurrent()
+            vm.regenerateReply("2")
+            runCurrent()
+            assertEquals(listOf(Triple("a", "first", cache.endpointGeneration.value)), repository.retainedRetryCalls)
+            assertTrue(repository.regenerateCalls.isEmpty())
+        }
+    }
+
+    @Test
+    fun `startup failure cannot truncate an older identical history occurrence`() = runTest(dispatcher) {
+        val cache = SessionCache()
+        val repository = FakeRepository(cache).apply {
+            historyResult = listOf(UserTurn("old", "first", CLOCK, rowId = TranscriptRowId(7L)))
+        }
+        val vm = ChatViewModel(cache, repository, clock = { CLOCK })
+        collectState(vm)
+        cache.upsertSession(SessionSummary("a", title = "", preview = "", lastActiveAtMillis = CLOCK))
+        cache.setTranscript("a", listOf(UserTurn("1", "first", CLOCK), AssistantTurn("2", "", CLOCK,
+            error = "failed", errorDetails = com.hermesagent.mobile.data.session.TurnErrorDetails(
+                details = "failed", layer = "runtime", code = "agent_init_failed",
+            ))))
+        vm.selectSession("a")
+        runCurrent()
+        vm.regenerateReply("2")
+        runCurrent()
+        assertEquals(1, repository.retainedRetryCalls.size)
+        assertTrue(repository.regenerateCalls.isEmpty())
     }
 
     @Test

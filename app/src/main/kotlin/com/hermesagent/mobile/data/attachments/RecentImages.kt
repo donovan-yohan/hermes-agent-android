@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Size
 import androidx.compose.ui.graphics.ImageBitmap
@@ -93,9 +94,15 @@ class MediaStoreRecentImages(private val resolver: ContentResolver) : RecentImag
         val cursor = resolver.query(
             collection(),
             PROJECTION,
-            "${MediaStore.Images.Media.MIME_TYPE} LIKE ?",
-            arrayOf("image/%"),
-            sortOrder(bounded),
+            Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, "${MediaStore.Images.Media.MIME_TYPE} LIKE ?")
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf("image/%"))
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.Images.Media.DATE_ADDED} DESC")
+                // LIMIT is not an ORDER BY token: modern MediaStore rejects it
+                // there even with photo access. Bundle query args are API 26+.
+                putInt(ContentResolver.QUERY_ARG_LIMIT, bounded)
+            },
+            null,
         ) ?: return emptyList()
         return cursor.use { rows(it, bounded) }
     }
@@ -136,10 +143,6 @@ class MediaStoreRecentImages(private val resolver: ContentResolver) : RecentImag
             MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.MIME_TYPE,
         )
-
-        /** Newest first, with the bound carried in the query itself. */
-        internal fun sortOrder(limit: Int): String =
-            "${MediaStore.Images.Media.DATE_ADDED} DESC LIMIT $limit"
 
         internal fun collection(): Uri =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

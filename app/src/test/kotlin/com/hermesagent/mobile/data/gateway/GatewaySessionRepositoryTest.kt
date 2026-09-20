@@ -627,6 +627,214 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `retry rejects a changed endpoint before any activation or prompt dispatch`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        val endpoint = cache.endpointGeneration.value
+        cache.resetForEndpointSwitch()
+        val before = rpc.calls.size
+        assertTrue(runCatching {
+            repository.regenerate("durable-a", "same prompt", TranscriptRowId(7L), "u1", endpoint)
+        }.isFailure)
+        assertEquals(before, rpc.calls.size)
+        assertTrue(cache.transcript("durable-a").isEmpty())
+    }
+
+    @Test
+    fun `retry preserves staged image and file directives on the wire`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val prompt = "Inspect these\n@image:/synthetic/staged/image.png\n@file:/synthetic/staged/notes.txt"
+        cache.setTranscript("durable-a", listOf(
+            UserTurn("u1", prompt, CLOCK, rowId = TranscriptRowId(7L)),
+            AssistantTurn("a1", "", CLOCK, error = "Could not finish"),
+        ))
+        repository.regenerate("durable-a", prompt, TranscriptRowId(7L), "u1", cache.endpointGeneration.value)
+        assertEquals("Inspect these\n@file:/synthetic/staged/notes.txt", rpc.call("prompt.submit").params.string("text"))
+        assertEquals("/synthetic/staged/image.png", rpc.call("image.attach").params.string("path"))
+        assertEquals(prompt, cache.transcript("durable-a").filterIsInstance<UserTurn>().last().text)
+    }
+
+    @Test
+    fun `resume preserves structured error metadata even with status-only failure`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            resumeA = """{"session_id":"runtime-a","session_key":"durable-a","running":false,"inflight":{"user":"hello","assistant":"","status":"error","error_surface":{"layer":"provider","code":"rate_limit","retryable":false,"provider":"deepseek","model":"deepseek-v4.1-flash"}}}"""
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val failed = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single()
+        assertNotNull(failed.error)
+        assertEquals(false, failed.errorDetails?.retryable)
+        assertEquals("deepseek", failed.errorDetails?.provider)
+        assertEquals("deepseek-v4.1-flash", failed.errorDetails?.model)
+    }
+
+    @Test
+    fun `retained startup retry submits without truncation and refuses unconfirmed failures`() = runTest {
+        for (code in listOf("agent_init_failed", "internal_start", "unknown")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                activateResult = """{"session_id":"runtime-a","running":false,"inflight":{"user":"hello","status":"error","error":"failed","error_surface":{"layer":"runtime","code":"$code","retryable":true}}}"""
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            assertEquals(code == "agent_init_failed", repository.retryRetainedFailure("durable-a", "hello", cache.endpointGeneration.value))
+            val submits = rpc.calls.filter { it.method == "prompt.submit" }
+            assertEquals(if (code == "agent_init_failed") 1 else 0, submits.size)
+            submits.forEach {
+                assertEquals("hello", it.params.string("text"))
+                assertFalse("confirm_truncate" in it.params)
+                assertFalse("truncate_before_row_id" in it.params)
+            }
+        }
+    }
+
+    @Test
+    fun `attachment-only retry restores native image before fallback prompt`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.regenerate("durable-a", "@image:/gw/img.png", TranscriptRowId(7L), "u1", cache.endpointGeneration.value)
+        assertEquals(listOf("image.attach", "prompt.submit"), rpc.calls.takeLast(2).map { it.method })
+        assertEquals("What do you see in this image?", rpc.call("prompt.submit").params.string("text"))
+        assertEquals("@image:/gw/img.png", cache.transcript("durable-a").filterIsInstance<UserTurn>().last().text)
+    }
+
+    @Test
+    fun `startup image retry reuses unconsumed native slot rather than staging twice`() = runTest {
+        for (body in listOf("What do you see in this image?", "Describe both")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                activateResult = """{"session_id":"runtime-a","running":false,"inflight":{"user":"$body","status":"error","error_surface":{"layer":"runtime","code":"agent_init_failed","retryable":true}}}"""
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            val prompt = "$body\n@image:/gw/one.png\n@image:/gw/two.png"
+            assertTrue(repository.retryRetainedFailure("durable-a", prompt, cache.endpointGeneration.value))
+            assertEquals(body, rpc.call("prompt.submit").params.string("text"))
+            assertFalse("truncate_before_row_id" in rpc.call("prompt.submit").params)
+            assertFalse(rpc.calls.any { it.method.startsWith("image.attach") })
+        }
+    }
+
+    @Test
+    fun `retry cannot submit when native image restoration fails`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { attachFailure = GatewayRpcException("image not found") }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        assertTrue(runCatching {
+            repository.regenerate("durable-a", "Describe\n@image:/gw/missing.png", TranscriptRowId(7L), "u1", cache.endpointGeneration.value)
+        }.isFailure)
+        assertFalse(rpc.calls.any { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `retry suspended at wire dispatch cannot send or roll back into replacement endpoint`() = runTest {
+        for (retained in listOf(false, true)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                activateResult = """{"session_id":"runtime-a","running":false,"inflight":{"user":"hello","status":"error","error_surface":{"layer":"runtime","code":"agent_init_failed","retryable":true}}}"""
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            val endpoint = cache.endpointGeneration.value
+            val gate = CompletableDeferred<Unit>()
+            rpc.beforeEndpointWire = { method -> if (method == "prompt.submit") gate.await() }
+            val retry = async {
+                runCatching {
+                    if (retained) repository.retryRetainedFailure("durable-a", "hello", endpoint)
+                    else repository.regenerate("durable-a", "hello", TranscriptRowId(7L), "u1", endpoint)
+                }
+            }
+            runCurrent()
+            cache.resetForEndpointSwitch()
+            val replacement = listOf(UserTurn("new", "replacement", CLOCK))
+            cache.setTranscript("durable-a", replacement)
+            gate.complete(Unit)
+            assertTrue(retry.await().isFailure)
+            assertEquals(0, rpc.calls.count { it.method == "prompt.submit" })
+            assertEquals(replacement, cache.transcript("durable-a"))
+        }
+    }
+
+    @Test
+    fun `retained retry refuses already persisted or nonretryable startup failure`() = runTest {
+        for (persisted in listOf(false, true)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                activateResult = """{"session_id":"runtime-a","running":false,"inflight":{"user":"hello","status":"error","error_surface":{"layer":"runtime","code":"agent_init_failed","retryable":$persisted}}}"""
+                if (persisted) historyResult = """{"messages":[{"row_id":7,"role":"user","text":"hello"}],"count":1}"""
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            assertFalse(repository.retryRetainedFailure("durable-a", "hello", cache.endpointGeneration.value))
+            assertFalse(rpc.calls.any { it.method == "prompt.submit" })
+        }
+    }
+
+    @Test
+    fun `image retry suspended before attachment dispatch cannot stage on changed endpoint`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val endpoint = cache.endpointGeneration.value
+        val gate = CompletableDeferred<Unit>()
+        rpc.beforeEndpointWire = { method -> if (method == "image.attach") gate.await() }
+        val retry = async { runCatching {
+            repository.regenerate("durable-a", "@image:/gw/img.png", TranscriptRowId(7L), "u1", endpoint)
+        } }
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        gate.complete(Unit)
+        assertTrue(retry.await().isFailure)
+        assertFalse(rpc.calls.any { it.method == "image.attach" || it.method == "prompt.submit" })
+        assertTrue(cache.transcript("durable-a").isEmpty())
+    }
+
+    @Test
     fun `completion methods use documented payloads and mapped items`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
@@ -3605,7 +3813,7 @@ class GatewaySessionRepositoryTest {
         val failed = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single()
         assertEquals("half an answer", failed.markdown)
         assertFalse(failed.streaming)
-        assertEquals("Hermes ended this turn unexpectedly. Check the Gateway, then try again.", failed.error)
+        assertEquals("Hermes could not finish this reply. Try again. If it keeps happening, use Desktop to send diagnostics.", failed.error)
         assertEquals(SessionStatus.Idle, cache.session("durable-a")?.status)
         repository.submit("durable-a", "retry safely")
         assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
@@ -3855,7 +4063,7 @@ class GatewaySessionRepositoryTest {
         runCurrent()
 
         val failed = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
-        assertEquals("Hermes ended this turn unexpectedly. Check the Gateway, then try again.", failed.error)
+        assertEquals("Hermes could not finish this reply. Try again. If it keeps happening, use Desktop to send diagnostics.", failed.error)
         assertEquals("kept partial", failed.markdown)
         assertEquals(ToolState.Failed, cache.transcript("durable-a").filterIsInstance<ToolActivity>().last().state)
     }
@@ -4121,12 +4329,14 @@ class GatewaySessionRepositoryTest {
         rpc.emit(
             "error",
             "runtime-a",
-            """{"error":"Authorization: Bearer sentinel-event-value"}""",
+            """{"error":"Authorization: Bearer sentinel-event-value","error_surface":{"layer":"gateway","code":"internal_start","retryable":true,"model":"failed-model"}}""",
         )
         runCurrent()
         val eventFailure = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
-        assertEquals("Hermes ended this turn unexpectedly. Check the Gateway, then try again.", eventFailure.error)
-        assertFalse(eventFailure.error.orEmpty().contains("sentinel-event-value"))
+        assertEquals("Hermes hit an internal problem starting this reply. Send your message again. If it keeps happening, use Desktop to send diagnostics.", eventFailure.error)
+        assertFalse(eventFailure.toString().contains("sentinel-event-value"))
+        assertEquals("internal_start", eventFailure.errorDetails?.code)
+        assertEquals("failed-model", eventFailure.errorDetails?.model)
 
         repository.submit("durable-a", "continue")
         rpc.emit("message.start", "runtime-a", """{"id":"safe-partial","role":"assistant"}""")
@@ -4134,13 +4344,15 @@ class GatewaySessionRepositoryTest {
         rpc.emit(
             "message.complete",
             "runtime-a",
-            """{"status":"error","error":"https://example.invalid/api?token=sentinel-complete-value","text":"sentinel-complete-value","partial":true}""",
+            """{"status":"error","error":"https://example.invalid/api?token=sentinel-complete-value","text":"sentinel-complete-value","partial":true,"error_surface":{"layer":"provider","code":"rate_limit","retryable":false}}""",
         )
         runCurrent()
 
         val completionFailure = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
-        assertEquals("Hermes ended this turn unexpectedly. Check the Gateway, then try again.", completionFailure.error)
+        assertEquals("This request could not continue. Review Details and check the provider or Gateway in Desktop before trying again.", completionFailure.error)
         assertEquals("Useful partial answer", completionFailure.markdown)
+        assertEquals("provider", completionFailure.errorDetails?.layer)
+        assertEquals(false, completionFailure.errorDetails?.retryable)
         assertFalse(cache.transcript("durable-a").joinToString().contains("sentinel-complete-value"))
     }
 
@@ -7195,6 +7407,13 @@ class GatewaySessionRepositoryTest {
                 "slash.exec" -> {
                     goalStatusFailure?.let { throw it }
                     json(goalStatusResult)
+                }
+                "image.attach" -> {
+                    attachFailure?.let { throw it }
+                    buildJsonObject {
+                        put("attached", JsonPrimitive(true))
+                        put("path", JsonPrimitive(params.string("path").orEmpty().trim('`', '\"', '\'')))
+                    }
                 }
                 "image.attach_bytes" -> {
                     imageAttachCount += 1

@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
             switchComposerQueueScope = app::switchComposerQueueScope,
             replySpeaker = app.replySpeaker,
             connectionGeneration = { app.gatewayConnection.currentGeneration },
+            gatewayHttp = { app.gatewayHttp },
         )
     }
     private val sshViewModel: SshViewModel by viewModels {
@@ -442,6 +443,12 @@ class MainActivity : ComponentActivity() {
                     onCreateSession = { chatViewModel.createSession() },
                     onBranchFromReply = chatViewModel::branchFromReply,
                     onRegenerateReply = chatViewModel::regenerateReply,
+                    onSendDiagnostics = chatViewModel::requestSendDiagnostics,
+                    onConfirmDiagnostics = chatViewModel::confirmSendDiagnostics,
+                    onDismissDiagnostics = chatViewModel::dismissSendDiagnostics,
+                    onViewGatewayLogs = chatViewModel::requestGatewayLogs,
+                    onConfirmGatewayLogs = chatViewModel::confirmGatewayLogs,
+                    onDismissGatewayLogs = chatViewModel::dismissGatewayLogs,
                     onRenameSession = chatViewModel::renameSessionAsync,
                     onDeleteSession = chatViewModel::deleteSessionAsync,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,
