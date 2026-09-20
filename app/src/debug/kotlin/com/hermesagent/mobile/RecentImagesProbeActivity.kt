@@ -58,7 +58,13 @@ class RecentImagesProbeActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 val image = state.images.first { it.id == id }
                                 val readable = withContext(Dispatchers.IO) {
-                                    contentResolver.openInputStream(Uri.parse(source.sourceFor(image)))?.use { it.read() >= 0 } == true
+                                    try {
+                                        contentResolver.openInputStream(Uri.parse(source.sourceFor(image)))?.use { it.read() >= 0 } == true
+                                    } catch (_: java.io.IOException) {
+                                        false
+                                    } catch (_: SecurityException) {
+                                        false
+                                    }
                                 }
                                 state = state.copy(addedIds = state.addedIds + id)
                                 result = "Selected QA image; source readable=$readable"

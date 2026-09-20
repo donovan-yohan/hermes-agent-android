@@ -11,8 +11,8 @@ Source references recorded in the implementation:
 
 The user-supplied newer Desktop screenshot has unknown revision. Its heading,
 Details disclosure and dismissal are the requested presentation, not evidence
-of a pinned renderer. A fresh verbatim source/copy/glyph comparison is owed in
-#325; the reference citations above are not a claim that comparison was completed.
+of a pinned renderer. A fresh verbatim source/copy/glyph comparison is owed
+in #325; the reference citations above are not a claim that comparison was completed.
 
 ## Current behavior and privacy
 
