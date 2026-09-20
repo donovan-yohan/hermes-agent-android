@@ -32,6 +32,12 @@ class ChatActions(
     val onCreateSession: () -> Unit = {},
     val onBranchFromReply: ((String) -> Unit)? = null,
     val onRegenerateReply: ((String) -> Unit)? = null,
+    val onSendDiagnostics: ((String, Long) -> Unit)? = null,
+    val onConfirmDiagnostics: (Long) -> Unit = {},
+    val onDismissDiagnostics: () -> Unit = {},
+    val onViewGatewayLogs: ((String, Long) -> Unit)? = null,
+    val onConfirmGatewayLogs: (Long) -> Unit = {},
+    val onDismissGatewayLogs: () -> Unit = {},
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
     /**

@@ -547,12 +547,17 @@ class ChatJourneyTest {
     @Test
     fun `another running turn keeps stream ownership while an idle thread sends`() {
         launch()
-        cache.upsertSession(cache.session("live-a")!!.copy(status = Working))
-        viewModel.selectSession("live-b")
+        // Navigation is a main-thread UI action. Drain its flow projection before
+        // polling: waitUntil alone does not idle Robolectric's Android looper.
+        compose.runOnIdle {
+            cache.upsertSession(cache.session("live-a")!!.copy(status = Working))
+            viewModel.selectSession("live-b")
+        }
+        compose.waitForIdle()
         compose.waitUntil(5_000) {
             viewModel.uiState.value.composer.runtime.busyKind == ComposerBusyKind.Idle
         }
-        compose.waitForIdle()
+        assertEquals("live-b", viewModel.uiState.value.activeSessionId)
 
         // Desktop parity: live-a owns its running turn and keeps its stop
         // control; the idle selected session (live-b) sends its own text

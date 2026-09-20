@@ -1,7 +1,17 @@
 package com.hermesagent.mobile.data.attachments
 
 import android.Manifest
+import android.content.ContentProvider
+import android.content.ContentResolver
+import android.content.ContentValues
+import android.database.Cursor
 import android.database.MatrixCursor
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteQueryBuilder
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.CancellationSignal
 import android.provider.MediaStore
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.test.core.app.ApplicationProvider
@@ -80,11 +90,93 @@ class RecentImagesTest {
     }
 
     @Test
-    fun `sort order is newest first and bounded`() {
-        val order = MediaStoreRecentImages.sortOrder(7)
+    fun `granted library read succeeds through a strict provider with a separate limit`() = runTest {
+        StrictImagesProvider().use { provider ->
+            org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("media", provider)
+            val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+            val source = MediaStoreRecentImages(resolver)
 
-        assertTrue(order.contains("${MediaStore.Images.Media.DATE_ADDED} DESC"))
-        assertTrue(order.contains("LIMIT 7"))
+            val read = source.readRecentImages()
+
+            assertFalse("Valid media access must not become a failed rail query", read.failed)
+            assertEquals((20L downTo 9L).toList(), read.images.map { it.id })
+            assertEquals(RecentImagesPolicy.MAX_RAIL_IMAGES, provider.queryArgs!!.getInt(ContentResolver.QUERY_ARG_LIMIT))
+            assertTrue(provider.lastCursor!!.isClosed)
+            assertEquals("content://media/external/images/media/20", source.sourceFor(read.images.first()))
+        }
+    }
+
+    @Test
+    @Config(sdk = [26, 34])
+    fun `provider query clamps its requested limit`() {
+        StrictImagesProvider().use { provider ->
+            org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("media", provider)
+            val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+            val source = MediaStoreRecentImages(resolver)
+
+            for ((requested, expected) in listOf(-1 to 1, 0 to 1, 7 to 7, 100 to 12)) {
+                assertEquals(expected, source.recentImages(requested).size)
+                assertEquals(expected, provider.queryArgs!!.getInt(ContentResolver.QUERY_ARG_LIMIT))
+            }
+        }
+    }
+
+    @Test
+    fun `provider that ignores query limit is still bounded and closed`() {
+        StrictImagesProvider(honorLimit = false).use { provider ->
+            org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("media", provider)
+            val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+
+            val images = MediaStoreRecentImages(resolver).recentImages(7)
+
+            assertEquals((20L downTo 14L).toList(), images.map { it.id })
+            assertTrue(provider.lastCursor!!.isClosed)
+        }
+    }
+
+    /** Exercises Android's SQL grammar validator, not just a fake source's rows. */
+    private class StrictImagesProvider(private val honorLimit: Boolean = true) : ContentProvider(), AutoCloseable {
+        private val database = SQLiteDatabase.create(null).apply {
+            execSQL("CREATE TABLE images (_id INTEGER, _display_name TEXT, mime_type TEXT, date_added INTEGER)")
+            for (id in 1..20) {
+                execSQL("INSERT INTO images VALUES (?, ?, ?, ?)", arrayOf<Any>(id, "image-$id.jpg", "image/jpeg", id))
+            }
+            execSQL("INSERT INTO images VALUES (21, 'not-an-image', 'video/mp4', 21)")
+        }
+        var queryArgs: Bundle? = null
+        var lastCursor: Cursor? = null
+
+        override fun query(uri: Uri, projection: Array<out String>?, queryArgs: Bundle?, cancellationSignal: CancellationSignal?): Cursor {
+            this.queryArgs = queryArgs
+            return queryRows(
+                projection,
+                queryArgs?.getString(ContentResolver.QUERY_ARG_SQL_SELECTION),
+                queryArgs?.getStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS),
+                queryArgs?.getString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER),
+                queryArgs?.takeIf { honorLimit && it.containsKey(ContentResolver.QUERY_ARG_LIMIT) }
+                    ?.getInt(ContentResolver.QUERY_ARG_LIMIT)?.toString(),
+            )
+        }
+
+        override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor =
+            queryRows(projection, selection, selectionArgs, sortOrder, null)
+
+        private fun queryRows(projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?, limit: String?): Cursor {
+            val builder = SQLiteQueryBuilder().apply {
+                tables = "images"
+                setProjectionMap((MediaStoreRecentImages.PROJECTION + MediaStore.Images.Media.DATE_ADDED).associateWith { it })
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setStrictGrammar(true)
+            }
+            return builder.query(database, projection, selection, selectionArgs, null, null, sortOrder, limit)
+                .also { lastCursor = it }
+        }
+
+        override fun onCreate(): Boolean = true
+        override fun getType(uri: Uri): String = "vnd.android.cursor.dir/image"
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = error("Unused")
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = error("Unused")
+        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = error("Unused")
+        override fun close() = database.close()
     }
 
     @Test

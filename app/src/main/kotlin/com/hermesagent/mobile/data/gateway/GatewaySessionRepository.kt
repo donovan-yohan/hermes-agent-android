@@ -18,6 +18,7 @@ import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
 import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.parseTurnErrorDetails
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcessState
 import com.hermesagent.mobile.data.session.ComposerGatewayQueuedPrompt
@@ -104,6 +105,13 @@ data class ProfileRouting(
 )
 
 interface GatewaySessionRepository {
+    /** Mutating upload: caller must supply a fresh, explicit per-upload consent dispatch gate. */
+    suspend fun shareDiagnostics(
+        errorContext: String,
+        expectedEndpointGeneration: Long,
+        consentDispatch: (() -> Boolean) -> Boolean,
+    ): DiagnosticsResult = DiagnosticsResult.Unsupported
+
     val connectionState: StateFlow<GatewayConnectionState>
     /** Connection-owned loader for attached-image bytes; null while disconnected. */
     val imageLoader: StateFlow<GatewayImageLoader?> get() = NO_IMAGE_LOADER
@@ -272,7 +280,10 @@ interface GatewaySessionRepository {
         text: String,
         truncateBeforeRowId: TranscriptRowId,
         truncateBeforeEntryId: String,
+        expectedEndpointGeneration: Long? = null,
     ): GatewaySubmitOutcome = error("Regenerate is not implemented by this repository.")
+    /** Retry only an authoritative retained startup failure with no durable user row. */
+    suspend fun retryRetainedFailure(durableId: String, text: String, expectedEndpointGeneration: Long): Boolean = false
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
     /** A queue drain opts into the Gateway's non-interrupting busy behavior. */
     suspend fun submit(durableId: String, text: String, queued: Boolean): GatewaySubmitOutcome =
@@ -2920,31 +2931,113 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    override suspend fun retryRetainedFailure(
+        durableId: String,
+        text: String,
+        expectedEndpointGeneration: Long,
+    ): Boolean = submitMutexes.withLock(durableId) {
+        val endpoint = expectedEndpointGeneration
+        requireEndpoint(endpoint)
+        val binding = ensureRuntime(durableId, endpoint)
+        val connection = connectionSnapshot()
+        val snapshot = requestAtEndpointDispatch(connection, endpoint, "session.activate", objectParams("session_id", binding.runtimeId))
+            .asObject("session.activate")
+        val projection = parseLiveSessionProjection(snapshot, clock())
+        val inflight = projection.inflight ?: return@withLock false
+        val details = parseTurnErrorDetails(inflight.error, inflight.errorSurface)
+        val wireText = ImageRefLines.split(text.trim()).first.ifBlank { IMAGE_ONLY_PROMPT }
+        // Only this backend code proves the accepted prompt never reached the agent/history writer.
+        // A generic failed turn or missing row alone is not permission to duplicate a prompt.
+        if (snapshot.string("session_id") != binding.runtimeId || projection.running != false ||
+            projection.busy || !projection.retainedFailure || !details.retryable || details.layer != "runtime" ||
+            details.code != "agent_init_failed" || inflight.user != wireText ||
+            inflight.assistant.isNotBlank() || inflight.corrections.isNotEmpty()) return@withLock false
+        val history = parseHistory(
+            requestAtEndpointDispatch(connection, endpoint, "session.history", historyParams(binding.runtimeId)),
+            binding.runtimeId, clock(),
+        )
+        if (history.filterIsInstance<UserTurn>().any { it.text.trim() == text.trim() }) return@withLock false
+        val current = cache.transcript(durableId)
+        val sourceIndex = current.indexOfLast { it is UserTurn && it.text.trim() == text.trim() }
+        // agent_init_failed precedes _run_prompt_submit: attached_images has not been consumed.
+        // Re-staging here would duplicate native images already retained by that runtime.
+        submitInternalLocked(binding, connection, wireText, text.trim(), queued = false,
+            gatewayQueueMergeable = false, interruptEpoch = submitInterruptEpoch(durableId),
+            expectedEndpointGeneration = endpoint,
+            optimisticTranscriptPrefix = if (sourceIndex >= 0) current.take(sourceIndex) else history)
+        true
+    }
+
+    /** Re-stage native images; @image lines are persistence/display refs, not native image input. */
+    private suspend fun submitRetryLocked(
+        binding: SessionBinding,
+        connection: ConnectionSnapshot,
+        prompt: String,
+        interruptEpoch: Long,
+        endpoint: Long,
+        truncateBeforeRowId: TranscriptRowId? = null,
+        optimisticTranscriptPrefix: List<TranscriptEntry>? = null,
+    ): GatewaySubmitOutcome {
+        val (body, refs) = ImageRefLines.split(prompt)
+        val paths = refs.map { ref ->
+            val path = ImageRefLines.pathOf(ref)
+            if (path == null || !path.startsWith("/") || path.any { it.isISOControl() } ||
+                ImageRefLines.formatRef(path) != ref) {
+                throw GatewayRpcException("This image reference cannot be restored. Attach the image again.")
+            }
+            path
+        }.distinct()
+        val staged = mutableListOf<String>()
+        try {
+            for (path in paths) {
+                requireUninterruptedSubmit(binding.durableId, interruptEpoch)
+                val attached = requestAtEndpointDispatch(connection, endpoint, "image.attach", buildJsonObject {
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                    put("path", JsonPrimitive(ImageRefLines.formatRef(path).removePrefix("@image:")))
+                }).asObject("image.attach")
+                if (attached.string("path") != path || attached.boolean("attached") != true) {
+                    throw GatewayRpcException("The image restoration could not be reconciled. Reopen this session.", requestMayHaveBeenAccepted = true)
+                }
+                staged += path
+            }
+            return submitInternalLocked(
+                binding, connection, body.ifBlank { IMAGE_ONLY_PROMPT }, prompt,
+                queued = false, gatewayQueueMergeable = paths.isEmpty(), interruptEpoch = interruptEpoch,
+                truncateBeforeRowId = truncateBeforeRowId,
+                optimisticTranscriptPrefix = optimisticTranscriptPrefix, expectedEndpointGeneration = endpoint,
+            )
+        } catch (failure: Throwable) {
+            if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
+            if (cache.endpointGeneration.value == endpoint && !detachStagedImages(connection, binding.runtimeId, staged)) {
+                throw GatewayRpcException("The image restoration could not be reconciled. Reopen this session.", requestMayHaveBeenAccepted = true)
+            }
+            throw failure
+        }
+    }
+
     override suspend fun regenerate(
         durableId: String,
         text: String,
         truncateBeforeRowId: TranscriptRowId,
         truncateBeforeEntryId: String,
+        expectedEndpointGeneration: Long?,
     ): GatewaySubmitOutcome {
+        val endpoint = expectedEndpointGeneration ?: cache.endpointGeneration.value
+        requireEndpoint(endpoint)
         val prompt = text.trim()
         val interruptEpoch = submitInterruptEpoch(durableId)
         return submitMutexes.withLock(durableId) {
             require(prompt.isNotEmpty())
-            val binding = ensureRuntime(durableId)
+            val binding = ensureRuntime(durableId, endpoint)
             val connection = connectionSnapshot()
+            requireEndpoint(endpoint)
             val currentTranscript = cache.transcript(durableId)
             val prefixCutoff = currentTranscript.indexOfFirst { it.id == truncateBeforeEntryId }.let { index ->
                 if (index >= 0) index else currentTranscript.indexOfFirst { it.rowId == truncateBeforeRowId }
             }
             val optimisticTranscriptPrefix = if (prefixCutoff >= 0) currentTranscript.take(prefixCutoff) else null
-            submitInternalLocked(
-                binding,
-                connection,
-                prompt,
-                prompt,
-                queued = false,
-                gatewayQueueMergeable = true,
-                interruptEpoch = interruptEpoch,
+            submitRetryLocked(
+                binding, connection, prompt, interruptEpoch, endpoint,
                 truncateBeforeRowId = truncateBeforeRowId,
                 optimisticTranscriptPrefix = optimisticTranscriptPrefix,
             )
@@ -3071,7 +3164,9 @@ internal class LiveGatewaySessionRepository(
                     // A definite, non-live rejection rolls its own submit back —
                     // not just the runtime that happens to own the event pin.
                     // Ambiguous acknowledgements still keep the optimistic row.
-                    val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds
+                    val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds &&
+                        connection.generation == connectionGeneration && clientFlow.value === connection.client &&
+                        (expectedEndpointGeneration == null || cache.endpointGeneration.value == expectedEndpointGeneration)
                     if (canRollback) {
                         releaseRuntimeGuard(binding.runtimeId)
                         localSubmitStartedAtByRuntime.remove(binding.runtimeId)
@@ -4422,12 +4517,17 @@ internal class LiveGatewaySessionRepository(
             "error" -> {
                 clearPendingInputsForRuntime(runtimeId)
                 val current = assistantByRuntime.remove(runtimeId)
-                val errorText = safeGatewayTerminalError(payload.string("error") ?: payload.string("message"))
+                val rawError = payload.string("error") ?: payload.string("message")
+                val errorText = safeGatewayTerminalError(rawError, payload["error_surface"])
                 val failed = (current ?: AssistantTurn(
                     id = "gateway-error-${sequence.incrementAndGet()}",
                     markdown = "",
                     atMillis = payload.timestamp(clock()),
-                )).copy(streaming = false, error = errorText)
+                )).copy(
+                    streaming = false,
+                    error = errorText,
+                    errorDetails = parseTurnErrorDetails(rawError, payload["error_surface"]),
+                )
                 cache.putEntry(durableId, failed)
                 sealReasoning(durableId, runtimeId, ToolState.Failed)
                 sealTools(durableId, runtimeId, ToolState.Failed)
@@ -5068,6 +5168,7 @@ internal class LiveGatewaySessionRepository(
         val errorText = if (status == "error") {
             safeGatewayTerminalError(
                 payload.string("error") ?: payload.string("message") ?: finalText,
+                payload["error_surface"],
             )
         } else {
             null
@@ -5085,6 +5186,10 @@ internal class LiveGatewaySessionRepository(
             },
             streaming = false,
             error = errorText,
+            errorDetails = if (errorText != null) parseTurnErrorDetails(
+                payload.string("error") ?: payload.string("message") ?: finalText,
+                payload["error_surface"],
+            ) else null,
             termination = termination,
         )
         cache.putEntry(durableId, completed)
@@ -5606,6 +5711,32 @@ internal class LiveGatewaySessionRepository(
         return targetId
     }
 
+    override suspend fun shareDiagnostics(
+        errorContext: String,
+        expectedEndpointGeneration: Long,
+        consentDispatch: (() -> Boolean) -> Boolean,
+    ): DiagnosticsResult = try {
+        val connection = connectionSnapshot()
+        val response = requestAtEndpointDispatch(
+            connection, expectedEndpointGeneration, "diagnostics.share_nous",
+            buildJsonObject {
+                put("error_context", JsonPrimitive(com.hermesagent.mobile.data.session.safeTurnErrorDetails(errorContext)))
+            },
+            consentDispatch,
+        )
+        parseDiagnosticsResult(response)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: GatewayRpcError) {
+        when (failure.code) {
+            -32601 -> DiagnosticsResult.Unsupported
+            401, 403, 4401, 4403 -> DiagnosticsResult.Refused
+            else -> DiagnosticsResult.Failed
+        }
+    } catch (_: Exception) {
+        DiagnosticsResult.Failed
+    }
+
     private fun connectionSnapshot(): ConnectionSnapshot {
         val client = clientFlow.value ?: throw GatewayRpcException("Connect to a Gateway first.")
         return synchronized(stateLock) {
@@ -5650,6 +5781,7 @@ internal class LiveGatewaySessionRepository(
         expectedEndpointGeneration: Long?,
         method: String,
         params: JsonObject,
+        consentDispatch: ((() -> Boolean) -> Boolean) = { send -> send() },
     ): JsonElement {
         if (expectedEndpointGeneration == null) return connection.client.request(method, params)
         val rpc = connection.client as? EndpointDispatchingGatewayRpcClient
@@ -5663,7 +5795,7 @@ internal class LiveGatewaySessionRepository(
         val lease = endpointDispatchFence.leaseAt(expectedEndpointGeneration, stillOwns)
             ?: throw GatewayRpcException("The gateway connection changed.")
         val result = rpc.requestAtEndpointDispatch(method, params) { send ->
-            endpointDispatchFence.dispatchIfCurrent(lease, stillOwns, send)
+            endpointDispatchFence.dispatchIfCurrent(lease, stillOwns) { consentDispatch(send) }
         }
         // A frame legitimately handed to the old wire cannot be retracted, but
         // its response must never become new-endpoint state.
@@ -5878,12 +6010,21 @@ internal class LiveGatewaySessionRepository(
     )
 }
 
-internal fun safeGatewayTerminalError(raw: String?): String {
+internal fun safeGatewayTerminalError(raw: String?, descriptor: JsonElement? = null): String {
     val classified = redact(raw).take(MAX_GATEWAY_ERROR_CLASSIFICATION_CHARS).lowercase()
-    return if (REMOTE_STORAGE_ERROR_MARKERS.any(classified::contains)) {
+    val surface = parseTurnErrorDetails(null, descriptor)
+    return if (surface.layer == "disk" || REMOTE_STORAGE_ERROR_MARKERS.any(classified::contains)) {
         "The remote host is out of storage. Free space there, then try again."
+    } else if (surface.code == "internal_start" || "internal problem starting" in classified || "internal_start" in classified) {
+        "Hermes hit an internal problem starting this reply. Send your message again. If it keeps happening, use Desktop to send diagnostics."
+    } else if (surface.layer == "auth") {
+        "The provider refused sign-in. Check this provider’s credentials in Desktop, then try again."
+    } else if (surface.layer == "billing") {
+        "The provider could not continue. Check your credits or billing in Desktop, then try again."
+    } else if (!surface.retryable) {
+        "This request could not continue. Review Details and check the provider or Gateway in Desktop before trying again."
     } else {
-        "Hermes ended this turn unexpectedly. Check the Gateway, then try again."
+        "Hermes could not finish this reply. Try again. If it keeps happening, use Desktop to send diagnostics."
     }
 }
 
@@ -6654,6 +6795,7 @@ private data class InflightProjection(
     val correctionOffsets: List<Int>?,
     val streaming: Boolean,
     val error: String,
+    val errorSurface: JsonElement?,
     val status: String?,
     val atMillis: Long,
 )
@@ -6805,6 +6947,7 @@ private fun parseLiveSessionProjection(root: JsonObject, fallbackTime: Long): Li
             correctionOffsets = offsets,
             streaming = it.boolean("streaming") == true,
             error = it.string("error").orEmpty().trim(),
+            errorSurface = it["error_surface"],
             status = it.string("status"),
             atMillis = atMillis,
         )
@@ -6842,7 +6985,7 @@ private fun appendInflightProjection(
     }
 
     val assistant = inflight?.assistant.orEmpty()
-    val error = inflight?.error.orEmpty().takeIf(String::isNotBlank)?.let(::safeGatewayTerminalError)
+    val error = if (projection.retainedFailure) safeGatewayTerminalError(inflight?.error, inflight?.errorSurface) else null
     val corrections = inflight?.corrections.orEmpty()
     val offsets = inflight?.correctionOffsets
     val usableOffsets = error == null && assistant.isNotEmpty() && offsets != null && offsets.size == corrections.size
@@ -6875,6 +7018,7 @@ private fun appendInflightProjection(
                 atMillis = atMillis,
                 streaming = projection.busy,
                 error = error,
+                errorDetails = if (error != null) parseTurnErrorDetails(inflight?.error, inflight?.errorSurface) else null,
             )
         }
         corrections.forEachIndexed { index, correction ->

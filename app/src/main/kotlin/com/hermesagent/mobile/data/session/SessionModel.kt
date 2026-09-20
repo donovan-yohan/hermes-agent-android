@@ -305,6 +305,8 @@ data class AssistantTurn(
     val streaming: Boolean = false,
     /** Set when the turn ended badly. Rendered as an honest error, not a retry spinner. */
     val error: String? = null,
+    /** Redacted, bounded diagnostics captured from the failed turn, never composer state. */
+    val errorDetails: TurnErrorDetails? = null,
     /**
      * Why this turn stopped before ordinary completion, if the Gateway made
      * that fact available. Only [TurnTermination.UserRequested] means this

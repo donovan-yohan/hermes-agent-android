@@ -155,6 +155,18 @@ fun ChatScreen(
     // the same predicate three times.
     val gatewayDoor = StatusAction(ConnectionsCopy.MANAGE_GATEWAYS, onOpenGateways)
         .takeIf { state.gatewayNeedsAttention }
+    state.diagnostics?.let { diagnostics ->
+        SendDiagnosticsDialog(diagnostics, actions.onConfirmDiagnostics, actions.onDismissDiagnostics)
+    }
+    state.gatewayLogs?.let { GatewayLogsDialog(it, actions.onConfirmGatewayLogs, actions.onDismissGatewayLogs) }
+    val dismissGatewayLogs by androidx.compose.runtime.rememberUpdatedState(actions.onDismissGatewayLogs)
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { dismissGatewayLogs() }
+    }
+    val dismissDiagnostics by androidx.compose.runtime.rememberUpdatedState(actions.onDismissDiagnostics)
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { dismissDiagnostics() }
+    }
     var contextUsageOpen by rememberSaveable { mutableStateOf(false) }
     val onOpenContextUsage = { contextUsageOpen = true }
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
@@ -274,6 +286,14 @@ private fun CompactLayout(
                 onShowEarlier = actions.onShowEarlierMessages,
                 onBranchFromReply = actions.onBranchFromReply,
                 onRegenerateReply = actions.onRegenerateReply,
+                onViewGatewayLogs = actions.onViewGatewayLogs
+                    ?.takeIf { state.connection.status == GatewayConnectionStatus.Connected }?.let { view ->
+                        { id -> view(id, state.diagnosticsEndpointGeneration) }
+                    },
+                onSendDiagnostics = actions.onSendDiagnostics
+                    ?.takeIf { state.connection.status == GatewayConnectionStatus.Connected }?.let { send ->
+                    { id -> send(id, state.diagnosticsEndpointGeneration) }
+                },
                 onToggleReadAloud = actions.onToggleReadAloud,
                 introSplashEnabled = introSplashEnabled,
                 modifier = Modifier.weight(1f),
@@ -343,6 +363,14 @@ private fun WideLayout(
                 onShowEarlier = actions.onShowEarlierMessages,
                 onBranchFromReply = actions.onBranchFromReply,
                 onRegenerateReply = actions.onRegenerateReply,
+                onViewGatewayLogs = actions.onViewGatewayLogs
+                    ?.takeIf { state.connection.status == GatewayConnectionStatus.Connected }?.let { view ->
+                        { id -> view(id, state.diagnosticsEndpointGeneration) }
+                    },
+                onSendDiagnostics = actions.onSendDiagnostics
+                    ?.takeIf { state.connection.status == GatewayConnectionStatus.Connected }?.let { send ->
+                    { id -> send(id, state.diagnosticsEndpointGeneration) }
+                },
                 onToggleReadAloud = actions.onToggleReadAloud,
                 introSplashEnabled = introSplashEnabled,
                 modifier = Modifier.weight(1f),
@@ -413,6 +441,8 @@ private fun TranscriptPane(
     onShowEarlier: () -> Unit,
     onBranchFromReply: ((String) -> Unit)?,
     onRegenerateReply: ((String) -> Unit)?,
+    onSendDiagnostics: ((String) -> Unit)?,
+    onViewGatewayLogs: ((String) -> Unit)?,
     onToggleReadAloud: (String) -> Unit,
     introSplashEnabled: Boolean,
     modifier: Modifier = Modifier,
@@ -547,6 +577,8 @@ private fun TranscriptPane(
             listState = listState,
             onBranchFromReply = onBranchFromReply,
             onRegenerateReply = onRegenerateReply,
+            onSendDiagnostics = onSendDiagnostics,
+            onViewGatewayLogs = onViewGatewayLogs,
             onShowEarlier = if (!state.canShowEarlierMessages) {
                 null
             } else {

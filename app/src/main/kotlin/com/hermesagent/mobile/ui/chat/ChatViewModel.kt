@@ -347,6 +347,9 @@ data class ChatNotice(
 )
 
 data class ChatUiState(
+    val diagnostics: SendDiagnosticsState? = null,
+    val gatewayLogs: GatewayLogsState? = null,
+    val diagnosticsEndpointGeneration: Long = 0L,
     val voice: VoiceUiState = VoiceUiState.Idle,
     val readAloud: ReadAloudUiState = ReadAloudUiState.Idle,
     val sessionRows: List<SessionListRow> = emptyList(),
@@ -486,6 +489,7 @@ internal class ChatViewModel(
     private val connectionGeneration: () -> Long = { 0L },
     /** Reads happen off Main; tests inject the virtual scheduler. */
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val gatewayHttp: () -> com.hermesagent.mobile.data.gateway.GatewayHttp? = { null },
 
     /**
      * How a month divider is worded. Null means the shipped ICU formatter,
@@ -630,9 +634,11 @@ internal class ChatViewModel(
     private val historyRevision = MutableStateFlow(0L)
     private val queueScopeReady = MutableStateFlow(false)
     private val createdProjectBySession = mutableMapOf<String, String>()
-    private var navigationGeneration = 0L
+    @Volatile private var navigationGeneration = 0L
+        set(value) { field = value; gatewayLogsController.dismiss() }
     private var sidebarGroupingGeneration = 0L
-    private var profileScopeGeneration = 0L
+    @Volatile private var profileScopeGeneration = 0L
+        set(value) { field = value; gatewayLogsController.dismiss() }
     private var choseInitialSession = false
     private var previousStatuses = emptyMap<String, SessionStatus>()
     private var draftSnapshot = linkedMapOf<String, String>()
@@ -702,6 +708,58 @@ internal class ChatViewModel(
      * `combine`'s arity.
      */
     private val chromeState = combine(repository.approvalMode, visibleModels, ::ChromeBundle)
+
+    private val gatewayLogsController = GatewayLogsController(
+        scope = viewModelScope,
+        identity = { GatewayLogsIdentity(cache.endpointGeneration.value, connectionGeneration(),
+            activeSessionId.value, profileScope.value.key, navigationGeneration, profileScopeGeneration) },
+        connected = { repository.connectionState.value.status == GatewayConnectionStatus.Connected },
+        read = { current ->
+            // Resolve only after confirmation, never retain the transport from VM creation.
+            // The consent identity and this exact transport must both survive until IO/retention.
+            val http = if (current()) gatewayHttp() else null
+            if (http == null) com.hermesagent.mobile.data.gateway.GatewayLogsResult.Failed
+            else com.hermesagent.mobile.data.gateway.readGatewayLogs(http) {
+                current() && gatewayHttp() === http
+            }
+        },
+    )
+
+    fun requestGatewayLogs(entryId: String, endpoint: Long) {
+        if (endpoint != cache.endpointGeneration.value) return
+        if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
+            noticeLine = "Connect to a Gateway before viewing logs."
+            return
+        }
+        val session = activeSessionId.value ?: return
+        if (cache.state.value.transcripts[session].orEmpty().filterIsInstance<AssistantTurn>()
+                .none { it.id == entryId && it.error != null }) return
+        gatewayLogsController.open()
+    }
+
+    fun confirmGatewayLogs(generation: Long) = gatewayLogsController.confirm(generation)
+    fun dismissGatewayLogs() = gatewayLogsController.dismiss()
+
+    private val diagnosticsController = SendDiagnosticsController(
+        scope = viewModelScope,
+        endpoint = { cache.endpointGeneration.value },
+        connection = connectionGeneration,
+        connected = { repository.connectionState.value.status == GatewayConnectionStatus.Connected },
+        upload = repository::shareDiagnostics,
+    )
+
+    fun requestSendDiagnostics(entryId: String, endpoint: Long) {
+        if (endpoint != cache.endpointGeneration.value ||
+            repository.connectionState.value.status != GatewayConnectionStatus.Connected) return
+        val sessionId = activeSessionId.value ?: return
+        val turn = cache.state.value.transcripts[sessionId].orEmpty()
+            .filterIsInstance<AssistantTurn>().firstOrNull { it.id == entryId && it.error != null } ?: return
+        val details = turn.errorDetails ?: com.hermesagent.mobile.data.session.TurnErrorDetails(details = turn.error.orEmpty())
+        diagnosticsController.open(details.copyText(turn.error.orEmpty()))
+    }
+
+    fun confirmSendDiagnostics(generation: Long) = diagnosticsController.confirm(generation)
+    fun dismissSendDiagnostics() = diagnosticsController.dismiss()
 
     val uiState: StateFlow<ChatUiState> = combine(
         combine(cache.state, cache.endpointGeneration) { state, endpoint -> state to endpoint },
@@ -943,6 +1001,7 @@ internal class ChatViewModel(
                     id in cacheState.projects.memberships[project.id].orEmpty()
                 }
             },
+            diagnosticsEndpointGeneration = cacheAndEndpoint.second,
             transcript = displayedActiveId?.let(cacheState.transcripts::get).orEmpty(),
             query = searchState.query,
             draft = draftText,
@@ -969,9 +1028,17 @@ internal class ChatViewModel(
                 botChatEndpoint?.cacheGeneration == cacheAndEndpoint.second &&
                 botChatEndpoint?.connectionGeneration == connectionGeneration(),
         )
+    }.combine(diagnosticsController.state) { state, diagnostics ->
+        state.copy(diagnostics = diagnostics)
+    }.combine(gatewayLogsController.state) { state, logs ->
+        state.copy(gatewayLogs = logs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
+        viewModelScope.launch {
+            combine(cache.endpointGeneration, repository.connectionState, activeSessionId, profileScope) { _, _, _, _ -> Unit }
+                .collect { gatewayLogsController.invalidateIfChanged() }
+        }
         // Desktop's sidebar search, and its reason: "Full-text search across
         // *all* sessions (not just the loaded page) so 699 sessions stay
         // findable. Debounced; loaded sessions are matched instantly
@@ -1259,6 +1326,7 @@ internal class ChatViewModel(
             }
                 .distinctUntilChanged()
                 .collect { (endpoint, _) ->
+                    diagnosticsController.invalidateIfChanged()
                     if (endpoint != generation) {
                         generation = endpoint
                         // A durable id is only meaningful on the endpoint that
@@ -1287,6 +1355,7 @@ internal class ChatViewModel(
         }
         viewModelScope.launch {
             repository.connectionState.collect { connection ->
+                diagnosticsController.invalidateIfChanged()
                 if (connectionGeneration() != observedRecentImagesGeneration) {
                     observedRecentImagesGeneration = connectionGeneration()
                     clearRecentImages()
@@ -2125,6 +2194,8 @@ internal class ChatViewModel(
     fun regenerateReply(entryId: String) {
         if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
+        val endpoint = cache.endpointGeneration.value
+        fun stillOwnsReply() = activeSessionId.value == sessionId && cache.endpointGeneration.value == endpoint
 
         viewModelScope.launch {
             fun setInterruptNotice(interrupt: GatewayInterruptOutcome) {
@@ -2136,37 +2207,44 @@ internal class ChatViewModel(
             }
 
             suspend fun interruptForRefresh(): Boolean {
+                if (!stillOwnsReply()) return false
                 val outcome = try {
                     repository.requestInterrupt(sessionId)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Throwable) {
-                    if (activeSessionId.value == sessionId) {
+                    if (stillOwnsReply()) {
                         noticeLine = "Hermes could not be stopped. Check the Gateway connection."
                     }
                     return false
                 }
                 if (outcome == GatewayInterruptOutcome.Interrupted) return true
-                if (activeSessionId.value == sessionId) setInterruptNotice(outcome)
+                if (stillOwnsReply()) setInterruptNotice(outcome)
                 return false
             }
 
             try {
+                if (!stillOwnsReply()) return@launch
                 val transcript = cache.transcript(sessionId)
                 val plan = planRegenerate(transcript, entryId)
                 if (plan !is RegeneratePlan.Ready) return@launch
 
                 if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) {
-                    if (activeSessionId.value == sessionId) {
+                    if (stillOwnsReply()) {
                         noticeLine = "Connect to a Gateway before refreshing this reply."
                     }
                     return@launch
                 }
 
                 var targetRowId = plan.sourceRowId
-                if (targetRowId == null) {
+                val failedTurn = transcript.firstOrNull { it.id == entryId } as? AssistantTurn
+                val startupFailure = failedTurn?.errorDetails?.let {
+                    it.layer == "runtime" && it.code == "agent_init_failed"
+                } == true
+                // A retained startup failure is a new occurrence, never an older identical history row.
+                if (targetRowId == null && !startupFailure) {
                     val authoritativeHistory = repository.fetchSessionHistory(sessionId)
-                    if (activeSessionId.value != sessionId) return@launch
+                    if (!stillOwnsReply()) return@launch
                     val matchingUsers = authoritativeHistory.filterIsInstance<UserTurn>().filter { it.rowId != null && it.text.trim() == plan.sourceText.trim() }
                     if (matchingUsers.size == 1) {
                         targetRowId = matchingUsers.first().rowId
@@ -2179,14 +2257,15 @@ internal class ChatViewModel(
                 }
 
                 if (targetRowId == null) {
-                    if (activeSessionId.value == sessionId) noticeLine =
+                    if (plan.sourceIsLastUserTurn && repository.retryRetainedFailure(sessionId, plan.sourceText, endpoint)) return@launch
+                    if (stillOwnsReply()) noticeLine =
                         "Refresh could not find this turn in the session history. Reopen the session and try again."
                     return@launch
                 }
 
                 val sessionStatus = cache.session(sessionId)?.status
                 if (sessionStatus == SessionStatus.NeedsInput) {
-                    if (activeSessionId.value == sessionId) {
+                    if (stillOwnsReply()) {
                         noticeLine = "Hermes needs a response. Answer the request above."
                     }
                     return@launch
@@ -2198,7 +2277,8 @@ internal class ChatViewModel(
                 var retries = 1
                 while (true) {
                     try {
-                        repository.regenerate(sessionId, plan.sourceText, targetRowId, plan.sourceEntryId)
+                        if (!stillOwnsReply()) return@launch
+                        repository.regenerate(sessionId, plan.sourceText, targetRowId, plan.sourceEntryId, endpoint)
                         break
                     } catch (e: GatewayRpcException) {
                         // Match the repository's own refusal ("Hermes is already working in this session.") and the Gateway's 4090 busy refusal.
@@ -2208,7 +2288,7 @@ internal class ChatViewModel(
                             retries--
                             if (!interruptForRefresh()) return@launch
                         } else {
-                            if (activeSessionId.value == sessionId) noticeLine = "Regenerate failed. Check the Gateway and try again."
+                            if (stillOwnsReply()) noticeLine = "Regenerate failed. Check the Gateway and try again."
                             break
                         }
                     }
@@ -2216,7 +2296,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                if (activeSessionId.value == sessionId) noticeLine = "Regenerate failed. Check the Gateway and try again."
+                if (stillOwnsReply()) noticeLine = "Regenerate failed. Check the Gateway and try again."
             }
         }
     }
@@ -3780,6 +3860,7 @@ internal class ChatViewModel(
     }
 
     override fun onCleared() {
+        gatewayLogsController.dismiss()
         replySpeaker?.stop()
         // Attachment bytes are memory-only by contract: nothing survives the
         // ViewModel, and process recreation shows "unavailable" rather than a
@@ -4288,6 +4369,7 @@ internal class ChatViewModel(
             switchComposerQueueScope: suspend (ComposerQueueScope) -> Unit = {},
             replySpeaker: ReplySpeaker? = null,
             connectionGeneration: () -> Long = { 0L },
+            gatewayHttp: () -> com.hermesagent.mobile.data.gateway.GatewayHttp? = { null },
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -4309,6 +4391,7 @@ internal class ChatViewModel(
                         switchComposerQueueScope = switchComposerQueueScope,
                         replySpeaker = replySpeaker,
                         connectionGeneration = connectionGeneration,
+                        gatewayHttp = gatewayHttp,
                         composerHistoryController = ComposerHistoryController(
                             cache,
                             SavedStateComposerHistoryBrowseStore(extras.createSavedStateHandle()),
