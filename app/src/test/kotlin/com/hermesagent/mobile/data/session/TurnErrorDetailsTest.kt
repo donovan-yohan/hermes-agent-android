@@ -8,6 +8,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TurnErrorDetailsTest {
+    @Test fun `IPv6 addresses and scopes are removed from retained details and clipboard`() {
+        val addresses = listOf("[2001:db8::1]:443", "2001:db8:0:1:2:3:4:5", "::1",
+            "fe80::abcd%qa0", "[fe80::abcd%qa0]:443", "::ffff:192.0.2.1")
+        for (address in addresses) {
+            val raw = "Connection failed to $address\nUseful diagnostic"
+            val details = parseTurnErrorDetails(raw, null)
+            for (safe in listOf(details.details, details.copyText(raw))) {
+                assertFalse(safe, safe.contains(address))
+                assertFalse(safe, safe.contains("qa0"))
+                assertFalse(safe, safe.contains("2001:db8"))
+                assertTrue(safe, safe.contains("Useful diagnostic"))
+            }
+        }
+        assertEquals("layer: runtime\ncode: agent_init_failed", safeTurnErrorDetails("layer: runtime\ncode: agent_init_failed"))
+        assertEquals("<redacted address>", safeTurnErrorDetails(":".repeat(20_000)))
+    }
     @Test fun `descriptor carries failed identity and retryability not foreground settings`() {
         val details = parseTurnErrorDetails("Provider refused request", Json.parseToJsonElement(
             """{"layer":"auth","code":"auth_permanent","retryable":false,"provider":"test-provider","model":"failed-model"}""",

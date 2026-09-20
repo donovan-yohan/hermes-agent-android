@@ -44,6 +44,9 @@ private val CREDENTIAL_FIELD = Regex(
     """\b(authorization|proxy-authorization|password|passwd|api[_-]?key|(?:access|refresh|session|auth)[_-]?token|token|secret|client[_-]?secret|x-hermes-session-token|hermes_dashboard_session_token)["']?\s*[:=]\s*""",
     RegexOption.IGNORE_CASE,
 )
+// Conservatively redact colon-rich numeric address tokens (also timestamps) without DNS.
+// Scan one flat token rather than enumerating IPv6 compression forms with nested repetition.
+private val IPV6_DETAIL_TOKEN = Regex("""\[?[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.~-]+)?\]?(?::[0-9]+)?""")
 private val DETAIL_REDACTIONS = listOf(
     Regex("""\bBearer\s+[^\s"']+""", RegexOption.IGNORE_CASE) to "Bearer <redacted>",
     Regex("""\bsk-[A-Za-z0-9_-]+""", RegexOption.IGNORE_CASE) to "<redacted>",
@@ -87,6 +90,9 @@ private fun redactCredentialFields(raw: String): String = buildString {
 fun safeTurnErrorDetails(raw: String?): String {
     var safe = redact(redactCredentialFields(raw.orEmpty()))
     for ((pattern, replacement) in DETAIL_REDACTIONS) safe = pattern.replace(safe, replacement)
+    safe = IPV6_DETAIL_TOKEN.replace(safe) { match ->
+        if (match.value.count { it == ':' } >= 2) "<redacted address>" else match.value
+    }
     return safe.trim().take(4_096)
 }
 
