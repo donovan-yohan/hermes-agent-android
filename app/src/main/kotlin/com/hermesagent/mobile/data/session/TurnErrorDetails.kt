@@ -47,10 +47,12 @@ private val CREDENTIAL_FIELD = Regex(
 // Conservatively redact colon-rich numeric address tokens (also timestamps) without DNS.
 // Scan one flat token rather than enumerating IPv6 compression forms with nested repetition.
 private val IPV6_DETAIL_TOKEN = Regex("""\[?[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.~-]+)?\]?(?::[0-9]+)?""")
-private val DETAIL_REDACTIONS = listOf(
+private val DETAIL_ENDPOINT = Regex("""[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>]+""")
+private val DETAIL_SECRET_REDACTIONS = listOf(
     Regex("""\bBearer\s+[^\s"']+""", RegexOption.IGNORE_CASE) to "Bearer <redacted>",
     Regex("""\bsk-[A-Za-z0-9_-]+""", RegexOption.IGNORE_CASE) to "<redacted>",
-    Regex("""[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>]+""") to "<redacted endpoint>",
+)
+private val DETAIL_REDACTIONS = listOf(
     Regex("""\b(?:[A-Za-z0-9-]+\.)+[a-z]{2,}(?::[0-9]+)?\b""", RegexOption.IGNORE_CASE) to "<redacted host>",
     Regex("""\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?\b""") to "<redacted address>",
     Regex("""SHA256:[A-Za-z0-9+/=]+""") to "<redacted fingerprint>",
@@ -89,10 +91,14 @@ private fun redactCredentialFields(raw: String): String = buildString {
 /** Redact BEFORE bounding, and before SSH redaction can break quoted values. */
 fun safeTurnErrorDetails(raw: String?): String {
     var safe = redact(redactCredentialFields(raw.orEmpty()))
-    for ((pattern, replacement) in DETAIL_REDACTIONS) safe = pattern.replace(safe, replacement)
+    for ((pattern, replacement) in DETAIL_SECRET_REDACTIONS) safe = pattern.replace(safe, replacement)
+    // Remove whole endpoints first, then whole IPv6 tokens before dotted host/IPv4
+    // rules can split a mixed address from its scope identifier.
+    safe = DETAIL_ENDPOINT.replace(safe, "<redacted endpoint>")
     safe = IPV6_DETAIL_TOKEN.replace(safe) { match ->
         if (match.value.count { it == ':' } >= 2) "<redacted address>" else match.value
     }
+    for ((pattern, replacement) in DETAIL_REDACTIONS) safe = pattern.replace(safe, replacement)
     return safe.trim().take(4_096)
 }
 

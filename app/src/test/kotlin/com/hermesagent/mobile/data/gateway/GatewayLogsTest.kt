@@ -40,7 +40,7 @@ class GatewayLogsTest {
     }
 
     @Test fun `bounded authenticated request redacts before retaining and wipes bytes`() = runTest {
-        val bytes = """{"file":"errors","lines":["password=synthetic-secret","Bearer synthetic-bearer","[2001:db8::1]:443 fe80::abcd%qa0","ordinary failure"]}""".encodeToByteArray()
+        val bytes = """{"file":"errors","lines":["password=synthetic-secret","Bearer synthetic-bearer","[2001:db8::1]:443 fe80::abcd%qa0 [fe80::192.0.2.1%qa0]:443","ordinary failure"]}""".encodeToByteArray()
         val http = FakeHttp(GatewayHttpResult.Success(200, bytes))
         val result = readGatewayLogs(http) { true } as GatewayLogsResult.Content
         val request = http.request!!

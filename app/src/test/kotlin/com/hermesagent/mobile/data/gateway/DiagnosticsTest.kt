@@ -54,7 +54,7 @@ class DiagnosticsTest {
         )
         runCurrent()
         assertEquals(0, rpc.uploads)
-        val result = repository.shareDiagnostics("password=synthetic-secret\n[2001:db8::1]:443 fe80::abcd%qa0\n" + "x".repeat(9000), 0L) { it() }
+        val result = repository.shareDiagnostics("password=synthetic-secret\n[2001:db8::1]:443 fe80::abcd%qa0 [fe80::192.0.2.1%qa0]:443\n" + "x".repeat(9000), 0L) { it() }
         assertTrue(result is DiagnosticsResult.Uploaded)
         assertEquals(1, rpc.uploads)
         assertEquals(setOf("error_context"), rpc.params!!.keys)
