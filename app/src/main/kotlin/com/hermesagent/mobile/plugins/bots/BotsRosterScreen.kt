@@ -46,6 +46,8 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.MenuSectionLabel
+import com.hermesagent.mobile.ui.common.ProfileGlyph
+import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -79,6 +81,8 @@ fun BotsRosterScreen(
     state: BotsRosterUiState,
     onBack: () -> Unit,
     onOpenBotChat: (BotRosterRow) -> Unit = {},
+    /** Open one bot's Routines. Distinct from the row tap, which opens its chat. */
+    onOpenRoutines: (BotRosterRow) -> Unit = {},
     modifier: Modifier = Modifier,
     actions: BotsActions = BotsActions(),
 ) {
@@ -186,6 +190,7 @@ fun BotsRosterScreen(
                     nowMillis = nowMillis,
                     actions = actions,
                     onOpenBotChat = onOpenBotChat,
+                    onOpenRoutines = onOpenRoutines,
                 )
             }
         }
@@ -198,6 +203,7 @@ private fun RosterList(
     nowMillis: Long,
     actions: BotsActions,
     onOpenBotChat: (BotRosterRow) -> Unit,
+    onOpenRoutines: (BotRosterRow) -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     // A header belongs to a user section, so with none made Desktop draws the
@@ -221,6 +227,7 @@ private fun RosterList(
                     attention = state.attentionByKey[row.rosterKey],
                     opening = state.openingBotKey == row.rosterKey,
                     onOpen = { onOpenBotChat(row) },
+                    onOpenRoutines = { onOpenRoutines(row) },
                 )
             }
         }
@@ -265,6 +272,7 @@ private fun RosterList(
                                 attention = state.attentionByKey[row.rosterKey],
                                 opening = state.openingBotKey == row.rosterKey,
                                 onOpen = { onOpenBotChat(row) },
+                                onOpenRoutines = { onOpenRoutines(row) },
                             )
                         }
                     }
@@ -325,6 +333,8 @@ private fun BotRowItem(
     attention: BotAttention?,
     opening: Boolean,
     onOpen: () -> Unit,
+    /** Open this bot's Routines — its own visible control, never the row's tap. */
+    onOpenRoutines: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     val preview = displayPreview(row.activity?.preview)
@@ -335,6 +345,11 @@ private fun BotRowItem(
         Modifier
             .fillMaxWidth()
             .heightIn(min = HermesTheme.spacing.touchTarget)
+            // The row's own tap target and the Routines control are siblings, so
+            // opening chat can never swallow the other destination — Desktop
+            // makes the same split between its title button, switch and delete
+            // control (`cron.tsx:539-576`), and a nested control would be
+            // invalid markup besides.
             .clickable(onClick = onOpen)
             .padding(vertical = 8.dp),
     ) {
@@ -353,6 +368,17 @@ private fun BotRowItem(
                     modifier = Modifier.padding(end = 6.dp),
                 )
             }
+            ProfileGlyph(
+                profile = HermesProfile(
+                    name = row.name,
+                    displayName = row.displayName,
+                    hasAvatar = row.hasAvatar,
+                    avatarRef = row.avatarRef,
+                ),
+                size = 36.dp,
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.padding(end = 10.dp),
+            )
             Text(
                 text = name,
                 style = HermesTheme.type.bodyStrong,
@@ -378,6 +404,18 @@ private fun BotRowItem(
                     )
                 }
             }
+            // The one distinct Routines entry for this row: always visible, its
+            // own accessible name, and its own 48dp target. Desktop reaches
+            // Routines by focusing the bot, because its Bots pane and the
+            // Routines tile are both on screen; a phone shows one surface at a
+            // time, so the destination needs a control on the row instead —
+            // ledgered as mobile-adaptation in `docs/parity/bot-routines.md`.
+            HermesIconButton(
+                icon = HermesIcon.Watch,
+                contentDescription = routinesEntryLabel(name),
+                onClick = onOpenRoutines,
+                modifier = Modifier.testTag(ROUTINES_ROW_ACTION_TAG),
+            )
         }
 
         Text(
@@ -575,6 +613,17 @@ private fun RosterError(description: String, onRetry: () -> Unit) {
 }
 
 private const val BOTS_TITLE = "Bots"
+
+/**
+ * The Routines entry's accessible name on a roster row.
+ *
+ * It names the bot rather than repeating its own glyph: a list of identical
+ * "Scheduled jobs" controls says nothing about which bot each one opens.
+ */
+internal fun routinesEntryLabel(botName: String): String = "Scheduled jobs for $botName"
+
+/** The roster row's Routines control, so a journey can find it. */
+internal const val ROUTINES_ROW_ACTION_TAG = "Bots routines"
 
 private const val UNAVAILABLE_REASON = "this Gateway does not serve profiles.list"
 

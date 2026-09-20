@@ -6,6 +6,7 @@ import com.hermesagent.mobile.plugins.HermesPlugin
 import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.plugins.PluginContribution
 import com.hermesagent.mobile.plugins.PluginContext
+import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.ui.LocalPluginNavigation
 import com.hermesagent.mobile.ui.settings.SettingsRow
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,16 @@ class BotsPlugin(
     private val sections: List<BotSection> = emptyList(),
     private val metaByKey: Map<String, BotMeta> = emptyMap(),
     private val scope: CoroutineScope? = null,
+    /**
+     * A host the plugin should use instead of the context's, or null for
+     * production.
+     *
+     * The one thing a test needs to drive the Routines fixture's own
+     * contribution without a Gateway; `null` everywhere in production, where
+     * `ctx.host` is the live door.
+     */
+    private val hostOverride: PluginHost? = null,
+    private val avatarRoster: com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator? = null,
 ) : HermesPlugin {
 
     override val id: String = "bots"
@@ -46,9 +57,14 @@ class BotsPlugin(
     override fun register(ctx: PluginContext) {
         val pluginScope = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         ctx.onDispose { pluginScope.cancel() }
+        val host = hostOverride ?: ctx.host
+        val avatarProducer = avatarRoster?.open(
+            com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator.Kind.Bots, host,
+        )
+        ctx.onDispose { avatarProducer?.close() }
 
         val viewModel = BotsViewModel(
-            repository = BotsPluginRepository(ctx.host),
+            repository = BotsPluginRepository(host, avatarProducer),
             scope = pluginScope,
             sections = sections,
             metaByKey = metaByKey,
@@ -56,12 +72,13 @@ class BotsPlugin(
             // registration: the app discovers plugins before it has dialled
             // anything, so a read here would be refused and could never be
             // repeated. `connected` is the door's own view of the live client.
-            connected = ctx.host.connected,
+            connected = host.connected,
             // ...and the door's endpoint generation is what tells the roster
             // that a list it is holding — deliberately, so a failed refresh is
             // a banner rather than a blank screen — belongs to a machine this
             // device has left, which a transport redial never means.
-            endpointGeneration = ctx.host.endpointGeneration,
+            endpointGeneration = host.endpointGeneration,
+            connectionToken = avatarRoster?.let { host.connectionToken },
         )
         val actions = BotsActions(
             onRefresh = viewModel::refresh,
@@ -71,6 +88,20 @@ class BotsPlugin(
             onSetHiddenExpanded = viewModel::setHiddenExpanded,
             onClearFilters = viewModel::clearFilters,
             onResume = viewModel::surfaceResumed,
+        )
+        // The Routines surface's state, and the one place a bot's profile
+        // reaches it. It is plugin-scoped like the roster's: no module global,
+        // and it dies with the plugin.
+        val routines = BotsRoutinesViewModel(
+            repository = BotsPluginRepository(host),
+            scope = pluginScope,
+            connected = host.connected,
+            endpointGeneration = host.endpointGeneration,
+        )
+        val routinesActions = BotsRoutinesActions(
+            onRetry = routines::refresh,
+            onResume = routines::surfaceResumed,
+            onAction = routines::act,
         )
 
         ctx.registerMany(
@@ -86,7 +117,34 @@ class BotsPlugin(
                             state = state,
                             onBack = nav.onBack,
                             onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
+                            onOpenRoutines = { row ->
+                                // The row's own tap still opens Bot Chat; this
+                                // is the Routines affordance beside it, and it
+                                // hands the bot to the destination rather than
+                                // to any shared navigation state. The row's
+                                // display name travels with it so the pane
+                                // header reads as the roster does.
+                                routines.selectOwner(
+                                    profile = row.name,
+                                    label = displayName(row.name, row.displayName),
+                                )
+                                nav.onNavigate("$id:$ROUTINES_ROUTE_ID")
+                            },
                             actions = actions,
+                        )
+                    },
+                ),
+                PluginContribution(
+                    id = ROUTINES_ROUTE_ID,
+                    area = PluginAreas.ROUTES_AREA,
+                    title = BotsRoutinesCopy.TITLE,
+                    render = {
+                        val nav = LocalPluginNavigation.current
+                        val state by routines.uiState.collectAsStateWithLifecycle()
+                        BotsRoutinesScreen(
+                            state = state,
+                            onBack = nav.onBack,
+                            actions = routinesActions,
                         )
                     },
                 ),
@@ -121,5 +179,8 @@ class BotsPlugin(
 
     private companion object {
         const val GATEWAY_PREDATES_REASON = "this Gateway does not serve profiles.list"
+
+        /** The id the Routines contribution registers under. */
+        const val ROUTINES_ROUTE_ID = "routines"
     }
 }

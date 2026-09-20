@@ -113,6 +113,8 @@ import com.hermesagent.mobile.data.prefs.SidebarViewStore
 import com.hermesagent.mobile.data.prefs.TransientSidebarViewStore
 import com.hermesagent.mobile.data.session.ProjectSummary
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.data.session.SessionBucketLabel
+import com.hermesagent.mobile.data.session.IcuSessionBucketLabel
 import com.hermesagent.mobile.data.session.SessionListRow
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
@@ -488,12 +490,31 @@ internal class ChatViewModel(
     /** Reads happen off Main; tests inject the virtual scheduler. */
     var attachmentReadDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val gatewayHttp: () -> com.hermesagent.mobile.data.gateway.GatewayHttp? = { null },
+
+    /**
+     * How a month divider is worded. Null means the shipped ICU formatter,
+     * which is resolved on first use — see [productionBucketLabel]. A plain JVM
+     * suite has no ICU at all, so it injects its own and this state machine
+     * stays drivable there; `IcuSessionBucketLabelTest` pins the real one under
+     * Robolectric.
+     */
+    private val bucketLabel: SessionBucketLabel? = null,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     /** UI routing state, never backend/session-cache authority. */
     private var botChatSessionId: String? = null
     /** Endpoint generations that minted the transient Bot Chat capability. */
     private var botChatEndpoint: BotChatEndpoint? = null
+
+    /**
+     * The shipped divider wording, resolved once and only when a list is
+     * actually built. It is ICU, which a plain JVM unit-test classpath does not
+     * carry: building it at construction made *every* plain JVM test that
+     * collects this state die on `ULocale.forLocale`, for a question most of
+     * them never asked. Building it here keeps it lazy per ViewModel rather than
+     * per emission, and only a month divider ever asks for it.
+     */
+    private val productionBucketLabel: SessionBucketLabel by lazy { IcuSessionBucketLabel() }
 
     private data class BotChatEndpoint(
         val cacheGeneration: Long,
@@ -937,6 +958,7 @@ internal class ChatViewModel(
                 searchPending = searchState.pending,
                 serverMatches = searchState.results,
                 archivedView = navigation.sidebarView.archivedVisible,
+                bucketLabel = bucketLabel ?: productionBucketLabel,
             ),
             archivedVisible = navigation.sidebarView.archivedVisible,
             archivedPool = navigation.sidebarView.archivedPool,

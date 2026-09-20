@@ -729,6 +729,11 @@ internal class GatewayConnectionManager(
             // A successful upgrade alone is not readiness. This authenticated
             // round trip proves the leg the app will actually use.
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
+            // And this is the round trip that makes the leg one a prompt may be
+            // parked on, on the same socket and before anything is published as
+            // connected — so the first session activation on this connection
+            // already rides an advertised one.
+            rpc.advertiseServerRequests()
 
             active = ActiveConnection.Local(rpc, profile)
             localRouteActive.set(true)
@@ -941,6 +946,9 @@ internal class GatewayConnectionManager(
                         // The authenticated RPC round trip, not merely a WS
                         // upgrade, is the readiness boundary.
                         rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
+                        // Same boundary, same socket: advertise before the
+                        // connection is published as one a prompt can park on.
+                        rpc.advertiseServerRequests()
                         mutex.withLock {
                             // `cancelRemoteSignIn` is the one competing path that
                             // does not bump the connect-intent generation — it
@@ -1110,6 +1118,9 @@ internal class GatewayConnectionManager(
             // A successful upgrade alone is not readiness. This authenticated
             // JSON-RPC round trip proves the leg the app will actually use.
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
+            // And the same socket says this client answers server→client
+            // requests, before anything is published as connected.
+            rpc.advertiseServerRequests()
 
             active = ActiveConnection.Ssh(transport, backend, forward, rpc)
             localRouteActive.set(false)

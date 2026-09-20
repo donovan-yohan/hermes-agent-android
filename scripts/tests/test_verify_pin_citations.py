@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-MODULE = pathlib.Path(__file__).with_name("verify-pin-citations.py")
+MODULE = pathlib.Path(__file__).resolve().parents[1] / "verify-pin-citations.py"
 spec = importlib.util.spec_from_file_location("verify_pin_citations", MODULE)
 assert spec and spec.loader
 verifier = importlib.util.module_from_spec(spec)

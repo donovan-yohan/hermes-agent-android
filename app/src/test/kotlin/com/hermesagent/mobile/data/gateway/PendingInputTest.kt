@@ -23,6 +23,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,6 +42,217 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingInputTest {
+    /**
+     * A method this client has no handler for gets exactly one refusal.
+     *
+     * Without it the backend waits out its own deadline — 300s for clarify —
+     * for a question no phone surface could ever answer. Desktop's own
+     * bridges (`terminal.read`, `preview.read`, `window.read`, `tour`) are the
+     * real population here: they are declared server requests this app has no
+     * card for, so a turn that needs one must fail fast rather than park.
+     */
+    @Test
+    fun `a request method with no handler is refused once, and parks nothing`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.ask("srq-bridge", "terminal.read", """{"range":"all"}""")
+        advanceUntilIdle()
+
+        val refusal = env.rpc.refused.single()
+        assertEquals("srq-bridge", refusal.id)
+        assertEquals(JSON_RPC_METHOD_NOT_FOUND, refusal.code)
+        assertTrue(
+            "the message names the method and claims no more",
+            refusal.message.contains("terminal.read"),
+        )
+        assertTrue("nothing is parked for a method this client cannot show", env.repository.pendingInputs.value.isEmpty())
+        assertTrue("and no answer frame was invented", env.rpc.answered.isEmpty())
+        assertEquals(
+            "a refused question is not a reason to park the session",
+            SessionStatus.Idle,
+            env.cache.session("durable-a")?.status,
+        )
+    }
+
+    /**
+     * The refusal is not a catch-all for every request this client drops.
+     *
+     * A *known* question for a session that is not bound yet is still
+     * answerable — the resume that binds it re-delivers it through
+     * `open_requests` — so refusing it would throw away a prompt that was about
+     * to have a card.
+     */
+    @Test
+    fun `a question for an unbound session is left for its resume, not refused`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        env.rpc.ask("srq-elsewhere", "clarify", CLARIFY_SINGLE, runtimeId = "runtime-not-open")
+        advanceUntilIdle()
+
+        assertTrue("an unbound session's question is not this connection's to refuse", env.rpc.refused.isEmpty())
+        assertTrue(env.repository.pendingInputs.value.isEmpty())
+    }
+
+    /**
+     * A reconnect's replay is the only delivery an unanswered question gets, so
+     * a method with no handler has to be refused there too.
+     *
+     * `open_requests` is re-delivered by every resume; a client that drops an
+     * unknown one here answers nothing, every time, and the backend's wait
+     * settles only on its own deadline. This is the same class as the live
+     * frame — and unlike a *known* replayed question, it needs no card, so an
+     * unbound session is no reason to withhold the refusal.
+     */
+    @Test
+    fun `an unknown method in open_requests is refused too`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-bridge","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
+        )
+
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        val refusal = env.rpc.refused.single()
+        assertEquals("srq-bridge", refusal.id)
+        assertEquals(JSON_RPC_METHOD_NOT_FOUND, refusal.code)
+        assertTrue("the replayed unknown method is named", refusal.message.contains("terminal.read"))
+        assertTrue("and nothing is parked for it", env.repository.pendingInputs.value.isEmpty())
+    }
+
+    /**
+     * Cancellation must escape a refusal, not be swallowed as a send failure.
+     *
+     * `refuseServerRequests` answers a replay's refusals one at a time. A
+     * cancelled open has to stop there: a `runCatching` around the send would
+     * eat the `CancellationException` and go on to answer the rest of the
+     * batch on a connection the app has already abandoned.
+     *
+     * Proven from both ends: the cancellation reaches the caller, and the
+     * second entry's refusal is never sent. The ordinary failure case beside it
+     * keeps its old behaviour — a broken send is still tolerated, because the
+     * backend owns its own timeout and nothing could act on the report.
+     */
+    @Test
+    fun `a cancelled refusal escapes instead of sending the rest of the replay`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-first","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
+            """{"id":"srq-second","method":"preview.read","params":{"session_id":"runtime-a"}}""",
+        )
+        // The first refusal is where this open is abandoned.
+        env.rpc.refusalFailure = kotlinx.coroutines.CancellationException("this open was abandoned")
+
+        val cancelled = runCatching { env.repository.openSession("durable-a") }.exceptionOrNull()
+        advanceUntilIdle()
+
+        assertTrue(
+            "cancellation must reach the caller, not be read as a send failure",
+            cancelled is kotlinx.coroutines.CancellationException,
+        )
+        assertTrue(
+            "and the first refusal did not go out as a normal answer",
+            env.rpc.refused.isEmpty(),
+        )
+    }
+
+    /**
+     * The behaviour the cancellation fix must not change: an ordinary send
+     * failure is tolerated, so the rest of the batch is still answered.
+     */
+    @Test
+    fun `an ordinary refusal send failure is still tolerated`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-first","method":"terminal.read","params":{"session_id":"runtime-a"}}""",
+            """{"id":"srq-second","method":"preview.read","params":{"session_id":"runtime-a"}}""",
+        )
+        env.rpc.refusalFailure = GatewayRpcException("The gateway connection could not send the response.")
+
+        val outcome = runCatching { env.repository.openSession("durable-a") }
+        advanceUntilIdle()
+
+        assertTrue("a broken send is not the open failing", outcome.isSuccess)
+        assertEquals("and the replay is still worked through", 1, env.rpc.refused.size)
+        assertEquals("srq-second", env.rpc.refused.single().id)
+    }
+
+    /**
+     * The same replay, with a *known* question in it: that one is the card's,
+     * so it is adopted rather than refused, and the unknown beside it is still
+     * refused exactly once. Interleaved in one snapshot on purpose — a fix that
+     * refused the lot, or ignored the lot, fails on one half or the other.
+     */
+    @Test
+    fun `a replay splits known questions into cards and unknown ones into refusals`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        env.rpc.resumeOverride = env.rpc.resumeWithOpenRequests(
+            "durable-a",
+            """{"id":"srq-known","method":"clarify","params":{"session_id":"runtime-a","question":"Proceed?"}}""",
+            """{"id":"srq-unknown","method":"preview.read","params":{"session_id":"runtime-a"}}""",
+        )
+
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        assertEquals("the known question is the one card", "srq-known", singlePending(env).key.requestId)
+        assertEquals("and the unknown one is answered once", 1, env.rpc.refused.size)
+        assertEquals("srq-unknown", env.rpc.refused.single().id)
+        assertEquals(JSON_RPC_METHOD_NOT_FOUND, env.rpc.refused.single().code)
+    }
+
+    /**
+     * A request that arrives only after the advertisement.
+     *
+     * The fake Gateway here withholds a question from a connection that never
+     * advertised, exactly as a current backend does
+     * (`tui_gateway/server_requests.py:117-122` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`). Both halves matter and are
+     * asserted: asked before the advertisement the card never appears, and
+     * asked after it — through the same `advertiseServerRequests()` the
+     * connection route uses — it does. Drop the advertisement from production
+     * and the second half fails.
+     */
+    @Test
+    fun `a question is withheld until the connection advertises, then delivered`() = runTest {
+        val env = environment(UnconfinedTestDispatcher(testScheduler), requireAdvertisement = true)
+        runCurrent()
+        env.repository.openSession("durable-a")
+        advanceUntilIdle()
+
+        assertFalse("an unadvertised connection never said it could answer", env.rpc.advertised)
+        env.rpc.ask("srq-too-early", "clarify", CLARIFY_SINGLE)
+        advanceUntilIdle()
+
+        assertTrue(
+            "a current backend writes no frame for a client that never advertised",
+            env.repository.pendingInputs.value.isEmpty(),
+        )
+
+        // The one call the connection makes on every dial, before any session
+        // is activated.
+        env.rpc.advertiseServerRequests()
+        assertTrue("the connection advertised before any session was activated", env.rpc.advertised)
+        env.rpc.ask("srq-after", "clarify", CLARIFY_SINGLE)
+        advanceUntilIdle()
+
+        assertEquals("the parked question is the delivered one", "srq-after", singlePending(env).key.requestId)
+        assertEquals(SessionStatus.NeedsInput, env.cache.session("durable-a")?.status)
+    }
+
     @Test
     fun `a clarify request parks its session with parsed choices`() = runTest {
         val env = environment(UnconfinedTestDispatcher(testScheduler))
@@ -554,11 +766,19 @@ class PendingInputTest {
     private fun environment(
         scopeDispatcher: kotlinx.coroutines.CoroutineDispatcher,
         sessions: List<String> = listOf("durable-a"),
+        /**
+         * Make this fake Gateway behave like a current one, which hands a
+         * question to a connection only once that connection has advertised
+         * (`tui_gateway/server_requests.py:117-122` @
+         * `d177b119e9c56c9ddc0b7379ffce52341ec06584`). Off by default so every
+         * other test in this file can ask without advertising first.
+         */
+        requireAdvertisement: Boolean = false,
     ): Environment {
         val scope = CoroutineScope(scopeDispatcher + Job())
         val cache = SessionCache()
         cache.upsertSessions(sessions.map(::summary))
-        val rpc = FakeRpc()
+        val rpc = FakeRpc(requireAdvertisement)
         val repository = LiveGatewaySessionRepository(
             cache,
             MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
@@ -580,13 +800,20 @@ class PendingInputTest {
     /** One response frame this client handed the wire. */
     private class AnswerFrame(val id: String, val result: JsonObject)
 
-    private class FakeRpc : GatewayRpcClient, GatewayServerRequestResponder {
+    /** One error response frame, for a request method this client has no handler for. */
+    private class RefusalFrame(val id: String, val code: Int, val message: String)
+
+    private class FakeRpc(
+        /** When set, a question is withheld until this connection advertises. */
+        private val requireAdvertisement: Boolean = false,
+    ) : GatewayRpcClient, GatewayServerRequestResponder {
         private val eventFlow = MutableSharedFlow<GatewayEvent>(replay = 64, extraBufferCapacity = 64)
         private val requestFlow = MutableSharedFlow<GatewayServerRequest>(replay = 64, extraBufferCapacity = 64)
         override val events = eventFlow
         override val serverRequests = requestFlow
         val calls = mutableListOf<RpcCall>()
         val answered = mutableListOf<AnswerFrame>()
+        val refused = mutableListOf<RefusalFrame>()
 
         /** What `clarify.lock` answers with; the last lock empties it. */
         var lockRemaining: List<String>? = null
@@ -594,9 +821,20 @@ class PendingInputTest {
         /** When set, every answer fails the way a closed or broken leg does. */
         var sendFailure: GatewayRpcException? = null
 
+        /**
+         * When set, the *first* refusal throws this. [failServerRequest] does
+         * not record the frame first, so a throw leaves `refused` untouched —
+         * which is what lets a test tell "the send happened" from "it did not".
+         */
+        var refusalFailure: Throwable? = null
+
         /** Holds the answer inside the transport, for the one-at-a-time guard. */
         var blockSend = false
         private var sendGate: CompletableDeferred<Unit>? = null
+
+        /** Whether this connection has said it answers server→client requests. */
+        var advertised = false
+            private set
 
         fun releaseSend() {
             sendGate?.complete(Unit)
@@ -604,6 +842,7 @@ class PendingInputTest {
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
+            if (method == CLIENT_CAPABILITIES_METHOD) advertised = true
             return when (method) {
                 "session.list" -> json("""{"sessions":[]}""")
                 "session.resume" -> json(resumeOverride ?: resumeBody(params.string("session_id").orEmpty()))
@@ -631,6 +870,15 @@ class PendingInputTest {
             answered += AnswerFrame(id, result)
         }
 
+        override suspend fun failServerRequest(id: String, code: Int, message: String) {
+            sendFailure?.let { throw it }
+            refusalFailure?.let { failure ->
+                refusalFailure = null
+                throw failure
+            }
+            refused += RefusalFrame(id, code, message)
+        }
+
         /** Overrides the canned resume snapshot for one test. */
         var resumeOverride: String? = null
 
@@ -642,6 +890,14 @@ class PendingInputTest {
                 """"inflight":null,"running":false,"session_key":"$durableId","started_at":1700001000.125,"status":"idle"}"""
         }
 
+        /**
+         * The same resume snapshot, plus the `open_requests` a reconnect
+         * re-delivers — each entry exactly as `snapshot()` writes it
+         * (`tui_gateway/server_requests.py:66-71` @ the snapshot).
+         */
+        fun resumeWithOpenRequests(durableId: String, vararg entries: String): String =
+            resumeBody(durableId).dropLast(1) + ""","open_requests":[${entries.joinToString(",")}]}"""
+
         fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull) {
             check(eventFlow.tryEmit(GatewayEvent(type, runtimeId, payload)))
         }
@@ -650,6 +906,11 @@ class PendingInputTest {
 
         /** One server→client request, exactly as the socket hands it over. */
         fun ask(id: String, method: String, body: String = "{}", runtimeId: String = "runtime-a") {
+            // A current backend does not write the frame at all for a client
+            // that never advertised, so a fake that still delivered one would
+            // hand this suite a prompt the real Gateway withholds — and every
+            // regression test below would pass against the bug.
+            if (requireAdvertisement && !advertised) return
             val params = buildJsonObject {
                 put("session_id", JsonPrimitive(runtimeId))
                 (json(body) as JsonObject).forEach { (key, value) -> put(key, value) }

@@ -199,6 +199,7 @@ class HermesApplication : Application() {
             endpointScopedState = {
                 updateController.reset()
                 gatewayThemes.resetForEndpointSwitch()
+                avatarRoster.reset()
             },
             endpointDispatchFence = endpointDispatchFence,
         )
@@ -341,6 +342,14 @@ class HermesApplication : Application() {
     internal val profileRepository: com.hermesagent.mobile.data.profiles.ProfileRepository by lazy {
         com.hermesagent.mobile.data.profiles.GatewayProfileRepository(
             rpc = { gatewayConnection.client.value },
+            avatarProducer = avatarRoster.open(com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator.Kind.Core),
+        )
+    }
+    /** A dedicated asset door; per-plugin host scopes and request cancellation stay unchanged. */
+    internal val avatarRoster by lazy {
+        com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator(
+            GatewayPluginHost(appScope, gatewayConnection.client, cache.endpointGeneration, endpointDispatchFence),
+            com.hermesagent.mobile.data.profiles.ProfileAvatarRepository(appScope),
         )
     }
     internal val composerQueueController: ComposerQueueController by lazy {
@@ -384,6 +393,8 @@ class HermesApplication : Application() {
                 override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                     gatewayConnection.applicationForegroundChanged(true)
                     notificationPresence.applicationForegroundChanged(true)
+                    avatarRoster.syncOwner()
+                    avatarRoster.refreshAvatars()
                 }
 
                 override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
@@ -395,7 +406,13 @@ class HermesApplication : Application() {
         gatewayActivity.start(appScope)
         startSessionNotifier()
         startTurnProtection()
-        pluginLoader.discover()
+        pluginLoader.discover(com.hermesagent.mobile.plugins.BundledPlugins.create(
+            com.hermesagent.mobile.plugins.bots.BotsPlugin(avatarRoster = avatarRoster),
+        ))
+        appScope.launch {
+            combine(gatewayConnection.client, cache.endpointGeneration) { _, _ -> Unit }
+                .collect { avatarRoster.syncOwner() }
+        }
         appScope.launch {
             followActiveConnection(
                 connections = preferences,

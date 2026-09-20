@@ -18,6 +18,31 @@
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".SessionListSectionsParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
         <activity android:name=".StickyPromptParityActivity" android:exported="true" android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".ToolNameAliasesParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".BotsRoutinesParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".GroupsParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
+        <activity
+            android:name=".ProfileAvatarsParityActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.HermesMobile" />
     </application>
 </manifest>

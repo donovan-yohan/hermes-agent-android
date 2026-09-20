@@ -96,6 +96,82 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Desktop's `SidebarPanelLabel`: the accent ink, the 0.16em tracking and the
+ * leading 8 px dither square
+ * (`apps/desktop/src/app/shell/sidebar-label.tsx:11-19` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`).
+ *
+ * One level above [DateDividerLabel]: this names a *section* (`Pinned`,
+ * `Sessions`), that one names a slice of time. Desktop draws them differently on
+ * purpose, and rendering both through one treatment is what flattened the
+ * hierarchy in #141.
+ *
+ * The dither takes the same accent as the words — Desktop's `dither` class
+ * inherits the label's `--theme-primary`, and nothing upstream overrides it.
+ */
+@Composable
+fun PanelLabel(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Tagged on a wrapper rather than on the glyph: `DitherMark` ends its
+        // modifier chain with `clearAndSetSemantics {}`, which would take the
+        // tag with everything else it clears.
+        Box(Modifier.testTag(SECTION_DITHER_TAG)) {
+            DitherMark(HermesTheme.tokens.accent)
+        }
+        Text(
+            text = text.uppercase(),
+            style = HermesTheme.type.panelLabel,
+            color = HermesTheme.tokens.accent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** The leading 8 px dither square a section caption carries and a divider does not. */
+const val SECTION_DITHER_TAG = "Section caption dither"
+
+/** The trailing hairline rule a date divider carries and a section caption does not. */
+const val DATE_DIVIDER_RULE_TAG = "Session date divider rule"
+
+/**
+ * Desktop's `SidebarDateDivider`: a `--ui-text-quaternary` caption at 0.12em
+ * tracking, trailed by a hairline rule that fills the remaining width
+ * (`apps/desktop/src/app/chat/sidebar/chrome.tsx:134-140` @ the pin).
+ *
+ * The rule is `--ui-stroke-tertiary`, Desktop's own in-panel divider, which is
+ * what [Hairline] already draws.
+ */
+@Composable
+fun DateDividerLabel(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = text.uppercase(),
+            style = HermesTheme.type.dateDivider,
+            color = HermesTheme.tokens.textQuaternary,
+            maxLines = 1,
+        )
+        // Desktop's `h-px min-w-4 flex-1`: the rule takes what the caption
+        // leaves, and never collapses below 16dp even when the caption is long.
+        Hairline(
+            modifier = Modifier
+                .weight(1f)
+                .widthIn(min = 16.dp)
+                .testTag(DATE_DIVIDER_RULE_TAG),
+            color = HermesTheme.tokens.strokeTertiary,
+        )
+    }
+}
+
+/**
  * The heading over one section of a menu or a popover.
  *
  * Desktop's `DropdownMenuLabel` is a quiet tertiary row above a separator
@@ -449,6 +525,13 @@ fun <T> SegmentedControl(
  * caller so far was wide enough only by accident, through `fillMaxWidth()` or a
  * long label. Padding stays as the *visual* rhythm; the floors only ever make
  * the box bigger.
+ *
+ * @param variant which filled action this is. The fill and its label ink are
+ *   read from one token pair, never taken as independent arguments: a caller
+ *   that could supply a fill on its own could supply one whose label is
+ *   illegible, which is exactly #140. Desktop pairs them the same way —
+ *   `button.tsx:19,21` @ `437116f9497c80d242ce034ff7f5d81dc277a337` writes
+ *   `bg-primary text-primary-foreground` and `bg-destructive text-white`.
  */
 @Composable
 fun PrimaryButton(
@@ -456,10 +539,17 @@ fun PrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    /** The one filled action's colour. Destructive confirmations own the exception. */
-    container: Color = HermesTheme.tokens.accent,
+    variant: FilledActionVariant = FilledActionVariant.Accent,
 ) {
     val tokens = HermesTheme.tokens
+    val container = when (variant) {
+        FilledActionVariant.Accent -> tokens.accent
+        FilledActionVariant.Destructive -> tokens.destructive
+    }
+    val ink = when (variant) {
+        FilledActionVariant.Accent -> tokens.filledActionInk
+        FilledActionVariant.Destructive -> tokens.destructiveActionInk
+    }
     Box(
         modifier = modifier
             .heightIn(min = HermesTheme.spacing.touchTarget)
@@ -475,10 +565,18 @@ fun PrimaryButton(
         Text(
             text = label,
             style = HermesTheme.type.caption,
-            color = if (enabled) tokens.accentForeground else tokens.accentForeground.copy(alpha = 0.6f),
+            color = if (enabled) ink else ink.copy(alpha = 0.6f),
         )
     }
 }
+
+/**
+ * The filled actions this app has. Destructive confirmations are the one
+ * exception to the accent fill, and both are painted from a token pair that
+ * keeps the fill and its ink together.
+ */
+enum class FilledActionVariant { Accent, Destructive }
+
 
 /**
  * Desktop's `size="sm" variant="outline"` button: a bordered, transparent
@@ -1093,7 +1191,7 @@ fun ChoiceButton(
                 !enabled -> tokens.textQuaternary
                 // On a solid accent fill the label is Desktop's
                 // `text-primary-foreground`, not the ordinary ink.
-                selected -> tokens.accentForeground
+                selected -> tokens.filledActionInk
                 else -> tokens.textSecondary
             },
         )

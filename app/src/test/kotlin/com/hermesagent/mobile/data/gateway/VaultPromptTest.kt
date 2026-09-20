@@ -371,6 +371,9 @@ class VaultPromptTest {
     /** One response frame this client handed the wire. */
     private class AnswerFrame(val id: String, val result: JsonObject)
 
+    /** One error response frame, for a request method this client has no handler for. */
+    private class RefusalFrame(val id: String, val code: Int, val message: String)
+
     private class FakeRpc : GatewayRpcClient, GatewayServerRequestResponder {
         private val eventFlow = MutableSharedFlow<GatewayEvent>(replay = 64, extraBufferCapacity = 64)
         private val requestFlow = MutableSharedFlow<GatewayServerRequest>(replay = 64, extraBufferCapacity = 64)
@@ -378,6 +381,7 @@ class VaultPromptTest {
         override val serverRequests = requestFlow
         val calls = mutableListOf<RpcCall>()
         val answered = mutableListOf<AnswerFrame>()
+        val refused = mutableListOf<RefusalFrame>()
 
         /** When set, every answer fails the way a closed or broken leg does. */
         var sendFailure: GatewayRpcException? = null
@@ -396,6 +400,11 @@ class VaultPromptTest {
         override suspend fun respondToServerRequest(id: String, result: JsonObject) {
             sendFailure?.let { throw it }
             answered += AnswerFrame(id, result)
+        }
+
+        override suspend fun failServerRequest(id: String, code: Int, message: String) {
+            sendFailure?.let { throw it }
+            refused += RefusalFrame(id, code, message)
         }
 
         fun emit(type: String, runtimeId: String?, payload: JsonElement = JsonNull) {

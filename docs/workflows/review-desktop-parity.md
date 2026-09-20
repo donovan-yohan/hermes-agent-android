@@ -237,6 +237,60 @@ python3 scripts/check-parity-evidence.py
 gate: it proves a report was named and every row was classified. It cannot see
 the pixels — that is what this checklist is for.
 
+### Moving a pin (`verify-pin-citations.py`)
+
+A page that restamps `## Pin` is making a claim about every citation under it:
+that the cited span is still the same span at the new SHA. Prove it before
+pushing, not after a reviewer does:
+
+```bash
+python3 scripts/verify-pin-citations.py --self-test          # the fixture; no network
+python3 scripts/verify-pin-citations.py \
+  --check-range "$(git merge-base origin/main HEAD)..HEAD" \
+  --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" \
+  --repo .
+```
+
+The gate reads the citations **out of the diff**, so a file whose stamp you have
+already rewritten is still checked — the `grep <old-sha>` scan the tool also
+offers drops exactly that file, which is why this mode exists. For each restamped
+file it takes the citations the change carried over and requires each to still be
+true at the SHA it now names, reporting the carrier `path:line` and the cited
+`path:ranges` when one is not:
+
+| Result | Meaning |
+|---|---|
+| `path-missing` | the cited path is absent from the new SHA (it moved or was deleted) |
+| `span-out-of-bounds` | the cited lines are past the end of the file at the new SHA |
+| `construct-moved` | the span's first and last lines now hold something else — the construct moved |
+| `unattributable` | the written shorthand has no candidate that uniquely owns the cited span (none fit, or several fit) |
+
+An edit *inside* a cited span is accepted: the first and last cited lines are
+what identify the construct, and #291's own correction moved the pin over
+exactly that shape (`statusbar.tsx:44-50` gained the ported `~` at `:46`). A
+citation you re-derived yourself is exempt — only the author knows what it
+claims — but it still has to fall inside the file it names.
+
+`--upstream` matters: the reference checkout is read-only, so nothing is ever
+fetched into it. Pass `--fetch` to let the tool build a throwaway clone of it
+and fetch the pins a shallow copy lacks; without `--fetch` a pin the checkout
+does not have is reported as *unprovable* (exit 2), which is deliberately a
+different answer from *wrong* (exit 1). CI runs this in the `pin citations` job
+over the pull request's own `base..head`, with `--fetch`.
+
+The exit codes are three different claims and are never conflated:
+
+| Exit | Claim |
+|---|---|
+| `0` | every citation the range restamped is true at the SHA it names |
+| `1` | at least one is not — each finding names its carrier `path:line` |
+| `2` | this checkout cannot read some cited pin, so nothing was proved |
+| `3` | the check could not run at all (bad revision, malformed range) |
+
+`3` exists so a tool or revision problem is not read as a bad citation: exit `1`
+is a verdict about citations, and reporting an unreadable range as one sends a
+reviewer hunting citations that are fine.
+
 ## 7. Post the verdict
 
 ```text

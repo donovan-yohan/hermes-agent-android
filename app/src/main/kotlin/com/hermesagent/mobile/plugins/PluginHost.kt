@@ -36,6 +36,10 @@ import kotlinx.serialization.json.JsonObject
  * a companion `private` is not visible to a sibling top-level class.
  */
 private val ENDPOINT_NEVER_MOVES: StateFlow<Long> = MutableStateFlow(0L)
+private val NO_READY_LEG: StateFlow<PluginConnectionToken?> = MutableStateFlow(null)
+
+/** An opaque identity, with no transport, credentials, or operations attached. */
+class PluginConnectionToken internal constructor()
 
 /**
  * The plugin-facing gateway door: JSON-RPC to the live connection, plus a tap
@@ -92,6 +96,17 @@ interface PluginHost {
             PluginHostResult.Refused(0, RECONNECT_MESSAGE)
         }
     }
+
+    /** Ready-leg identity; a transport reconnect changes it without changing endpointGeneration. */
+    val connectionToken: StateFlow<PluginConnectionToken?> get() = NO_READY_LEG
+
+    /** Bind a read sequence to both an endpoint and a ready leg. Unsupported doors fail closed. */
+    suspend fun requestAtConnection(
+        expectedEndpoint: Long,
+        token: PluginConnectionToken,
+        method: String,
+        params: JsonObject = JsonObject(emptyMap()),
+    ): PluginHostResult = PluginHostResult.Refused(0, RECONNECT_MESSAGE)
 
     /**
      * Whether a live connection exists behind this door, right now.
@@ -219,8 +234,43 @@ sealed interface PluginHostResult {
      * not be completed at all — no live connection, a transport failure, or an
      * exchange the Gateway never answered before its deadline. [safeMessage]
      * is this app's own sentence — never text the backend wrote.
+     *
+     * [reason] is the one machine datum this door forwards: a
+     * [PluginRefusalReason], never a string the backend chose. `null` is "no
+     * reason this build knows", an unrecognized string included, and the wire
+     * value never reaches a plugin — not even through `toString`.
      */
-    data class Refused(val code: Int, val safeMessage: String) : PluginHostResult
+    data class Refused(
+        val code: Int,
+        val safeMessage: String,
+        val reason: PluginRefusalReason? = null,
+    ) : PluginHostResult
+}
+
+/**
+ * The two reasons the hosted-room handlers answer as `error.data.reason`
+ * (`tui_gateway/methods_groups.py:206-210` and `gateway/hosted_rooms.py:185-198`
+ * @ `d177b119e9c56c9ddc0b7379ffce52341ec06584`). A closed set, and not every
+ * backend reason: `data.reason` also carries `prompt.submit`'s
+ * `SESSION_NOT_OWNED` (`data/gateway/GatewayRpc.kt`), which stays unnamed here.
+ * Anything else maps to `null` — [fromWire] is the only construction from wire
+ * data, and it matches exactly, so a reworded value is unknown, not misread.
+ */
+enum class PluginRefusalReason(val wireValue: String) {
+    /** The room was pruned; the id is retired forever. */
+    RoomHistoryExpired("room_history_expired"),
+
+    /** A stale authority tried to mutate the room's hosted state. */
+    AuthorityConflict("authority_conflict"),
+    ;
+
+    companion object {
+        private val byWireValue: Map<String, PluginRefusalReason> =
+            entries.associateBy { it.wireValue }
+
+        /** The reason [raw] names exactly, or null when it names none this build knows. */
+        fun fromWire(raw: String?): PluginRefusalReason? = raw?.let(byWireValue::get)
+    }
 }
 
 /**
@@ -284,6 +334,46 @@ internal class GatewayPluginHost(
     /** Shared with endpoint teardown; see [EndpointDispatchFence]. */
     private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
 ) : PluginHost {
+    private val tokenLock = Any()
+    private var tokenClient: GatewayRpcClient? = null
+    private var readyToken: PluginConnectionToken? = null
+
+    private fun snapshotToken(): PluginConnectionToken? = synchronized(tokenLock) {
+        val live = clients.value
+        if (live !== tokenClient) {
+            tokenClient = live
+            readyToken = live?.let { PluginConnectionToken() }
+        }
+        readyToken
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+    override val connectionToken: StateFlow<PluginConnectionToken?> by lazy {
+        val published = clients.map { snapshotToken() }
+            .stateIn(scope, SharingStarted.Eagerly, snapshotToken())
+        // Read-through value prevents a queued collector from advertising an old leg at dispatch.
+        object : StateFlow<PluginConnectionToken?> by published {
+            override val value: PluginConnectionToken? get() = snapshotToken()
+            override val replayCache: List<PluginConnectionToken?> get() = listOf(value)
+        }
+    }
+
+    override suspend fun requestAtConnection(
+        expectedEndpoint: Long,
+        token: PluginConnectionToken,
+        method: String,
+        params: JsonObject,
+    ): PluginHostResult {
+        val normalized = normalizePluginHostMethod(CALLER, method)
+        val rpc = endpointBoundClient(expectedEndpoint) as? EndpointDispatchingGatewayRpcClient
+            ?: return refusedWithoutRoute()
+        val stillOwns = {
+            endpointBoundClient(expectedEndpoint) === rpc && snapshotToken() === token && clients.value === rpc
+        }
+        val lease = endpointDispatchFence.leaseAt(expectedEndpoint, stillOwns) ?: return refusedWithoutRoute()
+        return requestAtEndpoint(rpc, normalized, params, lease, stillOwns)
+    }
+
     /**
      * The client slot as a readiness edge. `GatewayConnection` publishes the
      * client only after an authenticated round trip on the leg the app will
@@ -420,7 +510,7 @@ internal class GatewayPluginHost(
         if (error.code == METHOD_NOT_FOUND) {
             PluginHostResult.UnavailableOnGateway
         } else {
-            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE)
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, PluginRefusalReason.fromWire(error.reason))
         }
     } catch (_: GatewayRpcException) {
         PluginHostResult.Refused(0, RECONNECT_MESSAGE)
@@ -438,7 +528,7 @@ internal class GatewayPluginHost(
         if (error.code == METHOD_NOT_FOUND) {
             PluginHostResult.UnavailableOnGateway
         } else {
-            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE)
+            PluginHostResult.Refused(error.code ?: 0, REFUSED_MESSAGE, PluginRefusalReason.fromWire(error.reason))
         }
     } catch (_: GatewayRpcException) {
         PluginHostResult.Refused(0, RECONNECT_MESSAGE)

@@ -70,6 +70,88 @@ class GatewayGlobalEventsTest {
         assertEquals(GatewayEventLane.Session, gatewayEventLane("future.broadcast"))
     }
 
+    /**
+     * The deliverable of #212: admission, classification and routing are one
+     * table, and this probe enumerates the admitted set. The `when` below is
+     * exhaustive over [GatewayGlobalEventType], so a type added to the table
+     * does not compile until this test names its handler too — which is what
+     * stops a subscribed type from being silently unhandled.
+     */
+    @Test
+    fun `every admitted type reaches the handler its table entry names`() = runTest {
+        val lane = GatewayGlobalEventLane()
+        val hints = mutableListOf<GatewayChangeHint>()
+        val tap = launch { lane.changeHints.collect { hints += it } }
+        runCurrent()
+
+        // One membership question, asked twice: the allow-list is the table's
+        // own wire types, so a type classified `Global` cannot be unsubscribed
+        // and a subscribed type cannot fall out of the lane.
+        assertEquals(
+            "the allow-list must be the table's wire types",
+            GatewayGlobalEventType.entries.map { it.wire }.toSet(),
+            GATEWAY_GLOBAL_EVENT_TYPES,
+        )
+
+        GATEWAY_GLOBAL_EVENT_TYPES.forEach { type ->
+            assertEquals(
+                "$type is broadcast with no session to route by",
+                GatewayEventLane.Global,
+                gatewayEventLane(type),
+            )
+
+            val hintsBefore = hints.size
+            val refetchRequested = when (val entry = GatewayGlobalEventType.fromWire(type)) {
+                null -> org.junit.Assert.fail("$type is subscribed but names no table entry")
+
+                // The one frame that carries the process's seq numbering.
+                GatewayGlobalEventType.GatewayReady -> {
+                    assertEquals("$type must reach the global lane", GatewayGlobalEventOwner.Lane, entry.owner)
+                    lane.accept(ready("epoch-one"))
+                    assertEquals("$type must adopt the advertised epoch", "epoch-one", lane.replayEpoch())
+                    false
+                }
+
+                // The four change hints: each must publish its own kind.
+                GatewayGlobalEventType.CronChanged,
+                GatewayGlobalEventType.PetChanged,
+                GatewayGlobalEventType.SessionsChanged,
+                GatewayGlobalEventType.BotRelayOutbox,
+                -> {
+                    assertEquals("$type must reach the global lane", GatewayGlobalEventOwner.Lane, entry.owner)
+                    val refresh = lane.accept(sessionLess(type, JsonNull))
+                    runCurrent()
+                    assertEquals("$type reached no handler", hintsBefore + 1, hints.size)
+                    assertEquals("$type published the wrong kind", HINT_KIND_BY_ENTRY.getValue(entry), hints.last().kind)
+                    refresh
+                }
+
+                GatewayGlobalEventType.SessionReclaimed -> {
+                    // Settled by the repository's own reclaim path instead,
+                    // which holds the runtime identity map that settling and
+                    // unbinding need. The lane refusing it rather than claiming
+                    // it is what keeps that routing honest.
+                    assertEquals(
+                        "$type's handler is the repository's reclaim path",
+                        GatewayGlobalEventOwner.Reclaim,
+                        entry.owner,
+                    )
+                    val refresh = lane.accept(sessionLess(type, JsonNull))
+                    runCurrent()
+                    assertEquals("$type is not this lane's to settle", hintsBefore, hints.size)
+                    refresh
+                }
+            }
+
+            assertEquals(
+                "$type: only the sessions hint asks this repository for a refetch",
+                type == GatewayGlobalEventType.SessionsChanged.wire,
+                refetchRequested,
+            )
+        }
+        tap.cancel()
+    }
+
     @Test
     fun `a change hint carries its kind and the backend payload`() = runTest {
         val lane = GatewayGlobalEventLane()
@@ -221,4 +303,14 @@ class GatewayGlobalEventsTest {
     /** The envelope the socket builds for a broadcast: empty `session_id`, no `seq`. */
     private fun sessionLess(type: String, payload: JsonElement): GatewayEvent =
         GatewayEvent(type, null, payload)
+
+    private companion object {
+        /** What each hint type must publish; absent for the two lifecycle frames. */
+        val HINT_KIND_BY_ENTRY = mapOf(
+            GatewayGlobalEventType.CronChanged to GatewayChangeHintKind.Cron,
+            GatewayGlobalEventType.PetChanged to GatewayChangeHintKind.Pet,
+            GatewayGlobalEventType.SessionsChanged to GatewayChangeHintKind.Sessions,
+            GatewayGlobalEventType.BotRelayOutbox to GatewayChangeHintKind.BotRelayOutbox,
+        )
+    }
 }

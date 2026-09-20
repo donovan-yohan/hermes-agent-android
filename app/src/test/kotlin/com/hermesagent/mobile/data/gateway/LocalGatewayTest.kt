@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -152,7 +153,16 @@ class LocalGatewayTest {
         assertEquals(TOKEN, leg.healthToken)
         assertEquals("http://127.0.0.1:9119", leg.socketUrl)
         assertEquals("the socket is authenticated with the same token", TOKEN, leg.socketToken)
-        assertEquals(listOf("session.list"), leg.rpc.calls)
+        assertEquals(
+            "the advertisement rides the same socket, after the readiness round trip",
+            listOf("session.list", "client.capabilities"),
+            leg.rpc.calls,
+        )
+        assertEquals(
+            "explicitly true: a current backend parks no prompt here without it",
+            "true",
+            leg.rpc.callParams("client.capabilities").getValue("server_requests").jsonPrimitive.content,
+        )
         assertNotNull("the REST leg comes up with the socket", manager.gatewayHttp.value)
         assertNotNull(manager.imageLoader.value)
 
@@ -390,7 +400,11 @@ class LocalGatewayTest {
         assertEquals("http://127.0.0.1:9119", leg.healthCheckedUrl)
         assertEquals(TOKEN, leg.healthToken)
         assertEquals(TOKEN, leg.socketToken)
-        assertEquals(listOf("session.list"), leg.rpc.calls)
+        assertEquals(
+            "a restore dials the same gate in the same order, advertisement included",
+            listOf("session.list", "client.capabilities"),
+            leg.rpc.calls,
+        )
         assertNotNull(manager.gatewayHttp.value)
         assertEquals("an unattended dial never asks the port for a credential", 0, leg.scrapes)
 
@@ -683,13 +697,20 @@ class LocalGatewayTest {
         override val events = MutableSharedFlow<GatewayEvent>()
         override val closed = MutableSharedFlow<GatewayCloseCause>(replay = 1)
         val calls = mutableListOf<String>()
+        /** Every call's params, so an advertisement can be read back verbatim. */
+        val paramsByMethod = mutableMapOf<String, JsonObject>()
         var failRequests = false
         var socketClosed = false
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += method
+            paramsByMethod[method] = params
             if (failRequests) throw GatewayRpcException("The gateway connection closed.")
             return Json.parseToJsonElement("""{"sessions":[]}""")
+        }
+
+        fun callParams(method: String): JsonObject = requireNotNull(paramsByMethod[method]) {
+            "no call was made to $method"
         }
 
         override fun close() {

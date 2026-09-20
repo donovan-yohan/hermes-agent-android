@@ -297,7 +297,7 @@ private fun UrlReferenceSheet(onDismiss: () -> Unit, onInsert: (String) -> Unit)
             Text(
                 "Add URL",
                 style = HermesTheme.type.bodyStrong,
-                color = if (valid) tokens.accentForeground else tokens.textQuaternary,
+                color = if (valid) tokens.filledActionInk else tokens.textQuaternary,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = HermesTheme.spacing.touchTarget)

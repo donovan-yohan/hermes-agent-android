@@ -95,7 +95,20 @@ REQUIRED = (
     "~/.android/adb*",
     "./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache",
     "app/build/outputs/androidTest-results/connected/**",
+    # The pin-citation job. Its contract is the range it checks and the fact that
+    # it obtains an upstream checkout of its own: without one it would either pass
+    # by checking nothing or depend on somebody's workstation.
+    "citations:",
+    "name: pin citations",
+    "fetch-depth: 0",
+    "scripts/verify-pin-citations.py",
+    'git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL"',
+    "--upstream \"$upstream\" --fetch",
 )
+# A gate that runs on the wrong range is worse than no gate: it either blames a
+# branch for its base's history or checks nothing at all.
+CITATIONS_BASE = "${{ github.event.pull_request.base.sha || github.event.before }}"
+CITATIONS_HEAD = "${{ github.event.pull_request.head.sha || github.sha }}"
 # Only the opt-in seam is asserted here; the runtime `apksigner verify` step is
 # authoritative for the keystore's actual store/alias/password material.
 BUILD_REQUIRED = (
@@ -236,6 +249,62 @@ def main() -> int:
                 )
     if "needs: instrumented" in effective:
         failures.append("no job may gate on the instrumented lane; it is evidence, not a build step")
+
+    # The pin-citation job: it must exist, read the range from the event, and give
+    # the tool an upstream checkout of its own. A gate that reads the wrong range
+    # is worse than no gate — on a branch that trails main it would blame the
+    # branch for pins main moved, and then get switched off.
+    citations_job = _indented_block(effective, "  citations:")
+    if not citations_job:
+        failures.append(
+            "the pin-citation job is missing; verify-pin-citations.py would go back to "
+            "being a tool nobody runs"
+        )
+    else:
+        if "timeout-minutes:" not in citations_job:
+            failures.append("the pin-citation job must be time-bounded")
+        if "needs:" in citations_job:
+            failures.append(
+                "the pin-citation job must not depend on another job; a citation in a "
+                "docs-only change must not wait on an emulator"
+            )
+        if CITATIONS_BASE not in citations_job or CITATIONS_HEAD not in citations_job:
+            failures.append(
+                "the pin-citation job must check the pull request's own range "
+                "(base..head), not a fixed branch"
+            )
+        # A pull request's base is the target branch's tip, so against a branch
+        # that trails main a two-dot range reads main's own pin moves as this
+        # change's reverses. The merge-base form is the range a reviewer reads.
+        if "..." not in citations_job:
+            failures.append(
+                "the pin-citation job must resolve a pull request's range from its "
+                "merge base (base...head); two-dot would blame the branch for pins "
+                "the target branch moved after it forked"
+            )
+        if "fetch-depth: 0" not in citations_job:
+            failures.append(
+                "the pin-citation job must fetch the range's history; a shallow "
+                "checkout has no base to diff against"
+            )
+        if "--fetch" not in citations_job:
+            failures.append(
+                "the pin-citation job must pass --fetch; a shallow clone lacks the pins "
+                "the range cites"
+            )
+        if "--self-test" not in citations_job:
+            failures.append(
+                "the pin-citation job must run --self-test, so the gate proves it still "
+                "fails a drifted span even when the range moves no pin"
+            )
+        # The job exists because it needs an upstream checkout and nothing else
+        # provides one. Pointed at a workstation's checkout it would pass by
+        # finding nothing, which is the failure mode a gate must never have.
+        if "git clone" not in citations_job:
+            failures.append(
+                "the pin-citation job must obtain its own upstream checkout; without "
+                "one it depends on somebody's workstation and proves nothing in CI"
+            )
 
     for owner, repo, ref in ACTION_USE.findall(effective):
         if owner == FIRST_PARTY_ACTION_OWNER:

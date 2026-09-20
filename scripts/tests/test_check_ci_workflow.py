@@ -255,6 +255,116 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         self.assertNotEqual(self.valid_build_text, broken_build)
         self.assertEqual(1, self._run(self.valid_text, broken_build))
 
+    # The pin-citation job. Every rule above has a test that breaks it; these do
+    # the same for the rules that keep `verify-pin-citations.py` wired into CI,
+    # because a gate nobody runs is the failure this job was created to end.
+    # Each asserts the *specific* failure, so a rule going dead is caught rather
+    # than being masked by an unrelated one that happens to trip too.
+
+    def _run_captured(self, text: str) -> tuple[int, str]:
+        checker.WORKFLOW.write_text(text, encoding="utf-8")
+        checker.BUILD_FILE.write_text(self.valid_build_text, encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = checker.main()
+        return code, output.getvalue()
+
+    def _without_citations_job(self) -> str:
+        start = self.valid_text.index("  citations:\n")
+        end = self.valid_text.index("  instrumented:\n")
+        return self.valid_text[:start] + self.valid_text[end:]
+
+    def _assert_reports(self, broken: str, expected: str) -> None:
+        self.assertNotEqual(self.valid_text, broken)
+        code, output = self._run_captured(broken)
+        self.assertEqual(1, code, output)
+        self.assertIn(expected, output)
+
+    def test_rejects_removed_pin_citation_job(self) -> None:
+        self._assert_reports(
+            self._without_citations_job(),
+            "the pin-citation job is missing",
+        )
+
+    def test_rejects_unbounded_pin_citation_job(self) -> None:
+        self._assert_reports(
+            self.valid_text.replace("    timeout-minutes: 10\n", "", 1),
+            "the pin-citation job must be time-bounded",
+        )
+
+    def test_rejects_pin_citation_job_gated_on_another_job(self) -> None:
+        broken = self.valid_text.replace(
+            "  citations:\n", "  citations:\n    needs: check\n", 1
+        )
+        self._assert_reports(
+            broken,
+            "the pin-citation job must not depend on another job",
+        )
+
+    def test_rejects_pin_citation_job_on_a_fixed_branch(self) -> None:
+        # A fixed range either blames a branch for pins `main` moved under it or
+        # checks nothing at all; both get the gate switched off.
+        broken = self.valid_text.replace(
+            "${{ github.event.pull_request.base.sha || github.event.before }}",
+            "origin/main",
+            1,
+        )
+        self._assert_reports(
+            broken,
+            "the pin-citation job must check the pull request's own range",
+        )
+
+    def test_rejects_pin_citation_job_without_a_merge_base_range(self) -> None:
+        # Two-dot against a pull request's base tip reads every pin `main` moved
+        # after the fork as this branch's reverse, so the gate would report the
+        # target branch's own history as the change's moves.
+        broken = self.valid_text.replace(
+            'range="${BASE_SHA}...${HEAD_SHA}"', 'range="${BASE_SHA}..${HEAD_SHA}"', 1
+        )
+        self._assert_reports(
+            broken,
+            "must resolve a pull request's range from its merge base",
+        )
+
+    def test_rejects_pin_citation_job_without_range_history(self) -> None:
+        broken = self.valid_text.replace("          fetch-depth: 0\n", "", 1)
+        self._assert_reports(
+            broken,
+            "must fetch the range's history",
+        )
+
+    def test_rejects_pin_citation_job_without_fetch(self) -> None:
+        broken = self.valid_text.replace(
+            '            --upstream "$upstream" --fetch\n',
+            '            --upstream "$upstream"\n',
+            1,
+        )
+        self._assert_reports(broken, "must pass --fetch")
+
+    def test_rejects_pin_citation_job_without_self_test(self) -> None:
+        # Without the fixture the gate can pass by checking nothing whenever the
+        # range happens to move no pin, which is most ranges.
+        broken = self.valid_text.replace(
+            "          python3 scripts/verify-pin-citations.py --self-test\n",
+            "",
+            1,
+        )
+        self._assert_reports(broken, "must run --self-test")
+
+    def test_rejects_pin_citation_job_without_its_own_upstream(self) -> None:
+        # The job's whole reason for being separate: it obtains the upstream
+        # checkout itself. Left to a workstation's checkout it proves nothing in
+        # CI, which is the only place it runs unattended.
+        broken = self.valid_text.replace(
+            '          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream"\n',
+            "",
+            1,
+        )
+        self._assert_reports(
+            broken,
+            "the pin-citation job must obtain its own upstream checkout",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

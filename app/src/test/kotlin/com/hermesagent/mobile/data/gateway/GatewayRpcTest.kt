@@ -538,6 +538,97 @@ class GatewayRpcTest {
         assertTrue("a closed leg takes no frame", wire.frames.isEmpty())
     }
 
+    /**
+     * The advertisement itself, on the real correlated client: one call, an
+     * explicit `true`, and the response settling it like any other request.
+     */
+    @Test
+    fun `the capability advertisement is one explicit call settled by its response`() = runTest {
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+
+        val advertisement = async { rpc.advertiseServerRequests() }
+        runCurrent()
+
+        val frame = Json.parseToJsonElement(wire.frames.single()).jsonObject
+        assertEquals("client.capabilities", frame["method"]?.jsonPrimitive?.content)
+        assertEquals("true", frame["params"]?.jsonObject?.get("server_requests")?.jsonPrimitive?.content)
+
+        rpc.receive(
+            """{"jsonrpc":"2.0","id":"${frame.getValue("id").jsonPrimitive.content}","result":{"server_requests":["clarify","approval"]}}""",
+        )
+        advanceUntilIdle()
+
+        assertTrue("nothing to report: the backend recorded it", advertisement.await() == Unit)
+        assertEquals("one frame, once", 1, wire.frames.size)
+    }
+
+    /**
+     * A backend from before the method is not a failed connection, and the
+     * proof is that the call completes — nothing is thrown for it to land on.
+     */
+    @Test
+    fun `a backend without the method answers -32601 and the advertisement completes`() = runTest {
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+
+        val advertisement = async { rpc.advertiseServerRequests() }
+        runCurrent()
+        rpc.receive("""{"jsonrpc":"2.0","id":"m1","error":{"code":-32601,"message":"unknown method"}}""")
+        advanceUntilIdle()
+
+        assertEquals(Unit, advertisement.await())
+    }
+
+    /**
+     * Fail closed. Only `-32601` is compatibility; a refused credential or a
+     * protocol failure is this connection failing and must reach the connect.
+     */
+    @Test
+    fun `the advertisement fails closed on any error but method-not-found`() = runTest {
+        val refused = RecordingWire()
+        val refusedRpc = CorrelatedGatewayRpc(refused)
+        // Caught inside the coroutine: the point is the failure's shape, and a
+        // deferred that fails would take the test scope down with it.
+        val refusal = async { runCatching { refusedRpc.advertiseServerRequests() } }
+        runCurrent()
+        refusedRpc.receive("""{"jsonrpc":"2.0","id":"m1","error":{"code":401,"message":"unauthorized"}}""")
+        advanceUntilIdle()
+
+        val failure = refusal.await().exceptionOrNull()
+        assertTrue("an auth failure is not legacy compatibility", failure is GatewayRpcError)
+        assertEquals(401, (failure as GatewayRpcError).code)
+
+        // A closed leg never reaches the wire, and reports that rather than
+        // pretending the backend was old.
+        val closedWire = RecordingWire()
+        val closedRpc = CorrelatedGatewayRpc(closedWire)
+        closedRpc.close()
+        val closedFailure = runCatching { closedRpc.advertiseServerRequests() }.exceptionOrNull()
+        assertTrue(closedFailure is GatewayRpcException)
+        assertTrue("a closed leg takes no frame", closedWire.frames.isEmpty())
+    }
+
+    /**
+     * The `-32601` this client sends back for a method it has no handler for:
+     * one error frame, the request's own id, and no `result` beside it.
+     */
+    @Test
+    fun `an unhandled request method is answered with exactly one method-not-found frame`() = runTest {
+        val wire = RecordingWire()
+        val rpc = CorrelatedGatewayRpc(wire)
+
+        rpc.failServerRequest("srq-unknown", JSON_RPC_METHOD_NOT_FOUND, "no handler for server request: terminal.read")
+
+        val frame = Json.parseToJsonElement(wire.frames.single()).jsonObject
+        assertEquals("2.0", frame["jsonrpc"]?.jsonPrimitive?.content)
+        assertEquals("srq-unknown", frame["id"]?.jsonPrimitive?.content)
+        assertFalse("an error frame is not a method call", frame.containsKey("method"))
+        assertFalse("an error frame carries no result", frame.containsKey("result"))
+        val error = frame.getValue("error").jsonObject
+        assertEquals("-32601", error["code"]?.jsonPrimitive?.content)
+    }
+
     private fun requestId(frame: String): String =
         Json.parseToJsonElement(frame).jsonObject.getValue("id").jsonPrimitive.content
 

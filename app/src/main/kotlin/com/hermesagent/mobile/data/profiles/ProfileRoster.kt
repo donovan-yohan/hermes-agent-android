@@ -58,8 +58,12 @@ class ProfileRosterCache {
      * epoch check and the write are one step, so an [invalidate] cannot land
      * between them and let a stranded answer through.
      */
-    fun publish(epoch: Long, rows: List<HermesProfile>): Boolean = synchronized(epochLock) {
+    fun publish(epoch: Long, rows: List<HermesProfile>): Boolean = publishAccepted(epoch) { rows }
+
+    /** Accept attached permissions under the same epoch lock as row publication. */
+    internal fun publishAccepted(epoch: Long, accept: () -> List<HermesProfile>?): Boolean = synchronized(epochLock) {
         if (epoch != this.epoch) return false
+        val rows = accept() ?: return false
         _state.update { current ->
             if (current.loaded && rows == current.profiles) current
             else current.copy(profiles = rows, loaded = true)

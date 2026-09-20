@@ -4,6 +4,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+/**
+ * Configuration for the opt-in live-Gateway lane (`LiveGatewaySmokeTest`).
+ *
+ * Declared here rather than inline so the one test class that depends on them
+ * and the build that forwards them name the same four keys. Unset by default,
+ * which is what keeps `check` and CI from ever starting a Gateway.
+ */
+val liveGatewayProperties = listOf(
+    "hermes.liveGateway",
+    "hermes.liveGateway.driver",
+    "hermes.liveGateway.project",
+    "hermes.liveGateway.python",
+)
+
 android {
     namespace = "com.hermesagent.mobile"
     compileSdk = 36
@@ -81,6 +95,18 @@ android {
             // the mockable android.jar — including the java.* classes Android
             // ships — so a real call like CharArray.fill() silently becomes a
             // no-op and a test can pass while the code does nothing.
+            //
+            // The opt-in live-Gateway lane is configured by `-D` properties at
+            // the Gradle invocation, which do not reach the test JVM on their
+            // own, and the whole point of that lane is that it never runs
+            // unless it was asked for. Forwarding is unconditional and empty by
+            // default, so `check` and CI stay Gateway-free: no property set, no
+            // process started, and `LiveGatewaySmokeTest` reports skipped.
+            all {
+                liveGatewayProperties.forEach { name ->
+                    System.getProperty(name)?.let { value -> it.systemProperty(name, value) }
+                }
+            }
         }
     }
 
@@ -116,6 +142,30 @@ tasks.named("check") {
     // and dexing is where a rule like "no method names with spaces below
     // minSdk 30" actually bites.
     dependsOn("assembleDebugAndroidTest")
+}
+
+/**
+ * The opt-in live-Gateway lane must never be served from Gradle's up-to-date or
+ * build-cache machinery.
+ *
+ * That lane's real inputs are an external Python interpreter, a read-only
+ * upstream snapshot and a server process — none of which is a declared input of
+ * a JVM test task, and any of which can change under a green result. Gradle
+ * would happily report `UP-TO-DATE` (or replay a cached result) for a run that
+ * never happened, which is false evidence of exactly the kind this slice exists
+ * to remove, so when — and only when — the lane is opted into, the test task is
+ * forced to execute and is barred from the build cache.
+ *
+ * Non-opted runs are untouched: `check` and CI keep their normal caching.
+ */
+val liveGatewayOptIn: String? = System.getProperty("hermes.liveGateway")
+    ?: (project.findProperty("hermes.liveGateway") as String?)
+
+tasks.withType<Test>().configureEach {
+    if (!liveGatewayOptIn.isNullOrBlank()) {
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+    }
 }
 
 kotlin {

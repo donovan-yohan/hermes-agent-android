@@ -53,6 +53,125 @@
           "post_interaction_accessibility": "Turn on photo access. Show recent images in this sheet"
         }
       }
+    },
+    "bot-group-chat": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "bot-group-chat-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.GroupsParityActivity",
+      "desktop_selector": ".flex.items-center.gap-2",
+      "desktop_selector_note": "Source-only boundary: group-chat-view.tsx:672 has these header classes, which are not unique. A Desktop renderer must scope to the group workspace before capture. No Desktop pixels are claimed.",
+      "states": {
+        "populated": {
+          "interaction": ["tap:Planning"],
+          "post_interaction_accessibility": "Review the release plan.",
+          "fixture_note": "Production GroupsRepository, GroupsViewModel and GroupsScreen over synthetic hosted-room wire data. Tap the real list row to open the room. Desktop still uses a different store; no rendered Desktop half exists."
+        },
+        "read-failure": {
+          "interaction": [],
+          "post_interaction_accessibility": "Could not load Group Chats. Try again.",
+          "fixture_note": "Production list after a refused read, with its real Retry. Android capture is owed to CI; Desktop evidence is source-only."
+        }
+      }
+    },
+    "profile-avatars": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "profile-avatars-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+      "desktop_selector": "button:has(img[src^=\"data:image/png;base64,\"]) filtered hasText Alpha",
+      "desktop_selector_note": "Observed executed CSS locator from the pinned BotFace E2E sandbox: page.locator('button:has(img[src^=\"data:image/png;base64,\"])').filter({ hasText: 'Alpha' }) matched exactly one visible synthetic Alpha row. The executed assertions also proved .profile-glyph and button:has(img[src*=\"avatar.png\"]) match zero. This is Bots-only evidence, not profile-rail ProfileGlyph parity; fallback-only states do not use this locator.",
+      "states": {
+        "profile-ready": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-fallback": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-loading": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "profile-unavailable": { "interaction": [], "post_interaction_accessibility": "Synthetic avatar" },
+        "bots-ready": { "interaction": [], "post_interaction_accessibility": "Bots" },
+        "bots-fallback": { "interaction": [], "post_interaction_accessibility": "Bots" }
+      }
+    },
+    "bot-routines": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "bot-routines-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+      "desktop_selector": ".flex.h-full.flex-col",
+      "desktop_selector_note": "The RoutinesPane root class at the pin (`cron.tsx:1250`, `<div className=\"flex h-full flex-col\">`). The pin carries no `data-slot` or other stable hook on this pane, so this class list is the only source-derived selector available — and it is NOT unique: the same utility classes are used by other full-height columns in Desktop. A Desktop capture must therefore scope it to the Routines pane's own subtree before trusting it, or wait for a stable hook upstream. No Desktop capture exists for this surface, and no selector is invented to imply one does.",
+      "states": {
+        "populated": {
+          "interaction": [],
+          "post_interaction_accessibility": "Morning digest",
+          "fixture_note": "The production BotsRoutinesScreen over the production view model, one bot's store as cron.manage {action:list, include_disabled:true} sends it with the scoped echo the pinned Gateway returns: an active routine, a paused one, a schedule the label passes through, and a legacy delegated routine. Desktop's own counterpart is not captured at its pin, so no same-pin Desktop half exists for this surface yet — the Android packet stands alone and the parity page records Desktop as pending. No interaction: the destination is entered by the roster row's icon-only control, which publishes no text for this lane to tap."
+        },
+        "read-failure": {
+          "interaction": [],
+          "post_interaction_accessibility": "The list may still be there — this was a read failure, not a delete.",
+          "fixture_note": "The same production surface after a refused read with nothing held: the failure card and its Retry. Desktop's own counterpart is not captured at its pin; see the populated state's note."
+        },
+        "pause-pending": {
+          "interaction": [],
+          "post_interaction_accessibility": "Resume cron",
+          "fixture_note": "Production act pauses Morning digest optimistically while the synthetic host holds its acknowledgement. Its switch and delete are disabled; unrelated rows remain actionable. No Desktop pixels claimed."
+        },
+        "action-rollback": {
+          "interaction": [],
+          "post_interaction_accessibility": "Failed to update cron job",
+          "fixture_note": "Production act receives success:false and rolls back Morning digest. The subsequent read fails, retaining the row with safe failure and stale notices. No backend prose or Desktop pixels."
+        },
+        "resumed": {
+          "interaction": [],
+          "post_interaction_accessibility": "Nightly sweep",
+          "fixture_note": "Production resume is acknowledged and reconciled; Nightly sweep is active. Fixed original fixture clock; no Desktop pixels claimed."
+        },
+        "deleted": {
+          "interaction": [],
+          "post_interaction_accessibility": "Nightly sweep",
+          "fixture_note": "Production direct row delete is acknowledged and reconciled; Morning digest is absent. Desktop has no confirmation for this row action. No Desktop pixels claimed."
+        }
+      }
+    },
+    "session-list-sections": {
+      "desktop_sha": "437116f9497c80d242ce034ff7f5d81dc277a337",
+      "fixture_id": "session-list-sections-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity",
+      "desktop_selector": "[data-sessions-mode]",
+      "states": {
+        "pinned-sessions-month-dividers": {
+          "interaction": [],
+          "post_interaction_accessibility": "Head row alpha. Idle. Updated 12 minutes ago",
+          "fixture_note": "The seeded list from its head, on the same phone-sized pane every other state uses: PINNED, SESSIONS, the unlabelled head run, EARLIER TODAY. The fourteen-row seed is taller than the phone, so the month tail belongs to the months-scrolled state rather than to a claim this capture cannot show. The Desktop packet for #141/#299 was captured under this same state name from the same seed and clock."
+        },
+        "months-scrolled": {
+          "interaction": ["swipe:list-up"],
+          "post_interaction_accessibility": "November 2025 lima. Idle. Updated 309 days ago",
+          "fixture_note": "The same fourteen-row seed, dragged to its own end by the capture lane's bounded real adb swipes: the screen centre, 0.75H to 0.25H of the height `wm size` reports, at most 12 drags and then drags until the tree stops changing. One real render, one screencap, taken at the list's real end where the month dividers live — no grown pane, no shortened seed, no stitched pixels. The lane fails if the row never publishes."
+        },
+        "results": {
+          "interaction": [],
+          "post_interaction_accessibility": "Head row alpha. Idle. Updated 12 minutes ago",
+          "fixture_note": "The same seeded rows under a live query, so the list answers in one RESULTS section. Desktop has no rendered counterpart at this pin."
+        },
+        "all-pinned": {
+          "interaction": ["swipe:list-up"],
+          "post_interaction_accessibility": "Everything here is pinned. Unpin a chat to show it in recents.",
+          "fixture_note": "The same fourteen-row seed with every row pinned, which empties the recents pool and makes Desktop's all-pinned sentence the list's final row — below the phone's fold, so it is reached the way months-scrolled is, by the lane's bounded real swipes, and the catalogued evidence is that final note rather than the last row above it. Desktop has no rendered counterpart at this pin."
+        },
+        "archived-pinned": {
+          "interaction": [],
+          "post_interaction_accessibility": "Pinned design review. Archived. Updated 20 minutes ago",
+          "fixture_note": "The same fourteen-row seed, every row archived, in the Archived view (#146). The two seeded pins file under PINNED above the rest of the pool, which is headed by SESSIONS and takes no date dividers; the evidence is the pinned archived row that leads the list, because the pin staying visible in this view is the fix. Desktop's committed counterpart is docs/parity/visual/session-list-archived-view/desktop/ — node text `PINNED Refactor auth middleware 26m SESSIONS Onboarding copy pass 2d` — but that packet is pinned at `3ca096de` and the Android half of it was captured pre-fix, so this state is the fresh render of the same shape."
+        }
+      }
+    },
+    "tool-name-aliases": {
+      "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
+      "fixture_id": "tool-name-aliases-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ToolNameAliasesParityActivity",
+      "desktop_selector": "[data-slot=\"tool-block\"]",
+      "states": {
+        "todo-name-aliases": {
+          "interaction": [],
+          "post_interaction_accessibility": "Tool Updated todos, done",
+          "fixture_note": "Both wire spellings of the task tool over one identical synthetic payload (an explicit count of 2), with the composer task panel beneath them derived from a stored `todo_list` history through the production parser `latestComposerTodosFromHistory` (#284). The evidence is that the legacy row and the pinned row are one row: same title, same glyph, same count, same spoken description — `Tool Updated todos, done` is published twice. The panel is a real `ComposerStatusStack` over real `ComposerTodoStatus` rows, not a stand-in. The rows are mounted deliberately because a real turn hoists a task tool out of the transcript entirely, so no live session can show this seam. `desktop_selector` names Desktop's tool-block container. Desktop's half of this capture is source-only: no E2E fixture was identified at `d177b119e9c56c9ddc0b7379ffce52341ec06584` that mounts Desktop's tool block or task panel over synthetic state, so the packet names the pinned `Updated todos` title (`apps/desktop/src/i18n/en.ts:4368`) and the `todo` icon entry (`apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:212`) with no companion rendered Desktop pixels rather than inventing a same-pin comparison. The Android row title therefore moves from the old `Todo` fallback to Desktop's `Updated todos` — a deliberate copy change ledgered in `docs/parity/tool-output-fidelity.md`."
+        }
+      }
     }
   }
 }

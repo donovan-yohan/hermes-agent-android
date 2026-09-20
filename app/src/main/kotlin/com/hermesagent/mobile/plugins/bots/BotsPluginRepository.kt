@@ -2,6 +2,9 @@ package com.hermesagent.mobile.plugins.bots
 
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostResult
+import com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator
+import com.hermesagent.mobile.data.profiles.ProfileAvatarRef
+import com.hermesagent.mobile.data.profiles.avatarWireName
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -32,6 +35,50 @@ sealed interface BotsRosterLoad {
     data class Refused(val safeMessage: String) : BotsRosterLoad
 }
 
+/**
+ * The bot-scoped Routines read.
+ *
+ * The handler is `cron.manage` (`tui_gateway/methods_tools.py:1075-1085` @
+ * `d177b119e9c56c9ddc0b7379ffce52341ec06584`), which forwards
+ * `{action:"list", include_disabled:<bool>}` to `cronjob()` and honours an
+ * optional `profile` by scoping the whole read to that profile's cron store,
+ * echoing it back as `scoped`. The profile has to exist in the Gateway's own
+ * registry — an unknown one answers JSON-RPC `4064 profile '<p>' not found`
+ * (`methods_tools.py:56-60`) — so the name is sent verbatim from the roster row
+ * that came off that same Gateway, never slugged or lower-cased on the way out.
+ *
+ * `enabled:true` is not something this app can ask for. It is a member of the
+ * job's own record, and the Gateway derives `state` from it and passes an
+ * unrecognised stored state through verbatim (`cron/jobs.py:525-538`), which is
+ * why [parseRoutineJobs] reads a closed set of words and calls anything else
+ * [RoutineRunState.Unknown] rather than rendering it.
+ *
+ * Reads never mutate, including legacy jobs. Existing-row writes use the
+ * separate [BotsPluginRepository.mutateRoutine] door; creation and Desktop's
+ * legacy auto-pause sweep (`cron.tsx:131-166`) remain outside this slice.
+ */
+sealed interface BotsRoutinesLoad {
+    /** The Gateway answered with a list scoped to the requested bot. */
+    data class Loaded(val jobs: List<RoutineRow>, val scoped: String?) : BotsRoutinesLoad
+
+    /**
+     * The Gateway answered, and the answer is not this bot's store: its
+     * `scoped` echo names a different profile, so the rows belong to a bot the
+     * person did not ask for. Refused rather than filtered — see
+     * [selectRoutineJobs].
+     */
+    data class MismatchedScope(val requested: String) : BotsRoutinesLoad
+
+    /** The Gateway answered `success:false` inside a successful envelope. */
+    data object Rejected : BotsRoutinesLoad
+
+    /** This Gateway build does not serve `cron.manage` (`-32601`). */
+    data object UnavailableOnGateway : BotsRoutinesLoad
+
+    /** The call reached the Gateway and did not produce a readable list. */
+    data class Refused(val safeMessage: String) : BotsRoutinesLoad
+}
+
 /** The only conclusions a read-only canonical lookup is allowed to make. */
 sealed interface BotChatLookup {
     /** The registry named exactly one exact-title row; `resolved_id` wins over `id`. */
@@ -60,9 +107,31 @@ sealed interface BotChatOpen {
     data object Unsafe : BotChatOpen
 }
 
-class BotsPluginRepository(private val host: PluginHost) {
+class BotsPluginRepository(
+    private val host: PluginHost,
+    private val avatarProducer: AvatarRosterCoordinator.Producer? = null,
+) {
 
-    suspend fun loadRoster(): BotsRosterLoad = when (
+    internal fun invalidateAvatarRoster() { avatarProducer?.invalidate() }
+
+    suspend fun loadRoster(): BotsRosterLoad {
+        if (avatarProducer == null) return loadRosterWithoutAvatars()
+        val read = avatarProducer.begin() ?: return BotsRosterLoad.Refused(UNREADABLE_ROSTER)
+        return when (val result = read.request(includeSessions = true)) {
+            is PluginHostResult.Success -> {
+                if ((result.result as? JsonObject)?.get("profiles") !is JsonArray) return BotsRosterLoad.Refused(UNREADABLE_ROSTER)
+                val refs = avatarProducer.accept(read, result.result) ?: return BotsRosterLoad.Refused(UNREADABLE_ROSTER)
+                BotsRosterLoad.Loaded(checkNotNull(parseBotsRoster(result.result, refs)))
+            }
+            PluginHostResult.UnavailableOnGateway -> {
+                avatarProducer.invalidate()
+                BotsRosterLoad.UnavailableOnGateway
+            }
+            is PluginHostResult.Refused -> BotsRosterLoad.Refused(result.safeMessage)
+        }
+    }
+
+    private suspend fun loadRosterWithoutAvatars(): BotsRosterLoad = when (
         val result = host.request(
             method = PROFILES_LIST,
             params = buildJsonObject { put("include_sessions", JsonPrimitive(true)) },
@@ -76,6 +145,70 @@ class BotsPluginRepository(private val host: PluginHost) {
         PluginHostResult.UnavailableOnGateway -> BotsRosterLoad.UnavailableOnGateway
 
         is PluginHostResult.Refused -> BotsRosterLoad.Refused(result.safeMessage)
+    }
+
+    /**
+     * Read the routines scoped to [profile].
+     *
+     * `include_disabled` is always `true` and is asserted in the request
+     * shape, not only in the parse: the Gateway hides paused jobs by default
+     * (`tools/cronjob_tools.py:_action_list`, forward via
+     * `methods_tools.py:1079-1083`), and a paused routine silently missing from
+     * a read-only list reads to a person as a routine that was deleted.
+     *
+     * [expectedEndpointGeneration] binds the read to the Gateway the bot was
+     * chosen on, exactly as the canonical-chat lookups do: the host re-validates
+     * the endpoint at the dispatch itself, so a switch that lands mid-read
+     * cannot render the replacement machine's jobs under this bot.
+     */
+    suspend fun loadRoutines(
+        profile: String,
+        expectedEndpointGeneration: Long,
+    ): BotsRoutinesLoad = when (
+        val result = host.requestAtEndpoint(
+            expectedGeneration = expectedEndpointGeneration,
+            method = CRON_MANAGE,
+            params = buildJsonObject {
+                put("action", JsonPrimitive(CRON_LIST))
+                put("include_disabled", JsonPrimitive(true))
+                put("profile", JsonPrimitive(profile))
+            },
+        )
+    ) {
+        is PluginHostResult.Success -> when (val parsed = parseRoutineJobs(result.result)) {
+            is RoutineJobsParse.Answered ->
+                if (routineScopeAgrees(parsed.scoped, profile)) {
+                    BotsRoutinesLoad.Loaded(parsed.jobs, parsed.scoped)
+                } else {
+                    BotsRoutinesLoad.MismatchedScope(profile)
+                }
+
+            RoutineJobsParse.Rejected -> BotsRoutinesLoad.Rejected
+            RoutineJobsParse.Unreadable -> BotsRoutinesLoad.Refused(UNREADABLE_ROUTINES)
+        }
+
+        PluginHostResult.UnavailableOnGateway -> BotsRoutinesLoad.UnavailableOnGateway
+
+        is PluginHostResult.Refused -> BotsRoutinesLoad.Refused(result.safeMessage)
+    }
+
+    /**
+     * Existing-row mutations, bound to the endpoint that served the owner.
+     * Wire: tui_gateway/methods_tools.py:1097-1098 at
+     * d177b119e9c56c9ddc0b7379ffce52341ec06584. No retry after uncertainty.
+     */
+    suspend fun mutateRoutine(target: RoutineTarget, action: RoutineAction): Boolean {
+        val response = host.requestAtEndpoint(
+            expectedGeneration = target.endpoint,
+            method = CRON_MANAGE,
+            params = buildJsonObject {
+                put("action", action.wire)
+                put("name", target.jobId)
+                put("profile", target.owner)
+            },
+        )
+        val result = (response as? PluginHostResult.Success)?.result as? JsonObject
+        return result?.literalBoolean("success") == true
     }
 
     /** Hidden canonical chats bypass SessionCache and are resolved by exact title. */
@@ -111,25 +244,34 @@ class BotsPluginRepository(private val host: PluginHost) {
      * Phase B: the bot's one forever-chat, created only from a registry that
      * twice confirmed none exists.
      *
-     * The pinned Desktop path is `openBotCanonicalChat` / `createCanonicalChat`
-     * (`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:485-519`,
-     * `:290-475` @ the pin) and this mirrors its order:
+     * The Desktop path this mirrors is `openBotCanonicalChat`
+     * (`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:485-519` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`), which is a composition of
+     * `createCanonicalChat` (`canonical-chat.ts:290-475` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`). Its order is kept:
      *
      * 1. Consult the registry. A row opens as-is; an unreadable answer fails
      *    closed without touching `session.create`.
-     * 2. Adopt before minting (`:335-346`): the lookup runs a second time, so a
-     *    chat created by another surface between the tap and the create is
-     *    opened rather than forked.
+     * 2. Adopt before minting (`canonical-chat.ts:335-346` @
+     *    `564aef2946c436500a5e80ee117b66b789b3f99a`): the lookup runs a second
+     *    time, so a chat created by another surface between the tap and the
+     *    create is opened rather than forked.
      * 3. Create it titled, hidden and profile-following, then write the title
      *    eagerly so the row exists before anything is opened or sent.
      * 4. If that title write did not land, re-read the registry and adopt the
-     *    exact-title row a concurrent writer won (`:387-410`). No winner means
-     *    the attempt is abandoned — the stray lazy session holds no messages and
-     *    the gateway prunes it — never a second titled chat.
+     *    exact-title row a concurrent writer won (`canonical-chat.ts:387-410` @
+     *    `564aef2946c436500a5e80ee117b66b789b3f99a`). No winner means the attempt
+     *    is abandoned — the stray lazy session holds no messages and the gateway
+     *    prunes it — never a second titled chat.
+     *
+     * Those citations name the revision the file was ported from, which is
+     * **not** this app's theme/theme-adjacent pin: the canonical-chat construct
+     * was read at `564aef2946c436500a5e80ee117b66b789b3f99a`, and re-pointing
+     * them at a newer revision would claim a provenance the spans do not have.
      *
      * Deliberately absent, and ledgered in `docs/parity/bot-chat.md`: Desktop's
      * kickoff intro. `createCanonicalChat` submits it only on New Agent
-     * creation (`kickoff`) or as a legacy-gateway persistence fallback; the pin's
+     * creation (`kickoff`) or as a legacy-gateway persistence fallback; the
      * gateway materializes the row through the eager title write instead, so
      * opening a chat stays inert and the person's first message is the one that
      * arms live delivery.
@@ -161,17 +303,27 @@ class BotsPluginRepository(private val host: PluginHost) {
      * Create the bot's canonical chat, then make its identity durable.
      *
      * `session.create` is lazy on the pinned gateway — its row appears on the
-     * first prompt or on this title write (`tui_gateway/methods_session.py:325-390`
-     * @ the pin) — so the eager `session.title` is what closes the untitled
-     * window a second tap could mint through (`canonical-chat.ts:368-412`).
+     * first prompt or on this title write
+     * (`tui_gateway/methods_session.py:325-390` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`) — so the eager `session.title`
+     * is what closes the untitled window a second tap could mint through
+     * (`canonical-chat.ts:368-412` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`).
      *
      * The request is Desktop's exactly, `source` included in its absence: the
-     * bot-chat create does not send one (`canonical-chat.ts:348-363`), so the
-     * gateway resolves it from its own environment. This app's own
-     * `createSession` sends `"desktop"`, and that difference is deliberate —
-     * `source` decides `track_liveness` and the desktop-only cleanup lifecycle
-     * (`tui_gateway/session_lifecycle.py:37` @ the pin), and a canonical chat
-     * is not this app's ordinary session.
+     * bot-chat create does not send one (`canonical-chat.ts:348-363` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`), so the gateway resolves it
+     * from its own environment. This app's own `createSession` sends `"desktop"`,
+     * and that difference is deliberate — `source` decides `track_liveness` and
+     * the desktop-only cleanup lifecycle
+     * (`tui_gateway/session_lifecycle.py:37` @
+     * `564aef2946c436500a5e80ee117b66b789b3f99a`), and a canonical chat is not
+     * this app's ordinary session.
+     *
+     * Every citation above names `564aef2946c436500a5e80ee117b66b789b3f99a`,
+     * the revision they were read at, rather than the pin this app's own
+     * comment header names: a span is a claim about one revision, and moving
+     * one stamp does not move the others.
      *
      * Returns the durable id to resume, or null when the chat's identity could
      * not be confirmed.
@@ -233,11 +385,16 @@ class BotsPluginRepository(private val host: PluginHost) {
         const val SESSION_LIST = "session.list"
         const val SESSION_CREATE = "session.create"
         const val SESSION_TITLE = "session.title"
+        const val CRON_MANAGE = "cron.manage"
+        const val CRON_LIST = "list"
         const val CANONICAL_CHAT_TITLE = "Bot Chat"
         const val CANONICAL_LOOKUP_LIMIT = 200
 
         /** This app's sentence; the backend's own text is never shown. */
         const val UNREADABLE_ROSTER = "The Gateway sent a roster this app could not read."
+
+        /** This app's sentence for a `cron.manage` answer it cannot read. */
+        const val UNREADABLE_ROUTINES = "The Gateway sent a routine list this app could not read."
     }
 }
 
@@ -248,12 +405,16 @@ class BotsPluginRepository(private val host: PluginHost) {
  * malformed envelope answers null so the caller keeps its last good roster —
  * the same contract as `parseProfileList` in `data/profiles`.
  *
- * Row fields (`methods_profiles.py:245-250` @ the pin): `name`, `path`,
+ * Row fields (`methods_profiles.py:245-250` @
+ * `564aef2946c436500a5e80ee117b66b789b3f99a`): `name`, `path`,
  * `is_default`, `model`, `provider`, `description`, `display_name`,
  * `skill_count`, plus `last_session` / `worker_session` / `canonical_session` /
  * `ui_meta` / `has_avatar` when `include_sessions` is on.
  */
-fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
+fun parseBotsRoster(
+    result: JsonElement,
+    avatars: Map<String, ProfileAvatarRef> = emptyMap(),
+): List<BotRosterRow>? {
     val root = result as? JsonObject ?: return null
     val rows = root["profiles"] as? JsonArray ?: return null
     return rows.mapNotNull { element ->
@@ -269,6 +430,7 @@ fun parseBotsRoster(result: JsonElement): List<BotRosterRow>? {
             lastSession = parseSessionPreview(row["last_session"]),
             workerSession = parseSessionPreview(row["worker_session"]),
             hasAvatar = row.flag("has_avatar"),
+            avatarRef = avatarWireName(row)?.let(avatars::get),
         )
     }
 }
@@ -291,7 +453,7 @@ private fun parseSessionPreview(element: JsonElement?): BotSessionPreview? {
  * An epoch-seconds stamp, read off the wire as the Gateway actually sends it.
  *
  * The Gateway hands these out straight from SQLite, where the columns are
- * `REAL` (`hermes_state_common.py:319` @ the pin: `last_activity_at REAL`,
+ * `REAL` (`hermes_state_common.py:319` @ `564aef2946c436500a5e80ee117b66b789b3f99a`: `last_activity_at REAL`,
  * `started_at REAL`), so the JSON content is `1700000900.5` or
  * `1700000900.0` — not a whole number `toLongOrNull()` can read. That parse
  * answered `0` for every row, which is the bug that would have left the worker

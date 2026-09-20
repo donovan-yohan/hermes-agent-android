@@ -128,9 +128,68 @@ internal interface GatewayServerRequestResponder {
      * reached it. There is no acknowledgement to wait for — a response frame is
      * one-way by construction, so "sent" is the whole of what the transport can
      * promise, and a backend that had already withdrawn the request simply
-     * drops it (`server_requests.py:139-146` @ the pin).
+     * drops it (`tui_gateway/server_requests.py:201-235` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
      */
     suspend fun respondToServerRequest(id: String, result: JsonObject)
+
+    /**
+     * Hands the transport exactly one **error** response frame for [id].
+     *
+     * A request whose `method` this client has no handler for is answered
+     * `-32601`, which is what every other Hermes client does and what the
+     * backend reads as "no handler here" — it settles its wait at once instead
+     * of blocking out its own deadline (`clarify` blocks for 300s)
+     * (`apps/shared/src/json-rpc-channel.ts:388-389` @ the snapshot above,
+     * `tui_gateway/server_requests.py:201-219`).
+     *
+     * It is a separate act from [respondToServerRequest] rather than a result
+     * with a flag on it because the two settle the backend differently: a
+     * result is an answer, an error frame is the absence of one, and a
+     * `{"value": ""}` sent where an error belongs reads as a real answer the
+     * person never gave.
+     */
+    suspend fun failServerRequest(id: String, code: Int, message: String)
+}
+
+/**
+ * `client.capabilities`: the one call a client uses to say what it handles.
+ *
+ * `server_requests: true` is the whole of it — it is how a current backend
+ * learns it may park a question on this connection
+ * (`tui_gateway/contracts/liveness.py:29-43` @
+ * `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
+ */
+internal const val CLIENT_CAPABILITIES_METHOD = "client.capabilities"
+
+/**
+ * JSON-RPC "method not found" (`tui_gateway/server.py::dispatch` answers the
+ * unknown method with `_err(rid, -32601, …)`).
+ */
+internal const val JSON_RPC_METHOD_NOT_FOUND = -32601
+
+/**
+ * Tell the backend this connection answers server→client requests, over the
+ * connection's real RPC transport: one ordinary correlated request on the
+ * socket the app is about to use, not a channel beside it.
+ *
+ * A backend from before this method answers `-32601`, and that one answer is
+ * tolerated: it needs no advertisement to park a question, so the connection
+ * is exactly the connection it was. Every other failure propagates — a refused
+ * credential, a closed transport or a protocol error is this connection
+ * failing, and reading it as "legacy" would connect the app anyway and record
+ * a capability the backend never acknowledged.
+ */
+internal suspend fun GatewayRpcClient.advertiseServerRequests() {
+    try {
+        request(
+            CLIENT_CAPABILITIES_METHOD,
+            buildJsonObject { put("server_requests", JsonPrimitive(true)) },
+        )
+    } catch (refusal: GatewayRpcError) {
+        // The code alone: prose would read a reworded message as compatibility.
+        if (refusal.code != JSON_RPC_METHOD_NOT_FOUND) throw refusal
+    }
 }
 
 /** The small wire seam needed to prove correlation and close behavior offline. */
@@ -380,14 +439,56 @@ internal class CorrelatedGatewayRpc(
      * recorded on success — a response frame is one-way, and the backend drops
      * it silently when the request was already withdrawn, which is the
      * tolerated-late-answer case rather than an error
-     * (`tui_gateway/server_requests.py:139-146` @ the pin).
+     * (`tui_gateway/server_requests.py:201-235` @
+     * `d177b119e9c56c9ddc0b7379ffce52341ec06584`).
      */
     override suspend fun respondToServerRequest(id: String, result: JsonObject) {
         require(id.isNotBlank()) { "A server request id is required to answer." }
+        // A response frame carries `result` or `error`, never both and never
+        // neither: the backend reads the presence of `error` as "no answer"
+        // (`tui_gateway/server_requests.py:216-222` @ the snapshot).
+        respondToServerRequestFrame(id, buildJsonObject { put("result", result) })
+    }
+
+    /**
+     * The error half of the same act: one frame, the request's own id, and
+     * `error` where `result` would go.
+     *
+     * Nothing is recorded and nothing is awaited, for the reason every frame
+     * here is one-way — the backend settles the request on arrival and drops a
+     * frame for an id it has already withdrawn
+     * (`tui_gateway/server_requests.py:201-235` @ the snapshot).
+     */
+    override suspend fun failServerRequest(id: String, code: Int, message: String) {
+        require(id.isNotBlank()) { "A server request id is required to answer." }
+        require(message.isNotBlank()) { "A failure reason is required to refuse a server request." }
+        respondToServerRequestFrame(
+            id,
+            buildJsonObject {
+                put(
+                    "error",
+                    buildJsonObject {
+                        put("code", JsonPrimitive(code))
+                        put("message", JsonPrimitive(message))
+                    },
+                )
+            },
+        )
+    }
+
+    /**
+     * One response frame — result or error — on the socket the question arrived
+     * on, under the same lock [close] takes, so a teardown that got there first
+     * refuses this send rather than letting it land on a leg the app has left.
+     */
+    private suspend fun respondToServerRequestFrame(
+        id: String,
+        body: JsonObject,
+    ) {
         val frame = buildJsonObject {
             put("jsonrpc", JsonPrimitive("2.0"))
             put("id", JsonPrimitive(id))
-            put("result", result)
+            body.forEach { (key, value) -> put(key, value) }
         }.toString()
         val sent = synchronized(lock) {
             if (isClosed) throw GatewayRpcException("The gateway connection is closed.")
@@ -754,6 +855,8 @@ internal fun gatewayRpcTimeoutMillis(method: String, defaultTimeoutMillis: Long 
         // and opens each profile's state.db, which is seconds-scale on a cold
         // disk. Desktop gives the same call its own 60s boot budget rather
         // than the generic one (apps/desktop/src/hermes.ts:77-88).
-        "profiles.list" -> 60_000L
+        // Asset reads also use the slow lane: tui_gateway/server.py:167-168 at
+        // d177b119e9c56c9ddc0b7379ffce52341ec06584. No upload support is added.
+        "profiles.list", "profiles.get_asset" -> 60_000L
         else -> defaultTimeoutMillis
     }

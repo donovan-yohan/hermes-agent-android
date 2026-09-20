@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+"""Regression tests for the pin-citation range gate.
+
+The gate's own `--self-test` builds a real fixture repository and proves the
+pass/fail shapes end to end. These are the unit-level properties around it: that
+a range moving no pin stays quiet, that a citation under a pin the change did not
+move is left alone, and that the fixture is actually reachable from the gate the
+build runs.
+"""
+from __future__ import annotations
+
+import contextlib
+import importlib.util
+import io
+import pathlib
+import re
+import sys
+import tempfile
+import unittest
+from unittest import mock
+CHECKER_PATH = pathlib.Path(__file__).resolve().parents[1] / "verify-pin-citations.py"
+spec = importlib.util.spec_from_file_location("verify_pin_citations_range", CHECKER_PATH)
+assert spec and spec.loader
+gate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gate)
+
+FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+class CitationPinTest(unittest.TestCase):
+    """Which pin a citation line is answerable to."""
+
+    def setUp(self) -> None:
+        self.moved = "4" * 40
+        self.other = "a" * 40
+
+    def test_own_line_names_the_moved_pin(self) -> None:
+        lines = [f"* (`path/to/x.ts:12-14` @ `{self.moved}`),"]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 1, [self.moved]))
+
+    def test_wrapped_line_names_the_moved_pin(self) -> None:
+        lines = ["* Pinned to upstream `path/to/x.ts:12-14` @", f"* `{self.moved}`."]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 1, [self.moved]))
+
+    def test_abbreviated_pin_matches_its_full_sha(self) -> None:
+        lines = [f"* and `path/to/x.ts:12-14 @ {self.moved[:10]}`"]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 1, [self.moved]))
+
+    def test_another_pin_is_left_alone(self) -> None:
+        lines = [f"* kept at an older pin (`path/to/x.ts:12-14` @ `{self.other}`)"]
+        self.assertIsNone(gate.citation_pin(lines, 1, [self.moved]))
+
+    def test_page_declared_pin_governs_a_citation_below_it(self) -> None:
+        lines = [
+            "## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| entry point | `path/to/x.ts:12-14` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 7, [self.moved]))
+
+    def test_a_table_row_does_not_lend_its_pin_to_the_next_row(self) -> None:
+        # Row 2 sits directly under row 1's pin: row 2 is its own citation, and
+        # reading row 1's SHA as its tail would check the wrong claim.
+        lines = [
+            f"| a | `path/to/x.ts:12-14` @ `{self.other}` |",
+            "| b | `path/to/y.ts:3` |",
+        ]
+        self.assertIsNone(gate.citation_pin(lines, 2, [self.moved]))
+
+    def test_a_page_declaration_governs_a_row_below_a_borrowed_one(self) -> None:
+        # The row above names another pin *and* a citation: it is that citation's
+        # pin, not the page's. Letting it shadow the `## Pin` declaration would
+        # leave every row below it unattributed and unchecked — a drift with no
+        # finding, which is the failure this gate exists to prevent.
+        lines = [
+            "## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            f"| borrowed | `path/to/x.ts:1-2` @ `{self.other}` |",
+            "| governed by the page pin | `path/to/y.ts:3` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 8, [self.moved]))
+
+    def test_a_decimal_literal_does_not_shadow_a_declaration(self) -> None:
+        # `PIN_RE` matches any 7-40 char hex run and every digit is a hex digit,
+        # so `compactNumber(1000000)` in a test body reads as a revision. Letting
+        # it stand as the nearest declaration stops the upward scan before the
+        # real one and the citation is skipped as unattributable — a silent false
+        # pass, measured on the card's own acceptance range (#297 round 2).
+        lines = [
+            f"# `{self.moved}` is the page pin",
+            "",
+            'assertEquals("1M", compactNumber(1000000))',
+            "val stamp = 1700000000",
+            "val mask = 0x80123456",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| entry point | `path/to/x.ts:2-4` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 9, [self.moved]))
+
+    def test_a_section_prose_pin_wins_over_the_page_pin(self) -> None:
+        # A page may pin one half of itself separately, in that section's own
+        # prose, *below* the page's `## Pin` row: "that half is pinned at <other>
+        # — the repo pin — rather than at the authority above". Binding the
+        # citations to the page row reports a false red where the spans are
+        # exactly right at the section's pin (#240).
+        lines = [
+            "## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "## The half that is pinned separately",
+            "",
+            "That half is pinned at",
+            f"`{self.other}` — the repo pin — rather than at the `{self.moved[:8]}`",
+            "authority above.",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| governed by the section pin | `path/to/x.ts:2-4` |",
+        ]
+        self.assertEqual(self.other, gate.citation_pin(lines, 13, [self.moved, self.other]))
+
+    def test_a_qualified_pin_heading_declares_the_page_pin(self) -> None:
+        # Pages head their pin section `## Pin and source contract` as well as
+        # `## Pin` (five in this repo do). A heading match anchored on the whole
+        # line reads the longer form as declaring no pin, so a citation in a later
+        # section — the one shape only the page pin governs — is attributed to
+        # nothing and left unchecked. The second row carries another revision, so
+        # the single-pin fallback cannot quietly answer with the page pin either.
+        lines = [
+            "## Pin and source contract",
+            "",
+            f"| fixture | `{self.moved}` |",
+            f"| borrowed from another pin | `{self.other}` |",
+            "",
+            "## A later surface that declares nothing",
+            "",
+            "| Question | Path |",
+            "|---|---|",
+            "| entry point | `path/to/x.ts:12-14` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 10, [self.moved, self.other]))
+        self.assertIsNotNone(gate.PIN_SECTION_RE.match("## Pin and source contract"))
+        self.assertIsNotNone(gate.PIN_SECTION_RE.match("## Pin"))
+        self.assertIsNone(gate.PIN_SECTION_RE.match("## Pinning the surface"))
+
+    def test_a_wrapped_continuation_declares_nothing_for_the_lines_below(self) -> None:
+        # `:NNN` citations carry `@ `sha`` on the next line when they wrap. That
+        # revision belongs to the citation above; letting the backward scan read
+        # it as a declaration re-points every citation under it at a neighbour's
+        # pin, which is how a `construct-moved` false red appeared on honest
+        # history in the same file (#270's `:0` was the other half of this).
+        lines = [
+            f"## Pin",
+            "",
+            f"| fixture | `{self.moved}` |",
+            "",
+            "| a | `path/to/x.ts:1-2` @",
+            f"`{self.other}` |",
+            "| b | `path/to/y.ts:3` |",
+        ]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 7, [self.moved, self.other]))
+
+    def test_a_bare_continuation_inherits_the_paths_own_pin(self) -> None:
+        # `use-statusbar-items.tsx:569` under a
+        # `use-statusbar-items.tsx:281-294 @ <sha>` names the same file at the
+        # same pin. Checking it against the nearest declaration instead judges a
+        # citation at a revision it never named.
+        lines = [
+            f"// (`use-statusbar-items.tsx:281-294` @ `{self.other}`)",
+            "// and elsewhere",
+            "// (`use-statusbar-items.tsx:569`); this app hides it",
+        ]
+        self.assertIsNone(gate.citation_pin(lines, 3, [self.moved]))
+        self.assertEqual(self.other, gate.citation_pin(lines, 3, [self.moved, self.other]))
+
+
+class CitationExtractionTest(unittest.TestCase):
+    """What counts as a citation at all."""
+
+    def test_a_zero_span_is_not_a_citation(self) -> None:
+        # `:0` is not a line of any file. A JSON literal under a path-bearing
+        # line yields one by the bare-basename heuristic, and admitting it
+        # manufactures a citation nobody wrote — which a verdict then reports as
+        # an out-of-bounds finding against a path that was never cited (#270).
+        self.assertEqual([], gate.spans(":0"))
+        self.assertEqual([(2, 2)], gate.spans(":2"))
+        self.assertEqual([], gate.spans("0-0"))
+        self.assertEqual([(1, 4)], gate.spans("1-4"))
+
+    def test_a_spanless_token_is_not_a_citation(self) -> None:
+        # `github.event.pull_request.head.sha` in a workflow YAML matches the path
+        # heuristic (it ends in `.sh`). Bound to the GitHub Action SHA nearby, the
+        # whole file would report unprovable, because the upstream checkout by
+        # definition has no commit for somebody else's Action. A citation with no
+        # line span proves nothing about any revision, so it is not one.
+        text = (
+            "          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n"
+            "      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407\n"
+        )
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(gate, "resolve_path", return_value=None))
+            bound, ambiguous = gate.citation_bindings(text, ["9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407"])
+        self.assertEqual({}, bound)
+        self.assertGreater(ambiguous, 0)
+
+    def test_a_fingerprint_fixture_is_not_a_citation_of_line_zero(self) -> None:
+        text = 'const val FINGERPRINT = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01"'
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(gate, "resolve_path", return_value=None))
+            found = list(gate.citations(text, "old"))
+        self.assertEqual([], found)
+
+    def test_a_span_out_of_the_old_files_bounds_is_not_checkable(self) -> None:
+        # Judged at the old pin: a `:9999` on an 83-line file was never a citation.
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(gate, "resolve_path", return_value="lib/tiny.ts")
+            )
+            stack.enter_context(mock.patch.object(gate, "blob", return_value=["a"] * 83))
+            reason, resolved = gate.carried_verdict("old", "new", "lib/tiny.ts", [(9999, 9999)])
+        self.assertIsNone(reason)
+        self.assertIsNone(resolved)
+
+    def test_a_path_gone_from_the_new_pin_is_reported(self) -> None:
+        def fake_blob(sha: str, _path: str):
+            return ["a"] * 83 if sha == "old" else None
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(gate, "resolve_path", side_effect=lambda sha, _p: "lib/x.ts" if sha == "old" else None)
+            )
+            stack.enter_context(mock.patch.object(gate, "blob", side_effect=fake_blob))
+            reason, _ = gate.carried_verdict("old", "new", "lib/x.ts", [(1, 2)])
+        self.assertEqual("path-missing", reason)
+
+    def test_an_in_place_edit_still_holds(self) -> None:
+        def fake_blob(sha: str, _path: str):
+            return ["top", "old middle", "bottom"] if sha == "old" else ["top", "new middle", "bottom"]
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(gate, "resolve_path", return_value="lib/x.ts"))
+            stack.enter_context(mock.patch.object(gate, "blob", side_effect=fake_blob))
+            reason, _ = gate.carried_verdict("old", "new", "lib/x.ts", [(1, 3)])
+        self.assertIsNone(reason)
+
+    def test_a_moved_boundary_is_reported_as_a_drift(self) -> None:
+        def fake_blob(sha: str, _path: str):
+            return ["top", "middle", "bottom"] if sha == "old" else ["other", "middle", "bottom"]
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(gate, "resolve_path", return_value="lib/x.ts"))
+            stack.enter_context(mock.patch.object(gate, "blob", side_effect=fake_blob))
+            reason, _ = gate.carried_verdict("old", "new", "lib/x.ts", [(1, 3)])
+        self.assertEqual("construct-moved", reason)
+
+
+class SelfTestTest(unittest.TestCase):
+    """The fixture the acceptance criterion names must actually run."""
+
+    def test_self_test_runs_the_fixture_without_error(self) -> None:
+        # No stdout claim here: `self_test()` is the fixture itself and `main()`
+        # prints. Asserting on a print would test the wrong function.
+        gate.self_test()
+
+    def test_main_self_test_flag_reports_its_claim(self) -> None:
+        output = io.StringIO()
+        with mock.patch.object(sys, "argv", [str(CHECKER_PATH), "--self-test"]):
+            with contextlib.redirect_stdout(output):
+                gate.main()
+        self.assertIn("fails a drifted span", output.getvalue())
+
+
+class ExitCodeContractTest(unittest.TestCase):
+    """Exit 1 is a verdict; a tool failure must not borrow it.
+
+    The invariant script turns exit 1 into "a pin move left a citation that is not
+    true", so a range the tool cannot resolve — a bad revision, a malformed spec —
+    reported as 1 sends someone hunting citations that are fine while the real
+    fault stays hidden. It is its own code: 3, "could not be decided".
+    """
+
+    def _run_range(self, spec: str) -> int:
+        output = io.StringIO()
+        with mock.patch.object(
+            sys, "argv", [str(CHECKER_PATH), "--check-range", spec, "--repo", "."]
+        ):
+            with contextlib.redirect_stdout(output):
+                with self.assertRaises(SystemExit) as caught:
+                    gate.main()
+        self.assertNotEqual(1, caught.exception.code, output.getvalue())
+        return caught.exception.code
+
+    def test_an_unresolvable_head_is_not_a_verdict(self) -> None:
+        self.assertEqual(3, self._run_range("HEAD..deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"))
+
+    def test_a_malformed_range_is_not_a_verdict(self) -> None:
+        self.assertEqual(3, self._run_range("HEAD"))
+
+    def test_an_unresolvable_base_is_not_a_verdict(self) -> None:
+        self.assertEqual(3, self._run_range("not-a-revision..HEAD"))
+
+    def test_a_missing_upstream_checkout_is_a_named_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            gate._ensured.clear()
+            with mock.patch.object(gate, "UPSTREAM", pathlib.Path(directory) / "absent"):
+                with self.assertRaisesRegex(RuntimeError, "does not have"):
+                    gate.ensure_sha("d" * 40, fetch=False)
+            gate._ensured.clear()
+
+    def test_a_missing_upstream_checkout_is_not_a_verdict(self) -> None:
+        # The same failure reached through the CLI: when the range check cannot
+        # run, the CLI must not exit 1. `check_range_spec` is stubbed to raise the
+        # way an unreadable pin does, so the test does not depend on repo history.
+        output = io.StringIO()
+        with mock.patch.object(
+            sys, "argv", [str(CHECKER_PATH), "--check-range", "HEAD..HEAD", "--repo", "."]
+        ):
+            with mock.patch.object(
+                gate, "check_range_spec", side_effect=RuntimeError("upstream checkout does not have that pin")
+            ):
+                with contextlib.redirect_stdout(output):
+                    with self.assertRaises(SystemExit) as caught:
+                        gate.main()
+        self.assertEqual(3, caught.exception.code, output.getvalue())
+        self.assertIn("could not run", output.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

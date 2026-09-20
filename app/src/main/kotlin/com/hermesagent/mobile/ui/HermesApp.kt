@@ -26,6 +26,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator
+import com.hermesagent.mobile.ui.common.LocalProfileAvatarRoster
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -166,6 +168,7 @@ fun HermesApp(
     connectionsActions: ConnectionsActions = ConnectionsActions(),
     pluginRegistry: ContributionRegistry = ContributionRegistry(),
     pluginStore: PluginStore,
+    avatarRoster: AvatarRosterCoordinator? = null,
     notificationsState: NotificationsUiState = NotificationsUiState(),
     notificationsActions: NotificationsActions = NotificationsActions(),
     /**
@@ -238,7 +241,10 @@ fun HermesApp(
     }
 
     HermesTheme(appearance, customThemes = gatewayThemes.themes.map { it.preset }) {
-        CompositionLocalProvider(LocalPluginNavigation provides pluginNavigation) {
+        CompositionLocalProvider(
+            LocalPluginNavigation provides pluginNavigation,
+            LocalProfileAvatarRoster provides avatarRoster,
+        ) {
             when (destination) {
                 HermesDestination.Chat -> ChatScreen(
                     state = chatState,
