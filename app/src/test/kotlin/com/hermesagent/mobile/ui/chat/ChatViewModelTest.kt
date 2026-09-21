@@ -1078,6 +1078,29 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `reselecting the notification target refreshes stale history and preserves the draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val stale = AssistantTurn("partial", "Still working", CLOCK, streaming = true)
+        cache.setTranscript("session-a", listOf(stale))
+        viewModel.setDraft("keep this unsent")
+        val final = AssistantTurn("final", "Completed reply", CLOCK)
+        repository.transcriptOnOpen = listOf(final)
+        runCurrent()
+
+        // MainActivity's notification intent uses this same selection entry.
+        // The connection and selected durable id have not changed.
+        viewModel.selectSession("session-a")
+        runCurrent()
+
+        assertEquals(listOf("session-a", "session-a"), repository.opened)
+        assertEquals(listOf(final), cache.transcript("session-a"))
+        assertEquals(listOf(final), viewModel.uiState.value.transcript)
+        assertEquals("keep this unsent", viewModel.uiState.value.draft)
+        assertTrue(repository.submitted.isEmpty())
+    }
+
+    @Test
     fun `authoritatively rejected submit restores the current draft with concise action`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -3219,8 +3242,11 @@ class ChatViewModelTest {
         @JvmField
         var statusOnOpen: SessionStatus? = null
 
+        var transcriptOnOpen: List<TranscriptEntry>? = null
+
         override suspend fun openSession(durableId: String): String {
             opened += durableId
+            transcriptOnOpen?.let { cache.setTranscript(durableId, it) }
             statusOnOpen?.let { status ->
                 cache.session(durableId)?.let { cache.upsertSession(it.copy(status = status)) }
             }

@@ -2001,11 +2001,16 @@ internal class ChatViewModel(
     }
 
     fun selectSession(id: String) {
-        if (activeSessionId.value == id) return
-        navigationGeneration += 1
-        flushDraft()
-        clearBotChatCapability()
-        rehome(id)
+        if (activeSessionId.value != id) {
+            navigationGeneration += 1
+            flushDraft()
+            clearBotChatCapability()
+            rehome(id)
+        }
+        // A notification tap names a session that may already be the one on
+        // screen, and the open is what makes its history authoritative. Only
+        // navigation runs when the selection actually changes: rehoming an
+        // unchanged id would disturb its draft and composer state instead.
         viewModelScope.launch {
             openAndAdopt(id)
         }
