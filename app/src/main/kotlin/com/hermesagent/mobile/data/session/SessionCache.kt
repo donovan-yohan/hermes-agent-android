@@ -68,8 +68,19 @@ class SessionCache {
 
     fun upsertSession(row: SessionSummary) = upsertSessions(listOf(row))
 
-    /** Replace the authoritative project overview and merge its preview rows. */
-    fun replaceProjectOverview(rows: List<ProjectSummary>, activeProjectId: String?) {
+    /**
+     * Replace the authoritative project overview and merge its preview rows.
+     *
+     * [authoritativeSessionProfiles] says whether the caller's read was scoped
+     * by the request it made, so a preview's absent profile is a positive
+     * "the launch profile owns this" rather than missing metadata. Only the
+     * request-scoped project RPCs can claim that.
+     */
+    fun replaceProjectOverview(
+        rows: List<ProjectSummary>,
+        activeProjectId: String?,
+        authoritativeSessionProfiles: Boolean = false,
+    ) {
         _state.update { current ->
             val projectIds = rows.mapTo(linkedSetOf(), ProjectSummary::id)
             val existingHydrated = current.projects.hydratedProjectIds.intersect(projectIds)
@@ -84,7 +95,13 @@ class SessionCache {
             }
             val sessions = current.sessions.toMutableMap()
             rows.flatMap(ProjectSummary::previewSessions).forEach { preview ->
-                sessions.putIfAbsent(preview.id, preview)
+                val existing = sessions[preview.id]
+                sessions[preview.id] = existing?.copy(
+                    // A preview can correct scope, but must not replace richer
+                    // session-list metadata or an in-flight turn's state.
+                    remoteProfile = if (authoritativeSessionProfiles) preview.remoteProfile
+                        else preview.remoteProfile ?: existing.remoteProfile,
+                ) ?: preview
             }
             val catalog = ProjectCatalogState(
                 projects = rows.associateByTo(linkedMapOf(), ProjectSummary::id),
@@ -101,8 +118,18 @@ class SessionCache {
         }
     }
 
-    /** Atomically publish one fully hydrated project and every session it owns. */
-    fun replaceProjectDetails(project: ProjectSummary, sessions: List<SessionSummary>) {
+    /**
+     * Atomically publish one fully hydrated project and every session it owns.
+     *
+     * [authoritativeSessionProfiles] carries the same meaning as in
+     * [replaceProjectOverview]: a request-scoped read's absent profile is
+     * launch ownership, and it replaces the row's previous owner.
+     */
+    fun replaceProjectDetails(
+        project: ProjectSummary,
+        sessions: List<SessionSummary>,
+        authoritativeSessionProfiles: Boolean = false,
+    ) {
         _state.update { current ->
             val existingProject = current.projects.projects[project.id]
             val mergedProject = if (project.previewSessions.isEmpty() && existingProject != null) {
@@ -123,10 +150,10 @@ class SessionCache {
                         activityStartedAtMillis = existing.activityStartedAtMillis,
                         gitBranch = row.gitBranch ?: existing.gitBranch,
                         worktreePath = row.worktreePath ?: existing.worktreePath,
-                        // Project membership rows carry no owning profile, so a
-                        // drill-in must not move a row out of the profile scope
-                        // it was listed in.
-                        remoteProfile = row.remoteProfile ?: existing.remoteProfile,
+                        // Request-scoped reads know that null means launch-owned;
+                        // otherwise an absent stamp adds no ownership evidence.
+                        remoteProfile = if (authoritativeSessionProfiles) row.remoteProfile
+                            else row.remoteProfile ?: existing.remoteProfile,
                     )
                 }
             }

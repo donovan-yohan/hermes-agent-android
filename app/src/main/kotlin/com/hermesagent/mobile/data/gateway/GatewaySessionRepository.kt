@@ -2030,7 +2030,11 @@ internal class LiveGatewaySessionRepository(
             val overview = parseProjectOverview(payload, clock())
             synchronized(stateLock) {
                 ensureCurrentProject(connection, scope)
-                cache.replaceProjectOverview(overview.projects, overview.activeProjectId)
+                cache.replaceProjectOverview(
+                    overview.projects.map { it.inRequestProfile(scope.profile) },
+                    overview.activeProjectId,
+                    authoritativeSessionProfiles = true,
+                )
                 lastHydratedProjectId?.takeIf { projectId ->
                     overview.projects.any { it.id == projectId }
                 }.also { lastHydratedProjectId = it }
@@ -2065,9 +2069,23 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrentProject(connection, scope)
             lastHydratedProjectId = projectId
-            cache.replaceProjectDetails(details.project, details.sessions)
+            cache.replaceProjectDetails(
+                details.project.inRequestProfile(scope.profile),
+                details.sessions.map { it.copy(remoteProfile = scope.profile) },
+                authoritativeSessionProfiles = true,
+            )
         }
     }
+
+    /**
+     * Project RPCs stamp the actual launch profile even when the request omitted
+     * it. The mobile rail calls that scope `default`, represented by null so
+     * subsequent RPC and REST calls still omit the profile. Cache publication
+     * marks this ownership authoritative, not missing metadata.
+     */
+    private fun ProjectSummary.inRequestProfile(profile: String?): ProjectSummary = copy(
+        previewSessions = previewSessions.map { it.copy(remoteProfile = profile) },
+    )
 
     override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
         val cleanName = name.trim()

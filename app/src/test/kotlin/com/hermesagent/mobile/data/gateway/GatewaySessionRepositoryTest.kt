@@ -2186,6 +2186,71 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `stamped project sessions stay visible in launch scope in either load order`() = runTest {
+        for (sessionsFirst in listOf(true, false)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                sessionListResult = if (sessionsFirst) SESSION_LIST else """{"sessions":[]}"""
+                projectTreeResult = PROJECT_TREE.replace("\"title\":", "\"profile\":\"research\",\"title\":")
+                projectDetailsResult = PROJECT_DETAILS.replace("\"title\":", "\"profile\":\"research\",\"title\":")
+            }
+            val repository = LiveGatewaySessionRepository(
+                cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc),
+                backgroundScope,
+            ) { CLOCK }
+            runCurrent()
+
+            val preview = cache.state.value.projects.projects.getValue("project-mobile").previewSessions
+            assertEquals(listOf("durable-a"), filterSessionsByProfileScope(preview, DEFAULT_PROFILE).map { it.id })
+            assertEquals(listOf("home-a"), filterSessionsByProfileScope(listOf(cache.session("home-a")!!), DEFAULT_PROFILE).map { it.id })
+
+            repository.openProject("project-mobile")
+            rpc.sessionListResult = SESSION_LIST
+            repository.refreshSessions()
+            val members = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
+            assertEquals(listOf("durable-a", "durable-b"), filterSessionsByProfileScope(members, DEFAULT_PROFILE).map { it.id })
+            assertTrue(filterSessionsByProfileScope(members, "other").isEmpty())
+            repository.openSession("durable-a")
+            assertNull(rpc.call("session.resume").params["profile"])
+        }
+    }
+
+    @Test
+    fun `project scope changes replace ownership without losing cached live state`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            projectTreeResult = PROJECT_TREE.replace("\"title\":", "\"profile\":\"research\",\"title\":")
+            projectDetailsResult = PROJECT_DETAILS.replace("\"title\":", "\"profile\":\"research\",\"title\":")
+        }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "research", listProfiles = listOf("research")))
+        repository.refreshProjects()
+        repository.openProject("project-mobile")
+        val namedMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
+        assertEquals(2, filterSessionsByProfileScope(namedMembers, "research").size)
+        assertTrue(filterSessionsByProfileScope(namedMembers, DEFAULT_PROFILE).isEmpty())
+        val live = cache.session("durable-a")!!.copy(status = SessionStatus.Working, title = "Live title")
+        cache.upsertSession(live)
+
+        repository.setProfileRouting(ProfileRouting())
+        repository.refreshProjects()
+        assertEquals(live.copy(remoteProfile = null), cache.session("durable-a"))
+        repository.openProject("project-mobile")
+        val launchMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
+        assertEquals(2, filterSessionsByProfileScope(launchMembers, DEFAULT_PROFILE).size)
+        assertTrue(filterSessionsByProfileScope(launchMembers, "research").isEmpty())
+        assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+    }
+
+    @Test
     fun `missing project RPC keeps legacy session navigation available`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
