@@ -38,6 +38,7 @@ import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.SessionUsage
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
+import com.hermesagent.mobile.data.session.TimelineEvent
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.TurnTermination
@@ -6344,7 +6345,23 @@ private fun parseMessages(
         val rowId = message.durableRowId()
         val time = message.timestamp(nowMillis)
         when (message.string("role")) {
-            "user" -> add(UserTurn(id, message.answerText(), time, rowId = rowId))
+            "user" -> {
+                // A typed timeline row is classified by its own stored
+                // metadata — never by its text — and projects as one compact
+                // disclosure instead of a user bubble. `hydration.ts:191-225,
+                // 317-324` @ `437116f9497c80d242ce034ff7f5d81dc277a337`.
+                val text = message.answerText()
+                val timeline = classifyTimelineEvent(
+                    displayKind = message.string("display_kind"),
+                    displayMetadata = message["display_metadata"],
+                    text = text,
+                )
+                if (timeline != null) {
+                    add(TimelineEvent(id, timeline.label, timeline.report, time, rowId = rowId))
+                } else {
+                    add(UserTurn(id, text, time, rowId = rowId))
+                }
+            }
             "assistant" -> {
                 val reasoning = message.reasoningText()
                 reasoning.takeIf(String::isNotBlank)?.let {
@@ -7057,6 +7074,12 @@ private fun List<TranscriptEntry>.openUserRunContains(text: String): Boolean {
             is AssistantTurn -> if (!entry.streaming) return false
             is ReasoningActivity -> Unit
             is ToolActivity -> Unit
+            // A typed timeline row is scaffolding inside the live turn — the
+            // delegation-completion row a notification turn leaves behind — not
+            // the turn's committed reply. Walking past it keeps a resumed
+            // `inflight.user` from painting a second bubble behind a completion
+            // row that is already the durable record of the same turn.
+            is TimelineEvent -> Unit
         }
     }
     return false

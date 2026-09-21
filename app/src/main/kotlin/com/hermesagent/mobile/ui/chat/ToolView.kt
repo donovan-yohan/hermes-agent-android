@@ -4,6 +4,7 @@ import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
 import com.hermesagent.mobile.data.session.LEGACY_TODO_TOOL_NAME
 import com.hermesagent.mobile.data.session.isTodoToolName
+import com.hermesagent.mobile.data.markdown.resolveEffectiveInlineDiff
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -205,6 +206,22 @@ private fun String.nthNewlineEnd(count: Int): Int {
 
 private val ToolJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
+/**
+ * The one diff this row holds, from whichever field carries it.
+ *
+ * `fallback.tsx:375-392` @ `437116f9497c80d242ce034ff7f5d81dc277a337`:
+ * `const inlineDiff = stripInlineDiffChrome(sideDiff) || inlineDiffFromResult(…)`.
+ * The live `inline_diff` side-channel wins when it carries anything usable,
+ * otherwise the **tool result** is decoded and read for `inline_diff` and then
+ * `diff`. A `patch_tool` result is `{"success":true,"diff":"…"}`
+ * (`tools/file_operations.py:1355-1357` @ the same SHA) — a diff with no
+ * side-channel at all — so every read of "does this row have a diff" has to go
+ * through here rather than through `inlineDiff`. `EffectiveInlineDiff.kt` is the
+ * resolver; this is the seam the UI layer reads it through.
+ */
+internal fun ToolActivity.effectiveInlineDiff(): String? =
+    resolveEffectiveInlineDiff(inlineDiff, resultText)
+
 /** Project this activity into what the row paints. `buildToolView`, index.ts:1409. */
 internal fun ToolActivity.toolView(): ToolView {
     val args = argsText.asJsonObject()
@@ -215,7 +232,13 @@ internal fun ToolActivity.toolView(): ToolView {
     // spellings paint one row (`isTodoToolName`,
     // `app/src/main/kotlin/.../data/session/ToolNames.kt`).
     val lookup = lookupToolName(name)
-    val meta = toolMeta(lookup, inlineDiff != null)
+    // One resolved diff per projection, read by the tone icon, by the detail and
+    // (through `ToolRow`) by the panel itself. `resolveEffectiveInlineDiff` reads
+    // the live side-channel and then the decoded result, so a `patch` result
+    // carrying only `{"success":true,"diff":…}` is a file edit at every one of
+    // those seams — the same value Desktop's `fallback.tsx:375-392` decides on.
+    val diff = effectiveInlineDiff()
+    val meta = toolMeta(lookup, diff != null)
 
     val error = toolErrorText(name, result)
     val status = toolStatus(name, error)
@@ -242,7 +265,7 @@ internal fun ToolActivity.toolView(): ToolView {
         ""
     }
 
-    val body = toolDetailText(name, args, result, splitStreams)
+    val body = toolDetailText(name, args, result, splitStreams, diff != null)
     // index.ts:1446-1451 — an error message leads the detail, and a body that
     // merely repeats it is not printed twice.
     val detail = if (error.isEmpty()) {
@@ -439,7 +462,13 @@ private fun detailLabel(name: String): String = when {
  * its command on the `$` prompt line, so it prints nothing rather than
  * repeating the command as a detail.
  */
-private fun ToolActivity.toolDetailText(name: String, args: JsonObject, result: JsonObject, splitStreams: Boolean): String {
+private fun ToolActivity.toolDetailText(
+    name: String,
+    args: JsonObject,
+    result: JsonObject,
+    splitStreams: Boolean,
+    hasDiff: Boolean,
+): String {
     if (splitStreams) return ""
 
     if (name.rendersAnsi()) {
@@ -471,7 +500,10 @@ private fun ToolActivity.toolDetailText(name: String, args: JsonObject, result: 
     if (name.contains("memory")) return result.firstStringField("message", "error")
 
     // index.ts:1149-1165 — a file edit that produced a diff says it in the diff.
-    if (inlineDiff != null) return result.firstStringField("message", "summary")
+    // The diff may be carried only by the *result* (`{"success":true,"diff":…}`),
+    // which is exactly the row this resolver exists for, so the test is the
+    // resolved value rather than the live side-channel.
+    if (hasDiff) return result.firstStringField("message", "summary")
 
     return fallbackDetailText(args, result)
 }
