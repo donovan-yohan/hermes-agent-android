@@ -60,6 +60,7 @@ import com.hermesagent.mobile.data.attachments.RecentImagesSource
 import com.hermesagent.mobile.data.attachments.readRecentImages
 import com.hermesagent.mobile.ui.chat.composer.RecentImagesUiState
 import com.hermesagent.mobile.ui.common.AttachmentThumbnails
+import com.hermesagent.mobile.data.gateway.safeGatewayStatusText
 import com.hermesagent.mobile.data.gateway.APPROVAL_MODE_REJECTED
 import com.hermesagent.mobile.data.gateway.isSessionNotOwned
 import com.hermesagent.mobile.data.gateway.ARCHIVED_UNSUPPORTED
@@ -346,6 +347,40 @@ data class ChatNotice(
     val action: ChatNoticeAction? = null,
 )
 
+/**
+ * What the open of a durable session is doing, as a fact the chat pane can act
+ * on instead of a sentence it has to recognize.
+ *
+ * The chat pane used to identify a failed open by comparing the notice text
+ * against `SESSION_OPEN_FAILED_COPY` — the only signal the state carried. That
+ * coupling is what this type deletes: the failure now says *which* session
+ * could not be opened and carries a safe internal cause, so the pane renders a
+ * retry from the typed field and never parses prose.
+ *
+ * [Failed.sessionId] is the id the caller asked for, not the canonical one: a
+ * failure can happen before compression moved the key, and re-selecting the id
+ * the reader was navigating to is the path that re-runs the open without
+ * rehoming.
+ */
+sealed interface SessionOpenState {
+    /** Nothing is being opened, or the open finished without an outcome. */
+    data object Idle : SessionOpenState
+
+    /** The named session's open is on the wire. */
+    data class Opening(val sessionId: String) : SessionOpenState
+
+    /**
+     * The open of [sessionId] failed. [detail] is a bounded, redacted summary of
+     * the internal cause — safe to show and safe to attach to a report, and
+     * deliberately not a transcript.
+     */
+    data class Failed(
+        val sessionId: String,
+        val message: String,
+        val detail: String? = null,
+    ) : SessionOpenState
+}
+
 data class ChatUiState(
     val diagnostics: SendDiagnosticsState? = null,
     val gatewayLogs: GatewayLogsState? = null,
@@ -426,6 +461,12 @@ data class ChatUiState(
     val backgroundPendingInput: BackgroundPendingInput? = null,
     val connection: GatewayConnectionState = GatewayConnectionState(),
     val notice: ChatNotice? = null,
+    /**
+     * Whether the active session is still opening, and if it failed. The chat
+     * pane renders its own failure surface from this — never from [notice]'s
+     * prose. See [SessionOpenState].
+     */
+    val sessionOpen: SessionOpenState = SessionOpenState.Idle,
     val composer: ComposerUiState = ComposerUiState(),
     /** Connection-owned attached-image loader; null while disconnected. */
     val imageLoader: GatewayImageLoader? = null,
@@ -585,6 +626,17 @@ internal class ChatViewModel(
     private val readAloudState = MutableStateFlow<ReadAloudUiState>(ReadAloudUiState.Idle)
     private var readAloudJob: Job? = null
     private val notice = MutableStateFlow<ChatNotice?>(null)
+
+    /**
+     * The open's own state, alongside — never inside — [notice].
+     *
+     * Two readers with two lifetimes: the composer's status line reports what
+     * the reader just did and is replaced by the next thing, while the chat
+     * pane's failure surface has to survive until the reader retries or leaves.
+     * Keeping them in one slot meant a failure could only be recognized by its
+     * sentence.
+     */
+    private val sessionOpen = MutableStateFlow<SessionOpenState>(SessionOpenState.Idle)
 
     /**
      * The status line, for the notices that are only a sentence — which is all
@@ -790,15 +842,30 @@ internal class ChatViewModel(
                         selectedProjectId,
                         projectLoadingId,
                         combine(
-                            sidebarGrouping,
-                            profileScope,
-                            profileRepository.roster,
-                            archivedVisible,
-                            archivedPool,
-                            ::SidebarViewState,
-                        ),
-                    ) { connection, message, projectId, loadingId, sidebarView ->
-                        NavigationState(connection, message, projectId, loadingId, sidebarView)
+                            combine(
+                                sidebarGrouping,
+                                profileScope,
+                                profileRepository.roster,
+                                archivedVisible,
+                                archivedPool,
+                                ::SidebarViewState,
+                            ),
+                            // Its own flow, not a `notice` field: the pane
+                            // renders a failed open from this typed fact and
+                            // never from prose, and a notice the reader
+                            // dismisses must not take the failure surface
+                            // with it.
+                            sessionOpen,
+                        ) { sidebarView, open -> sidebarView to open },
+                    ) { connection, message, projectId, loadingId, sidebarAndOpen ->
+                        NavigationState(
+                            connection,
+                            message,
+                            projectId,
+                            loadingId,
+                            sidebarAndOpen.first,
+                            sessionOpen = sidebarAndOpen.second,
+                        )
                     },
                     localComposerState,
                 ) { navigation, local -> navigation.copy(localComposer = local) },
@@ -1017,6 +1084,9 @@ internal class ChatViewModel(
             backgroundPendingInput = backgroundPending,
             connection = navigation.connection,
             notice = navigation.notice,
+            // Read from its own flow, not from `notice`: the pane classifies a
+            // failed open from this typed fact and never from prose.
+            sessionOpen = navigation.sessionOpen,
             composer = composerBundle.composer.copy(
                 runtime = runtime,
                 visibleModels = composerBundle.chrome.visibleModels,
@@ -2541,6 +2611,9 @@ internal class ChatViewModel(
         invalidatePendingDraftWrite()
         draft.value = id?.let(draftSnapshot::get).orEmpty()
         noticeLine = null
+        // Leaving this chat retires its open state with it: a failure surface
+        // for a session the reader has navigated away from is a stale claim.
+        sessionOpen.value = SessionOpenState.Idle
         if (applyOpenSideEffects) {
             id?.let(::markRead)
             id?.let(::drainQueueIfIdle)
@@ -3908,6 +3981,11 @@ internal class ChatViewModel(
         // compression can move an adopted session to its canonical key.
         fun stillOwns(target: String): Boolean =
             sessionOpenGeneration == generation && activeSessionId.value == target
+        // Publishing `Opening` is what lets the pane distinguish "still on the
+        // wire" from "failed" without a timer; only the newest owner may set it.
+        if (sessionOpenGeneration == generation && activeSessionId.value == id) {
+            sessionOpen.value = SessionOpenState.Opening(id)
+        }
         try {
             val canonicalId = repository.openSession(id)
             if (!stillOwns(id)) return
@@ -3915,14 +3993,43 @@ internal class ChatViewModel(
             // This fence is the half adoption cannot cover: for an equal id it
             // returns before any of its own guards run.
             if (!stillOwns(canonicalId)) return
+            // The open succeeded; the pane's surface goes back to Idle before the
+            // composer read starts, so a slow catalog cannot look like a failure.
+            if (sessionOpenGeneration == generation && activeSessionId.value == canonicalId) {
+                sessionOpen.value = SessionOpenState.Idle
+            }
             refreshComposer(canonicalId)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
-            if (stillOwns(id)) {
-                noticeLine = "This session could not be opened. Check the Gateway and try again."
-            }
+        } catch (failure: Throwable) {
+            if (!stillOwns(id)) return
+            // The internal cause is captured, not discarded. It is redacted and
+            // bounded (never a transcript, never a secret) and travels with the
+            // failure so a report can name what actually happened; the reader
+            // still gets the one product sentence.
+            val detail = safeSessionOpenFailureDetail(failure)
+            sessionOpen.value = SessionOpenState.Failed(
+                sessionId = id,
+                message = SESSION_OPEN_FAILED_COPY,
+                detail = detail,
+            )
         }
+    }
+
+    /**
+     * Re-run the open for the session the pane says failed.
+     *
+     * Re-selecting the id already homed is exactly the path that re-opens it
+     * without rehoming, so the draft, attachments and composer scope stay where
+     * they are. A no-op when nothing failed or when the reader has since moved
+     * to another session.
+     */
+    fun retrySessionOpen() {
+        val failed = sessionOpen.value as? SessionOpenState.Failed ?: return
+        val target = failed.sessionId
+        if (target != activeSessionId.value) return
+        sessionOpen.value = SessionOpenState.Idle
+        selectSession(target)
     }
 
     private fun refreshComposer(
@@ -4197,6 +4304,8 @@ internal class ChatViewModel(
         val projectId: String?,
         val loadingProjectId: String?,
         val sidebarView: SidebarViewState,
+        /** The active session's open state; see [SessionOpenState]. */
+        val sessionOpen: SessionOpenState = SessionOpenState.Idle,
         val composer: ComposerUiState = ComposerUiState(),
         val localComposer: LocalComposerState = LocalComposerState(),
     )
@@ -4479,3 +4588,23 @@ private const val BOT_CHAT_MUTATION_NOTICE = "Only messages can be sent from a B
  * by comparing against it (see [ChatNotice]).
  */
 internal const val NOT_OWNED_NOTICE = "Another Hermes has this session open. Start a new session to send here."
+/**
+ * A bounded, redacted summary of why an open failed — safe to show, safe to
+ * attach to a report, and never the transcript.
+ *
+ * This exists because the old handler discarded the cause entirely: the
+ * observable failure was the product sentence and nothing else, so a real
+ * defect (a lock the UI thread was waiting on, a malformed row, a timeout)
+ * looked exactly like a Gateway that was down. The class name and message of an
+ * exception are not user content, and both are pushed through the same
+ * redaction the rest of the app uses before they are bounded.
+ */
+internal fun safeSessionOpenFailureDetail(failure: Throwable): String {
+    val type = failure::class.java.simpleName.takeIf(String::isNotBlank) ?: "Throwable"
+    val raw = failure.message.orEmpty()
+    val message = safeGatewayStatusText(raw).take(MAX_SESSION_OPEN_DETAIL)
+    return if (message.isBlank()) type else "$type: $message"
+}
+
+/** Long enough to name a cause, short enough for one line of a surface. */
+private const val MAX_SESSION_OPEN_DETAIL = 240

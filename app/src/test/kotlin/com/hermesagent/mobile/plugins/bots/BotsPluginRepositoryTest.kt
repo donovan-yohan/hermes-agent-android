@@ -407,7 +407,7 @@ class BotsPluginRepositoryTest {
 
         val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
 
-        assertEquals(BotChatOpen.Unsafe, open)
+        assertEquals(BotChatOpen.Unsafe(BotChatFailure.Refused), open)
         assertEquals(
             listOf("session.list", "session.list", "session.create", "session.title", "session.list"),
             host.calls.map { it.first },
@@ -473,7 +473,11 @@ class BotsPluginRepositoryTest {
                 answer("session.title", PluginHostResult.Success(json(receipt)))
             }
 
-            assertEquals(receipt, BotChatOpen.Unsafe, BotsPluginRepository(orphan).openCanonicalChat("bot-a", null))
+            assertEquals(
+                receipt,
+                BotChatOpen.Unsafe(BotChatFailure.Unreadable),
+                BotsPluginRepository(orphan).openCanonicalChat("bot-a", null),
+            )
             assertEquals(receipt, 1, orphan.calls.count { it.first == "session.create" })
         }
     }
@@ -495,7 +499,11 @@ class BotsPluginRepositoryTest {
                 answer("session.title", PluginHostResult.Success(json("""{"pending":false,"title":"Bot Chat"}""")))
             }
 
-            assertEquals(answer, BotChatOpen.Unsafe, BotsPluginRepository(host).openCanonicalChat("bot-a", null))
+            assertEquals(
+                answer,
+                BotChatOpen.Unsafe(BotChatFailure.Unreadable),
+                BotsPluginRepository(host).openCanonicalChat("bot-a", null),
+            )
             assertEquals(
                 answer,
                 listOf("session.list", "session.list", "session.create"),
@@ -516,7 +524,11 @@ class BotsPluginRepositoryTest {
         for (row in rows) {
             val host = ScriptedHost().apply { answer("session.list", sessions(row)) }
 
-            assertEquals(row, BotChatOpen.Unsafe, BotsPluginRepository(host).openCanonicalChat("bot-a", null))
+            assertEquals(
+                row,
+                BotChatOpen.Unsafe(BotChatFailure.Unreadable),
+                BotsPluginRepository(host).openCanonicalChat("bot-a", null),
+            )
             assertEquals(row, listOf("session.list"), host.calls.map { it.first })
         }
     }
@@ -528,17 +540,24 @@ class BotsPluginRepositoryTest {
         // not in this list: that is the one licence to create, and
         // `a registry that twice confirms no chat creates one...` owns it.
         val cases = listOf(
-            PluginHostResult.Refused(500, "backend prose"),
-            PluginHostResult.UnavailableOnGateway,
-            sessions("""{"sessions":[{"id":"x","title":"Other"}]}"""),
-            sessions("""{"sessions":[{"id":"x","title":"Bot Chat"},{"id":"y","title":"Bot Chat"}]}"""),
-            PluginHostResult.Success(json("""{"sessions":"nope"}""")),
+            // A Gateway's own error envelope keeps its code, so it is a refusal.
+            PluginHostResult.Refused(500, "backend prose") to BotChatFailure.Refused,
+            // A Gateway that does not serve the method says so, and retrying
+            // can never fix that.
+            PluginHostResult.UnavailableOnGateway to BotChatFailure.UnavailableOnGateway,
+            sessions("""{"sessions":[{"id":"x","title":"Other"}]}""") to BotChatFailure.Unreadable,
+            sessions("""{"sessions":[{"id":"x","title":"Bot Chat"},{"id":"y","title":"Bot Chat"}]}""")
+                to BotChatFailure.Unreadable,
+            PluginHostResult.Success(json("""{"sessions":"nope"}""")) to BotChatFailure.Unreadable,
+            // The door's own no-route bucket: nothing answered, so nothing was
+            // refused and the person should wait rather than check a Gateway.
+            PluginHostResult.Refused(0, "Reconnect to the Gateway and try again.") to BotChatFailure.NotAnswered,
         )
-        for (result in cases) {
+        for ((result, expected) in cases) {
             val host = ScriptedHost().apply { answer("session.list", result) }
             val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null)
 
-            assertEquals("$result", BotChatOpen.Unsafe, open)
+            assertEquals("$result", BotChatOpen.Unsafe(expected), open)
             assertEquals("$result", listOf("session.list"), host.calls.map { it.first })
         }
 
@@ -546,7 +565,7 @@ class BotsPluginRepositoryTest {
         // the roster says a chat exists, so absence is unconfirmed.
         val rosterBacked = ScriptedHost().apply { answer("session.list", emptyRegistry()) }
         assertEquals(
-            BotChatOpen.Unsafe,
+            BotChatOpen.Unsafe(BotChatFailure.Unreadable),
             BotsPluginRepository(rosterBacked).openCanonicalChat("bot-a", "roster-tip"),
         )
         assertEquals(listOf("session.list"), rosterBacked.calls.map { it.first })
@@ -559,7 +578,10 @@ class BotsPluginRepositoryTest {
             answer("session.create", PluginHostResult.Success(json("""{"session_id":"runtime-only"}""")))
         }
 
-        assertEquals(BotChatOpen.Unsafe, BotsPluginRepository(host).openCanonicalChat("bot-a", null))
+        assertEquals(
+            BotChatOpen.Unsafe(BotChatFailure.Unreadable),
+            BotsPluginRepository(host).openCanonicalChat("bot-a", null),
+        )
         assertEquals(listOf("session.list", "session.list", "session.create"), host.calls.map { it.first })
     }
 
@@ -589,7 +611,7 @@ class BotsPluginRepositoryTest {
 
             val open = BotsPluginRepository(host).openCanonicalChat("bot-a", null, expectedEndpointGeneration = 0L)
 
-            assertEquals(stopAt, BotChatOpen.Unsafe, open)
+            assertEquals(stopAt, BotChatOpen.Unsafe(BotChatFailure.NotAnswered), open)
             assertEquals(stopAt, expectedCalls, host.calls.size)
         }
     }

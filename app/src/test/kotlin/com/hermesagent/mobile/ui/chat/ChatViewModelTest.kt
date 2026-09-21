@@ -4792,6 +4792,52 @@ class ChatViewModelTest {
             assertNull(viewModel.uiState.value.notice?.text)
         }
 
+    @Test
+    fun `failed session open stays in chat pane and retry preserves draft`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        repository.openGates["session-z"] = gate
+        collectState()
+        runCurrent()
+        viewModel.selectSession("session-z")
+        runCurrent()
+        viewModel.setDraft("keep this draft")
+        viewModel.selectSession("session-z")
+        runCurrent()
+        gate.completeExceptionally(IllegalStateException("backend root cause unknown"))
+        runCurrent()
+
+        val failure = viewModel.uiState.value.sessionOpen as SessionOpenState.Failed
+        assertEquals("session-z", failure.sessionId)
+        assertEquals(SESSION_OPEN_FAILED_COPY, failure.message)
+        assertNull("session-open errors do not populate composer notice", viewModel.uiState.value.notice)
+        assertEquals("keep this draft", viewModel.uiState.value.draft)
+
+        repository.openGates.remove("session-z")
+        viewModel.retrySessionOpen()
+        runCurrent()
+        assertEquals(listOf("session-z", "session-z"), repository.opened.takeLast(2))
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertEquals("keep this draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `late failed open after navigation cannot overwrite newer session`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        repository.openGates["session-z"] = gate
+        collectState()
+        runCurrent()
+        viewModel.selectSession("session-z")
+        runCurrent()
+        viewModel.selectSession("session-b")
+        runCurrent()
+        gate.completeExceptionally(IllegalStateException("old open failed"))
+        runCurrent()
+
+        assertEquals("session-b", viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
     /**
      * The whole point of a stub row: the conversation it names is one this app
      * has never paged in, so selecting it has to reach the Gateway rather than

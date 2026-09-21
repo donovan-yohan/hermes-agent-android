@@ -52,7 +52,12 @@ import com.hermesagent.mobile.data.session.ComposerTodoState
 import com.hermesagent.mobile.data.session.ComposerTodoStatus
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.JoinedEdge
+import com.hermesagent.mobile.ui.common.JoinedPaneLayout
+import com.hermesagent.mobile.ui.common.JoinedStackRadius
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.common.combine
+import com.hermesagent.mobile.ui.common.joinedEdge
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import kotlinx.coroutines.delay
 
@@ -70,6 +75,20 @@ fun ComposerStatusStack(
     onKillProcess: (String) -> Unit = {},
     hasQueue: Boolean = false,
     queueContent: (@Composable () -> Unit)? = null,
+    /** Geometry for this group inside the shared composer chrome run. */
+    joinedLayout: JoinedPaneLayout? = null,
+    /**
+     * The pre-run form of [joinedLayout], kept for callers that still speak it.
+     *
+     * It said one thing — "there is another surface directly above me" — and drew
+     * it as a rounded top with a flat, borderless bottom edge and no bottom gap.
+     * That is exactly the top of a run, so it is expressed as one rather than as a
+     * second drawing path: the strip is the run's first pane and whatever stands
+     * above it owns its own join.
+     */
+    // API REQUIREMENT: `fusedToComposer` is the pre-run form of `joinedLayout` and
+    // is honoured as the run's start edge, so an existing caller keeps working.
+    // It should be removed once every caller passes `joinedLayout`.
     fusedToComposer: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -81,7 +100,20 @@ fun ComposerStatusStack(
     val previews = visiblePreviews.filterNot { it.id in dismissedPreviewIds }
     val visibleGroupCount = composerStatusGroupCount(status, hasQueue, previews.size)
     if (visibleGroupCount == 0) return
-    val fuseSingleGroup = fusedToComposer && visibleGroupCount == 1
+    val legacyLayout = JoinedPaneLayout(JoinedEdge.Start, JoinedStackRadius)
+        .takeIf { fusedToComposer }
+    // Every rendered group is part of the shared status pane. The pane's own
+    // outer geometry is supplied by JoinedChromeStack; group count must not
+    // resurrect independent rounded cards or seam gaps.
+    val groupLayout = joinedLayout ?: legacyLayout
+    var renderedGroupIndex = 0
+    fun nextGroupLayout(): JoinedPaneLayout? {
+        val layout = groupLayout?.let {
+            val edge = joinedEdge(renderedGroupIndex++, visibleGroupCount)
+            JoinedPaneLayout(it.edge.combine(edge), it.radius)
+        }
+        return layout
+    }
     ReconcileSilentExits(
         activeSessionId,
         visibleBackgroundProcesses,
@@ -115,7 +147,7 @@ fun ComposerStatusStack(
                 // then the only thing on screen that says anything at all.
                 defaultExpanded = goal.state == ComposerGoalState.Unknown,
                 followDefaultExpandedChanges = true,
-                fusedToComposer = fuseSingleGroup,
+                joinedLayout = nextGroupLayout(),
             ) {
                 StatusText(goal.title ?: goal.rawText)
                 goal.detail?.takeIf(String::isNotBlank)?.let { StatusText(it) }
@@ -130,7 +162,7 @@ fun ComposerStatusStack(
                 title = "Tasks $done/${todos.size}",
                 defaultExpanded = true,
                 icon = HermesIcon.Checklist,
-                fusedToComposer = fuseSingleGroup,
+                joinedLayout = nextGroupLayout(),
             ) {
                 todos.forEach { todo -> TodoStatusRow(todo) }
             }
@@ -141,7 +173,7 @@ fun ComposerStatusStack(
                 "Subagents",
                 defaultExpanded = false,
                 count = agents.size,
-                fusedToComposer = fuseSingleGroup,
+                joinedLayout = nextGroupLayout(),
             ) {
                 agents.forEach { agent ->
                     StatusText(agent.currentTool?.let { "${agent.title} · $it" } ?: agent.title)
@@ -154,7 +186,7 @@ fun ComposerStatusStack(
                 "Background",
                 defaultExpanded = false,
                 count = processes.size,
-                fusedToComposer = fuseSingleGroup,
+                joinedLayout = nextGroupLayout(),
             ) {
                 processes.forEach { process ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -182,7 +214,7 @@ fun ComposerStatusStack(
                 "Previews",
                 defaultExpanded = false,
                 count = previews.size,
-                fusedToComposer = fuseSingleGroup,
+                joinedLayout = nextGroupLayout(),
             ) {
                 previews.forEach { preview ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -203,7 +235,7 @@ fun ComposerStatusStack(
                 "Queued next",
                 defaultExpanded = false,
                 count = prompts.size,
-                fusedToComposer = fuseSingleGroup,
+                joinedLayout = nextGroupLayout(),
             ) {
                 prompts.forEach { prompt -> StatusText(prompt.text) }
             }
@@ -309,7 +341,16 @@ private fun StatusGroup(
     followDefaultExpandedChanges: Boolean = false,
     count: Int? = null,
     icon: HermesIcon? = null,
-    fusedToComposer: Boolean = false,
+    /**
+     * Where this group sits inside the composer chrome run, or null when it is
+     * standing on its own.
+     *
+     * Inside the run the group stops drawing its own outline and fill: the run
+     * paints one surface for the whole strip, so a border here would draw a line
+     * inside the run and a background here would sit on top of the run's own. On
+     * its own the group keeps the whole frame it has always had.
+     */
+    joinedLayout: JoinedPaneLayout? = null,
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable(stateKey) { mutableStateOf(defaultExpanded) }
@@ -330,16 +371,18 @@ private fun StatusGroup(
     val tokens = HermesTheme.tokens
     val headerText = tokens.textTertiary.alphaMultiply(0.92f)
     val groupIcon = tokens.textTertiary.alphaMultiply(0.70f)
-    val shape = if (fusedToComposer) {
-        RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomEnd = 0.dp, bottomStart = 0.dp)
-    } else {
-        RoundedCornerShape(10.dp)
-    }
     Column(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, tokens.strokeTertiary, shape)
-            .background(if (fusedToComposer) tokens.cardSurface else tokens.widgetSurface, shape),
+            .then(
+                if (joinedLayout == null) {
+                    Modifier
+                        .border(1.dp, tokens.strokeTertiary, RoundedCornerShape(10.dp))
+                        .background(tokens.widgetSurface, RoundedCornerShape(10.dp))
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Row(
             modifier = Modifier

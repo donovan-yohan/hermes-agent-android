@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ModalBottomSheet
@@ -37,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
+import com.hermesagent.mobile.ui.common.JoinedPaneLayout
+import com.hermesagent.mobile.ui.common.StandaloneChromeRadius
 import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
 import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -56,6 +60,17 @@ internal fun CodingStatusRow(
     modifier: Modifier = Modifier,
     openExternal: ((String) -> Unit)? = null,
     copyPath: ((String) -> Unit)? = null,
+    /**
+     * Where this row sits inside the composer chrome run, or null when it stands
+     * alone.
+     *
+     * In the run the row stops closing its own bottom edge and takes the run's
+     * geometry instead: only a row that is the run's last surface rounds its
+     * bottom, and the line between the row and its neighbour is drawn once, by
+     * whichever of the two owns it. Left out of the run the row is a lone panel
+     * and keeps the frame it has always had.
+     */
+    joinedLayout: JoinedPaneLayout? = null,
 ) {
     val status = context as? CodingContext.Available ?: return
     val tokens = HermesTheme.tokens
@@ -74,8 +89,28 @@ internal fun CodingStatusRow(
             copied = false
         }
     }
+    // Outside the run the row is a lone panel: every corner rounded, its own
+    // outline, its own bottom rule. Inside the run only the outer corners round
+    // and the row paints a bottom rule just when it is not the surface standing
+    // against the composer below it.
+    val shape = joinedLayout?.shape ?: RoundedCornerShape(StandaloneChromeRadius)
+    // The line under the row is drawn by whatever stands below it — the next
+    // surface of the run, or the row's own bottom rule when it stands alone.
+    val closesOwnBottom = joinedLayout == null
 
-    Column(modifier.fillMaxWidth().semantics { contentDescription = "Coding status" }) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .then(
+                if (joinedLayout == null) {
+                    Modifier
+                        .border(1.dp, tokens.strokeTertiary, shape)
+                } else {
+                    Modifier
+                },
+            )
+            .semantics { contentDescription = "Coding status" },
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -191,7 +226,9 @@ internal fun CodingStatusRow(
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(tokens.strokeTertiary))
+        if (closesOwnBottom) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(tokens.strokeTertiary))
+        }
     }
 }
 

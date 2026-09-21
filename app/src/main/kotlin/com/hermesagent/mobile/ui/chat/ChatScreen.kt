@@ -83,6 +83,8 @@ import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.JoinedChromeStack
+import com.hermesagent.mobile.ui.common.JoinedPane
 import com.hermesagent.mobile.ui.common.QuietIconButton
 import com.hermesagent.mobile.ui.common.StatusAction
 import com.hermesagent.mobile.ui.common.statusAction
@@ -146,8 +148,10 @@ fun ChatScreen(
      * preference rather than chat state, so it arrives beside the theme.
      */
     introSplashEnabled: Boolean = true,
-    /** Rail chrome above the session header — the connection switcher. */
+    /** Fixed bottom rail footer — the connection switcher. */
     sidebarHeader: @Composable () -> Unit = {},
+    /** Plugin feature launchers, kept above projects and pinned sessions. */
+    sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution> = emptyList(),
 ) {
     // Derived once, here, because this is where the policy lives: which
     // connection states are a door, and which surface that door opens. Both
@@ -171,9 +175,9 @@ fun ChatScreen(
     val onOpenContextUsage = { contextUsageOpen = true }
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, introSplashEnabled, onOpenContextUsage)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, introSplashEnabled, onOpenContextUsage)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage)
         }
     }
     // The meter disappears whenever its session does — a switch, a reconnect, an
@@ -214,6 +218,7 @@ private fun CompactLayout(
     gatewayDoor: StatusAction?,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
+    sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution>,
     introSplashEnabled: Boolean,
     onOpenContextUsage: () -> Unit = {},
 ) {
@@ -235,6 +240,7 @@ private fun CompactLayout(
                     state = state,
                     actions = actions,
                     header = sidebarHeader,
+                    sidebarNavigation = sidebarNavigation,
                     // The drawer still does not inherit the rail's navigation-bar
                     // inset, which is a deliberate difference. The keyboard is
                     // not that: search is at the top of this pane and the list
@@ -296,6 +302,14 @@ private fun CompactLayout(
                 },
                 onToggleReadAloud = actions.onToggleReadAloud,
                 introSplashEnabled = introSplashEnabled,
+                // A session that could not be opened is reported here, in the chat
+                // pane, with the retry that re-opens it — never on the composer's
+                // status line. The composer answers something the person did *in
+                // this chat*; an open that never arrived has no chat to act in, so
+                // the report belongs where the chat would have been, and Retry
+                // re-opens the same session without disturbing the draft.
+                openFailure = sessionOpenFailure(state),
+                onRetrySessionOpen = actions.onRetrySessionOpen,
                 modifier = Modifier.weight(1f),
             )
             ComposerPane(state, actions, gatewayDoor)
@@ -313,6 +327,7 @@ private fun WideLayout(
     railInsets: WindowInsets,
     imeInsets: WindowInsets,
     sidebarHeader: @Composable () -> Unit,
+    sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution>,
     introSplashEnabled: Boolean,
     onOpenContextUsage: () -> Unit = {},
 ) {
@@ -324,6 +339,7 @@ private fun WideLayout(
             state,
             actions,
             sidebarHeader,
+            sidebarNavigation,
             Modifier
                 .width(RAIL_WIDTH)
                 .fillMaxHeight()
@@ -373,6 +389,14 @@ private fun WideLayout(
                 },
                 onToggleReadAloud = actions.onToggleReadAloud,
                 introSplashEnabled = introSplashEnabled,
+                // A session that could not be opened is reported here, in the chat
+                // pane, with the retry that re-opens it — never on the composer's
+                // status line. The composer answers something the person did *in
+                // this chat*; an open that never arrived has no chat to act in, so
+                // the report belongs where the chat would have been, and Retry
+                // re-opens the same session without disturbing the draft.
+                openFailure = sessionOpenFailure(state),
+                onRetrySessionOpen = actions.onRetrySessionOpen,
                 modifier = Modifier.weight(1f),
             )
             ComposerPane(state, actions, gatewayDoor)
@@ -385,6 +409,7 @@ private fun SessionsPane(
     state: ChatUiState,
     actions: ChatActions,
     header: @Composable () -> Unit = {},
+    sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution> = emptyList(),
     modifier: Modifier = Modifier,
     onSelectSession: (String) -> Unit = actions.onSelectSession,
     onCreateSession: () -> Unit = actions.onCreateSession,
@@ -423,6 +448,7 @@ private fun SessionsPane(
         sessionsLoading = state.sessionsLoading,
         onMarkAllRead = actions.onMarkAllSessionsRead,
         header = header,
+        sidebarNavigation = sidebarNavigation,
         profileRail = state.profileRail,
         projectScope = state.projectScope,
         profileRailActions = remember(actions, onManageProfiles) {
@@ -445,6 +471,13 @@ private fun TranscriptPane(
     onViewGatewayLogs: ((String) -> Unit)?,
     onToggleReadAloud: (String) -> Unit,
     introSplashEnabled: Boolean,
+    /**
+     * A session that could not be opened, reported at the foot of the transcript
+     * the person is looking at instead of in the composer.
+     */
+    openFailure: SessionOpenState.Failed? = null,
+    /** The ViewModel's own re-open of the failed session; it never rehomes. */
+    onRetrySessionOpen: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -570,16 +603,17 @@ private fun TranscriptPane(
         listState.scrollToItem(index + leadingItems, anchor.scrollOffset)
     }
 
-    Box(modifier.fillMaxWidth()) {
-        Transcript(
-            entries = state.transcript,
-            imageLoader = state.imageLoader,
-            listState = listState,
-            onBranchFromReply = onBranchFromReply,
-            onRegenerateReply = onRegenerateReply,
-            onSendDiagnostics = onSendDiagnostics,
-            onViewGatewayLogs = onViewGatewayLogs,
-            onShowEarlier = if (!state.canShowEarlierMessages) {
+    Column(modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            Transcript(
+                entries = state.transcript,
+                imageLoader = state.imageLoader,
+                listState = listState,
+                onBranchFromReply = onBranchFromReply,
+                onRegenerateReply = onRegenerateReply,
+                onSendDiagnostics = onSendDiagnostics,
+                onViewGatewayLogs = onViewGatewayLogs,
+                onShowEarlier = if (!state.canShowEarlierMessages) {
                 null
             } else {
                 {
@@ -669,6 +703,17 @@ private fun TranscriptPane(
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }
+        }
+        }
+        if (openFailure != null) {
+            SessionOpenFailurePanel(
+                failure = openFailure,
+                onRetry = onRetrySessionOpen,
+                modifier = Modifier.padding(
+                    horizontal = HermesTheme.spacing.pageInset,
+                    vertical = HermesTheme.spacing.turnGap,
+                ),
+            )
         }
     }
 }
@@ -827,11 +872,24 @@ private fun JumpToLatestButton(
 private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: StatusAction?) {
     val composerStatus = state.activeSession?.composerStatus
     val hasQueue = state.composer.runtime.queueEntries.isNotEmpty()
-    val fuseStatusStack = composerStatusGroupCount(composerStatus, hasQueue) == 1 &&
-        state.composer.runtime.pendingInput == null && state.backgroundPendingInput == null
     val latestSettledToolId = state.transcript.asReversed().firstNotNullOfOrNull { entry ->
         (entry as? ToolActivity)?.takeIf { it.state != ToolState.Running }?.id
     }
+    // What the chrome directly above the editor actually is right now. The stack
+    // is derived from this, so a session that gains background work, or one that
+    // leaves its worktree behind, moves the joined corners rather than leaving a
+    // rounded top with nothing above it. `pendingInput` and a background pending
+    // input both stand in the strip's place, so the strip is not the stack's top
+    // when either is on screen.
+    val statusStackOnScreen = statusStackVisible(composerStatus, hasQueue) &&
+        state.composer.runtime.pendingInput == null && state.backgroundPendingInput == null
+    val chromeInputs = ComposerChromeInputs(
+        hasStatusStack = statusStackOnScreen,
+        statusStackIsSingleGroup = statusStackOnScreen &&
+            statusStackIsSingleGroup(composerStatus, hasQueue),
+        hasCodingRow = state.composer.codingContext is CodingContext.Available,
+    )
+    val chromePanes = composerChromePanes(chromeInputs)
     Column(Modifier.imePadding().navigationBarsPadding()) {
         LaunchedEffect(state.activeSession?.id) { actions.onComposerStatusOpened() }
         LaunchedEffect(
@@ -842,41 +900,6 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
         ) {
             actions.onRefreshCodingContext()
         }
-        ComposerStatusStack(
-            activeSessionId = state.activeSession?.id,
-            status = state.activeSession?.composerStatus,
-            onRefreshProcesses = actions.onRefreshProcesses,
-            onReconcileProcesses = actions.onReconcileProcesses,
-            onKillProcess = actions.onKillProcess,
-            hasQueue = hasQueue,
-            queueContent = {
-                ComposerQueueSection(
-                    durableSessionId = state.composer.runtime.activeDurableId,
-                    entries = state.composer.runtime.queueEntries,
-                    parked = state.composer.runtime.queueParked,
-                    editingEntryId = state.composer.runtime.queueEditingEntryId,
-                    editingText = state.composer.runtime.queueEditingText,
-                    redirectableEntryId = state.composer.runtime.queueEntries.firstOrNull()
-                        ?.takeIf { state.composer.runtime.canRedirect }?.id,
-                    onEdit = actions.onEditQueuedEntry,
-                    onEditTextChange = actions.onQueueEditTextChange,
-                    onSaveEdit = actions.onSaveQueueEdit,
-                    onCancelEdit = actions.onCancelQueueEdit,
-                    onDelete = actions.onDeleteQueuedEntry,
-                    onSendNext = actions.onSendNext,
-                    onRedirectNow = actions.onRedirectQueuedEntry,
-                    onResume = actions.onResumeQueue,
-                    onMarkReadyAfterReview = actions.onMarkQueuedEntryReady,
-                )
-            },
-            fusedToComposer = fuseStatusStack,
-            modifier = Modifier.padding(
-                start = HermesTheme.spacing.pageInset + 8.dp,
-                top = 4.dp,
-                end = HermesTheme.spacing.pageInset + 8.dp,
-                bottom = if (fuseStatusStack) 0.dp else 4.dp,
-            ),
-        )
         PendingInputSurface(
             pending = state.composer.runtime.pendingInput,
             background = state.backgroundPendingInput,
@@ -899,63 +922,126 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
             state = state.composer.codingReview,
             onDismiss = actions.onDismissCodingReview,
         )
-        Composer(
-            draft = state.draft,
-            onDraftChange = actions.onDraftChange,
-            onSend = actions.onSend,
-            onStop = actions.onStop,
-            isStreaming = state.isStreaming && state.connection.status == GatewayConnectionStatus.Connected,
-            canSend = state.canSend,
-            connected = state.connection.status == GatewayConnectionStatus.Connected,
-            statusLine = state.composerStatus(),
-            notice = state.notice?.text,
-            statusAction = state.composerStatusAction(actions, gatewayDoor),
-            editorIdentity = state.activeSession?.id,
-            codingHeader = {
-                CodingStatusRow(
-                    context = state.composer.codingContext,
-                    onOpenReview = actions.onOpenCodingReview,
-                )
+        JoinedChromeStack(
+            panes = chromePanes.mapNotNull { pane ->
+                when (pane) {
+                    ComposerChromePane.StatusStack -> JoinedPane(
+                        key = "status",
+                        fill = HermesTheme.tokens.cardSurface,
+                        stroke = HermesTheme.tokens.strokeTertiary,
+                    ) { layout ->
+                        ComposerStatusStack(
+                            activeSessionId = state.activeSession?.id,
+                            status = state.activeSession?.composerStatus,
+                            onRefreshProcesses = actions.onRefreshProcesses,
+                            onReconcileProcesses = actions.onReconcileProcesses,
+                            onKillProcess = actions.onKillProcess,
+                            hasQueue = hasQueue,
+                            queueContent = {
+                                ComposerQueueSection(
+                                    durableSessionId = state.composer.runtime.activeDurableId,
+                                    entries = state.composer.runtime.queueEntries,
+                                    parked = state.composer.runtime.queueParked,
+                                    editingEntryId = state.composer.runtime.queueEditingEntryId,
+                                    editingText = state.composer.runtime.queueEditingText,
+                                    redirectableEntryId = state.composer.runtime.queueEntries.firstOrNull()
+                                        ?.takeIf { state.composer.runtime.canRedirect }?.id,
+                                    onEdit = actions.onEditQueuedEntry,
+                                    onEditTextChange = actions.onQueueEditTextChange,
+                                    onSaveEdit = actions.onSaveQueueEdit,
+                                    onCancelEdit = actions.onCancelQueueEdit,
+                                    onDelete = actions.onDeleteQueuedEntry,
+                                    onSendNext = actions.onSendNext,
+                                    onRedirectNow = actions.onRedirectQueuedEntry,
+                                    onResume = actions.onResumeQueue,
+                                    onMarkReadyAfterReview = actions.onMarkQueuedEntryReady,
+                                )
+                            },
+                            joinedLayout = layout,
+                            modifier = Modifier.padding(
+                                start = 8.dp,
+                                top = 4.dp,
+                                end = 8.dp,
+                                // In the stack's top position there is chrome directly
+                                // below, so the joint is sealed with no gap and the
+                                // stack's own corners carry the outer edge.
+                                bottom = if (layout.isTop) 0.dp else 4.dp,
+                            ),
+                        )
+                    }
+
+                    ComposerChromePane.CodingRow -> JoinedPane(
+                        key = "coding",
+                        fill = HermesTheme.tokens.cardSurface,
+                        stroke = HermesTheme.tokens.strokeTertiary,
+                    ) { layout ->
+                        CodingStatusRow(
+                            context = state.composer.codingContext,
+                            onOpenReview = actions.onOpenCodingReview,
+                            joinedLayout = layout,
+                        )
+                    }
+
+                    ComposerChromePane.Composer -> JoinedPane(
+                        key = "composer",
+                        fill = HermesTheme.tokens.cardSurface,
+                    ) { layout ->
+                        Composer(
+                            draft = state.draft,
+                            onDraftChange = actions.onDraftChange,
+                            onSend = actions.onSend,
+                            onStop = actions.onStop,
+                            isStreaming = state.isStreaming &&
+                                state.connection.status == GatewayConnectionStatus.Connected,
+                            canSend = state.canSend,
+                            connected = state.connection.status == GatewayConnectionStatus.Connected,
+                            statusLine = state.composerStatus(),
+                            notice = state.composerNotice(),
+                            statusAction = state.composerStatusAction(actions, gatewayDoor),
+                            editorIdentity = state.activeSession?.id,
+                            joinedLayout = layout,
+                            controls = state.composer,
+                            onSelectModel = actions.onSelectModel,
+                            onSelectReasoning = actions.onSelectReasoning,
+                            onSelectFast = actions.onSelectFast,
+                            onToggleModelVisible = actions.onToggleModelVisible,
+                            onSetProviderModelsVisible = actions.onSetProviderModelsVisible,
+                            onEditorSelectionChange = actions.onEditorSelectionChange,
+                            onCompletionSelected = actions.onCompletionSelected,
+                            onInsertText = actions.onInsertText,
+                            onPickFiles = actions.onPickFiles,
+                            recentImages = state.composer.runtime.recentImages,
+                            onAddRecentImage = actions.onAddRecentImage,
+                            onRequestRecentImageAccess = actions.onRequestRecentImageAccess,
+                            onPickPhotos = actions.onPickPhotos,
+                            onRecentImagesSheetOpened = actions.onRecentImagesSheetOpened,
+                            onRecentImagesSheetClosed = actions.onRecentImagesSheetClosed,
+                            attachments = state.composer.runtime.attachments,
+                            attachmentThumbnails = state.composer.runtime.attachmentThumbnails,
+                            onRemoveAttachment = actions.onRemoveAttachment,
+                            voiceState = state.voice,
+                            onToggleDictation = actions.onToggleDictation,
+                            onToggleConversation = actions.onToggleConversation,
+                            onToggleMute = actions.onToggleVoiceMute,
+                            busyKind = state.composer.runtime.busyKind,
+                            queueCount = state.composer.runtime.queueEntries.size,
+                            canRedirect = state.composer.runtime.canRedirect,
+                            canQueue = state.composer.runtime.canQueue,
+                            onRedirect = actions.onRedirect,
+                            onQueue = actions.onQueue,
+                            onSendNext = {
+                                state.composer.runtime.queueEntries.firstOrNull()?.id?.let(actions.onSendNext)
+                            },
+                            canUndo = state.composer.runtime.undoRedo.canUndo,
+                            canRedo = state.composer.runtime.undoRedo.canRedo,
+                            onUndo = actions.onUndoDraft,
+                            onRedo = actions.onRedoDraft,
+                            onHistoryOlder = actions.onHistoryOlder,
+                            onHistoryNewer = actions.onHistoryNewer,
+                        )
+                    }
+                }
             },
-            fusedStatusAbove = fuseStatusStack,
-            controls = state.composer,
-            onSelectModel = actions.onSelectModel,
-            onSelectReasoning = actions.onSelectReasoning,
-            onSelectFast = actions.onSelectFast,
-            onToggleModelVisible = actions.onToggleModelVisible,
-            onSetProviderModelsVisible = actions.onSetProviderModelsVisible,
-            onEditorSelectionChange = actions.onEditorSelectionChange,
-            onCompletionSelected = actions.onCompletionSelected,
-            onInsertText = actions.onInsertText,
-            onPickFiles = actions.onPickFiles,
-            recentImages = state.composer.runtime.recentImages,
-            onAddRecentImage = actions.onAddRecentImage,
-            onRequestRecentImageAccess = actions.onRequestRecentImageAccess,
-            onPickPhotos = actions.onPickPhotos,
-            onRecentImagesSheetOpened = actions.onRecentImagesSheetOpened,
-            onRecentImagesSheetClosed = actions.onRecentImagesSheetClosed,
-            attachments = state.composer.runtime.attachments,
-            attachmentThumbnails = state.composer.runtime.attachmentThumbnails,
-            onRemoveAttachment = actions.onRemoveAttachment,
-            voiceState = state.voice,
-            onToggleDictation = actions.onToggleDictation,
-            onToggleConversation = actions.onToggleConversation,
-            onToggleMute = actions.onToggleVoiceMute,
-            busyKind = state.composer.runtime.busyKind,
-            queueCount = state.composer.runtime.queueEntries.size,
-            canRedirect = state.composer.runtime.canRedirect,
-            canQueue = state.composer.runtime.canQueue,
-            onRedirect = actions.onRedirect,
-            onQueue = actions.onQueue,
-            onSendNext = {
-                state.composer.runtime.queueEntries.firstOrNull()?.id?.let(actions.onSendNext)
-            },
-            canUndo = state.composer.runtime.undoRedo.canUndo,
-            canRedo = state.composer.runtime.undoRedo.canRedo,
-            onUndo = actions.onUndoDraft,
-            onRedo = actions.onRedoDraft,
-            onHistoryOlder = actions.onHistoryOlder,
-            onHistoryNewer = actions.onHistoryNewer,
         )
     }
 }
@@ -1123,7 +1209,18 @@ internal fun compactChatSubtitle(subtitle: String, crowded: Boolean): String {
     }
 }
 
-private fun ChatUiState.composerStatus(): String = notice?.text ?: when {
+/**
+ * The notice the composer's own status line may report.
+ *
+ * A failed session open is deliberately not one of them: it is drawn in the chat
+ * pane, with its own Retry, so repeating it here would put the same sentence in
+ * two places and offer a worse second control. Every other notice keeps its
+ * existing home.
+ */
+private fun ChatUiState.composerNotice(): String? =
+    notice?.takeIf { sessionOpenFailure(this) == null }?.text
+
+private fun ChatUiState.composerStatus(): String = composerNotice() ?: when {
     connection.status == GatewayConnectionStatus.Connecting -> "Connecting to Gateway"
     connection.status == GatewayConnectionStatus.NeedsAttention ->
         connection.message ?: "Open Gateways to reconnect"

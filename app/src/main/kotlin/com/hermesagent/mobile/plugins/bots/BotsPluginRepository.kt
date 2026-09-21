@@ -95,6 +95,45 @@ sealed interface BotChatLookup {
     data object Unsafe : BotChatLookup
 }
 
+/**
+ * Why an open-or-create could not be confirmed.
+ *
+ * These are the four failures the wire can actually produce, and they are
+ * deliberately distinct because the *person's next action is different for
+ * each*: reconnect, update the Gateway, retry, or report an unreadable answer.
+ * Collapsing them into one `Unsafe` is what made every start failure read as
+ * "Check the Gateway and try again" — true for at most one of them, and
+ * unactionable for the other three.
+ *
+ * The classification is made in [BotsPluginRepository] because that is the only
+ * layer that still holds the evidence: `PluginHostResult.Refused` carries the
+ * JSON-RPC code, and `UnavailableOnGateway` is the `-32601` method-not-found
+ * signal. By the time a failure reaches the surface as a boolean, the wire
+ * evidence is gone.
+ */
+enum class BotChatFailure {
+    /**
+     * Nothing answered: no live connection, so the request was never sent, or
+     * the exchange timed out before the Gateway did.
+     *
+     * This is the door's own `code == 0` refusal — `RECONNECT_MESSAGE` and
+     * `TIMED_OUT_MESSAGE` are its two sentences — and deliberately not
+     * `PluginHostResult.Refused`'s `code == 0` branch read as "the Gateway
+     * refused": nothing was refused, and the next action is to wait or retry
+     * rather than to go looking at the Gateway's configuration.
+     */
+    NotAnswered,
+
+    /** This Gateway build does not serve a method the open needs (`-32601`). */
+    UnavailableOnGateway,
+
+    /** The Gateway answered with a JSON-RPC error. */
+    Refused,
+
+    /** The Gateway answered, and this app could not read the answer. */
+    Unreadable,
+}
+
 /** What one open-or-create attempt established for the tapped roster row. */
 sealed interface BotChatOpen {
     /**
@@ -103,8 +142,22 @@ sealed interface BotChatOpen {
      */
     data class Opened(val durableId: String) : BotChatOpen
 
-    /** Nothing could be confirmed. Fail closed: no navigation, no prompt, no second mint. */
-    data object Unsafe : BotChatOpen
+    /**
+     * Nothing could be confirmed. Fail closed: no navigation, no prompt, no
+     * second mint. [failure] is the classified reason, which the surface turns
+     * into one actionable sentence and a preserved retry.
+     */
+    data class Unsafe(val failure: BotChatFailure) : BotChatOpen
+}
+
+/** One canonical lookup, with its failure classified rather than erased. */
+private sealed interface Lookup {
+    data class Found(val durableId: String) : Lookup
+
+    /** A well-formed successful answer that proves no canonical chat exists. */
+    data object Missing : Lookup
+
+    data class Unreadable(val failure: BotChatFailure) : Lookup
 }
 
 class BotsPluginRepository(
@@ -216,7 +269,25 @@ class BotsPluginRepository(
         profile: String,
         rosterCanonicalId: String?,
         expectedEndpointGeneration: Long? = null,
-    ): BotChatLookup {
+    ): BotChatLookup = when (val lookup = lookupCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
+        is Lookup.Found -> BotChatLookup.Found(lookup.durableId)
+        is Lookup.Unreadable -> BotChatLookup.Unsafe
+        Lookup.Missing -> BotChatLookup.Missing
+    }
+
+    /**
+     * The canonical lookup with its failure classified.
+     *
+     * [findCanonicalChat] is the adapter that keeps the three-way answer
+     * [BotsPluginRepository.findCanonicalChat]'s callers have always branched
+     * on; this is where the *reason* survives, which is what an open's failure
+     * report needs — see [BotChatFailure].
+     */
+    private suspend fun lookupCanonicalChat(
+        profile: String,
+        rosterCanonicalId: String?,
+        expectedEndpointGeneration: Long?,
+    ): Lookup {
         val params = buildJsonObject {
             put("profile", JsonPrimitive(profile))
             put("title", JsonPrimitive(CANONICAL_CHAT_TITLE))
@@ -226,18 +297,30 @@ class BotsPluginRepository(
         val result = expectedEndpointGeneration?.let { endpoint ->
             host.requestAtEndpoint(endpoint, SESSION_LIST, params)
         } ?: host.request(SESSION_LIST, params)
-        if (result !is PluginHostResult.Success) return BotChatLookup.Unsafe
-        val sessions = (result.result as? JsonObject)?.get("sessions") as? JsonArray ?: return BotChatLookup.Unsafe
-        if (sessions.isEmpty()) return if (rosterCanonicalId.isNullOrBlank()) BotChatLookup.Missing else BotChatLookup.Unsafe
+        if (result !is PluginHostResult.Success) {
+            return Lookup.Unreadable(result.failure())
+        }
+        val sessions = (result.result as? JsonObject)?.get("sessions") as? JsonArray
+            ?: return Lookup.Unreadable(BotChatFailure.Unreadable)
+        if (sessions.isEmpty()) {
+            return if (rosterCanonicalId.isNullOrBlank()) {
+                Lookup.Missing
+            } else {
+                Lookup.Unreadable(BotChatFailure.Unreadable)
+            }
+        }
         // `title` makes this a constrained lookup, not a ranking request. A
         // surprising extra or malformed row therefore means the response no
         // longer proves which hidden chat is canonical; never pick arbitrarily.
-        val exact = sessions.singleOrNull() as? JsonObject ?: return BotChatLookup.Unsafe
-        if (exact.string("title") != CANONICAL_CHAT_TITLE) return BotChatLookup.Unsafe
+        val exact = sessions.singleOrNull() as? JsonObject
+            ?: return Lookup.Unreadable(BotChatFailure.Unreadable)
+        if (exact.string("title") != CANONICAL_CHAT_TITLE) {
+            return Lookup.Unreadable(BotChatFailure.Unreadable)
+        }
         val id = exact.string("resolved_id")?.trim()?.takeIf(String::isNotEmpty)
             ?: exact.string("id")?.trim()?.takeIf(String::isNotEmpty)
-            ?: return BotChatLookup.Unsafe
-        return BotChatLookup.Found(id)
+            ?: return Lookup.Unreadable(BotChatFailure.Unreadable)
+        return Lookup.Found(id)
     }
 
     /**
@@ -285,18 +368,54 @@ class BotsPluginRepository(
         rosterCanonicalId: String?,
         expectedEndpointGeneration: Long = host.endpointGeneration.value,
     ): BotChatOpen {
-        when (val first = findCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
-            is BotChatLookup.Found -> return BotChatOpen.Opened(first.durableId)
-            BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
-            BotChatLookup.Missing -> Unit
+        when (val first = lookupCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
+            is Lookup.Found -> return BotChatOpen.Opened(first.durableId)
+            is Lookup.Unreadable -> return BotChatOpen.Unsafe(first.failure)
+            Lookup.Missing -> Unit
         }
-        when (val concurrent = findCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
-            is BotChatLookup.Found -> return BotChatOpen.Opened(concurrent.durableId)
-            BotChatLookup.Unsafe -> return BotChatOpen.Unsafe
-            BotChatLookup.Missing -> Unit
+        when (val concurrent = lookupCanonicalChat(profile, rosterCanonicalId, expectedEndpointGeneration)) {
+            is Lookup.Found -> return BotChatOpen.Opened(concurrent.durableId)
+            is Lookup.Unreadable -> return BotChatOpen.Unsafe(concurrent.failure)
+            Lookup.Missing -> Unit
         }
-        val created = createCanonicalChat(profile, expectedEndpointGeneration) ?: return BotChatOpen.Unsafe
-        return BotChatOpen.Opened(created)
+        val created = createCanonicalChat(profile, expectedEndpointGeneration)
+        return when (created) {
+            is Created.Confirmed -> BotChatOpen.Opened(created.durableId)
+            is Created.Failed -> BotChatOpen.Unsafe(created.failure)
+        }
+    }
+
+    /**
+     * One `PluginHostResult`'s failure, classified.
+     *
+     * `UnavailableOnGateway` is its own reason and never a generic refusal: it
+     * is the `-32601` method-not-found answer, which retrying can never fix and
+     * an update might, so the surface must not tell the person to retry.
+     *
+     * Code zero also represents a Gateway error without a numeric code. Only
+     * the door's known local connection/timeout sentences identify an unanswered
+     * request; unknown refusals retain the generic refusal instead.
+     */
+    private fun PluginHostResult.failure(): BotChatFailure = when {
+        this is PluginHostResult.Success -> BotChatFailure.Unreadable
+        this === PluginHostResult.UnavailableOnGateway -> BotChatFailure.UnavailableOnGateway
+        this is PluginHostResult.Refused ->
+            if (code == 0 && (safeMessage == "Reconnect to the Gateway and try again." ||
+                    safeMessage == "The Gateway did not answer in time.")) {
+                BotChatFailure.NotAnswered
+            } else {
+                BotChatFailure.Refused
+            }
+        // Unreachable while the sealed hierarchy is three-wide; stated so a
+        // fourth result added later fails to "unreadable", never to "refused".
+        else -> BotChatFailure.Unreadable
+    }
+
+    /** What one create-and-title attempt established. */
+    private sealed interface Created {
+        data class Confirmed(val durableId: String) : Created
+
+        data class Failed(val failure: BotChatFailure) : Created
     }
 
     /**
@@ -325,10 +444,10 @@ class BotsPluginRepository(
      * comment header names: a span is a claim about one revision, and moving
      * one stamp does not move the others.
      *
-     * Returns the durable id to resume, or null when the chat's identity could
-     * not be confirmed.
+     * Returns the confirmed durable id, or the classified reason the chat's
+     * identity could not be confirmed.
      */
-    private suspend fun createCanonicalChat(profile: String, expectedEndpointGeneration: Long): String? {
+    private suspend fun createCanonicalChat(profile: String, expectedEndpointGeneration: Long): Created {
         val created = host.requestAtEndpoint(
             expectedGeneration = expectedEndpointGeneration,
             method = SESSION_CREATE,
@@ -343,9 +462,21 @@ class BotsPluginRepository(
         // adopted: without both ids there is no durable row to open or title.
         // Ids are JSON strings on this wire; a number or boolean is a
         // malformed answer, not an id to coerce into one.
-        val result = (created as? PluginHostResult.Success)?.result as? JsonObject ?: return null
-        val storedId = result.string("stored_session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        val runtimeId = result.string("session_id")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val result = (created as? PluginHostResult.Success)?.result as? JsonObject
+        val storedId = result?.string("stored_session_id")?.trim()?.takeIf(String::isNotEmpty)
+        val runtimeId = result?.string("session_id")?.trim()?.takeIf(String::isNotEmpty)
+        if (created !is PluginHostResult.Success || storedId == null || runtimeId == null) {
+            // A create the Gateway refused or never answered keeps *its* reason;
+            // a successful answer whose ids are missing or malformed is an
+            // unreadable answer, not a refusal.
+            return Created.Failed(
+                if (created is PluginHostResult.Success) {
+                    BotChatFailure.Unreadable
+                } else {
+                    created.failure()
+                },
+            )
+        }
 
         val titled = host.requestAtEndpoint(
             expectedGeneration = expectedEndpointGeneration,
@@ -367,16 +498,28 @@ class BotsPluginRepository(
             titleResult?.literalBoolean("pending") == false &&
             titleResult.string("title") == CANONICAL_CHAT_TITLE
         ) {
-            return storedId
+            return Created.Confirmed(storedId)
         }
 
         // The title write did not land. Only the registry can say whether a
         // concurrent writer took the canonical title (adopt its row) or the
         // write could not be made at all (abandon the attempt).
-        val winner = findCanonicalChat(profile, null, expectedEndpointGeneration)
+        val winner = lookupCanonicalChat(profile, null, expectedEndpointGeneration)
         return when (winner) {
-            is BotChatLookup.Found -> winner.durableId
-            BotChatLookup.Missing, BotChatLookup.Unsafe -> null
+            is Lookup.Found -> Created.Confirmed(winner.durableId)
+            // A registry that could not be read is its own reason — the
+            // attempt abandoned for want of evidence, not a Gateway refusal.
+            is Lookup.Unreadable -> Created.Failed(winner.failure)
+            // No winner and a readable registry: the title write did not take
+            // and no concurrent writer holds it. The failure to report is the
+            // title write's own, when it had one.
+            Lookup.Missing -> Created.Failed(
+                if (titled is PluginHostResult.Success) {
+                    BotChatFailure.Unreadable
+                } else {
+                    titled.failure()
+                },
+            )
         }
     }
 

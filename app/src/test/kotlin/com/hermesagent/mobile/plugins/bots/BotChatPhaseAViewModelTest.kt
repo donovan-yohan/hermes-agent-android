@@ -127,13 +127,13 @@ class BotChatPhaseAViewModelTest {
         // `BotChatPhaseBViewModelTest` owns that branch and its refusals.
         for ((result, expected) in listOf(
             PluginHostResult.Success(Json.parseToJsonElement("""{"sessions":[{"title":"not canonical","id":"x"}]}""")) to
-                "Bot Chat could not be opened. Check the Gateway and try again.",
+                BotChatFailure.Unreadable,
             PluginHostResult.Success(Json.parseToJsonElement("""{"sessions":[]}""")) to
-                "Bot Chat could not be opened. Check the Gateway and try again.",
+                BotChatFailure.Unreadable,
             PluginHostResult.Refused(500, "backend prose") to
-                "Bot Chat could not be opened. Check the Gateway and try again.",
+                BotChatFailure.Refused,
             PluginHostResult.UnavailableOnGateway to
-                "Bot Chat could not be opened. Check the Gateway and try again.",
+                BotChatFailure.UnavailableOnGateway,
         )) {
             // The roster says a canonical chat exists (`rosterCanonicalId` is
             // set), so the zero-row answer is unconfirmed absence: create is
@@ -145,7 +145,10 @@ class BotChatPhaseAViewModelTest {
             unsafe.openBotChat(rosterBacked) { _, _, _ -> unsafeOpens += 1 }
             runCurrent()
             assertEquals(0, unsafeOpens)
-            assertEquals(expected, unsafe.uiState.value.botChatMessage)
+            // One sentence per reason: the answer is not "check the Gateway"
+            // for a build that cannot serve the method, nor for an answer this
+            // app could not read.
+            assertEquals(expected.sentence(), unsafe.uiState.value.botChatMessage)
             assertTrue(unsafeHost.createCalls == 0)
         }
     }

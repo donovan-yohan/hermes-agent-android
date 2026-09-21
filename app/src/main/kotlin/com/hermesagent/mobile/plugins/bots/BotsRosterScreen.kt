@@ -1,5 +1,11 @@
 package com.hermesagent.mobile.plugins.bots
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,31 +19,43 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
@@ -388,13 +406,7 @@ private fun BotRowItem(
                 modifier = Modifier.weight(1f),
             )
             if (opening) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .widthIn(min = 18.dp, max = 18.dp)
-                        .semantics { contentDescription = "Opening Bot Chat" },
-                    strokeWidth = 2.dp,
-                    color = tokens.accent,
-                )
+                BotRowSpinner()
             } else {
                 ageMillis?.let { stamp ->
                     Text(
@@ -621,6 +633,127 @@ private const val BOTS_TITLE = "Bots"
  * "Scheduled jobs" controls says nothing about which bot each one opens.
  */
 internal fun routinesEntryLabel(botName: String): String = "Scheduled jobs for $botName"
+
+/**
+ * The Bot Chat row's loading indicator.
+ *
+ * Deliberately not Material's `CircularProgressIndicator`. That composable
+ * applies its own `Modifier.size(40.dp)` *after* the caller's modifier and
+ * ignores constraints, so a caller that asks for 18dp gets a 40dp ring laid
+ * out in an 18dp slot: the slot clips the ring to a partial arc, and the arc
+ * sweeps about the slot's bounds centre rather than the ring's own — which
+ * reads as the glyph orbiting rather than spinning in place.
+ *
+ * This animates a phase and hands it to [BotRowSpinnerFrame], which draws an
+ * arc in an 18dp square it owns.
+ */
+@Composable
+internal fun BotRowSpinner(
+    modifier: Modifier = Modifier,
+    sizeDp: Dp = BOT_ROW_SPINNER_SIZE,
+    /**
+     * Resolved inside the composition, not as a default argument:
+     * `HermesTheme.tokens` is `@ReadOnlyComposable`, and a default value is
+     * evaluated outside it.
+     */
+    color: Color = Color.Unspecified,
+    strokeWidthDp: Dp = BOT_ROW_SPINNER_STROKE_WIDTH,
+) {
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val motionScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+    val animate = lifecycle.isAtLeast(Lifecycle.State.RESUMED) && motionScale > 0f
+    val phase = if (!animate) {
+        0f
+    } else {
+        val transition = rememberInfiniteTransition(label = "bot-row-spinner")
+        val animatedPhase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = BOT_ROW_SPINNER_PERIOD_MILLIS,
+                    easing = LinearEasing,
+                ),
+            ),
+            label = "bot-row-spinner-phase",
+        )
+        animatedPhase
+    }
+    BotRowSpinnerFrame(
+        sizeDp = sizeDp,
+        phase = phase,
+        color = color,
+        strokeWidthDp = strokeWidthDp,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The spinner at one instant of its phase, with no animation attached.
+ *
+ * Split out so a frame is a pure function of [phase]. `phase` is a fraction of
+ * one turn, not degrees, because that is what the animation produces; the
+ * conversion happens once, here.
+ *
+ * [color] may be [Color.Unspecified], resolved against the theme's accent
+ * inside the composition.
+ */
+@Composable
+internal fun BotRowSpinnerFrame(
+    sizeDp: Dp,
+    phase: Float,
+    color: Color,
+    strokeWidthDp: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val ink = if (color == Color.Unspecified) HermesTheme.tokens.accent else color
+    Canvas(
+        modifier
+            // `size`, not `widthIn`: this node *is* the spinner's square, so the
+            // drawn centre and the layout centre are one point. A
+            // constraint-based size is what let a 40dp ring overflow an 18dp
+            // slot in the first place.
+            .size(sizeDp)
+            .semantics { contentDescription = BOT_ROW_SPINNER_LABEL },
+    ) {
+        val stroke = Stroke(width = strokeWidthDp.toPx(), cap = StrokeCap.Round)
+        // A stroke straddles the path, so the arc is inset by half its width to
+        // stay inside the square rather than being clipped at the extremes.
+        val inset = stroke.width / 2f
+        val arcSize = Size(size.width - stroke.width, size.height - stroke.width)
+        val center = Offset(size.width / 2f, size.height / 2f)
+        // The arc is fixed; only its rotation moves. Turning about the drawn
+        // square's own centre is what makes it spin in place rather than orbit.
+        rotate(degrees = phase * 360f, pivot = center) {
+            drawArc(
+                color = ink,
+                startAngle = BOT_ROW_SPINNER_START_DEGREES,
+                sweepAngle = BOT_ROW_SPINNER_SWEEP_DEGREES,
+                useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = arcSize,
+                style = stroke,
+            )
+        }
+    }
+}
+
+/** The row spinner's fixed square — and the bounding box its rotation stays in. */
+internal val BOT_ROW_SPINNER_SIZE = 18.dp
+
+/** The indicator's stroke, matching the material indicator it replaced. */
+internal val BOT_ROW_SPINNER_STROKE_WIDTH = 2.dp
+
+/** The one accessible name the spinner carries; the row still reads its bot. */
+internal const val BOT_ROW_SPINNER_LABEL = "Opening Bot Chat"
+
+/** One full turn, at Material's own indeterminate cadence for a 40dp ring. */
+internal const val BOT_ROW_SPINNER_PERIOD_MILLIS = 1_080
+
+internal const val BOT_ROW_SPINNER_START_DEGREES = -90f
+
+/** A three-quarter arc: long enough to read as motion, short enough to spin. */
+internal const val BOT_ROW_SPINNER_SWEEP_DEGREES = 270f
 
 /** The roster row's Routines control, so a journey can find it. */
 internal const val ROUTINES_ROW_ACTION_TAG = "Bots routines"

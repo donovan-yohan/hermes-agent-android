@@ -26,6 +26,9 @@ import com.hermesagent.mobile.data.session.ComposerTodoStatus
 import com.hermesagent.mobile.ui.chat.Composer
 import com.hermesagent.mobile.ui.chat.ComposerQueueSection
 import com.hermesagent.mobile.ui.chat.ComposerStatusStack
+import com.hermesagent.mobile.ui.common.JoinedEdge
+import com.hermesagent.mobile.ui.common.JoinedPaneLayout
+import com.hermesagent.mobile.ui.common.JoinedStackRadius
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
@@ -113,12 +116,15 @@ internal fun ComposerStatusParityFixture(state: ComposerStatusFixtureState) {
             } else null,
             // Background starts collapsed in the real status stack. Its catalogued
             // Background tap opens it, then the helper retains/checks that state.
-            fusedToComposer = true,
+            // The strip is the run's top pane and the composer is its bottom, which
+            // is the geometry the capture is judging.
+            joinedLayout = JoinedPaneLayout(JoinedEdge.Start, JoinedStackRadius),
             modifier = Modifier.padding(start = HermesTheme.spacing.pageInset + 8.dp, top = 4.dp, end = HermesTheme.spacing.pageInset + 8.dp),
         )
         Composer(
             draft = "", onDraftChange = {}, onSend = {}, onStop = {}, isStreaming = false,
-            canSend = false, connected = true, statusLine = "Synthetic capture connection", fusedStatusAbove = true,
+            canSend = false, connected = true, statusLine = "Synthetic capture connection",
+            joinedLayout = JoinedPaneLayout(JoinedEdge.End, JoinedStackRadius),
         )
     }
 }

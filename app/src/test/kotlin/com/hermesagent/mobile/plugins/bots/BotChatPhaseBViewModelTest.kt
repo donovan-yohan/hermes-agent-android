@@ -186,7 +186,7 @@ class BotChatPhaseBViewModelTest {
         assertEquals(0, opens)
         assertEquals(listOf("session.list"), host.methods)
         assertEquals(
-            "Bot Chat could not be opened. Check the Gateway and try again.",
+            BotChatFailure.Unreadable.sentence(),
             viewModel.uiState.value.botChatMessage,
         )
     }
