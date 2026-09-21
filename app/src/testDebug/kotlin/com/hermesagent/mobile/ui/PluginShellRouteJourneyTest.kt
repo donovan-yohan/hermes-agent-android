@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.ui
 
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
@@ -98,7 +100,11 @@ class PluginShellRouteJourneyTest {
                         area = PluginAreas.ROUTES_AREA,
                         title = ROW_LABEL,
                         render = {
-                            Text(ROUTE_BODY, modifier = Modifier.testTag(ROUTE_BODY_TAG))
+                            val nav = LocalPluginNavigation.current
+                            Column {
+                                Text(ROUTE_BODY, modifier = Modifier.testTag(ROUTE_BODY_TAG))
+                                TextButton(onClick = nav.onBack) { Text("Return from feature") }
+                            }
                         },
                     ),
                     PluginContribution(
@@ -176,6 +182,12 @@ class PluginShellRouteJourneyTest {
         // 2. The sidebar launcher opens the contributed route destination.
         compose.onNodeWithTag(ROW_TAG).performClick()
         compose.waitForIdle()
+        compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
+
+        // Returning from a sidebar feature restores Chat, not Settings.
+        compose.onNodeWithText("Return from feature").performClick()
+        compose.onNodeWithContentDescription("Open sessions").assertIsDisplayed().performClick()
+        compose.onNodeWithTag(ROW_TAG).performClick()
         compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
 
         // 3. Disabling the plugin unloads the route and the row, and the shell

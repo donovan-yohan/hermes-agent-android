@@ -209,7 +209,12 @@ fun HermesApp(
     LaunchedEffect(signInOrigin) { onSignInOriginChange(signInOrigin) }
     LaunchedEffect(navigationAsk) { navigationAsk?.let { destination = it.destination } }
 
-    val onBack = { destination = destination.backDestination() }
+    var routeOrigin by rememberSaveable(stateSaver = HermesDestinationSaver) {
+        mutableStateOf<HermesDestination>(HermesDestination.Settings)
+    }
+    val onBack = {
+        destination = if (destination is HermesDestination.Route) routeOrigin else destination.backDestination()
+    }
     // Three surfaces name this one destination: the sidebar's "Manage gateways…",
     // Settings, and the chat chrome's connection line. They divide by
     // *journey*, not by destination: the two that leave from the sessions
@@ -226,6 +231,7 @@ fun HermesApp(
             onBack = onBack,
             onOpenGateways = openGateways,
             onNavigate = { target ->
+                if (destination !is HermesDestination.Route) routeOrigin = destination
                 destination = HermesDestination.Route(target)
             },
             onOpenBotChat = { profile, durableId, onFinished ->
