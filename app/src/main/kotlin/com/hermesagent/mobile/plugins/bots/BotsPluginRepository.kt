@@ -392,17 +392,20 @@ class BotsPluginRepository(
      * is the `-32601` method-not-found answer, which retrying can never fix and
      * an update might, so the surface must not tell the person to retry.
      *
-     * A `Refused` with `code == 0` is [BotChatFailure.NotAnswered]: that is the
-     * door's own no-route or timed-out bucket (`RECONNECT_MESSAGE`,
-     * `TIMED_OUT_MESSAGE`), not a Gateway error envelope. Every JSON-RPC error
-     * the Gateway actually wrote carries its own non-zero code, so the split is
-     * exact rather than a guess about connection state.
+     * Code zero also represents a Gateway error without a numeric code. Only
+     * the door's known local connection/timeout sentences identify an unanswered
+     * request; unknown refusals retain the generic refusal instead.
      */
     private fun PluginHostResult.failure(): BotChatFailure = when {
         this is PluginHostResult.Success -> BotChatFailure.Unreadable
         this === PluginHostResult.UnavailableOnGateway -> BotChatFailure.UnavailableOnGateway
         this is PluginHostResult.Refused ->
-            if (this.code == 0) BotChatFailure.NotAnswered else BotChatFailure.Refused
+            if (code == 0 && (safeMessage == "Reconnect to the Gateway and try again." ||
+                    safeMessage == "The Gateway did not answer in time.")) {
+                BotChatFailure.NotAnswered
+            } else {
+                BotChatFailure.Refused
+            }
         // Unreachable while the sealed hierarchy is three-wide; stated so a
         // fourth result added later fails to "unreadable", never to "refused".
         else -> BotChatFailure.Unreadable

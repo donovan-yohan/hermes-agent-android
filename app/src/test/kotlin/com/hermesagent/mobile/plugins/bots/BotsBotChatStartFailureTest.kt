@@ -53,6 +53,11 @@ class BotsBotChatStartFailureTest {
             // timed-out exchange as code 0.
             PluginHostResult.Refused(0, "Reconnect to the Gateway and try again.")
                 to BotChatFailure.NotAnswered,
+            PluginHostResult.Refused(0, "The Gateway did not answer in time.")
+                to BotChatFailure.NotAnswered,
+            PluginHostResult.Refused(0, "backend prose") to BotChatFailure.Refused,
+            PluginHostResult.Refused(0, "Hermes refused that Gateway request.")
+                to BotChatFailure.Refused,
             // This Gateway cannot serve the read at all.
             PluginHostResult.UnavailableOnGateway to BotChatFailure.UnavailableOnGateway,
             // The Gateway answered an error envelope of its own.
