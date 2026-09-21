@@ -69,7 +69,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
         if (role !in PROJECTED_TRANSCRIPT_ROLES) continue
         // Model-facing scaffolding: compaction references and interrupted-turn
         // checkpoints (`server.py:9733-9739`). The REST route stamps this on a
-        // compaction row it could not project (`sessions.py:696-698`).
+        // compaction row it could not project
+        // (`hermes_cli/web_routers/sessions.py:515-517` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`).
         if (row.string("display_kind") == "hidden") continue
 
         // The route replaces a compaction summary's visible body in place and
@@ -93,8 +95,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             // (`server.py:9743-9754`).
             //
             // The presence test is the ARRAY, never the key. `SessionDB.get_messages`
-            // builds each row as `dict(row)` (`hermes_state_messages.py:616` @
-            // `72a3277cd7`) over a `SELECT *` (`hermes_state_messages.py:649`, and
+            // builds each row as `dict(row)` (`hermes_state_messages.py:756` @
+            // `437116f9497c80d242ce034ff7f5d81dc277a337`), a `SELECT *`
+            // (`hermes_state_messages.py:649` @ `72a3277cd7`, and
             // `:646` on the `include_compacted` read this app always makes), so every column of
             // the `messages` table rides the wire and `"tool_calls": null` is on
             // every row that made no call. Reading the key's presence would drop every

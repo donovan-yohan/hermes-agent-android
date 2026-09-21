@@ -132,9 +132,8 @@ internal fun tokenizeSyntaxLine(line: String, language: SyntaxLanguage): List<Sy
         val comment = commentRun(line, i, language)
         if (comment != null) {
             emit(SyntaxTokenKind.Comment, comment)
-            // A line comment is the rest of the row by definition; a block
-            // comment without its close runs to the row's end for the same
-            // reason (`SyntaxHighlight.kt`'s per-line bound).
+            i += comment.length
+            if (i < line.length) continue
             return finish(out, line)
         }
 

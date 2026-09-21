@@ -154,9 +154,10 @@ private fun timelineLabel(kind: TimelineKind, metadata: JsonObject?): String {
  * not a report, and painting them is the bug this projection exists to remove.
  */
 internal fun asyncResultBody(content: String): String? {
-    var bodies = listOf(content)
+    var bodies = emptyList<String>()
 
     when {
+        content.startsWith(CRON_JOB_PREFIX) -> bodies = listOf(content)
         content.startsWith(IMPORTANT_PREFIX) ->
             // Background-process completion: one `[IMPORTANT: …]` block per
             // process, with a batch header first.

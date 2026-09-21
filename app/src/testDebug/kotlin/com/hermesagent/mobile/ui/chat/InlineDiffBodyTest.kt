@@ -259,7 +259,7 @@ class InlineDiffBodyTest {
         val runs = inkOf(inlineDiffLineTag(1)).second
         assertTrue("the added row must paint its keyword in the syntax ink", runs.contains(tokens.syntax.keyword))
         assertTrue("and keep the diff foreground for the rest", runs.contains(tokens.diffAddedForeground))
-        assertTrue("a number takes its own ink", runs.contains(tokens.syntax.number) || runs.contains(tokens.diffAddedForeground))
+        assertTrue("a number takes its own ink", runs.contains(tokens.syntax.number))
     }
 
     @Test
@@ -326,7 +326,7 @@ class InlineDiffBodyTest {
         compose.onNodeWithTag(INLINE_DIFF_BODY_TAG, useUnmergedTree = true).assertDoesNotExist()
         assertTrue(
             "and a collapsed diff paints none of its rows: ${renderedText()}",
-            !renderedText().contains("old") || !renderedText().contains("@@"),
+            !renderedText().contains("old") && !renderedText().contains("new"),
         )
     }
 

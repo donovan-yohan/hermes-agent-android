@@ -222,7 +222,8 @@ private val ToolJson = Json { ignoreUnknownKeys = true; isLenient = true }
 internal fun ToolActivity.effectiveInlineDiff(): String? =
     resolveEffectiveInlineDiff(inlineDiff, resultText)
 
-/** Project this activity into what the row paints. `buildToolView`, index.ts:1409. */
+/** Project this activity into what the row paints. `buildToolView`,
+ * `fallback-model/index.ts:1437` @ `437116f9497c80d242ce034ff7f5d81dc277a337`. */
 internal fun ToolActivity.toolView(): ToolView {
     val args = argsText.asJsonObject()
     val result = resultText.asJsonObject()
@@ -243,8 +244,10 @@ internal fun ToolActivity.toolView(): ToolView {
     val error = toolErrorText(name, result)
     val status = toolStatus(name, error)
 
-    // index.ts:1463-1473 — for shell/code tools the two streams are surfaced
-    // separately, and stderr is deliberately not painted destructively.
+    // `fallback-model/index.ts:1492-1495` @
+    // `437116f9497c80d242ce034ff7f5d81dc277a337` — for shell/code tools the two
+    // streams are surfaced separately, and stderr is deliberately not painted
+    // destructively.
     val rendersAnsi = name.rendersAnsi()
     val stdout = if (rendersAnsi) result.firstStringField("stdout") else ""
     val stderr = if (rendersAnsi) result.firstStringField("stderr") else ""
@@ -266,8 +269,9 @@ internal fun ToolActivity.toolView(): ToolView {
     }
 
     val body = toolDetailText(name, args, result, splitStreams, diff != null)
-    // index.ts:1446-1451 — an error message leads the detail, and a body that
-    // merely repeats it is not printed twice.
+    // `fallback-model/index.ts:1475-1480` @
+    // `437116f9497c80d242ce034ff7f5d81dc277a337` — an error message leads the
+    // detail, and a body that merely repeats it is not printed twice.
     val detail = if (error.isEmpty()) {
         body
     } else {

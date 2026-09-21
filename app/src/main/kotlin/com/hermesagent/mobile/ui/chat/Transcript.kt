@@ -1066,8 +1066,9 @@ private fun ToolRow(activity: ToolActivity) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DisclosureRow(
             title = title,
-            // fallback.tsx:577-591 — the count and the duration are two meta
-            // slots trailing the label, not one joined string.
+            // `fallback.tsx:604-606,617-619` @
+            // `437116f9497c80d242ce034ff7f5d81dc277a337` — the count and the
+            // duration are two meta slots trailing the label, not one joined string.
             meta = listOfNotNull(
                 view.countLabel,
                 if (view.status == ToolStatus.Running) seconds.elapsedLabel() else view.durationLabel,
@@ -1507,8 +1508,10 @@ internal const val INLINE_DIFF_BODY_TAG = "inline-diff-body"
 
 /**
  * Desktop's file-edit tool card body: the header's `+N`/`−N` stats and the
- * compact `FileDiffPanel` under it (`fallback.tsx:481-486,585-594,636-637` and
- * `chat/diff-lines.tsx:583-641` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * compact `FileDiffPanel` under it (`fallback.tsx:481-486,585-594,636-637` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), with the box those rows park in
+ * from `chat/diff-lines.tsx:583-641` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * The `inlineDiff` the Gateway sends is written for a TTY, so everything the
  * panel reads is the *cleaned* diff — `stripInlineDiffChrome` first, exactly as
@@ -1638,7 +1641,6 @@ private fun InlineDiffPanel(
                     .fillMaxWidth()
                     .testTag(INLINE_DIFF_BODY_TAG)
                     .heightIn(max = DIFF_BODY_MAX_HEIGHT)
-                    .nestedScroll(DiffBodyEdgeRelease)
                     .verticalScroll(rememberScrollState()),
             ) {
                 Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -1708,27 +1710,6 @@ private val DIFF_GUTTER_WIDTH = 2.dp
 /** `diff-lines.tsx:66-67` @ the same SHA — `max-h-[12rem]`. */
 private val DIFF_BODY_MAX_HEIGHT = 192.dp
 
-/**
- * Hand a drag back to the transcript when the diff body cannot consume it.
- *
- * `DIFF_BOX_CLASS` carries `overscroll-y-auto` for exactly this reason
- * (`diff-lines.tsx:66-67` @ the same SHA): a scroll that reaches the box's own
- * end must continue into the page behind it, not stop dead. Compose's default
- * for a nested scroller is the opposite — a child that is at its top or bottom
- * still reports the gesture as consumed — so this is the one piece of the box
- * that has to be said out loud. A nested vertical scroller inside a
- * `LazyColumn` is the gesture ambiguity #56 deferred; releasing at both edges on
- * the axis the transcript scrolls is the smallest way to add the box without
- * re-opening it.
- */
-private val DiffBodyEdgeRelease = object : NestedScrollConnection {
-    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-        // Whatever the body did not take on the vertical axis goes back to the
-        // parent, at either end. `consumed` is what the body took, so this is a
-        // pass-through of a gesture the body could not use.
-        return Offset(x = 0f, y = if (consumed.y == 0f) available.y else 0f)
-    }
-}
 
 /**
  * One tokenised row, painted as a `Text` with the diff ink as the base and the
@@ -1851,7 +1832,7 @@ private fun TimelineRow(event: TimelineEvent) {
 private fun TimelineReport(report: String) {
     val tokens = HermesTheme.tokens
     // Clamp before parsing, so the row count is bounded before Compose measures
-    // anything (`fallback.tsx:664-668`).
+    // anything (`fallback.tsx:664-668` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
     val blocks = remember(report) { parseMarkdown(clampForDisplay(report)) }
     Column(
         modifier = Modifier
