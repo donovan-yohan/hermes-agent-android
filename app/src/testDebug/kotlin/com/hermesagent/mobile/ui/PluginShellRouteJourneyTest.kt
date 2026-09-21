@@ -166,14 +166,14 @@ class PluginShellRouteJourneyTest {
         }
         compose.waitForIdle()
 
-        // 1. Settings carries the contributed row, and the plugin owns both areas.
-        compose.onNodeWithContentDescription("Open settings").performClick()
-        compose.onNodeWithText("Settings").assertIsDisplayed()
+        // 1. Feature launchers live in the sessions drawer/rail, while Settings
+        // keeps the separate Plugins management preference row.
+        compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.onNodeWithTag(ROW_TAG).assertIsDisplayed()
         assertEquals(1, registry.getArea(PluginAreas.ROUTES_AREA).size)
         assertEquals(1, registry.getArea(PluginAreas.SIDEBAR_NAV_AREA).size)
 
-        // 2. The row opens the contributed route destination.
+        // 2. The sidebar launcher opens the contributed route destination.
         compose.onNodeWithTag(ROW_TAG).performClick()
         compose.waitForIdle()
         compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
@@ -193,6 +193,8 @@ class PluginShellRouteJourneyTest {
         pluginStore.setPluginEnabled(PLUGIN_ID, true)
         compose.waitForIdle()
 
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.onNodeWithTag(ROW_TAG).assertIsDisplayed()
         assertEquals(1, registry.getArea(PluginAreas.ROUTES_AREA).size)
         assertEquals(1, registry.getArea(PluginAreas.SIDEBAR_NAV_AREA).size)

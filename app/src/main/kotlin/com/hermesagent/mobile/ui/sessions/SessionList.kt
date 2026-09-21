@@ -155,6 +155,8 @@ fun SessionList(
      * sessions.
      */
     header: @Composable () -> Unit = {},
+    /** Feature launchers precede projects and pinned sessions. */
+    sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution> = emptyList(),
     /** The foot rail's profiles and scope; empty means no Gateway has answered. */
     profileRail: ProfileRailState = ProfileRailState(),
     profileRailActions: ProfileRailActions = ProfileRailActions(),
@@ -201,7 +203,9 @@ fun SessionList(
             // Exact, not a minimum: a cramped pane measures its children with an
             // unbounded height, and a LazyColumn given one throws.
             val listSlot = if (cramped) Modifier.height(CRAMPED_LIST_HEIGHT) else Modifier.weight(1f)
-            header()
+            sidebarNavigation
+                .sortedWith(compareBy<com.hermesagent.mobile.plugins.Contribution> { it.order ?: Int.MAX_VALUE })
+                .forEach { contribution -> contribution.render?.invoke() }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -539,6 +543,7 @@ fun SessionList(
             }
 
             ProfileRail(state = profileRail, actions = profileRailActions)
+            header()
         }
     }
 

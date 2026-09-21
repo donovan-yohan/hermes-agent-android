@@ -953,11 +953,10 @@ class GatewaySessionRepositoryTest {
 
         repository.openSession("durable-a")
 
-        // The pinned Gateway stamps its own read and never looks at this param
-        // (tui_gateway/methods_session.py:2611-2620 @ 3ca096de). The flag is the
-        // hedge for a Gateway that ever makes the stamped read opt-in, and it
-        // costs nothing here because this handler reads only `session_id`.
-        assertEquals(JsonPrimitive(true), rpc.call("session.history").params["include_row_ids"])
+        // The pinned Gateway stamps its own database read. The request must
+        // remain exactly within the session.history contract: session_id only.
+        assertEquals(setOf("session_id"), rpc.call("session.history").params.keys)
+        assertEquals("runtime-a", rpc.call("session.history").params.string("session_id"))
         val transcript = cache.transcript("durable-a")
         assertEquals(
             listOf(TranscriptRowId(101), TranscriptRowId(102), null),
@@ -1072,7 +1071,7 @@ class GatewaySessionRepositoryTest {
         val canonical = repository.openSession("durable-a")
 
         assertEquals("continuation-tip", canonical)
-        assertEquals(JsonPrimitive(true), second.call("session.history").params["include_row_ids"])
+        assertEquals(setOf("session_id"), second.call("session.history").params.keys)
         assertEquals(listOf(TranscriptRowId(101), TranscriptRowId(102), null), hydrated)
         assertEquals(hydrated, cache.transcript("continuation-tip").map(TranscriptEntry::rowId))
         assertTrue(cache.transcript("durable-a").isEmpty())
@@ -7528,7 +7527,14 @@ class GatewaySessionRepositoryTest {
                         else -> json(resumeA)
                     }
                 }
-                "session.history" -> historyResponse?.await() ?: json(historyResult)
+                "session.history" -> {
+                    // Mirror the pinned Gateway's strict request validation: an
+                    // unknown field is rejected before authoritative history is read.
+                    check(params.keys == setOf("session_id")) {
+                        "session.history received unsupported fields: ${params.keys}"
+                    }
+                    historyResponse?.await() ?: json(historyResult)
+                }
                 "session.create" -> json(createResult)
                 "session.branch" -> json(branchResult)
                 "model.options" -> modelOptionsResponse?.await() ?: json(modelOptionsResult)

@@ -332,15 +332,15 @@ class BotsViewModel(
                         _uiState.update {
                             it.copy(
                                 openingBotKey = null,
-                                botChatMessage = if (opened) null else BOT_CHAT_OPEN_FAILED,
+                                botChatMessage = if (opened) null else BOT_CHAT_RESUME_FAILED,
                             )
                         }
                     }
                     return@launch
                 }
 
-                BotChatOpen.Unsafe -> if (endpoint == endpointGeneration.value) {
-                    _uiState.update { it.copy(botChatMessage = BOT_CHAT_OPEN_FAILED) }
+                is BotChatOpen.Unsafe -> if (endpoint == endpointGeneration.value) {
+                    _uiState.update { it.copy(botChatMessage = outcome.failure.sentence()) }
                 }
             }
             if (endpoint == endpointGeneration.value) _uiState.update { it.copy(openingBotKey = null) }
@@ -603,8 +603,39 @@ class BotsViewModel(
 /**
  * What a roster row says when its canonical chat could not be resolved.
  *
- * One sentence for both a read that failed and a creation that could not be
- * confirmed: from here they are the same outcome — nothing was opened — and
- * the row stays actionable for a retry.
+ * One sentence per classified reason, because the next action differs: a
+ * dropped connection is waited out, a Gateway without the method is updated,
+ * an answering Gateway is retried, and an unreadable answer is reported.
+ * The retry survives all four: the row stays actionable either way, so the
+ * sentence never has to say "try again" for the person to be able to.
+ *
+ * The generic sentence is the [BotChatFailure.Refused] one — the only case
+ * where "Check the Gateway and try again" is true — and it is deliberately
+ * worded exactly as it was before this classification existed, so a Gateway
+ * that answers an error keeps the copy people already know.
  */
-private const val BOT_CHAT_OPEN_FAILED = "Bot Chat could not be opened. Check the Gateway and try again."
+fun BotChatFailure.sentence(): String = when (this) {
+    BotChatFailure.NotAnswered ->
+        "Bot Chat could not be opened. Waiting for the Gateway connection."
+
+    BotChatFailure.UnavailableOnGateway ->
+        "Bot Chat could not be opened. Update Hermes and restart the gateway."
+
+    BotChatFailure.Refused ->
+        "Bot Chat could not be opened. Check the Gateway and try again."
+
+    BotChatFailure.Unreadable ->
+        "Bot Chat could not be opened. The Gateway sent an answer this app could not read."
+}
+
+/**
+ * The resume half of an open that already resolved: the roster found the chat,
+ * and the app's own handoff to Chat could not complete it.
+ *
+ * It keeps the generic sentence because the handoff reports a boolean and
+ * nothing finer — there is no wire reason left by the time it answers, and
+ * inventing one would be a guess. The row keeps this message and stays
+ * actionable, so the person can tap again.
+ */
+private const val BOT_CHAT_RESUME_FAILED =
+    "Bot Chat could not be opened. Check the Gateway and try again."

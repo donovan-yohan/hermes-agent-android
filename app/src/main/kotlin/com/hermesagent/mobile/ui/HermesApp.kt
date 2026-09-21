@@ -267,6 +267,7 @@ fun HermesApp(
                             onManage = onOpenGatewaysFromSessions,
                         )
                     },
+                    sidebarNavigation = sidebarNavContributions,
                 )
 
                 // "Manage profiles…" is a sidebar affordance, so its back goes home
@@ -293,7 +294,8 @@ fun HermesApp(
                         onOpenPlugins = { destination = HermesDestination.Plugins },
                         systemAvailable =
                             gatewayState.connection.status == GatewayConnectionStatus.Connected,
-                        contributions = sidebarNavContributions,
+                        // Sidebar feature launchers render in Chat's drawer/rail, not Settings.
+                        contributions = emptyList(),
                     )
                 }
 

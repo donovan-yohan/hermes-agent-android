@@ -19,6 +19,7 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import com.hermesagent.mobile.ui.theme.HermesTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -126,11 +127,12 @@ class StickyPromptMaskInkTest {
         // Without this the two assertions above would also pass on a transcript
         // with nothing behind the pin. The very next row down is the fence, so
         // an unmasked band would have read as that fill instead.
-        assertEquals(
-            "the turn behind the pin paints its own fill, so a missing mask would show",
-            tokens.widgetSurface,
-            inkAt(x, bubble.bottom.toInt() + turnGapPx + FENCE_PROBE_PX),
-        )
+        // Measure the actual painted fence band instead of assuming the tail's
+        // scroll offset. The fence is taller than the viewport, so at least one
+        // sample below the pin must be its opaque fill.
+        val fenceSamples = (bubble.bottom.toInt() until compose.activity.window.decorView.height)
+            .filter { y -> inkAt(x, y) == tokens.widgetSurface }
+        assertTrue("the measured transcript contains a painted fence below the pin", fenceSamples.isNotEmpty())
         assertNotEquals(tokens.chatSurface, tokens.widgetSurface)
     }
 

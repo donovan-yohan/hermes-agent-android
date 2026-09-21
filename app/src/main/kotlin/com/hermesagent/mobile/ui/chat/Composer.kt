@@ -58,6 +58,10 @@ import com.hermesagent.mobile.ui.chat.composer.VoiceDictationControl
 import com.hermesagent.mobile.ui.common.CenteredTextFieldContent
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
+import com.hermesagent.mobile.ui.common.JoinedPaneLayout
+import com.hermesagent.mobile.ui.common.StandaloneChromeRadius
+import com.hermesagent.mobile.ui.common.JoinedEdge
+import com.hermesagent.mobile.ui.common.JoinedStackRadius
 import com.hermesagent.mobile.ui.common.StatusAction
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.common.statusAction
@@ -191,7 +195,20 @@ fun Composer(
      */
     notice: String? = null,
     editorIdentity: String? = null,
-    codingHeader: (@Composable () -> Unit)? = null,
+    /**
+     * Where the shell sits inside the composer chrome run, or null when it stands
+     * alone above the keyboard.
+     *
+     * In the run the shell stops rounding its own top and stops owning its own
+     * horizontal inset: the run decides both, so the shell's width and its
+     * horizontal inset are the same as every surface standing above it, the joint
+     * between them is flat, and only the run's two outer corners are rounded.
+     * Standing alone the shell is a lone panel with every corner rounded.
+     */
+    joinedLayout: JoinedPaneLayout? = null,
+    // API REQUIREMENT: the pre-run form of `joinedLayout`, honoured as "there is a
+    // surface directly above me" — the run's start edge. Remove once every caller
+    // passes `joinedLayout`.
     fusedStatusAbove: Boolean = false,
     controls: ComposerUiState = ComposerUiState(),
     onSelectModel: (ComposerModelSelection) -> Unit = {},
@@ -263,21 +280,32 @@ fun Composer(
     }
     BoxWithConstraints(modifier.fillMaxWidth().background(tokens.chatSurface)) {
         val layoutMode = composerLayoutMode(maxWidth)
+        // A caller that still speaks the pre-run flag means the same thing as the
+        // run's start edge: something is standing directly above the shell, so the
+        // seam is flat and the shell's own top gap goes away.
+        val legacyFused = joinedLayout == null && fusedStatusAbove
+        val shellLayout = joinedLayout
+            ?: JoinedPaneLayout(JoinedEdge.Start, JoinedStackRadius).takeIf { legacyFused }
+        val shellShape = shellLayout?.shape ?: RoundedCornerShape(StandaloneChromeRadius)
+        // Inside the run the run owns the horizontal inset, so every surface in it
+        // starts and ends on the same line; the seam above the shell is a joint, so
+        // there is no gap between the run's panes either.
+        val inRun = joinedLayout != null
+        val seamGap = if (inRun || legacyFused) 0.dp else 5.dp
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(
-                    start = HermesTheme.spacing.pageInset,
-                    top = if (fusedStatusAbove) 0.dp else 5.dp,
-                    end = HermesTheme.spacing.pageInset,
+                    start = if (inRun) 0.dp else HermesTheme.spacing.pageInset,
+                    top = seamGap,
+                    end = if (inRun) 0.dp else HermesTheme.spacing.pageInset,
                     bottom = 5.dp,
                 )
-                .border(1.dp, tokens.strokeSecondary, RoundedCornerShape(16.dp))
-                .background(tokens.cardSurface, RoundedCornerShape(16.dp))
+                .border(1.dp, tokens.strokeSecondary, shellShape)
+                .background(tokens.cardSurface, shellShape)
                 .testTag("Composer shell ${layoutMode.name}"),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            codingHeader?.invoke()
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 5.dp),
             ) {

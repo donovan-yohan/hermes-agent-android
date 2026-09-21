@@ -120,6 +120,10 @@ the wheel is likewise the optional half.
 
 ## The contract split
 
+### `session.history` request shape
+
+The pinned Gateway (`NousResearch/hermes-agent` `3ca096de5f8183cb2e0ec23673f294d5978656a3`) stamps durable `row_id` values while handling `session.history`; its handler reads the session selector and calls the database with `include_row_ids=True` internally. The client must therefore send only `session_id`. Sending `include_row_ids` as a request field is not a compatibility hedge: strict Gateway validation rejects unknown fields before the handler runs (`GatewayRpcError: invalid params`, `include_row_ids: Extra inputs are not permitted`). Android preserves returned `row_id` values and leaves `TranscriptEntry.rowId` null when the response has no authoritative stamp; local rendering keys are never promoted to durable addresses.
+
 At the pin, Desktop hydrates and refreshes a chat's transcript over REST
 (`getLatestSessionMessages`, called from `use-session-actions/index.ts:1235,1478,1786`,
 `use-background-sync.ts:131,203`, `use-session-tile-delegate.ts:244`,

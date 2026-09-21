@@ -28,6 +28,15 @@ class ChatActions(
     val onExitProject: () -> Unit = {},
     val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
     val onSelectSession: (String) -> Unit = {},
+    /**
+     * Re-run the open for the session the chat pane says failed.
+     *
+     * Distinct from [onSelectSession] because it is not a navigation: the reader
+     * is already homed on the id that failed, and this re-dials that session
+     * without rehoming, so the draft and the composer scope stay where they are.
+     * The ViewModel owns the difference; the surface only reports one press.
+     */
+    val onRetrySessionOpen: () -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     val onCreateSession: () -> Unit = {},
     val onBranchFromReply: ((String) -> Unit)? = null,

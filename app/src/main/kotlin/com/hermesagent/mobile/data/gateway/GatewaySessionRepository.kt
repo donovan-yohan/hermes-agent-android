@@ -50,6 +50,7 @@ import com.hermesagent.mobile.data.session.preservingRowIdOf
 import com.hermesagent.mobile.data.session.retainingGatewayQueue
 import com.hermesagent.mobile.data.session.transcriptPageState
 import com.hermesagent.mobile.data.ssh.redact
+
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -2325,8 +2326,8 @@ internal class LiveGatewaySessionRepository(
 
 
     /**
-     * Reads the authoritative persisted transcript via `session.history` including
-     * the `include_row_ids` argument.
+     * Reads the authoritative persisted transcript via `session.history`.
+     * The Gateway stamps durable row ids in its own database read.
      */
     override suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> = navigationMutex.withLock {
         val binding = ensureRuntime(durableId)
@@ -6625,35 +6626,11 @@ private fun objectParams(name: String, value: String): JsonObject =
     buildJsonObject { put(name, JsonPrimitive(value)) }
 
 /**
- * Params for `session.history`, including a forward-compatible
- * `include_row_ids` hedge.
- *
- * Be honest about what this flag does today: nothing. At
- * NousResearch/hermes-agent @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` the
- * handler hardcodes `include_row_ids=True` on its own read and never looks at
- * request params (`tui_gateway/methods_session.py:2611-2620`), so the pinned
- * Gateway stamps every persisted row with its `messages.id` whether or not we
- * ask. The flag is sent so that a Gateway which one day makes the stamped read
- * opt-in still answers a stamped transcript, because that stamp is the only
- * durable address a client has for one turn — the ids this app mints are
- * rendering keys and differ between a live, an optimistic and a rehydrated row.
- *
- * Sending it is safe on the pinned Gateway for a narrow, method-specific
- * reason, not a protocol guarantee: dispatch only type-checks that `params` is
- * an object (`tui_gateway/server.py:2144-2161`) and this handler then reads
- * `session_id` alone (`_sess_nowait`, `server.py:2518-2520`), so an extra key
- * is inert here. Handlers validate their own params and do refuse requests —
- * `message.react` answers 4023 when its row address is missing
- * (`methods_session.py:1266-1274`) — so this tolerance must be re-checked per
- * method, never assumed.
- *
- * Either way [durableRowId] reports no durable identity when a response
- * carries no `row_id`, rather than inventing one.
+ * The pinned `session.history` contract accepts only its session selector.
+ * Durable row ids are stamped by the Gateway's own database read; rendering
+ * keys remain a local fallback and [durableRowId] never invents an address.
  */
-private fun historyParams(sessionId: String): JsonObject = buildJsonObject {
-    put("session_id", JsonPrimitive(sessionId))
-    put("include_row_ids", JsonPrimitive(true))
-}
+private fun historyParams(sessionId: String): JsonObject = objectParams("session_id", sessionId)
 
 /**
  * The rendering key for a projected row: whatever identifier the row carries,

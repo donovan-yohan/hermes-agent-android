@@ -440,6 +440,7 @@ class MainActivity : ComponentActivity() {
                     onExitProject = chatViewModel::exitProject,
                     onCreateProject = chatViewModel::createProject,
                     onSelectSession = chatViewModel::selectSession,
+                    onRetrySessionOpen = chatViewModel::retrySessionOpen,
                     onOpenBotChat = chatViewModel::openBotChat,
                     onCreateSession = { chatViewModel.createSession() },
                     onBranchFromReply = chatViewModel::branchFromReply,
