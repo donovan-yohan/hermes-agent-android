@@ -181,6 +181,8 @@ data class HermesTokens(
     val ansi: HermesAnsiInk,
     /** The eight inks the Context Usage breakdown paints its categories in. */
     val contextUsage: HermesContextUsageInk,
+    /** The five inks an inline diff's change content is tokenised in. */
+    val syntax: HermesSyntaxInk,
 ) {
     companion object {
         // Tailwind amber-500 / emerald-500, the two literals Desktop's status
@@ -190,6 +192,36 @@ data class HermesTokens(
 
         /** `--ui-selection-background`'s seed, identical in both modes. */
         private val SelectionInk = Color(0xFFFFD24A)
+
+        /**
+         * Desktop's Shiki theme pair for code and diffs, one value per mode.
+         *
+         * `components/chat/shiki-config.ts:9` @
+         * `437116f9497c80d242ce034ff7f5d81dc277a337`:
+         * `{ dark: 'github-dark-dimmed', light: 'github-light-default' }`,
+         * consumed by `diff-lines.tsx:607-608` for the compact diff body this
+         * app ports. `github-dark-dimmed` is GitHub's lower-contrast dark
+         * palette, chosen upstream over the vivid default at this code size
+         * (`shiki-config.ts:6-8`).
+         *
+         * The five ink roles are read out of those two themes' own TextMate
+         * rules rather than invented, and fixed per mode like the diff and ANSI
+         * ladders beside them — Desktop's comment replacement
+         * (`shiki-config.ts:20-22`, `#6e7781` → `#57606a` for light) is the one
+         * upstream remap and is already in the light value below. The scope each
+         * role is read from is named in its own comment.
+         */
+        private val SyntaxDarkKeyword = Color(0xFFF47067)
+        private val SyntaxDarkString = Color(0xFF96D0FF)
+        private val SyntaxDarkComment = Color(0xFF768390)
+        private val SyntaxDarkNumber = Color(0xFF6CB6FF)
+        private val SyntaxDarkFunction = Color(0xFFDCBDFB)
+
+        private val SyntaxLightKeyword = Color(0xFFCF222E)
+        private val SyntaxLightString = Color(0xFF0A3069)
+        private val SyntaxLightComment = Color(0xFF57606A)
+        private val SyntaxLightNumber = Color(0xFF0550AE)
+        private val SyntaxLightFunction = Color(0xFF8250DF)
 
         /**
          * [overlayScrim]. One value for every preset and both modes, because
@@ -423,6 +455,24 @@ data class HermesTokens(
                     memory = mixPremultiplied(uiOrange, 80f, uiYellow),
                     conversation = uiCyan,
                 ),
+                // Desktop's Shiki theme pair, one value per mode and fixed for
+                // every preset, exactly like the diff palette and the ANSI hues
+                // above: code in a diff must read the same in all eleven skins.
+                syntax = HermesSyntaxInk(
+                    // `keyword`, `storage`, `storage.type` → `#f47067` dark /
+                    // `#cf222e` light.
+                    keyword = if (dark) SyntaxDarkKeyword else SyntaxLightKeyword,
+                    // `string` → `#96d0ff` dark / `#0a3069` light.
+                    string = if (dark) SyntaxDarkString else SyntaxLightString,
+                    // `comment`, `punctuation.definition.comment` → `#768390`
+                    // dark / `#57606a` light, the one remapped rung.
+                    comment = if (dark) SyntaxDarkComment else SyntaxLightComment,
+                    // `constant`, `variable.language`, `support` → `#6cb6ff` dark
+                    // / `#0550ae` light.
+                    number = if (dark) SyntaxDarkNumber else SyntaxLightNumber,
+                    // `entity.name.function` → `#dcbdfb` dark / `#8250df` light.
+                    function = if (dark) SyntaxDarkFunction else SyntaxLightFunction,
+                ),
             )
         }
     }
@@ -554,4 +604,37 @@ data class HermesContextUsageInk(
     val subagents: Color,
     val memory: Color,
     val conversation: Color,
+)
+
+/**
+ * The five inks an inline diff's change content is tokenised in.
+ *
+ * Desktop highlights a diff with Shiki under
+ * `{ dark: 'github-dark-dimmed', light: 'github-light-default' }`
+ * (`components/chat/shiki-config.ts:9` @
+ * `437116f9497c80d242ce034ff7f5d81dc277a337`) and layers the add/remove tint
+ * over the result, so the *background* is the change and the *ink* is the code
+ * (`components/chat/diff-lines.tsx:453-467,469-487` @ the same SHA). Each value
+ * here is read out of one of those two themes' own TextMate rules, by the scope
+ * named on the field, rather than invented.
+ *
+ * Fixed per mode and identical in every preset, for the same reason the diff
+ * palette is: a diff is the file's syntax, not the app's skin, and Desktop's
+ * Shiki pair does not track the theme.
+ *
+ * The one place this diverges from Desktop is *which* tokeniser produces these
+ * runs — Shiki's grammars there, `SyntaxHighlight.kt`'s bounded lexer here. See
+ * that file's header and `docs/parity/tool-output-fidelity.md`.
+ */
+data class HermesSyntaxInk(
+    /** `keyword`, `storage`, `storage.type`. */
+    val keyword: Color,
+    /** `string`. */
+    val string: Color,
+    /** `comment`, `punctuation.definition.comment`. */
+    val comment: Color,
+    /** `constant`, `variable.language`, `support`. */
+    val number: Color,
+    /** `entity.name.function`. */
+    val function: Color,
 )

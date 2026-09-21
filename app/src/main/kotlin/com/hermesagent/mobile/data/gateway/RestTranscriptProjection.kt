@@ -27,8 +27,8 @@ import kotlinx.serialization.json.longOrNull
  * durable address is the row's own `messages.id` — the same integer the RPC
  * forwards as `row_id` (`server.py:9799-9800`).
  *
- * Two places where this is deliberately NOT byte-for-byte the RPC's projection,
- * both ledgered in `docs/parity/transcript-backfill.md`:
+ * Three places where this is deliberately NOT byte-for-byte the RPC's projection,
+ * all ledgered in `docs/parity/transcript-backfill.md`:
  *
  * - A **tool row keeps its `content`, `row_id` and `timestamp`.** The RPC ships
  *   `{role, name, context, args}` and nothing else (`server.py:9755-9769`), so a
@@ -37,12 +37,21 @@ import kotlinx.serialization.json.longOrNull
  *   durable address here would make the one row this window cannot dedupe by id.
  *   So the tool row follows the **REST** contract, and a tool row is richer on
  *   this path than on the RPC path.
- * - `display_kind`/`display_metadata` beyond `"hidden"` are **not** forwarded.
- *   Nothing on Android reads them on either contract, so this is not a
- *   regression against the RPC path — but Desktop renders `model_switch`,
- *   `auto_continue`, `personality_switch` and `async_delegation_complete` as
- *   system timeline rows (`apps/desktop/src/lib/chat-messages/hydration.ts:94-116,197-208`),
- *   and Android does not, on either path.
+ * - A typed display row **keeps its `display_kind` and `display_metadata`**,
+ *   and so does the RPC path (`session_history.py:237-241` ships both). Desktop
+ *   classifies `model_switch`, `auto_continue`, `personality_switch`,
+ *   `async_delegation_complete` and `process_complete` off that metadata and
+ *   renders a system timeline row (`apps/desktop/src/lib/chat-messages/
+ *   hydration.ts:191-225,317-324` @ `437116f9497c80d242ce034ff7f5d81dc277a337`),
+ *   and without the metadata the shared parser cannot tell a model-facing
+ *   delegation envelope from a user's own words. The RPC contract carries these
+ *   fields already; dropping them here made the two contracts disagree about
+ *   the same persisted row.
+ *
+ *   Forwarded only for a kind the app renders — `TimelineKind.fromWireName`.
+ *   An unrecognised kind keeps the row and its role, with the metadata left
+ *   off, exactly as before: nothing reads a kind this app has no row for, and
+ *   forwarding it would invite a future renderer to trust a shape no test pins.
  */
 internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject> {
     val projected = mutableListOf<JsonObject>()
@@ -60,7 +69,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
         if (role !in PROJECTED_TRANSCRIPT_ROLES) continue
         // Model-facing scaffolding: compaction references and interrupted-turn
         // checkpoints (`server.py:9733-9739`). The REST route stamps this on a
-        // compaction row it could not project (`sessions.py:696-698`).
+        // compaction row it could not project
+        // (`hermes_cli/web_routers/sessions.py:515-517` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337`).
         if (row.string("display_kind") == "hidden") continue
 
         // The route replaces a compaction summary's visible body in place and
@@ -84,8 +95,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             // (`server.py:9743-9754`).
             //
             // The presence test is the ARRAY, never the key. `SessionDB.get_messages`
-            // builds each row as `dict(row)` (`hermes_state_messages.py:616` @
-            // `72a3277cd7`) over a `SELECT *` (`hermes_state_messages.py:649`, and
+            // builds each row as `dict(row)` (`hermes_state_messages.py:756` @
+            // `437116f9497c80d242ce034ff7f5d81dc277a337`), a `SELECT *`
+            // (`hermes_state_messages.py:649` @ `72a3277cd7`, and
             // `:646` on the `include_compacted` read this app always makes), so every column of
             // the `messages` table rides the wire and `"tool_calls": null` is on
             // every row that made no call. Reading the key's presence would drop every
@@ -123,6 +135,14 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
         }
         if (text.isBlank() && reasoning.isEmpty()) continue
 
+        // The typed display metadata a timeline row is classified by. Forwarded
+        // whole — object or JSON text — because the shared parser is the one
+        // that reads it, and a kind this app has no row for is left off rather
+        // than half-forwarded. `session_history.py:237-241` @
+        // `437116f9497c80d242ce034ff7f5d81dc277a337` ships the same two fields
+        // on the RPC path.
+        val timelineKind = TimelineKind.fromWireName(row.string("display_kind"))
+
         projected += buildJsonObject {
             put("role", JsonPrimitive(role))
             // A `/skill` turn is stored expanded; the invocation is what any
@@ -131,6 +151,10 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             row["timestamp"]?.takeUnless { it is JsonNull }?.let { put("timestamp", it) }
             row.rowIdPrimitive()?.let { put("row_id", it) }
             reasoning.forEach { key -> row[key]?.let { put(key, it) } }
+            timelineKind?.let { kind ->
+                put("display_kind", JsonPrimitive(kind.wireName))
+                row["display_metadata"]?.takeUnless { it is JsonNull }?.let { put("display_metadata", it) }
+            }
         }
     }
     return projected

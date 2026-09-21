@@ -359,6 +359,36 @@ data class ToolActivity(
     override val rowId: TranscriptRowId? = null,
 ) : TranscriptEntry
 
+/**
+ * A Gateway timeline event — a delegation completion, a model or personality
+ * switch, an auto-continue — rendered as one compact disclosure rather than as
+ * a message bubble.
+ *
+ * This exists because the Gateway persists these as `role=user` rows carrying a
+ * **model-facing** envelope: the `[ASYNC DELEGATION BATCH COMPLETE …]` block a
+ * background fan-out writes is addressed to the model, not to the person, and
+ * painting it in a user bubble shows internal control text as if it were their
+ * own turn. Desktop reads the row's typed `display_kind` metadata and projects
+ * a system timeline row instead (`apps/desktop/src/lib/chat-messages/
+ * hydration.ts:191-225,317-324` @ `437116f9497c80d242ce034ff7f5d81dc277a337`);
+ * this entry is that projection.
+ *
+ * Typed metadata is the **only** thing that licences it. Genuine user text can
+ * quote an envelope marker, so nothing here is ever reached by sniffing a
+ * prefix; see `classifyTimelineEvent`.
+ *
+ * @param label the row's title.
+ * @param report the producer-owned result body, disclosed on demand, or null
+ *   when the row has none.
+ */
+data class TimelineEvent(
+    override val id: String,
+    val label: String,
+    val report: String? = null,
+    val atMillis: Long,
+    override val rowId: TranscriptRowId? = null,
+) : TranscriptEntry
+
 enum class ToolState { Running, Done, Failed, Stopped }
 
 /**
@@ -371,6 +401,7 @@ internal fun TranscriptEntry.withRowId(rowId: TranscriptRowId?): TranscriptEntry
     is AssistantTurn -> copy(rowId = rowId)
     is ReasoningActivity -> copy(rowId = rowId)
     is ToolActivity -> copy(rowId = rowId)
+    is TimelineEvent -> copy(rowId = rowId)
 }
 
 /**

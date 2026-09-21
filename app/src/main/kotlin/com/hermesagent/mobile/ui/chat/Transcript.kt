@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -95,6 +96,12 @@ import com.hermesagent.mobile.data.markdown.countDiffLineStats
 import com.hermesagent.mobile.data.markdown.hasAnsiCodes
 import com.hermesagent.mobile.data.markdown.isArrowHeaderLine
 import com.hermesagent.mobile.data.markdown.parseDiff
+import com.hermesagent.mobile.data.markdown.resolveEffectiveInlineDiff
+import com.hermesagent.mobile.data.markdown.exceedsHighlightBudget
+import com.hermesagent.mobile.data.markdown.syntaxLanguageForPath
+import com.hermesagent.mobile.data.markdown.SyntaxToken
+import com.hermesagent.mobile.data.markdown.SyntaxTokenKind
+import com.hermesagent.mobile.data.markdown.tokenizeSyntaxLine
 import com.hermesagent.mobile.data.markdown.stripInlineDiffChrome
 import com.hermesagent.mobile.data.markdown.parseAnsi
 import com.hermesagent.mobile.data.markdown.parseTranscriptDirective
@@ -106,6 +113,7 @@ import com.hermesagent.mobile.data.session.ReasoningActivity
 import com.hermesagent.mobile.data.session.SessionProgress
 import com.hermesagent.mobile.data.session.ToolActivity
 import com.hermesagent.mobile.data.session.ToolState
+import com.hermesagent.mobile.data.session.TimelineEvent
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
@@ -125,6 +133,7 @@ import com.hermesagent.mobile.ui.common.WipPill
 import com.hermesagent.mobile.ui.common.COPY_CONFIRM_MILLIS
 import com.hermesagent.mobile.ui.common.copyToClipboard
 import com.hermesagent.mobile.ui.theme.HermesAnsiInk
+import com.hermesagent.mobile.ui.theme.HermesSyntaxInk
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -328,6 +337,7 @@ fun Transcript(
                 )
                 is ReasoningActivity -> ReasoningRow(entry)
                 is ToolActivity -> ToolRow(entry)
+                is TimelineEvent -> TimelineRow(entry)
             }
         }
         if (showTurnProgress) {
@@ -1022,14 +1032,25 @@ private fun ToolRow(activity: ToolActivity) {
     // One projection per activity value, shared by the collapsed row and the
     // expanded payload, so a streamed delta re-derives the view exactly once.
     val view = remember(activity) { activity.toolView() }
-    val title = activity.displayTitle()
+    // `fallback.tsx:390-392` @ 437116f9497c80d242ce034ff7f5d81dc277a337 — the
+    // live side-channel first, then the tool *result* decoded and read for
+    // `inline_diff` / `diff`. A `patch` result carries its diff only in the
+    // result object (`tools/file_operations.py:1355-1357`), so without the
+    // second read a good patch fell through to the generic disclosure and
+    // painted raw JSON. The resolved value is chrome-stripped once, here, and
+    // every reader below — the panel, its stats, its language, its Copy — reads
+    // that one value.
+    val diff = remember(activity) {
+        resolveEffectiveInlineDiff(activity.inlineDiff, activity.resultText)
+    }
+    val title = activity.displayTitle(diff != null)
     val seconds = liveElapsedSeconds(activity.startedAtMillis, activity.elapsedSeconds, view.status == ToolStatus.Running)
 
-    var expanded by rememberSaveable(activity.id, activity.inlineDiff != null) {
-        mutableStateOf(activity.inlineDiff != null)
+    var expanded by rememberSaveable(activity.id, diff != null) {
+        mutableStateOf(diff != null)
     }
 
-    activity.inlineDiff?.let { diff ->
+    if (diff != null) {
         InlineDiffPanel(
             diff = diff,
             argsText = activity.argsText,
@@ -1037,6 +1058,7 @@ private fun ToolRow(activity: ToolActivity) {
             expanded = expanded,
             onToggle = { expanded = !expanded },
             contentDescription = "Tool $title, ${view.status.spokenState()}",
+            running = view.status == ToolStatus.Running,
         )
         return
     }
@@ -1044,8 +1066,9 @@ private fun ToolRow(activity: ToolActivity) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DisclosureRow(
             title = title,
-            // fallback.tsx:577-591 — the count and the duration are two meta
-            // slots trailing the label, not one joined string.
+            // `fallback.tsx:604-606,617-619` @
+            // `437116f9497c80d242ce034ff7f5d81dc277a337` — the count and the
+            // duration are two meta slots trailing the label, not one joined string.
             meta = listOfNotNull(
                 view.countLabel,
                 if (view.status == ToolStatus.Running) seconds.elapsedLabel() else view.durationLabel,
@@ -1087,15 +1110,15 @@ private fun DisclosureRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon?.let {
-            HermesIconGlyph(icon = it, color = status.glyphColor(), size = 13.sp)
+            if (status == ToolStatus.Running) RunningToolGlyph(status.glyphColor())
+            else HermesIconGlyph(icon = it, color = status.glyphColor(), size = 13.sp)
             Spacer(Modifier.width(8.dp))
         }
-        Text(
+        ActivityLabel(
             text = title,
+            active = status == ToolStatus.Running,
             style = HermesTheme.type.scaffold,
             color = tokens.scaffoldText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         meta.forEach {
@@ -1475,9 +1498,20 @@ private fun ToolStatus.spokenState(): String = when (this) {
 internal fun inlineDiffLineTag(index: Int): String = "inline-diff-line-$index"
 
 /**
+ * The diff body's own test tag: the `max-h-[12rem]` scroller, not the panel.
+ *
+ * `diff-lines.tsx:66-67,583-641` @ `437116f9497c80d242ce034ff7f5d81dc277a337`
+ * parks the rows in that box; a test has to be able to measure *it* rather than
+ * the card around it, which is why the body carries a tag of its own.
+ */
+internal const val INLINE_DIFF_BODY_TAG = "inline-diff-body"
+
+/**
  * Desktop's file-edit tool card body: the header's `+N`/`−N` stats and the
- * compact `FileDiffPanel` under it (`fallback.tsx:481-486,585-594,636-637` and
- * `chat/diff-lines.tsx:583-641` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+ * compact `FileDiffPanel` under it (`fallback.tsx:481-486,585-594,636-637` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), with the box those rows park in
+ * from `chat/diff-lines.tsx:583-641` @
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`.
  *
  * The `inlineDiff` the Gateway sends is written for a TTY, so everything the
  * panel reads is the *cleaned* diff — `stripInlineDiffChrome` first, exactly as
@@ -1494,6 +1528,7 @@ private fun InlineDiffPanel(
     expanded: Boolean,
     onToggle: () -> Unit,
     contentDescription: String,
+    running: Boolean = false,
 ) {
     val tokens = HermesTheme.tokens
     // `fallback.tsx:375` — the ESC byte is invisible in Compose, so an unstripped
@@ -1503,11 +1538,8 @@ private fun InlineDiffPanel(
     // `fallback.tsx:481-486` — the stats are counted on the cleaned diff, before
     // markers are stripped, and only shown when there is something to show.
     val stats = remember(cleaned) { countDiffLineStats(cleaned) }
-    // Desktop parks the body in a `max-h-[12rem]` box that scrolls internally
-    // (`diff-lines.tsx:66-67`); a nested vertical scroller inside a `LazyColumn`
-    // is the wrong trade on touch (#56), so the phone clamps what it *paints*
-    // instead and parses the clamped text. Copy is unaffected: it reads
-    // `cleaned`, which the clamp never touches.
+    // Bound parsing separately from the 192 dp scroll viewport. Copy retains
+    // the complete cleaned payload even when the rendering budget is exceeded.
     val painted = remember(cleaned) { cleaned.paintableDiffLines() }
     val path = remember(cleaned, argsText, resultText) {
         // `fallback-model/index.ts:61-67` — the tool's own argument wins, then
@@ -1517,6 +1549,22 @@ private fun InlineDiffPanel(
             ?: resultText.jsonStringField("path", "file", "filepath", "resolved_path")
             ?: cleaned.filePath()
             ?: "Patched file"
+    }
+    // `diff-lines.tsx:607-608` — Desktop hands the change content to Shiki under
+    // `shikiLanguageForFilename(path)`, and refuses past the same character/line
+    // budget (`shiki-highlighter.tsx:34-35,56-70`). The language comes from the
+    // path the header already resolved, and an id this app carries no lexicon
+    // for — or a payload past the budget — paints the plain coloured diff, which
+    // is Desktop's own `canHighlight == false` arm.
+    val syntaxLanguage = remember(path) { syntaxLanguageForPath(path) }
+    // One tokenisation per painted row, computed once per resolved diff. Null
+    // means "plain coloured diff" for every row.
+    val tokenised = remember(painted, syntaxLanguage, cleaned) {
+        if (syntaxLanguage == null || exceedsHighlightBudget(cleaned)) {
+            null
+        } else {
+            painted.map { line -> tokenizeSyntaxLine(line.text, syntaxLanguage) }
+        }
     }
 
     Column(
@@ -1537,14 +1585,14 @@ private fun InlineDiffPanel(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HermesIconGlyph(HermesIcon.Edit, color = tokens.scaffoldText, size = 13.sp)
+            if (running) RunningToolGlyph(tokens.scaffoldText)
+            else HermesIconGlyph(HermesIcon.Edit, color = tokens.scaffoldText, size = 13.sp)
             Spacer(Modifier.width(7.dp))
-            Text(
+            ActivityLabel(
                 text = path,
+                active = running,
                 style = HermesTheme.type.scaffold,
                 color = tokens.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             // `fallback.tsx:585-594` — two independent slots, each drawn only
@@ -1581,8 +1629,22 @@ private fun InlineDiffPanel(
             Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                 ToolCopyControl(ToolCopyAction(COPY_DIFF, "File copied", cleaned))
             }
-            Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                painted.forEachIndexed { index, line ->
+            // Desktop parks the body in a `max-h-[12rem]` box that scrolls
+            // internally (`diff-lines.tsx:66-67,583-641`). The phone keeps the
+            // clamp — the row count is bounded before Compose measures it — and
+            // now also the box: a vertical scroller that reaches the body's own
+            // top or bottom hands the drag back to the transcript via the same
+            // nested-scroll reach the screen already uses, so the gesture stays
+            // unambiguous instead of trapping the finger in the diff.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(INLINE_DIFF_BODY_TAG)
+                    .heightIn(max = DIFF_BODY_MAX_HEIGHT)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    painted.forEachIndexed { index, line ->
                     // diff-lines.tsx:42-52 @
                     // 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd — a changed line
                     // is a `border-l-2` in the seed, its own tint and its own
@@ -1610,7 +1672,8 @@ private fun InlineDiffPanel(
                     Text(
                         // `diff-lines.tsx:279-291` — an empty line still paints
                         // a row, so a blank hunk separator keeps its height.
-                        text = line.text.ifEmpty { " " },
+                        text = tokenised?.getOrNull(index)?.syntaxAnnotated(foreground, tokens.syntax)
+                            ?: line.text.ifEmpty { " " }.let(::AnnotatedString),
                         style = HermesTheme.type.code,
                         color = foreground,
                         // `DIFF_LINE_BASE`'s `whitespace-pre` (`:54`): the text
@@ -1634,6 +1697,7 @@ private fun InlineDiffPanel(
                                 bottom = 1.dp,
                             ),
                     )
+                    }
                 }
             }
         }
@@ -1642,6 +1706,38 @@ private fun InlineDiffPanel(
 
 /** `diff-lines.tsx:54` @ `72a3277cd7` — `border-l-2`, in the seed colour. */
 private val DIFF_GUTTER_WIDTH = 2.dp
+
+/** `diff-lines.tsx:66-67` @ the same SHA — `max-h-[12rem]`. */
+private val DIFF_BODY_MAX_HEIGHT = 192.dp
+
+
+/**
+ * One tokenised row, painted as a `Text` with the diff ink as the base and the
+ * syntax ink layered on the recognised runs.
+ *
+ * `diff-lines.tsx:453-467,469-487` @ `437116f9497c80d242ce034ff7f5d81dc277a337`:
+ * Desktop gives Shiki the change *content*, lets it paint the code, and
+ * re-applies the add/remove tint on top — so a changed line reads as code and as
+ * a change at once. [base] is that tint's ink and is what a run the lexer did
+ * not classify keeps; the five recognised kinds take `tokens.syntax`. The line's
+ * text is reconstructed exactly by [tokenizeSyntaxLine], so no character is lost
+ * or duplicated by highlighting.
+ */
+private fun List<SyntaxToken>.syntaxAnnotated(base: Color, syntax: HermesSyntaxInk): AnnotatedString {
+    return buildAnnotatedString {
+        for (token in this@syntaxAnnotated) {
+            val ink = when (token.kind) {
+                SyntaxTokenKind.Plain -> base
+                SyntaxTokenKind.Keyword -> syntax.keyword
+                SyntaxTokenKind.String -> syntax.string
+                SyntaxTokenKind.Comment -> syntax.comment
+                SyntaxTokenKind.Number -> syntax.number
+                SyntaxTokenKind.Function -> syntax.function
+            }
+            withStyle(SpanStyle(color = ink)) { append(token.text) }
+        }
+    }
+}
 
 /**
  * The rows an inline diff is allowed to paint: the clamped body, parsed, with
@@ -1676,6 +1772,87 @@ internal fun String.paintableDiffLines(): List<DiffLine> {
 }
 
 @Composable
+private fun TimelineRow(event: TimelineEvent) {
+    val tokens = HermesTheme.tokens
+    var expanded by rememberSaveable(event.id) { mutableStateOf(false) }
+    val report = event.report
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = HermesTheme.spacing.touchTarget)
+                .clickable(enabled = report != null, role = Role.Button, onClick = { expanded = !expanded })
+                .semantics(mergeDescendants = true) {
+                    contentDescription = if (report != null) {
+                        "${event.label}, ${if (expanded) "expanded" else "collapsed"}"
+                    } else {
+                        event.label
+                    }
+                    if (report != null) stateDescription = if (expanded) "Expanded" else "Collapsed"
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = event.label,
+                style = HermesTheme.type.scaffold,
+                color = tokens.scaffoldText,
+                modifier = Modifier.weight(1f),
+            )
+            if (report != null) {
+                HermesIconGlyph(
+                    icon = if (expanded) HermesIcon.ChevronDown else HermesIcon.ChevronRight,
+                    color = tokens.scaffoldMeta,
+                    size = 12.sp,
+                )
+            }
+        }
+        if (expanded && report != null) {
+            TimelineReport(report)
+        }
+    }
+}
+
+/**
+ * The producer-owned body a completion event discloses.
+ *
+ * `system-message.tsx:44-56` @ `437116f9497c80d242ce034ff7f5d81dc277a337`
+ * paints `asyncResult` as markdown inside `max-h-80 overflow-auto
+ * overscroll-contain`, and that is what this is: markdown, in the same widget
+ * inset the expanded tool row uses.
+ *
+ * The height rule is the one adaptation. Desktop's box scrolls internally; a
+ * nested vertical scroller inside a `LazyColumn` competes with the transcript's
+ * own drag on touch, the gesture ambiguity `#56` already deferred once, so the
+ * phone clamps what it *paints* instead
+ * (`docs/parity/tool-output-fidelity.md`), by the same character and line
+ * budget every other tool payload takes.
+ */
+@Composable
+private fun TimelineReport(report: String) {
+    val tokens = HermesTheme.tokens
+    // Clamp before parsing, so the row count is bounded before Compose measures
+    // anything (`fallback.tsx:664-668` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
+    val blocks = remember(report) { parseMarkdown(clampForDisplay(report)) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tokens.widgetSurface, RoundedCornerShape(10.dp))
+            .border(1.dp, tokens.strokeTertiary, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap),
+    ) {
+        SelectionContainer {
+            Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
+                for (block in blocks) {
+                    MarkdownBlockView(block = block)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun TurnProgressRow(startedAtMillis: Long?, progress: SessionProgress?) {
     val tokens = HermesTheme.tokens
     val seconds = liveElapsedSeconds(startedAtMillis, 0.0, running = true)
@@ -1690,7 +1867,7 @@ private fun TurnProgressRow(startedAtMillis: Long?, progress: SessionProgress?) 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.width(18.dp))
-        DitherMark(tokens.accent)
+        DitherMark(tokens.accent.copy(alpha = progressPulseAlpha(transcriptMotionPhase(true, 5000))))
         Spacer(Modifier.width(10.dp))
         progress?.let {
             Text(
@@ -1718,9 +1895,9 @@ private fun liveElapsedSeconds(startedAtMillis: Long?, fallback: Double, running
     return elapsed
 }
 
-private fun ToolActivity.displayTitle(): String {
+private fun ToolActivity.displayTitle(hasDiff: Boolean = resolveEffectiveInlineDiff(inlineDiff, resultText) != null): String {
     val normalized = toolName.lowercase()
-    if (inlineDiff != null || normalized.contains("patch")) return "Patched file"
+    if (hasDiff || normalized.contains("patch")) return "Patched file"
     val command = argsText.jsonStringField("command") ?: detail.takeIf { normalized.contains("terminal") }
     if (command != null && normalized.contains("terminal")) {
         val commands = command.lineSequence().map(String::trim).filter(String::isNotBlank).toList()

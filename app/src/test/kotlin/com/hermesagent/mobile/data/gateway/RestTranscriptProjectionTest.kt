@@ -2,6 +2,8 @@ package com.hermesagent.mobile.data.gateway
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -238,29 +240,68 @@ class RestTranscriptProjectionTest {
     }
 
     /**
-     * Only `"hidden"` drops a row. The other `display_kind` values the route
-     * forwards (`server.py:9705-9717,9813-9820`) reach Desktop as system
-     * timeline rows (`lib/chat-messages/hydration.ts:94-116,197-208`) and
-     * Android renders no such row on either contract, so the row keeps its
-     * stored role and body here. Ledgered in
-     * `docs/parity/transcript-backfill.md`, and pinned so a change is a decision
-     * rather than a surprise.
+     * A typed display row keeps the `display_kind` and `display_metadata` it was
+     * stamped with, for every kind this app renders a row for. The shared parser
+     * is the one that reads them (`classifyTimelineEvent`), and it is the only
+     * thing that may licence treating a row as a timeline event. The RPC
+     * contract carries the same two fields (`session_history.py:237-241`), so
+     * dropping them here made the two contracts disagree about one persisted
+     * row — and an `async_delegation_complete` row's `[ASYNC DELEGATION BATCH
+     * COMPLETE …]` body, which is addressed to the model, reached a user bubble.
+     * Ledgered in `docs/parity/transcript-backfill.md`.
+     */
+    @Test
+    fun `a typed display row keeps the metadata it is classified by`() {
+        val projected = project(
+            """{"id":21,"role":"user","content":"[ASYNC DELEGATION BATCH COMPLETE — done]",
+                "display_kind":"async_delegation_complete","display_metadata":{"task_count":2}}""",
+            """{"id":22,"role":"user","content":"[System note: Your previous turn was interrupted mid-run]",
+                "display_kind":"auto_continue"}""",
+        )
+
+        assertEquals(listOf("async_delegation_complete", "auto_continue"), projected.map { it.string("display_kind") })
+        assertEquals(2, projected.first().displayMetadataField("task_count"))
+        assertNull(projected.last()["display_metadata"])
+    }
+
+    /**
+     * The `[System: …` filter runs **before** the kind is read, on both
+     * contracts (`session_history.py:195-196`), and it is why a `model_switch`
+     * row — whose stored body *is* a `[System: The active model …]` marker —
+     * never reaches this app as a row at all. Its [TimelineKind] entry is the
+     * set Desktop itself classifies, kept whole rather than trimmed to whatever
+     * survives this filter today.
+     */
+    @Test
+    fun `a system-marker row is dropped whatever kind it was stamped with`() {
+        val projected = project(
+            """{"id":24,"role":"user","content":"[System: The active model for this chat has changed to acme/reasoner.]",
+                "display_kind":"model_switch","display_metadata":{"model":"acme/reasoner"}}""",
+        )
+
+        assertEquals(emptyList<JsonObject>(), projected)
+    }
+
+    /**
+     * A kind this app renders no row for keeps the row it was stamped on and
+     * nothing else: forwarding a shape no renderer reads would invite a future
+     * one to trust what no test pins. `TimelineKind.fromWireName` is the gate.
      */
     @Test
     fun `a display_kind the app does not render keeps the row it was stamped on`() {
         val projected = project(
-            """{"id":21,"role":"system","content":"Model changed to acme/reasoner",
-                "display_kind":"model_switch","display_metadata":{"model":"acme/reasoner"}}""",
-            """{"id":22,"role":"user","content":"[System note: resumed the interrupted turn]",
-                "display_kind":"auto_continue"}""",
+            """{"id":23,"role":"system","content":"Compacted 40 turns",
+                "display_kind":"skill_invocation","display_metadata":{"name":"work"}}""",
         )
 
-        assertEquals(
-            listOf("Model changed to acme/reasoner", "[System note: resumed the interrupted turn]"),
-            projected.map { it.string("text") },
-        )
-        assertNull(projected.first().string("display_kind"))
+        assertEquals("Compacted 40 turns", projected.single().string("text"))
+        assertNull(projected.single().string("display_kind"))
+        assertNull(projected.single()["display_metadata"])
     }
+
+    /** The metadata object a projected row carries, read back through its own key. */
+    private fun JsonObject.displayMetadataField(key: String): Int? =
+        ((this["display_metadata"] as? JsonObject)?.get(key) as? JsonPrimitive)?.intOrNull
 
     @Test
     fun `a blank row with nothing to say is dropped`() {
