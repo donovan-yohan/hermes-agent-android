@@ -636,6 +636,13 @@ internal class ChatViewModel(
     private val createdProjectBySession = mutableMapOf<String, String>()
     @Volatile private var navigationGeneration = 0L
         set(value) { field = value; gatewayLogsController.dismiss() }
+    /**
+     * The newest session-open request. `repository.openSession` waits on the
+     * Gateway, so a tap can outlive the chat it named; the completion carries
+     * this number and proves the screen still belongs to it before adopting or
+     * repainting anything.
+     */
+    private var sessionOpenGeneration = 0L
     private var sidebarGroupingGeneration = 0L
     @Volatile private var profileScopeGeneration = 0L
         set(value) { field = value; gatewayLogsController.dismiss() }
@@ -3891,14 +3898,28 @@ internal class ChatViewModel(
     }
 
     private suspend fun openAndAdopt(id: String) {
+        val generation = ++sessionOpenGeneration
+        // The open waits on the Gateway and adoption waits on the draft store,
+        // so the reader can leave this chat between either await and the work
+        // it licenses. Only the newest request for the session still on screen
+        // may adopt or repaint: a stale completion that ran on would republish
+        // `Loading` over the live chat's composer, after cancelling the only
+        // read that could have finished it. The id is re-read each time, since
+        // compression can move an adopted session to its canonical key.
+        fun stillOwns(target: String): Boolean =
+            sessionOpenGeneration == generation && activeSessionId.value == target
         try {
             val canonicalId = repository.openSession(id)
+            if (!stillOwns(id)) return
             adoptCanonicalSession(id, canonicalId)
+            // This fence is the half adoption cannot cover: for an equal id it
+            // returns before any of its own guards run.
+            if (!stillOwns(canonicalId)) return
             refreshComposer(canonicalId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Throwable) {
-            if (activeSessionId.value == id) {
+            if (stillOwns(id)) {
                 noticeLine = "This session could not be opened. Check the Gateway and try again."
             }
         }

@@ -1101,6 +1101,40 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `a stale reselect cannot repaint the composer of the session now on screen`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        assertEquals("session-a", viewModel.uiState.value.activeSessionId)
+        assertTrue(
+            "the startup open must leave a ready catalog before the race begins",
+            viewModel.uiState.value.composer.catalog is ComposerCatalogUiState.Ready,
+        )
+        // The notification tap's open is still on the wire when the reader
+        // moves to another chat; B's own composer read has already landed.
+        repository.openGates["session-a"] = CompletableDeferred()
+        viewModel.selectSession("session-a")
+        runCurrent()
+        viewModel.selectSession("session-b")
+        runCurrent()
+
+        assertEquals("session-b", viewModel.uiState.value.activeSessionId)
+        assertTrue(viewModel.uiState.value.composer.catalog is ComposerCatalogUiState.Ready)
+
+        // The late A open resumes here. It owns neither the screen nor the
+        // composer, and its synchronous publish would put B's catalog back on
+        // `Loading` after cancelling the only read that could finish it.
+        repository.openGates.getValue("session-a").complete(Unit)
+        runCurrent()
+
+        assertEquals("session-b", viewModel.uiState.value.activeSessionId)
+        assertTrue(
+            "a late open must not clear the live session's catalog",
+            viewModel.uiState.value.composer.catalog is ComposerCatalogUiState.Ready,
+        )
+        assertEquals("model/default", viewModel.uiState.value.composer.controls.selection?.model)
+    }
+
+    @Test
     fun `authoritatively rejected submit restores the current draft with concise action`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -3244,8 +3278,15 @@ class ChatViewModelTest {
 
         var transcriptOnOpen: List<TranscriptEntry>? = null
 
+        /**
+         * Holds the authoritative open of these exact durable ids, so a test can
+         * make one session's `session.resume` land after another selection.
+         */
+        val openGates = mutableMapOf<String, CompletableDeferred<Unit>>()
+
         override suspend fun openSession(durableId: String): String {
             opened += durableId
+            openGates[durableId]?.await()
             transcriptOnOpen?.let { cache.setTranscript(durableId, it) }
             statusOnOpen?.let { status ->
                 cache.session(durableId)?.let { cache.upsertSession(it.copy(status = status)) }
