@@ -55,10 +55,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Non-obvious rules
 
-**Upstream is read-only.** `~/.hermes/hermes-agent` is a
-reference checkout pinned at `437116f9497c80d242ce034ff7f5d81dc277a337`. Never
-write to it, never fetch or check out inside it. Cite `path:line` **with** that
-SHA or the citation means nothing.
+**Upstream is read-only.** The current Desktop implementation target is
+`e2f8a0731bf26e95b31e35d73e71e183a1045b81` (upstream main frozen 2026-09-22).
+Use a disposable checkout at that SHA for new ports. `~/.hermes/hermes-agent`
+remains a read-only reference: never write, fetch or check out inside it.
+Cite `path:line` **with** the inspected SHA or the citation means nothing.
+Existing per-surface pins and rendered reports retain their original provenance;
+the new target does not retroactively certify them against the newer source.
 
 **Theme parity is an invariant.** Every Desktop built-in at the pinned SHA has
 an Android preset with the same name, label, description and registry order.

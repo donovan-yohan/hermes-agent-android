@@ -1127,7 +1127,6 @@ internal class ChatViewModel(
         // the profile the rail is standing in, which backend this is, and
         // whether the rail is showing sessions at all. See [SessionSearchKey].
         viewModelScope.launch {
-            var lastScope: SessionSearchScope? = null
             combine(
                 query,
                 profileScope,
@@ -1161,17 +1160,11 @@ internal class ChatViewModel(
                 )
             }
                 .distinctUntilChanged()
-                // Before the debounce, not after it. A scope change means a
-                // different set of conversations, and an endpoint change means
-                // a different machine that can recycle the same durable ids
-                // (`SessionCache.resetForEndpointSwitch`) — so the previous
-                // scope's stubs stop being an answer the moment the scope
-                // moves, not 200 ms and a round trip later. `collectLatest`
-                // below cancels the request that was in flight for them.
-                .onEach { key ->
-                    if (lastScope != null && lastScope != key.scope) searchResults.value = null
-                    lastScope = key.scope
-                }
+                // A result belongs to the complete search key: query, scope,
+                // endpoint and view. Retire it before the debounce whenever
+                // that key changes, while local matches still answer instantly.
+                // collectLatest cancels the previous key's in-flight request.
+                .onEach { searchResults.value = null }
                 .collectLatest { key ->
                     if (key.query.isEmpty() || !key.sessionsView) {
                         searchResults.value = null

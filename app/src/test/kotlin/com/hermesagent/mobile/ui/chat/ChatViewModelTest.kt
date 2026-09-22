@@ -4539,6 +4539,26 @@ class ChatViewModelTest {
         assertEquals(listOf("session-a", "session-z"), viewModel.uiState.value.sessionRows.rowIds())
     }
 
+    @Test
+    fun `changing search text drops previous server hits before the next debounce`() = runTest(dispatcher) {
+        repository.searchAnswer = listOf(stub("old-hit", "Earlier remote result"))
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("earlier")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("old-hit"), viewModel.uiState.value.sessionRows.rowIds())
+
+        viewModel.setQuery("different")
+        runCurrent()
+
+        assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
+        assertTrue(viewModel.uiState.value.sessionRows.contains(SessionListRow.SearchSkeletons))
+        assertEquals(listOf("earlier" to null), repository.searches)
+    }
+
     /**
      * A Gateway that cannot be asked, or that refuses, leaves the client-side
      * matches exactly where they were — no banner, no empty list. Desktop
