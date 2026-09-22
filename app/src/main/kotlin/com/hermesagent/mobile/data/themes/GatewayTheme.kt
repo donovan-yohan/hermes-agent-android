@@ -5,6 +5,7 @@ import com.hermesagent.mobile.ui.theme.BuiltinThemes
 import com.hermesagent.mobile.ui.theme.HermesFontChoice
 import com.hermesagent.mobile.ui.theme.HermesPalette
 import com.hermesagent.mobile.ui.theme.HermesThemePreset
+import com.hermesagent.mobile.ui.theme.ensureContrast
 import com.hermesagent.mobile.ui.theme.mix
 import com.hermesagent.mobile.ui.theme.over
 import com.hermesagent.mobile.ui.theme.readableOn
@@ -179,6 +180,43 @@ internal fun mapGatewayThemePalette(background: LayerR, midground: LayerR, foreg
     )
 }
 
+/** Convert the frozen Desktop HermesSkin contract into the mobile palette. */
+internal fun parseBackendSkin(payload: JsonObject): GatewayTheme? {
+    val name = payload.string("name")?.trim()?.takeIf { isSafeCustomThemeName(it) } ?: return null
+    if (BuiltinThemes.ALL.any { it.name == name } || name == "default") return null
+    val colors = (payload["colors"] as? JsonObject) ?: return null
+    fun color(vararg keys: String): Color? = keys.asSequence()
+        .mapNotNull { colors[it].stringOrNull() }
+        .mapNotNull(::backendColor)
+        .firstOrNull()
+    val seededBackground = color("background", "status_bar_bg")
+    val seededForeground = color("ui_text", "banner_text", "status_bar_text")
+    val background = seededBackground ?: if (seededForeground != null && rawLuminance(seededForeground) > .5f) Color(0xFF141414) else Color(0xFFF7F7F8)
+    val dark = rawLuminance(background) < .4f
+    val foreground = seededForeground ?: if (dark) Color(0xFFE6E6E6) else Color(0xFF161616)
+    val sidebar = mix(background, foreground, if (dark) .02f else .012f)
+    val accentSeed = color("ui_accent", "banner_accent", "banner_title") ?: mix(foreground, background, .55f)
+    val accent = ensureContrast(accentSeed, sidebar)
+    val border = color("ui_border", "banner_border") ?: mix(background, foreground, if (dark) .16f else .14f)
+    val muted = color("banner_dim", "session_border") ?: mix(foreground, background, .45f)
+    val palette = HermesPalette(
+        background = background, foreground = foreground,
+        card = mix(background, foreground, if (dark) .04f else .025f), cardForeground = foreground,
+        muted = mix(background, foreground, if (dark) .06f else .04f), mutedForeground = muted,
+        popover = mix(background, foreground, if (dark) .08f else .05f), popoverForeground = foreground,
+        primary = accent, primaryForeground = readableOn(accent),
+        secondary = mix(accent, background, if (dark) .72f else .86f), secondaryForeground = foreground,
+        accent = mix(accent, background, if (dark) .82f else .88f), accentForeground = foreground,
+        border = border, input = color("completion_menu_bg") ?: mix(background, foreground, if (dark) .10f else .06f), ring = accent,
+        destructive = color("ui_error") ?: Color(0xFFE25563), destructiveForeground = readableOn(color("ui_error") ?: Color(0xFFE25563)),
+        midground = accent, midgroundForeground = readableOn(accent), composerRing = accent,
+        sidebarBackground = sidebar, sidebarBorder = border,
+        userBubble = mix(background, accent, if (dark) .18f else .12f), userBubbleBorder = border,
+    )
+    val label = payload.string("name")!!.replaceFirstChar { it.uppercase() }
+    return GatewayTheme(name, label, payload.string("description") ?: "Hermes skin", preset(name, label, payload.string("description") ?: "Hermes skin", palette))
+}
+
 private fun preset(name: String, label: String, description: String, colors: HermesPalette) = HermesThemePreset(
     name = name, label = label, description = description, colors = colors, darkColors = colors, fonts = HermesFontChoice(),
 )
@@ -188,7 +226,24 @@ private fun kotlinx.serialization.json.JsonElement?.stringOrNull(): String? = (t
 private fun kotlinx.serialization.json.JsonElement?.numberOrNull(): Double? = (this as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toDoubleOrNull()
 private fun hexColor(hex: String): Color {
     val value = hex.removePrefix("#").toLong(16)
-    return if (hex.length == 7) Color(0xFF000000 or value) else Color(value)
+    return when (hex.length) {
+        7 -> Color(0xFF000000 or value)
+        9 -> Color(value)
+        else -> Color.Transparent
+    }
+}
+
+private fun rawLuminance(color: Color): Float =
+    0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
+
+/** Desktop normalizeHex uses CSS RGBA order and flattens alpha over black. */
+private fun backendColor(value: String): Color? {
+    val raw = value.trim().removePrefix("#")
+    if (!raw.matches(Regex("[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}"))) return null
+    val expanded = if (raw.length <= 4) raw.flatMap { listOf(it, it) }.joinToString("") else raw
+    val rgb = expanded.take(6).toLong(16)
+    val alpha = if (expanded.length == 8) expanded.takeLast(2).toInt(16) else 255
+    return Color(0xFF000000 or rgb).withAlpha(alpha / 255f).over(Color.Black)
 }
 
 private const val MAX_THEMES = 200

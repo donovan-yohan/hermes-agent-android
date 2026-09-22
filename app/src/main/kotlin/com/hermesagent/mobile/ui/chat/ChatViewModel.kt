@@ -918,7 +918,9 @@ internal class ChatViewModel(
             ).map { project ->
                 project.copy(
                     previewSessions = filterSessionsByProfileScope(
-                        project.previewSessions.map { preview -> cacheState.sessions[preview.id] ?: preview },
+                        project.previewSessions
+                            .map { preview -> cacheState.sessions[preview.id] ?: preview }
+                            .filter { it.hidden != true },
                         profileScopeState.key,
                     ),
                 )
@@ -1040,7 +1042,7 @@ internal class ChatViewModel(
             // unread (`store/session-dot-state.ts:186-200` @ `72a3277cd7`) and
             // hides the mark-all action at zero.
             unreadCount = scopedSessions.count {
-                it.archived != true && it.displayStatus() == SessionStatus.Unread
+                it.hidden != true && it.archived != true && it.displayStatus() == SessionStatus.Unread
             },
             // A genuinely empty account therefore alternates between the
             // placeholder bars and the blank state on every background refresh,
@@ -1127,7 +1129,6 @@ internal class ChatViewModel(
         // the profile the rail is standing in, which backend this is, and
         // whether the rail is showing sessions at all. See [SessionSearchKey].
         viewModelScope.launch {
-            var lastScope: SessionSearchScope? = null
             combine(
                 query,
                 profileScope,
@@ -1161,17 +1162,11 @@ internal class ChatViewModel(
                 )
             }
                 .distinctUntilChanged()
-                // Before the debounce, not after it. A scope change means a
-                // different set of conversations, and an endpoint change means
-                // a different machine that can recycle the same durable ids
-                // (`SessionCache.resetForEndpointSwitch`) — so the previous
-                // scope's stubs stop being an answer the moment the scope
-                // moves, not 200 ms and a round trip later. `collectLatest`
-                // below cancels the request that was in flight for them.
-                .onEach { key ->
-                    if (lastScope != null && lastScope != key.scope) searchResults.value = null
-                    lastScope = key.scope
-                }
+                // A result belongs to the complete search key: query, scope,
+                // endpoint and view. Retire it before the debounce whenever
+                // that key changes, while local matches still answer instantly.
+                // collectLatest cancels the previous key's in-flight request.
+                .onEach { searchResults.value = null }
                 .collectLatest { key ->
                     if (key.query.isEmpty() || !key.sessionsView) {
                         searchResults.value = null
@@ -2589,7 +2584,7 @@ internal class ChatViewModel(
         filterSessionsByProfileScope(
             cache.state.value.sessions.values.toList(),
             profileScope.value.key,
-        ).filter { it.archived != true && it.displayStatus() == SessionStatus.Unread }
+        ).filter { it.hidden != true && it.archived != true && it.displayStatus() == SessionStatus.Unread }
 
     private suspend fun reportingFailure(fallback: String, action: suspend () -> Unit) {
         try {

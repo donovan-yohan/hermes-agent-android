@@ -97,6 +97,9 @@ enum class HermesIcon(val glyph: String) {
     Files("\uEAF0"),
     Question("\uEB32"),
     Tools("\uEB6D"),
+    Robot("\uEC20"),
+    SymbolMisc("\uEB63"),
+    Comment("\uEA6B"),
     /**
      * Desktop's schedule-pill glyph. Its routines row draws the schedule in a
      * pill led by Codicon `calendar` (`cron.tsx:581-584`); this is that glyph in

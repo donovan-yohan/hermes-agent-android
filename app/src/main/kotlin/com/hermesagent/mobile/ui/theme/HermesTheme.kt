@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.ui.theme
 
+import android.app.Activity
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -11,8 +13,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 /** What the user picked in Appearance. Mirrors Desktop's `ThemeMode`. */
 enum class HermesThemeMode { Light, Dark, System }
@@ -82,6 +87,21 @@ fun HermesTheme(
     // which is Desktop's split between `getBaseColors` and `renderedModeFor`.
     val palette = remember(preset, requestedDark) { preset.paletteFor(requestedDark) }
     val dark = remember(palette, requestedDark) { rendersDark(palette.background, requestedDark) }
+    // Edge-to-edge initially follows the OS. A skin can render dark even when
+    // the requested mode is light, so platform icons must follow rendered mode.
+    val view = LocalView.current
+    val window = remember(view) {
+        generateSequence(view.context) { (it as? ContextWrapper)?.baseContext }
+            .filterIsInstance<Activity>().firstOrNull()?.window
+    }
+    if (!view.isInEditMode && window != null) {
+        SideEffect {
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
     val tokens = remember(palette, dark) { HermesTokens.from(palette, dark) }
     val typeScale = remember(preset.fonts) { hermesTypeScale(preset.fonts) }
     // Material 3 seeds selection from `colorScheme.primary`, which is a theme

@@ -120,6 +120,8 @@ data class SessionSummary(
      * nothing. Absent, so the affordance can stay absent.
      */
     val archived: Boolean? = null,
+    /** Backend visibility; null means unreported, not an explicit unhide. */
+    val hidden: Boolean? = null,
     /**
      * Durable server-side pin (`sessions.pinned`, `sessions.py:155`). The list
      * route back-fills pinned rows past its own LIMIT

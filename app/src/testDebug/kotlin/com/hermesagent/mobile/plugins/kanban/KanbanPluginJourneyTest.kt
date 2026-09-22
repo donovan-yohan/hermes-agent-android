@@ -49,7 +49,7 @@ class KanbanPluginJourneyTest {
     val compose = createComposeRule()
 
     @Test
-    fun `settings contribution is visible enabled touch sized and routes exactly to kanban`() {
+    fun `sidebar contribution is visible enabled touch sized and routes exactly to kanban`() {
         val registry = ContributionRegistry()
         val disposers = mutableListOf<() -> Unit>()
         KanbanPlugin().register(
@@ -82,21 +82,13 @@ class KanbanPluginJourneyTest {
                     if (routeOpen) {
                         route.render?.invoke()
                     } else {
-                        SettingsScreen(
-                            onOpenAppearance = {},
-                            onOpenGateways = {},
-                            onOpenSystem = {},
-                            onOpenNotifications = {},
-                            onOpenPlugins = {},
-                            systemAvailable = true,
-                            contributions = listOf(sidebar),
-                        )
+                        sidebar.render?.invoke()
                     }
                 }
             }
         }
 
-        compose.onNodeWithContentDescription("Kanban. A read-only snapshot of the current board.")
+        compose.onNodeWithContentDescription("Kanban")
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
             .performClick()

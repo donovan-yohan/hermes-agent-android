@@ -80,6 +80,20 @@ fun readableOn(color: Color): Color {
     return if (contrastRatio(color, white) >= contrastRatio(color, nearBlack)) white else nearBlack
 }
 
+/** Desktop ensureContrast: move the candidate toward the higher-contrast ink until AA. */
+fun ensureContrast(candidate: Color, backdrop: Color, minimum: Float = 4.5f): Color {
+    if (contrastRatio(candidate, backdrop) >= minimum) return candidate
+    val target = readableOn(backdrop)
+    var low = 0f
+    var high = 1f
+    repeat(16) {
+        val amount = (low + high) / 2f
+        val mixed = mix(candidate, target, amount)
+        if (contrastRatio(mixed, backdrop) >= minimum) high = amount else low = amount
+    }
+    return mix(candidate, target, high)
+}
+
 /**
  * WCAG AA for body text on a solid fill: 4.5:1 (WCAG 2.1 §1.4.3, the normal
  * text threshold; a button label is normal-size text, not large text).

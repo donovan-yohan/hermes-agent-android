@@ -2,6 +2,25 @@
   "schema_version": 1,
   "purpose": "Dispatch catalog for real, synthetic visual-parity captures. A state is one explicit artifact, never a production session.",
   "surfaces": {
+    "desktop-sidebar": {
+      "desktop_sha": "e2f8a0731bf26e95b31e35d73e71e183a1045b81",
+      "fixture_id": "desktop-sidebar-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.DesktopSidebarParityActivity",
+      "desktop_selector": "[data-sessions-mode]",
+      "desktop_selector_note": "Sessions subtree boundary, not the enclosing shell mode strip. Compare the separately captured genuine intake shell reference at this SHA for the top tabs. No sidebar/theme differences through target 95f20517c25ee418da5337f4ead347008baaa2b3; retain intake provenance rather than relabeling the pixels. The generic workflow Desktop job remains boundary-only.",
+      "states": {
+        "sessions-navigation": {
+          "interaction": [],
+          "post_interaction_accessibility": "Kanban",
+          "fixture_note": "Production SessionList with the five core rows and SESSIONS/BOTS/TERMINAL tabs; actual BotsPlugin typed mode and GroupsPlugin/KanbanPlugin sidebar contributions registered through createPluginContext. Two invented sessions, fixed en-US/UTC clock, mono dark/light, no initial selection. Disconnected in-memory plugin dependencies; no profile/Gateway footer seed or route-body capture. New session clears fixture selection rather than creating a backend session. Capture is sidebar-only, not the complete app shell."
+        },
+        "sessions-navigation-group-selected": {
+          "interaction": [],
+          "post_interaction_accessibility": "Group Chats",
+          "fixture_note": "Same Sessions-mode sidebar, seeded currentRoute groups:route. Only the real Group Chats launcher is selected; no chat row is selected. Tests also exercise the actual launcher callbacks. This is selection-chrome evidence, not navigation destination or hosted-room evidence; the Desktop reference does not certify this additional selected state."
+        }
+      }
+    },
     "composer-status-stack": {
       "desktop_sha": "564aef2946c436500a5e80ee117b66b789b3f99a",
       "fixture_id": "composer-status-stack-synthetic-v1",

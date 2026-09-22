@@ -8,7 +8,8 @@ import com.hermesagent.mobile.plugins.PluginContribution
 import com.hermesagent.mobile.plugins.PluginContext
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.ui.LocalPluginNavigation
-import com.hermesagent.mobile.ui.settings.SettingsRow
+import com.hermesagent.mobile.ui.sessions.SidebarNavRow
+import com.hermesagent.mobile.ui.common.HermesIcon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -103,6 +104,10 @@ class BotsPlugin(
             onResume = routines::surfaceResumed,
             onAction = routines::act,
         )
+        fun openRoutines(row: BotRosterRow, navigate: (String) -> Unit) {
+            routines.selectOwner(profile = row.name, label = displayName(row.name, row.displayName))
+            navigate("$id:$ROUTINES_ROUTE_ID")
+        }
 
         ctx.registerMany(
             listOf(
@@ -118,17 +123,7 @@ class BotsPlugin(
                             onBack = nav.onBack,
                             onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
                             onOpenRoutines = { row ->
-                                // The row's own tap still opens Bot Chat; this
-                                // is the Routines affordance beside it, and it
-                                // hands the bot to the destination rather than
-                                // to any shared navigation state. The row's
-                                // display name travels with it so the pane
-                                // header reads as the roster does.
-                                routines.selectOwner(
-                                    profile = row.name,
-                                    label = displayName(row.name, row.displayName),
-                                )
-                                nav.onNavigate("$id:$ROUTINES_ROUTE_ID")
+                                openRoutines(row, nav.onNavigate)
                             },
                             actions = actions,
                         )
@@ -149,29 +144,25 @@ class BotsPlugin(
                     },
                 ),
                 PluginContribution(
-                    id = "sidebar-nav",
+                    id = "sidebar-mode-bots",
                     area = PluginAreas.SIDEBAR_NAV_AREA,
                     title = "Bots",
-                    order = 400,
-                    render = {
-                        val nav = LocalPluginNavigation.current
-                        val state by viewModel.uiState.collectAsStateWithLifecycle()
-                        // A Gateway build without `profiles.list` cannot answer a
-                        // roster at all, so the entry point says so and stays
-                        // closed rather than opening an empty destination.
-                        val unavailable = state.phase == BotsRosterPhase.UnavailableOnGateway
-                        SettingsRow(
-                            label = "Bots",
-                            description = if (unavailable) {
-                                BotsRosterCopy.rosterUnavailable(GATEWAY_PREDATES_REASON)
-                            } else {
-                                "The bot roster for this Gateway."
-                            },
-                            traversalIndex = 5f,
-                            enabled = !unavailable,
-                            onClick = { nav.onNavigate("$id:route") },
-                        )
-                    },
+                    order = 0,
+                    data = com.hermesagent.mobile.ui.sessions.SidebarModeDestination(
+                        mode = com.hermesagent.mobile.ui.sessions.SidebarMode.Bots,
+                        content = { onBack ->
+                            val nav = LocalPluginNavigation.current
+                            val state by viewModel.uiState.collectAsStateWithLifecycle()
+                            BotsRosterScreen(
+                                state = state,
+                                onBack = onBack,
+                                onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
+                                onOpenRoutines = { row -> openRoutines(row, nav.onNavigate) },
+                                actions = actions,
+                                embedded = true,
+                            )
+                        },
+                    ),
                 ),
             ),
         )

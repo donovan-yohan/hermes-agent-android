@@ -819,6 +819,7 @@ internal class LiveGatewaySessionRepository(
      * only for isolated repository construction in tests.
      */
     private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
+    private val skinSourceScope: suspend () -> com.hermesagent.mobile.data.prefs.ComposerControlsScope? = { null },
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
@@ -826,6 +827,7 @@ internal class LiveGatewaySessionRepository(
         connection: GatewayConnectionManager,
         scope: CoroutineScope,
         endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
+        skinSourceScope: suspend () -> com.hermesagent.mobile.data.prefs.ComposerControlsScope? = { null },
         clock: () -> Long = System::currentTimeMillis,
     ) : this(
         cache,
@@ -836,6 +838,7 @@ internal class LiveGatewaySessionRepository(
         http = { connection.gatewayHttp.value },
         clock = clock,
         endpointDispatchFence = endpointDispatchFence,
+        skinSourceScope = skinSourceScope,
     )
 
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
@@ -863,7 +866,7 @@ internal class LiveGatewaySessionRepository(
      * surface — a session event's `seq` becoming a watermark, and an epoch
      * change clearing it — is verifiable from this module's tests.
      */
-    internal val globalEvents = GatewayGlobalEventLane()
+    internal val globalEvents = GatewayGlobalEventLane { cache.endpointGeneration.value }
     override val globalChangeHints: Flow<GatewayChangeHint> = globalEvents.changeHints
     private val mutablePendingInputs =
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
@@ -1147,13 +1150,16 @@ internal class LiveGatewaySessionRepository(
                     eventJob = scope.launch {
                         launch {
                             next.events.collect { event ->
+                                val sourceScope = if (event.type == "gateway.ready" || event.type == "skin.changed") {
+                                    skinSourceScope()
+                                } else null
                                 val refreshMetadata = synchronized(stateLock) {
                                     if (reset.generation != connectionGeneration || clientFlow.value !== next) {
                                         false
                                     } else if (gatewayEventLane(event.type) == GatewayEventLane.Global) {
                                         // No runtime to route by: the session lane's
                                         // `applyEvent` can never see these.
-                                        applyGlobalEvent(event)
+                                        applyGlobalEvent(event, sourceScope)
                                     } else {
                                         // A `seq` is the resume point a replay would
                                         // use; the epoch on `gateway.ready` is what
@@ -4333,10 +4339,10 @@ internal class LiveGatewaySessionRepository(
      * admitted type always lands on one of the two paths below, and a new one
      * does not compile until it names an owner.
      */
-    private fun applyGlobalEvent(event: GatewayEvent): Boolean =
+    private fun applyGlobalEvent(event: GatewayEvent, sourceScope: com.hermesagent.mobile.data.prefs.ComposerControlsScope? = null): Boolean =
         when (GatewayGlobalEventType.fromWire(event.type)?.owner) {
             GatewayGlobalEventOwner.Reclaim -> applyReclaimedEvent(event)
-            GatewayGlobalEventOwner.Lane, null -> globalEvents.accept(event)
+            GatewayGlobalEventOwner.Lane, null -> globalEvents.accept(event, sourceScope)
         }
 
     /**
@@ -5360,6 +5366,25 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun applyStatusUpdate(durableId: String, runtimeId: String, payload: JsonObject) {
+        // The Gateway's no-text status helper encodes manual compression's
+        // finally notification as {kind: "status", text: "ready"}.
+        if (payload.jsonString("kind") == "status" && payload.jsonString("text") == "ready") {
+            val existing = cache.session(durableId)
+            if (existing?.composerStatus?.isCompacting == true) {
+                // Only retire compression's own progress. A newer thinking,
+                // process or goal update still owns its runtime tracking.
+                val progress = existing.progress?.takeUnless {
+                    it.kind == "compressing" || it.kind == "compacting"
+                }
+                if (progress == null) progressRuntimeIds.remove(runtimeId)
+                cache.upsertSession(existing.copy(
+                    progress = progress,
+                    composerStatus = existing.composerStatus.copy(isCompacting = false),
+                ))
+                advanceProgressEventRevision(runtimeId)
+            }
+            return
+        }
         val kind = payload.jsonString("kind")?.trim()?.takeIf(KNOWN_STATUS_UPDATE_KINDS::contains) ?: return
         val text = payload.jsonString("text")
             ?.let(::safeGatewayStatusText)
@@ -5369,7 +5394,7 @@ internal class LiveGatewaySessionRepository(
             val progress = SessionProgress(kind, text)
             val previous = existing.composerStatus
             val status = when (kind) {
-                "compacting" -> (previous ?: ComposerStatusState()).copy(isCompacting = true)
+                "compacting", "compressing" -> (previous ?: ComposerStatusState()).copy(isCompacting = true)
                 "compacted" -> previous?.copy(isCompacting = false)
                 "goal" -> (previous ?: ComposerStatusState()).copy(
                     goal = parseGatewayGoalStatus(text, previous?.goal),
@@ -5874,6 +5899,7 @@ internal class LiveGatewaySessionRepository(
             lastActiveAtMillis = if (snapshot.hasTimestamp()) parsed.lastActiveAtMillis else existing.lastActiveAtMillis,
             messageCount = snapshot.primitive("message_count")?.toIntOrNull() ?: existing.messageCount,
             source = snapshot.string("source") ?: existing.source,
+            hidden = parsed.hidden ?: existing.hidden,
             remoteProfile = snapshot.string("profile") ?: snapshot.string("profile_name") ?: existing.remoteProfile,
             gitBranch = snapshot.sessionGitBranch() ?: existing.gitBranch,
             worktreePath = snapshot.sessionWorktreePath() ?: existing.worktreePath,
@@ -6421,6 +6447,7 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
         lastActiveAtMillis = root.timestamp(nowMillis),
         messageCount = root.primitive("message_count")?.toIntOrNull() ?: 0,
         source = root.string("source"),
+        hidden = root.boolean("hidden"),
         remoteProfile = root.string("profile") ?: root.string("profile_name"),
         gitBranch = root.sessionGitBranch(),
         worktreePath = root.sessionWorktreePath(),
@@ -7233,7 +7260,7 @@ private const val TRANSCRIPT_PAGE = 120
 /** The one status that means "this backend does not have that route". */
 private const val HTTP_NOT_FOUND = 404
 private val STATUS_WHITESPACE = Regex("\\s+")
-private val KNOWN_STATUS_UPDATE_KINDS = setOf("compacting", "compacted", "process", "goal", "progress", "thinking")
+private val KNOWN_STATUS_UPDATE_KINDS = setOf("compacting", "compressing", "compacted", "process", "goal", "progress", "thinking")
 private val NO_GOAL_STATUS = Regex("^(?:No active goal|No goal (?:set|to resume)|✓ Goal cleared)\\b.*", RegexOption.IGNORE_CASE)
 private val GOAL_SET_STATUS = Regex("^⊙ Goal set(?:\\s*\\([^)]*\\))?:\\s*(.+)$")
 private val GOAL_ACTIVE_STATUS = Regex("^⊙ Goal\\s*\\([^)]*active[^)]*\\):\\s*(.+)$", RegexOption.IGNORE_CASE)

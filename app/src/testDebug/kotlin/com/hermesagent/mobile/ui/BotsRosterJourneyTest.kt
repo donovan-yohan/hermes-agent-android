@@ -219,22 +219,33 @@ class BotsRosterJourneyTest {
             .assertHeightIsAtLeast(HermesSpacing().touchTarget)
     }
 
-    /** A Gateway without `profiles.list` says so, and closes the entry point. */
+    /** The Bots mode explains an unsupported Gateway instead of offering a chat row. */
     @Test
-    fun `a gateway that predates profiles dot list closes the entry point`() {
+    fun `a gateway that predates profiles dot list explains its unavailable roster`() {
         clients.value = FakeRpc { _, _ -> throw GatewayRpcError(-32601, "unknown method") }
         launch(renderSidebarEntry = true)
 
         val closed = BotsRosterCopy.rosterUnavailable(PREDATES_REASON)
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithContentDescription("Bots. $closed").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText(closed).fetchSemanticsNodes().isNotEmpty()
         }
-        // A statement, not a door: the row is there, spoken, and disabled.
-        compose.onNodeWithTag("settings-row-bots").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Bots. $closed").assertIsNotEnabled()
+        compose.onNodeWithText(closed).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+        compose.onAllNodesWithText("Bots").assertCountEquals(0)
     }
 
     /** True empty: the Gateway answered with nothing. */
+    @Test
+    fun `embedded roster scheduled jobs opens the routines destination`() {
+        clients.value = rosterRpc()
+        val destinations = mutableListOf<String>()
+        launch(renderSidebarEntry = true, navigation = PluginNavigation(onNavigate = destinations::add))
+        awaitText("Researcher")
+        compose.onNodeWithContentDescription("Scheduled jobs for Researcher").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("bots:routines"), destinations)
+    }
+
     @Test
     fun `an empty roster is the empty state`() {
         clients.value = FakeRpc { _, _ -> Json.parseToJsonElement("""{"profiles": []}""") }
@@ -423,6 +434,7 @@ class BotsRosterJourneyTest {
          * not about a switch, which is what a reconnect is.
          */
         endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
+        navigation: PluginNavigation = PluginNavigation(),
     ) {
         val registry = ContributionRegistry()
         val plugin = BotsPlugin(sections = sections, metaByKey = metaByKey, scope = pluginScope)
@@ -441,12 +453,18 @@ class BotsRosterJourneyTest {
         // This contribution, selected by its own id: the plugin also contributes
         // the Routines destination to the routes area, and this journey is about
         // the roster.
-        val id = if (renderSidebarEntry) "bots:sidebar-nav" else "bots:route"
-        val render = requireNotNull(registry.getArea(area).firstOrNull { it.id == id }?.render)
+        val id = if (renderSidebarEntry) "bots:sidebar-mode-bots" else "bots:route"
+        val contribution = requireNotNull(registry.getArea(area).firstOrNull { it.id == id })
+        val render: @Composable () -> Unit = if (renderSidebarEntry) {
+            val mode = contribution.data as com.hermesagent.mobile.ui.sessions.SidebarModeDestination
+            { mode.content {} }
+        } else requireNotNull(contribution.render)
 
         compose.setContent {
             val screen: @Composable () -> Unit = {
-                HermesTheme(AppearanceSelection()) { render() }
+                CompositionLocalProvider(LocalPluginNavigation provides navigation) {
+                    HermesTheme(AppearanceSelection()) { render() }
+                }
             }
             if (owner == null) {
                 screen()

@@ -1759,6 +1759,33 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `project previews omit cached hidden chats without discarding their owner`() = runTest(dispatcher) {
+        val visible = summary("session-a", 2_000)
+        val hidden = summary("bot-chat", 1_000).copy(hidden = true)
+        cache.upsertSession(hidden)
+        cache.replaceProjectOverview(
+            listOf(ProjectSummary(
+                id = "project-a",
+                label = "Project A",
+                path = "/work/a",
+                sessionCount = 2,
+                previewSessions = listOf(visible, hidden.copy(hidden = null)),
+            )),
+            activeProjectId = "project-a",
+        )
+        collectState()
+        viewModel.setSidebarGrouping(SidebarGrouping.Project)
+        runCurrent()
+
+        assertEquals(listOf("session-a"), viewModel.uiState.value.projects.single().previewSessions.map { it.id })
+        assertEquals(true, cache.session("bot-chat")?.hidden)
+
+        cache.upsertSession(hidden.copy(hidden = false))
+        runCurrent()
+        assertEquals(listOf("session-a", "bot-chat"), viewModel.uiState.value.projects.single().previewSessions.map { it.id })
+    }
+
+    @Test
     fun `project drill in filters authoritative membership without rerouting the active session`() = runTest(dispatcher) {
         cache.replaceProjectOverview(
             rows = listOf(
@@ -2420,6 +2447,26 @@ class ChatViewModelTest {
         assertEquals(listOf(Triple("unread", "session-b", false)), repository.flagWrites)
         assertEquals(SessionStatus.Idle, cache.session("session-b")?.status)
         assertEquals(false, cache.session("session-b")?.unread)
+    }
+
+    @Test
+    fun `hidden unread rows stay cached but do not count or receive bulk writes`() = runTest(dispatcher) {
+        collectState()
+        val hidden = summary("hidden", 900).copy(hidden = true, unread = true)
+        val hiddenDot = summary("hidden-dot", 800).copy(hidden = true, status = SessionStatus.Unread)
+        cache.upsertSessions(listOf(
+            summary("session-a", 2_000).copy(unread = true, hidden = false),
+            summary("session-b", 1_000).copy(status = SessionStatus.Unread),
+            hidden, hiddenDot,
+        ))
+        runCurrent()
+        assertEquals(2, viewModel.uiState.value.unreadCount)
+        viewModel.markAllSessionsRead()
+        runCurrent()
+        assertEquals(setOf("session-a", "session-b"), repository.flagWrites.map { it.second }.toSet())
+        assertEquals(hidden, cache.session("hidden"))
+        assertEquals(hiddenDot, cache.session("hidden-dot"))
+        assertEquals(0, viewModel.uiState.value.unreadCount)
     }
 
     /** A row the backend never called unread is not marked read on open. */
@@ -4537,6 +4584,26 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(listOf("session-a", "session-z"), viewModel.uiState.value.sessionRows.rowIds())
+    }
+
+    @Test
+    fun `changing search text drops previous server hits before the next debounce`() = runTest(dispatcher) {
+        repository.searchAnswer = listOf(stub("old-hit", "Earlier remote result"))
+        collectState()
+        runCurrent()
+
+        viewModel.setQuery("earlier")
+        runCurrent()
+        advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
+        runCurrent()
+        assertEquals(listOf("old-hit"), viewModel.uiState.value.sessionRows.rowIds())
+
+        viewModel.setQuery("different")
+        runCurrent()
+
+        assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
+        assertTrue(viewModel.uiState.value.sessionRows.contains(SessionListRow.SearchSkeletons))
+        assertEquals(listOf("earlier" to null), repository.searches)
     }
 
     /**

@@ -49,6 +49,8 @@ import com.hermesagent.mobile.data.updates.GatewaySystemApi
 import com.hermesagent.mobile.data.updates.GatewayUpdateController
 import com.hermesagent.mobile.data.updates.RestGatewaySystemApi
 import com.hermesagent.mobile.data.themes.GatewayThemeRepository
+import com.hermesagent.mobile.data.themes.BackendSkinCache
+import com.hermesagent.mobile.data.themes.BackendSkinSync
 import com.hermesagent.mobile.data.voice.GatewayReplySpeaker
 import com.hermesagent.mobile.data.voice.GatewayVoiceRepository
 import com.hermesagent.mobile.data.voice.ReplySpeaker
@@ -216,6 +218,15 @@ class HermesApplication : Application() {
         )
     }
 
+    private val backendSkinSync by lazy {
+        BackendSkinSync(
+            cache = BackendSkinCache(java.io.File(noBackupFilesDir, "backend-skins")),
+            repository = gatewayThemes,
+            currentScope = { preferences.activeScope.first() },
+            generation = { cache.endpointGeneration.value },
+        )
+    }
+
     /**
      * The backend-update engine, app-scoped for the reason its own KDoc gives:
      * a six-minute apply must outlive the screen that started it, and the
@@ -297,6 +308,7 @@ class HermesApplication : Application() {
             connection = gatewayConnection,
             scope = appScope,
             endpointDispatchFence = endpointDispatchFence,
+            skinSourceScope = { preferences.activeScope.first() },
         )
     }
 
@@ -430,6 +442,28 @@ class HermesApplication : Application() {
                 .map { it.status == GatewayConnectionStatus.Connected }
                 .distinctUntilChanged()
                 .collect { connected -> if (connected) gatewayThemes.refresh() }
+        }
+        appScope.launch {
+            combine(preferences.activeScope, cache.endpointGeneration) { _, _ -> Unit }
+                .collect { backendSkinSync.restore() }
+        }
+        appScope.launch {
+            sessionRepository.globalEvents.skinChanges.collect { (apply, payload, generation, sourceScope) ->
+                if (generation != cache.endpointGeneration.value) return@collect
+                val skinScope = sourceScope ?: return@collect
+                if (skinScope != preferences.activeScope.first()) return@collect
+                val connectionId = preferences.activeGatewayRoute.first().connectionId ?: return@collect
+
+                // gateway.ready only restores a definition. A skin.changed is an
+                // explicit backend choice, stamped to the live connection so a
+                // reconnect or route switch cannot overwrite a manual choice.
+                // Row and scope are checked again inside the preference transaction,
+                // not by a separate read that can race the eventual disk write.
+                backendSkinSync.ingestAndApply(payload, apply, generation, skinScope) { themeName ->
+                    generation == cache.endpointGeneration.value &&
+                        preferences.setBackendSkinTheme(themeName, connectionId, skinScope)
+                }
+            }
         }
         appScope.launch {
             connectionSwitch.routeGeneration
