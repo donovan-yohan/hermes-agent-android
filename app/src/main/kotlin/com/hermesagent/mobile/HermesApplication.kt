@@ -308,6 +308,7 @@ class HermesApplication : Application() {
             connection = gatewayConnection,
             scope = appScope,
             endpointDispatchFence = endpointDispatchFence,
+            skinSourceScope = { preferences.activeScope.first() },
         )
     }
 
@@ -447,21 +448,20 @@ class HermesApplication : Application() {
                 .collect { backendSkinSync.restore() }
         }
         appScope.launch {
-            sessionRepository.globalEvents.skinChanges.collect { (apply, payload, generation) ->
+            sessionRepository.globalEvents.skinChanges.collect { (apply, payload, generation, sourceScope) ->
                 if (generation != cache.endpointGeneration.value) return@collect
+                val skinScope = sourceScope ?: return@collect
+                if (skinScope != preferences.activeScope.first()) return@collect
                 val connectionId = preferences.activeGatewayRoute.first().connectionId ?: return@collect
-                val skinScope = preferences.activeScope.first()
-                val themeName = backendSkinSync.ingest(payload, apply, generation) ?: return@collect
+
                 // gateway.ready only restores a definition. A skin.changed is an
                 // explicit backend choice, stamped to the live connection so a
                 // reconnect or route switch cannot overwrite a manual choice.
-                if (skinScope == preferences.activeScope.first()) {
-                    // The transaction rejects a changed active row. The second
-                    // fence makes a stale socket event harmless after a route
-                    // generation changes while this coroutine is scheduled.
-                    if (generation == cache.endpointGeneration.value) {
-                        preferences.setConnectionTheme(themeName, connectionId)
-                    }
+                // Row and scope are checked again inside the preference transaction,
+                // not by a separate read that can race the eventual disk write.
+                backendSkinSync.ingestAndApply(payload, apply, generation, skinScope) { themeName ->
+                    generation == cache.endpointGeneration.value &&
+                        preferences.setBackendSkinTheme(themeName, connectionId, skinScope)
                 }
             }
         }

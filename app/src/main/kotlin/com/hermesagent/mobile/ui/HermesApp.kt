@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.ui
 
+import androidx.compose.material.icons.filled.Menu
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -74,6 +76,7 @@ data class PluginNavigation(
     val onOpenGateways: (SignInOrigin) -> Unit = {},
     val onNavigate: (String) -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    val currentRoute: String? = null,
 )
 
 val LocalPluginNavigation = staticCompositionLocalOf { PluginNavigation() }
@@ -226,8 +229,9 @@ fun HermesApp(
     }
     val onOpenGateways = { openGateways(SignInOrigin.Gateways) }
     val onOpenGatewaysFromSessions = { openGateways(SignInOrigin.Sessions) }
-    val pluginNavigation = remember(openGateways) {
+    val pluginNavigation = remember(openGateways, destination) {
         PluginNavigation(
+            currentRoute = (destination as? HermesDestination.Route)?.id,
             onBack = onBack,
             onOpenGateways = openGateways,
             onNavigate = { target ->
@@ -251,7 +255,10 @@ fun HermesApp(
             LocalPluginNavigation provides pluginNavigation,
             LocalProfileAvatarRoster provides avatarRoster,
         ) {
-            when (destination) {
+            val sidebarRoute = (destination as? HermesDestination.Route)
+                ?.takeIf { routeOrigin == HermesDestination.Chat }
+                ?.let { target -> routesContributions.firstOrNull { it.id == target.id }?.render }
+            when (if (sidebarRoute != null) HermesDestination.Chat else destination) {
                 HermesDestination.Chat -> ChatScreen(
                     state = chatState,
                     actions = chatActions,
@@ -274,6 +281,8 @@ fun HermesApp(
                         )
                     },
                     sidebarNavigation = sidebarNavContributions,
+                    routeContent = sidebarRoute,
+                    onLeaveRoute = { destination = HermesDestination.Chat },
                 )
 
                 // "Manage profiles…" is a sidebar affordance, so its back goes home
@@ -428,6 +437,7 @@ internal fun OverlayScaffold(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = HermesTheme.tokens
+    val openDrawer = LocalRouteDrawerAction.current
     Column(
         modifier
             .fillMaxSize()
@@ -440,9 +450,9 @@ internal fun OverlayScaffold(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             QuietIconButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = backDescription,
-                onClick = onBack,
+                icon = if (openDrawer != null) Icons.Filled.Menu else Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = if (openDrawer != null) "Open sessions" else backDescription,
+                onClick = openDrawer ?: onBack,
             )
             Column(Modifier.weight(1f)) {
                 Text(
@@ -464,9 +474,14 @@ internal fun OverlayScaffold(
             }
         }
         Hairline()
-        content()
+        androidx.compose.runtime.CompositionLocalProvider(LocalRouteDrawerAction provides null) {
+            content()
+        }
     }
 }
+
+/** The retained compact shell lends its drawer action to the route's own header. */
+internal val LocalRouteDrawerAction = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
 
 internal fun HermesDestination.backDestination(): HermesDestination = when (this) {
     HermesDestination.Chat -> HermesDestination.Chat

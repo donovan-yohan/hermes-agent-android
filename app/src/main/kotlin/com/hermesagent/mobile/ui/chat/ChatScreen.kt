@@ -152,6 +152,8 @@ fun ChatScreen(
     sidebarHeader: @Composable () -> Unit = {},
     /** Plugin feature launchers, kept above projects and pinned sessions. */
     sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution> = emptyList(),
+    routeContent: (@Composable () -> Unit)? = null,
+    onLeaveRoute: () -> Unit = {},
 ) {
     // Derived once, here, because this is where the policy lives: which
     // connection states are a door, and which surface that door opens. Both
@@ -175,9 +177,9 @@ fun ChatScreen(
     val onOpenContextUsage = { contextUsageOpen = true }
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute)
         }
     }
     // The meter disappears whenever its session does — a switch, a reconnect, an
@@ -221,9 +223,12 @@ private fun CompactLayout(
     sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution>,
     introSplashEnabled: Boolean,
     onOpenContextUsage: () -> Unit = {},
+    routeContent: (@Composable () -> Unit)? = null,
+    onLeaveRoute: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val pluginNavigation = com.hermesagent.mobile.ui.LocalPluginNavigation.current
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -236,6 +241,20 @@ private fun CompactLayout(
                 // Picking or creating a session closes the drawer; both are a
                 // "you are done here" gesture, and leaving it open hides the
                 // transcript the user just asked for.
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.hermesagent.mobile.ui.LocalPluginNavigation provides pluginNavigation.copy(
+                        onNavigate = { target ->
+                            pluginNavigation.onNavigate(target)
+                            scope.launch { drawerState.close() }
+                        },
+                        onOpenBotChat = { profile, durableId, onFinished ->
+                            pluginNavigation.onOpenBotChat(profile, durableId) { opened ->
+                                if (opened) scope.launch { drawerState.close() }
+                                onFinished(opened)
+                            }
+                        },
+                    ),
+                ) {
                 SessionsPane(
                     state = state,
                     actions = actions,
@@ -248,10 +267,12 @@ private fun CompactLayout(
                     // matches the search just produced are the part covered.
                     modifier = Modifier.statusBarsPadding().windowInsetsPadding(imeInsets),
                     onSelectSession = { id ->
+                        onLeaveRoute()
                         actions.onSelectSession(id)
                         scope.launch { drawerState.close() }
                     },
                     onCreateSession = {
+                        onLeaveRoute()
                         actions.onCreateSession()
                         scope.launch { drawerState.close() }
                     },
@@ -260,10 +281,19 @@ private fun CompactLayout(
                         scope.launch { drawerState.close() }
                     },
                 )
+                }
             }
         },
     ) {
         Column(Modifier.fillMaxSize()) {
+            if (routeContent != null) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.hermesagent.mobile.ui.LocalRouteDrawerAction provides {
+                        scope.launch { drawerState.open() }
+                    },
+                ) { routeContent() }
+                return@Column
+            }
             ChatTopBar(
                 title = state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
@@ -330,6 +360,8 @@ private fun WideLayout(
     sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution>,
     introSplashEnabled: Boolean,
     onOpenContextUsage: () -> Unit = {},
+    routeContent: (@Composable () -> Unit)? = null,
+    onLeaveRoute: () -> Unit = {},
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         // The rail owns its bottom edge in the wide layout. Keep its surface
@@ -352,9 +384,15 @@ private fun WideLayout(
                 // rail owes the taller of the two and never their sum.
                 .windowInsetsPadding(railInsets.union(imeInsets)),
             onManageProfiles = onOpenProfiles,
+            onSelectSession = { onLeaveRoute(); actions.onSelectSession(it) },
+            onCreateSession = { onLeaveRoute(); actions.onCreateSession() },
         )
         VerticalHairline(Modifier.fillMaxHeight())
         Column(Modifier.weight(1f)) {
+            if (routeContent != null) {
+                routeContent()
+                return@Column
+            }
             ChatTopBar(
                 title = state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
@@ -422,7 +460,9 @@ private fun SessionsPane(
         sidebarGrouping = state.sidebarGrouping,
         selectedProject = state.selectedProject,
         projectLoading = state.projectLoading,
-        activeSessionId = state.activeSession?.id,
+        activeSessionId = state.activeSession?.id.takeIf {
+            com.hermesagent.mobile.ui.LocalPluginNavigation.current.currentRoute == null
+        },
         // The state's own clock read — the one the rows were bucketed against —
         // rather than a second read here. See `ChatUiState.nowMillis`.
         nowMillis = state.nowMillis,

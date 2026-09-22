@@ -104,6 +104,10 @@ class BotsPlugin(
             onResume = routines::surfaceResumed,
             onAction = routines::act,
         )
+        fun openRoutines(row: BotRosterRow, navigate: (String) -> Unit) {
+            routines.selectOwner(profile = row.name, label = displayName(row.name, row.displayName))
+            navigate("$id:$ROUTINES_ROUTE_ID")
+        }
 
         ctx.registerMany(
             listOf(
@@ -119,17 +123,7 @@ class BotsPlugin(
                             onBack = nav.onBack,
                             onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
                             onOpenRoutines = { row ->
-                                // The row's own tap still opens Bot Chat; this
-                                // is the Routines affordance beside it, and it
-                                // hands the bot to the destination rather than
-                                // to any shared navigation state. The row's
-                                // display name travels with it so the pane
-                                // header reads as the roster does.
-                                routines.selectOwner(
-                                    profile = row.name,
-                                    label = displayName(row.name, row.displayName),
-                                )
-                                nav.onNavigate("$id:$ROUTINES_ROUTE_ID")
+                                openRoutines(row, nav.onNavigate)
                             },
                             actions = actions,
                         )
@@ -163,7 +157,9 @@ class BotsPlugin(
                                 state = state,
                                 onBack = onBack,
                                 onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
+                                onOpenRoutines = { row -> openRoutines(row, nav.onNavigate) },
                                 actions = actions,
+                                embedded = true,
                             )
                         },
                     ),

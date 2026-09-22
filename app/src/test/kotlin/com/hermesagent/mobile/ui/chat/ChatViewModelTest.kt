@@ -1759,6 +1759,33 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `project previews omit cached hidden chats without discarding their owner`() = runTest(dispatcher) {
+        val visible = summary("session-a", 2_000)
+        val hidden = summary("bot-chat", 1_000).copy(hidden = true)
+        cache.upsertSession(hidden)
+        cache.replaceProjectOverview(
+            listOf(ProjectSummary(
+                id = "project-a",
+                label = "Project A",
+                path = "/work/a",
+                sessionCount = 2,
+                previewSessions = listOf(visible, hidden.copy(hidden = null)),
+            )),
+            activeProjectId = "project-a",
+        )
+        collectState()
+        viewModel.setSidebarGrouping(SidebarGrouping.Project)
+        runCurrent()
+
+        assertEquals(listOf("session-a"), viewModel.uiState.value.projects.single().previewSessions.map { it.id })
+        assertEquals(true, cache.session("bot-chat")?.hidden)
+
+        cache.upsertSession(hidden.copy(hidden = false))
+        runCurrent()
+        assertEquals(listOf("session-a", "bot-chat"), viewModel.uiState.value.projects.single().previewSessions.map { it.id })
+    }
+
+    @Test
     fun `project drill in filters authoritative membership without rerouting the active session`() = runTest(dispatcher) {
         cache.replaceProjectOverview(
             rows = listOf(

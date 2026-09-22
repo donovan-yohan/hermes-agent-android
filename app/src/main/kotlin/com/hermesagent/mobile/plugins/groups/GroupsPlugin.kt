@@ -42,7 +42,8 @@ class GroupsPlugin : HermesPlugin {
             PluginContribution(id = "sidebar-nav", area = PluginAreas.SIDEBAR_NAV_AREA, title = name, order = 410, render = {
                 val navigation = LocalPluginNavigation.current
                 SidebarNavRow(label = name, icon = HermesIcon.Mail, enabled = true,
-                    onClick = { navigation.onNavigate("$id:route") }, testTag = "sidebar-action-group-chats")
+                    onClick = { navigation.onNavigate("$id:route") }, testTag = "sidebar-action-group-chats",
+                    selected = navigation.currentRoute == "$id:route")
             }),
         ))
     }

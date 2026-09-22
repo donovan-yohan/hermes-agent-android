@@ -36,6 +36,9 @@ internal class GatewayThemeRepository(
     private val endpointGeneration: () -> Long = { 0L },
 ) {
     private val mutex = Mutex()
+    // Never held across HTTP or disk I/O. Reset and every publication share this lock.
+    private val stateLock = Any()
+    private var resetRevision = 0L
     private val mutableState = MutableStateFlow(GatewayThemesState())
     private val backendSkinNames = mutableSetOf<String>()
     private var lastBackendSkin: String? = null
@@ -45,16 +48,20 @@ internal class GatewayThemeRepository(
     suspend fun refresh() {
         val transport = http()
         val generation = endpointGeneration()
+        val revision = synchronized(stateLock) { resetRevision }
         mutex.withLock {
-            if (endpointGeneration() != generation) return
-            mutableState.value = state.value.copy(status = GatewayThemesStatus.Loading)
+            synchronized(stateLock) {
+                if (endpointGeneration() != generation || resetRevision != revision) return
+                mutableState.value = state.value.copy(status = GatewayThemesStatus.Loading)
+            }
             val result = if (transport == null) {
                 GatewayRestResult.Failed(0, "")
             } else {
                 GatewayRestClient(http = { transport }).dashboardThemesEnvelope()
             }
-            if (endpointGeneration() != generation) return
-            mutableState.value = when (result) {
+            synchronized(stateLock) {
+                if (endpointGeneration() != generation || resetRevision != revision) return
+                mutableState.value = when (result) {
                 is GatewayRestResult.Success -> GatewayThemesState(
                     themes = (result.value.themes + state.value.themes.filter { it.name in backendSkinNames })
                         .distinctBy { it.name },
@@ -62,36 +69,49 @@ internal class GatewayThemeRepository(
                     activeOnGateway = result.value.active,
                 )
                 is GatewayRestResult.Failed -> state.value.copy(status = statusFor(result.statusCode))
+                }
             }
         }
     }
 
     /** Returns true only when this announcement requests a new local appearance choice. */
-    fun ingestBackendSkin(theme: GatewayTheme, apply: Boolean): Boolean {
+    fun ingestBackendSkin(theme: GatewayTheme, apply: Boolean, expectedGeneration: Long = endpointGeneration()): Boolean = synchronized(stateLock) {
+        if (endpointGeneration() != expectedGeneration) return@synchronized false
         backendSkinNames += theme.name
         val current = mutableState.value
         val themes = (current.themes.filterNot { it.name == theme.name } + theme)
             .distinctBy { it.name }
-        mutableState.value = current.copy(
-            themes = themes,
-            activeOnGateway = if (apply) theme.name else current.activeOnGateway,
-        )
-        if (lastBackendSkin != theme.name) {
-            lastBackendSkin = theme.name
+        mutableState.value = current.copy(themes = themes)
+        requestBackendSkinApply(theme.name, apply, expectedGeneration)
+    }
+
+    /** Built-in names are apply targets too, but never backend definitions. */
+    fun requestBackendSkinApply(name: String, apply: Boolean, expectedGeneration: Long = endpointGeneration()): Boolean = synchronized(stateLock) {
+        if (endpointGeneration() != expectedGeneration) return@synchronized false
+        if (apply) mutableState.value = state.value.copy(activeOnGateway = name)
+        if (lastBackendSkin != name) {
+            lastBackendSkin = name
             lastBackendSkinApplied = false
         }
         // A reconnect seed preserves a previous explicit apply. Otherwise a
         // repeated activation would undo the person's later manual selection.
         val shouldApply = apply && !lastBackendSkinApplied
-        if (shouldApply) lastBackendSkinApplied = true
-        return shouldApply
+        shouldApply
+    }
+
+    /** Only a successful preference transaction acknowledges an activation. */
+    fun acknowledgeBackendSkinApply(name: String, expectedGeneration: Long) = synchronized(stateLock) {
+        if (endpointGeneration() == expectedGeneration && lastBackendSkin == name) {
+            lastBackendSkinApplied = true
+        }
     }
 
     /** Backend skins arrive over the socket and must never be sent to Dashboard PUT. */
-    fun isBackendSkin(name: String): Boolean = name in backendSkinNames
+    fun isBackendSkin(name: String): Boolean = synchronized(stateLock) { name in backendSkinNames }
 
     /** Drops cached definitions when the connection-switch seam changes endpoint. */
-    fun resetForEndpointSwitch() {
+    fun resetForEndpointSwitch() = synchronized(stateLock) {
+        resetRevision++
         backendSkinNames.clear()
         lastBackendSkin = null
         lastBackendSkinApplied = false
@@ -105,18 +125,23 @@ internal class GatewayThemeRepository(
     suspend fun select(name: String): GatewayThemesStatus {
         val transport = http()
         val generation = endpointGeneration()
+        val revision = synchronized(stateLock) { resetRevision }
         return mutex.withLock {
-            if (endpointGeneration() != generation || transport == null || state.value.themes.none { it.name == name }) {
-                return@withLock GatewayThemesStatus.Unreachable
+            synchronized(stateLock) {
+                if (endpointGeneration() != generation || resetRevision != revision || transport == null || state.value.themes.none { it.name == name }) {
+                    return@withLock GatewayThemesStatus.Unreachable
+                }
             }
             val result = GatewayRestClient(http = { transport }).setDashboardTheme(name)
-            if (endpointGeneration() != generation) return@withLock GatewayThemesStatus.Unreachable
-            when (result) {
+            synchronized(stateLock) {
+                if (endpointGeneration() != generation || resetRevision != revision) return@withLock GatewayThemesStatus.Unreachable
+                when (result) {
                 is GatewayRestResult.Success -> {
                     mutableState.value = state.value.copy(activeOnGateway = result.value)
                     GatewayThemesStatus.Ready
                 }
                 is GatewayRestResult.Failed -> statusFor(result.statusCode)
+                }
             }
         }
     }

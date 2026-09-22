@@ -112,6 +112,28 @@ class HermesPreferencesTest {
     }
 
     @Test
+    fun `backend skin write rejects changed scope on the same saved row`() = runBlocking {
+        val row = SavedConnection("skin-scope", "Skin scope", ConnectionKind.Remote)
+        try {
+            preferences.saveConnection(row)
+            preferences.setActiveConnection(row.id)
+            val source = preferences.activeScope.first()
+            assertTrue(preferences.setBackendSkinTheme("custom-a", row.id, source))
+            val changed = preferences.connectionRegistry.first().active!!.let {
+                it.copy(remote = it.remote.copy(provider = "other-provider"))
+            }
+            preferences.saveConnection(changed)
+            assertFalse(preferences.setBackendSkinTheme("stale", row.id, source))
+            assertEquals("custom-a", preferences.appearance.first().themeName)
+            assertTrue(preferences.setBackendSkinTheme("custom-b", row.id, preferences.activeScope.first()))
+            assertEquals("custom-b", preferences.appearance.first().themeName)
+            assertFalse(preferences.setBackendSkinTheme("wrong-row", "missing-row", preferences.activeScope.first()))
+        } finally {
+            preferences.removeConnection(row.id)
+        }
+    }
+
+    @Test
     fun `appearance is stored on each row and a stale stamped theme write is dropped`() = runBlocking {
         val first = SavedConnection("theme-a", "Alpha", ConnectionKind.Remote)
         val second = SavedConnection("theme-b", "Beta", ConnectionKind.Remote)

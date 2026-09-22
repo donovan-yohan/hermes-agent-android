@@ -4581,6 +4581,41 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `manual compression wire status starts and clears without a turn completion`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit("status.update", "runtime-a", """{"kind":"compressing","text":"Compressing context"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.isCompacting == true)
+        rpc.emit("status.update", "runtime-other", """{"kind":"status","text":"ready"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.isCompacting == true)
+        rpc.emit("status.update", "runtime-a", """{"kind":"status","text":"ready"}""")
+        runCurrent()
+        assertFalse(cache.session("durable-a")?.composerStatus?.isCompacting == true)
+        assertNull(cache.session("durable-a")?.progress)
+        rpc.emit("status.update", "runtime-a", """{"kind":"thinking","text":"Continuing work"}""")
+        rpc.emit("status.update", "runtime-a", """{"kind":"status","text":"ready"}""")
+        runCurrent()
+        assertEquals("Continuing work", cache.session("durable-a")?.progress?.text)
+        // A newer status may arrive before manual compression's finally frame.
+        rpc.emit("status.update", "runtime-a", """{"kind":"compressing","text":"Compressing context"}""")
+        rpc.emit("status.update", "runtime-a", """{"kind":"thinking","text":"Newer work"}""")
+        rpc.emit("status.update", "runtime-a", """{"kind":"status","text":"ready"}""")
+        runCurrent()
+        assertFalse(cache.session("durable-a")?.composerStatus?.isCompacting == true)
+        assertEquals("Newer work", cache.session("durable-a")?.progress?.text)
+    }
+
+    @Test
     fun `status updates coalesce exact kind text progress and ignore malformed shapes`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()

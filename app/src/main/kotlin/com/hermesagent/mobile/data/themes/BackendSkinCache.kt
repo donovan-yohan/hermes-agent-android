@@ -54,10 +54,10 @@ internal class BackendSkinCache(private val directory: File) {
         return safe.takeIf { parseBackendSkin(it) != null }
     }
 
-    private companion object {
+    companion object {
         const val MAX_BYTES = 256 * 1024
         const val MAX_SKINS = 200
-        val COLOR_KEYS = setOf(
+        private val COLOR_KEYS = setOf(
             "background", "status_bar_bg", "ui_text", "banner_text", "status_bar_text",
             "ui_accent", "banner_accent", "banner_title", "ui_border", "banner_border",
             "banner_dim", "session_border", "completion_menu_bg", "ui_error",

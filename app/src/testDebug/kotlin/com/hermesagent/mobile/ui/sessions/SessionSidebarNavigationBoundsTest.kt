@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -151,8 +152,35 @@ class SessionSidebarNavigationBoundsTest {
         compose.onNodeWithContentDescription("BOTS").performClick().assertIsSelected()
         compose.onNodeWithTag("fixture-bots-roster").assertIsDisplayed()
         compose.onNodeWithTag("sidebar-mode-tabs").assertIsDisplayed()
+        compose.onNodeWithTag(PROFILE_RAIL_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(GATEWAY_TAG).assertIsDisplayed().performClick()
+        assertTrue("Bots retains a working Gateway footer", gatewayClicks == 2)
         compose.onNodeWithContentDescription("SESSIONS").performClick().assertIsSelected()
         compose.onNodeWithTag("fixture-bots-roster").assertDoesNotExist()
+    }
+
+    @Test
+    fun `flat navigation selection follows the active route`() {
+        val route = androidx.compose.runtime.mutableStateOf("groups:route")
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                androidx.compose.foundation.layout.Column {
+                    listOf("groups:route" to "Group Chats", "kanban:route" to "Kanban").forEach { (id, label) ->
+                        SidebarNavRow(
+                            label = label,
+                            icon = com.hermesagent.mobile.ui.common.HermesIcon.Checklist,
+                            enabled = true,
+                            onClick = { route.value = id },
+                            testTag = id,
+                            selected = route.value == id,
+                        )
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("groups:route").assertIsSelected()
+        compose.onNodeWithTag("kanban:route").assertIsNotSelected().performClick().assertIsSelected()
+        compose.onNodeWithTag("groups:route").assertIsNotSelected()
     }
 
     private companion object {

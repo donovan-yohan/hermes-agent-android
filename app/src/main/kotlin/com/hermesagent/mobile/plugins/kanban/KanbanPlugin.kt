@@ -65,6 +65,7 @@ class KanbanPlugin(
                             enabled = true,
                             onClick = { nav.onNavigate("$id:route") },
                             testTag = "sidebar-action-kanban",
+                            selected = nav.currentRoute == "$id:route",
                         )
                     },
                 ),

@@ -918,7 +918,9 @@ internal class ChatViewModel(
             ).map { project ->
                 project.copy(
                     previewSessions = filterSessionsByProfileScope(
-                        project.previewSessions.map { preview -> cacheState.sessions[preview.id] ?: preview },
+                        project.previewSessions
+                            .map { preview -> cacheState.sessions[preview.id] ?: preview }
+                            .filter { it.hidden != true },
                         profileScopeState.key,
                     ),
                 )

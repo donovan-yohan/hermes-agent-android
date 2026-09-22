@@ -230,9 +230,22 @@ class BotsRosterJourneyTest {
             compose.onAllNodesWithText(closed).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText(closed).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+        compose.onAllNodesWithText("Bots").assertCountEquals(0)
     }
 
     /** True empty: the Gateway answered with nothing. */
+    @Test
+    fun `embedded roster scheduled jobs opens the routines destination`() {
+        clients.value = rosterRpc()
+        val destinations = mutableListOf<String>()
+        launch(renderSidebarEntry = true, navigation = PluginNavigation(onNavigate = destinations::add))
+        awaitText("Researcher")
+        compose.onNodeWithContentDescription("Scheduled jobs for Researcher").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("bots:routines"), destinations)
+    }
+
     @Test
     fun `an empty roster is the empty state`() {
         clients.value = FakeRpc { _, _ -> Json.parseToJsonElement("""{"profiles": []}""") }
@@ -421,6 +434,7 @@ class BotsRosterJourneyTest {
          * not about a switch, which is what a reconnect is.
          */
         endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
+        navigation: PluginNavigation = PluginNavigation(),
     ) {
         val registry = ContributionRegistry()
         val plugin = BotsPlugin(sections = sections, metaByKey = metaByKey, scope = pluginScope)
@@ -448,7 +462,9 @@ class BotsRosterJourneyTest {
 
         compose.setContent {
             val screen: @Composable () -> Unit = {
-                HermesTheme(AppearanceSelection()) { render() }
+                CompositionLocalProvider(LocalPluginNavigation provides navigation) {
+                    HermesTheme(AppearanceSelection()) { render() }
+                }
             }
             if (owner == null) {
                 screen()

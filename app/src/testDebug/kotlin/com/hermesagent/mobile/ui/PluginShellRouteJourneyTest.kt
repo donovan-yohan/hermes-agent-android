@@ -2,11 +2,12 @@ package com.hermesagent.mobile.ui
 
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -87,7 +88,7 @@ class PluginShellRouteJourneyTest {
     }
 
     /** A plugin that contributes one shell route and one Settings launcher row. */
-    private class TestPlugin : HermesPlugin {
+    private class TestPlugin(private val botFinished: (Boolean) -> Unit = {}) : HermesPlugin {
         override val id: String = PLUGIN_ID
         override val name: String = "Test plugin"
         override val description: String = "Synthetic plugin for the shell route contract"
@@ -101,7 +102,7 @@ class PluginShellRouteJourneyTest {
                         title = ROW_LABEL,
                         render = {
                             val nav = LocalPluginNavigation.current
-                            Column {
+                            OverlayScaffold(title = "Feature header", onBack = nav.onBack) {
                                 Text(ROUTE_BODY, modifier = Modifier.testTag(ROUTE_BODY_TAG))
                                 TextButton(onClick = nav.onBack) { Text("Return from feature") }
                             }
@@ -120,6 +121,9 @@ class PluginShellRouteJourneyTest {
                                 traversalIndex = 4f,
                                 onClick = { nav.onNavigate("$PLUGIN_ID:route") },
                             )
+                            TextButton(onClick = { nav.onOpenBotChat("fixture", "bot-chat", botFinished) }) {
+                                Text("Open fixture bot")
+                            }
                         },
                     ),
                 ),
@@ -154,7 +158,9 @@ class PluginShellRouteJourneyTest {
             storageFactory = { ScopedPluginStorage(it, kvStore) },
             osFactory = { os },
         )
-        loader.discover(listOf(TestPlugin()))
+        val completions = mutableListOf<Boolean>()
+        var botOpens = false
+        loader.discover(listOf(TestPlugin(completions::add)))
 
         compose.setContent {
             HermesApp(
@@ -162,7 +168,7 @@ class PluginShellRouteJourneyTest {
                 gatewayState = GatewaySettingsUiState(),
                 sshState = SshUiState(),
                 appearance = AppearanceSelection(),
-                chatActions = ChatActions(),
+                chatActions = ChatActions(onOpenBotChat = { _, _, finished -> finished(botOpens) }),
                 appearanceActions = AppearanceActions(),
                 gatewayActions = GatewayActions(),
                 sshActions = SshActions(),
@@ -184,7 +190,29 @@ class PluginShellRouteJourneyTest {
         compose.waitForIdle()
         compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
 
+        val door = compose.onNodeWithContentDescription("Open sessions").getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithText("Feature header").getUnclippedBoundsInRoot()
+        org.junit.Assert.assertEquals((title.top.value + title.bottom.value) / 2, (door.top.value + door.bottom.value) / 2, 1f)
+
+        // A feature retains a drawer door; choosing the same route closes it again.
+        compose.onNodeWithContentDescription("Open sessions").assertIsDisplayed().performClick()
+        compose.onNodeWithTag(ROW_TAG).assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
+
         // Returning from a sidebar feature restores Chat, not Settings.
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithText("Open fixture bot").performClick()
+        compose.onNodeWithText("Open fixture bot").assertIsDisplayed()
+        assertEquals(listOf(false), completions)
+        compose.runOnIdle { botOpens = true }
+        compose.onNodeWithText("Open fixture bot").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Open fixture bot").assertIsNotDisplayed()
+        compose.onNodeWithTag(ROUTE_BODY_TAG).assertDoesNotExist()
+        assertEquals(listOf(false, true), completions)
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithTag(ROW_TAG).performClick()
         compose.onNodeWithText("Return from feature").performClick()
         compose.onNodeWithContentDescription("Open sessions").assertIsDisplayed().performClick()
         compose.onNodeWithTag(ROW_TAG).performClick()

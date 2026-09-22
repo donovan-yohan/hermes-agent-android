@@ -4,7 +4,7 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `e2f8a0731bf26e95b31e35d73e71e183a1045b81`. Identity, registry and typography
+ * `95f20517c25ee418da5337f4ead347008baaa2b3`. Identity, registry and typography
  * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
  * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
  * extraction), so `hasHandTunedDark` is read from there. Transcribed
@@ -24,7 +24,7 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "e2f8a0731bf26e95b31e35d73e71e183a1045b81"
+    const val PINNED_SHA = "95f20517c25ee418da5337f4ead347008baaa2b3"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** Where the palettes live since upstream's shared-package extraction. */

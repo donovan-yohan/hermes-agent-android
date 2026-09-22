@@ -27,6 +27,38 @@ import org.junit.Test
 class GatewayGlobalEventsTest {
 
     @Test
+    fun `buffered skin retains its source profile`() = runTest {
+        val lane = GatewayGlobalEventLane()
+        val origin = com.hermesagent.mobile.data.prefs.ComposerControlsScope("connection-a", "profile-a")
+        val payload = buildJsonObject { put("name", JsonPrimitive("custom")) }
+        lane.accept(sessionLess("skin.changed", payload), origin)
+        val skins = mutableListOf<GatewaySkinChange>()
+        val tap = launch { lane.skinChanges.collect { skins += it } }
+        runCurrent()
+        assertEquals(origin, skins.single().sourceScope)
+        tap.cancel()
+    }
+
+    @Test
+    fun `ready skin survives a late subscriber but not a connection reset`() = runTest {
+        val lane = GatewayGlobalEventLane()
+        val payload = buildJsonObject { put("name", JsonPrimitive("custom")) }
+        lane.accept(sessionLess("gateway.ready", buildJsonObject { put("skin", payload) }))
+        val skins = mutableListOf<GatewaySkinChange>()
+        val first = launch { lane.skinChanges.collect { skins += it } }
+        runCurrent()
+        assertEquals(listOf(GatewaySkinChange(false, payload, 0L)), skins)
+        first.cancel()
+        runCurrent()
+        lane.clearConnectionState()
+        skins.clear()
+        val next = launch { lane.skinChanges.collect { skins += it } }
+        runCurrent()
+        assertTrue(skins.isEmpty())
+        next.cancel()
+    }
+
+    @Test
     fun `queued skin events retain admission generation rather than delivery generation`() = runTest {
         var generation = 7L
         val lane = GatewayGlobalEventLane { generation }

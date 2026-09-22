@@ -201,6 +201,8 @@ fun SessionList(
                 Box(Modifier.weight(1f)) {
                     botDestination.content { sidebarMode = SidebarMode.Sessions }
                 }
+                ProfileRail(state = profileRail, actions = profileRailActions)
+                header()
             }
             return@BoxWithConstraints
         }
@@ -1020,16 +1022,19 @@ internal fun SidebarNavRow(
     onClick: () -> Unit,
     testTag: String,
     showWip: Boolean = false,
+    selected: Boolean = false,
 ) {
     val tokens = HermesTheme.tokens
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = HermesTheme.spacing.touchTarget)
+            .then(if (selected) Modifier.background(tokens.sessionRowActiveSurface) else Modifier)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .testTag(testTag)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
+                this.selected = selected
                 contentDescription = if (showWip) "$label. WIP" else label
                 if (!enabled) disabled()
             }
@@ -1037,8 +1042,8 @@ internal fun SidebarNavRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        HermesIconGlyph(icon, color = if (enabled) tokens.textSecondary else tokens.textQuaternary, size = 14.sp)
-        Text(label, style = HermesTheme.type.scaffold, color = if (enabled) tokens.textPrimary else tokens.textQuaternary, modifier = Modifier.weight(1f))
+        HermesIconGlyph(icon, color = if (!enabled) tokens.textQuaternary else if (selected) tokens.accent else tokens.textSecondary, size = 14.sp)
+        Text(label, style = HermesTheme.type.scaffold, color = if (!enabled) tokens.textQuaternary else if (selected) tokens.accent else tokens.textPrimary, modifier = Modifier.weight(1f))
         if (showWip) {
             WipPill()
         }

@@ -372,6 +372,26 @@ class HermesPreferences(private val context: Context) :
         return written
     }
 
+    /** Backend announcements must still own the row and scope at the actual disk write. */
+    suspend fun setBackendSkinTheme(
+        themeName: String,
+        expectedConnectionId: String,
+        expectedScope: ComposerControlsScope,
+    ): Boolean {
+        var written = false
+        context.hermesDataStore.edit { prefs ->
+            if (!ConnectionRegistryCodec.isWritable(prefs[CONNECTIONS])) return@edit
+            val registry = registryOf(prefs)
+            val active = registry.active ?: return@edit
+            if (active.id != expectedConnectionId || composerScope(prefs) != expectedScope) return@edit
+            prefs[CONNECTIONS] = ConnectionRegistryCodec.encode(
+                registry.connections.map { if (it.id == active.id) it.copy(themeName = themeName) else it },
+            )
+            written = true
+        }
+        return written
+    }
+
     suspend fun setMode(mode: HermesThemeMode) =
         context.hermesDataStore.edit { it[THEME_MODE] = mode.name }
 

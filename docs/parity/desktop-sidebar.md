@@ -13,7 +13,7 @@ sidebar slot and the flat core rows in this order: `New session`, `Capabilities`
 The two supported tabs (`SESSIONS`, `BOTS`) are rendered above the rows in both
 the compact drawer and wide rail. The selected tab has accent text and a thin
 accent underline. `BOTS` switches to the real `BotsRosterScreen` supplied by a
-typed sidebar contribution; its Back action returns to `SESSIONS`. Group Chats
+typed sidebar contribution without a nested page header; the `SESSIONS` tab returns to the session list. Group Chats
 remains a separate functional plugin launcher and keeps the `Group Chats` label.
 
 Rows use the shared Codicon-backed `HermesIconGlyph` primitive and a 48dp
@@ -21,7 +21,7 @@ minimum touch floor. Core icon/order mapping is `Robot`, `SymbolMisc`, `Comment`
 `Watch`, matching the frozen contribution data. Capabilities, Messaging,
 Artifacts, and Scheduled jobs remain disabled and show the shared `WIP` chip.
 `TERMINAL` remains visible as a disabled tab with a WIP chip; it has no Android
-route in this slice. The tab strip remains visible while the Bots roster is open.
+route in this slice. The tab strip and profile/Gateway footer remain visible while the Bots roster is open.
 
 ## Regression coverage
 
@@ -46,3 +46,4 @@ are still pending; this page does not claim rendered parity.
 | Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; visual comparison pending #71. |
 | Compact navigation rows | mobile-adaptation | 48dp touch floor | `SessionSidebarNavigationBoundsTest` checks cramped layout and action reachability. |
 | Bots mode | mobile-adaptation | Existing Android roster in the sidebar pane | `SessionSidebarNavigationBoundsTest` verifies mode selection and return; rendered roster comparison pending #71. |
+| Active plugin navigation | drift | Sidebar-origin routes retain the wide rail and compact drawer door; rows use semantic active-row fill/accent and suppress the retained chat selection. The compact drawer action shares the route's own header rather than adding a second row. | `SessionSidebarNavigationBoundsTest` covers row selection; `PluginShellRouteJourneyTest` covers header alignment, reopening the drawer and selecting the same active route. Updated device pixels, wide-route geometry and rendered comparison pending #71. |

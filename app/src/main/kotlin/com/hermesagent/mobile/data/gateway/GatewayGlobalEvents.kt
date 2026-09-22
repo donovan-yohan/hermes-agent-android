@@ -122,6 +122,7 @@ internal data class GatewaySkinChange(
     val apply: Boolean,
     val payload: JsonObject,
     val endpointGeneration: Long,
+    val sourceScope: com.hermesagent.mobile.data.prefs.ComposerControlsScope? = null,
 )
 
 /**
@@ -167,16 +168,24 @@ internal class GatewayGlobalEventLane(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val changeHints: Flow<GatewayChangeHint> = hintFlow
-    private val skinFlow = MutableSharedFlow<GatewaySkinChange>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    // Unlike a refetch hint, the latest skin definition must survive startup
+    // before the application bridge subscribes. Connection reset clears it.
+    private val skinFlow = MutableSharedFlow<GatewaySkinChange>(
+        replay = 1,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     val skinChanges: Flow<GatewaySkinChange> = skinFlow
 
     /** Backend skin payloads are data, never executable assets. */
-    private fun publishSkin(apply: Boolean, payload: JsonObject) {
-        skinFlow.tryEmit(GatewaySkinChange(apply, payload, endpointGeneration()))
+    private fun publishSkin(apply: Boolean, payload: JsonObject, sourceScope: com.hermesagent.mobile.data.prefs.ComposerControlsScope?) {
+        synchronized(lock) {
+            skinFlow.tryEmit(GatewaySkinChange(apply, payload, endpointGeneration(), sourceScope))
+        }
     }
 
     /** Feed a resolved skin from gateway.ready or skin.changed to the theme bridge. */
-    internal fun acceptSkin(apply: Boolean, payload: JsonObject) = publishSkin(apply, payload)
+    internal fun acceptSkin(apply: Boolean, payload: JsonObject, sourceScope: com.hermesagent.mobile.data.prefs.ComposerControlsScope? = null) = publishSkin(apply, payload, sourceScope)
 
     /** The gateway process's current seq numbering, once `gateway.ready` announced one. */
     fun replayEpoch(): String? = synchronized(lock) { epoch }
@@ -199,10 +208,12 @@ internal class GatewayGlobalEventLane(
      * re-announces the epoch and a reconnect refetches rather than resuming
      * from a number that may name a different run.
      */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun clearConnectionState() {
         synchronized(lock) {
             epoch = null
             lastSeenSeqByRuntime.clear()
+            skinFlow.resetReplayCache()
         }
     }
 
@@ -222,12 +233,12 @@ internal class GatewayGlobalEventLane(
      * this client's). Null cannot happen either, but naming it keeps the
      * refusal explicit rather than silent.
      */
-    fun accept(event: GatewayEvent): Boolean = when (GatewayGlobalEventType.fromWire(event.type)) {
+    fun accept(event: GatewayEvent, sourceScope: com.hermesagent.mobile.data.prefs.ComposerControlsScope? = null): Boolean = when (GatewayGlobalEventType.fromWire(event.type)) {
         GatewayGlobalEventType.GatewayReady -> {
             val payload = event.payload as? JsonObject
             adoptEpoch(payload)
             payload?.get("skin")?.let { skin ->
-                (skin as? JsonObject)?.let { acceptSkin(apply = false, payload = it) }
+                (skin as? JsonObject)?.let { acceptSkin(apply = false, payload = it, sourceScope = sourceScope) }
             }
             false
         }
@@ -236,7 +247,7 @@ internal class GatewayGlobalEventLane(
         // Keep this lane's event admission exhaustive without attempting to
         // render untrusted backend data here.
         GatewayGlobalEventType.SkinChanged -> {
-            (event.payload as? JsonObject)?.let { acceptSkin(apply = true, payload = it) }
+            (event.payload as? JsonObject)?.let { acceptSkin(apply = true, payload = it, sourceScope = sourceScope) }
             false
         }
 

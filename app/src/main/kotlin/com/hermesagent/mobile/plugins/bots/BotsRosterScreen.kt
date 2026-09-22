@@ -103,6 +103,8 @@ fun BotsRosterScreen(
     onOpenRoutines: (BotRosterRow) -> Unit = {},
     modifier: Modifier = Modifier,
     actions: BotsActions = BotsActions(),
+    /** The sidebar owns its tabs, insets, and footer; do not nest page chrome. */
+    embedded: Boolean = false,
 ) {
     // Desktop's roster has no interval of its own: it refetches on the socket
     // opening and on its query poll. A phone is not holding this pane open
@@ -115,7 +117,7 @@ fun BotsRosterScreen(
 
     val nowMillis = remember(state.sections, state.hiddenSections) { System.currentTimeMillis() }
 
-    OverlayScaffold(title = BOTS_TITLE, onBack = onBack, modifier = modifier) {
+    val roster: @Composable () -> Unit = {
         Column(
             Modifier
                 .fillMaxSize()
@@ -212,6 +214,11 @@ fun BotsRosterScreen(
                 )
             }
         }
+    }
+    if (embedded) {
+        Box(modifier.fillMaxSize()) { roster() }
+    } else {
+        OverlayScaffold(title = BOTS_TITLE, onBack = onBack, modifier = modifier) { roster() }
     }
 }
 

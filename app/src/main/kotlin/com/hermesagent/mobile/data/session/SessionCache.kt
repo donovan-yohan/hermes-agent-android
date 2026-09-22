@@ -57,8 +57,9 @@ class SessionCache {
             val merged = current.sessions.toMutableMap()
             var changed = false
             for (row in rows) {
-                if (merged[row.id] != row) {
-                    merged[row.id] = row
+                val next = row.copy(hidden = row.hidden ?: merged[row.id]?.hidden)
+                if (merged[row.id] != next) {
+                    merged[row.id] = next
                     changed = true
                 }
             }
@@ -101,6 +102,7 @@ class SessionCache {
                     // session-list metadata or an in-flight turn's state.
                     remoteProfile = if (authoritativeSessionProfiles) preview.remoteProfile
                         else preview.remoteProfile ?: existing.remoteProfile,
+                    hidden = preview.hidden ?: existing.hidden,
                 ) ?: preview
             }
             val catalog = ProjectCatalogState(
@@ -144,6 +146,7 @@ class SessionCache {
                     row
                 } else {
                     row.copy(
+                        hidden = row.hidden ?: existing.hidden,
                         status = existing.status,
                         progress = existing.progress,
                         composerStatus = existing.composerStatus,
@@ -299,9 +302,12 @@ class SessionCache {
     fun rehomeSession(fromId: String, row: SessionSummary, entries: List<TranscriptEntry>) {
         _state.update { current ->
             val targetId = row.id
+            val canonical = row.copy(
+                hidden = row.hidden ?: current.sessions[targetId]?.hidden ?: current.sessions[fromId]?.hidden,
+            )
             val sessions = current.sessions.toMutableMap().apply {
                 remove(fromId)
-                this[targetId] = row
+                this[targetId] = canonical
             }
             val transcripts = current.transcripts.toMutableMap().apply {
                 remove(fromId)
@@ -317,7 +323,7 @@ class SessionCache {
                 projects = current.projects.projects.mapValues { (_, project) ->
                     project.copy(
                         previewSessions = project.previewSessions
-                            .map { preview -> if (preview.id == fromId) row else preview }
+                            .map { preview -> if (preview.id == fromId || preview.id == targetId) canonical else preview }
                             .distinctBy(SessionSummary::id),
                     )
                 },

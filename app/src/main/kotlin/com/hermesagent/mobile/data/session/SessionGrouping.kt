@@ -343,6 +343,7 @@ fun buildSessionRows(
     val needle = query.trim().lowercase(locale)
     val localMatches = sessions
         .asSequence()
+        .filter { it.hidden != true }
         // `archived == null` is a Gateway that never said, and an unsaid flag
         // is not an archive: a row only leaves the live list when a contract
         // that can answer says `true`.
@@ -363,7 +364,11 @@ fun buildSessionRows(
         return if (archivedView) {
             localMatches.map(SessionListRow::Row)
         } else {
-            searchRows(localMatches, query.trim(), searchPending, serverMatches)
+            val hiddenKeys = sessions.filter { it.hidden == true }
+                .flatMap { listOfNotNull(it.id, it.lineageRootId) }.toSet()
+            searchRows(localMatches, query.trim(), searchPending, serverMatches?.filter {
+                it.hidden != true && it.id !in hiddenKeys && it.lineageRootId !in hiddenKeys
+            })
         }
     }
 
