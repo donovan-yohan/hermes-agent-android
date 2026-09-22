@@ -41,8 +41,8 @@ are still pending; this page does not claim rendered parity.
 
 ## Divergences
 
-| Difference | Class | Evidence / rationale |
-|---|---|---|
-| Terminal is visible but disabled with WIP | drift | No mobile Terminal route exists yet; mounted sidebar journey verifies the disabled control. |
-| WIP core rows carry a 48dp touch floor | mobile-adaptation | Required for phone accessibility; the shared chip preserves visible status. |
-| Bots roster uses the Android plugin's existing state and navigation | mobile-adaptation | Keeps Gateway availability, roster ordering, and Bot Chat actions authoritative. |
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; visual comparison pending #71. |
+| Compact navigation rows | mobile-adaptation | 48dp touch floor | `SessionSidebarNavigationBoundsTest` checks cramped layout and action reachability. |
+| Bots mode | mobile-adaptation | Existing Android roster in the sidebar pane | `SessionSidebarNavigationBoundsTest` verifies mode selection and return; rendered roster comparison pending #71. |
