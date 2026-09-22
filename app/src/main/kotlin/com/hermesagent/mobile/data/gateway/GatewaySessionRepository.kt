@@ -863,7 +863,7 @@ internal class LiveGatewaySessionRepository(
      * surface — a session event's `seq` becoming a watermark, and an epoch
      * change clearing it — is verifiable from this module's tests.
      */
-    internal val globalEvents = GatewayGlobalEventLane()
+    internal val globalEvents = GatewayGlobalEventLane { cache.endpointGeneration.value }
     override val globalChangeHints: Flow<GatewayChangeHint> = globalEvents.changeHints
     private val mutablePendingInputs =
         MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())

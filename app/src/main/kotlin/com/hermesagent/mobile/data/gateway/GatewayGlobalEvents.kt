@@ -92,6 +92,7 @@ internal enum class GatewayGlobalEventOwner {
  */
 internal enum class GatewayGlobalEventType(val wire: String, val owner: GatewayGlobalEventOwner) {
     GatewayReady("gateway.ready", GatewayGlobalEventOwner.Lane),
+    SkinChanged("skin.changed", GatewayGlobalEventOwner.Lane),
     SessionReclaimed("session.reclaimed", GatewayGlobalEventOwner.Reclaim),
     CronChanged("cron.changed", GatewayGlobalEventOwner.Lane),
     PetChanged("pet.changed", GatewayGlobalEventOwner.Lane),
@@ -115,6 +116,13 @@ internal val GATEWAY_GLOBAL_EVENT_TYPES: Set<String> =
 
 internal fun gatewayEventLane(type: String): GatewayEventLane =
     if (GatewayGlobalEventType.fromWire(type) != null) GatewayEventLane.Global else GatewayEventLane.Session
+
+/** Origin stamped at admission, before a buffered consumer can change endpoints. */
+internal data class GatewaySkinChange(
+    val apply: Boolean,
+    val payload: JsonObject,
+    val endpointGeneration: Long,
+)
 
 /**
  * The session-less lane: the dispatch path parallel to `applyEvent`, for frames
@@ -141,7 +149,9 @@ internal fun gatewayEventLane(type: String): GatewayEventLane =
  * client has no legacy poll for it to demote to a backstop, and an unused
  * capability flag would be a claim nothing reads.
  */
-internal class GatewayGlobalEventLane {
+internal class GatewayGlobalEventLane(
+    private val endpointGeneration: () -> Long = { 0L },
+) {
     private val lock = Any()
     private var epoch: String? = null
     private val lastSeenSeqByRuntime = mutableMapOf<String, Long>()
@@ -157,6 +167,16 @@ internal class GatewayGlobalEventLane {
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val changeHints: Flow<GatewayChangeHint> = hintFlow
+    private val skinFlow = MutableSharedFlow<GatewaySkinChange>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val skinChanges: Flow<GatewaySkinChange> = skinFlow
+
+    /** Backend skin payloads are data, never executable assets. */
+    private fun publishSkin(apply: Boolean, payload: JsonObject) {
+        skinFlow.tryEmit(GatewaySkinChange(apply, payload, endpointGeneration()))
+    }
+
+    /** Feed a resolved skin from gateway.ready or skin.changed to the theme bridge. */
+    internal fun acceptSkin(apply: Boolean, payload: JsonObject) = publishSkin(apply, payload)
 
     /** The gateway process's current seq numbering, once `gateway.ready` announced one. */
     fun replayEpoch(): String? = synchronized(lock) { epoch }
@@ -204,7 +224,19 @@ internal class GatewayGlobalEventLane {
      */
     fun accept(event: GatewayEvent): Boolean = when (GatewayGlobalEventType.fromWire(event.type)) {
         GatewayGlobalEventType.GatewayReady -> {
-            adoptEpoch(event.payload as? JsonObject)
+            val payload = event.payload as? JsonObject
+            adoptEpoch(payload)
+            payload?.get("skin")?.let { skin ->
+                (skin as? JsonObject)?.let { acceptSkin(apply = false, payload = it) }
+            }
+            false
+        }
+
+        // Skin payloads are consumed by the application-level theme bridge.
+        // Keep this lane's event admission exhaustive without attempting to
+        // render untrusted backend data here.
+        GatewayGlobalEventType.SkinChanged -> {
+            (event.payload as? JsonObject)?.let { acceptSkin(apply = true, payload = it) }
             false
         }
 

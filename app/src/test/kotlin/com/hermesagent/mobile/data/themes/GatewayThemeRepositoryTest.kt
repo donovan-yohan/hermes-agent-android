@@ -48,6 +48,41 @@ class GatewayThemeRepositoryTest {
         assertEquals(beforeBump, repo.state.value)
     }
 
+    @Test fun `socket skins survive dashboard failure but clear at endpoint switch`() = runTest {
+        val repo = GatewayThemeRepository(http = { RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "")) })
+        val skin = parseBackendSkin(kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"name":"socket-skin","colors":{"background":"#123","ui_text":"#fff"}}""",
+        ) as kotlinx.serialization.json.JsonObject)!!
+        repo.ingestBackendSkin(skin, apply = false)
+        repo.refresh()
+        assertEquals(GatewayThemesStatus.Unsupported, repo.state.value.status)
+        assertEquals(listOf("socket-skin"), repo.state.value.themes.map { it.name })
+        assertTrue(repo.isBackendSkin("socket-skin"))
+        repo.resetForEndpointSwitch()
+        assertTrue(repo.state.value.themes.isEmpty())
+        assertTrue(!repo.isBackendSkin("socket-skin"))
+    }
+
+    @Test fun `repeat skin changes and reconnect seeds preserve manual appearance choices`() {
+        val repo = GatewayThemeRepository(http = { null })
+        val skin = parseBackendSkin(kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"name":"socket-skin","colors":{"background":"#123","ui_text":"#fff"}}""",
+        ) as kotlinx.serialization.json.JsonObject)!!
+        assertEquals(false, repo.ingestBackendSkin(skin, apply = false))
+        assertEquals(true, repo.ingestBackendSkin(skin, apply = true))
+        // The caller can now choose a different local theme. Neither a replay
+        // nor the reconnect seed may request that the local choice be replaced.
+        assertEquals(false, repo.ingestBackendSkin(skin, apply = true))
+        assertEquals(false, repo.ingestBackendSkin(skin, apply = false))
+        assertEquals(false, repo.ingestBackendSkin(skin, apply = true))
+        val other = skin.copy(name = "another-skin")
+        assertEquals(false, repo.ingestBackendSkin(other, apply = false))
+        assertEquals(true, repo.ingestBackendSkin(other, apply = true))
+        assertEquals(true, repo.ingestBackendSkin(skin, apply = true))
+        repo.resetForEndpointSwitch()
+        assertEquals(true, repo.ingestBackendSkin(skin, apply = true))
+    }
+
     @Test fun `queued select keeps its captured transport`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val refreshStarted = CompletableDeferred<Unit>()

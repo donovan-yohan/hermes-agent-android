@@ -11,6 +11,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GatewayThemeParserTest {
+    @Test fun `converts frozen HermesSkin colors without accepting arbitrary assets`() {
+        val skin = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"name":"backend-neon","description":"Backend skin","colors":{"background":"#101820","ui_text":"#f2f4f8","ui_accent":"#00c2ff","ui_border":"#36505f","ui_error":"#ff5577"},"banner_logo":"data:text/plain,secret"}""",
+        ) as kotlinx.serialization.json.JsonObject
+        val theme = parseBackendSkin(skin)!!
+        assertEquals("backend-neon", theme.name)
+        assertEquals(Color(0xFF101820), theme.preset.colors.background)
+        assertEquals(Color(0xFFF2F4F8), theme.preset.colors.foreground)
+        assertEquals(Color(0xFF00C2FF), theme.preset.colors.primary)
+        assertTrue(theme.preset.description == "Backend skin")
+    }
+
+    @Test fun `matches Desktop defaults alpha normalization and contrast guard`() {
+        val skin = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"name":"sparse","colors":{"ui_text":"#fff8","ui_accent":"#777"}}""",
+        ) as kotlinx.serialization.json.JsonObject
+        val palette = parseBackendSkin(skin)!!.preset.colors
+        assertEquals(Color(0xFF141414), palette.background)
+        assertEquals(Color(0xFF888888), palette.foreground)
+        assertTrue(com.hermesagent.mobile.ui.theme.contrastRatio(palette.primary, palette.sidebarBackground!!) >= 4.5f)
+    }
+
+    @Test fun `rejects empty or builtin HermesSkin names and skins without usable colors`() {
+        val empty = kotlinx.serialization.json.Json.parseToJsonElement("""{"name":"backend"}""") as kotlinx.serialization.json.JsonObject
+        val builtin = kotlinx.serialization.json.Json.parseToJsonElement("""{"name":"${BuiltinThemes.DEFAULT_NAME}","colors":{"background":"#000000","ui_text":"#ffffff"}}""") as kotlinx.serialization.json.JsonObject
+        assertEquals(null, parseBackendSkin(empty))
+        assertEquals(null, parseBackendSkin(builtin))
+    }
+
     @Test fun `accepts a bounded custom definition and skips dashboard builtins`() {
         val parsed = parseGatewayThemes(fixture().toByteArray()) as GatewayThemeParse.Ok
         assertEquals("host-active", parsed.active)

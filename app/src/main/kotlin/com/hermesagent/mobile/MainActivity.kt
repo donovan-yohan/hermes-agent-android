@@ -531,7 +531,8 @@ class MainActivity : ComponentActivity() {
                             if (
                                 persisted && customAtTap &&
                                 endpointGeneration == app.cache.endpointGeneration.value &&
-                                app.gatewayThemes.state.value.themes.any { it.name == name }
+                                app.gatewayThemes.state.value.themes.any { it.name == name } &&
+                                !app.gatewayThemes.isBackendSkin(name)
                             ) {
                                 app.gatewayThemes.select(name)
                             }

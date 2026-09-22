@@ -49,6 +49,8 @@ import com.hermesagent.mobile.data.updates.GatewaySystemApi
 import com.hermesagent.mobile.data.updates.GatewayUpdateController
 import com.hermesagent.mobile.data.updates.RestGatewaySystemApi
 import com.hermesagent.mobile.data.themes.GatewayThemeRepository
+import com.hermesagent.mobile.data.themes.BackendSkinCache
+import com.hermesagent.mobile.data.themes.BackendSkinSync
 import com.hermesagent.mobile.data.voice.GatewayReplySpeaker
 import com.hermesagent.mobile.data.voice.GatewayVoiceRepository
 import com.hermesagent.mobile.data.voice.ReplySpeaker
@@ -213,6 +215,15 @@ class HermesApplication : Application() {
         GatewayThemeRepository(
             http = { gatewayHttp },
             endpointGeneration = { cache.endpointGeneration.value },
+        )
+    }
+
+    private val backendSkinSync by lazy {
+        BackendSkinSync(
+            cache = BackendSkinCache(java.io.File(noBackupFilesDir, "backend-skins")),
+            repository = gatewayThemes,
+            currentScope = { preferences.activeScope.first() },
+            generation = { cache.endpointGeneration.value },
         )
     }
 
@@ -430,6 +441,29 @@ class HermesApplication : Application() {
                 .map { it.status == GatewayConnectionStatus.Connected }
                 .distinctUntilChanged()
                 .collect { connected -> if (connected) gatewayThemes.refresh() }
+        }
+        appScope.launch {
+            combine(preferences.activeScope, cache.endpointGeneration) { _, _ -> Unit }
+                .collect { backendSkinSync.restore() }
+        }
+        appScope.launch {
+            sessionRepository.globalEvents.skinChanges.collect { (apply, payload, generation) ->
+                if (generation != cache.endpointGeneration.value) return@collect
+                val connectionId = preferences.activeGatewayRoute.first().connectionId ?: return@collect
+                val skinScope = preferences.activeScope.first()
+                val themeName = backendSkinSync.ingest(payload, apply, generation) ?: return@collect
+                // gateway.ready only restores a definition. A skin.changed is an
+                // explicit backend choice, stamped to the live connection so a
+                // reconnect or route switch cannot overwrite a manual choice.
+                if (skinScope == preferences.activeScope.first()) {
+                    // The transaction rejects a changed active row. The second
+                    // fence makes a stale socket event harmless after a route
+                    // generation changes while this coroutine is scheduled.
+                    if (generation == cache.endpointGeneration.value) {
+                        preferences.setConnectionTheme(themeName, connectionId)
+                    }
+                }
+            }
         }
         appScope.launch {
             connectionSwitch.routeGeneration

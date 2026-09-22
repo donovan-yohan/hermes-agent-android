@@ -37,6 +37,9 @@ internal class GatewayThemeRepository(
 ) {
     private val mutex = Mutex()
     private val mutableState = MutableStateFlow(GatewayThemesState())
+    private val backendSkinNames = mutableSetOf<String>()
+    private var lastBackendSkin: String? = null
+    private var lastBackendSkinApplied = false
     val state: StateFlow<GatewayThemesState> = mutableState.asStateFlow()
 
     suspend fun refresh() {
@@ -44,7 +47,7 @@ internal class GatewayThemeRepository(
         val generation = endpointGeneration()
         mutex.withLock {
             if (endpointGeneration() != generation) return
-            mutableState.value = GatewayThemesState(status = GatewayThemesStatus.Loading)
+            mutableState.value = state.value.copy(status = GatewayThemesStatus.Loading)
             val result = if (transport == null) {
                 GatewayRestResult.Failed(0, "")
             } else {
@@ -53,17 +56,45 @@ internal class GatewayThemeRepository(
             if (endpointGeneration() != generation) return
             mutableState.value = when (result) {
                 is GatewayRestResult.Success -> GatewayThemesState(
-                    themes = result.value.themes,
+                    themes = (result.value.themes + state.value.themes.filter { it.name in backendSkinNames })
+                        .distinctBy { it.name },
                     status = GatewayThemesStatus.Ready,
                     activeOnGateway = result.value.active,
                 )
-                is GatewayRestResult.Failed -> GatewayThemesState(status = statusFor(result.statusCode))
+                is GatewayRestResult.Failed -> state.value.copy(status = statusFor(result.statusCode))
             }
         }
     }
 
+    /** Returns true only when this announcement requests a new local appearance choice. */
+    fun ingestBackendSkin(theme: GatewayTheme, apply: Boolean): Boolean {
+        backendSkinNames += theme.name
+        val current = mutableState.value
+        val themes = (current.themes.filterNot { it.name == theme.name } + theme)
+            .distinctBy { it.name }
+        mutableState.value = current.copy(
+            themes = themes,
+            activeOnGateway = if (apply) theme.name else current.activeOnGateway,
+        )
+        if (lastBackendSkin != theme.name) {
+            lastBackendSkin = theme.name
+            lastBackendSkinApplied = false
+        }
+        // A reconnect seed preserves a previous explicit apply. Otherwise a
+        // repeated activation would undo the person's later manual selection.
+        val shouldApply = apply && !lastBackendSkinApplied
+        if (shouldApply) lastBackendSkinApplied = true
+        return shouldApply
+    }
+
+    /** Backend skins arrive over the socket and must never be sent to Dashboard PUT. */
+    fun isBackendSkin(name: String): Boolean = name in backendSkinNames
+
     /** Drops cached definitions when the connection-switch seam changes endpoint. */
     fun resetForEndpointSwitch() {
+        backendSkinNames.clear()
+        lastBackendSkin = null
+        lastBackendSkinApplied = false
         mutableState.value = GatewayThemesState()
     }
 

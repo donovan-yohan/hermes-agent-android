@@ -27,6 +27,24 @@ import org.junit.Test
 class GatewayGlobalEventsTest {
 
     @Test
+    fun `queued skin events retain admission generation rather than delivery generation`() = runTest {
+        var generation = 7L
+        val lane = GatewayGlobalEventLane { generation }
+        val skins = mutableListOf<GatewaySkinChange>()
+        val tap = launch { lane.skinChanges.collect { skins += it } }
+        runCurrent()
+        val payload = buildJsonObject { put("name", JsonPrimitive("custom")) }
+        lane.accept(sessionLess("skin.changed", payload))
+        generation = 8L
+        runCurrent()
+        assertEquals(listOf(GatewaySkinChange(true, payload, 7L)), skins)
+        lane.accept(sessionLess("skin.changed", payload))
+        runCurrent()
+        assertEquals(8L, skins.last().endpointGeneration)
+        tap.cancel()
+    }
+
+    @Test
     fun `session-less broadcasts route to the global lane and session events do not`() {
         listOf(
             "gateway.ready",
@@ -110,6 +128,20 @@ class GatewayGlobalEventsTest {
                     lane.accept(ready("epoch-one"))
                     assertEquals("$type must adopt the advertised epoch", "epoch-one", lane.replayEpoch())
                     false
+                }
+
+                // Skin changes have a payload stream, not a refetch hint.
+                GatewayGlobalEventType.SkinChanged -> {
+                    assertEquals(GatewayGlobalEventOwner.Lane, entry.owner)
+                    val skins = mutableListOf<GatewaySkinChange>()
+                    val skinTap = launch { lane.skinChanges.collect { skins += it } }
+                    runCurrent()
+                    val payload = buildJsonObject { put("name", JsonPrimitive("custom")) }
+                    val refresh = lane.accept(sessionLess(type, payload))
+                    runCurrent()
+                    assertEquals(listOf(GatewaySkinChange(true, payload, 0L)), skins)
+                    skinTap.cancel()
+                    refresh
                 }
 
                 // The four change hints: each must publish its own kind.
