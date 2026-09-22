@@ -11,6 +11,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -43,6 +47,7 @@ class SessionSidebarNavigationBoundsTest {
     fun `feature launchers precede sessions and gateway footer remains reachable after profile rail`() {
         var launcherClicks = 0
         var gatewayClicks = 0
+        var newSessionClicks = 0
         val launcher = Contribution(
             id = "fixture-launcher",
             area = PluginAreas.SIDEBAR_NAV_AREA,
@@ -87,8 +92,14 @@ class SessionSidebarNavigationBoundsTest {
                     onExitProject = {},
                     onCreateProject = { _, _ -> },
                     onSelect = {},
-                    onCreate = {},
-                    sidebarNavigation = listOf(launcher),
+                    onCreate = { newSessionClicks++ },
+                    sidebarNavigation = listOf(launcher, Contribution(
+                        id = "fixture-bots-mode",
+                        area = PluginAreas.SIDEBAR_NAV_AREA,
+                        data = SidebarModeDestination(SidebarMode.Bots) {
+                            Text("Fixture bot roster", modifier = Modifier.testTag("fixture-bots-roster"))
+                        },
+                    )),
                     header = {
                         Box(
                             Modifier
@@ -109,8 +120,19 @@ class SessionSidebarNavigationBoundsTest {
         }
         compose.waitForIdle()
 
-        val launcherBounds = compose.onNodeWithTag(LAUNCHER_TAG).fetchSemanticsNode().boundsInRoot
-        val firstSessionBounds = compose.onNodeWithTag("Session row session-0").fetchSemanticsNode().boundsInRoot
+        val coreRows = listOf("new-session", "capabilities", "messaging", "artifacts", "scheduled-jobs")
+        val coreBounds = coreRows.map {
+            compose.onNodeWithTag("sidebar-action-$it").getUnclippedBoundsInRoot()
+        }
+        coreBounds.zipWithNext().forEach { (before, after) ->
+            assertTrue("Desktop core rows retain order without overlapping", before.bottom <= after.top)
+        }
+        coreRows.drop(1).forEach { compose.onNodeWithTag("sidebar-action-$it").assertIsNotEnabled() }
+        compose.onNodeWithTag("sidebar-action-new-session").performClick()
+        assertTrue("New session is a working action", newSessionClicks == 1)
+
+        val launcherBounds = compose.onNodeWithTag(LAUNCHER_TAG).getUnclippedBoundsInRoot()
+        val firstSessionBounds = compose.onNodeWithTag("Session row session-0").getUnclippedBoundsInRoot()
         compose.onNodeWithTag(GATEWAY_TAG).performScrollTo()
         val railBounds = compose.onNodeWithTag(PROFILE_RAIL_TAG).fetchSemanticsNode().boundsInRoot
         val gatewayBounds = compose.onNodeWithTag(GATEWAY_TAG).fetchSemanticsNode().boundsInRoot
@@ -124,6 +146,13 @@ class SessionSidebarNavigationBoundsTest {
         compose.onNodeWithTag(GATEWAY_TAG).performScrollTo().assertIsDisplayed().performClick()
         assertTrue("feature launcher click-through", launcherClicks == 1)
         assertTrue("Gateway footer click-through", gatewayClicks == 1)
+        compose.onNodeWithContentDescription("SESSIONS").performScrollTo().assertIsSelected()
+        compose.onNodeWithContentDescription("TERMINAL. WIP").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("BOTS").performClick().assertIsSelected()
+        compose.onNodeWithTag("fixture-bots-roster").assertIsDisplayed()
+        compose.onNodeWithTag("sidebar-mode-tabs").assertIsDisplayed()
+        compose.onNodeWithContentDescription("SESSIONS").performClick().assertIsSelected()
+        compose.onNodeWithTag("fixture-bots-roster").assertDoesNotExist()
     }
 
     private companion object {

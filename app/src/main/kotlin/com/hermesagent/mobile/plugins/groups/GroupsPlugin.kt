@@ -4,7 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hermesagent.mobile.plugins.*
 import com.hermesagent.mobile.ui.LocalPluginNavigation
-import com.hermesagent.mobile.ui.settings.SettingsRow
+import com.hermesagent.mobile.ui.sessions.SidebarNavRow
+import com.hermesagent.mobile.ui.common.HermesIcon
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -40,8 +41,8 @@ class GroupsPlugin : HermesPlugin {
             }),
             PluginContribution(id = "sidebar-nav", area = PluginAreas.SIDEBAR_NAV_AREA, title = name, order = 410, render = {
                 val navigation = LocalPluginNavigation.current
-                SettingsRow(label = name, description = "Group Chats on this Gateway.", traversalIndex = 6f,
-                    onClick = { navigation.onNavigate("$id:route") })
+                SidebarNavRow(label = name, icon = HermesIcon.Mail, enabled = true,
+                    onClick = { navigation.onNavigate("$id:route") }, testTag = "sidebar-action-group-chats")
             }),
         ))
     }

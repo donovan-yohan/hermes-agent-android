@@ -7,7 +7,8 @@ import com.hermesagent.mobile.plugins.PluginAreas
 import com.hermesagent.mobile.plugins.PluginContribution
 import com.hermesagent.mobile.plugins.PluginContext
 import com.hermesagent.mobile.ui.LocalPluginNavigation
-import com.hermesagent.mobile.ui.settings.SettingsRow
+import com.hermesagent.mobile.ui.sessions.SidebarNavRow
+import com.hermesagent.mobile.ui.common.HermesIcon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,16 +59,12 @@ class KanbanPlugin(
                     render = {
                         val nav = LocalPluginNavigation.current
                         val state by viewModel.uiState.collectAsStateWithLifecycle()
-                        SettingsRow(
+                        SidebarNavRow(
                             label = "Kanban",
-                            description = if (state.phase == KanbanPhase.Unavailable) {
-                                KANBAN_UNAVAILABLE
-                            } else {
-                                "A read-only snapshot of the current board."
-                            },
-                            traversalIndex = 4.5f,
+                            icon = HermesIcon.Checklist,
                             enabled = true,
                             onClick = { nav.onNavigate("$id:route") },
+                            testTag = "sidebar-action-kanban",
                         )
                     },
                 ),

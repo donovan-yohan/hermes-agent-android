@@ -93,9 +93,18 @@ import com.hermesagent.mobile.ui.common.PanelLabel
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.StatusDot
 import com.hermesagent.mobile.ui.common.TextButton
+import com.hermesagent.mobile.ui.common.WipPill
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesTokens
 import kotlin.math.abs
+
+/** Declarative content supplied by a sidebar contribution for a selectable mode. */
+data class SidebarModeDestination(
+    val mode: SidebarMode,
+    val content: @Composable (onBack: () -> Unit) -> Unit,
+)
+
+enum class SidebarMode { Sessions, Bots }
 
 /**
  * Sessions.
@@ -179,9 +188,22 @@ fun SessionList(
     var menuVisible by rememberSaveable { mutableStateOf(false) }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var projectCreateVisible by rememberSaveable { mutableStateOf(false) }
+    var sidebarMode by rememberSaveable { mutableStateOf(SidebarMode.Sessions) }
     val searchIsVisible = searchVisible || query.isNotBlank()
+    val botDestination = sidebarNavigation
+        .mapNotNull { it.data as? SidebarModeDestination }
+        .firstOrNull { it.mode == SidebarMode.Bots }
 
     BoxWithConstraints(modifier.fillMaxSize().background(tokens.sidebarSurface)) {
+        if (sidebarMode == SidebarMode.Bots && botDestination != null) {
+            Column(Modifier.fillMaxSize()) {
+                SidebarModeTabs(selected = sidebarMode, onSelect = { sidebarMode = it })
+                Box(Modifier.weight(1f)) {
+                    botDestination.content { sidebarMode = SidebarMode.Sessions }
+                }
+            }
+            return@BoxWithConstraints
+        }
         // A landscape rail with the keyboard up is shorter than this pane's own
         // fixed chrome: the switcher, the title row and the search field
         // together outgrow it before the list is even asked for. A Column
@@ -203,6 +225,15 @@ fun SessionList(
             // Exact, not a minimum: a cramped pane measures its children with an
             // unbounded height, and a LazyColumn given one throws.
             val listSlot = if (cramped) Modifier.height(CRAMPED_LIST_HEIGHT) else Modifier.weight(1f)
+            SidebarModeTabs(
+                selected = sidebarMode,
+                onSelect = { mode -> if (mode == SidebarMode.Bots && botDestination != null) sidebarMode = mode else if (mode == SidebarMode.Sessions) sidebarMode = mode },
+            )
+            SidebarNavRow("New session", HermesIcon.Robot, canCreate, onCreate, "sidebar-action-new-session")
+            SidebarNavRow("Capabilities", HermesIcon.SymbolMisc, false, {}, "sidebar-action-capabilities", showWip = true)
+            SidebarNavRow("Messaging", HermesIcon.Comment, false, {}, "sidebar-action-messaging", showWip = true)
+            SidebarNavRow("Artifacts", HermesIcon.Files, false, {}, "sidebar-action-artifacts", showWip = true)
+            SidebarNavRow("Scheduled jobs", HermesIcon.Watch, false, {}, "sidebar-action-scheduled-jobs", showWip = true)
             sidebarNavigation
                 .sortedWith(compareBy<com.hermesagent.mobile.plugins.Contribution> { it.order ?: Int.MAX_VALUE })
                 .forEach { contribution -> contribution.render?.invoke() }
@@ -929,6 +960,86 @@ private fun SessionListRow.key(): String = when (this) {
     is SessionListRow.NoResultsNote -> "note-no-results-${query}"
     is SessionListRow.SearchSkeletons -> "search-skeletons"
     is SessionListRow.Row -> session.id
+}
+
+@Composable
+private fun SidebarModeTabs(
+    selected: SidebarMode,
+    onSelect: (SidebarMode) -> Unit,
+) {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier = Modifier.fillMaxWidth().selectableGroup().testTag("sidebar-mode-tabs"),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        listOf("SESSIONS" to SidebarMode.Sessions, "BOTS" to SidebarMode.Bots).forEach { (label, mode) ->
+            val active = selected == mode
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(HermesTheme.spacing.touchTarget)
+                    .selectable(selected = active, role = Role.Tab, onClick = { onSelect(mode) })
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Tab
+                        this.selected = active
+                        contentDescription = label
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.weight(1f))
+                Text(label, style = HermesTheme.type.panelLabel, color = if (active) tokens.accent else tokens.textTertiary)
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) tokens.accent else Color.Transparent))
+            }
+        }
+        Column(
+            Modifier.weight(1f).height(HermesTheme.spacing.touchTarget)
+                .semantics(mergeDescendants = true) {
+                    role = Role.Tab
+                    this.selected = false
+                    contentDescription = "TERMINAL. WIP"
+                    disabled()
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("TERMINAL", style = HermesTheme.type.panelLabel, color = tokens.textQuaternary)
+            WipPill()
+        }
+    }
+}
+
+@Composable
+internal fun SidebarNavRow(
+    label: String,
+    icon: HermesIcon,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+    showWip: Boolean = false,
+) {
+    val tokens = HermesTheme.tokens
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = HermesTheme.spacing.touchTarget)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .testTag(testTag)
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = if (enabled) label else "$label. WIP"
+                if (!enabled) disabled()
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        HermesIconGlyph(icon, color = if (enabled) tokens.textSecondary else tokens.textQuaternary, size = 14.sp)
+        Text(label, style = HermesTheme.type.scaffold, color = if (enabled) tokens.textPrimary else tokens.textQuaternary, modifier = Modifier.weight(1f))
+        if (showWip) {
+            WipPill()
+        }
+    }
 }
 
 /** The leading `Pinned` section label. */
