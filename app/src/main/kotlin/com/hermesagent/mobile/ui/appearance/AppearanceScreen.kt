@@ -134,18 +134,18 @@ fun AppearanceScreen(
                     text = "Themes supplied by the connected Gateway.",
                 )
             }
+            // Cached/socket definitions are usable independently of Dashboard availability.
+            items(gatewayThemes.themes, key = { it.name }) { theme ->
+                ThemeRow(
+                    preset = theme.preset,
+                    isSelected = theme.name == selection.themeName,
+                    dark = HermesTheme.isDark,
+                    onClick = { actions.onSelectTheme(theme.name) },
+                )
+            }
             when (gatewayThemes.status) {
                 GatewayThemesStatus.Ready -> if (gatewayThemes.themes.isEmpty()) {
                     item { GatewayThemesCaption("This Gateway has no custom themes.") }
-                } else {
-                    items(gatewayThemes.themes, key = { it.name }) { theme ->
-                        ThemeRow(
-                            preset = theme.preset,
-                            isSelected = theme.name == selection.themeName,
-                            dark = HermesTheme.isDark,
-                            onClick = { actions.onSelectTheme(theme.name) },
-                        )
-                    }
                 }
                 GatewayThemesStatus.Idle -> Unit
                 GatewayThemesStatus.Loading -> item {
@@ -154,8 +154,8 @@ fun AppearanceScreen(
                 GatewayThemesStatus.SignInRequired -> item {
                     GatewayThemesProblem(gatewayThemes.status.productCopy(), actions.onRetryThemes)
                 }
-                GatewayThemesStatus.Unsupported -> item {
-                    GatewayThemesCaption(gatewayThemes.status.productCopy())
+                GatewayThemesStatus.Unsupported -> if (gatewayThemes.themes.isEmpty()) {
+                    item { GatewayThemesCaption(gatewayThemes.status.productCopy()) }
                 }
                 GatewayThemesStatus.Unreachable -> item {
                     GatewayThemesProblem(gatewayThemes.status.productCopy(), actions.onRetryThemes)

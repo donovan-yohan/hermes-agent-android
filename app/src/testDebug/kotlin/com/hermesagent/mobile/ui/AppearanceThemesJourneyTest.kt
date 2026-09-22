@@ -76,6 +76,27 @@ class AppearanceThemesJourneyTest {
         assertEquals(1, retries)
     }
 
+    @Test
+    fun `cached theme remains selectable before Dashboard connects`() {
+        assertCustomThemeSelectable(GatewayThemesStatus.Idle)
+    }
+
+    @Test
+    fun `socket theme remains selectable when Dashboard themes are unsupported`() {
+        assertCustomThemeSelectable(GatewayThemesStatus.Unsupported)
+        compose.onNodeWithText(GatewayThemesStatus.Unsupported.productCopy()).assertDoesNotExist()
+    }
+
+    private fun assertCustomThemeSelectable(status: GatewayThemesStatus) {
+        val selections = mutableListOf<String>()
+        launch(GatewayThemesState(themes = listOf(customTheme()), status = status), selections::add)
+        scrollToContentDescription("Harbor skin. A calm Gateway palette.")
+        compose.onNodeWithContentDescription("Harbor skin. A calm Gateway palette.")
+            .assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("harbor"), selections)
+    }
+
     private fun scrollTo(text: String) {
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text, substring = true))
         compose.waitForIdle()

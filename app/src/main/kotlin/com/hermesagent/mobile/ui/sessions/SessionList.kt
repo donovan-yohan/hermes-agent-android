@@ -216,7 +216,8 @@ fun SessionList(
         // gives the focused field a scrollable ancestor to bring itself into
         // view within. Above it nothing changes, so the drawer and the
         // portrait rail keep the layout they have.
-        val cramped = maxHeight < RAIL_SCROLLS_BELOW
+        val navigationHeight = HermesTheme.spacing.touchTarget * (6 + sidebarNavigation.count { it.render != null })
+        val cramped = maxHeight < RAIL_SCROLLS_BELOW + navigationHeight
         Column(
             Modifier
                 .fillMaxSize()
@@ -248,23 +249,25 @@ fun SessionList(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    DitherMark(tokens.accent)
-                    Text(
-                        text = title.uppercase(),
-                        style = HermesTheme.type.panelLabel,
-                        color = tokens.accent,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    if (showingProjectOverview || selectedProject != null) {
+                        DitherMark(tokens.accent)
+                        Text(
+                            text = title.uppercase(),
+                            style = HermesTheme.type.panelLabel,
+                            color = tokens.accent,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (showingProjectOverview) {
+                    HermesIconButton(
+                        icon = HermesIcon.Add,
+                        contentDescription = "New project",
+                        onClick = { projectCreateVisible = true },
+                        enabled = canCreate && projectsAvailable == true,
                     )
                 }
-                HermesIconButton(
-                    icon = HermesIcon.Add,
-                    contentDescription = if (showingProjectOverview) "New project" else "New session",
-                    onClick = {
-                        if (showingProjectOverview) projectCreateVisible = true else onCreate()
-                    },
-                    enabled = canCreate && (!showingProjectOverview || projectsAvailable == true),
-                )
                 if (selectedProject != null) {
                     HermesIconButton(
                         icon = HermesIcon.ListUnordered,
@@ -1027,7 +1030,7 @@ internal fun SidebarNavRow(
             .testTag(testTag)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
-                contentDescription = if (enabled) label else "$label. WIP"
+                contentDescription = if (showWip) "$label. WIP" else label
                 if (!enabled) disabled()
             }
             .padding(horizontal = 12.dp, vertical = 8.dp),

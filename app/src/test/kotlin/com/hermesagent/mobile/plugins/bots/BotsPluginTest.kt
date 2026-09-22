@@ -107,12 +107,15 @@ class BotsPluginTest {
         val sidebarNav = registry.getArea(PluginAreas.SIDEBAR_NAV_AREA)
         assertEquals(1, sidebarNav.size)
         val nav = sidebarNav.single()
-        assertEquals("bots:sidebar-nav", nav.id)
+        assertEquals("bots:sidebar-mode-bots", nav.id)
         assertEquals(PluginAreas.SIDEBAR_NAV_AREA, nav.area)
         assertEquals("plugin:bots", nav.source)
         assertEquals("Bots", nav.title)
-        assertEquals(400, nav.order)
-        assertNotNull(nav.render)
+        assertEquals(0, nav.order)
+        val mode = nav.data as com.hermesagent.mobile.ui.sessions.SidebarModeDestination
+        assertEquals(com.hermesagent.mobile.ui.sessions.SidebarMode.Bots, mode.mode)
+        assertNotNull(mode.content)
+        assertEquals(null, nav.render)
 
         disposers.forEach { it.invoke() }
         assertEquals(emptyList<Any>(), registry.getArea(PluginAreas.ROUTES_AREA))

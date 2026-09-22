@@ -219,19 +219,17 @@ class BotsRosterJourneyTest {
             .assertHeightIsAtLeast(HermesSpacing().touchTarget)
     }
 
-    /** A Gateway without `profiles.list` says so, and closes the entry point. */
+    /** The Bots mode explains an unsupported Gateway instead of offering a chat row. */
     @Test
-    fun `a gateway that predates profiles dot list closes the entry point`() {
+    fun `a gateway that predates profiles dot list explains its unavailable roster`() {
         clients.value = FakeRpc { _, _ -> throw GatewayRpcError(-32601, "unknown method") }
         launch(renderSidebarEntry = true)
 
         val closed = BotsRosterCopy.rosterUnavailable(PREDATES_REASON)
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithContentDescription("Bots. $closed").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText(closed).fetchSemanticsNodes().isNotEmpty()
         }
-        // A statement, not a door: the row is there, spoken, and disabled.
-        compose.onNodeWithTag("settings-row-bots").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Bots. $closed").assertIsNotEnabled()
+        compose.onNodeWithText(closed).assertIsDisplayed()
     }
 
     /** True empty: the Gateway answered with nothing. */
@@ -441,8 +439,12 @@ class BotsRosterJourneyTest {
         // This contribution, selected by its own id: the plugin also contributes
         // the Routines destination to the routes area, and this journey is about
         // the roster.
-        val id = if (renderSidebarEntry) "bots:sidebar-nav" else "bots:route"
-        val render = requireNotNull(registry.getArea(area).firstOrNull { it.id == id }?.render)
+        val id = if (renderSidebarEntry) "bots:sidebar-mode-bots" else "bots:route"
+        val contribution = requireNotNull(registry.getArea(area).firstOrNull { it.id == id })
+        val render: @Composable () -> Unit = if (renderSidebarEntry) {
+            val mode = contribution.data as com.hermesagent.mobile.ui.sessions.SidebarModeDestination
+            { mode.content {} }
+        } else requireNotNull(contribution.render)
 
         compose.setContent {
             val screen: @Composable () -> Unit = {
