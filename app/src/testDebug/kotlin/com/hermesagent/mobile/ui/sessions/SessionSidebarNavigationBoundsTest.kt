@@ -152,10 +152,10 @@ class SessionSidebarNavigationBoundsTest {
         compose.onNodeWithContentDescription("BOTS").performClick().assertIsSelected()
         compose.onNodeWithTag("fixture-bots-roster").assertIsDisplayed()
         compose.onNodeWithTag("sidebar-mode-tabs").assertIsDisplayed()
-        compose.onNodeWithTag(PROFILE_RAIL_TAG).assertIsDisplayed()
-        compose.onNodeWithTag(GATEWAY_TAG).assertIsDisplayed().performClick()
+        compose.onNodeWithTag(PROFILE_RAIL_TAG).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(GATEWAY_TAG).performScrollTo().assertIsDisplayed().performClick()
         assertTrue("Bots retains a working Gateway footer", gatewayClicks == 2)
-        compose.onNodeWithContentDescription("SESSIONS").performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("SESSIONS").performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithTag("fixture-bots-roster").assertDoesNotExist()
     }
 

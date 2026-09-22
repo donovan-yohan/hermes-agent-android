@@ -131,6 +131,7 @@ internal class GatewayThemeRepository(
                 if (endpointGeneration() != generation || resetRevision != revision || transport == null || state.value.themes.none { it.name == name }) {
                     return@withLock GatewayThemesStatus.Unreachable
                 }
+                if (name in backendSkinNames) return@withLock GatewayThemesStatus.Unsupported
             }
             val result = GatewayRestClient(http = { transport }).setDashboardTheme(name)
             synchronized(stateLock) {

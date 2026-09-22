@@ -55,6 +55,12 @@ The terminal notification is in `finally`, so failure must clear it too.
 
 The GitHub comparison reports six commits after intake. The changed-file inventory
 does not touch the shared theme registry, Desktop theme converter, or sidebar.
+The exact comparison is
+[`e2f8a0731bf26e95b31e35d73e71e183a1045b81...95f20517c25ee418da5337f4ead347008baaa2b3`](https://github.com/NousResearch/hermes-agent/compare/e2f8a0731bf26e95b31e35d73e71e183a1045b81...95f20517c25ee418da5337f4ead347008baaa2b3).
+The inventory comes from that comparison's `files` list, not a line-range claim.
+The inspected sidebar baseline is `apps/desktop/src/app/chat/sidebar/index.tsx:201-237`
+and `apps/desktop/src/components/pane-shell/tree/renderer/tree-group.tsx:560-609`
+at `e2f8a0731bf26e95b31e35d73e71e183a1045b81`; neither path appears in the delta.
 The delta comprises Desktop peer-window profile routing and its tests, connector
 dialog layout/copy, and Python Codex authentication/catalog-cache handling.
 Native Android has no Electron peer windows or local Codex token catalog; those
@@ -80,6 +86,19 @@ Per-sidebar-profile skin attribution is not established by this protocol and is
 not an acceptance claim of this implementation.
 
 ## Evidence so far
+
+- Exact committed source `f39f0f95dbb12c4a2c8a532ac0c7dba645883c6f` built APK
+  `0e67d2166906883cb80f1c071b004b7c5f61510227e2ccb39bc89b28644a76a9`.
+  Matching transfer/install/package readback and cold launch passed on the
+  remote emulator. A real Gateway-provided custom skin applied visibly, then
+  survived force-stop/restart with both network transports disabled; settled
+  chrome and system icons remained readable. The launch-transition capture
+  was not settled, so this is not first-frame fidelity proof. Restoring the
+  original Nous/System choice and network, then cold-launching online, retained
+  that manual choice rather than reapplying the backend skin. No prompt was sent.
+  CodeRabbit subsequently identified sidebar availability/constrained-height,
+  hidden unread projections, and repository selection-boundary follow-ups;
+  this artifact does not include those pending corrections.
 
 - Reviewed working-tree APK `18ee6a3b027d7786c9213c2dd2a6d6c00993d4def7beeed42e7c42ad3285596b`
   was transferred with matching hashes and installed on the trusted remote

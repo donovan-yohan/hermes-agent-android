@@ -1042,7 +1042,7 @@ internal class ChatViewModel(
             // unread (`store/session-dot-state.ts:186-200` @ `72a3277cd7`) and
             // hides the mark-all action at zero.
             unreadCount = scopedSessions.count {
-                it.archived != true && it.displayStatus() == SessionStatus.Unread
+                it.hidden != true && it.archived != true && it.displayStatus() == SessionStatus.Unread
             },
             // A genuinely empty account therefore alternates between the
             // placeholder bars and the blank state on every background refresh,
@@ -2584,7 +2584,7 @@ internal class ChatViewModel(
         filterSessionsByProfileScope(
             cache.state.value.sessions.values.toList(),
             profileScope.value.key,
-        ).filter { it.archived != true && it.displayStatus() == SessionStatus.Unread }
+        ).filter { it.hidden != true && it.archived != true && it.displayStatus() == SessionStatus.Unread }
 
     private suspend fun reportingFailure(fallback: String, action: suspend () -> Unit) {
         try {

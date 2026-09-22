@@ -2449,6 +2449,26 @@ class ChatViewModelTest {
         assertEquals(false, cache.session("session-b")?.unread)
     }
 
+    @Test
+    fun `hidden unread rows stay cached but do not count or receive bulk writes`() = runTest(dispatcher) {
+        collectState()
+        val hidden = summary("hidden", 900).copy(hidden = true, unread = true)
+        val hiddenDot = summary("hidden-dot", 800).copy(hidden = true, status = SessionStatus.Unread)
+        cache.upsertSessions(listOf(
+            summary("session-a", 2_000).copy(unread = true, hidden = false),
+            summary("session-b", 1_000).copy(status = SessionStatus.Unread),
+            hidden, hiddenDot,
+        ))
+        runCurrent()
+        assertEquals(2, viewModel.uiState.value.unreadCount)
+        viewModel.markAllSessionsRead()
+        runCurrent()
+        assertEquals(setOf("session-a", "session-b"), repository.flagWrites.map { it.second }.toSet())
+        assertEquals(hidden, cache.session("hidden"))
+        assertEquals(hiddenDot, cache.session("hidden-dot"))
+        assertEquals(0, viewModel.uiState.value.unreadCount)
+    }
+
     /** A row the backend never called unread is not marked read on open. */
     @Test
     fun `opening a read session writes nothing`() = runTest(dispatcher) {

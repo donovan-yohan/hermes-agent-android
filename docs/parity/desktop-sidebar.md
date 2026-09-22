@@ -8,6 +8,11 @@ captured shell reference. The frozen shell shows the mode strip above the
 sidebar slot and the flat core rows in this order: `New session`, `Capabilities`,
 `Messaging`, `Artifacts`, `Scheduled jobs`.
 
+Source at `e2f8a0731bf26e95b31e35d73e71e183a1045b81`:
+`apps/desktop/src/app/chat/sidebar/index.tsx:201-237` defines the core row
+order and glyphs; `apps/desktop/src/components/pane-shell/tree/renderer/tree-group.tsx:560-609`
+mounts the enclosing pane-tab strip and derives its active tab.
+
 ## Mobile adaptation
 
 The two supported tabs (`SESSIONS`, `BOTS`) are rendered above the rows in both
@@ -34,10 +39,19 @@ real Bot roster state rather than a placeholder row.
 
 - pending: #71
 
-A genuine Desktop shell reference has been captured from the disposable export
-at the stated pin. The full shell includes the mode strip; the sidebar crop
-begins at its slot. An aligned Android comparison and portable evidence packet
-are still pending; this page does not claim rendered parity.
+A genuine mono Desktop shell reference has been captured from the disposable
+export at the stated pin in dark and light mode, with explicit renderer theme
+assertions. The full shell includes the mode strip; the sidebar crop begins at
+its slot. Android dark navigation and Group Chats selected-state captures at
+`f39f0f95dbb12c4a2c8a532ac0c7dba645883c6f` passed receipt validation and were
+visually compared against the Desktop core rows:
+[navigation capture](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/35765069376),
+[selected capture](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/35765533593).
+The comparison verifies core order/glyph family, flat rows, top tabs, and
+exclusive Android selection paint. It does not establish matching configured
+Desktop plugin states, Bots roster parity, footer behavior, or wide geometry.
+The clean Desktop sandbox lacks optional plugin/Terminal states. Full rendered
+parity remains pending; later changes need new exact-head evidence.
 
 ## Divergences
 

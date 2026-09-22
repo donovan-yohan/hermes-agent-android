@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -193,12 +194,22 @@ fun SessionList(
     val botDestination = sidebarNavigation
         .mapNotNull { it.data as? SidebarModeDestination }
         .firstOrNull { it.mode == SidebarMode.Bots }
+    LaunchedEffect(botDestination) {
+        if (botDestination == null) sidebarMode = SidebarMode.Sessions
+    }
 
     BoxWithConstraints(modifier.fillMaxSize().background(tokens.sidebarSurface)) {
         if (sidebarMode == SidebarMode.Bots && botDestination != null) {
-            Column(Modifier.fillMaxSize()) {
-                SidebarModeTabs(selected = sidebarMode, onSelect = { sidebarMode = it })
-                Box(Modifier.weight(1f)) {
+            val cramped = maxHeight < RAIL_SCROLLS_BELOW
+            Column(
+                Modifier.fillMaxSize()
+                    .then(if (cramped) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            ) {
+                SidebarModeTabs(selected = sidebarMode, botsAvailable = true, onSelect = { sidebarMode = it })
+                // Bound lazy destination content even inside the scrolling pane.
+                // The destination also owns search/filter chrome, unlike the sessions list.
+                val rosterSlot = if (cramped) Modifier.height(RAIL_SCROLLS_BELOW) else Modifier.weight(1f)
+                Box(rosterSlot) {
                     botDestination.content { sidebarMode = SidebarMode.Sessions }
                 }
                 ProfileRail(state = profileRail, actions = profileRailActions)
@@ -230,6 +241,7 @@ fun SessionList(
             val listSlot = if (cramped) Modifier.height(CRAMPED_LIST_HEIGHT) else Modifier.weight(1f)
             SidebarModeTabs(
                 selected = sidebarMode,
+                botsAvailable = botDestination != null,
                 onSelect = { mode -> if (mode == SidebarMode.Bots && botDestination != null) sidebarMode = mode else if (mode == SidebarMode.Sessions) sidebarMode = mode },
             )
             SidebarNavRow("New session", HermesIcon.Robot, canCreate, onCreate, "sidebar-action-new-session")
@@ -970,6 +982,7 @@ private fun SessionListRow.key(): String = when (this) {
 @Composable
 private fun SidebarModeTabs(
     selected: SidebarMode,
+    botsAvailable: Boolean,
     onSelect: (SidebarMode) -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -983,7 +996,7 @@ private fun SidebarModeTabs(
                 modifier = Modifier
                     .weight(1f)
                     .height(HermesTheme.spacing.touchTarget)
-                    .selectable(selected = active, role = Role.Tab, onClick = { onSelect(mode) })
+                    .selectable(selected = active, enabled = mode != SidebarMode.Bots || botsAvailable, role = Role.Tab, onClick = { onSelect(mode) })
                     .semantics(mergeDescendants = true) {
                         role = Role.Tab
                         this.selected = active

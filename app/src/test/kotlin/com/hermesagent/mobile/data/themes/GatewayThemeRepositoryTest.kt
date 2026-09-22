@@ -12,6 +12,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GatewayThemeRepositoryTest {
+    @Test fun `select refuses socket skins without a dashboard write`() = runTest {
+        val transport = RecordingGatewayHttp(
+            GatewayHttpResult.Success(200, """{"ok":true,"theme":"socket-skin"}""".toByteArray()),
+        )
+        val repo = GatewayThemeRepository(http = { transport })
+        val skin = parseBackendSkin(kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"name":"socket-skin","colors":{"background":"#123","ui_text":"#fff"}}""",
+        ) as kotlinx.serialization.json.JsonObject)!!
+        repo.ingestBackendSkin(skin, apply = false)
+        assertEquals(GatewayThemesStatus.Unsupported, repo.select(skin.name))
+        assertTrue(transport.requests.isEmpty())
+        assertEquals(null, repo.state.value.activeOnGateway)
+    }
+
     @Test fun `maps response classes and resets endpoint state`() = runTest {
         val generation = longArrayOf(0)
         val repo = GatewayThemeRepository(http = { RecordingGatewayHttp(GatewayHttpResult.Success(200, ok().toByteArray())) }, endpointGeneration = { generation[0] })
