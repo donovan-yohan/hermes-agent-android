@@ -22,12 +22,15 @@ private val REDACTIONS: List<Pair<Regex, String>> = listOf(
     Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----") to
         "-----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY-----",
     Regex("(password[\"']?\\s*[:=]\\s*[\"']?)([^\\s\"',]+)", RegexOption.IGNORE_CASE) to "$1<redacted>",
-    // SSH target with a non-numeric segment where a port belongs.
-    Regex("(\\S+@[^\\s:]+):(?!\\d+\\b)[^\\s:]+") to "$1:<redacted>",
-    // URL userinfo: `https://user:pass@host` puts a credential in a field this
-    // app renders and a screen reader speaks out loud. The scheme and the host
-    // are kept, because they are what the sentence is about.
-    Regex("([A-Za-z][A-Za-z0-9+.-]*://)[^/?#\\s@]+@") to "$1<redacted>@",
+)
+
+private val NON_WHITESPACE = Regex("\\S+")
+private val NUMERIC_PORT_PREFIX = Regex("\\d+\\b")
+
+// Try each scheme-shaped run once, not every suffix of an unbroken tool result.
+// Preserve leading digits/punctuation: the original rule could start after them.
+private val URL_USERINFO = Regex(
+    "(?<![A-Za-z0-9+.-])([0-9+.-]*)([A-Za-z][A-Za-z0-9+.-]*+://)[^/?#\\s@]++@",
 )
 
 fun redact(text: String?): String {
@@ -35,5 +38,31 @@ fun redact(text: String?): String {
     for ((pattern, replacement) in REDACTIONS) {
         out = pattern.replace(out, replacement)
     }
-    return out
+    out = redactSshTargets(out)
+    return URL_USERINFO.replace(out, "$1$2<redacted>@")
+}
+
+private fun redactSshTargets(text: String): String = NON_WHITESPACE.replace(text) { match ->
+    val token = match.value
+    var firstAt = -1
+    var secretStart = -1
+    var secretEnd = -1
+    for (index in token.indices) {
+        when (token[index]) {
+            '@' -> if (index > 0 && firstAt < 0) firstAt = index
+            ':' -> {
+                val start = index + 1
+                if (firstAt >= 0 && firstAt < index - 1 && start < token.length &&
+                    token[start] != ':' && NUMERIC_PORT_PREFIX.matchAt(token, start) == null
+                ) {
+                    // The old greedy username selected the last eligible host:secret
+                    // in this token. A host can contain @, but cannot contain a colon.
+                    secretStart = start
+                    secretEnd = token.indexOf(':', start).takeIf { it >= 0 } ?: token.length
+                }
+                firstAt = -1
+            }
+        }
+    }
+    if (secretStart < 0) token else token.replaceRange(secretStart, secretEnd, "<redacted>")
 }
