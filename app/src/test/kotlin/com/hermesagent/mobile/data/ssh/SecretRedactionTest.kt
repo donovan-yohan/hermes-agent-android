@@ -12,6 +12,59 @@ import org.junit.Test
  */
 class SecretRedactionTest {
 
+    @Test(timeout = 2_000)
+    fun `long unbroken tool output does not stall redaction`() {
+        val text = "a".repeat(65_536)
+        assertEquals(text, redact(text))
+    }
+
+    @Test(timeout = 2_000)
+    fun `repeated at signs without a port do not stall redaction`() {
+        val text = "a@".repeat(16_384)
+        assertEquals(text, redact(text))
+    }
+
+    @Test(timeout = 2_000)
+    fun `a long URL without userinfo does not stall redaction`() {
+        val text = "https://" + "a".repeat(65_536)
+        assertEquals(text, redact(text))
+    }
+
+    @Test
+    fun `SSH redaction preserves greedy targets and numeric port prefixes`() {
+        val cases = mapOf(
+            "user@host:22" to "user@host:22",
+            "user@host:22-extra" to "user@host:22-extra",
+            "user@host:22extra" to "user@host:<redacted>",
+            "user@example@host:secret" to "user@example@host:<redacted>",
+            "a@@:secret" to "a@@:<redacted>",
+            "a@host:first:b@host:second" to "a@host:first:b@host:<redacted>",
+            "a@host:secret:tail" to "a@host:<redacted>:tail",
+            "a@host:first b@host:second" to "a@host:<redacted> b@host:<redacted>",
+        )
+        cases.forEach { (input, expected) -> assertEquals(expected, redact(input)) }
+    }
+
+    @Test
+    fun `userinfo is redacted inside JSON and after invalid scheme prefixes`() {
+        for (prefix in listOf("{\"url\":\"", "1", "+.-", "_")) {
+            assertEquals(
+                "${prefix}https://<redacted>@host/path",
+                redact("${prefix}https://user:secret@host/path"),
+            )
+        }
+    }
+
+    @Test(timeout = 2_000)
+    fun `secrets after long harmless text are still redacted`() {
+        val prefix = "a".repeat(65_536)
+        assertEquals("${prefix}user@host:<redacted>", redact("${prefix}user@host:secret"))
+        assertEquals(
+            "${prefix} https://<redacted>@host/path",
+            redact("${prefix} https://user:secret@host/path"),
+        )
+    }
+
     private val secrets = listOf(
         "hunter2correcthorse",
         "sk-live-9f2b7c1d4e6a8b0c",
