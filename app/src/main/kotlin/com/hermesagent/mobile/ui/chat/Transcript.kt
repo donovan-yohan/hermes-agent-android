@@ -44,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -192,6 +193,7 @@ fun Transcript(
     showIntroSplash: Boolean = false,
     /** What the splash may say about the homed session; empty on a fresh draft. */
     introSplashContext: IntroSplashContext = IntroSplashContext(),
+    hiddenUserBubbleId: String? = null,
 ) {
     val spacing = HermesTheme.spacing
     // Progress has exactly one owner: the live transcript tail. A running tool
@@ -303,7 +305,7 @@ fun Transcript(
 
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth().nestedScroll(topEdgeReach),
+        modifier = modifier.fillMaxWidth().nestedScroll(topEdgeReach).testTag("Transcript"),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(spacing.blockGap),
     ) {
@@ -311,33 +313,35 @@ fun Transcript(
             item(key = SHOW_EARLIER_KEY) { ShowEarlierRow(onShowEarlier) }
         }
         items(items = entries, key = { it.id }) { entry ->
-            when (entry) {
-                is UserTurn -> UserBubble(entry, imageLoader)
-                is AssistantTurn -> AssistantProse(
-                    turn = entry,
-                    isWorking = isWorking,
-                    onBranchFromReply = onBranchFromReply,
-                    onRegenerateReply = if (entry.id == newestAssistantEntryId) onRegenerateReply else null,
-                    onSendDiagnostics = onSendDiagnostics,
-                    onViewGatewayLogs = onViewGatewayLogs,
-                    readAloudControl = when (val state = readAloud) {
-                        ReadAloudUiState.Idle -> ReadAloudControl.Idle
-                        is ReadAloudUiState.Preparing -> if (state.entryId == entry.id) {
-                            ReadAloudControl.Preparing
-                        } else {
-                            ReadAloudControl.Blocked
-                        }
-                        is ReadAloudUiState.Speaking -> if (state.entryId == entry.id) {
-                            ReadAloudControl.Speaking
-                        } else {
-                            ReadAloudControl.Blocked
-                        }
-                    },
-                    onToggleReadAloud = onToggleReadAloud,
-                )
-                is ReasoningActivity -> ReasoningRow(entry)
-                is ToolActivity -> ToolRow(entry)
-                is TimelineEvent -> TimelineRow(entry)
+            Box(Modifier.fillMaxWidth().testTag("Transcript item ${entry.id}")) {
+                when (entry) {
+                    is UserTurn -> UserBubble(entry, imageLoader, hiddenUserBubbleId == entry.id)
+                    is AssistantTurn -> AssistantProse(
+                        turn = entry,
+                        isWorking = isWorking,
+                        onBranchFromReply = onBranchFromReply,
+                        onRegenerateReply = if (entry.id == newestAssistantEntryId) onRegenerateReply else null,
+                        onSendDiagnostics = onSendDiagnostics,
+                        onViewGatewayLogs = onViewGatewayLogs,
+                        readAloudControl = when (val state = readAloud) {
+                            ReadAloudUiState.Idle -> ReadAloudControl.Idle
+                            is ReadAloudUiState.Preparing -> if (state.entryId == entry.id) {
+                                ReadAloudControl.Preparing
+                            } else {
+                                ReadAloudControl.Blocked
+                            }
+                            is ReadAloudUiState.Speaking -> if (state.entryId == entry.id) {
+                                ReadAloudControl.Speaking
+                            } else {
+                                ReadAloudControl.Blocked
+                            }
+                        },
+                        onToggleReadAloud = onToggleReadAloud,
+                    )
+                    is ReasoningActivity -> ReasoningRow(entry)
+                    is ToolActivity -> ToolRow(entry)
+                    is TimelineEvent -> TimelineRow(entry)
+                }
             }
         }
         if (showTurnProgress) {
@@ -464,6 +468,13 @@ private const val SHOW_EARLIER_KEY = "show-earlier"
 /** The one user-turn bubble shape, shared by the transcript and the pinned prompt. */
 private val UserBubbleShape = RoundedCornerShape(14.dp)
 
+@Composable
+internal fun Modifier.userTurnBubbleDecoration(): Modifier {
+    val tokens = HermesTheme.tokens
+    return background(tokens.userBubble, UserBubbleShape)
+        .border(1.dp, tokens.userBubbleBorder, UserBubbleShape)
+}
+
 /**
  * The user-turn bubble grammar in one place: the `--dt-user-bubble` fill, its
  * hairline, the 14dp radius and the 12/9 inset, spoken as a single merged node.
@@ -474,8 +485,9 @@ private val UserBubbleShape = RoundedCornerShape(14.dp)
 @Composable
 internal fun UserTurnBubble(
     body: String,
-    contentDescription: String,
+    contentDescription: String?,
     modifier: Modifier = Modifier,
+    decorated: Boolean = true,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     /**
@@ -495,8 +507,7 @@ internal fun UserTurnBubble(
     val label = contentDescription
     Box(
         modifier
-            .background(tokens.userBubble, UserBubbleShape)
-            .border(1.dp, tokens.userBubbleBorder, UserBubbleShape)
+            .then(if (decorated) Modifier.userTurnBubbleDecoration() else Modifier)
             .then(
                 if (onClick == null) {
                     Modifier
@@ -507,7 +518,13 @@ internal fun UserTurnBubble(
             // Keep the bubble as one accessible message. Merging removes the
             // duplicate readable Text child while preserving any descendant
             // actions the bubble carries (the pinned prompt's return tap).
-            .semantics(mergeDescendants = true) { this.contentDescription = label }
+            .then(
+                if (label == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics(mergeDescendants = true) { this.contentDescription = label }
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
         // The parent retains its accessible label and its actions; only this
@@ -534,7 +551,7 @@ internal fun UserTurnBubble(
 }
 
 @Composable
-private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?) {
+private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?, hideBody: Boolean) {
     // Persisted user turns carry trailing `@image:<path>` lines (the
     // gateway's persist-time rewrite); render them as thumbnails instead of
     // placeholder prose, exactly like Desktop's extractImageRefs.
@@ -551,9 +568,17 @@ private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?) {
                 // prompt: the pin is chrome that owns a drag and a return tap.
                 UserTurnBubble(
                     body = bodyText,
-                    contentDescription = "You said: $bodyText",
-                    modifier = Modifier.widthIn(max = 320.dp),
-                    selectable = true,
+                    contentDescription = if (hideBody) null else "You said: $bodyText",
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .then(
+                            if (hideBody) {
+                                Modifier.alpha(0f).clearAndSetSemantics {}
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    selectable = !hideBody,
                 )
             }
         }
