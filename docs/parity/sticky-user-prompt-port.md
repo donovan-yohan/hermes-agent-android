@@ -2,7 +2,9 @@
 
 Desktop authority is `3ca096de5f8183cb2e0ec23673f294d5978656a3`: `apps/desktop/src/components/assistant-ui/thread/list.tsx:194-232,350-372` groups each human turn, `user-message.tsx:28-52,321-367` makes its bubble sticky, `styles.css:1538-1569` supplies the opaque four-line fade, and `timeline.tsx:113-125` jumps by message id.
 
-Android derives the closest preceding authoritative `UserTurn` for the first visible assistant/tool row; its viewport/follow state is local. The pin uses opaque semantic user-bubble tokens, 14dp radius, four-line measured fade, a 48dp `Return to prompt` action, and re-resolves the source id at tap time while disarming tail follow. Its accessibility label includes the prompt text, and its bubble shares the transcript `LazyListState`, so a drag or fling begun on the overlay keeps scrolling instead of creating a dead strip. `@image:` references are split out and attachment-only prompts have no excerpt.
+Android derives the closest preceding authoritative `UserTurn` for the first visible assistant, tool, reasoning or timeline row; its viewport/follow state is local. As the source reaches the viewport top, Android preserves the inline slot and moves visible/accessibility ownership to an overlay whose height follows the source scroll distance in both directions. The full and four-line forms are measured at the same actual width, so short prompts and explicit wide lines keep the same right edge without rewrapping; prompts already within four lines use the turn-gap distance for a continuous inset transition. The `Show earlier messages` row stays in LazyColumn coordinates only and is removed before prompt-owner and source-position lookup. `PromptCollapseTest` covers width, intermediate/reverse geometry, one-pixel successor handoff, pagination-row indexing and single ownership. `PromptBubbleDecorationRenderTest` uses Robolectric native graphics for one-line/four-line continuity and compact border/corner pixels.
+
+The settled pin keeps the opaque semantic user-bubble tokens, 14dp radius, four-line measured fade, a 48dp `Return to prompt` action, and re-resolves the source id at tap time while disarming tail follow. Its accessibility label includes the prompt text, and its bubble shares the transcript `LazyListState`, so a drag or fling begun on the overlay keeps scrolling instead of creating a dead strip. `@image:` references are split out and attachment-only prompts have no excerpt.
 
 The debug-manifest-only `StickyPromptParityActivity` is a sanitized two-turn visual fixture with dark/light extra support and no orientation lock. Focused Compose coverage verifies visible-source suppression, turn-relative source identity, id return/no re-follow, delayed history, image reference stripping, readable unique semantics, shared scroll action, and touch size. Ignored visual evidence belongs in `build/visual-parity/sticky-user-prompt/`.
 
@@ -38,10 +40,10 @@ under a glass window forces `--ui-chat-surface-background` back to the solid
 through text, not as glass.
 
 This port has no sliver to cover. The pin is a sibling overlay aligned to the
-top of the very box the transcript fills (`ChatScreen.kt:636`), so it begins
+top of the very box the transcript fills (`ChatScreen.kt:700-702,773-788`), so it begins
 where the viewport begins, and its own opaque `chatSurface` box *is* the cover —
-full-bleed width, with `spacing.turnGap` of it above the bubble and the same
-below (`ChatScreen.kt:701-711`). The Android counterpart of `--sticky-human-top`
+full-bleed width, with a scroll-derived `spacing.turnGap` inset above and below
+the settled bubble (`ChatScreen.kt:874-875,925-929,985-990`). The Android counterpart of `--sticky-human-top`
 is 0 dp, which is why neither the `::before` nor the extra pixel has anything
 to do here. There is no glass field to fall through either: `chatSurface` is the
 chrome seed on every theme and mode (`HermesTokens.kt:252`), which is the value
@@ -51,15 +53,16 @@ That leaves the Android equivalent of a whole CSS element as an invariant about
 a colour — the kind of claim no text assertion can see and a silent refactor can
 drop. `StickyPromptMaskInkTest` reads it back in pixels instead: the turn behind
 the pin is one tall fenced block, because a fence paints `widgetSurface` edge to
-edge (`Transcript.kt:2061-2072`) where prose would leave exactly the
+edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 `chatSurface` a missing mask would show, and prove nothing. Both bands read
-`chatSurface`; the row below the pin reads `widgetSurface`.
+`chatSurface`; the row below the pin reads `widgetSurface` (`Transcript.kt:2295-2301`).
 
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | `timeline.tsx:113-125` jumps by message id held from render | mobile-adaptation | The source id is re-resolved at tap time, and tail follow is disarmed | A phone transcript is re-composed under the finger far more often than a desktop one; resolving late is what keeps the jump landing on the prompt the reader can see |
+| Desktop's sticky source keeps its settled message height | mobile-adaptation | Android collapses the same-width source into the four-line pin from `LazyListState` scroll distance, with reversible intermediate geometry (`ChatScreen.kt:662-698,874-990`) | A long prompt otherwise replaces a full-height inline bubble with compact chrome at one item boundary on a phone; `PromptCollapseTest` and `PromptBubbleDecorationRenderTest` cover actual width, the pagination row, forward/reverse one-pixel movement, corners and border |
 | Sticky bubble is chrome the pointer scrolls past | mobile-adaptation | The bubble shares the transcript `LazyListState` | A drag or fling begun on the overlay keeps scrolling instead of creating a dead strip under the thumb |
 | Return-to-prompt is a pointer-sized affordance | mobile-adaptation | A 48 dp `Return to prompt` action whose accessibility label includes the prompt text | Touch floor, and the spoken label has to name which prompt it returns to |
 | The prompt excerpt renders `@image:` references as prose | mobile-adaptation | References are split out; an attachment-only prompt has no excerpt | One phone-width line of excerpt cannot spend itself on a wire-format path |
