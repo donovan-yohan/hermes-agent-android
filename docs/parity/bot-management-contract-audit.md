@@ -161,6 +161,16 @@ Evidence files in the active profile scratch directory:
 The compiler emits existing coroutine opt-in warnings. Robolectric executes SDK 34;
 its SDK-36/Java-21 notice does not mean these SDK-34 tests were skipped.
 
+## Target refresh follow-up
+
+The [587e673e source audit](../spikes/upstream-bot-refresh-587e673e-2026-10-01.md)
+compares the previous target with `587e673e2a2fae0616d8b750bb189217080f621a`.
+It records route-owned Screen profile/RFB targeting, ticket-only credentials,
+reviewable scoped browser-comment drafts, group code wrapping, restricted Hub
+capabilities and stacked slash-skill dispatch. These missing Android capabilities
+are omissions, not new backend blockers. This addendum does not move the historical
+contract citations, test results or rendered evidence above.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
@@ -168,6 +178,7 @@ its SDK-36/Java-21 notice does not mean these SDK-34 tests were skipped.
 | Profile dialogs and context menus | mobile-adaptation | Scrollable bottom-sheet forms and accessible row actions with the same named operations | Phone keyboard/viewport and touch targets require a single reachable form; exact Gateway contracts above |
 | Local metadata fallback on old Gateways | drift | Writes require server CAS and readback; no unscoped local preference fallback | #189; failing closed prevents silently replacing another client's whole metadata namespace |
 | Rich identity/group/screen/routine controls | omission | Explicit WIP controls and finite remaining list above, not full-feature claims | coming soon — #189/#191/#192/#194; exact available and unavailable SDK contracts above |
+| Screen, browser-comment group drafts/code wrapping, Skills Hub, stacked slash-skill dispatch at 587e673e | omission | Native transport, rich drafts/picker and command-dispatch pipeline are not implemented; completion/display helpers alone are not execution parity | coming soon — #189/#190/#192; [exact target audit](../spikes/upstream-bot-refresh-587e673e-2026-10-01.md), not a backend blocker |
 | Once sends a recurring duration | mobile-adaptation | Sends explicit one-shot `in <duration>` | A one-time control must not authorize recurring work; actual Gateway contract and failing-then-passing model regression |
 | New menu lacks an empty-section management submenu | mobile-adaptation | New → Sections keeps empty folders editable without a drag target | A touch list drops empty drag slots but must retain rename/delete/order access |
 

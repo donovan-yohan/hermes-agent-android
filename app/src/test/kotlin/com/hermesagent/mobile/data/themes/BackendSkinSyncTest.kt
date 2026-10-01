@@ -39,7 +39,28 @@ class BackendSkinSyncTest {
         assertEquals(listOf("saved-skin"), boot.state.value.themes.map { it.name })
     }
 
-    @Test fun `builtins and default apply without replacing palettes or caching definitions`() = runTest {
+    @Test fun `classic default is cached restored and applied under its own name`() = runTest {
+        val cache = BackendSkinCache(temporary.newFolder())
+        val scope = ComposerControlsScope("connection-a", "default")
+        val repository = GatewayThemeRepository(http = { null })
+        val sync = BackendSkinSync(cache, repository, { scope }, { 0L })
+        val classic = Json.parseToJsonElement(
+            """{"name":"default","description":"Classic Hermes — gold and kawaii","colors":{"background":"#123","ui_text":"#fff"}}""",
+        ) as JsonObject
+        assertNull(sync.ingest(classic, apply = false, expectedGeneration = 0L, expectedScope = scope))
+        assertEquals("Classic Hermes", repository.state.value.themes.single().label)
+        assertNull(repository.state.value.activeOnGateway)
+        assertEquals(listOf(classic), cache.read(scope.connectionIdentity, scope.profileIdentity))
+        val boot = GatewayThemeRepository(http = { null })
+        BackendSkinSync(cache, boot, { scope }, { 0L }).restore()
+        assertEquals("default", boot.state.value.themes.single().name)
+        assertNull(boot.state.value.activeOnGateway)
+        assertEquals("default", sync.ingest(classic, apply = true, expectedGeneration = 0L, expectedScope = scope))
+        repository.acknowledgeBackendSkinApply("default", 0L)
+        assertNull(sync.ingest(classic, apply = true, expectedGeneration = 0L, expectedScope = scope))
+    }
+
+    @Test fun `builtins apply without replacing palettes but default needs a definition`() = runTest {
         val cache = BackendSkinCache(temporary.newFolder())
         val scope = ComposerControlsScope("connection-a", "default")
         val repository = GatewayThemeRepository(http = { null })
@@ -51,8 +72,6 @@ class BackendSkinSyncTest {
         repository.acknowledgeBackendSkinApply("mono", 0L)
         assertNull(sync.ingest(builtin, apply = false, expectedGeneration = 0L, expectedScope = scope))
         assertNull(sync.ingest(builtin, apply = true, expectedGeneration = 0L, expectedScope = scope))
-        assertEquals("nous", sync.ingest(default, apply = true, expectedGeneration = 0L, expectedScope = scope))
-        repository.acknowledgeBackendSkinApply("nous", 0L)
         assertNull(sync.ingest(default, apply = true, expectedGeneration = 0L, expectedScope = scope))
         assertTrue(repository.state.value.themes.isEmpty())
         assertTrue(cache.read(scope.connectionIdentity, scope.profileIdentity).isEmpty())

@@ -56,7 +56,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Non-obvious rules
 
 **Upstream is read-only.** The current Desktop implementation target is
-`e27448b231498e79ade668d68c0b6c6206951206` (upstream main verified 2026-10-01).
+`587e673e2a2fae0616d8b750bb189217080f621a` (upstream main verified 2026-10-01).
 Use a disposable checkout at that SHA for new ports. `~/.hermes/hermes-agent`
 remains a read-only reference: never write, fetch or check out inside it.
 Cite `path:line` **with** the inspected SHA or the citation means nothing.
