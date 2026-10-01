@@ -1,0 +1,25 @@
+{
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "upstream_regular_files_compared": 17003,
+  "changed_upstream_files": [],
+  "missing_upstream_files": [],
+  "fixture_sha256": "fa4d9ace16ade3988ca4b610047997f1ee932bd55ddc27a06ef5cba17924eac2",
+  "patch_sha256": "0f03bce170c56977ad210c26884e4bca836a587041593c0e9de9ceeb048791f3",
+  "patch_reconstruction_verified": true,
+  "run": {
+    "tests_passed": 4,
+    "tests_failed": 0,
+    "exit_code": 0,
+    "attempt": 3
+  },
+  "boundary": "Real Electron setupMockBackend / real renderer; synthetic toolset list and toggle state at existing main IPC test seam, synthetic profile describe at WebSocket seam. Not production backend persistence proof.",
+  "android_readonly_sources": {
+    "app/src/debug/kotlin/com/hermesagent/mobile/BotToolsetsParityActivity.kt": "bab6d5c2593ecd3c4897067c94a270b5ab309aaccf63dce699f32515cf2e1611",
+    "docs/parity/visual-capture-surfaces.json": "426528733fbdff55b653779a1064cd81adc5ec94c15eb99f9e2944b31494037a"
+  },
+  "receipt_validation_exit": 1,
+  "build_note": "Existing source-v2 dist reused from supplied prior disposable build; no build run in this task. All upstream source bytes verified against commit.",
+  "original_provenance_sha256": "32cf5628e391e2633f868a5114b6ec1c3788352a947bbc19aa90d1b5a21d1f79",
+  "built_artifacts_manifest_sha256": "ae5c977156a3fb68818ecc7f03e1607ebad011cb211a61d50ed02f3e9c60f646",
+  "publication_note": "Projection: original build-file map and raw trace locations omitted; original scratch provenance unchanged."
+}

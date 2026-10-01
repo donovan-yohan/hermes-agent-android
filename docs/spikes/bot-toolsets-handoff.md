@@ -1,5 +1,10 @@
 # Existing Bot Toolsets — integrated handoff
 
+> Historical pre-capture handoff. The [published capture packet](../media/bot-toolsets-v1/REPORT.md)
+> supersedes the outstanding Android capture status below: 24 Android canonical
+> receipts/PNGs and 14 current Desktop observational references. Original build
+> identities and test history below remain unchanged; fresh review is pending.
+
 ## Integration and failure root cause
 
 Toolsets implementation is preserved in `27a807c`; main avatar editor commit

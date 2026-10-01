@@ -4,6 +4,20 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Toolsets selection supplement
+
+[Side-by-side report](bot-toolsets-v1/report.html), [limits](bot-toolsets-v1/REPORT.md),
+[per-file manifest](bot-toolsets-v1/provenance.json) and [platform map](bot-toolsets-v1/platform-map.json):
+24 API 37 Android originals (12 catalog states × light/dark) and 14 actual Electron
+Desktop originals (seven native states × light/dark). Clean Android capture source
+`0d08856c6dcd720b62fa2aa97e6bf3ac82503902`, installed APK
+`52b931f852cf6f88f6e9d38ebea1983d634fa48c433e8e5a3aecbd6141111f96`.
+Desktop pin `587e673e2a2fae0616d8b750bb189217080f621a`; its original observations
+are not canonical parity receipts. No fake reset/restored counterpart. Android
+fixture-staged actions, native checkable View rows and explicit Save are distinct
+from current Desktop's live switches. Synthetic-only; no phone or live-Gateway claim.
+All paths and image hashes are enumerated in the manifest. Fresh review pending.
+
 ## Avatar fallback follow-up
 
 [Report](bot-avatar-fallback-v2/REPORT.md) and [per-image verification](bot-avatar-fallback-v2/verification.json):
