@@ -1,9 +1,10 @@
 # Media
 
 Screenshots and short screen recordings used by [`README.md`](../../README.md)
-and the guides in [`docs/guides/`](../guides). Everything here is captured from
-a running debug build and is checked into the repository, so it is public the
-moment it is committed.
+and the guides in [`docs/guides/`](../guides). Android images are captured from
+running debug builds; the routine-inspector supplement also contains genuine
+Electron Desktop captures. Everything here is checked into the repository, so it
+is public the moment it is committed.
 
 ## Capture rule
 
