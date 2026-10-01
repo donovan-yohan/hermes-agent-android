@@ -13,7 +13,7 @@ import com.hermesagent.mobile.data.session.SessionSummary
  * parameter below.
  *
  * @param activeProfile the concrete profile new chats belong to. [DEFAULT_PROFILE]
- *   means "whatever this Gateway launched with" and is what an install that has
+ *   means the host's literal default profile and is what an install that has
  *   never touched the rail carries.
  * @param showAllProfiles Desktop's opt-in unified browse view
  *   (`store/profile.ts:437`). It deliberately leaves [activeProfile] alone, so
@@ -31,7 +31,7 @@ data class ProfileScope(
 
     val isAll: Boolean get() = showAllProfiles
 
-    /** True while the scope is the Gateway's own profile and not the unified view. */
+    /** True while the scope is the literal default profile and not the unified view. */
     val isDefault: Boolean get() = !showAllProfiles && normalizeProfileKey(activeProfile) == DEFAULT_PROFILE
 
     /**
@@ -39,12 +39,11 @@ data class ProfileScope(
      * concrete profile — `session.create` (`tui_gateway/methods_session.py:42`)
      * and the scoped `session.list` (`:163`).
      *
-     * Null means "omit it": a blank profile resolves to the launch profile
-     * server-side (`tui_gateway/server.py:1599-1613`), so a single-profile
-     * install sends exactly the request it sends today.
+     * Blank retains the legacy omitted/launch scope. Explicit `default` must
+     * stay explicit on a named launch (tui_gateway/server.py:522-534 @
+     * 333898b353c27e57dbd9446f631f7fb0a5aa5918).
      */
-    val sessionProfileParam: String? get() = normalizeProfileKey(activeProfile)
-        .takeIf { it != DEFAULT_PROFILE }
+    val sessionProfileParam: String? get() = activeProfile.trim().takeIf(String::isNotEmpty)
 }
 
 /**
@@ -53,21 +52,19 @@ data class ProfileScope(
  * A single-profile scope is one request. The unified view has no server-side
  * union on this transport — Desktop's is the dashboard REST route
  * `/api/profiles/sessions?profile=all` (`apps/desktop/src/hermes.ts:533-559`),
- * which the RPC lane has no twin for — so it fans out: the launch profile,
+ * which the RPC lane has no twin for — so it fans out: the default profile,
  * then each named profile, each carrying its own `profile` parameter. Rows
  * accumulate in the backend-authoritative cache; nothing is dropped between
  * calls.
  *
- * **The launch profile is always first, and that order is load-bearing.** A
- * profile the Gateway cannot resolve falls back to the launch handle
- * (`tui_gateway/server.py:1556-1571,1599-1613`) rather than failing, so the
- * refresh needs to know which rows the launch profile already claimed before
- * it stamps anything with a named owner.
+ * Enumerate literal default once, independently of the Gateway's launch name.
+ * Legacy callers may still explicitly request an omitted launch leg; the
+ * repository preserves their fallback handling for old, unstamped RPC rows.
  */
 fun sessionListProfiles(scope: ProfileScope, roster: List<HermesProfile>): List<String?> = when {
     !scope.showAllProfiles -> listOf(scope.sessionProfileParam)
     else -> buildList {
-        add(null)
+        add(DEFAULT_PROFILE)
         roster.asSequence()
             .filterNot(HermesProfile::isDefault)
             .map { normalizeProfileKey(it.name) }

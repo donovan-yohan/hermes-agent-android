@@ -88,7 +88,7 @@ class ChatAccessibilityLayoutTest {
         )
 
         val sessions = compose.onNodeWithText("SESSIONS").fetchSemanticsNode()
-        val newSession = compose.onNodeWithContentDescription("New session").fetchSemanticsNode()
+        val newSession = compose.onNodeWithTag("sidebar-action-new-session").fetchSemanticsNode()
 
         // The controls are in the rail, left of the 300dp content
         // boundary. Their presence also proves this isn't the compact drawer.

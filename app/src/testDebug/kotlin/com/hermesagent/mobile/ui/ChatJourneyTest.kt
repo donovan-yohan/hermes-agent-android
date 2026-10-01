@@ -303,7 +303,10 @@ class ChatJourneyTest {
         assertEquals("send through Gateway", (cache.transcript("live-a").last() as UserTurn).text)
 
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.onNodeWithContentDescription("New session").performClick()
+        // The sidebar nav row, not the drawer's own header `+` or the chat
+        // header's: all three hand off to the same create action, and this
+        // journey is about the drawer path closing behind the press.
+        compose.onNodeWithTag("sidebar-action-new-session").performClick()
         compose.waitForIdle()
         // A session the Gateway has just created is empty, and an empty homed
         // session now draws the intro splash rather than the plain
@@ -370,7 +373,9 @@ class ChatJourneyTest {
 
         compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("New session").assertIsNotEnabled()
+        // Named by tag: three controls now carry this action, and the claim is
+        // about the sidebar nav row the sentence points at.
+        compose.onNodeWithTag("sidebar-action-new-session").assertIsNotEnabled()
         compose.onNodeWithText("Connect to a Gateway to start a session.").assertIsDisplayed()
     }
 

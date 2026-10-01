@@ -856,7 +856,11 @@ internal fun isValidServedToken(value: ByteArray): Boolean =
         byte.toInt() and 0xff in 0x21..0x7e
     }
 
-private val READY_LINE = Regex("(?m)^(?:HERMES_BACKEND_READY|HERMES_DASHBOARD_READY) port=([0-9]{1,5})$")
+// Merged stderr can end without a newline before the stdout sentinel. Match
+// its token boundary, not the line start; authenticated ownership still proves
+// the endpoint. Upstream 333898b353c27e57dbd9446f631f7fb0a5aa5918,
+// apps/desktop/electron/backend-ready.ts:8-12.
+private val READY_LINE = Regex("(?m)(?<!\\w)(?:HERMES_BACKEND_READY|HERMES_DASHBOARD_READY) port=([0-9]{1,5})$")
 private val PROFILE = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 private val EXECUTABLE = Regex("/[A-Za-z0-9_+.,/@%:=~-]+(?:/[A-Za-z0-9_+.,@%:=~-]+)*")
 private const val HEX = "0123456789abcdef"

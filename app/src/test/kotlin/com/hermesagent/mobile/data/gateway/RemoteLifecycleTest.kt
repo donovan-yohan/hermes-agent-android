@@ -218,11 +218,16 @@ class RemoteLifecycleTest {
     }
 
     @Test
-    fun `readiness accepts only an exact bounded marker and port`() {
+    fun `readiness accepts merged output with bounded marker and port`() {
         assertEquals(1234, parseReadyPort("HERMES_BACKEND_READY port=1234"))
         assertEquals(65535, parseReadyPort("noise\nHERMES_DASHBOARD_READY port=65535\n"))
-        assertEquals(null, parseReadyPort("prefix HERMES_BACKEND_READY port=22"))
+        assertEquals(65238, parseReadyPort("INFO  Started server process [4711]HERMES_BACKEND_READY port=65238"))
+        assertEquals(22, parseReadyPort("prefix HERMES_BACKEND_READY port=22"))
+        assertEquals(null, parseReadyPort("NOT_HERMES_BACKEND_READY port=22"))
+        assertEquals(null, parseReadyPort("HERMES_BACKEND_READY port=0"))
         assertEquals(null, parseReadyPort("HERMES_BACKEND_READY port=65536"))
+        assertEquals(null, parseReadyPort("HERMES_BACKEND_READY port=123456"))
+        assertEquals(null, parseReadyPort("HERMES_BACKEND_READY port=22x"))
         assertEquals(null, parseReadyPort("HERMES_BACKEND_READY port=22 trailing"))
     }
 

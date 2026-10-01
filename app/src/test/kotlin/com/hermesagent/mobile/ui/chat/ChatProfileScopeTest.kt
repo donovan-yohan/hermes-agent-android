@@ -130,8 +130,8 @@ class ChatProfileScopeTest {
             listOf("home-row", "work-row", "lab-row"),
             viewModel.uiState.value.visibleSessionIds(),
         )
-        // The fan-out covers the launch profile plus every named one.
-        assertEquals(listOf(null, "work", "lab"), repository.routing.listProfiles)
+        // The fan-out covers literal default plus every named profile.
+        assertEquals(listOf("default", "work", "lab"), repository.routing.listProfiles)
         // Leaving it returns to the profile that was active, not to default.
         assertEquals("work", viewModel.uiState.value.profileRail.scope.activeProfile)
         assertTrue(viewModel.uiState.value.profileRail.scope.isAll)
@@ -196,17 +196,17 @@ class ChatProfileScopeTest {
     }
 
     @Test
-    fun `an unmoved scope does not ask for a second session list at launch`() = runTest(dispatcher) {
+    fun `the explicit default scope refreshes separately from launch bootstrap`() = runTest(dispatcher) {
         collectState()
         runCurrent()
 
-        // The connection's own bootstrap refresh already covered these rows.
-        assertEquals(emptyList<List<String?>>(), repository.listed.map { it.listProfiles })
+        // Omitted bootstrap may have read a named launch, not literal default.
+        assertEquals(listOf(listOf("default")), repository.listed.map { it.listProfiles })
 
         viewModel.selectProfile("work")
         runCurrent()
 
-        assertEquals(listOf(listOf("work")), repository.listed.map { it.listProfiles })
+        assertEquals(listOf(listOf("default"), listOf("work")), repository.listed.map { it.listProfiles })
     }
 
     @Test
@@ -227,7 +227,7 @@ class ChatProfileScopeTest {
         runCurrent()
 
         assertEquals(DEFAULT_PROFILE, subject.uiState.value.profileRail.scope.activeProfile)
-        assertNull(repository.routing.activeProfile)
+        assertEquals("default", repository.routing.activeProfile)
         assertEquals("That profile is no longer available.", subject.uiState.value.notice?.text)
     }
 
@@ -386,7 +386,7 @@ class ChatProfileScopeTest {
 
         viewModel.setArchivedVisible(true)
         runCurrent()
-        assertEquals(listOf(ProfileRouting()), repository.archivedReads)
+        assertEquals(listOf(ProfileRouting(activeProfile = "default", listProfiles = listOf("default"))), repository.archivedReads)
 
         viewModel.selectProfile("work")
         runCurrent()

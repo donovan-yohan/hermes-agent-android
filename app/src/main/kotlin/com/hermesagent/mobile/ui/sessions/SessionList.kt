@@ -99,6 +99,17 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesTokens
 import kotlin.math.abs
 
+/**
+ * The sessions header's `+` — the flat list's top-level new-session control.
+ *
+ * Desktop draws it beside the filter menu (`sidebar/index.tsx:1875-1895`, the
+ * button itself at `sidebar/chrome.tsx:54-101`), labelled `New session` in the
+ * flat list and `New project` in the project overview
+ * (`i18n/en.ts:3057,3093`) — one control whose label follows the view, never two
+ * buttons. Read at `95f20517c25ee418da5337f4ead347008baaa2b3`.
+ */
+internal const val SIDEBAR_HEADER_ADD_TAG = "sidebar-header-add"
+
 /** Declarative content supplied by a sidebar contribution for a selectable mode. */
 data class SidebarModeDestination(
     val mode: SidebarMode,
@@ -280,6 +291,22 @@ fun SessionList(
                         contentDescription = "New project",
                         onClick = { projectCreateVisible = true },
                         enabled = canCreate && projectsAvailable == true,
+                        modifier = Modifier.testTag(SIDEBAR_HEADER_ADD_TAG),
+                    )
+                }
+                // The flat list's own `+`. Desktop draws exactly one such
+                // control and swaps its label with the view — `ariaLabel={
+                // agentsGrouped ? s.projects.newButton : s.nav['new-session']}`
+                // (`sidebar/index.tsx:1876` @ `95f20517`) — so the project branch
+                // above is the same button wearing the other word, and the flat
+                // list is the case it was being denied.
+                if (!showingProjectOverview && selectedProject == null) {
+                    HermesIconButton(
+                        icon = HermesIcon.Add,
+                        contentDescription = "New session",
+                        onClick = onCreate,
+                        enabled = canCreate,
+                        modifier = Modifier.testTag(SIDEBAR_HEADER_ADD_TAG),
                     )
                 }
                 if (selectedProject != null) {
@@ -474,7 +501,8 @@ fun SessionList(
                 // (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`
                 // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), which it
                 // renders on exactly this condition: nothing filtered, nothing
-                // loading, no sessions and no projects (`sidebar/index.tsx:1400,1911`).
+                // loading, no sessions and no projects (`apps/desktop/src/app/chat/sidebar/index.tsx:1400-1401,1911`
+                // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
                 rows.isEmpty() -> SidebarBlankState(
                     canCreateProject = canCreate && projectsAvailable == true,
                     onNewProject = { projectCreateVisible = true },
@@ -967,7 +995,8 @@ internal const val AUTO_PROJECT_GLYPH = "Auto-discovered project glyph"
 private fun SessionListRow.key(): String = when (this) {
     // Desktop keys a divider by its own bucket key — `m-<year>-<month>` for a
     // month — which is what keeps two month dividers distinct rows
-    // (`session-date-groups.ts:146` @ the pin). `bucket.name` would collide the
+    // (`apps/desktop/src/lib/session-date-groups.ts:139` and `apps/desktop/src/lib/time.ts:162-164`
+    // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). `bucket.name` would collide the
     // moment the tail stops being one bucket.
     is SessionListRow.Divider -> "divider-${bucket.key}"
     is SessionListRow.PinnedLabel -> "divider-pinned"
