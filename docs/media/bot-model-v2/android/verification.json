@@ -1,0 +1,142 @@
+{
+  "validated_receipts": 14,
+  "apk_sha256": "e15abfce6b8873289aff499b37a14fde90144a60dcf2e869c53dadbba7ed3966",
+  "jvm_suites": {
+    "Debug": {
+      "tests": 3271,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "Release": {
+      "tests": 2594,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    }
+  },
+  "captures": [
+    {
+      "theme": "dark",
+      "state": "bot-model-confirmation",
+      "receipt": "captures/dark/bot-model-confirmation/contract.json",
+      "screenshot_sha256": "8949295ed79c9eb5466ecc8c0aaaf2d7032b6b824a80c0d5cabd294f572900b2",
+      "model_writes": 1,
+      "named_reads": 2
+    },
+    {
+      "theme": "dark",
+      "state": "bot-model-inventory-error",
+      "receipt": "captures/dark/bot-model-inventory-error/contract.json",
+      "screenshot_sha256": "444f31a58dcf7720d5343ae71ec7c98c3984e1e5763f3c599117150d475f66ac",
+      "model_writes": 0,
+      "named_reads": 2
+    },
+    {
+      "theme": "dark",
+      "state": "bot-model-inventory-loading",
+      "receipt": "captures/dark/bot-model-inventory-loading/contract.json",
+      "screenshot_sha256": "0138327f10311d87b9aae1e1167b3ded5ee05ab85082d834c98417823eecb873",
+      "model_writes": 0,
+      "named_reads": 2,
+      "loading_elapsed_ms": {
+        "before": 9061.04263,
+        "after": 10126.437713
+      },
+      "loading_postcheck_seconds": 14.18455775
+    },
+    {
+      "theme": "dark",
+      "state": "bot-model-loaded",
+      "receipt": "captures/dark/bot-model-loaded/contract.json",
+      "screenshot_sha256": "2e43bb543bcc6389dd8c57e4e7ad7db7f3f25c154eabafbcabd5b32ce5baba27",
+      "model_writes": 0,
+      "named_reads": 2
+    },
+    {
+      "theme": "dark",
+      "state": "bot-model-manual",
+      "receipt": "captures/dark/bot-model-manual/contract.json",
+      "screenshot_sha256": "be29f9078cd442e167051a35897fb8f5998471712a49c13e38fcc3441bf7b6b6",
+      "model_writes": 0,
+      "named_reads": 2
+    },
+    {
+      "theme": "dark",
+      "state": "bot-model-save-refused",
+      "receipt": "captures/dark/bot-model-save-refused/contract.json",
+      "screenshot_sha256": "50f69bd4bda4c33f97c006c90c90d7df2bcd4ddbe5860b0c8eca3c2379a803c0",
+      "model_writes": 1,
+      "named_reads": 2
+    },
+    {
+      "theme": "dark",
+      "state": "bot-model-saved",
+      "receipt": "captures/dark/bot-model-saved/contract.json",
+      "screenshot_sha256": "ce14c6c59a407841239c55062dc6a1e86eb9d608891fafae657d3c591f929842",
+      "model_writes": 2,
+      "named_reads": 3
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-confirmation",
+      "receipt": "captures/light/bot-model-confirmation/contract.json",
+      "screenshot_sha256": "f88dd700d9ae2c110c69724ded05869caf32bac24746ab6d1d579b58325be619",
+      "model_writes": 1,
+      "named_reads": 2
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-inventory-error",
+      "receipt": "captures/light/bot-model-inventory-error/contract.json",
+      "screenshot_sha256": "51f1c12d821a47d90a70a49ba00710324947ccac2eaac1d5b4bd279adc6ef41d",
+      "model_writes": 0,
+      "named_reads": 2
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-inventory-loading",
+      "receipt": "captures/light/bot-model-inventory-loading/contract.json",
+      "screenshot_sha256": "f7626c1174e501fab044f595aaee03307ddf2bf80c04f7a4b3c9eabf18cd174d",
+      "model_writes": 0,
+      "named_reads": 2,
+      "loading_elapsed_ms": {
+        "before": 8921.275588,
+        "after": 9965.913505
+      },
+      "loading_postcheck_seconds": 13.999371292
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-loaded",
+      "receipt": "captures/light/bot-model-loaded/contract.json",
+      "screenshot_sha256": "0649e942b4a4c44aedbfb10b38c7563860d78c4ab85a6b19b9ffaffbea13da1b",
+      "model_writes": 0,
+      "named_reads": 2
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-manual",
+      "receipt": "captures/light/bot-model-manual/contract.json",
+      "screenshot_sha256": "ba9c13321a7b9058ca4289ea84023b5aef7b5392a6ddf5f6b1a39cf53b11c8a6",
+      "model_writes": 0,
+      "named_reads": 2
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-save-refused",
+      "receipt": "captures/light/bot-model-save-refused/contract.json",
+      "screenshot_sha256": "d32e23df5657cb08a8de5f5558ac6d0cb0be06e5a7f33a3dafef1dd94d3b5707",
+      "model_writes": 1,
+      "named_reads": 2
+    },
+    {
+      "theme": "light",
+      "state": "bot-model-saved",
+      "receipt": "captures/light/bot-model-saved/contract.json",
+      "screenshot_sha256": "f7056e3907787e0207f02e3558228d508eb57eaa0a9ed6abe36e1a6f1f96724a",
+      "model_writes": 2,
+      "named_reads": 3
+    }
+  ]
+}

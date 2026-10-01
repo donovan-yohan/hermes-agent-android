@@ -1,0 +1,98 @@
+[
+  {
+    "sequence": 1,
+    "action": "roster:edit",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Edit…",
+        "content_description": "",
+        "role": "menuitem"
+      }
+    ],
+    "wire_sequence": 1
+  },
+  {
+    "sequence": 2,
+    "action": "editor:advanced",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Advanced — model, skills, toolsets, SOUL.md",
+        "content_description": "",
+        "role": "button"
+      }
+    ],
+    "wire_sequence": 3
+  },
+  {
+    "sequence": 3,
+    "action": "model:change",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "synthetic-planner-v1",
+        "content_description": "",
+        "role": "combobox"
+      },
+      {
+        "text": "synthetic-planner-v1",
+        "content_description": "",
+        "role": "span"
+      }
+    ],
+    "wire_sequence": 7
+  },
+  {
+    "sequence": 4,
+    "action": "editor:save",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Save",
+        "content_description": "",
+        "role": "button"
+      }
+    ],
+    "wire_sequence": 8
+  },
+  {
+    "sequence": 5,
+    "action": "shared-dialog:confirm",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Switch anyway",
+        "content_description": "",
+        "role": "button"
+      }
+    ],
+    "wire_sequence": 10
+  },
+  {
+    "sequence": 6,
+    "action": "roster:edit",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Edit…",
+        "content_description": "",
+        "role": "menuitem"
+      }
+    ],
+    "wire_sequence": 12
+  },
+  {
+    "sequence": 7,
+    "action": "editor:advanced",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Advanced — model, skills, toolsets, SOUL.md",
+        "content_description": "",
+        "role": "button"
+      }
+    ],
+    "wire_sequence": 14
+  }
+]

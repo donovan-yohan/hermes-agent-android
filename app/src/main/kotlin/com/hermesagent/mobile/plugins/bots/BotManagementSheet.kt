@@ -33,7 +33,10 @@ class BotManagementActions(
 /** Phone adaptation of the profile/section dialogs; no secret or raw Gateway error fields. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BotManagementSheet(state: BotManagementState, actions: BotManagementActions) {
+fun BotManagementSheet(
+    state: BotManagementState, actions: BotManagementActions,
+    modelState: BotModelState = BotModelState(), modelActions: BotModelActions = BotModelActions(),
+) {
     val dialog = state.dialog ?: return
     val tokens = HermesTheme.tokens
     val editing = !state.busy && !state.consumed
@@ -80,7 +83,10 @@ fun BotManagementSheet(state: BotManagementState, actions: BotManagementActions)
                         style = HermesTheme.type.caption, color = tokens.textSecondary)
                     // These are explicit remaining gaps, not enabled no-op controls.
                     ComingSoonAction("Avatar")
-                    ComingSoonAction("Model, skills and toolsets")
+                    if (dialog == BotManagementDialog.Edit && modelState.ticket?.target == state.target)
+                        BotModelEditor(modelState, modelActions)
+                    else ComingSoonAction("Model")
+                    ComingSoonAction("Skills and toolsets")
                 }
                 BotManagementDialog.Delete -> {
                     Text("Permanently delete ${state.target?.name.orEmpty()} and its profile data? This cannot be undone.",
@@ -125,7 +131,7 @@ fun BotManagementSheet(state: BotManagementState, actions: BotManagementActions)
 }
 
 @Composable
-private fun BotIdentityField(
+internal fun BotIdentityField(
     label: String, value: String, enabled: Boolean, singleLine: Boolean = true, onChange: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

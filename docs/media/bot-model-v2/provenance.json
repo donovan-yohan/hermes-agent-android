@@ -1,0 +1,191 @@
+{
+  "android_base_commit": "fba060888b21a3ce0c456809f1f464fd0e5938ba",
+  "android_capture_source_status": "dirty working-tree build; not a publication-commit APK",
+  "apk_sha256": "e15abfce6b8873289aff499b37a14fde90144a60dcf2e869c53dadbba7ed3966",
+  "original_runtime_patch_sha256": "db11305d1a6359ead11b89368983dd28b2e78b2670435631648960ae46d827f6",
+  "publication_source_snapshot_sha256": "ae5357d289addc34534f265807a180d22d98ff1cbb06eb89bcfeb77da3b70df5",
+  "snapshot_note": "Publication-time complete dirty diff plus new source/tests before documentation publication; original runtime patch is separately retained unchanged. Fixture source bytes verified against every capture. Do not call this later snapshot the original capture-time full diff.",
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "images": [
+    {
+      "path": "android/dark/bot-model-confirmation/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "8949295ed79c9eb5466ecc8c0aaaf2d7032b6b824a80c0d5cabd294f572900b2"
+    },
+    {
+      "path": "android/dark/bot-model-inventory-error/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "444f31a58dcf7720d5343ae71ec7c98c3984e1e5763f3c599117150d475f66ac"
+    },
+    {
+      "path": "android/dark/bot-model-inventory-loading/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "0138327f10311d87b9aae1e1167b3ded5ee05ab85082d834c98417823eecb873"
+    },
+    {
+      "path": "android/dark/bot-model-loaded/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "2e43bb543bcc6389dd8c57e4e7ad7db7f3f25c154eabafbcabd5b32ce5baba27"
+    },
+    {
+      "path": "android/dark/bot-model-manual/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "be29f9078cd442e167051a35897fb8f5998471712a49c13e38fcc3441bf7b6b6"
+    },
+    {
+      "path": "android/dark/bot-model-save-refused/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "50f69bd4bda4c33f97c006c90c90d7df2bcd4ddbe5860b0c8eca3c2379a803c0"
+    },
+    {
+      "path": "android/dark/bot-model-saved/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "ce14c6c59a407841239c55062dc6a1e86eb9d608891fafae657d3c591f929842"
+    },
+    {
+      "path": "android/light/bot-model-confirmation/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "f88dd700d9ae2c110c69724ded05869caf32bac24746ab6d1d579b58325be619"
+    },
+    {
+      "path": "android/light/bot-model-inventory-error/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "51f1c12d821a47d90a70a49ba00710324947ccac2eaac1d5b4bd279adc6ef41d"
+    },
+    {
+      "path": "android/light/bot-model-inventory-loading/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "f7626c1174e501fab044f595aaee03307ddf2bf80c04f7a4b3c9eabf18cd174d"
+    },
+    {
+      "path": "android/light/bot-model-loaded/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "0649e942b4a4c44aedbfb10b38c7563860d78c4ab85a6b19b9ffaffbea13da1b"
+    },
+    {
+      "path": "android/light/bot-model-manual/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "ba9c13321a7b9058ca4289ea84023b5aef7b5392a6ddf5f6b1a39cf53b11c8a6"
+    },
+    {
+      "path": "android/light/bot-model-save-refused/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "d32e23df5657cb08a8de5f5558ac6d0cb0be06e5a7f33a3dafef1dd94d3b5707"
+    },
+    {
+      "path": "android/light/bot-model-saved/reference.png",
+      "width": 1280,
+      "height": 2856,
+      "sha256": "f7056e3907787e0207f02e3558228d508eb57eaa0a9ed6abe36e1a6f1f96724a"
+    },
+    {
+      "path": "desktop/accepted/confirmation-dark.png",
+      "width": 448,
+      "height": 118,
+      "sha256": "ff0fc68e188447650dadbe3293db20d11ac6bfcb77abd8a59ff6459cb1e071b7"
+    },
+    {
+      "path": "desktop/accepted/confirmation-light.png",
+      "width": 448,
+      "height": 118,
+      "sha256": "4eba5db1d5131f01c2874a276cae3eece32a61a96ceeb773c79c8a981da14959"
+    },
+    {
+      "path": "desktop/accepted/inventory-error-dark.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "bf7c1d97483be0e35f1eb3a553329d7e275dfe5d6f3289753e79566919b7ecf7"
+    },
+    {
+      "path": "desktop/accepted/inventory-error-light.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "c5070e6383468de4cafb89c9b99b67577f39dc5c8c7b032074d4868bf3aae126"
+    },
+    {
+      "path": "desktop/accepted/loaded-dark.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "6d1647c8d1d8cf6314d3a166eea06cbd04a97fe6b282e1d3bf97d7cba1ec6819"
+    },
+    {
+      "path": "desktop/accepted/loaded-light.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "005751d61a5b61fcb5c5a9310e7d47f78c42d676a85316c47aefc834206e4b47"
+    },
+    {
+      "path": "desktop/accepted/manual-dark.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "e22d7ea5a1ee9cb61e85fdcaada0daf27896bb3d8791cfefb9255a7a34b406ec"
+    },
+    {
+      "path": "desktop/accepted/manual-light.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "d127cc5e04c93f78a253e0c217bf06b80ea1861d8851be8899a578103b9028d6"
+    },
+    {
+      "path": "desktop/accepted/save-refused-dark.png",
+      "width": 438,
+      "height": 67,
+      "sha256": "419876e264f4c63931554c79d317ed8957747f45ba2a747f074edf4c203c0cd7"
+    },
+    {
+      "path": "desktop/accepted/save-refused-dark.refused-reopened.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "ec2cfe41bbbd0c8c0726b6550f1a1f748e0941a57152cf39e9adb9c529a90bf0"
+    },
+    {
+      "path": "desktop/accepted/save-refused-light.png",
+      "width": 438,
+      "height": 67,
+      "sha256": "3ade37ee49a452d3385768994969f34da7fad1b5723aa6a21ca1e3ffc558bdb4"
+    },
+    {
+      "path": "desktop/accepted/save-refused-light.refused-reopened.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "a16410e129cdabc5b1f9571abc1b92983e1ee4d3dff46803f6e778e9abafa4fa"
+    },
+    {
+      "path": "desktop/accepted/saved-dark.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "bfbedc1a8f95b8c8a4cdcdac9d31d624d572e3479bc9121faf08b3481c2516fd"
+    },
+    {
+      "path": "desktop/accepted/saved-light.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "690ffb4ec1aa1f4e52f477551375321497c1d80e5b88b5cb333cf8b0b5f5f74f"
+    },
+    {
+      "path": "desktop/rejected/inventory-loading-dark.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "191ba2e1a4dda4b15f98b9d971526df6c1ee23d362c280c7b2fca9974a8c1958"
+    },
+    {
+      "path": "desktop/rejected/inventory-loading-light.png",
+      "width": 1160,
+      "height": 720,
+      "sha256": "6b6bd2ed94c05d95e741c95c6b8e3d7dc2b62cea12611fb614381dff53d12802"
+    }
+  ]
+}

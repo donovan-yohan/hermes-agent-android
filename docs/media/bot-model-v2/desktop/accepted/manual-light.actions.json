@@ -1,0 +1,64 @@
+[
+  {
+    "sequence": 1,
+    "action": "roster:edit",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Edit…",
+        "content_description": "",
+        "role": "menuitem"
+      }
+    ],
+    "wire_sequence": 1
+  },
+  {
+    "sequence": 2,
+    "action": "editor:advanced",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Advanced — model, skills, toolsets, SOUL.md",
+        "content_description": "",
+        "role": "button"
+      }
+    ],
+    "wire_sequence": 3
+  },
+  {
+    "sequence": 3,
+    "action": "provider:open-menu",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Synthetic Provider (synthetic-provider)",
+        "content_description": "",
+        "role": "combobox"
+      },
+      {
+        "text": "Synthetic Provider (synthetic-provider)",
+        "content_description": "",
+        "role": "span"
+      }
+    ],
+    "wire_sequence": 7
+  },
+  {
+    "sequence": 4,
+    "action": "provider:enter-manually",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "✏️ Enter manually…",
+        "content_description": "",
+        "role": "option"
+      },
+      {
+        "text": "✏️ Enter manually…",
+        "content_description": "",
+        "role": "span"
+      }
+    ],
+    "wire_sequence": 8
+  }
+]

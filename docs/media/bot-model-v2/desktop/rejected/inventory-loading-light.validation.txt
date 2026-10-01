@@ -1,0 +1,1 @@
+FAIL  visible fields must match the editor phase; hidden fields must not be claimed

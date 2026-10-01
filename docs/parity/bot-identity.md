@@ -8,8 +8,11 @@
 
 The historical evidence below records the Android read-only avatar slice. The
 current management delta at `e27448b231498e79ade668d68c0b6c6206951206` adds bot
-creation, display title/description/SOUL.md editing, configuration duplication and
-confirmed profile deletion. Avatar upload, clear, pets and generation remain absent.
+creation, display title/description/SOUL.md editing and configuration duplication.
+Deletion remains disabled without a lifecycle-aware host capability. The bounded
+existing-Bot model/provider delta at `587e673e2a2fae0616d8b750bb189217080f621a`
+is documented in [Bot model configuration](bot-model-config.md). Avatar upload,
+clear, pets and generation remain absent.
 See [the exact contract audit](bot-management-contract-audit.md); old screenshots
 do not certify these new forms.
 
@@ -46,7 +49,7 @@ path, or private session text.
 | Desktop BotFace renders an uploaded avatar in the Bots surface | mobile-adaptation | Android uses the shared profile glyph and fixed 36dp cover-cropped static image to keep one identity treatment across rail, picker, profile roster and Bots on a phone | [Pinned BotFace rendering packet](visual/desktop-bot-render-evidence/README.md#bots-avatar) proves the static image in the Bots roster, not profile-rail image parity; 36dp touch/space budget and shared component contract |
 | Desktop BotFace uses 22% corner rounding | mobile-adaptation | Current Bot roster image uses `RoundedCornerShape(percent = 22)` at its 36dp size; the profile rail fallback is unchanged | `avatar.tsx:996-1012` @ `e27448b231498e79ade668d68c0b6c6206951206`; `BotsAvatarShapeTest` pins the geometry. Historical captures below predate this fix; new rendered acceptance remains #194 |
 | Desktop identity dialogs | mobile-adaptation | Scrollable phone forms for create/edit/duplicate fit the phone viewport | `BotsManagementRepository` and current-target contract audit; rendered acceptance still #194 |
-| Desktop advanced configuration and avatar authoring controls | omission | Disabled WIP actions for Avatar and Model, skills and toolsets | coming soon — `BotManagementSheet`; these controls are not implemented |
+| Desktop advanced configuration and avatar authoring controls | omission | Existing Bot model/provider configuration is delivered separately; Avatar, Skills and toolsets, creation model and reset remain WIP | coming soon — `BotManagementSheet`; [bounded model scope](bot-model-config.md), not full advanced-editor parity |
 | Desktop profile deletion | omission | Delete is visible, disabled and marked WIP; the repository returns Unsupported | coming soon — the Android host has no lifecycle-aware profile-deletion capability; no deletion confirmation flow is delivered |
 | Desktop has no phone lifecycle binding equivalent | mobile-adaptation | Avatar subscriptions are admitted only while the real Compose lifecycle is resumed, disposed on pause/row removal/plugin disposal, and invalidated once on foreground/explicit refresh | `ProfileAvatars.kt`, coordinator revision/current draw guard, lifecycle test |
 | Aligned Desktop/Android scene comparison remains pending | omission | Android's six dark states are rendered and inspected; the executed Desktop proof is Bots-only, with different scene inputs, and does not establish profile-rail avatar parity | deferred: #194 — [Android capture review](https://github.com/donovan-yohan/hermes-agent-android/pull/323#issuecomment-5734724739) |

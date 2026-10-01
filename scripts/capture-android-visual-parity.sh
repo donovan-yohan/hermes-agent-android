@@ -39,14 +39,21 @@ fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixt
 # sheet taps for it. An interaction this lane cannot perform is a hard failure —
 # running the capture without it would publish pixels of a state that never
 # happened.
+ordered_args=()
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" ]]; then
+  ordered_args=(--ordered-actions "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["state_spec"]["interaction"]))' "$request_json")")
+fi
 interaction_kinds="$(python3 -c '
 import json,sys
-values = json.load(open(sys.argv[1]))["state_spec"].get("interaction", [])
+request = json.load(open(sys.argv[1]))
+values = [] if request["surface"] == "bot-model-config" else request["state_spec"].get("interaction", [])
 unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
 if unsupported:
     sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
     raise SystemExit(1)
 taps = [value[len("tap:"):] for value in values if value.startswith("tap:")]
+if len(taps) > 1:
+    raise SystemExit("legacy capture supports only one tap; use ordered actions")
 print(taps[0] if taps else "")
 print("1" if "swipe:list-up" in values else "")
 ' "$request_json")"
@@ -57,9 +64,16 @@ expected_accessibility="$(python3 -c 'import json,sys; print(json.load(open(sys.
 if [[ "$CAPTURE_SURFACE" == "notification-latest" ]]; then
   adb shell pm grant com.hermesagent.mobile.debug android.permission.POST_NOTIFICATIONS
 fi
-adb shell am start -W -n "$activity" \
-  --es visual_parity_state "$CAPTURE_STATE" \
-  --es visual_parity_theme "$CAPTURE_THEME"
+# Ordered model captures launch inside Python, after installed APK identity is
+# collected. This keeps signing/pull work outside the production loading budget.
+launch_args=()
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" ]]; then
+  launch_args=(--launch-fixture)
+else
+  adb shell am start -W -S -n "$activity" \
+    --es visual_parity_state "$CAPTURE_STATE" \
+    --es visual_parity_theme "$CAPTURE_THEME"
+fi
 
 tap_args=()
 swipe_args=()
@@ -102,7 +116,7 @@ dismiss_system_dialog() {
 # fold until the real drag moves it into view, so waiting here would spend the
 # whole budget on a row that cannot be published yet. The reference capture owns
 # that wait, bounded, on the far side of the swipe.
-if [[ -n "$expected_accessibility" && -z "$swipe_list_up" ]]; then
+if [[ -n "$expected_accessibility" && -z "$swipe_list_up" && ${#ordered_args[@]} -eq 0 ]]; then
   published=""
   for _ in $(seq 1 20); do
     if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1; then
@@ -136,6 +150,8 @@ python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-refere
   --apk-kind debug \
   --activity "${activity#*/}" \
   --out "$out" \
+  "${launch_args[@]}" \
+  "${ordered_args[@]}" \
   "${tap_args[@]}" \
   "${swipe_args[@]}" \
   "${accessibility_args[@]}"

@@ -1,0 +1,610 @@
+diff --git a/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py b/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py
+index a88dc4cc..33910257 100755
+--- a/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py
++++ b/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py
+@@ -409,15 +409,102 @@ def ordered_accessibility_actions(serial: str | None, actions: list[str], *,
+     return evidence
+ 
+ 
+-def bracketed_screenshot(serial, package, activity, expected, launch_started=None):
++def read_model_runtime(serial, package):
++    raw = shell(serial, "content", "call", "--uri", f"content://{package}.model-runtime",
++                "--method", "snapshot")
++    match = re.search(r"snapshot=([A-Za-z0-9+/=]+)", raw)
++    if not match:
++        raise SystemExit("debug synthetic runtime export is unavailable")
++    return json.loads(base64.b64decode(match[1], validate=True))
++
++
++def accessibility_boundary_matches(nodes, label):
++    """Resolve Android's explicit accessible name before a visual text caption.
++
++    Text fields publish a content description and a separate visible caption.
++    Count the named field, not its non-control caption; duplicate named fields
++    still fail uniqueness. Text-only buttons/banners use exact text fallback.
++    """
++    described = [n for n in nodes if n.get("content_description") == label]
++    return len(described) if described else sum(n.get("text") == label for n in nodes)
++
++
++def model_v2_proof(spec, before, after, steps, nodes, screenshot_hash):
++    """Normalize observed transport results; never synthesize requests from a state label."""
++    for sample in (before, after):
++        if any(sample.get(k) != spec[k] for k in ("fixture_id", "state", "theme")):
++            raise SystemExit("runtime export belongs to another fixture/state/theme")
++        if sample["capture_inputs"] != {**spec["capture_inputs"], "theme": spec["theme"]} or sample["synthetic_inputs"] != spec["synthetic_inputs"]:
++            raise SystemExit("runtime normalization differs from registered inputs")
++    runtime = after["runtime"]
++    mapping = spec["platform_spec"]
++    calls, reads, inventories = [], [], []
++    for item in runtime["requests"]:
++        params, response = item["params"], item["response"]
++        if item["method"] == "profiles.configure":
++            if set(params) - {"name", "provider", "model", "confirm_expensive_model"}:
++                raise SystemExit("runtime configure contains non-model mutation")
++            calls.append({"sequence": item["sequence"], "profile": params["name"],
++                          "patch": {k: params[k] for k in ("provider", "model")},
++                          "confirmed": params.get("confirm_expensive_model", False),
++                          "outcome": item["outcome"], "response": response})
++        elif item["method"] == "profiles.describe" and item["outcome"] == "loaded":
++            if params != {"name": response["name"]}:
++                raise SystemExit("describe response does not match named request")
++            reads.append({"sequence": item["sequence"], "profile": params["name"], "model": response["model"]["default"]})
++        elif item["method"] == "model.options":
++            if params != {"profile": spec["synthetic_inputs"]["name"], "include_unconfigured": True, "explicit_only": False}:
++                raise SystemExit("inventory routing differs from production request")
++            inventories.append(item)
++    if len(inventories) != 1:
++        raise SystemExit("expected one actual inventory request")
++    inventory = inventories[0]
++    events = list(runtime["events"])
++    if inventory["pending"]:
++        events.append("model.options:pending")
++    if any(s["action"] == "tap:Enter manually" and s.get("pre_tap") for s in steps):
++        events.append("manual-entry:tapped")
++    # A general identity editor also performs a named describe. Keep all reads,
++    # while projecting only the model transition vocabulary into state events.
++    selected_events = []
++    for event in events:
++        if event in mapping["required_events"] and event not in selected_events:
++            selected_events.append(event)
++    if selected_events != mapping["required_events"]:
++        raise SystemExit("runtime transitions do not establish requested state")
++    labels = {n.get(k, "") for n in nodes for k in ("text", "content_description")}
++    fields = None
++    manual = {"Provider", "Model ID"} <= labels
++    if spec["state"] not in ("bot-model-confirmation", "bot-model-save-refused"):
++        fields = after["draft"]
++        if not all(any(value in label for label in labels) for value in fields.values()):
++            raise SystemExit("runtime model pair is not visible in captured accessibility")
++    proof = {k: mapping[k] for k in ("selector", "locator", "presentation", "interaction_semantics", "action_origin", "ordered_actions")}
++    proof.update(source="runtime-capture-worker", events=selected_events, nodes=nodes,
++                 locator_matches=accessibility_boundary_matches(nodes, mapping["selector"]),
++                 action_evidence=[{"action": s["action"], "origin": mapping["action_origin"], "sequence": i+1, "nodes": s["accessibility"]["nodes"]} for i, s in enumerate(steps)],
++                 model_calls=calls, describe_reads=reads, authoritative_model=runtime["authoritative_model"], fields=fields,
++                 inventory={"method": inventory["method"], "scope": {"kind": "inventory-profile-parameter", "profile": inventory["params"]["profile"]}, "outcome": inventory["outcome"]},
++                 manual_fields_visible=manual)
++    if inventory["pending"]:
++        previous = next(c for c in before["runtime"]["requests"] if c["request_id"] == inventory["request_id"])
++        keys = ("request_id", "pending", "response", "error", "elapsed_ms")
++        proof["loading_bracket"] = {"screenshot_sha256": screenshot_hash, "request_id": inventory["request_id"],
++            "basis": "monotonic-since-interception", "before": {k: previous[k] for k in keys}, "after": {k: inventory[k] for k in keys}}
++    return proof
++
++
++def bracketed_screenshot(serial, package, activity, expected, launch_started=None, runtime_reader=None):
+     """Fail closed if the state/focus changes or the conservative launch budget expires."""
+     verify_app_identity(serial, package, activity)
+     before = accessibility_snapshot(serial, expected, attempts=1, package=package)
++    runtime_before = runtime_reader() if runtime_reader else None
+     started = time.monotonic()
+     if launch_started is not None and not 0 <= started - launch_started < 20:
+         raise SystemExit("loading capture exceeded the production 20-second deadline before screenshot")
+     screenshot = adb(serial, "exec-out", "screencap", "-p", binary=True)
+     ended = time.monotonic()
++    runtime_after = runtime_reader() if runtime_reader else None
+     after = accessibility_snapshot(serial, expected, attempts=1, package=package)
+     verify_app_identity(serial, package, activity)
+     checked = time.monotonic()
+@@ -429,7 +516,10 @@ def bracketed_screenshot(serial, package, activity, expected, launch_started=Non
+                   "screenshot_start_seconds": started - launch_started,
+                   "screenshot_end_seconds": ended - launch_started,
+                   "postcheck_seconds": checked - launch_started}
+-    return screenshot, {"before": before, "after": after, "timing": timing}
++    bracket = {"before": before, "after": after, "timing": timing}
++    if runtime_reader:
++        bracket["runtime"] = {"before": runtime_before, "after": runtime_after}
++    return screenshot, bracket
+ 
+ 
+ def main() -> None:
+@@ -463,7 +553,8 @@ def main() -> None:
+     ordered = json.loads(args.ordered_actions) if args.ordered_actions else None
+     if ordered is not None and (args.tap_text or args.swipe_list_up):
+         raise SystemExit("ordered actions cannot be mixed with legacy single-tap capture")
+-    spec = request(load_catalog(), args.name.split("--", 1)[0], args.state, args.theme)
++    spec = request(load_catalog(), args.name.split("--", 1)[0], args.state, args.theme,
++                   fixture_id=args.fixture_id, platform="android" if args.fixture_id == "bot-model-config-synthetic-v2" else None)
+     interactions = ordered if ordered is not None else interaction_receipt(args.tap_text, args.swipe_list_up)
+     if (args.name != f"{spec['surface']}--{args.state}" or args.fixture_id != spec["fixture_id"]
+             or f"{args.package}/{args.activity}" != spec["android_activity"]
+@@ -492,7 +583,8 @@ def main() -> None:
+     # fixture held the focused window through them.
+     identity = verify_app_identity(args.serial, args.package, args.activity)
+     screenshot, bracket = bracketed_screenshot(args.serial, args.package, args.activity,
+-                                               args.expected_accessibility, launch_started if loading else None)
++                                               args.expected_accessibility, launch_started if loading else None,
++                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None)
+     accessibility = bracket["after"]
+     output = Path(args.out or f"build/visual-parity/{args.name}/android").resolve()
+     output.mkdir(parents=True, exist_ok=True)
+@@ -525,6 +617,22 @@ def main() -> None:
+         # How the state above the fold was actually reached: real drags, on the
+         # screen the platform reported. No serial and no path ever lands here.
+         contract["list_swipe"] = list_swipe
++    if args.fixture_id == "bot-model-config-synthetic-v2":
++        samples = bracket.pop("runtime")
++        screenshot_hash = hashlib.sha256(screenshot).hexdigest()
++        implementation = {}
++        for relative in ("app/src/debug/kotlin/com/hermesagent/mobile/BotManagementParityFixture.kt",
++                         "app/src/debug/kotlin/com/hermesagent/mobile/BotModelRuntimeProvider.kt",
++                         "app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt",
++                         "app/src/debug/AndroidManifest.xml"):
++            implementation[relative] = (REPO_ROOT / relative).read_text()
++        implementation_bytes = json.dumps(implementation, sort_keys=True, indent=2).encode()
++        contract.update(capture_mapping=spec["platform_spec"], capture_inputs=samples["after"]["capture_inputs"],
++                        synthetic_inputs=samples["after"]["synthetic_inputs"], screenshot_sha256=screenshot_hash,
++                        fixture_implementation_sha256=hashlib.sha256(implementation_bytes).hexdigest(),
++                        state_proof=model_v2_proof(spec, samples["before"], samples["after"], steps, accessibility["nodes"], screenshot_hash))
++        (output / "runtime.json").write_text(json.dumps(samples, indent=2) + "\n")
++        (output / "fixture-implementation.json").write_bytes(implementation_bytes)
+     validate_receipt(contract, "android")
+     (output / "reference.png").write_bytes(screenshot)
+     (output / "contract.json").write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+diff --git a/app/src/debug/AndroidManifest.xml b/app/src/debug/AndroidManifest.xml
+index 62bb81a6..415b7c5d 100644
+--- a/app/src/debug/AndroidManifest.xml
++++ b/app/src/debug/AndroidManifest.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <application>
++        <provider android:name=".BotModelRuntimeProvider" android:authorities="${applicationId}.model-runtime" android:exported="true" android:permission="android.permission.DUMP" />
+         <activity android:name=".NotificationParityActivity" android:exported="true" android:theme="@style/Theme.HermesMobile" />
+         <activity
+             android:name=".DesktopSidebarParityActivity"
+diff --git a/app/src/debug/kotlin/com/hermesagent/mobile/BotManagementParityFixture.kt b/app/src/debug/kotlin/com/hermesagent/mobile/BotManagementParityFixture.kt
+index bcf973ae..95b30814 100644
+--- a/app/src/debug/kotlin/com/hermesagent/mobile/BotManagementParityFixture.kt
++++ b/app/src/debug/kotlin/com/hermesagent/mobile/BotManagementParityFixture.kt
+@@ -32,7 +32,7 @@ internal class BotManagementParityFixture(scope: CoroutineScope) {
+     )
+     val model = BotsManagementViewModel(host, storage, scope, {}, initialSections = roster.userSections,
+         storageEndpoint = MutableStateFlow(BotStorageEndpoint("synthetic-capture", 0L)),
+-        clock = { 0L }, newSectionId = { "synthetic-new-section" })
++        clock = { java.time.Instant.parse("2026-09-17T16:00:00Z").toEpochMilli() }, newSectionId = { "synthetic-new-section" })
+ 
+     fun open(state: String) {
+         host.scenario = state.takeIf { it in BOT_MODEL_CAPTURE_STATES }
+@@ -56,11 +56,14 @@ internal class BotManagementParityFixture(scope: CoroutineScope) {
+         if (state !in setOf("bot-model-confirmation", "bot-model-saved", "bot-model-save-refused")) return
+         val editor = model.model
+         editor.state.first { it.editable && !it.inventoryLoading }
++        host.runtimeEvents += "model-edit:staged"
+         editor.update(editor.state.value, BotModelSelection("synthetic-provider", "synthetic-planner-v2"))
++        host.runtimeEvents += "save:staged"
+         editor.save(editor.state.value)
+         editor.state.first { !it.busy }
+         if (state == "bot-model-saved") {
+             check(editor.state.value.warning != null)
++            host.runtimeEvents += "confirm:staged"
+             editor.confirm(editor.state.value)
+             editor.state.first { !it.busy }
+         }
+@@ -80,8 +83,63 @@ internal class BotManagementFixtureHost : PluginHost {
+     private var applied = false
+     override val connected = MutableStateFlow(true)
+     override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
++    private var sequence = 0
++    private data class RuntimeCall(val sequence: Int, val method: String, val params: JsonObject,
++        val started: Long, var response: JsonElement = JsonNull, var outcome: String = "pending")
++    private val runtimeCalls = mutableListOf<RuntimeCall>()
++    val runtimeEvents = mutableListOf<String>()
++    fun runtimeSnapshot(): JsonObject = buildJsonObject {
++        put("authoritative_model", authoritative.model)
++        put("events", buildJsonArray { runtimeEvents.forEach { add(it) } })
++        put("requests", buildJsonArray {
++            runtimeCalls.forEach { call -> add(buildJsonObject {
++                put("sequence", call.sequence); put("request_id", "synthetic-rpc-${call.sequence}")
++                put("method", call.method); put("params", call.params)
++                put("response", call.response); put("outcome", call.outcome)
++                put("pending", call.outcome == "pending")
++                put("error", if (call.outcome in setOf("refused", "cancelled")) JsonPrimitive(call.outcome) else JsonNull)
++                put("elapsed_ms", (System.nanoTime() - call.started) / 1_000_000.0)
++            }) }
++        })
++    }
+     override suspend fun request(method: String, params: JsonObject): PluginHostResult {
+         requests += Call(method, params)
++        // Never export arbitrary caller input, even from this synthetic host.
++        val safe = method in setOf("profiles.describe", "profiles.configure", "model.options", "profiles.list") &&
++            params.all { (key, value) -> when (key) {
++                "name", "profile" -> value == JsonPrimitive("synthetic-planner")
++                "provider" -> value == JsonPrimitive("synthetic-provider")
++                "model" -> value == JsonPrimitive("synthetic-planner-v2")
++                "include_unconfigured", "include_sessions", "confirm_expensive_model" -> value == JsonPrimitive(true)
++                "explicit_only" -> value == JsonPrimitive(false)
++                else -> false
++            } }
++        if (!safe) return PluginHostResult.UnavailableOnGateway
++        val call = RuntimeCall(++sequence, method, params, System.nanoTime())
++        runtimeCalls += call
++        try {
++            val result = answer(method, params)
++            call.response = (result as? PluginHostResult.Success)?.result ?: JsonNull
++            call.outcome = if (result is PluginHostResult.Success) "loaded" else "refused"
++            when (method) {
++                "profiles.describe" -> if (result is PluginHostResult.Success) runtimeEvents += if (applied) "describe:saved-pair" else "describe:loaded"
++                "model.options" -> runtimeEvents += "model.options:${call.outcome}"
++                "profiles.configure" -> {
++                    call.outcome = if (result !is PluginHostResult.Success) "refused" else if (applied) "applied" else "warning"
++                    runtimeEvents += when (call.outcome) {
++                        "warning" -> "configure:confirmation-required"
++                        "applied" -> "configure:applied"
++                        else -> "configure:initial-write-refused"
++                    }
++                }
++            }
++            return result
++        } catch (cancelled: kotlinx.coroutines.CancellationException) {
++            call.outcome = "cancelled"
++            throw cancelled
++        }
++    }
++    private suspend fun answer(method: String, params: JsonObject): PluginHostResult {
+         return when (method) {
+             "profiles.describe" -> {
+                 if (params != buildJsonObject { put("name", "synthetic-planner") }) return PluginHostResult.UnavailableOnGateway
+@@ -144,9 +202,37 @@ internal class BotManagementFixtureHost : PluginHost {
+ }
+ 
+ @Composable
+-internal fun BotManagementParityContent(state: String) {
++internal fun BotManagementParityContent(state: String, theme: String = "dark") {
+     val scope = rememberCoroutineScope()
+     val fixture = remember { BotManagementParityFixture(scope) }
++    DisposableEffect(fixture, state, theme) {
++        val exporter = {
++            val draft = fixture.model.model.state.value.draft
++            check(draft.provider == "synthetic-provider" && draft.model in setOf("synthetic-planner-v1", "synthetic-planner-v2")) {
++                "Only allowlisted synthetic selections can be exported"
++            }
++            buildJsonObject {
++            put("fixture_id", "bot-model-config-synthetic-v2"); put("state", state)
++            put("theme", theme); put("runtime", fixture.host.runtimeSnapshot())
++            put("capture_inputs", buildJsonObject {
++                put("skin", "mono"); put("theme", theme); put("locale", java.util.Locale.getDefault().toLanguageTag())
++                put("timezone", java.util.TimeZone.getDefault().id); put("clock", "2026-09-17T16:00:00Z"); put("timers", "live")
++            })
++            put("synthetic_inputs", buildJsonObject {
++                put("name", "synthetic-planner"); put("title", "Synthetic Planner")
++                put("description", "Reviews release plans"); put("soul", "Review synthetic release plans.")
++                put("provider", "synthetic-provider"); put("provider_name", "Synthetic Provider")
++                put("initial_model", "synthetic-planner-v1"); put("requested_model", "synthetic-planner-v2")
++                put("confirmation_message", "Synthetic model cost and data policy require confirmation.")
++            })
++            put("draft", buildJsonObject {
++                put("provider", fixture.model.model.state.value.draft.provider)
++                put("model", fixture.model.model.state.value.draft.model)
++            })
++        } }
++        if (state in BOT_MODEL_CAPTURE_STATES) BotModelRuntimeProvider.snapshot = exporter
++        onDispose { if (BotModelRuntimeProvider.snapshot === exporter) BotModelRuntimeProvider.snapshot = null }
++    }
+     val management by fixture.model.state.collectAsState()
+     val modelState by fixture.model.model.state.collectAsState()
+     LaunchedEffect(state) { fixture.open(state); fixture.stage(state) }
+diff --git a/app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt b/app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt
+index 3566523a..e9bd884c 100644
+--- a/app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt
++++ b/app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt
+@@ -65,9 +65,11 @@ class ProfileAvatarsParityActivity : ComponentActivity() {
+         enableEdgeToEdge()
+         val requestedState = intent.getStringExtra(EXTRA_STATE)
+         if (requestedState in BOT_MODEL_CAPTURE_STATES || requestedState in setOf("bot-roster", "bot-new", "bot-edit", "bot-duplicate", "bot-move", "bot-section")) {
++            java.util.Locale.setDefault(java.util.Locale.US)
++            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+             val mode = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
+             setContent {
+-                HermesTheme(AppearanceSelection("mono", mode)) { BotManagementParityContent(requireNotNull(requestedState)) }
++                HermesTheme(AppearanceSelection("mono", mode)) { BotManagementParityContent(requireNotNull(requestedState), if (mode == HermesThemeMode.Light) "light" else "dark") }
+             }
+             return
+         }
+diff --git a/docs/parity/bot-model-capture-v2.md b/docs/parity/bot-model-capture-v2.md
+index 9b2b758e..c7e52675 100644
+--- a/docs/parity/bot-model-capture-v2.md
++++ b/docs/parity/bot-model-capture-v2.md
+@@ -90,8 +90,16 @@ claim that a particular initial-refusal notice has already been observed.
+   Profile and pair must match registered inputs. No unrelated title/SOUL mutation.
+ - `authoritative_model`: v2 only after saved; otherwise v1.
+ - `fields`: visible provider/model pair for read/manual/saved editor captures.
+-  Null for confirmation/refusal: the receipt does not infer hidden editor fields
+-  from a modal/notice crop. Android inline content remains in retained nodes.
++  Explicit null for confirmation/refusal and **Desktop inventory-loading only**:
++  the receipt must not infer hidden editor fields from a modal/notice crop or spinner.
++  At Desktop pin `587e673e2a2fae0616d8b750bb189217080f621a`,
++  `apps/desktop/src/plugins/hermes-bots/model-picker.tsx:148–153` returns only
++  `GlyphSpinner` while `isLoading`, before either field-rendering branch.
++  Loading still requires original `authoritative_model`, the named initial v1
++  `describe_reads` RPC proof, zero writes, pending scoped inventory and the complete
++  per-PNG request/deadline bracket below. Missing `fields` keys are never accepted;
++  loaded/manual/error/saved editor states require their exact visible pair.
++  Android loading field requirements are unchanged; inline content remains in nodes.
+ - `describe_reads`: nonempty ordered `{sequence, profile, model}` objects; initial
+   named read must precede writes and contain v1. Saved requires named v2 read after
+   apply. Desktop saved also requires `reopen_sequence` strictly between apply and
+@@ -132,7 +140,18 @@ test inputs and must never be published as capture results.
+ ## Visual report
+ 
+ - pending: #194
+-- No v2 runtime packet has been produced. The Android driver currently resolves
++- Desktop packet `model-contract-v2-packet-final` has genuine captures for all
++  seven states in both themes. Its original validation history remains **12 accepted,
++  2 rejected**: loading truthfully reported `fields:null`. Source-backed correction
++  of this validator requirement accepts all **14 unchanged receipts** on revalidation.
++  Dark loading bracket: **1789→2350 ms**; light: **1957→2499 ms**; both stay pending
++  with null response/error, strictly before 20000 ms. All 116 packet files remained
++  byte-identical and all 115 original manifest entries verified. The new sibling
++  `model-contract-v2-revalidation-loading-fix.json` records validator/receipt hashes
++  and fresh CLI results; original `validation.json`, accepted/rejected directories,
++  PNGs, receipts and capture history were not rewritten or moved. This is contract
++  revalidation, not a new capture or visual-parity approval.
++- Android runtime v2 capture remains separate. The Android driver currently resolves
+   the default v1 fixture even when its CLI receives a v2 ID; its preflight rejects
+   that mismatch. The debug host retains request parameters for tests but exports
+   no runtime RPC response trace, normalized input identity, or pending-request
+diff --git a/scripts/tests/test_model_fixture_v2.py b/scripts/tests/test_model_fixture_v2.py
+index b8177499..58725e94 100644
+--- a/scripts/tests/test_model_fixture_v2.py
++++ b/scripts/tests/test_model_fixture_v2.py
+@@ -42,7 +42,8 @@ class ModelFixtureV2Test(unittest.TestCase):
+                  inventory={'method':'model.options','scope':spec['transport_mapping'][platform],
+                             'outcome': 'pending' if state.endswith('inventory-loading') else
+                             'refused' if state.endswith('inventory-error') else 'loaded'})
+-        if state in ('bot-model-confirmation','bot-model-save-refused'):
++        if (state in ('bot-model-confirmation','bot-model-save-refused')
++                or (platform == 'desktop' and state == 'bot-model-inventory-loading')):
+             p['fields']=None  # No claim that hidden editor fields are visible.
+         if saved:
+             p['describe_reads'].append({'sequence':5,'profile':'synthetic-planner','model':model})
+@@ -132,8 +133,48 @@ class ModelFixtureV2Test(unittest.TestCase):
+         r=self.receipt('bot-model-inventory-error'); r['state_proof']['manual_fields_visible']=False
+         with self.assertRaises(ValueError): contract.validate_receipt(r,'desktop')
+ 
++    def test_desktop_loading_hides_fields_but_requires_original_rpc_state(self):
++        r=self.receipt('bot-model-inventory-loading')
++        self.assertIsNone(r['state_proof']['fields'])
++        contract.validate_receipt(r,'desktop')
++        mutations=[lambda p:p.pop('fields'),
++                   lambda p:p.update(fields={'provider':'synthetic-provider','model':'synthetic-planner-v1'}),
++                   lambda p:p.pop('authoritative_model'),
++                   lambda p:p.update(authoritative_model='synthetic-planner-v2'),
++                   lambda p:p.pop('describe_reads'),
++                   lambda p:p.update(describe_reads=[]),
++                   lambda p:p['describe_reads'][0].update(profile='another-profile'),
++                   lambda p:p['describe_reads'][0].update(model='synthetic-planner-v2'),
++                   lambda p:p.update(model_calls=self.receipt()['state_proof']['model_calls']),
++                   lambda p:p['inventory'].update(outcome='loaded'),
++                   lambda p:p.pop('loading_bracket')]
++        for index,mutate in enumerate(mutations):
++            bad=copy.deepcopy(r); mutate(bad['state_proof'])
++            with self.subTest(mutation=index),self.assertRaises(ValueError):
++                contract.validate_receipt(bad,'desktop')
++
++    def test_loading_exception_does_not_hide_other_editor_fields(self):
++        for platform in ('desktop','android'):
++            states=['loaded','inventory-error','manual','saved']
++            if platform == 'android': states.append('inventory-loading')
++            for state in states:
++                r=self.receipt('bot-model-'+state,platform=platform)
++                contract.validate_receipt(r,platform)
++                for missing in (False,True):
++                    bad=copy.deepcopy(r)
++                    if missing: del bad['state_proof']['fields']
++                    else: bad['state_proof']['fields']=None
++                    with self.subTest(platform=platform,state=state,missing=missing),self.assertRaisesRegex(ValueError,'visible fields'):
++                        contract.validate_receipt(bad,platform)
++
+     def test_loading_proof_is_per_png_pending_and_strictly_before_deadline(self):
+         r=self.receipt('bot-model-inventory-loading')
++        contract.validate_receipt(r,'desktop')
++        for side in ('before','after'):
++            for key in ('pending','elapsed_ms','response','error','request_id'):
++                bad=copy.deepcopy(r); del bad['state_proof']['loading_bracket'][side][key]
++                with self.subTest(missing=key,side=side),self.assertRaises(ValueError):
++                    contract.validate_receipt(bad,'desktop')
+         for key,value in [('pending',False),('elapsed_ms',20000),('elapsed_ms',float('nan')),
+                           ('request_id','another'),('response',{}),('error','timeout')]:
+             for side in ('before','after'):
+diff --git a/scripts/visual_parity_contract.py b/scripts/visual_parity_contract.py
+index 65a96cc5..e29d21ff 100644
+--- a/scripts/visual_parity_contract.py
++++ b/scripts/visual_parity_contract.py
+@@ -269,7 +269,11 @@ def validate_state_proof(receipt: dict[str, Any], spec: dict[str, Any], platform
+         raise ValueError("model writes must be strictly ordered")
+     if proof.get("authoritative_model") != assertions["authoritative_model"]:
+         raise ValueError("authoritative model contradicts capture phase")
+-    expected_fields = None if receipt["state"] in {"bot-model-confirmation", "bot-model-save-refused"} else {
++    # Desktop 587e673e model-picker.tsx:148–153 returns only a spinner while
++    # loading. Original authoritative state still requires named describe proof.
++    hidden_fields = receipt["state"] in {"bot-model-confirmation", "bot-model-save-refused"} or (
++        platform == "desktop" and receipt["state"] == "bot-model-inventory-loading")
++    expected_fields = None if hidden_fields else {
+         "provider": inputs["provider"], "model": assertions["authoritative_model"]}
+     if "fields" not in proof or proof["fields"] != expected_fields:
+         raise ValueError("visible fields must match the editor phase; hidden fields must not be claimed")
+diff --git a/app/src/debug/kotlin/com/hermesagent/mobile/BotModelRuntimeProvider.kt b/app/src/debug/kotlin/com/hermesagent/mobile/BotModelRuntimeProvider.kt
+new file mode 100644
+index 00000000..dfb867a1
+--- /dev/null
++++ b/app/src/debug/kotlin/com/hermesagent/mobile/BotModelRuntimeProvider.kt
+@@ -0,0 +1,34 @@
++package com.hermesagent.mobile
++
++import android.content.ContentProvider
++import android.content.ContentValues
++import android.database.Cursor
++import android.net.Uri
++import android.os.Bundle
++import android.os.Handler
++import android.os.Looper
++import android.util.Base64
++import kotlinx.serialization.json.JsonObject
++import java.util.concurrent.FutureTask
++import java.util.concurrent.TimeUnit
++
++/** Debug source set only. No app repositories, files, credentials or network access. */
++class BotModelRuntimeProvider : ContentProvider() {
++    override fun onCreate() = true
++    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
++        require(method == "snapshot")
++        val task = FutureTask {
++            checkNotNull(snapshot) { "No active synthetic model fixture" }.invoke().toString()
++        }
++        Handler(Looper.getMainLooper()).post(task)
++        return Bundle().apply {
++            putString("snapshot", Base64.encodeToString(task.get(2, TimeUnit.SECONDS).toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
++        }
++    }
++    override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
++    override fun getType(uri: Uri): String? = null
++    override fun insert(uri: Uri, values: ContentValues?): Uri? = throw UnsupportedOperationException()
++    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = throw UnsupportedOperationException()
++    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = throw UnsupportedOperationException()
++    companion object { internal var snapshot: (() -> JsonObject)? = null }
++}
+diff --git a/app/src/testDebug/kotlin/com/hermesagent/mobile/BotModelRuntimeExportTest.kt b/app/src/testDebug/kotlin/com/hermesagent/mobile/BotModelRuntimeExportTest.kt
+new file mode 100644
+index 00000000..b8c39e50
+--- /dev/null
++++ b/app/src/testDebug/kotlin/com/hermesagent/mobile/BotModelRuntimeExportTest.kt
+@@ -0,0 +1,63 @@
++package com.hermesagent.mobile
++
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.test.runTest
++import kotlinx.serialization.json.*
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34])
++class BotModelRuntimeExportTest {
++    @Test fun pendingExportHasLiveMonotonicTimeAndCancellationIsNotPending() = runTest {
++        val host = BotManagementFixtureHost()
++        host.scenario = "bot-model-inventory-loading"
++        val job = backgroundScope.launch {
++            host.request("model.options", buildJsonObject {
++                put("profile", "synthetic-planner"); put("include_unconfigured", true); put("explicit_only", false)
++            })
++        }
++        testScheduler.runCurrent()
++        val first = host.runtimeSnapshot()["requests"]!!.jsonArray.single().jsonObject
++        assertTrue(first["pending"]!!.jsonPrimitive.boolean)
++        assertEquals(JsonNull, first["response"])
++        assertEquals(JsonNull, first["error"])
++        val second = host.runtimeSnapshot()["requests"]!!.jsonArray.single().jsonObject
++        assertTrue(second["elapsed_ms"]!!.jsonPrimitive.double >= first["elapsed_ms"]!!.jsonPrimitive.double)
++        job.cancel()
++        testScheduler.runCurrent()
++        val cancelled = host.runtimeSnapshot()["requests"]!!.jsonArray.single().jsonObject
++        assertFalse(cancelled["pending"]!!.jsonPrimitive.boolean)
++        assertEquals("cancelled", cancelled["error"]!!.jsonPrimitive.content)
++    }
++
++    @Test fun privateCallerValuesNeverEnterExport() = runTest {
++        val host = BotManagementFixtureHost()
++        host.request("profiles.describe", buildJsonObject { put("name", "PRIVATE-UNSAFE") })
++        assertFalse(host.runtimeSnapshot().toString().contains("PRIVATE-UNSAFE"))
++        assertTrue(host.runtimeSnapshot()["requests"]!!.jsonArray.isEmpty())
++    }
++
++    @Test fun exportRecordsActualNamedReadWarningApplyAndReadback() = runTest {
++        val host = BotManagementFixtureHost()
++        host.scenario = "bot-model-saved"
++        val named = buildJsonObject { put("name", "synthetic-planner") }
++        val pair = buildJsonObject { put("name", "synthetic-planner"); put("provider", "synthetic-provider"); put("model", "synthetic-planner-v2") }
++        host.request("profiles.describe", named)
++        host.request("profiles.configure", pair)
++        host.request("profiles.configure", JsonObject(pair + ("confirm_expensive_model" to JsonPrimitive(true))))
++        host.request("profiles.describe", named)
++        val method = host.javaClass.methods.firstOrNull { it.name == "runtimeSnapshot" }
++        assertNotNull("debug host must export runtime outcomes", method)
++        val trace = method!!.invoke(host) as JsonObject
++        assertEquals("synthetic-planner-v2", trace["authoritative_model"]!!.jsonPrimitive.content)
++        val requests = trace["requests"]!!.jsonArray
++        assertEquals(4, requests.size)
++        assertEquals(listOf(1, 2, 3, 4), requests.map { it.jsonObject["sequence"]!!.jsonPrimitive.int })
++        assertEquals(true, requests[1].jsonObject["response"]!!.jsonObject["confirm_required"]!!.jsonPrimitive.boolean)
++        assertEquals("synthetic-planner-v2", requests.last().jsonObject["response"]!!.jsonObject["model"]!!.jsonObject["default"]!!.jsonPrimitive.content)
++    }
++}
+diff --git a/scripts/tests/test_android_model_v2_runtime.py b/scripts/tests/test_android_model_v2_runtime.py
+new file mode 100644
+index 00000000..66e0fedb
+--- /dev/null
++++ b/scripts/tests/test_android_model_v2_runtime.py
+@@ -0,0 +1,49 @@
++"""Runtime driver regression tests; not capture evidence."""
++import importlib.util
++from pathlib import Path
++import unittest
++from unittest.mock import patch
++
++ROOT = Path(__file__).resolve().parents[2]
++spec = importlib.util.spec_from_file_location('capture_v2', ROOT / '.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py')
++capture = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(capture)
++
++class RuntimeV2Test(unittest.TestCase):
++    def test_named_field_boundary_uses_accessibility_description_not_caption(self):
++        self.assertTrue(hasattr(capture, 'accessibility_boundary_matches'))
++        nodes = [{'text': 'Model ID', 'content_description': ''}, {'text': 'synthetic-planner-v1', 'content_description': 'Model ID'}]
++        self.assertEqual(1, capture.accessibility_boundary_matches(nodes, 'Model ID'))
++        self.assertEqual(2, capture.accessibility_boundary_matches(nodes + [nodes[1]], 'Model ID'))
++
++    def test_rpc_samples_straddle_the_real_screenshot(self):
++        order = []
++        with patch.object(capture, 'verify_app_identity'), patch.object(capture, 'accessibility_snapshot', return_value={'nodes': []}), patch.object(capture, 'adb', side_effect=lambda *a, **k: order.append('png') or b'png'):
++            def sample():
++                order.append('runtime')
++                return {'sample': len(order)}
++            png, bracket = capture.bracketed_screenshot(None, 'package', 'activity', 'label', runtime_reader=sample)
++        self.assertEqual(['runtime', 'png', 'runtime'], order)
++        self.assertEqual(b'png', png)
++        self.assertEqual(1, bracket['runtime']['before']['sample'])
++        self.assertEqual(3, bracket['runtime']['after']['sample'])
++
++    def test_runtime_identity_mismatch_is_not_relabelled(self):
++        spec = capture.request(capture.load_catalog(), 'bot-model-config', 'bot-model-loaded', 'dark', fixture_id='bot-model-config-synthetic-v2', platform='android')
++        with self.assertRaisesRegex(SystemExit, 'another fixture'):
++            capture.model_v2_proof(spec, {'fixture_id':'bot-model-config-synthetic-v1'}, {}, [], [], 'a'*64)
++
++    def test_missing_runtime_export_fails_closed(self):
++        self.assertTrue(hasattr(capture, 'read_model_runtime'), 'v2 needs real runtime reader')
++        with patch.object(capture, 'shell', return_value='Bundle[{}]'):
++            with self.assertRaises(SystemExit):
++                capture.read_model_runtime(None, capture.DEFAULT_PACKAGE)
++
++    def test_explicit_fixture_is_resolved_before_device_provenance(self):
++        import sys
++        argv = ['capture', '--name', 'bot-model-config--bot-model-loaded', '--state', 'bot-model-loaded', '--theme', 'dark', '--fixture-id', 'bot-model-config-synthetic-v2', '--git-sha', 'a'*40, '--apk', __file__, '--apk-kind', 'debug', '--activity', 'com.hermesagent.mobile.ProfileAvatarsParityActivity', '--ordered-actions', '["scroll:Choose model"]', '--expected-accessibility', 'Choose model']
++        with patch.object(sys, 'argv', argv), patch.object(capture, 'adb', return_value='device'), patch.object(capture, 'installed_apk_provenance', side_effect=RuntimeError('preflight passed')):
++            with self.assertRaisesRegex(RuntimeError, 'preflight passed'):
++                capture.main()
++
++if __name__ == '__main__': unittest.main()

@@ -1,0 +1,28 @@
+[
+  {
+    "sequence": 1,
+    "action": "roster:edit",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Edit…",
+        "content_description": "",
+        "role": "menuitem"
+      }
+    ],
+    "wire_sequence": 1
+  },
+  {
+    "sequence": 2,
+    "action": "editor:advanced",
+    "origin": "recorded-ui-gestures",
+    "nodes": [
+      {
+        "text": "Advanced — model, skills, toolsets, SOUL.md",
+        "content_description": "",
+        "role": "button"
+      }
+    ],
+    "wire_sequence": 3
+  }
+]

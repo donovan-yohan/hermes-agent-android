@@ -4,6 +4,16 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Model editor v2 supplement
+
+The [paired model-editor report](bot-model-v2/REPORT.md) publishes 30 original
+PNGs (14 Android, 14 Desktop primary, two Desktop refusal reopens) and 28 runtime
+receipts. [Per-image provenance](bot-model-v2/provenance.json) records dimensions
+and hashes, original dirty Android base/diff/APK identity and Desktop pin.
+Original Desktop rejection history and separate unchanged-receipt revalidation
+are retained. Synthetic-only, bounded model editor acceptance; no whole-Bot, live
+Gateway or physical-device claim. APKs, raw logs and private device data excluded.
+
 ## Routine inspector v2 supplement
 
 The [bounded inspector report](routine-inspector-v2/REPORT.md) and its

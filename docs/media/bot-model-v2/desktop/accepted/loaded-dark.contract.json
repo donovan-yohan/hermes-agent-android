@@ -1,0 +1,1202 @@
+{
+  "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+  "capture_inputs": {
+    "clock": "2026-09-17T16:00:00Z",
+    "locale": "en-US",
+    "skin": "mono",
+    "timers": "live",
+    "timezone": "UTC"
+  },
+  "contract_version": 2,
+  "desktop_selector_note": "Future captures only. Per-state semantic boundaries must resolve to exactly one visible real component at runtime. Initial refusal is intentionally undiscovered; fail rather than assume a selector or relabel a confirmed retry.",
+  "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_id": "bot-model-config-synthetic-v2",
+  "fixture_versions": {
+    "bot-model-config-synthetic-v2": {
+      "capture_inputs": {
+        "clock": "2026-09-17T16:00:00Z",
+        "locale": "en-US",
+        "skin": "mono",
+        "timers": "live",
+        "timezone": "UTC"
+      },
+      "contract_version": 2,
+      "desktop_selector_note": "Future captures only. Per-state semantic boundaries must resolve to exactly one visible real component at runtime. Initial refusal is intentionally undiscovered; fail rather than assume a selector or relabel a confirmed retry.",
+      "states": {
+        "bot-model-confirmation": {
+          "fixture_note": "FIXTURE-STAGED via production update and Save model actions; warning is not an authoritative change. No recorded Save gesture claimed.",
+          "interaction": [
+            "scroll:Confirm model change"
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "fixture-staged-production-actions",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 1
+              },
+              "capture_boundary": "Confirm model change",
+              "interaction_semantics": "production-actions-staged-then-recorded-scroll",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "Confirm model change"
+              },
+              "ordered_actions": [
+                "scroll:Confirm model change"
+              ],
+              "presentation": "inline-staged",
+              "required_events": [
+                "model-edit:staged",
+                "save:staged",
+                "configure:confirmation-required"
+              ],
+              "required_labels": [
+                "Confirm model change"
+              ],
+              "selector": "Confirm model change",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 1
+              },
+              "capture_boundary": "shared-confirm-dialog",
+              "interaction_semantics": "real-ui-gesture",
+              "locator": {
+                "exact": true,
+                "kind": "role",
+                "name": "Switch to synthetic-planner-v2?",
+                "role": "dialog"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced",
+                "model:change",
+                "editor:save"
+              ],
+              "presentation": "shared-dialog",
+              "required_events": [
+                "model-edit:changed",
+                "save:clicked",
+                "configure:confirmation-required",
+                "shared-confirm-dialog:visible"
+              ],
+              "required_labels": [
+                "Switch to synthetic-planner-v2?",
+                "Synthetic model cost and data policy require confirmation."
+              ],
+              "selector": "shared-confirm-dialog",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "Confirm model change"
+        },
+        "bot-model-inventory-error": {
+          "fixture_note": "Actual model.options refused, not a prepainted error.",
+          "interaction": [
+            "scroll:Model choices could not be loaded. Enter a provider and model manually."
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "refused",
+                "model_write_count": 0
+              },
+              "capture_boundary": "Model choices could not be loaded. Enter a provider and model manually.",
+              "interaction_semantics": "recorded-ordered-accessibility-actions",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "Model choices could not be loaded. Enter a provider and model manually."
+              },
+              "ordered_actions": [
+                "scroll:Model choices could not be loaded. Enter a provider and model manually."
+              ],
+              "presentation": "inline-editor",
+              "required_events": [
+                "describe:loaded",
+                "model.options:refused"
+              ],
+              "required_labels": [
+                "Model choices could not be loaded. Enter a provider and model manually."
+              ],
+              "selector": "Model choices could not be loaded. Enter a provider and model manually.",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "refused",
+                "model_write_count": 0
+              },
+              "capture_boundary": "edit-profile-dialog",
+              "interaction_semantics": "real-ui-read",
+              "locator": {
+                "exact": true,
+                "kind": "role",
+                "name": "Edit profile",
+                "role": "dialog"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced"
+              ],
+              "presentation": "manual-fallback",
+              "required_events": [
+                "describe:loaded",
+                "model.options:refused",
+                "manual-fallback:visible"
+              ],
+              "required_labels": [
+                "Edit profile"
+              ],
+              "selector": "edit-profile-dialog",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "Model choices could not be loaded. Enter a provider and model manually."
+        },
+        "bot-model-inventory-loading": {
+          "fixture_note": "Actual model.options suspended; production 20-second deadline still applies. Capture must finish before timeout or fail; never relabel timeout as loading.",
+          "interaction": [
+            "scroll:Loading model choices…"
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "pending",
+                "model_write_count": 0
+              },
+              "capture_boundary": "Loading model choices…",
+              "interaction_semantics": "recorded-ordered-accessibility-actions",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "Loading model choices…"
+              },
+              "ordered_actions": [
+                "scroll:Loading model choices…"
+              ],
+              "presentation": "inline-editor",
+              "required_events": [
+                "describe:loaded",
+                "model.options:pending"
+              ],
+              "required_labels": [
+                "Loading model choices…"
+              ],
+              "selector": "Loading model choices…",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "pending",
+                "model_write_count": 0
+              },
+              "capture_boundary": "edit-profile-dialog",
+              "interaction_semantics": "real-ui-read",
+              "locator": {
+                "exact": true,
+                "kind": "role",
+                "name": "Edit profile",
+                "role": "dialog"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced"
+              ],
+              "presentation": "editor-loading",
+              "required_events": [
+                "describe:loaded",
+                "model.options:pending"
+              ],
+              "required_labels": [
+                "Edit profile"
+              ],
+              "selector": "edit-profile-dialog",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "Loading model choices…"
+        },
+        "bot-model-loaded": {
+          "fixture_note": "Real describe and inventory reads; no writes.",
+          "interaction": [
+            "scroll:Choose model"
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 0
+              },
+              "capture_boundary": "Choose model",
+              "interaction_semantics": "recorded-ordered-accessibility-actions",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "Choose model"
+              },
+              "ordered_actions": [
+                "scroll:Choose model"
+              ],
+              "presentation": "inline-editor",
+              "required_events": [
+                "describe:loaded",
+                "model.options:loaded"
+              ],
+              "required_labels": [
+                "Choose model"
+              ],
+              "selector": "Choose model",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 0
+              },
+              "capture_boundary": "edit-profile-dialog",
+              "interaction_semantics": "real-ui-read",
+              "locator": {
+                "exact": true,
+                "kind": "role",
+                "name": "Edit profile",
+                "role": "dialog"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced"
+              ],
+              "presentation": "editor",
+              "required_events": [
+                "describe:loaded",
+                "model.options:loaded"
+              ],
+              "required_labels": [
+                "Edit profile"
+              ],
+              "selector": "edit-profile-dialog",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "Choose model"
+        },
+        "bot-model-manual": {
+          "fixture_note": "Not staged: real Enter manually Compose control is tapped; original provider/model retained.",
+          "interaction": [
+            "scroll:Enter manually",
+            "tap:Enter manually",
+            "scroll:Model ID"
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 0
+              },
+              "capture_boundary": "Model ID",
+              "interaction_semantics": "recorded-ordered-accessibility-actions",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "Model ID"
+              },
+              "ordered_actions": [
+                "scroll:Enter manually",
+                "tap:Enter manually",
+                "scroll:Model ID"
+              ],
+              "presentation": "inline-editor",
+              "required_events": [
+                "describe:loaded",
+                "model.options:loaded",
+                "manual-entry:tapped"
+              ],
+              "required_labels": [
+                "Model ID"
+              ],
+              "selector": "Model ID",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 0
+              },
+              "capture_boundary": "edit-profile-dialog",
+              "interaction_semantics": "real-ui-gesture",
+              "locator": {
+                "exact": true,
+                "kind": "role",
+                "name": "Edit profile",
+                "role": "dialog"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced",
+                "provider:open-menu",
+                "provider:enter-manually"
+              ],
+              "presentation": "manual-editor",
+              "required_events": [
+                "describe:loaded",
+                "model.options:loaded",
+                "manual-entry:clicked"
+              ],
+              "required_labels": [
+                "Edit profile"
+              ],
+              "selector": "edit-profile-dialog",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "Model ID"
+        },
+        "bot-model-save-refused": {
+          "fixture_note": "FIXTURE-STAGED via production update and Save model; actual configure refuses. No recorded Save gesture claimed.",
+          "interaction": [
+            "scroll:The model change could not be confirmed. Close and read it again before retrying."
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "fixture-staged-production-actions",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 1
+              },
+              "capture_boundary": "The model change could not be confirmed. Close and read it again before retrying.",
+              "interaction_semantics": "production-actions-staged-then-recorded-scroll",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "The model change could not be confirmed. Close and read it again before retrying."
+              },
+              "ordered_actions": [
+                "scroll:The model change could not be confirmed. Close and read it again before retrying."
+              ],
+              "presentation": "inline-staged",
+              "required_events": [
+                "model-edit:staged",
+                "save:staged",
+                "configure:initial-write-refused"
+              ],
+              "required_labels": [
+                "The model change could not be confirmed. Close and read it again before retrying."
+              ],
+              "selector": "The model change could not be confirmed. Close and read it again before retrying.",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v1",
+                "confirmed_write_count": 0,
+                "inventory_outcome": "loaded",
+                "model_write_count": 1
+              },
+              "capture_boundary": "runtime-discovered",
+              "interaction_semantics": "real-ui-gesture",
+              "locator": {
+                "kind": "runtime-discovered"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced",
+                "model:change",
+                "editor:save"
+              ],
+              "presentation": "runtime-discovered-initial-refusal",
+              "required_events": [
+                "model-edit:changed",
+                "save:clicked",
+                "configure:initial-write-refused"
+              ],
+              "required_labels": [],
+              "runtime_discovery": true,
+              "selector": "runtime-discovered",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "The model change could not be confirmed. Close and read it again before retrying."
+        },
+        "bot-model-saved": {
+          "fixture_note": "FIXTURE-STAGED via production update, Save model, explicit confirm and named describe readback; synthetic memory only, not a live backend or recorded consent gesture.",
+          "interaction": [
+            "scroll:Model saved."
+          ],
+          "platforms": {
+            "android": {
+              "action_origin": "fixture-staged-production-actions",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v2",
+                "confirmed_write_count": 1,
+                "inventory_outcome": "loaded",
+                "model_write_count": 2
+              },
+              "capture_boundary": "Model saved.",
+              "interaction_semantics": "production-actions-staged-then-recorded-scroll",
+              "locator": {
+                "exact": true,
+                "kind": "accessibility-label",
+                "name": "Model saved."
+              },
+              "ordered_actions": [
+                "scroll:Model saved."
+              ],
+              "presentation": "inline-staged",
+              "required_events": [
+                "model-edit:staged",
+                "save:staged",
+                "configure:confirmation-required",
+                "confirm:staged",
+                "configure:applied",
+                "describe:saved-pair"
+              ],
+              "required_labels": [
+                "Model saved."
+              ],
+              "selector": "Model saved.",
+              "selector_kind": "exact-accessibility-label"
+            },
+            "desktop": {
+              "action_origin": "recorded-ui-gestures",
+              "assertions": {
+                "authoritative_model": "synthetic-planner-v2",
+                "confirmed_write_count": 1,
+                "inventory_outcome": "loaded",
+                "model_write_count": 2
+              },
+              "capture_boundary": "edit-profile-dialog",
+              "interaction_semantics": "real-ui-gesture",
+              "locator": {
+                "exact": true,
+                "kind": "role",
+                "name": "Edit profile",
+                "role": "dialog"
+              },
+              "ordered_actions": [
+                "roster:edit",
+                "editor:advanced",
+                "model:change",
+                "editor:save",
+                "shared-dialog:confirm",
+                "roster:edit",
+                "editor:advanced"
+              ],
+              "presentation": "saved-reopened",
+              "required_events": [
+                "model-edit:changed",
+                "save:clicked",
+                "configure:confirmation-required",
+                "confirm:clicked",
+                "configure:applied",
+                "editor:closed",
+                "editor:reopened",
+                "describe:saved-pair"
+              ],
+              "required_labels": [
+                "Edit profile"
+              ],
+              "selector": "edit-profile-dialog",
+              "selector_kind": "semantic-boundary-resolved-by-worker"
+            }
+          },
+          "post_interaction_accessibility": "Model saved."
+        }
+      },
+      "synthetic_inputs": {
+        "confirmation_message": "Synthetic model cost and data policy require confirmation.",
+        "description": "Reviews release plans",
+        "initial_model": "synthetic-planner-v1",
+        "name": "synthetic-planner",
+        "provider": "synthetic-provider",
+        "provider_name": "Synthetic Provider",
+        "requested_model": "synthetic-planner-v2",
+        "soul": "Review synthetic release plans.",
+        "title": "Synthetic Planner"
+      },
+      "transport_mapping": {
+        "android": {
+          "kind": "inventory-profile-parameter",
+          "profile": "synthetic-planner"
+        },
+        "desktop": {
+          "kind": "bot-scoped-websocket",
+          "profile": "synthetic-planner"
+        }
+      }
+    }
+  },
+  "platform_spec": {
+    "action_origin": "recorded-ui-gestures",
+    "assertions": {
+      "authoritative_model": "synthetic-planner-v1",
+      "confirmed_write_count": 0,
+      "inventory_outcome": "loaded",
+      "model_write_count": 0
+    },
+    "capture_boundary": "edit-profile-dialog",
+    "interaction_semantics": "real-ui-read",
+    "locator": {
+      "exact": true,
+      "kind": "role",
+      "name": "Edit profile",
+      "role": "dialog"
+    },
+    "ordered_actions": [
+      "roster:edit",
+      "editor:advanced"
+    ],
+    "presentation": "editor",
+    "required_events": [
+      "describe:loaded",
+      "model.options:loaded"
+    ],
+    "required_labels": [
+      "Edit profile"
+    ],
+    "selector": "edit-profile-dialog",
+    "selector_kind": "semantic-boundary-resolved-by-worker"
+  },
+  "state": "bot-model-loaded",
+  "state_spec": {
+    "fixture_note": "Real describe and inventory reads; no writes.",
+    "interaction": [
+      "scroll:Choose model"
+    ],
+    "platforms": {
+      "android": {
+        "action_origin": "recorded-ui-gestures",
+        "assertions": {
+          "authoritative_model": "synthetic-planner-v1",
+          "confirmed_write_count": 0,
+          "inventory_outcome": "loaded",
+          "model_write_count": 0
+        },
+        "capture_boundary": "Choose model",
+        "interaction_semantics": "recorded-ordered-accessibility-actions",
+        "locator": {
+          "exact": true,
+          "kind": "accessibility-label",
+          "name": "Choose model"
+        },
+        "ordered_actions": [
+          "scroll:Choose model"
+        ],
+        "presentation": "inline-editor",
+        "required_events": [
+          "describe:loaded",
+          "model.options:loaded"
+        ],
+        "required_labels": [
+          "Choose model"
+        ],
+        "selector": "Choose model",
+        "selector_kind": "exact-accessibility-label"
+      },
+      "desktop": {
+        "action_origin": "recorded-ui-gestures",
+        "assertions": {
+          "authoritative_model": "synthetic-planner-v1",
+          "confirmed_write_count": 0,
+          "inventory_outcome": "loaded",
+          "model_write_count": 0
+        },
+        "capture_boundary": "edit-profile-dialog",
+        "interaction_semantics": "real-ui-read",
+        "locator": {
+          "exact": true,
+          "kind": "role",
+          "name": "Edit profile",
+          "role": "dialog"
+        },
+        "ordered_actions": [
+          "roster:edit",
+          "editor:advanced"
+        ],
+        "presentation": "editor",
+        "required_events": [
+          "describe:loaded",
+          "model.options:loaded"
+        ],
+        "required_labels": [
+          "Edit profile"
+        ],
+        "selector": "edit-profile-dialog",
+        "selector_kind": "semantic-boundary-resolved-by-worker"
+      }
+    },
+    "post_interaction_accessibility": "Choose model"
+  },
+  "states": {
+    "bot-model-confirmation": {
+      "fixture_note": "FIXTURE-STAGED via production update and Save model actions; warning is not an authoritative change. No recorded Save gesture claimed.",
+      "interaction": [
+        "scroll:Confirm model change"
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "fixture-staged-production-actions",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 1
+          },
+          "capture_boundary": "Confirm model change",
+          "interaction_semantics": "production-actions-staged-then-recorded-scroll",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "Confirm model change"
+          },
+          "ordered_actions": [
+            "scroll:Confirm model change"
+          ],
+          "presentation": "inline-staged",
+          "required_events": [
+            "model-edit:staged",
+            "save:staged",
+            "configure:confirmation-required"
+          ],
+          "required_labels": [
+            "Confirm model change"
+          ],
+          "selector": "Confirm model change",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 1
+          },
+          "capture_boundary": "shared-confirm-dialog",
+          "interaction_semantics": "real-ui-gesture",
+          "locator": {
+            "exact": true,
+            "kind": "role",
+            "name": "Switch to synthetic-planner-v2?",
+            "role": "dialog"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced",
+            "model:change",
+            "editor:save"
+          ],
+          "presentation": "shared-dialog",
+          "required_events": [
+            "model-edit:changed",
+            "save:clicked",
+            "configure:confirmation-required",
+            "shared-confirm-dialog:visible"
+          ],
+          "required_labels": [
+            "Switch to synthetic-planner-v2?",
+            "Synthetic model cost and data policy require confirmation."
+          ],
+          "selector": "shared-confirm-dialog",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "Confirm model change"
+    },
+    "bot-model-inventory-error": {
+      "fixture_note": "Actual model.options refused, not a prepainted error.",
+      "interaction": [
+        "scroll:Model choices could not be loaded. Enter a provider and model manually."
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "refused",
+            "model_write_count": 0
+          },
+          "capture_boundary": "Model choices could not be loaded. Enter a provider and model manually.",
+          "interaction_semantics": "recorded-ordered-accessibility-actions",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "Model choices could not be loaded. Enter a provider and model manually."
+          },
+          "ordered_actions": [
+            "scroll:Model choices could not be loaded. Enter a provider and model manually."
+          ],
+          "presentation": "inline-editor",
+          "required_events": [
+            "describe:loaded",
+            "model.options:refused"
+          ],
+          "required_labels": [
+            "Model choices could not be loaded. Enter a provider and model manually."
+          ],
+          "selector": "Model choices could not be loaded. Enter a provider and model manually.",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "refused",
+            "model_write_count": 0
+          },
+          "capture_boundary": "edit-profile-dialog",
+          "interaction_semantics": "real-ui-read",
+          "locator": {
+            "exact": true,
+            "kind": "role",
+            "name": "Edit profile",
+            "role": "dialog"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced"
+          ],
+          "presentation": "manual-fallback",
+          "required_events": [
+            "describe:loaded",
+            "model.options:refused",
+            "manual-fallback:visible"
+          ],
+          "required_labels": [
+            "Edit profile"
+          ],
+          "selector": "edit-profile-dialog",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "Model choices could not be loaded. Enter a provider and model manually."
+    },
+    "bot-model-inventory-loading": {
+      "fixture_note": "Actual model.options suspended; production 20-second deadline still applies. Capture must finish before timeout or fail; never relabel timeout as loading.",
+      "interaction": [
+        "scroll:Loading model choices…"
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "pending",
+            "model_write_count": 0
+          },
+          "capture_boundary": "Loading model choices…",
+          "interaction_semantics": "recorded-ordered-accessibility-actions",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "Loading model choices…"
+          },
+          "ordered_actions": [
+            "scroll:Loading model choices…"
+          ],
+          "presentation": "inline-editor",
+          "required_events": [
+            "describe:loaded",
+            "model.options:pending"
+          ],
+          "required_labels": [
+            "Loading model choices…"
+          ],
+          "selector": "Loading model choices…",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "pending",
+            "model_write_count": 0
+          },
+          "capture_boundary": "edit-profile-dialog",
+          "interaction_semantics": "real-ui-read",
+          "locator": {
+            "exact": true,
+            "kind": "role",
+            "name": "Edit profile",
+            "role": "dialog"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced"
+          ],
+          "presentation": "editor-loading",
+          "required_events": [
+            "describe:loaded",
+            "model.options:pending"
+          ],
+          "required_labels": [
+            "Edit profile"
+          ],
+          "selector": "edit-profile-dialog",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "Loading model choices…"
+    },
+    "bot-model-loaded": {
+      "fixture_note": "Real describe and inventory reads; no writes.",
+      "interaction": [
+        "scroll:Choose model"
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 0
+          },
+          "capture_boundary": "Choose model",
+          "interaction_semantics": "recorded-ordered-accessibility-actions",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "Choose model"
+          },
+          "ordered_actions": [
+            "scroll:Choose model"
+          ],
+          "presentation": "inline-editor",
+          "required_events": [
+            "describe:loaded",
+            "model.options:loaded"
+          ],
+          "required_labels": [
+            "Choose model"
+          ],
+          "selector": "Choose model",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 0
+          },
+          "capture_boundary": "edit-profile-dialog",
+          "interaction_semantics": "real-ui-read",
+          "locator": {
+            "exact": true,
+            "kind": "role",
+            "name": "Edit profile",
+            "role": "dialog"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced"
+          ],
+          "presentation": "editor",
+          "required_events": [
+            "describe:loaded",
+            "model.options:loaded"
+          ],
+          "required_labels": [
+            "Edit profile"
+          ],
+          "selector": "edit-profile-dialog",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "Choose model"
+    },
+    "bot-model-manual": {
+      "fixture_note": "Not staged: real Enter manually Compose control is tapped; original provider/model retained.",
+      "interaction": [
+        "scroll:Enter manually",
+        "tap:Enter manually",
+        "scroll:Model ID"
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 0
+          },
+          "capture_boundary": "Model ID",
+          "interaction_semantics": "recorded-ordered-accessibility-actions",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "Model ID"
+          },
+          "ordered_actions": [
+            "scroll:Enter manually",
+            "tap:Enter manually",
+            "scroll:Model ID"
+          ],
+          "presentation": "inline-editor",
+          "required_events": [
+            "describe:loaded",
+            "model.options:loaded",
+            "manual-entry:tapped"
+          ],
+          "required_labels": [
+            "Model ID"
+          ],
+          "selector": "Model ID",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 0
+          },
+          "capture_boundary": "edit-profile-dialog",
+          "interaction_semantics": "real-ui-gesture",
+          "locator": {
+            "exact": true,
+            "kind": "role",
+            "name": "Edit profile",
+            "role": "dialog"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced",
+            "provider:open-menu",
+            "provider:enter-manually"
+          ],
+          "presentation": "manual-editor",
+          "required_events": [
+            "describe:loaded",
+            "model.options:loaded",
+            "manual-entry:clicked"
+          ],
+          "required_labels": [
+            "Edit profile"
+          ],
+          "selector": "edit-profile-dialog",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "Model ID"
+    },
+    "bot-model-save-refused": {
+      "fixture_note": "FIXTURE-STAGED via production update and Save model; actual configure refuses. No recorded Save gesture claimed.",
+      "interaction": [
+        "scroll:The model change could not be confirmed. Close and read it again before retrying."
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "fixture-staged-production-actions",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 1
+          },
+          "capture_boundary": "The model change could not be confirmed. Close and read it again before retrying.",
+          "interaction_semantics": "production-actions-staged-then-recorded-scroll",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "The model change could not be confirmed. Close and read it again before retrying."
+          },
+          "ordered_actions": [
+            "scroll:The model change could not be confirmed. Close and read it again before retrying."
+          ],
+          "presentation": "inline-staged",
+          "required_events": [
+            "model-edit:staged",
+            "save:staged",
+            "configure:initial-write-refused"
+          ],
+          "required_labels": [
+            "The model change could not be confirmed. Close and read it again before retrying."
+          ],
+          "selector": "The model change could not be confirmed. Close and read it again before retrying.",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v1",
+            "confirmed_write_count": 0,
+            "inventory_outcome": "loaded",
+            "model_write_count": 1
+          },
+          "capture_boundary": "runtime-discovered",
+          "interaction_semantics": "real-ui-gesture",
+          "locator": {
+            "kind": "runtime-discovered"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced",
+            "model:change",
+            "editor:save"
+          ],
+          "presentation": "runtime-discovered-initial-refusal",
+          "required_events": [
+            "model-edit:changed",
+            "save:clicked",
+            "configure:initial-write-refused"
+          ],
+          "required_labels": [],
+          "runtime_discovery": true,
+          "selector": "runtime-discovered",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "The model change could not be confirmed. Close and read it again before retrying."
+    },
+    "bot-model-saved": {
+      "fixture_note": "FIXTURE-STAGED via production update, Save model, explicit confirm and named describe readback; synthetic memory only, not a live backend or recorded consent gesture.",
+      "interaction": [
+        "scroll:Model saved."
+      ],
+      "platforms": {
+        "android": {
+          "action_origin": "fixture-staged-production-actions",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v2",
+            "confirmed_write_count": 1,
+            "inventory_outcome": "loaded",
+            "model_write_count": 2
+          },
+          "capture_boundary": "Model saved.",
+          "interaction_semantics": "production-actions-staged-then-recorded-scroll",
+          "locator": {
+            "exact": true,
+            "kind": "accessibility-label",
+            "name": "Model saved."
+          },
+          "ordered_actions": [
+            "scroll:Model saved."
+          ],
+          "presentation": "inline-staged",
+          "required_events": [
+            "model-edit:staged",
+            "save:staged",
+            "configure:confirmation-required",
+            "confirm:staged",
+            "configure:applied",
+            "describe:saved-pair"
+          ],
+          "required_labels": [
+            "Model saved."
+          ],
+          "selector": "Model saved.",
+          "selector_kind": "exact-accessibility-label"
+        },
+        "desktop": {
+          "action_origin": "recorded-ui-gestures",
+          "assertions": {
+            "authoritative_model": "synthetic-planner-v2",
+            "confirmed_write_count": 1,
+            "inventory_outcome": "loaded",
+            "model_write_count": 2
+          },
+          "capture_boundary": "edit-profile-dialog",
+          "interaction_semantics": "real-ui-gesture",
+          "locator": {
+            "exact": true,
+            "kind": "role",
+            "name": "Edit profile",
+            "role": "dialog"
+          },
+          "ordered_actions": [
+            "roster:edit",
+            "editor:advanced",
+            "model:change",
+            "editor:save",
+            "shared-dialog:confirm",
+            "roster:edit",
+            "editor:advanced"
+          ],
+          "presentation": "saved-reopened",
+          "required_events": [
+            "model-edit:changed",
+            "save:clicked",
+            "configure:confirmation-required",
+            "confirm:clicked",
+            "configure:applied",
+            "editor:closed",
+            "editor:reopened",
+            "describe:saved-pair"
+          ],
+          "required_labels": [
+            "Edit profile"
+          ],
+          "selector": "edit-profile-dialog",
+          "selector_kind": "semantic-boundary-resolved-by-worker"
+        }
+      },
+      "post_interaction_accessibility": "Model saved."
+    }
+  },
+  "surface": "bot-model-config",
+  "synthetic_inputs": {
+    "confirmation_message": "Synthetic model cost and data policy require confirmation.",
+    "description": "Reviews release plans",
+    "initial_model": "synthetic-planner-v1",
+    "name": "synthetic-planner",
+    "provider": "synthetic-provider",
+    "provider_name": "Synthetic Provider",
+    "requested_model": "synthetic-planner-v2",
+    "soul": "Review synthetic release plans.",
+    "title": "Synthetic Planner"
+  },
+  "theme": "dark",
+  "transport_mapping": {
+    "android": {
+      "kind": "inventory-profile-parameter",
+      "profile": "synthetic-planner"
+    },
+    "desktop": {
+      "kind": "bot-scoped-websocket",
+      "profile": "synthetic-planner"
+    }
+  }
+}

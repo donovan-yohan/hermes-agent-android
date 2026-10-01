@@ -34,6 +34,23 @@ class VisualParityWorkflowTest(unittest.TestCase):
             self.assertIn(state, states)
             self.assertTrue(spec["states"][state]["post_interaction_accessibility"])
 
+    def test_model_editor_is_separate_and_ordered(self) -> None:
+        import json
+        catalog = json.loads((ROOT / "docs/parity/visual-capture-surfaces.json").read_text())
+        spec = catalog["surfaces"]["bot-model-config"]
+        self.assertEqual("587e673e2a2fae0616d8b750bb189217080f621a", spec["desktop_sha"])
+        self.assertEqual("bot-model-config-synthetic-v1", spec["fixture_id"])
+        self.assertEqual("e27448b231498e79ade668d68c0b6c6206951206", catalog["surfaces"]["bot-management"]["desktop_sha"])
+        self.assertEqual(7, len(spec["states"]))
+        for state in spec["states"]:
+            self.assertIn("          - " + state, self.text)
+        self.assertEqual(["scroll:Enter manually", "tap:Enter manually", "scroll:Model ID"],
+                         spec["states"]["bot-model-manual"]["interaction"])
+        for state in ("confirmation", "saved", "save-refused"):
+            self.assertIn("FIXTURE-STAGED", spec["states"]["bot-model-" + state]["fixture_note"])
+        self.assertIn('--ordered-actions', self.capture_script)
+        self.assertIn('legacy capture supports only one tap', self.capture_script)
+
     def test_is_manual_immutable_ref_and_artifact_only(self) -> None:
         for required in ("workflow_dispatch:", "Exact immutable 40-character", "contents: read", "Upload Android packet only", "^[0-9a-f]{40}$", "CHECKED_OUT_REF"):
             self.assertIn(required, self.text)
