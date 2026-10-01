@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "surface": "bot-avatar-editor",
+  "state": "bot-avatar-cancel",
+  "fixture_id": "bot-avatar-editor-synthetic-v1",
+  "theme": "light",
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "viewport": {
+    "window_width": 1440,
+    "window_height": 1100,
+    "screenshot_width": 384,
+    "screenshot_height": 536,
+    "crop": "Edit profile dialog"
+  },
+  "captured_at": "2026-10-01T19:58:19.236Z",
+  "screenshot_sha256": "0a6ff910eae49da7c0cf450dbaf445ff810eb79ed1fc563a06171d30f3a38495",
+  "fixture_implementation_sha256": "d93baa975e075ddfa2e4c2e38d70ac7e48eaa9acded10c5158f51b90d188b353",
+  "observed_platform_boundary": {
+    "presentation": "native-cancel-preview-unchanged",
+    "interaction_semantics": "Native Open File cancelled with Escape; trusted cancel event, zero files, no change event or asset writes, blue preview unchanged. Upstream only handles onchange; original pick promise has no cancel resolver (source boundary). No Android cancellation notice equivalent.",
+    "observed_asset_reads": 1,
+    "observed_asset_writes": 0,
+    "native_events": [
+      {
+        "type": "cancel",
+        "isTrusted": true,
+        "files": 0
+      }
+    ]
+  },
+  "run_boundary": "Fresh focused journey and refusal run: 2 passed, no retries; not a cross-platform equivalence assertion."
+}

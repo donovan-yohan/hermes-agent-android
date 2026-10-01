@@ -36,6 +36,7 @@ class BotManagementActions(
 fun BotManagementSheet(
     state: BotManagementState, actions: BotManagementActions,
     modelState: BotModelState = BotModelState(), modelActions: BotModelActions = BotModelActions(),
+    avatarState: BotAvatarState = BotAvatarState(), avatarActions: BotAvatarActions = BotAvatarActions(),
 ) {
     val dialog = state.dialog ?: return
     val tokens = HermesTheme.tokens
@@ -82,7 +83,9 @@ fun BotManagementSheet(
                     if (create) Text("Uses this Gateway’s provider credentials. Messaging accounts and chat history are not copied.",
                         style = HermesTheme.type.caption, color = tokens.textSecondary)
                     // These are explicit remaining gaps, not enabled no-op controls.
-                    ComingSoonAction("Avatar")
+                    if (dialog == BotManagementDialog.Edit && avatarState.ticket?.target == state.target)
+                        BotAvatarEditor(avatarState, avatarActions)
+                    else ComingSoonAction("Avatar")
                     if (dialog == BotManagementDialog.Edit && modelState.ticket?.target == state.target)
                         BotModelEditor(modelState, modelActions)
                     else ComingSoonAction("Model")

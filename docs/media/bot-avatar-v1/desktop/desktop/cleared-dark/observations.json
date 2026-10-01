@@ -1,0 +1,22 @@
+{
+  "presentation": "cleared-reopened-shape",
+  "boundary": "Actual Remove image and Save; clear RPC followed by fallback shape raster upload. Reopened shape is not confirmed asset absence; documented drift.",
+  "images": [],
+  "reads": 2,
+  "pending_reads": 0,
+  "refused_reads": 0,
+  "write_count": 3,
+  "native_events": [
+    {
+      "type": "cancel",
+      "isTrusted": true,
+      "files": 0
+    },
+    {
+      "type": "change",
+      "isTrusted": true,
+      "files": 1
+    }
+  ],
+  "visible_text": "Edit profile\n\nAppearance and role for Synthetic Avatar (synthetic-avatar).\n\nBot\nGenerate\nUpload\nPet\nAuto\nRandomize\nLock face\nFace follows the name.\nClassic shapes\nTitle\nDescription\nAdvanced \u2014 model, skills, toolsets, SOUL.md\nCancel\nSave\nClose"
+}

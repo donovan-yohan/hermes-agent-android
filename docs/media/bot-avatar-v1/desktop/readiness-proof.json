@@ -1,0 +1,7 @@
+{
+  "realReadDelayedThenReleased": true,
+  "rosterImageReadyAfterReply": true,
+  "alreadyOpenEditorImageCount": 0,
+  "reopenedEditorImageVisible": true,
+  "conclusion": "Editor seeds image only on bot/open key change, not asynchronous appearance.image change."
+}

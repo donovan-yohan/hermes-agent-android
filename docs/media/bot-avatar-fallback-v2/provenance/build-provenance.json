@@ -1,0 +1,16 @@
+{
+  "source": {
+    "kind": "working-tree-build",
+    "base_git_sha": "60cc7deb8035e8ca3061021ebe11118af9dc1be1",
+    "diff_sha256": "e004a20017d657b2eced29884af79a3ffc014cb240c4e6decd4d70c23e0b0521",
+    "source_manifest_sha256": "5baa3a55bbc27e316a6b27c4a03a2e58fe436d6751a849252bfd81b2615e6f5b",
+    "note": "Base SHA plus retained working-tree patch; editor now renders shared Android glyph. No Desktop raster equivalence."
+  },
+  "installed": {
+    "apk_sha256": "792b3cee351d1239bed2c2a90c19f414dd2bc5f47c8eef438364bd9bacc1aee5",
+    "installed_apk_sha256": "792b3cee351d1239bed2c2a90c19f414dd2bc5f47c8eef438364bd9bacc1aee5",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  }
+}

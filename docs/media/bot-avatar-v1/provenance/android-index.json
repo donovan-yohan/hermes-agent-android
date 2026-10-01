@@ -1,0 +1,82 @@
+[
+  {
+    "state": "bot-avatar-loaded",
+    "theme": "light",
+    "screenshot_sha256": "fa437f17dd8006ab3c0cc9e5526be104fbc8c26f530667e5c04058302f3c4037"
+  },
+  {
+    "state": "bot-avatar-loading",
+    "theme": "light",
+    "screenshot_sha256": "8acc35c25c22091e5a636a24ea3f2341cb028ae97fa24d47a9be74c7d2e4cecb"
+  },
+  {
+    "state": "bot-avatar-picking",
+    "theme": "light",
+    "screenshot_sha256": "d157a9e96b943cc6a0d0dbecabe30ae2ddec3899ccf2f6ab7357e62f79dd88ca"
+  },
+  {
+    "state": "bot-avatar-cancel",
+    "theme": "light",
+    "screenshot_sha256": "ff18ad5b953820bf7c1b1e7808c8d9b8ce8a56dd4f471ef512f0052dd7c4d4b4"
+  },
+  {
+    "state": "bot-avatar-error",
+    "theme": "light",
+    "screenshot_sha256": "1e2865d459516938a058412251288bfdb03973f5026e4fe8b3bd7b8a756dd05c"
+  },
+  {
+    "state": "bot-avatar-changed",
+    "theme": "light",
+    "screenshot_sha256": "81834ffc0ce2c619462f8a7b6557673180fe34ad0ef778f1c75fc9958944606e"
+  },
+  {
+    "state": "bot-avatar-saved",
+    "theme": "light",
+    "screenshot_sha256": "80a65f2c6d7c0b18f53f84fbfc14a9275b019f437ee644c48082eefb826e103d"
+  },
+  {
+    "state": "bot-avatar-cleared",
+    "theme": "light",
+    "screenshot_sha256": "f9eb880bcf5d637623aecb6fb230c67c5fe8b9ecc564e9495859f24cd6dd8a7a"
+  },
+  {
+    "state": "bot-avatar-loaded",
+    "theme": "dark",
+    "screenshot_sha256": "b67236271fbd66f24fb01366c83e4c61ae15548250f4089d00b488b61d28abb8"
+  },
+  {
+    "state": "bot-avatar-loading",
+    "theme": "dark",
+    "screenshot_sha256": "773c3b21f16cadf0d2ed961cb62b88aff5285f0d117d10ff046cadc7c5876fe5"
+  },
+  {
+    "state": "bot-avatar-picking",
+    "theme": "dark",
+    "screenshot_sha256": "784b7c48d45ccb234e2867daef52abf81d8d0d4369639465224991545ff235e3"
+  },
+  {
+    "state": "bot-avatar-cancel",
+    "theme": "dark",
+    "screenshot_sha256": "cb1650cb321071df12f621fde8e35ba8113411f4d87b10de084e3bb35e3f839c"
+  },
+  {
+    "state": "bot-avatar-error",
+    "theme": "dark",
+    "screenshot_sha256": "5aeb498d244dd91dedc8ccb38826b036add60aadac6e3484eadb4b13dfc515fb"
+  },
+  {
+    "state": "bot-avatar-changed",
+    "theme": "dark",
+    "screenshot_sha256": "f2fa74bbc62daa82ee4f948952eb0e31641ce0e2b7c9b79e5af94c3a57c8876f"
+  },
+  {
+    "state": "bot-avatar-saved",
+    "theme": "dark",
+    "screenshot_sha256": "ca5132ac1aada3e5544d5cd8a8da47479cc28ed0a236d69cdd335b185044032c"
+  },
+  {
+    "state": "bot-avatar-cleared",
+    "theme": "dark",
+    "screenshot_sha256": "49a157b071436b4ab6b5a18ec911143362809272154c3d0cdda46a3aec1af572"
+  }
+]

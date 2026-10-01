@@ -15,8 +15,11 @@ internal class ModelTestHost : PluginHost {
     var answer: suspend (String, JsonObject) -> PluginHostResult = { _, _ -> error("Unexpected request") }
     override suspend fun request(method: String, params: JsonObject): PluginHostResult = error("Unfenced call")
     override suspend fun requestAtEndpoint(expectedGeneration: Long, method: String, params: JsonObject): PluginHostResult {
+        return requestAtEndpointGuarded(expectedGeneration, method, params) { true }
+    }
+    override suspend fun requestAtEndpointGuarded(expectedGeneration: Long, method: String, params: JsonObject, dispatchAllowed: () -> Boolean): PluginHostResult {
         beforeDispatch()
-        if (expectedGeneration != endpointGeneration.value) return PluginHostResult.Refused(0, "Changed")
+        if (!dispatchAllowed() || expectedGeneration != endpointGeneration.value) return PluginHostResult.Refused(0, "Changed")
         calls += method to params
         val response = answer(method, params)
         return if (expectedGeneration == endpointGeneration.value) response else PluginHostResult.Refused(0, "Changed")

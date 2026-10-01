@@ -1,0 +1,57 @@
+{
+  "receipts": [
+    {
+      "state": "bot-avatar-cleared",
+      "theme": "dark",
+      "image": "android/cleared-dark/reference.png",
+      "sha256": "b93deca6fc52828fb8c8935b0e5eb2ef5c4492accf9652d005141fd291879615"
+    },
+    {
+      "state": "bot-avatar-cleared",
+      "theme": "light",
+      "image": "android/cleared-light/reference.png",
+      "sha256": "f75d4c7405daa3eaffa1919337bdae796107460eff68485ea703575c71ab553c"
+    },
+    {
+      "state": "bot-avatar-error",
+      "theme": "dark",
+      "image": "android/error-dark/reference.png",
+      "sha256": "490fd668d5952c7b00dca4e548192f967931cd5620d6cfa4b4356597ef6b30c5"
+    },
+    {
+      "state": "bot-avatar-error",
+      "theme": "light",
+      "image": "android/error-light/reference.png",
+      "sha256": "d2168b2cc200de9cd45d7a6bd3fd46328edebad90c06e807af568d1dc73f7879"
+    },
+    {
+      "state": "bot-avatar-loaded",
+      "theme": "dark",
+      "image": "android/loaded-dark/reference.png",
+      "sha256": "e19c21b3ad0d3b57494210a6764c7874b5994533e8ca4f16e867413270732f19"
+    },
+    {
+      "state": "bot-avatar-loaded",
+      "theme": "light",
+      "image": "android/loaded-light/reference.png",
+      "sha256": "825af687b849f37cc75f55cb15f57ccd451b4bcaf522b32f0317a883063df55b"
+    },
+    {
+      "state": "bot-avatar-loading",
+      "theme": "dark",
+      "image": "android/loading-dark/reference.png",
+      "sha256": "ac74a0fdbe871b33f2a5d48bb67e3918bd47db80145dd593cb43c883ae37c37d"
+    },
+    {
+      "state": "bot-avatar-loading",
+      "theme": "light",
+      "image": "android/loading-light/reference.png",
+      "sha256": "72b3bb92cd2a7b11f3d10d480dcf48254a5b20ebcdbcd2a35874841c5e471631"
+    }
+  ],
+  "receipt_count": 8,
+  "reconstructed_source_entries": 604,
+  "previous_snapshot_files_unchanged": 127,
+  "scope": "Fresh Android emulator API 37 standalone production-editor fixture captures. Existing v1 receipt schema, not a new equivalent-platform fixture. Registered navigation proved separately by native Robolectric Compose test. No new Desktop pixels or raster equivalence.",
+  "verification": "All eight receipts validated; original image bytes/hash preserved; source patch reconstructs exact app source manifest; old packet hashes unchanged."
+}

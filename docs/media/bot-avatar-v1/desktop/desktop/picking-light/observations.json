@@ -1,0 +1,22 @@
+{
+  "presentation": "picking-native-app-unchanged",
+  "boundary": "Actual native Open File window open; screenshot is real app editor beneath it, not OS picker pixels. Native picker separately retained; OS chrome is not light/dark emulated.",
+  "images": [
+    {
+      "width": 256,
+      "height": 256,
+      "center_rgb": [
+        60,
+        140,
+        220
+      ],
+      "data_sha256": "35f6310fdd6044e83d71311482ebf8068cfdb5f02ea3295498c6b9f29ccd57c0"
+    }
+  ],
+  "reads": 1,
+  "pending_reads": 0,
+  "refused_reads": 0,
+  "write_count": 0,
+  "native_events": [],
+  "visible_text": "Edit profile\n\nAppearance and role for Synthetic Avatar (synthetic-avatar).\n\nBot\nGenerate\nUpload\nPet\nRemove image \u2014 use shape\nChoose an image\u2026\nTitle\nDescription\nAdvanced \u2014 model, skills, toolsets, SOUL.md\nCancel\nSave\nClose"
+}

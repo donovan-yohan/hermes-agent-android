@@ -92,6 +92,71 @@
         }
       }
     },
+    "bot-avatar-editor": {
+      "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+      "fixture_id": "bot-avatar-editor-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "Source-only Edit profile boundary, must be scoped and runtime verified. Android mounts its production avatar editor alone; Desktop mounts actual AvatarPicker in Edit profile. Picking is app waiting state, not OS/browser picker. Android saved/cleared are inline staged outcomes; no Desktop equivalent pixels claimed. All rendered acceptance pending #194.",
+      "states": {
+        "bot-avatar-loaded": {
+          "interaction": [
+            "scroll:Avatar preview"
+          ],
+          "post_interaction_accessibility": "Avatar preview",
+          "fixture_note": "Named profiles.get_asset returns a real synthetic PNG; no write."
+        },
+        "bot-avatar-loading": {
+          "interaction": [
+            "scroll:Loading avatar…"
+          ],
+          "post_interaction_accessibility": "Loading avatar…",
+          "fixture_note": "Actual asset request held pending; unchanged 60-second production deadline applies. Capture must precede timeout."
+        },
+        "bot-avatar-picking": {
+          "interaction": [
+            "scroll:Choosing image…"
+          ],
+          "post_interaction_accessibility": "Choosing image…",
+          "fixture_note": "Production beginPick staged; app waiting state only, NOT Android system picker pixels or a selected file."
+        },
+        "bot-avatar-cancel": {
+          "interaction": [
+            "scroll:Image selection cancelled. Nothing was saved."
+          ],
+          "post_interaction_accessibility": "Image selection cancelled. Nothing was saved.",
+          "fixture_note": "Production beginPick then null result; unchanged draft and zero writes. Desktop uses its browser file chooser; no equivalent cancel notice claimed."
+        },
+        "bot-avatar-error": {
+          "interaction": [
+            "scroll:The avatar could not be read. Close and try again."
+          ],
+          "post_interaction_accessibility": "The avatar could not be read. Close and try again.",
+          "fixture_note": "Actual get_asset refuses through GatewayPluginHost; no original and writes disabled."
+        },
+        "bot-avatar-changed": {
+          "interaction": [
+            "scroll:Save avatar"
+          ],
+          "post_interaction_accessibility": "Save avatar",
+          "fixture_note": "Production beginPick and real synthetic-image normalization then result callback; draft only, zero writes. No real system-picker gesture claimed."
+        },
+        "bot-avatar-saved": {
+          "interaction": [
+            "scroll:Avatar saved."
+          ],
+          "post_interaction_accessibility": "Avatar saved.",
+          "fixture_note": "Fixture-staged production pick/normalize/save; one profiles.set_asset followed by named get_asset byte-equal readback. Inline Android result, unlike Desktop dialog close/reopen."
+        },
+        "bot-avatar-cleared": {
+          "interaction": [
+            "scroll:Avatar removed."
+          ],
+          "post_interaction_accessibility": "Avatar removed.",
+          "fixture_note": "Fixture-staged explicit production Remove then Save; clear:true followed by found:false readback. No delete inferred from absence or cancelled pick."
+        }
+      }
+    },
     "profile-avatars": {
       "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
       "fixture_id": "profile-avatars-synthetic-v1",

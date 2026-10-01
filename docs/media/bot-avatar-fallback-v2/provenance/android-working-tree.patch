@@ -1,0 +1,258 @@
+diff --git a/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotAvatarEditor.kt b/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotAvatarEditor.kt
+index f5c0e372..8ecd3005 100644
+--- a/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotAvatarEditor.kt
++++ b/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotAvatarEditor.kt
+@@ -58,7 +58,19 @@ fun BotAvatarEditor(state: BotAvatarState, actions: BotAvatarActions, chooseImag
+     }
+     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+         Text("Avatar", style = HermesTheme.type.sectionLabel)
+-        preview?.let { Image(it.asImageBitmap(), "Avatar preview", Modifier.size(96.dp).clip(BOT_AVATAR_SHAPE)) }
++        // A cleared draft must not reuse the roster's still-admitted avatarRef.
++        // Derive the shared fallback from the immutable canonical target, not an
++        // editable display-name field, and let ProfileGlyph use the active theme.
++        val bitmap = preview.takeIf { state.bytes != null }
++        if (bitmap != null) Image(bitmap.asImageBitmap(), "Avatar preview", Modifier.size(96.dp).clip(BOT_AVATAR_SHAPE))
++        else state.ticket?.target?.name?.let { name ->
++            com.hermesagent.mobile.ui.common.ProfileGlyph(
++                profile = com.hermesagent.mobile.data.profiles.HermesProfile(name = name, isDefault = name == "default"),
++                size = 96.dp,
++                shape = BOT_AVATAR_SHAPE,
++                contentDescription = "Avatar fallback: $name",
++            )
++        }
+         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+             ComingSoonAction("Bot", Modifier.semantics { role = Role.Button })
+             ComingSoonAction("Generate", Modifier.semantics { role = Role.Button })
+diff --git a/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarJourneyTest.kt b/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarJourneyTest.kt
+index c1241d98..ae997901 100644
+--- a/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarJourneyTest.kt
++++ b/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarJourneyTest.kt
+@@ -91,6 +91,8 @@ class BotsAvatarJourneyTest {
+         compose.onNodeWithText("Save avatar").performClick()
+         compose.waitForIdle()
+         compose.onNodeWithText("Avatar removed.").assertIsDisplayed()
++        compose.onNodeWithContentDescription("Avatar fallback: worker").assertIsDisplayed()
++        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
+         assertEquals(1, host.calls.count { it.first == "profiles.set_asset" })
+         assertEquals("profiles.get_asset", host.calls.last().first)
+     }
+diff --git a/docs/parity/bot-avatar-editor.md b/docs/parity/bot-avatar-editor.md
+index 766ce910..e2baca64 100644
+--- a/docs/parity/bot-avatar-editor.md
++++ b/docs/parity/bot-avatar-editor.md
+@@ -28,6 +28,24 @@ This delta does not restamp the historical read-only captures in [bot identity](
+   configuration is a separate describe/configure capability. Image bytes never
+   go into `profiles.configure`, SOUL.md, plugin storage or attachment staging.
+ 
++## Scoped clear adaptation
++
++Desktop `profile-ops.ts:94-118,194-201` at the pin intentionally rasterizes a
++160px vector face for **inter-agent notices**, and suppresses that backfilled
++raster on the roster so its live shape remains live. It is not an accidental
++failure of clear. Android does not implement that shape authoring/runtime and
++must not fabricate or upload an equivalent Desktop raster. Android clear is
++scoped to confirmed asset absence and its existing shared `ProfileGlyph`.
++
++The editor now renders that shared glyph at 96dp whenever no decoded preview is
++available, including clear, absence, loading and refused reads. Identity comes
++from the immutable ticket's canonical target (not the editable display label);
++the active `HermesTheme` supplies fallback ink. A cleared draft deliberately has
++no roster avatar reference, preventing a still-cached photo from covering it.
++Android usages remain the rail, picker, profile roster, session tags and Bots row;
++this adds the editor, not Desktop BotFace equivalence. Shape/color authoring,
++Pet and Generate remain disabled WIP and deferred under #194.
++
+ ## Android implementation
+ 
+ Existing Bot → Edit profile now includes the avatar editor. Upload invokes
+@@ -80,8 +98,8 @@ retries; its 14 images join two previously successful pending-diagnostic images.
+ It exercised native picker Cancel (trusted event), production file normalization
+ and actual Gateway-backed synthetic profile upload/clear, with uploaded bytes
+ verified against disk. Desktop saved/cleared are **reopened** outcomes.
+-Clear is followed by upstream `pushLocalAvatars` rasterizing and writing the shape;
+-this observed drift is not Android's confirmed absence. Desktop read pending/error
++Clear is followed by upstream `pushLocalAvatars` intentionally rasterizing and
++writing the shape for inter-agent notices; this scoped adaptation is not Android's confirmed absence. Desktop read pending/error
+ render shape fallback without Android's inline labels; native picker pending and
+ Cancel leave its preview unchanged. See [the full map and history](bot-avatar-visual-acceptance.md).
+ 
+@@ -93,7 +111,7 @@ Robolectric checks covered repository, ViewModel, native decode/crop, Compose
+ controls, ActivityResult cancellation and fixture paths. No additional Gradle
+ execution was performed for this publication. Installed-APK captures and real Desktop
+ captures now support bounded acceptance in the paired report below; strict UI
+-equivalence and the Desktop clear/backfill drift remain unresolved under #194.
++equivalence and shape/pet/generate authoring remain deferred under #194.
+ The Android runtime uses synthetic in-memory RPC; it is not live-Gateway acceptance.
+ 
+ ## Divergences
+@@ -106,7 +124,7 @@ The Android runtime uses synthetic in-memory RPC; it is not live-Gateway accepta
+ | Bot shape/color authoring, Generate, Pet | omission | Visible disabled WIP; no pet asset kind, gallery URL fetch or image generation call invented | coming soon — #194; reachable sprite sheets and inline generated images remain unproved |
+ | New/duplicate avatar authoring | omission | Avatar remains WIP outside existing-Bot Edit | coming soon — #194; no asset write before a profile exists |
+ | Shared dialog preview and close/reopen saved result | mobile-adaptation | Scrollable inline phone editor; standalone production-editor debug capture | Small viewport; catalog names staged app states rather than claiming Desktop-equivalent outcomes |
+-| Clear then shape-raster reupload | drift | Clear confirms intentional asset absence in the fixture | deferred: #194 — Desktop recreates an asset; [actual disk outcome](../media/bot-avatar-v1/desktop/clear-outcome.json), not absence parity |
++| Clear then intentional notice-only shape-raster backfill | mobile-adaptation | Clear confirms asset absence and shows shared Android profile glyph; no synthetic shape upload | `profile-ops.ts:94-118,194-201`; [actual disk outcome](../media/bot-avatar-v1/desktop/clear-outcome.json). Shape authoring/runtime remains deferred #194, not a clear bug |
+ | Strict rendered equivalence | omission | Bounded paired evidence complete; staged Android and real Desktop actions explicitly separated | deferred: #194 — different inline vs reopened states and unsupported appearance modes remain; no fake equivalence |
+ 
+ ## Visual report
+diff --git a/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarRegisteredJourneyTest.kt b/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarRegisteredJourneyTest.kt
+new file mode 100644
+index 00000000..08a954e3
+--- /dev/null
++++ b/app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsAvatarRegisteredJourneyTest.kt
+@@ -0,0 +1,156 @@
++package com.hermesagent.mobile.plugins.bots
++
++import androidx.compose.ui.test.*
++import com.hermesagent.mobile.plugins.*
++import com.hermesagent.mobile.data.gateway.*
++import com.hermesagent.mobile.data.profiles.*
++import com.hermesagent.mobile.ui.theme.AppearanceSelection
++import com.hermesagent.mobile.ui.theme.HermesTheme
++import kotlinx.coroutines.*
++import kotlinx.coroutines.flow.*
++import kotlinx.serialization.json.*
++import org.junit.After
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.GraphicsMode
++
++/** Registered route, real host dispatch/roster admission/decoder, synthetic asset server. */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34], qualifiers = "w411dp-h891dp")
++@GraphicsMode(GraphicsMode.Mode.NATIVE)
++class BotsAvatarRegisteredJourneyTest {
++    @get:Rule val compose = androidx.compose.ui.test.junit4.v2.createAndroidComposeRule<androidx.activity.ComponentActivity>()
++    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
++    private val calls = mutableListOf<Pair<String, JsonObject>>()
++    private var stored: ByteArray? = null
++    private val rpc = object : EndpointDispatchingGatewayRpcClient {
++        override val events: Flow<GatewayEvent> = emptyFlow()
++        override suspend fun request(method: String, params: JsonObject): JsonElement = error("unfenced RPC")
++        override suspend fun requestAtEndpointDispatch(method: String, params: JsonObject, dispatch: (() -> Boolean) -> Boolean): JsonElement {
++            check(dispatch { calls += method to params; true })
++            return when (method) {
++                "profiles.list" -> buildJsonObject { put("profiles", buildJsonArray { add(buildJsonObject {
++                    put("name", "worker"); put("display_name", "Different Label"); put("has_avatar", stored != null)
++                }) }) }
++                "profiles.describe" -> Json.parseToJsonElement("""{"name":"worker","description":"","soul":"","model":{"provider":"custom","default":"original"}}""")
++                "model.options" -> Json.parseToJsonElement("""{"providers":[]}""")
++                "profiles.get_asset" -> stored?.let { avatarReply(it) } ?: Json.parseToJsonElement("""{"found":false}""")
++                "profiles.set_asset" -> {
++                    assertEquals("worker", params.getValue("name").jsonPrimitive.content)
++                    assertEquals("avatar", params.getValue("asset").jsonPrimitive.content)
++                    stored = if (params["clear"] == JsonPrimitive(true)) null else
++                        java.util.Base64.getDecoder().decode(params.getValue("data").jsonPrimitive.content.substringAfter(','))
++                    buildJsonObject { put("ok", true); put("asset", "avatar"); put("size", stored?.size ?: 0) }
++                }
++                else -> error("Unexpected $method")
++            }
++        }
++        override fun close() {}
++    }
++    private val host = GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(rpc), MutableStateFlow(0L), EndpointDispatchFence())
++    private val coordinator = AvatarRosterCoordinator(host, ProfileAvatarRepository(scope, decoder = AndroidAvatarDecoder()))
++    private var launchedCode = -1
++    private val picker = object : androidx.activity.result.ActivityResultRegistry() {
++        override fun <I, O> onLaunch(requestCode: Int, contract: androidx.activity.result.contract.ActivityResultContract<I, O>, input: I,
++            options: androidx.core.app.ActivityOptionsCompat?) { launchedCode = requestCode }
++    }
++    private val pickerOwner = object : androidx.activity.result.ActivityResultRegistryOwner { override val activityResultRegistry = picker }
++    @After fun close() { coordinator.close(); scope.cancel() }
++
++    private fun launch() {
++        val registry = ContributionRegistry()
++        BotsPlugin(scope = scope, avatarRoster = coordinator).register(createPluginContext(
++            pluginId = "bots", registry = registry, host = host,
++            rest = object : PluginRest {
++                override suspend fun execute(pluginId: String, path: String, options: PluginRestOptions) = PluginRestResult.Success(200, "{}".toByteArray())
++            }, socket = object : PluginSocket {
++                override fun connect(pluginId: String, path: String, onMessage: (String) -> Unit): () -> Unit = {}
++            }, storage = object : PluginStorage {
++                override suspend fun get(key: String, fallback: String?) = fallback
++                override suspend fun set(key: String, value: String) {}
++                override suspend fun remove(key: String) {}
++            }, os = object : PluginOs {
++                override fun notify(input: PluginNotificationInput) {}
++                override suspend fun openExternal(url: String) = false
++                override suspend fun writeClipboard(text: String) = false
++                override suspend fun share(text: String, title: String?) = false
++            },
++        ))
++        val route = registry.getArea(PluginAreas.ROUTES_AREA).single { it.id.endsWith(":route") }
++        compose.setContent {
++            androidx.compose.runtime.CompositionLocalProvider(
++                androidx.activity.compose.LocalActivityResultRegistryOwner provides pickerOwner,
++                com.hermesagent.mobile.ui.common.LocalProfileAvatarRoster provides coordinator,
++            ) { HermesTheme(AppearanceSelection()) { route.render!!.invoke() } }
++        }
++        compose.waitForIdle()
++    }
++    private fun edit() {
++        compose.onNodeWithContentDescription("Actions for Different Label").performClick()
++        compose.onNodeWithText("Edit…").performClick()
++        compose.waitForIdle()
++        compose.onNodeWithContentDescription("Drag handle")
++            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.Expand)
++        compose.waitForIdle()
++    }
++    private fun closeSheet() {
++        compose.onNodeWithText("Cancel").performScrollTo().performClick()
++        compose.waitForIdle()
++    }
++    private fun bluePixels(): Int {
++        val decor = compose.activity.window.decorView
++        val pixels = android.graphics.Bitmap.createBitmap(decor.width, decor.height, android.graphics.Bitmap.Config.ARGB_8888)
++        compose.runOnIdle { decor.draw(android.graphics.Canvas(pixels)) }
++        var count = 0
++        for (y in 0 until pixels.height) for (x in 0 until pixels.width)
++            if (pixels.getPixel(x, y) == android.graphics.Color.rgb(60, 140, 220)) count++
++        pixels.recycle()
++        return count
++    }
++    @Test fun registeredPhotoSaveRosterReopenClearRosterReopenHasNoStalePhoto() {
++        launch()
++        assertEquals(0, bluePixels())
++        edit()
++        compose.onNodeWithContentDescription("Avatar fallback: worker").performScrollTo().assertIsDisplayed()
++        val uri = android.net.Uri.parse("content://synthetic.avatar/registered")
++        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
++        org.robolectric.Shadows.shadowOf(context.contentResolver).registerInputStream(uri,
++            java.io.ByteArrayInputStream(com.hermesagent.mobile.fixtureAvatarPng()))
++        compose.onNodeWithText("Upload").performScrollTo().performClick()
++        compose.runOnIdle { picker.dispatchResult(launchedCode, android.app.Activity.RESULT_OK, android.content.Intent().setData(uri)) }
++        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Avatar preview").fetchSemanticsNodes().isNotEmpty() }
++        assertNull(stored)
++        compose.onNodeWithText("Save avatar").performScrollTo().performClick()
++        compose.waitForIdle()
++        compose.onNodeWithText("Avatar saved.").performScrollTo()
++        compose.onNodeWithText("Avatar saved.").assertIsDisplayed()
++        assertNotNull(stored)
++        closeSheet()
++        compose.waitUntil(5_000) { bluePixels() > 100 }
++        edit()
++        compose.onNodeWithContentDescription("Avatar preview").performScrollTo().assertIsDisplayed()
++        compose.onNodeWithText("Remove image").performScrollTo().performClick()
++        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
++        compose.onNodeWithContentDescription("Avatar fallback: worker").performScrollTo().assertIsDisplayed()
++        assertNotNull(stored)
++        compose.onNodeWithText("Save avatar").performScrollTo().performClick()
++        compose.waitForIdle()
++        compose.onNodeWithText("Avatar removed.").performScrollTo().assertIsDisplayed()
++        assertNull(stored)
++        closeSheet()
++        assertEquals(0, bluePixels())
++        edit()
++        compose.onNodeWithContentDescription("Avatar fallback: worker").performScrollTo().assertIsDisplayed()
++        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
++        compose.onNodeWithText("Save avatar").performScrollTo().assertIsNotEnabled()
++        assertEquals(2, calls.count { it.first == "profiles.set_asset" })
++        val writes = calls.filter { it.first == "profiles.set_asset" }
++        assertEquals(setOf("name", "asset", "data"), writes.first().second.keys)
++        assertEquals(setOf("name", "asset", "clear"), writes.last().second.keys)
++        assertTrue(calls.dropWhile { it != writes.last() }.any { it.first == "profiles.get_asset" })
++    }
++}

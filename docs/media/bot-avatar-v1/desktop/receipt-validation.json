@@ -1,0 +1,98 @@
+[
+  {
+    "receipt": "desktop/loaded-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/loaded-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/loading-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/loading-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/picking-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/picking-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/cancel-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/cancel-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/error-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/error-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/changed-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/changed-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/saved-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/saved-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/cleared-light/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  },
+  {
+    "receipt": "desktop/cleared-dark/contract.json",
+    "exit": 0,
+    "stdout": "ok    desktop capture receipt is safe, complete, and catalogued\n",
+    "stderr": ""
+  }
+]

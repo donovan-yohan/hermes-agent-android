@@ -1,0 +1,33 @@
+{
+  "presentation": "saved-reopened",
+  "boundary": "Shared Save closes editor; 2375 uploaded bytes verified exactly on disk; orange preview captured only after reopening.",
+  "images": [
+    {
+      "width": 256,
+      "height": 256,
+      "center_rgb": [
+        220,
+        140,
+        60
+      ],
+      "data_sha256": "5604c12500776d26ed10af86e12102558c1ef2d07997c13e5c0f89a8b48afce3"
+    }
+  ],
+  "reads": 1,
+  "pending_reads": 0,
+  "refused_reads": 0,
+  "write_count": 1,
+  "native_events": [
+    {
+      "type": "cancel",
+      "isTrusted": true,
+      "files": 0
+    },
+    {
+      "type": "change",
+      "isTrusted": true,
+      "files": 1
+    }
+  ],
+  "visible_text": "Edit profile\n\nAppearance and role for Synthetic Avatar (synthetic-avatar).\n\nBot\nGenerate\nUpload\nPet\nRemove image \u2014 use shape\nAuto\nRandomize\nLock face\nFace follows the name.\nClassic shapes\nTitle\nDescription\nAdvanced \u2014 model, skills, toolsets, SOUL.md\nCancel\nSave\nClose"
+}

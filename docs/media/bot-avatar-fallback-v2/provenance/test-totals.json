@@ -1,0 +1,14 @@
+{
+  "Debug": {
+    "tests": 3304,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1
+  },
+  "Release": {
+    "tests": 2618,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1
+  }
+}

@@ -185,7 +185,8 @@ def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
         labels = accessibility_labels(evidence)
         if expected and (evidence.get("expected_description") != expected or expected not in labels):
             raise ValueError("Android receipt lacks catalogued post-interaction accessibility state")
-        if receipt["state"] == "bot-model-inventory-loading":
+        if receipt["state"] in ("bot-model-inventory-loading", "bot-avatar-loading"):
+            deadline = 60 if receipt["state"] == "bot-avatar-loading" else 20
             bracket = receipt.get("screenshot_bracket")
             if not isinstance(bracket, dict):
                 raise ValueError("loading capture needs screenshot state bracket")
@@ -193,11 +194,11 @@ def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
                 if expected not in accessibility_labels(bracket.get(side)):
                     raise ValueError("loading state did not bracket screenshot")
             timing = bracket.get("timing")
-            if not isinstance(timing, dict) or timing.get("basis") != "monotonic-before-fixture-launch" or timing.get("deadline_seconds") != 20:
+            if not isinstance(timing, dict) or timing.get("basis") != "monotonic-before-fixture-launch" or timing.get("deadline_seconds") != deadline:
                 raise ValueError("loading capture needs production deadline proof")
             values = [timing.get(key) for key in ("screenshot_start_seconds", "screenshot_end_seconds", "postcheck_seconds")]
-            if any(type(value) not in (int, float) for value in values) or not 0 <= values[0] <= values[1] <= values[2] < 20:
-                raise ValueError("loading screenshot/check must finish before the production 20-second deadline")
+            if any(type(value) not in (int, float) for value in values) or not 0 <= values[0] <= values[1] <= values[2] < deadline:
+                raise ValueError(f"loading screenshot/check must finish before the production {deadline}-second deadline")
     elif platform == "desktop":
         if receipt.get("desktop_upstream_sha") != spec["desktop_sha"]:
             raise ValueError("Desktop receipt SHA does not match its catalogued surface pin")

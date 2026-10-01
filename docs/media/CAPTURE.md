@@ -4,6 +4,18 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Avatar fallback follow-up
+
+[Report](bot-avatar-fallback-v2/REPORT.md) and [per-image verification](bot-avatar-fallback-v2/verification.json):
+eight original API 37 emulator PNGs, loaded/loading/error/cleared in light/dark,
+with adjacent app-only XML and validated receipts. Working-tree build at
+`60cc7deb8035e8ca3061021ebe11118af9dc1be1`; retained exact patch/app manifest and
+installed APK hash. Existing v1 fixture/schema, not newly claimed Desktop equivalence.
+The registered sheet/upload/save/roster/reopen/clear/reopen journey is separately
+proved by native Robolectric Compose. All 127 previous avatar packet files remain
+unchanged; no new Desktop captures. Shape backfill is intentional notice-only behavior;
+Android clear is a scoped shared-glyph adaptation. Shape/pet/generate remain deferred.
+
 ## Model editor v2 supplement
 
 The [paired model-editor report](bot-model-v2/REPORT.md) publishes 30 original
@@ -129,6 +141,26 @@ megabytes before the first paragraph is not worth it.
 The contact sheet for `live-turn.gif` is 21 tiles, one per 10 frames, covering
 the clip end to end. Every tile shows only the chat surface; the drawer is never
 opened, so the only titles in the file are the two above.
+
+## Bot avatar v1 supplement
+
+[Paired report](bot-avatar-v1/REPORT.md) and
+[per-file publication manifest](bot-avatar-v1/publication-verification.json):
+16 Android + 16 Desktop canonical v1 receipts and unchanged original editor PNGs.
+Each manifest row names its state, theme, receipt, image and SHA-256.
+
+| Files | Capture conditions and scope |
+|---|---|
+| `bot-avatar-v1/android/*/reference.png` (16) | API 37 emulator, painted/inset-safe standalone production editor; eight fixture-staged states in light/dark. Dirty base `0cc6ea3564fc268b8572e4f27c59e02c3f23546b` plus exact retained patch; APK `d3f30a1aef2cb15ab2c58b97d90d0606a32a850dc233f06fa2a4553528c62a27`. No Android OS-picker gesture proof. |
+| `bot-avatar-v1/desktop/desktop/*/screenshot.png` (16) | Real Electron shared dialog, disposable synthetic E2E Gateway/disk, upstream `587e673e2a2fae0616d8b750bb189217080f621a`; 14 fresh journey/refusal images and two preserved pending-diagnostic images. Native cancel, save bytes and clear→shape-raster drift separately proved. |
+| `bot-avatar-v1/desktop/native-picker.png` (1) | Supplementary Linux native Open File chooser on owned disposable display; not a themed editor state or Android-equivalence claim. |
+| `bot-avatar-v1/desktop/blue.png`, `orange.png` (2) | Synthetic image input fixtures, not acceptance screenshots. |
+
+The packet contains safe observations, exact patches and source hashes, not
+APKs, raw logs, serials or private paths. Clear confirms absence on Android's
+fixture but Desktop recreates a shape asset; #194 remains open. The report is
+bounded acceptance, not strict pixel/interaction equivalence or an integrated
+publication-head build. Historical failed captures were not overwritten.
 
 ## Open blockers
 

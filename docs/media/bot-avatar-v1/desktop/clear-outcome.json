@@ -1,0 +1,18 @@
+{
+  "assetExists": true,
+  "write_sequence": [
+    {
+      "clear": false,
+      "data_sha256": "373f11fa17109557f7825226fbe638d7afc3c97756c3dfe2df488ee36e966c4f"
+    },
+    {
+      "clear": true,
+      "data_sha256": null
+    },
+    {
+      "clear": false,
+      "data_sha256": "a56fd088231e61fb8699e0548236fced02aba7f90a01d2f9b832ea80bda213f5"
+    }
+  ],
+  "boundary": "clear followed by fallback-shape raster upload; not confirmed absence"
+}

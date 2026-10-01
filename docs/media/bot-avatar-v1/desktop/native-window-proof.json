@@ -1,0 +1,17 @@
+{
+  "title": "Open File",
+  "toolkit_class": "Electron",
+  "native_window_dimensions": [
+    1124,
+    822
+  ],
+  "action": "XTest Escape sent only after checking current focused native window title",
+  "postcondition": [
+    {
+      "type": "cancel",
+      "isTrusted": true,
+      "files": 0
+    }
+  ],
+  "source": "Native xwininfo tree plus trusted browser cancel-event observation; no filechooser interception for cancellation"
+}

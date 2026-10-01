@@ -1,0 +1,490 @@
+diff --git a/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py b/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py
+index 33910257..63b191a5 100755
+--- a/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py
++++ b/.chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py
+@@ -494,14 +494,14 @@ def model_v2_proof(spec, before, after, steps, nodes, screenshot_hash):
+     return proof
+ 
+ 
+-def bracketed_screenshot(serial, package, activity, expected, launch_started=None, runtime_reader=None):
++def bracketed_screenshot(serial, package, activity, expected, launch_started=None, runtime_reader=None, deadline_seconds=20):
+     """Fail closed if the state/focus changes or the conservative launch budget expires."""
+     verify_app_identity(serial, package, activity)
+     before = accessibility_snapshot(serial, expected, attempts=1, package=package)
+     runtime_before = runtime_reader() if runtime_reader else None
+     started = time.monotonic()
+-    if launch_started is not None and not 0 <= started - launch_started < 20:
+-        raise SystemExit("loading capture exceeded the production 20-second deadline before screenshot")
++    if launch_started is not None and not 0 <= started - launch_started < deadline_seconds:
++        raise SystemExit(f"loading capture exceeded the production {deadline_seconds}-second deadline before screenshot")
+     screenshot = adb(serial, "exec-out", "screencap", "-p", binary=True)
+     ended = time.monotonic()
+     runtime_after = runtime_reader() if runtime_reader else None
+@@ -510,9 +510,9 @@ def bracketed_screenshot(serial, package, activity, expected, launch_started=Non
+     checked = time.monotonic()
+     timing = {}
+     if launch_started is not None:
+-        if not 0 <= started - launch_started <= ended - launch_started <= checked - launch_started < 20:
+-            raise SystemExit("loading capture crossed the production 20-second deadline")
+-        timing = {"basis": "monotonic-before-fixture-launch", "deadline_seconds": 20,
++        if not 0 <= started - launch_started <= ended - launch_started <= checked - launch_started < deadline_seconds:
++            raise SystemExit(f"loading capture crossed the production {deadline_seconds}-second deadline")
++        timing = {"basis": "monotonic-before-fixture-launch", "deadline_seconds": deadline_seconds,
+                   "screenshot_start_seconds": started - launch_started,
+                   "screenshot_end_seconds": ended - launch_started,
+                   "postcheck_seconds": checked - launch_started}
+@@ -561,7 +561,7 @@ def main() -> None:
+             or interactions != spec["state_spec"].get("interaction", [])
+             or (args.expected_accessibility or None) != spec["state_spec"].get("post_interaction_accessibility")):
+         raise SystemExit("capture arguments do not match the catalogued fixture/actions/state")
+-    loading = args.state == "bot-model-inventory-loading"
++    loading = args.state in ("bot-model-inventory-loading", "bot-avatar-loading")
+     if loading and not args.launch_fixture:
+         raise SystemExit("loading capture requires a measured fresh fixture launch")
+     provenance = installed_apk_provenance(args.serial, args.package, args.apk)
+@@ -584,7 +584,8 @@ def main() -> None:
+     identity = verify_app_identity(args.serial, args.package, args.activity)
+     screenshot, bracket = bracketed_screenshot(args.serial, args.package, args.activity,
+                                                args.expected_accessibility, launch_started if loading else None,
+-                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None)
++                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None,
++                                               deadline_seconds=60 if args.state == "bot-avatar-loading" else 20)
+     accessibility = bracket["after"]
+     output = Path(args.out or f"build/visual-parity/{args.name}/android").resolve()
+     output.mkdir(parents=True, exist_ok=True)
+diff --git a/.github/workflows/android-exact-head.yml b/.github/workflows/android-exact-head.yml
+index b0ad0abc..6c4cc78d 100644
+--- a/.github/workflows/android-exact-head.yml
++++ b/.github/workflows/android-exact-head.yml
+@@ -237,6 +237,7 @@ jobs:
+           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+           disable-animations: true
+           script: |
++            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+             ./scripts/prepare-ci-emulator.sh
+             ./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache
+       - name: Upload instrumented lane evidence
+diff --git a/app/src/androidTest/kotlin/com/hermesagent/mobile/device/ComposerImeTest.kt b/app/src/androidTest/kotlin/com/hermesagent/mobile/device/ComposerImeTest.kt
+index ef5ab77a..186b1e6c 100644
+--- a/app/src/androidTest/kotlin/com/hermesagent/mobile/device/ComposerImeTest.kt
++++ b/app/src/androidTest/kotlin/com/hermesagent/mobile/device/ComposerImeTest.kt
+@@ -34,9 +34,12 @@ import org.junit.runner.RunWith
+ @RunWith(AndroidJUnit4::class)
+ class ComposerImeTest {
+ 
+-    @get:Rule
++    @get:Rule(order = 0)
+     val compose = createAndroidComposeRule<MainActivity>()
+ 
++    @get:Rule(order = 1)
++    val windowReadiness: org.junit.rules.TestRule = WindowReadinessRule { compose.activity }
++
+     @Test
+     fun theComposerFieldTakesARealInputConnection() {
+         awaitWindowFocus()
+diff --git a/app/src/androidTest/kotlin/com/hermesagent/mobile/device/PlatformAccessibilityTest.kt b/app/src/androidTest/kotlin/com/hermesagent/mobile/device/PlatformAccessibilityTest.kt
+index 0289d601..c8dd9248 100644
+--- a/app/src/androidTest/kotlin/com/hermesagent/mobile/device/PlatformAccessibilityTest.kt
++++ b/app/src/androidTest/kotlin/com/hermesagent/mobile/device/PlatformAccessibilityTest.kt
+@@ -37,9 +37,12 @@ import org.junit.runner.RunWith
+ @RunWith(AndroidJUnit4::class)
+ class PlatformAccessibilityTest {
+ 
+-    @get:Rule
++    @get:Rule(order = 0)
+     val compose = createAndroidComposeRule<ComponentActivity>()
+ 
++    @get:Rule(order = 1)
++    val windowReadiness: org.junit.rules.TestRule = WindowReadinessRule { compose.activity }
++
+     /**
+      * The narrowed claim: the chat chrome reaches the platform tree.
+      *
+diff --git a/app/src/debug/kotlin/com/hermesagent/mobile/BotAvatarParityFixture.kt b/app/src/debug/kotlin/com/hermesagent/mobile/BotAvatarParityFixture.kt
+index 1ee7d140..0e9f515f 100644
+--- a/app/src/debug/kotlin/com/hermesagent/mobile/BotAvatarParityFixture.kt
++++ b/app/src/debug/kotlin/com/hermesagent/mobile/BotAvatarParityFixture.kt
+@@ -2,6 +2,7 @@ package com.hermesagent.mobile
+ 
+ import android.graphics.Bitmap
+ import android.graphics.Color
++import androidx.compose.foundation.background
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.verticalScroll
+@@ -73,7 +74,7 @@ internal suspend fun stageBotAvatar(state: String, vm: BotsAvatarViewModel) {
+     if (state == "bot-avatar-saved") vm.save(vm.state.value)
+ }
+ @Composable
+-internal fun BotAvatarParityContent(state: String) {
++internal fun BotAvatarParityContent(state: String, systemInsets: WindowInsets = WindowInsets.systemBars) {
+     val scope = rememberCoroutineScope()
+     val rpc = remember(state) { BotAvatarFixtureRpc(state) }
+     val host = remember(rpc) { GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(rpc), MutableStateFlow(0L), EndpointDispatchFence()) }
+@@ -85,7 +86,8 @@ internal fun BotAvatarParityContent(state: String) {
+     }
+     DisposableEffect(vm) { onDispose { vm.close() } }
+     val value by vm.state.collectAsState()
+-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
++    Column(Modifier.fillMaxSize().background(com.hermesagent.mobile.ui.theme.HermesTheme.tokens.chatSurface)
++        .windowInsetsPadding(systemInsets).verticalScroll(rememberScrollState()).padding(24.dp)) {
+         BotAvatarEditor(value, botAvatarActions(vm, value))
+     }
+ }
+diff --git a/docs/parity/bot-avatar-editor.md b/docs/parity/bot-avatar-editor.md
+index b55ecc2a..62b81e40 100644
+--- a/docs/parity/bot-avatar-editor.md
++++ b/docs/parity/bot-avatar-editor.md
+@@ -108,5 +108,7 @@ The Android runtime uses synthetic in-memory RPC; it is not live-Gateway accepta
+ 
+ ## Visual report
+ 
++- pending: #194
++
+ - [Actual capture outcome and platform map](bot-avatar-visual-acceptance.md).
+ - Verdict: Blocked until the Android fixture presentation is corrected and recaptured; no canonical receipt or platform equivalence claimed.
+diff --git a/docs/parity/bot-avatar-visual-acceptance.md b/docs/parity/bot-avatar-visual-acceptance.md
+index e7f53e19..db8d5062 100644
+--- a/docs/parity/bot-avatar-visual-acceptance.md
++++ b/docs/parity/bot-avatar-visual-acceptance.md
+@@ -36,6 +36,20 @@ Every row has separate light/dark images. These are descriptive mappings, **not
+ 4. Desktop pending/error/chooser cancellation do not match Android's presentation or action boundary. A future explicit contract needs parent review; this lane did not churn the catalog or validators to manufacture equivalence.
+ 5. Raw evidence manifests are not canonical receipts. `check-receipt` rejected the Android aggregate (`receipt must be an object`) and Desktop raw record (`receipt misses required common provenance`); failures are retained. No validator pass is claimed.
+ 
++## Visual report
++
++- pending: #194
++- Original failed packet retained unchanged; replacement Android verification is recorded below when complete.
++
++## Divergences
++
++| Desktop | Class | Android | Evidence |
++|---|---|---|---|
++| Pending/error silently render shape | mobile-adaptation | Explicit loading/error labels | Original actual platform map above |
++| Empty browser file input selection | mobile-adaptation | Production cancellation result and inline notice | Not native Cancel-event equivalence |
++| Shared Save closes; reopen for saved pixels | mobile-adaptation | Inline save/readback result | Separate presentation boundaries |
++| Clear then shape-raster upload recreates asset | drift | Explicit clear followed by confirmed absence | deferred: #194 — `profile-ops.ts:64-119` and retained clear-disk-outcome.json; not absence parity |
++
+ ## Retained packet
+ 
+ The parent handoff includes scratch packet `avatar-acceptance/packet` with original images, Android XML/labels/deadline brackets, Desktop state/probe JSON, source/installed-APK provenance, per-file hashes, and the additive Desktop fixture plus reconstructible patch. APKs, private device identifiers, capture-host commands and raw logs are excluded from the curated packet.
+diff --git a/scripts/capture-android-visual-parity.sh b/scripts/capture-android-visual-parity.sh
+index a95fc924..3487836a 100755
+--- a/scripts/capture-android-visual-parity.sh
++++ b/scripts/capture-android-visual-parity.sh
+@@ -40,13 +40,13 @@ fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixt
+ # running the capture without it would publish pixels of a state that never
+ # happened.
+ ordered_args=()
+-if [[ "$CAPTURE_SURFACE" == "bot-model-config" ]]; then
++if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
+   ordered_args=(--ordered-actions "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["state_spec"]["interaction"]))' "$request_json")")
+ fi
+ interaction_kinds="$(python3 -c '
+ import json,sys
+ request = json.load(open(sys.argv[1]))
+-values = [] if request["surface"] == "bot-model-config" else request["state_spec"].get("interaction", [])
++values = [] if request["surface"] in ("bot-model-config", "bot-avatar-editor") else request["state_spec"].get("interaction", [])
+ unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
+ if unsupported:
+     sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
+@@ -67,7 +67,7 @@ fi
+ # Ordered model captures launch inside Python, after installed APK identity is
+ # collected. This keeps signing/pull work outside the production loading budget.
+ launch_args=()
+-if [[ "$CAPTURE_SURFACE" == "bot-model-config" ]]; then
++if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
+   launch_args=(--launch-fixture)
+ else
+   adb shell am start -W -S -n "$activity" \
+diff --git a/scripts/prepare-ci-emulator.sh b/scripts/prepare-ci-emulator.sh
+index 0e29d4a8..b8fdd77e 100755
+--- a/scripts/prepare-ci-emulator.sh
++++ b/scripts/prepare-ci-emulator.sh
+@@ -14,8 +14,9 @@ say() { printf '  %s\n' "$1"; }
+ 
+ # 1. Input focus. A window that does not have it is never served by the input
+ #    method: `View.onFocusChanged` only calls `InputMethodManager.focusIn` when
+-#    `mAttachInfo.mHasWindowFocus` is set, and nothing retries afterwards. A
+-#    keyguard over a freshly booted emulator is the ordinary way to lose it.
++#    `mAttachInfo.mHasWindowFocus` is set, and nothing retries afterwards.
++#    Wake explicitly; dismissing keyguard does not itself wake the display.
++adb shell input keyevent KEYCODE_WAKEUP
+ adb shell wm dismiss-keyguard >/dev/null 2>&1 || say "keyguard dismissal was refused; continuing"
+ adb shell svc power stayon true >/dev/null 2>&1 || say "stay-awake was refused; continuing"
+ 
+@@ -35,8 +36,3 @@ if [ -n "$selected" ]; then
+ else
+   say "this system image lists no input method; ComposerImeTest will say so"
+ fi
+-
+-# 4. Evidence. When the lane goes red on the input connection, the first
+-#    question is which method was bound and to what, and the answer has to be in
+-#    the log that already exists rather than in a rerun.
+-adb shell dumpsys input_method 2>/dev/null | sed -n '1,12p' || true
+diff --git a/scripts/tests/test_bot_avatar_capture.py b/scripts/tests/test_bot_avatar_capture.py
+index 580f43d2..b1a061ac 100644
+--- a/scripts/tests/test_bot_avatar_capture.py
++++ b/scripts/tests/test_bot_avatar_capture.py
+@@ -18,4 +18,36 @@ class BotAvatarCaptureRegistrationTest(unittest.TestCase):
+         self.assertIn('BOT_AVATAR_CAPTURE_STATES', (ROOT / 'app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt').read_text())
+         self.assertEqual('587e673e2a2fae0616d8b750bb189217080f621a', spec['desktop_sha'])
+ 
++    def test_fixture_default_uses_system_insets_and_surface_before_scrolling(self):
++        source = (ROOT / 'app/src/debug/kotlin/com/hermesagent/mobile/BotAvatarParityFixture.kt').read_text()
++        self.assertIn('systemInsets: WindowInsets = WindowInsets.systemBars', source)
++        self.assertLess(source.index('.background('), source.index('.windowInsetsPadding(systemInsets)'))
++        self.assertLess(source.index('.windowInsetsPadding(systemInsets)'), source.index('.verticalScroll('))
++
++    def test_avatar_dispatch_uses_ordered_actions_and_measured_launch(self):
++        source = (ROOT / 'scripts/capture-android-visual-parity.sh').read_text()
++        self.assertEqual(2, source.count('"$CAPTURE_SURFACE" == "bot-avatar-editor"'))
++        self.assertIn('request["surface"] in ("bot-model-config", "bot-avatar-editor")', source)
++
++    def test_avatar_loading_receipt_rejects_missing_or_late_bracket(self):
++        import sys
++        sys.path.insert(0, str(ROOT / 'scripts'))
++        from visual_parity_contract import load_catalog, request, validate_receipt
++        spec = request(load_catalog(), 'bot-avatar-editor', 'bot-avatar-loading', 'light')
++        label = spec['state_spec']['post_interaction_accessibility']
++        evidence = {'expected_description': label, 'nodes': [{'text': label}]}
++        receipt = dict(schema_version=1, surface='bot-avatar-editor', state='bot-avatar-loading',
++                       fixture_id=spec['fixture_id'], theme='light', viewport={}, android_git_sha='a'*40,
++                       apk_sha256='b'*64, installed_apk_sha256='b'*64, apk_kind='debug',
++                       application=dict(component=spec['android_activity'], package_name='com.hermesagent.mobile.debug',
++                                        version_code='1', version_name='test', signing_certificate_sha256='c'*64),
++                       interactions=spec['state_spec']['interaction'], accessibility=evidence)
++        with self.assertRaisesRegex(ValueError, 'bracket'): validate_receipt(receipt, 'android')
++        receipt['screenshot_bracket'] = dict(before=evidence, after=evidence, timing=dict(
++            basis='monotonic-before-fixture-launch', deadline_seconds=60,
++            screenshot_start_seconds=40, screenshot_end_seconds=41, postcheck_seconds=42))
++        validate_receipt(receipt, 'android')
++        receipt['screenshot_bracket']['timing']['postcheck_seconds'] = 60
++        with self.assertRaisesRegex(ValueError, '60-second'): validate_receipt(receipt, 'android')
++
+ if __name__ == '__main__': unittest.main()
+diff --git a/scripts/visual_parity_contract.py b/scripts/visual_parity_contract.py
+index e29d21ff..5e999efe 100644
+--- a/scripts/visual_parity_contract.py
++++ b/scripts/visual_parity_contract.py
+@@ -185,7 +185,8 @@ def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
+         labels = accessibility_labels(evidence)
+         if expected and (evidence.get("expected_description") != expected or expected not in labels):
+             raise ValueError("Android receipt lacks catalogued post-interaction accessibility state")
+-        if receipt["state"] == "bot-model-inventory-loading":
++        if receipt["state"] in ("bot-model-inventory-loading", "bot-avatar-loading"):
++            deadline = 60 if receipt["state"] == "bot-avatar-loading" else 20
+             bracket = receipt.get("screenshot_bracket")
+             if not isinstance(bracket, dict):
+                 raise ValueError("loading capture needs screenshot state bracket")
+@@ -193,11 +194,11 @@ def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
+                 if expected not in accessibility_labels(bracket.get(side)):
+                     raise ValueError("loading state did not bracket screenshot")
+             timing = bracket.get("timing")
+-            if not isinstance(timing, dict) or timing.get("basis") != "monotonic-before-fixture-launch" or timing.get("deadline_seconds") != 20:
++            if not isinstance(timing, dict) or timing.get("basis") != "monotonic-before-fixture-launch" or timing.get("deadline_seconds") != deadline:
+                 raise ValueError("loading capture needs production deadline proof")
+             values = [timing.get(key) for key in ("screenshot_start_seconds", "screenshot_end_seconds", "postcheck_seconds")]
+-            if any(type(value) not in (int, float) for value in values) or not 0 <= values[0] <= values[1] <= values[2] < 20:
+-                raise ValueError("loading screenshot/check must finish before the production 20-second deadline")
++            if any(type(value) not in (int, float) for value in values) or not 0 <= values[0] <= values[1] <= values[2] < deadline:
++                raise ValueError(f"loading screenshot/check must finish before the production {deadline}-second deadline")
+     elif platform == "desktop":
+         if receipt.get("desktop_upstream_sha") != spec["desktop_sha"]:
+             raise ValueError("Desktop receipt SHA does not match its catalogued surface pin")
+diff --git a/app/src/androidTest/kotlin/com/hermesagent/mobile/device/WindowReadinessRule.kt b/app/src/androidTest/kotlin/com/hermesagent/mobile/device/WindowReadinessRule.kt
+new file mode 100644
+index 00000000..24fa4453
+--- /dev/null
++++ b/app/src/androidTest/kotlin/com/hermesagent/mobile/device/WindowReadinessRule.kt
+@@ -0,0 +1,44 @@
++package com.hermesagent.mobile.device
++
++import android.app.Activity
++import android.app.KeyguardManager
++import android.os.PowerManager
++import android.os.SystemClock
++import org.junit.rules.TestRule
++import org.junit.runner.Description
++import org.junit.runners.model.Statement
++
++/** Wait for an awake, unlocked, input-focused window inside Compose's activity lifetime. */
++internal class WindowReadinessRule(private val activity: () -> Activity) : TestRule {
++    override fun apply(base: Statement, description: Description): Statement = object : Statement() {
++        override fun evaluate() {
++            val deadline = SystemClock.uptimeMillis() + DeviceLane.PLATFORM_TIMEOUT_MILLIS
++            while (!ready()) {
++                check(SystemClock.uptimeMillis() < deadline) {
++                    "Activity not awake, unlocked and input-focused within " +
++                        "${DeviceLane.PLATFORM_TIMEOUT_MILLIS} ms: ${state()}"
++                }
++                SystemClock.sleep(50)
++            }
++            // No catch/wrap: preserve the exact original throwable.
++            base.evaluate()
++        }
++    }
++
++    private fun ready(): Boolean = onMain {
++        val owner = activity()
++        owner.getSystemService(PowerManager::class.java).isInteractive &&
++            !owner.getSystemService(KeyguardManager::class.java).isKeyguardLocked &&
++            !owner.getSystemService(KeyguardManager::class.java).isDeviceLocked &&
++            owner.hasWindowFocus()
++    }
++
++    private fun state(): String = onMain {
++        val owner = activity()
++        val keyguard = owner.getSystemService(KeyguardManager::class.java)
++        "activity=${owner.componentName} interactive=" +
++            "${owner.getSystemService(PowerManager::class.java).isInteractive} " +
++            "keyguardLocked=${keyguard.isKeyguardLocked} deviceLocked=${keyguard.isDeviceLocked} " +
++            describeImeBinding(owner)
++    }
++}
+diff --git a/app/src/testDebug/kotlin/com/hermesagent/mobile/BotAvatarFixtureSurfaceTest.kt b/app/src/testDebug/kotlin/com/hermesagent/mobile/BotAvatarFixtureSurfaceTest.kt
+new file mode 100644
+index 00000000..b8107e93
+--- /dev/null
++++ b/app/src/testDebug/kotlin/com/hermesagent/mobile/BotAvatarFixtureSurfaceTest.kt
+@@ -0,0 +1,50 @@
++package com.hermesagent.mobile
++
++import android.graphics.Bitmap
++import android.graphics.Canvas
++import androidx.activity.ComponentActivity
++import androidx.compose.foundation.layout.WindowInsets
++import androidx.compose.ui.graphics.toArgb
++import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithText
++import com.hermesagent.mobile.ui.theme.AppearanceSelection
++import com.hermesagent.mobile.ui.theme.HermesTheme
++import com.hermesagent.mobile.ui.theme.HermesThemeMode
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.GraphicsMode
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [34], qualifiers = "w411dp-h891dp")
++@GraphicsMode(GraphicsMode.Mode.NATIVE)
++class BotAvatarFixtureSurfaceTest {
++    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
++
++    @Test fun lightSurfacePaintsAndHeaderClearsSystemBars() = verify(HermesThemeMode.Light)
++    @Test fun darkSurfacePaintsAndHeaderClearsSystemBars() = verify(HermesThemeMode.Dark)
++
++    private fun verify(mode: HermesThemeMode) {
++        var surface = 0
++        compose.setContent {
++            HermesTheme(AppearanceSelection("mono", mode)) {
++                surface = HermesTheme.tokens.chatSurface.toArgb()
++                // Deliberately larger than fixture padding: catches missing insets.
++                BotAvatarParityContent("bot-avatar-loaded", WindowInsets(top = 120, bottom = 80))
++            }
++        }
++        compose.waitForIdle()
++        val header = compose.onNodeWithText("Avatar").fetchSemanticsNode().boundsInWindow
++        val decor = compose.activity.window.decorView
++        assertTrue("header must clear status area", header.top >= 120)
++        assertTrue("header inside safe viewport", header.bottom <= decor.height - 80)
++        val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
++        compose.runOnIdle { decor.draw(Canvas(bitmap)) }
++        // Blank margin next to the header, not text or an avatar pixel.
++        assertEquals("semantic surface must be painted", surface, bitmap.getPixel(2, header.center.y.toInt()))
++        bitmap.recycle()
++    }
++}
+diff --git a/scripts/tests/test_instrumentation_readiness.py b/scripts/tests/test_instrumentation_readiness.py
+new file mode 100644
+index 00000000..fee0018f
+--- /dev/null
++++ b/scripts/tests/test_instrumentation_readiness.py
+@@ -0,0 +1,84 @@
++"""Host-only readiness checks; fake adb never contacts a device or starts Gradle."""
++import os
++from pathlib import Path
++import subprocess
++import tempfile
++import unittest
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++class InstrumentationReadinessTest(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        directory = Path(self.temp.name)
++        self.log = directory / "adb.log"
++        adb = directory / "adb"
++        adb.write_text('''#!/usr/bin/env python3
++import os, sys
++with open(os.environ["ADB_LOG"], "a") as log:
++    log.write(" ".join(sys.argv[1:]) + "\\n")
++if os.environ.get("FAIL_ADB") == "1":
++    sys.exit(9)
++if sys.argv[1:] == ["shell", "ime", "list", "-s", "-a"]:
++    print("fixture.ime/.Service")
++''')
++        adb.chmod(0o755)
++        self.env = dict(os.environ, PATH=f"{directory}:{os.environ['PATH']}",
++                        ADB_LOG=str(self.log))
++
++    def prepare(self):
++        return subprocess.run(["bash", str(ROOT / "scripts/prepare-ci-emulator.sh")],
++                              env=self.env, capture_output=True, text=True)
++
++    def test_wakes_before_dismissing_keyguard_without_system_dump(self):
++        result = self.prepare()
++        self.assertEqual(0, result.returncode, result.stderr)
++        calls = self.log.read_text()
++        self.assertLess(calls.index("KEYCODE_WAKEUP"), calls.index("dismiss-keyguard"))
++        self.assertIn("ime set fixture.ime/.Service", calls)
++        self.assertNotIn("dumpsys", calls)
++
++    def test_failed_wake_is_not_ignored(self):
++        self.env["FAIL_ADB"] = "1"
++        self.assertNotEqual(0, self.prepare().returncode)
++        self.assertNotIn("dismiss-keyguard", self.log.read_text())
++
++    def test_compile_precedes_prepare_and_instrumentation(self):
++        workflow = (ROOT / ".github/workflows/android-exact-head.yml").read_text()
++        compile_at = workflow.index("./gradlew :app:assembleDebug :app:assembleDebugAndroidTest")
++        prepare_at = workflow.index("./scripts/prepare-ci-emulator.sh", compile_at)
++        run_at = workflow.index("./gradlew :app:connectedDebugAndroidTest", prepare_at)
++        self.assertLess(compile_at, prepare_at)
++        self.assertLess(prepare_at, run_at)
++
++    def test_ci_preserves_only_original_test_report_upload(self):
++        workflow = (ROOT / ".github/workflows/android-exact-head.yml").read_text()
++        lane = workflow.split("  instrumented:", 1)[1].split("  prune:", 1)[0]
++        self.assertEqual(1, lane.count("uses: actions/upload-artifact@v4"))
++        upload = lane.split("      - name: Upload instrumented lane evidence", 1)[1]
++        self.assertIn("if: always()", upload)
++        paths = upload.split("          path: |\n", 1)[1].split("          if-no-files-found:", 1)[0]
++        self.assertEqual([
++            "app/build/outputs/androidTest-results/connected/**",
++            "app/build/reports/androidTests/connected/**",
++        ], paths.split())
++
++    def test_readiness_is_inside_activity_lifetime_without_export(self):
++        source = ROOT / "app/src/androidTest/kotlin/com/hermesagent/mobile/device"
++        for name in ("ComposerImeTest", "PlatformAccessibilityTest"):
++            text = (source / f"{name}.kt").read_text()
++            self.assertIn("@get:Rule(order = 0)\n    val compose", text)
++            self.assertIn("@get:Rule(order = 1)\n    val windowReadiness", text)
++        rule = (source / "WindowReadinessRule.kt").read_text()
++        for token in ("isInteractive", "isKeyguardLocked", "isDeviceLocked",
++                      "hasWindowFocus()", "base.evaluate()"):
++            self.assertIn(token, rule)
++        for token in ("takeScreenshot", "executeShellCommand", "rootInActiveWindow",
++                      "getExternalFilesDir", "additionalTestOutputDir", "File("):
++            self.assertNotIn(token, rule)
++
++
++if __name__ == "__main__":
++    unittest.main()

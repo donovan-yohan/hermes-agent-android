@@ -1,0 +1,1258 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-01T19:44:07.896282+00:00",
+  "surface": "bot-avatar-editor",
+  "state": "bot-avatar-saved",
+  "fixture_id": "bot-avatar-editor-synthetic-v1",
+  "theme": "dark",
+  "android_git_sha": "0cc6ea3564fc268b8572e4f27c59e02c3f23546b",
+  "apk_sha256": "d3f30a1aef2cb15ab2c58b97d90d0606a32a850dc233f06fa2a4553528c62a27",
+  "installed_apk_sha256": "d3f30a1aef2cb15ab2c58b97d90d0606a32a850dc233f06fa2a4553528c62a27",
+  "apk_kind": "debug",
+  "interactions": [
+    "scroll:Avatar saved."
+  ],
+  "ordered_action_evidence": [
+    {
+      "action": "scroll:Avatar saved.",
+      "accessibility": {
+        "expected_description": "Avatar saved.",
+        "nodes": [
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1280,2856]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1280,2856]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1280,2856]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1280,2856]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1280,2856]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,156][1280,2784]"
+          },
+          {
+            "text": "Avatar",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,228][183,267]"
+          },
+          {
+            "text": "",
+            "content_description": "Avatar preview",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,291][360,579]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,603][250,747]"
+          },
+          {
+            "text": "",
+            "content_description": "Bot. Work in progress.",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,603][250,747]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[42,603][186,747]"
+          },
+          {
+            "text": "Bot",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[84,652][143,698]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[161,651][250,699]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,603][250,747]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[274,603][552,747]"
+          },
+          {
+            "text": "",
+            "content_description": "Generate. Work in progress.",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[274,603][552,747]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[274,603][457,747]"
+          },
+          {
+            "text": "Generate",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[286,652][445,698]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[463,651][552,699]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[274,603][552,747]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,771][217,915]"
+          },
+          {
+            "text": "Upload",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[84,820][205,866]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,771][217,915]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,939][250,1083]"
+          },
+          {
+            "text": "",
+            "content_description": "Pet. Work in progress.",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,939][250,1083]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[42,939][186,1083]"
+          },
+          {
+            "text": "Pet",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[84,988][143,1034]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[161,987][250,1035]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,939][250,1083]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,1107][354,1251]"
+          },
+          {
+            "text": "Remove image",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[84,1156][342,1202]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,1107][354,1251]"
+          },
+          {
+            "text": "Choose an image from this device. It will be cropped to a square.",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,1275][1190,1321]"
+          },
+          {
+            "text": "Avatar saved.",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,1345][306,1391]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,1415][297,1559]"
+          },
+          {
+            "text": "Save avatar",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[84,1464][285,1510]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[72,1415][297,1559]"
+          }
+        ]
+      }
+    }
+  ],
+  "viewport": {
+    "size": "Physical size: 1280x2856",
+    "density": "Physical density: 480"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+    "focused_window": "mCurrentFocus=Window{74c1a3b u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity}\nmFocusedApp=ActivityRecord{156683779 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity t680}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  },
+  "accessibility": {
+    "expected_description": "Avatar saved.",
+    "nodes": [
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,156][1280,2784]"
+      },
+      {
+        "text": "Avatar",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,228][183,267]"
+      },
+      {
+        "text": "",
+        "content_description": "Avatar preview",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,291][360,579]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,603][250,747]"
+      },
+      {
+        "text": "",
+        "content_description": "Bot. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,603][250,747]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,603][186,747]"
+      },
+      {
+        "text": "Bot",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[84,652][143,698]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[161,651][250,699]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,603][250,747]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[274,603][552,747]"
+      },
+      {
+        "text": "",
+        "content_description": "Generate. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[274,603][552,747]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[274,603][457,747]"
+      },
+      {
+        "text": "Generate",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[286,652][445,698]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[463,651][552,699]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[274,603][552,747]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,771][217,915]"
+      },
+      {
+        "text": "Upload",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[84,820][205,866]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,771][217,915]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,939][250,1083]"
+      },
+      {
+        "text": "",
+        "content_description": "Pet. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,939][250,1083]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,939][186,1083]"
+      },
+      {
+        "text": "Pet",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[84,988][143,1034]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[161,987][250,1035]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,939][250,1083]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,1107][354,1251]"
+      },
+      {
+        "text": "Remove image",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[84,1156][342,1202]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,1107][354,1251]"
+      },
+      {
+        "text": "Choose an image from this device. It will be cropped to a square.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,1275][1190,1321]"
+      },
+      {
+        "text": "Avatar saved.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,1345][306,1391]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,1415][297,1559]"
+      },
+      {
+        "text": "Save avatar",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[84,1464][285,1510]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[72,1415][297,1559]"
+      }
+    ]
+  },
+  "screenshot_bracket": {
+    "before": {
+      "expected_description": "Avatar saved.",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,156][1280,2784]"
+        },
+        {
+          "text": "Avatar",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,228][183,267]"
+        },
+        {
+          "text": "",
+          "content_description": "Avatar preview",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,291][360,579]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,603][250,747]"
+        },
+        {
+          "text": "",
+          "content_description": "Bot. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,603][250,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,603][186,747]"
+        },
+        {
+          "text": "Bot",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,652][143,698]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[161,651][250,699]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,603][250,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][552,747]"
+        },
+        {
+          "text": "",
+          "content_description": "Generate. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][552,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][457,747]"
+        },
+        {
+          "text": "Generate",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[286,652][445,698]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[463,651][552,699]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][552,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,771][217,915]"
+        },
+        {
+          "text": "Upload",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,820][205,866]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,771][217,915]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,939][250,1083]"
+        },
+        {
+          "text": "",
+          "content_description": "Pet. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,939][250,1083]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,939][186,1083]"
+        },
+        {
+          "text": "Pet",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,988][143,1034]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[161,987][250,1035]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,939][250,1083]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1107][354,1251]"
+        },
+        {
+          "text": "Remove image",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,1156][342,1202]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1107][354,1251]"
+        },
+        {
+          "text": "Choose an image from this device. It will be cropped to a square.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1275][1190,1321]"
+        },
+        {
+          "text": "Avatar saved.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1345][306,1391]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1415][297,1559]"
+        },
+        {
+          "text": "Save avatar",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,1464][285,1510]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1415][297,1559]"
+        }
+      ]
+    },
+    "after": {
+      "expected_description": "Avatar saved.",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,156][1280,2784]"
+        },
+        {
+          "text": "Avatar",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,228][183,267]"
+        },
+        {
+          "text": "",
+          "content_description": "Avatar preview",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,291][360,579]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,603][250,747]"
+        },
+        {
+          "text": "",
+          "content_description": "Bot. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,603][250,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,603][186,747]"
+        },
+        {
+          "text": "Bot",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,652][143,698]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[161,651][250,699]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,603][250,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][552,747]"
+        },
+        {
+          "text": "",
+          "content_description": "Generate. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][552,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][457,747]"
+        },
+        {
+          "text": "Generate",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[286,652][445,698]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[463,651][552,699]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[274,603][552,747]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,771][217,915]"
+        },
+        {
+          "text": "Upload",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,820][205,866]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,771][217,915]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,939][250,1083]"
+        },
+        {
+          "text": "",
+          "content_description": "Pet. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,939][250,1083]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,939][186,1083]"
+        },
+        {
+          "text": "Pet",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,988][143,1034]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[161,987][250,1035]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,939][250,1083]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1107][354,1251]"
+        },
+        {
+          "text": "Remove image",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,1156][342,1202]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1107][354,1251]"
+        },
+        {
+          "text": "Choose an image from this device. It will be cropped to a square.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1275][1190,1321]"
+        },
+        {
+          "text": "Avatar saved.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1345][306,1391]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1415][297,1559]"
+        },
+        {
+          "text": "Save avatar",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,1464][285,1510]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[72,1415][297,1559]"
+        }
+      ]
+    },
+    "timing": {}
+  },
+  "device": {
+    "model": "sdk_gphone16k_arm64",
+    "manufacturer": "Google",
+    "android": "17",
+    "sdk": "37",
+    "font_scale": "1.0"
+  },
+  "source_build": {
+    "kind": "working-tree-build",
+    "base_git_sha": "0cc6ea3564fc268b8572e4f27c59e02c3f23546b",
+    "integrated_readiness_commit": "fbdda921252df85b1f73f8a1342f21ce59a61128",
+    "diff_sha256": "6f04708ee81908ec45128790cf8b12854f7ed10e0e77ac9ca7793f0ec10b29a0",
+    "source_manifest_sha256": "0bf958203e14f7dd3332c68afffd92a782d2148d987d610acfb410cc2b7f8b56",
+    "note": "Base SHA plus retained working-tree patch, not an immutable commit build. Production sheet unchanged."
+  },
+  "observed_platform_boundary": "Fixture invokes production Save then named readback; inline saved notice, not Desktop reopened dialog.",
+  "observation_basis": "Fixture-staged production UI plus actual pixels and accessibility; no runtime RPC/ticket exporter.",
+  "screenshot_sha256": "ca5132ac1aada3e5544d5cd8a8da47479cc28ed0a236d69cdd335b185044032c"
+}
